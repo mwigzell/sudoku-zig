@@ -54,5 +54,5 @@ test "render: printGrid renders with 3x3 box boundaries" {
     std.debug.print("\n===== ACTUAL ({d} bytes) =====\n{s}===== END ACTUAL =====\n", .{ actual.len, actual });
     std.debug.print("\n===== EXPECTED ({d} bytes) =====\n{s}===== END EXPECTED =====\n", .{ expected.len, expected });
 
-    try std.testing.expect(false); // FORCE FAIL: inspect actual vs expected above
+
 }
