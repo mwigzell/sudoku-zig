@@ -1,0 +1,7 @@
+#!/bin/bash
+rm -rf kcov-out
+zig build test
+TEST=$(ls -t .zig-cache/o/*/test | head -1)
+kcov --include-pattern=src/ kcov-out "$TEST"
+kcov --dump-summary --include-path="$PWD/src" kcov-out "$TEST"
+vivaldi kcov-out/index.html
