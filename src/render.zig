@@ -73,6 +73,36 @@ test "render: cellChar maps empty (zero) cells to dot placeholder" {
     try testing.expectEqual('.', cellChar(c));
 }
 
-// NOTE: printGrid render test lives in tests.zig (root module) because std.io
-// fails to resolve under the current transitive-import arrangement.
-// TODO: Fix and move back when Zig 0.17 import resolution stabilises.
+// ---------------------------------------------------------------------------
+// printGrid render test
+// ---------------------------------------------------------------------------
+
+test "render: printGrid renders with 3x3 box boundaries" {
+    var buf: [4096]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buf);
+
+    const b = board.Board.init(); // all empty / zero
+
+    printGrid(&writer, b) catch |err| {
+        std.debug.print("printGrid error: {s}\n", .{@errorName(err)});
+        try testing.expect(false);
+    };
+
+    const actual = buf[0..writer.end];
+
+    const expected = "+-----+-----+-----+\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "+-----+-----+-----+\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "+-----+-----+-----+\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "| . . . | . . . | . . . |\n"
+        ++ "+-----+-----+-----+\n";
+
+    try testing.expectEqualStrings(expected, actual);
+}
