@@ -19,8 +19,32 @@ No rendering or I/O — just the domain structs and construction logic.
 - One embedded easy puzzle stored inline; construction of Board from flat 81-element u8 array writes cells through Box ownership.
 
 ### Test seams
-- Domain model tests (Cell, Board construction) in `src/cell_test.zig`, `src/board_test.zig` per coding standards.
-- Grid topology tests: `row(n).cells()` returns correct 9 references, `col(n).cells()` likewise, `box(br,bc)` is owned 3×3. Tests in `src/grid_test.zig`.
+- All tests are co-located inline with the source modules they test (Ziglings 105 colocation pattern):
+  - Cell tests live in `src/cell.zig`; Board construction tests in `src/board.zig`; Grid topology tests inline wherever Grid/RowView/ColView are defined.
+  - Discovered by `addTest` via the library root (`src/root.zig`).
+
+## Deliverable structures & functions (TDD order)
+
+### Box (`src/box.zig` — ✅ TDD Cycle 1 complete)
+| What | Detail |
+|------|--------|
+| Struct fields | `cells: [3][3]Cell`, `boxRow: u2`, `boxCol: u2` |
+| Function | `init(r: u2, c: u2) Box` — construct all cells empty/unlocked with stable meta-grid position |
+| Test | verifies 9 cells start zero + position metadata correct |
+
+### Grid (`src/grid.zig` — pending)
+| What | Detail |
+|------|--------|
+| Struct fields | `boxes: [3][3]Box` (canonical storage) |
+| Functions | `row(n): u8 → *RowView`, `col(n): u8 → *ColView`, `cellAt(row, col): u8 → *Cell` (coordinate→Box resolution for Board construction) |
+| Row/Col lenses | RowView / ColView structs that aggregate 9 cell references across the Boxes they traverse (computed views, not owned arrays) |
+
+### Board (`src/board.zig` refactor — pending)
+| What | Detail |
+|------|--------|
+| Change | Replace flat `cells: [81]Cell` with `grid: Grid` as canonical storage |
+| Function (rename) | `initWithPuzzle(flat: [81]u8) Board` — replace current `boardFromFlat`, write cells through Box ownership (`row / 3`, `col / 3` → target box, `row % 3`, `col % 3` → cell slot within that box) |
+| Keeps | Existing tests still valid concept-wise (givens locked, empties unlocked) — updated for Grid access pattern |
 
 ## Acceptance criteria
 
@@ -31,8 +55,7 @@ No rendering or I/O — just the domain structs and construction logic.
 - [ ] Unit tests exercise domain model construction and Grid views
 
 ## Blocked by
-
-08 — test infrastructure cleanup must complete before TDD cycles begin
+(none — issue 08 closed, prerequisite met)
 
 ## Triage Assessment
 
@@ -42,7 +65,7 @@ No rendering or I/O — just the domain structs and construction logic.
 |-----------|--------|
 | Specification clarity | ✅ Clear — structs, topology rules, render contract all defined with ADR cross-references |
 | Acceptance criteria measurable | ✅ 5 checklist items covering Box ownership, Grid views, Board construction, compilation, and unit tests (scope reduced on 2026-07-11 — Renderer moved to issue 09) |
-| Blocked by | ✅ Issue 08 (test infrastructure cleanup, must run first before TDD cycles) |
+| Blocked by | ✅ Issue 08 (test infrastructure cleanup, completed) — unblocked |
 | Parent PRD aligned | ✅ Domain model underpins all user stories; Renderer mapped to US1 via issue 09 |
 | Test strategy defined | ✅ HITL TDD mode, co-located tests named for each module, smoke test via fixedBufferStream |
 

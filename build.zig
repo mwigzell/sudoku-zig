@@ -34,8 +34,21 @@ pub fn build(b: *std.Build) void {
     const check = b.addTest(.{
         .name = "test",
         .root_module = test_mod,
+        .use_llvm = true
     });
     const test_run = b.addRunArtifact(check);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&test_run.step);
+
+	// code coverage
+	const cov_step = b.step("cov", "Run tests under kcov");
+	const kcov = b.addSystemCommand(&.{
+		"kcov",
+		"--dump-summary",
+		"--include-path",
+		"src",
+		"kcov-out",
+	});
+	kcov.addArtifactArg(check);   // your existing addTest artifact
+	cov_step.dependOn(&kcov.step);
 }

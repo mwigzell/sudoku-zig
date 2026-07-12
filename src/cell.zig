@@ -50,7 +50,6 @@ pub const Cell = struct {
 // ---------------------------------------------------------------------------
 
 test "Cell: init produces unlocked cell with given value" {
-    std.debug.print("TEST CELL RUNNING\n", .{});
     const c = Cell.init(.zero);
     try std.testing.expect(c.value == .zero);
     try std.testing.expect(!c.locked);
@@ -61,4 +60,14 @@ test "Cell: locked given cell retains its digit" {
     c.locked = true;
     try std.testing.expect(c.value == .eight);
     try std.testing.expect(c.locked);
+}
+
+test "rawToCellValue maps 0..9 to correct CellValue enum members" {
+    const expected: []const CellValue = &.{
+        .zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine,
+    };
+
+    for (0..10) |i| {
+        try std.testing.expect(expected[i] == rawToCellValue(@intCast(i)));
+    }
 }

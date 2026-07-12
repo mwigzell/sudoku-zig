@@ -1,6 +1,6 @@
 # Issue 08 — Test infrastructure cleanup (idiomatic Zig colocation via library root)
 
-Status: ready-for-agent
+Status: closed
 
 ## Parent
 
@@ -45,21 +45,21 @@ workarounds caused by having no proper library root:
 
 ## Acceptance criteria
 
-- [ ] `src/root.zig` exists and re-exports cell, board, render as `pub const`
-- [ ] `build.zig` test step uses `.root_source_file = b.path("src/root.zig")` — no fake module indirection
-- [ ] All inline `test {}` blocks remain in their original source files (cell, board, render)
-- [ ] printGrid test lives in render.zig (moved back from tests.zig)
-- [ ] Dead-code-workaround "references" test removed entirely
-- [ ] Sanity placeholder test removed
-- [ ] Force-fail trap removed (already done this session)
-- [ ] `tests.zig` deleted
-- [ ] `zig build test` discovers and runs all colocated tests with zero warnings
-- [ ] Zero new imports or API changes to existing modules
+- [x] `src/root.zig` exists and re-exports cell, board, render as `pub const`
+- [x] `build.zig` test step uses `.root_source_file = b.path("src/root.zig")` — no fake module indirection
+- [x] All inline `test {}` blocks remain in their original source files (cell, board, render)
+- [x] printGrid test lives in render.zig (moved back from tests.zig)
+- [x] Dead-code-workaround "references" test removed entirely
+- [x] Sanity placeholder test removed
+- [x] Force-fail trap removed (already done this session)
+- [x] `tests.zig` deleted
+- [x] `zig build test` discovers and runs all colocated tests with zero warnings
+- [x] Zero new imports or API changes to existing modules
 
 ## Blocked by
 
 (none — foundational prerequisite)
 
-## Comments
+## Work Done
 
-Note: Force-fail trap (`try std.testing.expect(false)` at line ~67 of the old `tests.zig`) was already removed in a prior session. The remaining work is root.zig creation, build.zig fix, printGrid relocation, and deleting the fake aggregator file.
+Work completed this session:
