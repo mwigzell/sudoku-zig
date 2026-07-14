@@ -26,6 +26,64 @@ Player interactivity: accept Commands to fill/clear cells, validate board state 
 2. Renderer renders initial Board to stdout
 3. stdin line reader loops: parse Command → GameEngine.execute(Command, &board) → Event emitted → Renderer.renderEvent(Event)
 
+## StdoutRenderer Design
+
+ASCII box grid with column labels (A–I), row labels (1–9), three-by-three box separators, and per-cell indicators:
+```
+  A   B   C
++-------+-------+-------+
+1|     |     |     |
+ _|_ _ |_ _ _ |_ _ _ |
+  |     |     |     |
+ _|_ _ |_ _ _ |_ _ _ |
+2|     |     |     |
+ _|_ _ |_ _ _ |_ _ _ |
+  |     |     |     |
+ _|_ _ |_ _ _ |_ _ _ |
+3|     |     |     |
++-------+-------+-------+
+```
+
+Cell rendering (based on `RenderCell` struct):
+- Locked/given: `[X]`
+- User-filled, no conflict: ` X `
+- User-filled, conflicting: `✗X ✗` (Unicode strike indicator)
+- Empty: `   `
+
+Methods:
+```zig
+/// Main public entry — draws full 9×9 grid from a snapshot.
+pub fn render(self: *StdoutRenderer, snap: renderer.RenderSnapshot) anyerror!void {
+    // delegates to helpers below
+}
+
+/// Format one cell as `[]u3` ("[7]", " 7 ", or " ✗7 ✗")
+fn renderCell(cell: renderer.RenderCell) [4]u8
+
+/// Build a single row line with horizontal box separators.
+/// Called for each of the 3 sub-bands per row (top border, cells, bottom separator).
+fn renderRowLine(
+    self: *StdoutRenderer,
+    snap: renderer.RenderSnapshot,
+    row_idx: usize,
+) anyerror!void
+```
+
+Render flow:
+1. Print column header line (`  A   B   C`)
+2. For each row (0–8):
+   a. Horizontal top border (`+-------+-------+-------+`)
+   b. Cells prefixed with row label (`1| ... | ... | ... |`)
+   c. After every third row, replace bottom separator with final grid close
+3. Flush — writes to internal `Io.Writer` over the provided buffer.
+
+### Error handling for `try` in render()
+
+Change `render` return type from `void` to `anyerror!void`. Io.Writer always has an error set (`WriteFailed`) — propagating it is the only correct option.
+
+- **GameEngine.renderOnce()**: propagate via `try` and bubble out. If stdout dies, the game loop terminates — appropriate behaviour.
+- **StdoutRenderer test**: use `_ = r.render(snap) catch unreachable;` — fixed buffer won't overflow under test conditions.
+
 ### Test seams
 - No TUI assertions. Tests feed Commands into GameEngine and assert emitted Event snapshots match expected state.
 - Validator tested in isolation: construct Board with known conflicts → assert which cells are flagged.
@@ -43,7 +101,11 @@ Player interactivity: accept Commands to fill/clear cells, validate board state 
 
 ## Blocked by
 
-01 — requires Box/Grid/Board domain model with row-view and col-view lenses
 09 — requires renderer interface/contract
 
 ## Comments
+
+### 2026-07-13 — Session resume, StdoutRenderer test fix
+- Fixed `StdoutRenderer` smoke test: `[9][9]RenderCell` literal was only 1 element (81 expected). Replaced with `{.cells = undefined}` — the placeholder render body ignores cell contents anyway so all-zero or all-undefined is equivalent.
+- Kept `try self.w.print(...)` bug (void return vs `!void`) per user direction. Design plan added above under "Error plan" section.
+- Tests won't compile until that `try` / return-type mismatch is addressed.

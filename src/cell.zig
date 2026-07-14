@@ -43,6 +43,14 @@ pub const Cell = struct {
             .locked = false,
         };
     }
+
+    /// Return the display character for this cell's value (0x20 for empty, '1'–'9' otherwise).
+    pub fn charOf(self: @This()) u8 {
+        return switch (self.value) {
+            .zero => 0x20,
+            else => @as(u8, @intFromEnum(self.value)) + '0',
+        };
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -70,4 +78,15 @@ test "rawToCellValue maps 0..9 to correct CellValue enum members" {
     for (0..10) |i| {
         try std.testing.expect(expected[i] == rawToCellValue(@intCast(i)));
     }
+}
+
+test "Cell charOf returns display character" {
+    var c = Cell.init(.zero);
+    try std.testing.expectEqual(0x20, c.charOf());
+
+    c.value = .four;
+    try std.testing.expectEqual('4', c.charOf());
+
+    c.value = .nine;
+    try std.testing.expectEqual('9', c.charOf());
 }

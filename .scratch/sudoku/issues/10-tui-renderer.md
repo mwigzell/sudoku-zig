@@ -35,7 +35,6 @@ Implement conflict visualization: cells flagged by the Validator render differen
 
 ## Blocked by
 
-01 — requires Box/Grid/Board domain model with row-view and col-view lenses
 09 — requires renderer interface/contract to implement against
 
 ## Comments

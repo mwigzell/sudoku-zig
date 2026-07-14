@@ -32,6 +32,6 @@ The interface must represent conflict state so any renderer can highlight confli
 
 ## Blocked by
 
-01 — requires Box/Grid/Board domain model with row-view and col-view lenses
+(none)
 
 ## Comments

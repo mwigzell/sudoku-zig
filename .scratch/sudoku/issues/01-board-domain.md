@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 ## Working mode
 HITL (Human In The Loop). One TDD cycle per session. Agent enumerates its plan, does one iteration, pauses for explicit direction before proceeding. See `.coding-standards.md` → "TDD methodology (HITL)".
@@ -25,34 +25,39 @@ No rendering or I/O — just the domain structs and construction logic.
 
 ## Deliverable structures & functions (TDD order)
 
-### Box (`src/box.zig` — ✅ TDD Cycle 1 complete)
+### Box (`src/box.zig` — ✅ TDD Cycle 1 complete, completed earlier)
 | What | Detail |
 |------|--------|
 | Struct fields | `cells: [3][3]Cell`, `boxRow: u2`, `boxCol: u2` |
 | Function | `init(r: u2, c: u2) Box` — construct all cells empty/unlocked with stable meta-grid position |
 | Test | verifies 9 cells start zero + position metadata correct |
 
-### Grid (`src/grid.zig` — pending)
+### Grid (`src/grid.zig` — ✅ complete)
 | What | Detail |
 |------|--------|
 | Struct fields | `boxes: [3][3]Box` (canonical storage) |
-| Functions | `row(n): u8 → *RowView`, `col(n): u8 → *ColView`, `cellAt(row, col): u8 → *Cell` (coordinate→Box resolution for Board construction) |
+| Functions | `row(n): u8 → RowView`, `col(n): u8 → ColView`, `cellAt(row, col): *Cell` (coordinate→Box resolution for Board construction) |
 | Row/Col lenses | RowView / ColView structs that aggregate 9 cell references across the Boxes they traverse (computed views, not owned arrays) |
 
-### Board (`src/board.zig` refactor — pending)
+### Board (`src/board.zig` refactor — ✅ complete)
 | What | Detail |
 |------|--------|
-| Change | Replace flat `cells: [81]Cell` with `grid: Grid` as canonical storage |
-| Function (rename) | `initWithPuzzle(flat: [81]u8) Board` — replace current `boardFromFlat`, write cells through Box ownership (`row / 3`, `col / 3` → target box, `row % 3`, `col % 3` → cell slot within that box) |
+| Change | Replaced flat `cells: [81]Cell` with `grid: Grid` as canonical storage |
+| Function (rename) | `fromFlat(flat: [81]u8) BoardError!Board` — writes cells through Box ownership. Additional `fromOneLineString(oneLine: []const u8) BoardError!Board` for interop with online sudoku puzzle sites (digits + `.` convention). Both return errors on invalid input (out-of-range values, wrong string length, unrecognised characters). |
+| Keeps | Existing tests still valid concept-wise (givens locked, empties unlocked) — updated for Grid access pattern. Three new validation tests added.
 | Keeps | Existing tests still valid concept-wise (givens locked, empties unlocked) — updated for Grid access pattern |
 
-## Acceptance criteria
+## Acceptance criteria (completed 2026-07-12)
 
-- [ ] Zig project compiles natively with zero warnings
-- [ ] Box struct owns Cell[3][3] with (boxRow, boxCol) metadata
-- [ ] Grid provides row(n), col(n) returning computed views (not owned arrays)
-- [ ] Board constructable from flat 81-element puzzle data written through Box ownership
-- [ ] Unit tests exercise domain model construction and Grid views
+- [x] Zig project compiles natively with zero warnings
+- [x] Box struct owns Cell[3][3] with (boxRow, boxCol) metadata
+- [x] Grid provides row(n), col(n) returning computed views (not owned arrays)
+- [x] Board constructable from flat 81-element puzzle data written through Box ownership
+- [x] Unit tests exercise domain model construction and Grid views
+
+## Notes
+- `fromFlat` and `fromOneLineString` both return `BoardError!Board` with three error variants (`BadCellValue`, `WrongLength`, `InvalidCharacter`) so callers can reject malformed puzzles gracefully.
+- `cellAt` takes a mutable receiver (`self: *Grid`). Buck is fine with this — a Board is not a const thing.
 
 ## Blocked by
 (none — issue 08 closed, prerequisite met)
