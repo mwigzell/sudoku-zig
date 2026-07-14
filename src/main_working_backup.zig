@@ -7,5 +7,4 @@ pub fn main(init: std.process.Init) anyerror!void {
     var r = std_renderer.StdoutRenderer.init(init.io);
     var engine = try game_engine.GameEngine(std_renderer.StdoutRenderer).init(default_puzzle.default_puzzle, &r);
 
-    try engine.render();
-}
+    try engine.render(); } 

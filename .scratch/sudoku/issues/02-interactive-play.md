@@ -101,9 +101,20 @@ Change `render` return type from `void` to `anyerror!void`. Io.Writer always has
 
 ## Blocked by
 
-09 — requires renderer interface/contract
+(none)
+
+### Dependencies resolved
+- ✅ Issue 09: renderer interface exists, StdoutRenderer implemented, conflict marking shape in place
 
 ## Comments
+
+### 2026-07-13 — Dep blocked cleared
+Issue 09 (Renderer interface) completed. Dependency satisfied:
+- `renderer.zig`: `RenderSnapshot` + `RenderCell{ value, locked, conflicting }` contract in place
+- `StdoutRenderer.init()` now takes no writer dependency; handles its own stdout
+- All 18 tests passing at 99.67% coverage
+
+Issue 02 is free to build the Validator and interactive game loop next.
 
 ### 2026-07-13 — Session resume, StdoutRenderer test fix
 - Fixed `StdoutRenderer` smoke test: `[9][9]RenderCell` literal was only 1 element (81 expected). Replaced with `{.cells = undefined}` — the placeholder render body ignores cell contents anyway so all-zero or all-undefined is equivalent.

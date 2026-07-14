@@ -1,6 +1,7 @@
 const std = @import("std");
 const cell = @import("cell.zig");
 const grid = @import("grid.zig");
+const default_puzzle = @import("default_puzzle.zig");
 
 /// Board dimension — a standard Sudoku grid is 9×9.
 pub const DIMENSION_SIZE: u8 = 9;
@@ -147,7 +148,7 @@ test "Board: constructs from flat puzzle array with correct givens and empties" 
 }
 
 test "Board: fromOneLineString parses digits and dots into locked/unlocked cells" {
-    const fixture = "67..4..524....1....53.87.91....12.85.2...46..7.5...21..47.3.52.5.62.8.499.....378";
+    const fixture = default_puzzle.default_puzzle;
     var b = try fromOneLineString(fixture);
 
     // Sample locked cells at known positions (taken from fixture above)

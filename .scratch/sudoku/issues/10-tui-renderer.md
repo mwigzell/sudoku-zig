@@ -35,6 +35,6 @@ Implement conflict visualization: cells flagged by the Validator render differen
 
 ## Blocked by
 
-09 — requires renderer interface/contract to implement against
+(none) — renderer interface (issue 09) complete
 
 ## Comments

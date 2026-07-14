@@ -14,6 +14,7 @@ When proposing work or building features, prioritise end-to-end completeness ove
 
 We are on **Zig 0.17** (dev snapshot). Consult `.zig-testing.md` for the stdlib API surface
 (Io, testing, build system changes) **before** searching stdlib source files with grep.
+The zig stdlib source hierarchy is at /home/mark/.local/tools/zig-latest/lib/std/
 
 ### Local working example: Ziglings
 `~/Dev/src/ziglings/exercises/` contains solved exercises against the same 0.17 toolchain.

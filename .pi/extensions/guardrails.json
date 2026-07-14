@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/@aliou/pi-guardrails@0.15.0/schema.json",
+  "pathAccess": {
+    "allowedPaths": [
+      {
+        "kind": "directory",
+        "path": "/tmp"
+      },
+      {
+        "kind": "file",
+        "path": "/dev/null"
+      },
+      {
+        "kind": "directory",
+        "path": "~/Dev/src/ziglings/exercises"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.local/tools/zig-latest/lib"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.local/tools/zig-latest"
+      }
+    ]
+  },
+  "version": "0.13.0-20260619"
+}

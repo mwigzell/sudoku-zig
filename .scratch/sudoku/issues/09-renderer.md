@@ -1,4 +1,5 @@
-Status: ready-for-agent
+Status: closed
+Date completed: 2026-07-13
 
 ## Working mode
 HITL (Human In The Loop). One TDD cycle per session.
@@ -25,10 +26,10 @@ The interface must represent conflict state so any renderer can highlight confli
 
 ## Acceptance criteria
 
-- [ ] A renderer interface/contract exists defining `render(board_snapshot)` minimum
-- [ ] The contract supports conflict marking data (even if no conflict marks exist yet)
-- [ ] The interface is testable without a concrete renderer implementation
-- [ ] Existing test suite (`cellChar`, grid rendering) passes against the new contract
+- [x] A renderer interface/contract exists defining `render(board_snapshot)` minimum
+- [x] The contract supports conflict marking data (even if no conflict marks exist yet)
+- [x] The interface is testable without a concrete renderer implementation
+- [x] Existing test suite (`cellChar`, grid rendering) passes against the new contract
 
 ## Blocked by
 

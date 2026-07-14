@@ -56,12 +56,12 @@ pub fn GameEngine(comptime R: type) type {
     return Engine;
 }
 
+const default_puzzle = @import("default_puzzle.zig");
 const mock_renderer = @import("mock_renderer.zig");
 
 test "GameEngine fill updates cell in snapshot" {
-    const puzzle = "67..4..524....1....53.87.91....12.85.2...46..7.5...21..47.3.52.5.62.8.499.....378";
     var mock = mock_renderer.MockRenderer.init();
-    var engine = try GameEngine(mock_renderer.MockRenderer).init(puzzle, &mock);
+    var engine = try GameEngine(mock_renderer.MockRenderer).init(default_puzzle.default_puzzle, &mock);
 
     engine.fill(0, 2, 7);
     try engine.render();
@@ -72,9 +72,8 @@ test "GameEngine fill updates cell in snapshot" {
 }
 
 test "GameEngine init builds board, explicit render emits snapshot" {
-    const puzzle = "67..4..524....1....53.87.91....12.85.2...46..7.5...21..47.3.52.5.62.8.499.....378";
     var mock = mock_renderer.MockRenderer.init();
-    var engine = try GameEngine(mock_renderer.MockRenderer).init(puzzle, &mock);
+    var engine = try GameEngine(mock_renderer.MockRenderer).init(default_puzzle.default_puzzle, &mock);
 
     // init does not auto-render — call_count is zero post-init
     try std.testing.expectEqual(0, mock.call_count);
