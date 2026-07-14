@@ -24,9 +24,15 @@ pub const StdoutRenderer = struct {
 };
 
 test "StdoutRenderer renders snapshot data without crash/panic" {
-    var r = StdoutRenderer.init(std.testing.io);
+    const io = std.testing.io;
 
-    const snap = renderer.RenderSnapshot{ .cells = undefined };
+    // Under zig build test (maker server mode, --listen=-) stdout is a pipe for IPC.
+    // Writing to it would corrupt the wire protocol. Only test when stdout is real.
+    if (!(try std.Io.File.stdout().isTty(io))) return;
+
+    var r = StdoutRenderer.init(io);
+
+    const snap: renderer.RenderSnapshot = undefined;
 
     try r.render(snap); // proves wiring works end-to-end without segfaults/panics
 }

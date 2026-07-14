@@ -44,11 +44,28 @@ pub fn build(b: *std.Build) void {
 	const cov_step = b.step("cov", "Run tests under kcov");
 	const kcov = b.addSystemCommand(&.{
 		"kcov",
+		"--include-path",
+		"src",
+		"kcov-out",
+	});
+	kcov.addArtifactArg(check); // compiled test artifact
+	cov_step.dependOn(&kcov.step);
+
+	// After collection, dump a JSON summary and tell the user where to look.
+	const kcov_sum = b.addSystemCommand(&.{
+		"kcov",
 		"--dump-summary",
 		"--include-path",
 		"src",
 		"kcov-out",
 	});
-	kcov.addArtifactArg(check);   // your existing addTest artifact
-	cov_step.dependOn(&kcov.step);
+	kcov_sum.addArtifactArg(check);
+	cov_step.dependOn(&kcov_sum.step);
+
+	// Auto-open coverage HTML in browser
+	const open_cov = b.addSystemCommand(&.{
+		"vivaldi",
+		"kcov-out/test/index.html",
+	});
+	cov_step.dependOn(&open_cov.step);
 }
