@@ -21,6 +21,10 @@
       {
         "kind": "directory",
         "path": "~/.local/tools/zig-latest"
+      },
+      {
+        "kind": "file",
+        "path": "/usr/bin/kcov"
       }
     ]
   },

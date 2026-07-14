@@ -36,9 +36,18 @@ pub fn build(b: *std.Build) void {
         .root_module = test_mod,
         .use_llvm = true
     });
-    const test_run = b.addRunArtifact(check);
+
+    // Run the compiled test binary directly via addSystemCommand to avoid
+    // Zig 0.17's default server-mode IPC (--listen=-) which hangs on x86_64.
+    // /bin/sh -c "exec $0" passes through to running the ELF directly as $0.
+    const run_tests = b.addSystemCommand(&.{
+        "/bin/sh",
+        "-c",
+        "exec $0",
+    });
+    run_tests.addArtifactArg(check);
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&test_run.step);
+    test_step.dependOn(&run_tests.step);
 
 	// code coverage
 	const cov_step = b.step("cov", "Run tests under kcov");

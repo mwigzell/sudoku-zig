@@ -2,22 +2,23 @@ const std = @import("std");
 const renderer = @import("renderer.zig");
 const cell = @import("cell.zig");
 const default_puzzle = @import("default_puzzle.zig");
+const io_sink = @import("io_sink.zig");
 
-/// Renders Sudoku grid as ASCII via stdout (TUI renderer impl.).
+/// Renders Sudoku grid as ASCII via an output sink.
 pub const StdoutRenderer = struct {
-    file_writer: std.Io.File.Writer,
+    sink: *io_sink.IoSink,
 
-    pub fn init(io: std.Io) StdoutRenderer {
-        const writer = std.Io.File.stdout().writer(io, &.{});
+    pub fn init(r: *io_sink.IoSink) StdoutRenderer {
         return .{
-            .file_writer = writer,
+            .sink = r,
         };
     }
 
-    /// Render the board state snapshot to standard out/terminal display.
+    /// Render the board state snapshot to stdout/terminal display.
     pub fn render(self: *StdoutRenderer, snap: renderer.RenderSnapshot) !void {
-        const w = &self.file_writer.interface;
-        try w.print("+-------+--------\n", .{}); // header border line
+        var w = self.sink.writer();
+        const writer = &w.interface;
+        try writer.print("+-------+--------\n", .{}); // header border line
 
         _ = snap; // until real grid printing wired in next cycle
     }
@@ -26,13 +27,24 @@ pub const StdoutRenderer = struct {
 test "StdoutRenderer renders snapshot data without crash/panic" {
     const io = std.testing.io;
 
-    // Under zig build test (maker server mode, --listen=-) stdout is a pipe for IPC.
-    // Writing to it would corrupt the wire protocol. Only test when stdout is real.
-    if (!(try std.Io.File.stdout().isTty(io))) return;
+    var sink: io_sink.IoSink = undefined;
+    sink = try io_sink.IoSink.init(io).toTemp(std.testing.allocator);
+    defer sink.deinit(std.testing.allocator);
 
-    var r = StdoutRenderer.init(io);
+    var r = StdoutRenderer.init(&sink);
 
     const snap: renderer.RenderSnapshot = undefined;
+    try r.render(snap);
 
-    try r.render(snap); // proves wiring works end-to-end without segfaults/panics
+    // Re-open the same temp file for reading to verify output (don't close sink.out — deinit does that)
+    const tdir = try std.Io.Dir.openDirAbsolute(io, "/tmp", .{});
+    defer tdir.close(io);
+
+    const path = sink.temp_path_owned orelse unreachable;
+    var read_file = try tdir.openFile(io, path, .{ .mode = .read_only });
+    defer read_file.close(io);
+
+    var buf: [256]u8 = undefined;
+    const n = try read_file.readPositionalAll(io, &buf, 0);
+    try std.testing.expectEqualStrings("+-------+--------\n", buf[0..n]);
 }

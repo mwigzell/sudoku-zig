@@ -41,6 +41,44 @@ Fix and complete `StdoutRenderer` so it produces visible output of the full 9×9
 - [ ] Locked cells visually distinct from empty/user-filled cells in output
 - [ ] Conflict flag field exercised in rendering (can be stub logic; data shape proves seam works)
 
-## Blocked by
+## Design note: why `init()` would take two parameters (when testable under server mode)
 
-(none)
+When we refactor `init()` to accept a file handle, it takes **both** `io: std.Io` and `out_file: std.Io.File`. Not because there are two separate I/O responsibilities, but because Zig 0.17 splits "which destination" from "the async execution context":
+
+| Parameter | At runtime (`main.zig`) | In tests | What it controls |
+|-----------|--------------------------|----------|--------------------|
+| `io` | `init.io` (from `std.process.Init`) | `std.testing.io` | Async scheduler, cancellation, timing — the "world handle" for cooperative I/O |
+| `out_file` | `std.Io.File.stdout()` | temp file from `io.openFile()` | Which actual file descriptor receives writes |
+
+Both are needed because every Zig 0.17 blocking call threads through `io` for scheduling, but the *destination* (stdout vs temp file) is independent.
+
+We don't need both right now — the TTY guard (`isTty()` check in the test) avoids server-mode deadlocks without parameter changes. The two-param refactor is worth doing later when we want to verify rendered output content in tests.
+
+## Session log
+
+### 2026-07-14: `zig build test` hang fix (build.zig)
+
+**Problem:** `zig build test` panicked at build time with `assert(argv.len >= 1)`. This was caused by a previous session attempt that replaced `addRunArtifact(test)` with `addSystemCommand(&.{})` and then called `addArtifactArg(check)` afterwards. Zig 0.17's `addSystemCommand` asserts its argument list starts non-empty, so passing an empty slice and appending after crashed the build immediately.
+
+**Deeper root cause:** On x86_64 + Zig 0.17, `addRunArtifact(test)` always enables server-mode IPC (`--listen=-`) through `.zig_test` stdio mode. The maker process and test binary contend over the same stdin/stdout pipes for their own IPC, causing a hang.
+
+**Attempted but rejected:**
+- `addSystemCommand(&.{})` + `addArtifactArg(check)` → build-time panic (empty argv assertion)
+- `.test_runner = .{ .path = ..., .mode = .simple }` on the compile step → Zig still resolved `.path` as a file reference and failed with `file_hash IsDir`/`FileNotFound`
+
+**Working fix:** Replaced `addRunArtifact(check)` with:
+```zig
+const run_tests = b.addSystemCommand(&.{
+    "/bin/sh",
+    "-c",
+    "exec $0",
+});
+run_tests.addArtifactArg(check);
+```
+The `$0` trick passes the resolved artifact path as the shell's positional arg, and `exec` replaces sh with the actual test ELF. This runs entirely outside Zig's server-mode IPC orchestration.
+
+**Important:** `.use_llvm = true` must be **kept** on the `addTest()` options. It controls the compilation backend (provides debug symbols kcov needs), not the runner protocol. Removing it was a red herring — tests hang regardless of backend; the hang is purely from `addRunArtifact`'s server-mode IPC, which this fix sidesteps. Keeping `.use_llvm = true` means kcov still works.
+
+**Result:**
+- `zig build test` → all 20 tests pass instantly, no hang
+- `zig build cov` → 99.72% coverage (io_sink + std_renderer both at 100%)
