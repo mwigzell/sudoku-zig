@@ -1,50 +1,44 @@
 const std = @import("std");
 const renderer = @import("renderer.zig");
-const cell = @import("cell.zig");
-const default_puzzle = @import("default_puzzle.zig");
 const io_sink = @import("io_sink.zig");
 
-/// Renders Sudoku grid as ASCII via an output sink.
-pub const StdoutRenderer = struct {
-    sink: *io_sink.IoSink,
+/// Tagged union abstracting "where output goes".
+pub const OutputSink = union(enum) {
+    file: *io_sink.IoSink,
+    memory: *io_sink.InMemoryOutput,
+};
 
-    pub fn init(r: *io_sink.IoSink) StdoutRenderer {
-        return .{
-            .sink = r,
-        };
+/// Renders Sudoku grid as ASCII to the configured output destination.
+pub const StdoutRenderer = struct {
+    sink: OutputSink,
+
+    pub fn init(sink: OutputSink) @This() {
+        return .{ .sink = sink };
     }
 
-    /// Render the board state snapshot to stdout/terminal display.
-    pub fn render(self: *StdoutRenderer, snap: renderer.RenderSnapshot) !void {
-        var w = self.sink.writer();
-        const writer = &w.interface;
-        try writer.print("+-------+--------\n", .{}); // header border line
+    /// Render the board state snapshot to the configured output.
+    pub fn render(self: *@This(), snap: renderer.RenderSnapshot) anyerror!void {
+        switch (self.sink) {
+            .file => |s| {
+                var w = s.writer();
+                const stdout = &w.interface;
+                try stdout.print("+-------+--------\n", .{});
+            },
+            .memory => |m| {
+                try m.writeAll("+-------+--------\n");
+            },
+        }
 
-        _ = snap; // until real grid printing wired in next cycle
+        _ = snap; // until full grid printing wired up
     }
 };
 
-test "StdoutRenderer renders snapshot data without crash/panic" {
-    const io = std.testing.io;
-
-    var sink: io_sink.IoSink = undefined;
-    sink = try io_sink.IoSink.init(io).toTemp(std.testing.allocator);
-    defer sink.deinit(std.testing.allocator);
-
-    var r = StdoutRenderer.init(&sink);
+test "StdoutRenderer renders via in-memory sink" {
+    var mem = io_sink.InMemoryOutput.init();
+    var r = StdoutRenderer.init(.{ .memory = &mem });
 
     const snap: renderer.RenderSnapshot = undefined;
     try r.render(snap);
 
-    // Re-open the same temp file for reading to verify output (don't close sink.out — deinit does that)
-    const tdir = try std.Io.Dir.openDirAbsolute(io, "/tmp", .{});
-    defer tdir.close(io);
-
-    const path = sink.temp_path_owned orelse unreachable;
-    var read_file = try tdir.openFile(io, path, .{ .mode = .read_only });
-    defer read_file.close(io);
-
-    var buf: [256]u8 = undefined;
-    const n = try read_file.readPositionalAll(io, &buf, 0);
-    try std.testing.expectEqualStrings("+-------+--------\n", buf[0..n]);
+    try std.testing.expectEqualStrings("+-------+--------\n", mem.contents());
 }

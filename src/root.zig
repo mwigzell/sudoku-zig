@@ -10,5 +10,5 @@ const std_renderer = @import("std_renderer.zig");
 const io_sink = @import("io_sink.zig");
 
 test {
-    _ = .{ box, cell, grid, board, renderer, game_engine, std_renderer, io_sink };
+    _ = .{ box, cell, grid, board, renderer, game_engine, mock_renderer, std_renderer, io_sink };
 }
