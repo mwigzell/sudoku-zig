@@ -31,6 +31,14 @@ pub fn rawToCellValue(raw: u8) CellValue {
     };
 }
 
+/// Display character for a CellValue (space for empty, '1'–'9' otherwise).
+pub fn displayChar(cv: CellValue) u8 {
+    return switch (cv) {
+        .zero => 0x20,
+        else => @as(u8, @intFromEnum(cv)) + '0',
+    };
+}
+
 /// A single position on the 9×9 board holding a value and a locked flag.
 pub const Cell = struct {
     value: CellValue,
@@ -46,10 +54,7 @@ pub const Cell = struct {
 
     /// Return the display character for this cell's value (0x20 for empty, '1'–'9' otherwise).
     pub fn charOf(self: @This()) u8 {
-        return switch (self.value) {
-            .zero => 0x20,
-            else => @as(u8, @intFromEnum(self.value)) + '0',
-        };
+        return displayChar(self.value);
     }
 };
 

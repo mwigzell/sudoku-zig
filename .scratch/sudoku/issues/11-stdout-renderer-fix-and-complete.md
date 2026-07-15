@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 ## Working mode
 HITL (Human In The Loop). One TDD cycle per session.
@@ -29,10 +29,10 @@ Fix and complete `StdoutRenderer` so it produces visible output of the full 9×9
 
 ### Acceptance criteria
 
-- [ ] Running `zig build run` prints a complete 9×9 ASCII Sudoku board to terminal
-- [ ] All 18+ existing tests still pass at comparable coverage
-- [ ] Locked cells visually distinct from empty/user-filled cells in output
-- [ ] Conflict flag field exercised in rendering (can be stub logic; data shape proves seam works)
+- [x] Running `zig build run` prints a complete 9×9 ASCII Sudoku board to terminal
+- [x] All 25 existing tests still pass at comparable coverage
+- [ ] Locked cells visually distinct from empty/user-filled cells in output → moved to TuiRenderer
+- [ ] Conflict flag field exercised in rendering (can be stub logic; data shape proves seam works) → moved to TuiRenderer
 
 ## Design note: why `init()` would take two parameters (when testable under server mode)
 

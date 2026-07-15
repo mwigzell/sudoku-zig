@@ -10,14 +10,6 @@ pub const OutputSink = union(enum) {
     memory: *io_sink.InMemoryOutput,
 };
 
-pub fn cellChar(cv: cell.CellValue) u8 {
-    return switch (cv) {
-        .zero => ' ',
-        else => @as(u8, @intFromEnum(cv)) + '0',
-    };
-}
-
-/// Return the column-header line (A–I).
 pub fn columnHeader() []const u8 {
     return "   A B C | D E F | G H I \n";
 }
@@ -32,7 +24,7 @@ pub fn cellRow(row: usize, snap: renderer.RenderSnapshot, buf: []u8) ![]u8 {
     const display: [9]u8 = blk: {
         var chars: [9]u8 = undefined;
         for (0..9) |col| {
-            chars[col] = cellChar(snap.cells[row][col].value);
+            chars[col] = cell.displayChar(snap.cells[row][col].value);
         }
         break :blk chars;
     };

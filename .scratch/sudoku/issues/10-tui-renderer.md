@@ -17,8 +17,9 @@ Implement `TuiRenderer` as a concrete renderer fulfilling the interface from iss
 - Retain current ASCII box-boundary rendering style (top/down borders, vertical dividers every 3 columns); no visual regression
 - Must compile against new Box/Grid/Board types from issue 01
 
-### Conflict highlighting
+### Conflict & locked-cell highlighting
 Implement conflict visualization: cells flagged by the Validator render differently (ANSI red or unicode emphasis — implementation choice). Distinct from region highlighting (issue 07).
+Also handle locked-vs-user filled cell distinction (moved here from StdoutRenderer #11).
 
 ### What this does NOT cover
 - Renderer interface definition (issue 09)
