@@ -44,12 +44,12 @@ pub fn GameEngine(comptime R: type) type {
     return Engine;
 }
 
-const default_puzzle = @import("puzzle_gen.zig");
+const puzzle_gen = @import("puzzle_gen.zig");
 const mock_renderer = @import("mock_renderer.zig");
 
 test "GameEngine fill updates cell in snapshot" {
     var mock = mock_renderer.MockRenderer.init();
-    var engine = try GameEngine(mock_renderer.MockRenderer).init(default_puzzle.PuzzleGen.Default(), &mock);
+    var engine = try GameEngine(mock_renderer.MockRenderer).init(puzzle_gen.PuzzleGen.default(), &mock);
 
     engine.fill(0, 2, 7);
     try engine.render();
@@ -61,7 +61,7 @@ test "GameEngine fill updates cell in snapshot" {
 
 test "GameEngine init builds board, explicit render emits snapshot" {
     var mock = mock_renderer.MockRenderer.init();
-    var engine = try GameEngine(mock_renderer.MockRenderer).init(default_puzzle.PuzzleGen.Default(), &mock);
+    var engine = try GameEngine(mock_renderer.MockRenderer).init(puzzle_gen.PuzzleGen.default(), &mock);
 
     // init does not auto-render — call_count is zero post-init
     try std.testing.expectEqual(0, mock.call_count);

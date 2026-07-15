@@ -210,7 +210,7 @@ test "Board: constructs from flat puzzle array with correct givens and empties" 
 }
 
 test "Board: fromOneLineString parses digits and dots into locked/unlocked cells" {
-    const fixture = puzzle_gen.PuzzleGen.Default();
+    const fixture = puzzle_gen.PuzzleGen.default();
     var b = try fromOneLineString(fixture);
 
     // Sample locked cells at known positions (taken from fixture above)

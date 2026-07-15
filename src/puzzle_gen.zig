@@ -21,7 +21,7 @@ pub const PuzzleGen = struct {
     }
 
     /// Convenience wrappers — each delegates through `generate()`.
-    pub fn Default() []const u8 {
+    pub fn default() []const u8 {
         return generate(.default);
     }
 
@@ -48,14 +48,14 @@ pub fn countGivens(s: []const u8) usize {
 }
 
 test "puzzle_gen: each string is exactly 81 chars" {
-    try std.testing.expectEqual(81, PuzzleGen.Default().len);
+    try std.testing.expectEqual(81, PuzzleGen.default().len);
     try std.testing.expectEqual(81, PuzzleGen.easy().len);
     try std.testing.expectEqual(81, PuzzleGen.medium().len);
     try std.testing.expectEqual(81, PuzzleGen.hard().len);
 }
 
 test "puzzle_gen: all puzzles load into Board" {
-    _ = try board.fromOneLineString(PuzzleGen.Default());
+    _ = try board.fromOneLineString(PuzzleGen.default());
     _ = try board.fromOneLineString(PuzzleGen.easy());
     _ = try board.fromOneLineString(PuzzleGen.medium());
     _ = try board.fromOneLineString(PuzzleGen.hard());
