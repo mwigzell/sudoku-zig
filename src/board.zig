@@ -2,7 +2,7 @@ const std = @import("std");
 const cell = @import("cell.zig");
 const grid = @import("grid.zig");
 const renderer = @import("renderer.zig");
-const default_puzzle = @import("default_puzzle.zig");
+const puzzle_gen = @import("puzzle_gen.zig");
 
 /// Board dimension — a standard Sudoku grid is 9×9.
 pub const DIMENSION_SIZE: u8 = 9;
@@ -210,17 +210,17 @@ test "Board: constructs from flat puzzle array with correct givens and empties" 
 }
 
 test "Board: fromOneLineString parses digits and dots into locked/unlocked cells" {
-    const fixture = default_puzzle.default_puzzle;
+    const fixture = puzzle_gen.PuzzleGen.Default();
     var b = try fromOneLineString(fixture);
 
     // Sample locked cells at known positions (taken from fixture above)
     const locked_specs: []const struct { row: u4, col: u4, expected: cell.CellValue } = &.{
-        .{ .row = 0,  .col = 0,  .expected = .six },
-        .{ .row = 0,  .col = 1,  .expected = .seven },
-        .{ .row = 2,  .col = 4,  .expected = .eight },
-        .{ .row = 3,  .col = 5,  .expected = .two },
-        .{ .row = 7,  .col = 0,  .expected = .five },
-        .{ .row = 8,  .col = 6,  .expected = .three },
+        .{ .row = 0, .col = 0, .expected = .six },
+        .{ .row = 0, .col = 1, .expected = .seven },
+        .{ .row = 2, .col = 4, .expected = .eight },
+        .{ .row = 3, .col = 5, .expected = .two },
+        .{ .row = 7, .col = 0, .expected = .five },
+        .{ .row = 8, .col = 6, .expected = .three },
     };
     for (locked_specs) |spec| {
         const c = b.grid.cellAt(spec.row, spec.col).*;

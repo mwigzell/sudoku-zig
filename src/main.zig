@@ -9,7 +9,7 @@ pub fn main(init: std.process.Init) anyerror!void {
     defer real_sink.deinit(std.heap.page_allocator);
 
     var r = std_renderer.StdoutRenderer.init(.{ .file = &real_sink });
-    var engine = try game_engine.GameEngine(std_renderer.StdoutRenderer).init(puzzle_gen.generate(.easy), &r);
+    var engine = try game_engine.GameEngine(std_renderer.StdoutRenderer).init(puzzle_gen.PuzzleGen.easy(), &r);
 
     try engine.render();
 }
