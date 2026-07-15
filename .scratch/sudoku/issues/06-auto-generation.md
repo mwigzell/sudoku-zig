@@ -10,10 +10,10 @@ Replace `default_puzzle.zig` with a proper puzzle generator module. Extract the 
 
 ### Concretely
 
-- Create `src/generator.zig`
+- Create `src/puzzle_gen.zig`
 - Define `Difficulty` enum: `{ easy, medium, hard }`
 - Maintain a canned puzzle pool — at least one puzzle per difficulty level (current `default_puzzle` becomes the easy-level entry)
-- `Generator.generate(difficulty)` returns puzzle data suitable for `Board.fromFlat(u8[81])` or equivalent loader
+- `PuzzleGen.generate(difficulty)` returns puzzle data suitable for `Board.fromFlat(u8[81])` or equivalent loader
 - Replace the import of `default_puzzle.zig` in `main.zig` (and any other consumer) with the new generator API
 - Remove or retire `src/default_puzzle.zig` once wired through generator
 
@@ -30,7 +30,7 @@ Difficulty → given cell guidelines for when you curate puzzles:
 
 ## Acceptance criteria
 
-- [ ] `src/generator.zig` exists with `Difficulty` enum and canned puzzle pool (≥1 per difficulty)
+- [ ] `src/puzzle_gen.zig` exists with `Difficulty` enum and canned puzzle pool (≥1 per difficulty)
 - [ ] Generator returns valid puzzle data for each difficulty level via a clean API
 - [ ] Returned puzzles load into Board without errors (`Board.fromFlat()` or equivalent)
 - [ ] `src/default_puzzle.zig` is retired — `main.zig` uses generator instead
