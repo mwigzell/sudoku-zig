@@ -1,6 +1,7 @@
 const std = @import("std");
 const cell = @import("cell.zig");
 const grid = @import("grid.zig");
+const renderer = @import("renderer.zig");
 const default_puzzle = @import("default_puzzle.zig");
 
 /// Board dimension — a standard Sudoku grid is 9×9.
@@ -13,6 +14,24 @@ pub const Board = struct {
     /// Create an empty Board (all zeros, nothing locked).
     pub fn init() Board {
         return .{ .grid = grid.Grid.init() };
+    }
+
+    /// Walk the Grid and produce a render-ready snapshot of every cell's
+    /// value, lock state, and conflict flag. Returns an owned RenderSnapshot;
+    /// safe to discard after renderer consumes it.
+    pub fn assembleRenderSnapshot(self: *Board) renderer.RenderSnapshot {
+        var snap: renderer.RenderSnapshot = undefined;
+        for (0..DIMENSION_SIZE) |row| {
+            for (0..DIMENSION_SIZE) |col| {
+                const actual = self.grid.cellAt(@intCast(row), @intCast(col));
+                snap.cells[row][col] = renderer.RenderCell{
+                    .value = actual.value,
+                    .locked = actual.locked,
+                    .conflicting = false, // validator not yet shipped
+                };
+            }
+        }
+        return snap;
     }
 };
 
@@ -69,6 +88,49 @@ pub fn fromOneLineString(oneLine: []const u8) BoardError!Board {
 // ---------------------------------------------------------------------------
 // Tests (co-located, Ziglings 105 style)
 // ---------------------------------------------------------------------------
+
+test "Board: assembleRenderSnapshot on an empty board yields all-zeroes snapshot" {
+    var b = Board.init();
+
+    const snap = b.assembleRenderSnapshot();
+
+    for (0..9) |row| {
+        for (0..9) |col| {
+            try std.testing.expectEqual(cell.CellValue.zero, snap.cells[row][col].value);
+            try std.testing.expect(!snap.cells[row][col].locked);
+            try std.testing.expect(!snap.cells[row][col].conflicting);
+        }
+    }
+}
+
+test "Board: assembleRenderSnapshot reflects locked givens populated by fromFlat" {
+    var flat: [81]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 6; // A1
+    flat[1] = 7; // B1
+    flat[4] = 5; // E1 (index 4 = row 0, col 4)
+
+    var b = try fromFlat(flat);
+    const snap = b.assembleRenderSnapshot();
+
+    // Locked givens present in snapshot
+    try std.testing.expectEqual(cell.CellValue.six, snap.cells[0][0].value);
+    try std.testing.expect(snap.cells[0][0].locked);
+    try std.testing.expectEqual(cell.CellValue.seven, snap.cells[0][1].value);
+    try std.testing.expect(snap.cells[0][1].locked);
+    try std.testing.expectEqual(cell.CellValue.five, snap.cells[0][4].value);
+    try std.testing.expect(snap.cells[0][4].locked);
+
+    // All other cells empty and unlocked
+    try std.testing.expectEqual(cell.CellValue.zero, snap.cells[0][2].value);
+    try std.testing.expect(!snap.cells[0][2].locked);
+    try std.testing.expectEqual(cell.CellValue.zero, snap.cells[8][8].value);
+    try std.testing.expect(!snap.cells[8][8].locked);
+
+    // Snap is a copy — mutating Board after capture doesn't affect it
+    b.grid.cellAt(0, 4).value = .one;
+    try std.testing.expectEqual(cell.CellValue.five, snap.cells[0][4].value);
+}
 
 test "Board: constructs from flat puzzle array with correct givens and empties" {
     const easy: [81]u8 = blk: {

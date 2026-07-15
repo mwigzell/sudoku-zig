@@ -28,27 +28,44 @@ Player interactivity: accept Commands to fill/clear cells, validate board state 
 
 ## StdoutRenderer Design
 
-ASCII box grid with column labels (A–I), row labels (1–9), three-by-three box separators, and per-cell indicators:
+ASCII box grid with column labels (A–I) across top, row labels (1–9) down the left. Cell addressing uses chess-style <col><row> — so cell A7 = column A, row 7.
 ```
-  A   B   C
-+-------+-------+-------+
-1|     |     |     |
- _|_ _ |_ _ _ |_ _ _ |
-  |     |     |     |
- _|_ _ |_ _ _ |_ _ _ |
-2|     |     |     |
- _|_ _ |_ _ _ |_ _ _ |
-  |     |     |     |
- _|_ _ |_ _ _ |_ _ _ |
-3|     |     |     |
-+-------+-------+-------+
+   A B C | D E F | G H I 
+ +-------+-------+-------+
+1|       |       |       |
+2|       |       |       |
+3|       |       |       |
+ +-------+-------+-------+
+4|       |       |       |
+5|       |       |       |
+6|       |       |       |
+ +-------+-------+-------+
+7| 7 2   |     9 |     5 |
+8| 5 1 3 | 6 7 8 | 2 4 9 |
+9|     4 |   5 7 | 3   6 |
+ +-------+-------+-------+
 ```
 
-Cell rendering (based on `RenderCell` struct):
-- Locked/given: `[X]`
-- User-filled, no conflict: ` X `
-- User-filled, conflicting: `✗X ✗` (Unicode strike indicator)
-- Empty: `   `
+Cell rendering (each cell occupies exactly one display position):
+- `0` / empty → `' '` (space)
+- `1`–`9` → the digit character (`'1'` through `'9'`)
+
+No locked/user visual distinction at this stage — every value renders as itself. The `RenderCell.locked` and `RenderCell.conflicting` fields stay in the contract for future UI passes (e.g., TUI dimming, ANSI conflict highlight) but StdoutRenderer treats all values identically.
+
+Border layout:
+- Column header row: letter spacing aligned directly above each cell position.
+- Row label digit + `|` at left margin of every data line.
+- Box dividers across top and between box bands (after rows 3 and 6), plus final closing border.
+- Vertical separators (`|`) between 3-cell groups within each row.
+
+Render flow:
+1. Column header across top with letters A–I.
+2. Top border line.
+3. For each data row (1–9): row label + `|` + 9 display chars (space for empty, one digit char per cell).
+4. Box-band dividers after rows 3 and 6.
+5. Final closing border.
+
+
 
 Methods:
 ```zig
@@ -70,12 +87,11 @@ fn renderRowLine(
 ```
 
 Render flow:
-1. Print column header line (`  A   B   C`)
-2. For each row (0–8):
-   a. Horizontal top border (`+-------+-------+-------+`)
-   b. Cells prefixed with row label (`1| ... | ... | ... |`)
-   c. After every third row, replace bottom separator with final grid close
-3. Flush — writes to internal `Io.Writer` over the provided buffer.
+1. Column header line: letters A–I with spacing directly above cell positions.
+2. Top border: ` +-------+-------+-------+`
+3. For each row (1–9): row label digit + cells in 9x1 grid slots.
+4. Box dividers after rows 3 and 6.
+5. Final closing border.
 
 ### Error handling for `try` in render()
 

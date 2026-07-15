@@ -1,7 +1,6 @@
 const std = @import("std");
 const board = @import("board.zig");
 const cell = @import("cell.zig");
-const renderer = @import("renderer.zig");
 
 /// GameEngine is generic over the Renderer type it receives at init.
 /// Holds Board state and delegates snapshot emission to the renderer.
@@ -30,20 +29,9 @@ pub fn GameEngine(comptime R: type) type {
             }
         }
 
-        /// Assemble a RenderSnapshot from current Board state and emit through renderer.
+        /// Delegate snapshot assembly to Board and emit through renderer.
         pub fn render(self: *@This()) anyerror!void {
-            const dim: usize = @as(usize, board.DIMENSION_SIZE);
-            var snap: renderer.RenderSnapshot = undefined;
-            for (0..dim) |row| {
-                for (0..dim) |col| {
-                    const actual = self.board.grid.cellAt(@intCast(row), @intCast(col));
-                    snap.cells[row][col] = renderer.RenderCell{
-                        .value = actual.value,
-                        .locked = actual.locked,
-                        .conflicting = false, // validator not yet shipped
-                    };
-                }
-            }
+            const snap = self.board.assembleRenderSnapshot();
             try self.renderer.render(snap);
         }
 
