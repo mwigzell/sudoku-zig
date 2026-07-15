@@ -25,4 +25,4 @@ Tests exercise `select_cell` command through the command→event seam, asserting
 
 ## Blocked by
 
-03
+(none)

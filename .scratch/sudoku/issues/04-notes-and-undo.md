@@ -28,4 +28,4 @@ Tests exercise command→event seam for note toggling and undo with expected sta
 
 ## Blocked by
 
-03
+(none)

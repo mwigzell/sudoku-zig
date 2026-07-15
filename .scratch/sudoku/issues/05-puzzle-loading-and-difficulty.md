@@ -19,9 +19,7 @@ Tests exercise new_puzzle command via the command→event seam, asserting correc
 - [ ] 3–5 hand-crafted puzzles embedded across easy, medium, hard difficulties
 - [ ] `new_puzzle <difficulty>` loads a fresh puzzle and resets all board state (values, notes, history)
 - [ ] Given/locked cells are tracked so mutations on them remain rejected
-- [ ] Both TUI and browser re-render the new puzzle correctly
 - [ ] Integration tests exercise new_puzzle command for at least two difficulty levels
-
 ## Blocked by
 
-03
+(none)
