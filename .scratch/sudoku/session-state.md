@@ -1,31 +1,21 @@
-# Session State — Sudoku Issue #02 (Interactive Play)
-**Cycle 2** | 2026-07-13
+[2026-07-15] TDD Cycle 1 — Issue #14: Logger Subsystem
 
-## What Shipped This Cycle
-`GameEngine(comptime R: type)` generic struct with:
-- `init(puzzle_str, renderer)` → parses Board from one-line puzzle string, assembles initial RenderSnapshot from Grid topology, emits through passed-in renderer
-- `renderOnce()` internal helper walks all 81 cells via `grid.cellAt()`, reading actual `.locked` and `.value` (not hardcoded)
-- Full end-to-end test: MockRenderer captures snapshot → call_count == 1, locked givens have correct values/states, empty cells are unlocked/zero
+Red -> green on base factory shape. `Logger(comptime scope: anytype) type { return struct { ... }}`.
+Routes through std.log default formatter, comptime-gated below threshold via std.log.logEnabled().
 
-## Test Count
-16 tests pass (15 baseline + 1 new: "GameEngine init from puzzle string renders initial board through renderer")
+## What we learned
+@src() works inside function body with `const src = @src();` and resolves to caller's file/line correctly.
+Zig 0.17 dev rejects `@src()` as a default parameter value (parser error: expected ',' after parameter).
 
-## Zig Learnings
-- `return struct { ... }` gives an anonymous type — `Self` and named const both failed for self-reference inside the body. Had to use `@This()` instead in Zig 0.17
-- Old-style implicit cast `usize(1)` removed in recent Zig — bare literal or `@as(usize, 1)` needed
+## Current state
+28 tests passing. Logger module has a .debug() method wired with comptime scope gating.
 
-## Files Modified
-- `src/game_engine.zig` — new GameEngine generic struct + renderOnce helper + init test
-- `src/root.zig` — added `mock_renderer` import (needed for test discovery if ever added there)
+## Remaining acceptance criteria from issue #14:
+1. [x] Logger factory with comptime-scoped tagging
+2. [ ] Wire custom logFn for format: `[LEVEL] [scope_tag] file.zig:LL - message`
+3. [ ] Add remaining severity methods: .err(), .warn().info()  
+4. [ ] Implement .fatal() with stack dump + abort (noreturn)
+5. [ ] Added opt-in `stack bool = false` named param to all non-fatal methods
+6. [ ] Integration test with GameEngine logging at least two messages as spec'd
 
-## Where Issue #02 Stands
-- [x] ✅ puzzle string → Board construction → display through renderer (init path proven)
-- [ ] GameEngine.execute(Command, board) mutates and re-renders
-- [ ] Validator detects conflicts across RowView/ColView/Box axes
-- [ ] Conflicting cells visually highlighted in rendered grid  
-- [ ] Integration tests exercise Command→Event seam
-
-## Open for Next Session
-1. What command to implement next? Fill (already exists as processFill) or Clear (not yet)?
-2. How do we structure GameEngine.execute(Command)? The renderer is already wired — could add `execute()` that dispatches, validates, then re-renders
-3. Input parsing (string → Command union) — can wait until execute exists
+## Next: Cycle 2 — custom logFn formatting wired through std.options.logF

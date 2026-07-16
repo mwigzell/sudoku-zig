@@ -1,4 +1,5 @@
-Status: ready-for-agent
+Status: resolved
+Resolved in d58a0ef + 882dbbc
 
 ## Parent
 
