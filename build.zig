@@ -15,7 +15,10 @@ pub fn build(b: *std.Build) void {
         .name = "sudoku",
         .root_module = exe_mod,
     });
+
     b.installArtifact(exe);
+
+
 
     // run step
     const run_cmd = b.addRunArtifact(exe);
@@ -38,6 +41,8 @@ pub fn build(b: *std.Build) void {
     });
 
     // Run the compiled test binary via addRunArtifact (server-mode IPC).
+
+
     // Works because no tests touch std.testing.io — InMemoryOutput is used for I/O tests.
     const run_tests = b.addRunArtifact(check);
     const test_step = b.step("test", "Run unit tests");
