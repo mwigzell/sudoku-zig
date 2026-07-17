@@ -49,13 +49,15 @@ test "GameEngine fill updates cell in snapshot" {
     var mock = mock_renderer.MockRenderer.init();
     var engine = try GameEngine(mock_renderer.MockRenderer).init(puzzle_gen.PuzzleGen.default(), &mock);
 
-    engine.fill(0, 2, 7);
+    engine.fill(0, 3, 7);
     try engine.render();
 
     const snap = mock.last_snapshot orelse unreachable;
-    try std.testing.expectEqual(cell.CellValue.seven, snap.cells[0][2].value);
-    try std.testing.expect(!snap.cells[0][2].locked);
+    try std.testing.expectEqual(cell.CellValue.seven, snap.cells[0][3].value);
+    try std.testing.expect(!snap.cells[0][3].locked);
 }
+
+
 
 test "GameEngine init builds board, explicit render emits snapshot" {
     var mock = mock_renderer.MockRenderer.init();

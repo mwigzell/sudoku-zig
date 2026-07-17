@@ -32,21 +32,17 @@ Current sub-issue: **15.1** (`15.1-refactor.md`) — Flat `[81]Cell` storage + a
 ### Completed
 | Test | Status | Notes |
 |------|--------|-------|
-| Test 2: cellAt row-major math + pointer aliasing | ✅ Green | `cellAt` implementation already correct; test added as coverage proof |
+| Test 1: Board init produces 81 empty, non-given cells | ✅ Green | `Board.init()` zero-init |
+| Test 2: cellAt row-major math + pointer aliasing | ⚠️ N/A | `cellAt` removed — replaced by accessor methods (`getCellValue`, `setCell`, `isGiven`, `clearCell`) |
+| Test 3: setCell / clearCell lifecycle | ✅ Green | `Board.setCell()` returns error.NotGiven for givens; `clearCell` resets value + bit |
+| Test 4: fromFlat sets value and given flag for non-zero entries | ✅ Green | Added test using public seams (`getCellValue`, `isGiven`) — positions 5 and 67 |
 
 ---
 
-### In Progress: Test 3 — setCell / clearCell lifecycle  [DONE]
+### In Progress: Test 5 — assembleRenderSnapshot from flat storage
 
+**Status:** Pending. (Test 3 in board.zig already covers this partially via `assembleRenderSnapshot reflects givens populated by fromFlat`. Remaining: verify snapshot assembly over flat storage with setCell + isGiven bridge.)
 
-**Status:** Green ✅ (added `Board.setCell()` and `Board.clearCell()`, both pass).
-
-**Goal:** Verify `setCell` places a digit, doesn't mark it as given; then `clearCell` resets both value and given flag.
-
-**Red phase:** Write the test first → will fail to compile because `Board.setCell` and `Board.clearCell` don't exist yet.
-**Green phase:** Add minimal implementations of both methods.
-
-Halt after green, wait for direction.
 
 ---
 

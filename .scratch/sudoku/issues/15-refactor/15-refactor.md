@@ -35,13 +35,13 @@ Refactor the Board topology from Grid-as-storage (Box owns `Cell[3][3]`) to flat
 
 Each sub-issue must be reviewed against this parent's acceptance criteria and existing artifacts before code is written.
 
-| Issue | Scope |
-|-------|-------|
-| [15.1 Flat `[81]Cell` storage](./issue-15.1-flat-storage.md) | Drop Grid-as-storage, standalone Box. Add `setCell`, `clearCell`, `cellAt`. Update constructors. Rename `locked` → `given`. |
-| [15.2 Box digit bitmask cache](./issue-15.2-box-bitmask.md) | `[9]u8` bitmask on Board, updated in mutation chokepoints. O(1) `hasValueInBox`. |
-| [15.3 BoardView + Row/Col/Box lenses](./issue-15.3-views.md) | Borrowed `BoardView`, 9-cell view structs for each axis. Intersection tests. |
-| [15.4 AsciiRenderer replacing StdoutRenderer](./issue-15.4-renderer.md) | Drop `RenderCell`/`RenderSnapshot`/`assembleRenderSnapshot`. Injected `std.Io.File.Writer`. Buffer-backed render tests. |
-| [15.5 main.zig rewire + cleanup](./issue-15.5-cleanup.md) | Wire AsciiRenderer via Writer. Update root.zig imports. Drop obsolete files (box.zig, grid.zig → leaner, renderer.zig, collapse std_renderer.zig). Full test suite green. |
+| Issue | Scope | File |
+|-------|-------|------|
+| [15.1 Flat `[81]Cell` storage](./15.1-refactor.md) | Drop Grid-as-storage, standalone Box. Add `setCell`, `clearCell`, `cellAt`. Update constructors. Rename `locked` → `given`. | `15.1-refactor.md` |
+| [15.2 Box digit bitmask cache](./issue-15.2-box-bitmask.md) | `[9]u8` bitmask on Board, updated in mutation chokepoints. O(1) `hasValueInBox`. | — |
+| [15.3 BoardView + Row/Col/Box lenses](./issue-15.3-views.md) | Borrowed `BoardView`, 9-cell view structs for each axis. Intersection tests. | — |
+| [15.4 AsciiRenderer replacing StdoutRenderer](./issue-15.4-renderer.md) | Drop `RenderCell`/`RenderSnapshot`/`assembleRenderSnapshot`. Injected `std.Io.File.Writer`. Buffer-backed render tests. | — |
+| [15.5 main.zig rewire + cleanup](./issue-15.5-cleanup.md) | Wire AsciiRenderer via Writer. Update root.zig imports. Drop obsolete files (box.zig, grid.zig → leaner, renderer.zig, collapse std_renderer.zig). Full test suite green. | — |
 
 ## Acceptance criteria
 
