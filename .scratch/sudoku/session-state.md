@@ -36,7 +36,10 @@ Current sub-issue: **15.1** (`15.1-refactor.md`) — Flat `[81]Cell` storage + a
 
 ---
 
-### In Progress: Test 3 — setCell / clearCell lifecycle
+### In Progress: Test 3 — setCell / clearCell lifecycle  [DONE]
+
+
+**Status:** Green ✅ (added `Board.setCell()` and `Board.clearCell()`, both pass).
 
 **Goal:** Verify `setCell` places a digit, doesn't mark it as given; then `clearCell` resets both value and given flag.
 

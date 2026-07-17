@@ -26,6 +26,18 @@ pub const Board = struct {
         return &self.cells[idx];
     }
 
+        /// Set the value at (row, col). Does NOT mark the cell as given.
+        pub fn setCell(self: *Board, row: u4, col: u4, val: cell.CellValue) void {
+            self.cellAt(row, col).value = val;
+        }
+
+        /// Reset a cell at (row, col) to empty and strip the given flag.
+        pub fn clearCell(self: *Board, row: u4, col: u4) void {
+            const c = self.cellAt(row, col);
+            c.value = .zero;
+            c.given = false;
+        }
+
     /// Walk the flat cells and produce a render-ready snapshot.
     pub fn assembleRenderSnapshot(self: *Board) renderer.RenderSnapshot {
         var snap: renderer.RenderSnapshot = undefined;
@@ -284,3 +296,34 @@ test "Board: fromOneLineString rejects invalid characters" {
 
     try std.testing.expectError(BoardError.InvalidCharacter, fromOneLineString(bad[0..]));
 }
+test "Board: setCell places a digit without marking it given" {
+    var b = Board.init();
+
+    // Set a cell to value 3 at row 0, col 2
+    b.setCell(0, 2, .three);
+
+    // Value should be set
+    try std.testing.expectEqual(.three, b.cells[2].value);
+
+    // But the cell must NOT be marked as given (user entry, not puzzle clue)
+    try std.testing.expect(!b.cells[2].given);
+}
+
+test "Board: clearCell resets both value and given flag" {
+    var b = Board.init();
+
+    // Prime a cell as a given (simulating a puzzle clue)
+    const c1 = b.cellAt(1, 1);
+    c1.value = .seven;
+    c1.given = true;
+
+    try std.testing.expectEqual(.seven, b.cells[10].value);
+    try std.testing.expect(b.cells[10].given);
+
+    // Clear it — both value AND given must be reset
+    b.clearCell(1, 1);
+
+    try std.testing.expectEqual(.zero, b.cells[10].value);
+    try std.testing.expect(!b.cells[10].given);
+}
+
