@@ -12,7 +12,6 @@ pub fn GameEngine(comptime R: type) type {
         renderer: *R,
 
         /// Construct from a one-line puzzle string.
-        /// Stores renderer reference but does not emit — caller controls first render via `render()`.
         pub fn init(puzzle_str: []const u8, r: *R) board.BoardError!@This() {
             return @This(){
                 .board = try board.fromOneLineString(puzzle_str),
@@ -23,9 +22,8 @@ pub fn GameEngine(comptime R: type) type {
         /// Set a single cell on the Board to the given raw digit (1–9).
         /// Silently skips given cells.
         pub fn fill(self: *@This(), row_idx: usize, col_idx: usize, value: u8) void {
-            const ptr = self.board.cellAt(@intCast(row_idx), @intCast(col_idx));
-            if (!ptr.given) {
-                ptr.value = cell.rawToCellValue(value);
+            if (!self.board.isGiven(@intCast(row_idx), @intCast(col_idx))) {
+                self.board.setCell(@intCast(row_idx), @intCast(col_idx), cell.rawToCellValue(value)) catch {};
             }
         }
 
@@ -70,7 +68,7 @@ test "GameEngine init builds board, explicit render emits snapshot" {
     try std.testing.expectEqual(1, mock.call_count);
 
     const snap = mock.last_snapshot orelse unreachable;
-    // puzzle[0..3] is '6' → A1 should be locked six
+    // puzzle[0..2] is '6' → A1 should be locked six
     try std.testing.expect(snap.cells[0][0].locked);
     try std.testing.expectEqual(cell.CellValue.six, snap.cells[0][0].value);
 

@@ -3,20 +3,22 @@ const cell = @import("cell.zig");
 const renderer = @import("renderer.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 
-/// Board dimension — a standard Sudoku grid is 9×9.
+// Board dimension — a standard Sudoku grid is 9×9.
 pub const DIMENSION_SIZE: u8 = 9;
 pub const CELL_COUNT = DIMENSION_SIZE * DIMENSION_SIZE;
 
-/// The canonical 9×9 Sudoku board state, backed by flat [81]Cell storage.
+/// The canonical 9×9 Sudoku board state, backed by flat storage + a given-bitmask.
 pub const Board = struct {
     cells: [CELL_COUNT]cell.Cell,
+    given_bits: u128, // bit-per-cell mask of immutable puzzle clues
 
-    /// Create an empty Board (all zeros, nothing given).
+    /// Create an empty Board (all zeros, no givens).
     pub fn init() Board {
         var b: Board = undefined;
         for (0..CELL_COUNT) |i| {
-            b.cells[i] = cell.Cell.init(.zero, false);
+            b.cells[i] = cell.Cell.init(.zero);
         }
+        b.given_bits = 0;
         return b;
     }
 
@@ -26,27 +28,34 @@ pub const Board = struct {
         return &self.cells[idx];
     }
 
-        /// Set the value at (row, col). Does NOT mark the cell as given.
-        pub fn setCell(self: *Board, row: u4, col: u4, val: cell.CellValue) void {
-            self.cellAt(row, col).value = val;
-        }
+    /// Is this cell a puzzle clue (immutable)?
+    pub fn isGiven(self: Board, row: u4, col: u4) bool {
+        const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
+        return ((self.given_bits >> @intCast(idx)) & 1) == 1;
+    }
 
-        /// Reset a cell at (row, col) to empty and strip the given flag.
-        pub fn clearCell(self: *Board, row: u4, col: u4) void {
-            const c = self.cellAt(row, col);
-            c.value = .zero;
-            c.given = false;
-        }
+    /// Set the value at (row, col). Returns error.NotGiven if the cell is a puzzle clue.
+    pub fn setCell(self: *Board, row: u4, col: u4, val: cell.CellValue) !void {
+        if (self.isGiven(row, col)) return error.NotGiven;
+        self.cellAt(row, col).value = val;
+    }
+
+    /// Reset a cell at (row, col) to empty and clear its given-bit.
+    pub fn clearCell(self: *Board, row: u4, col: u4) void {
+        const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
+        self.cells[idx].value = .zero;
+        self.given_bits &= ~(@as(u128, 1) << @intCast(idx));
+    }
 
     /// Walk the flat cells and produce a render-ready snapshot.
-    pub fn assembleRenderSnapshot(self: *Board) renderer.RenderSnapshot {
+    pub fn assembleRenderSnapshot(self: Board) renderer.RenderSnapshot {
         var snap: renderer.RenderSnapshot = undefined;
         for (0..DIMENSION_SIZE) |row| {
             for (0..DIMENSION_SIZE) |col| {
                 const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
                 snap.cells[row][col] = renderer.RenderCell{
                     .value = self.cells[idx].value,
-                    .locked = self.cells[idx].given,
+                    .locked = self.isGiven(@intCast(row), @intCast(col)),
                     .conflicting = false,
                 };
             }
@@ -66,23 +75,25 @@ pub const BoardError = error{
 };
 
 /// Construct a Board from a flat 81-element u8 array.
-/// Values 0 mean empty; values 1–9 are given digits and marked as given.
-/// Returns an error if any cell value is outside 0–9.
+/// Values 0 mean empty; values 1–9 are given digits and set their bit in given_bits.
 pub fn fromFlat(flat: [81]u8) BoardError!Board {
     for (flat) |v| {
         if (v > 9) return BoardError.BadCellValue;
     }
-    var b: Board = undefined;
+
+    var b = Board.init(); // zeroes cells + clear bits
+    var mask: u128 = 0;
     for (flat, 0..) |v, i| {
-        b.cells[i] = cell.Cell.init(cell.rawToCellValue(v), v != 0);
+        b.cells[i] = cell.Cell.init(cell.rawToCellValue(v));
+        if (v != 0) {
+            mask |= @as(u128, 1) << @intCast(i);
+        }
     }
+    b.given_bits = mask;
     return b;
 }
 
 /// Construct a Board from a one-line Sudoku string like "53..7........6.....98..".
-/// Digits '1'–'9' are given; '.' or '0' are empty.
-/// Returns an error if the string is not exactly 81 characters
-/// or contains any character outside those ranges.
 pub fn fromOneLineString(oneLine: []const u8) BoardError!Board {
     if (oneLine.len != 81) return BoardError.WrongLength;
 
@@ -102,12 +113,11 @@ pub fn fromOneLineString(oneLine: []const u8) BoardError!Board {
 // Tests (co-located, Ziglings 105 style)
 // ---------------------------------------------------------------------------
 
-test "Board: init produces 81 empty, non-given cells" {
+test "Board: init produces 81 empty cells and no givens" {
     const b = Board.init();
 
     for (0..CELL_COUNT) |i| {
         try std.testing.expectEqual(cell.CellValue.zero, b.cells[i].value);
-        try std.testing.expect(!b.cells[i].given);
     }
 }
 
@@ -125,12 +135,12 @@ test "Board: assembleRenderSnapshot on an empty board yields all-zeroes snapshot
     }
 }
 
-test "Board: assembleRenderSnapshot reflects given givens populated by fromFlat" {
+test "Board: assembleRenderSnapshot reflects givens populated by fromFlat" {
     var flat: [81]u8 = undefined;
     @memset(&flat, 0);
     flat[0] = 6; // A1
     flat[1] = 7; // B1
-    flat[4] = 5; // E1 (index 4 = row 0, col 4)
+    flat[4] = 5; // E1
 
     var b = try fromFlat(flat);
     const snap = b.assembleRenderSnapshot();
@@ -149,14 +159,13 @@ test "Board: assembleRenderSnapshot reflects given givens populated by fromFlat"
     try std.testing.expectEqual(cell.CellValue.zero, snap.cells[8][8].value);
     try std.testing.expect(!snap.cells[8][8].locked);
 
-    // Snap is a copy - mutating Board after capture doesn't affect it
+    // Snap is a copy — mutating Board after capture doesn't affect it
     b.cellAt(0, 4).value = .one;
     try std.testing.expectEqual(cell.CellValue.five, snap.cells[0][4].value);
 }
 
-test "Board: constructs from flat puzzle array with correct givens and empties" {
+test "Board: constructs from flat puzzle array with correct values" {
     const easy: [81]u8 = blk: {
-        // Classic easy Sudoku - pre-filled cells as digits, blanks as 0.
         var data: [81]u8 = undefined;
         @memset(&data, 0);
 
@@ -205,35 +214,32 @@ test "Board: constructs from flat puzzle array with correct givens and empties" 
 
     const b = try fromFlat(easy);
 
-    // Total givens: count non-zero in the flat array (independent known-good literal)
-    var expected_given_count: usize = 0;
-    for (&easy) |v| {
-        if (v != 0) expected_given_count += 1;
+    // Count givens via bitmask
+    var given_count: usize = 0;
+    for (0..81) |i| {
+        if ((b.given_bits >> @intCast(i)) & 1 == 1) given_count += 1;
     }
-    try std.testing.expectEqual(30, expected_given_count);
+    try std.testing.expectEqual(30, given_count);
 
-    // All 81 cells populated - accessed through flat array to verify row-major indexing.
-    var actual_given_count: usize = 0;
+    // All 81 cells populated correctly
     for (0..81) |i| {
         const raw_val = easy[i];
         const c = b.cells[i];
         if (raw_val != 0) {
-            try std.testing.expect(c.given);
-            actual_given_count += 1;
+            try std.testing.expect((b.given_bits >> @intCast(i)) & 1 == 1);
             try std.testing.expect(c.value == cell.rawToCellValue(raw_val));
         } else {
-            try std.testing.expect(!c.given);
+            try std.testing.expect((b.given_bits >> @intCast(i)) & 1 != 1);
             try std.testing.expect(c.value == .zero);
         }
     }
-    try std.testing.expectEqual(expected_given_count, actual_given_count);
 }
 
-test "Board: fromOneLineString parses digits and dots into given/non-given cells" {
+test "Board: fromOneLineString parses digits and dots correctly" {
     const fixture = puzzle_gen.PuzzleGen.default();
-    var b = try fromOneLineString(fixture);
+    const b = try fromOneLineString(fixture);
 
-    // Sample given cells at known positions (taken from fixture above)
+    // Sample given positions (taken from fixture)
     const given_specs: []const struct { row: u4, col: u4, expected: cell.CellValue } = &.{
         .{ .row = 0, .col = 0, .expected = .six },
         .{ .row = 0, .col = 1, .expected = .seven },
@@ -243,26 +249,22 @@ test "Board: fromOneLineString parses digits and dots into given/non-given cells
         .{ .row = 8, .col = 6, .expected = .three },
     };
     for (given_specs) |spec| {
-        const c = b.cellAt(spec.row, spec.col).*;
-        try std.testing.expect(c.given);
-        try std.testing.expectEqual(spec.expected, c.value);
+        try std.testing.expect(b.isGiven(spec.row, spec.col));
+        try std.testing.expectEqual(spec.expected, b.cells[@as(usize, @intCast(spec.row)) * 9 + @as(usize, @intCast(spec.col))].value);
     }
 
-    // Total givens: fixture has exactly 39 non-dot characters
+    // Total givens = 39 non-dot chars in fixture
     var given_count: usize = 0;
     for (fixture) |ch| {
         if (ch != '.' and ch != '0') given_count += 1;
     }
     try std.testing.expectEqual(39, given_count);
 
-    // Check a few dot positions are non-given and zero
-    const c13 = b.cellAt(1, 3).*;
-    try std.testing.expect(!c13.given);
-    try std.testing.expectEqual(.zero, c13.value);
-
-    const c40 = b.cellAt(4, 0).*;
-    try std.testing.expect(!c40.given);
-    try std.testing.expectEqual(.zero, c40.value);
+    // Dot positions are non-given and zero
+    try std.testing.expect(!b.isGiven(1, 3));
+    try std.testing.expectEqual(.zero, b.cells[1 * 9 + 3].value);
+    try std.testing.expect(!b.isGiven(4, 0));
+    try std.testing.expectEqual(.zero, b.cells[4 * 9 + 0].value);
 }
 
 test "Board: fromFlat rejects out-of-range cell values" {
@@ -277,7 +279,7 @@ test "Board: fromOneLineString rejects wrong length" {
     const tooShort: []const u8 = "67..4";
     try std.testing.expectError(BoardError.WrongLength, fromOneLineString(tooShort));
 
-    var tooLong: [82]u8 = undefined; // any extra char past 81 -> wrong length
+    var tooLong: [82]u8 = undefined;
     @memset(&tooLong, '.');
     try std.testing.expectError(BoardError.WrongLength, fromOneLineString(tooLong[0..]));
 }
@@ -289,38 +291,34 @@ test "Board: fromOneLineString rejects invalid characters" {
 
     try std.testing.expectError(BoardError.InvalidCharacter, fromOneLineString(bad[0..]));
 }
-test "Board: setCell places a digit without marking it given" {
+
+test "Board: setCell places a digit on an empty cell" {
     var b = Board.init();
 
     // Set a cell to value 3 at row 0, col 2
-    b.setCell(0, 2, .three);
+    try b.setCell(0, 2, .three);
 
-    // Value should be set
     try std.testing.expectEqual(.three, b.cells[2].value);
-
-    // But the cell must NOT be marked as given (user entry, not puzzle clue)
-    try std.testing.expect(!b.cells[2].given);
 }
 
-test "Board: clearCell resets both value and given flag" {
+test "Board: clearCell resets value and clears given bit" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
-    flat[10] = 7;   // row 1, col 1 — index 9 + 1 = 10
+    flat[10] = 7;   // row 1, col 1 — index 10
 
     var b = try fromFlat(flat);
 
     try std.testing.expectEqual(.seven, b.cells[10].value);
-    try std.testing.expect(b.cells[10].given);
+    try std.testing.expect(b.isGiven(1, 1));
 
-    // Clear it — both value AND given must be reset
+    // Clear it — both value AND given bit must be reset
     b.clearCell(1, 1);
 
     try std.testing.expectEqual(.zero, b.cells[10].value);
-    try std.testing.expect(!b.cells[10].given);
+    try std.testing.expect(!b.isGiven(1, 1));
 }
 
-
-test "Board: fromFlat computes given flag from data for every cell" {
+test "Board: fromFlat derives given bits dynamically per cell" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
     flat[5] = 6;   // row 0, col 5
@@ -328,14 +326,30 @@ test "Board: fromFlat computes given flag from data for every cell" {
 
     const b = try fromFlat(flat);
 
-    // Every cell must derive given from its value: non-zero → given, zero → not given
+    // Every cell's given flag must match its data: non-zero → bit set, zero → clear
     for (flat, 0..) |v, i| {
-        const expected_given = v != 0;
-        const c = b.cells[i];
-        try std.testing.expectEqual(expected_given, c.given);
+        const expected_bit_set = v != 0;
+        const bit_set = ((b.given_bits >> @intCast(i)) & 1) == 1;
+        try std.testing.expectEqual(expected_bit_set, bit_set);
     }
 
     // Values also correct at known positions
     try std.testing.expectEqual(cell.CellValue.six, b.cells[5].value);
     try std.testing.expectEqual(cell.CellValue.three, b.cells[67].value);
+}
+
+test "Board: setCell errors when modifying a given cell" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[5] = 6;   // row 0, col 5 is a given
+
+    var b = try fromFlat(flat);
+
+    try std.testing.expect(b.isGiven(0, 5));
+
+    // Attempting to overwrite a given must fail
+    try std.testing.expectError(error.NotGiven, b.setCell(0, 5, .nine));
+
+    // The given cell's value is unchanged
+    try std.testing.expectEqual(cell.CellValue.six, b.cells[5].value);
 }

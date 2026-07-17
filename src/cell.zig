@@ -39,17 +39,14 @@ pub fn displayChar(cv: CellValue) u8 {
     };
 }
 
-/// A single position on the 9×9 board holding a value and a given flag.
+/// A single position on the board holding a value.
+/// "Given" status lives in Board.given_bits — Cell is dumb data only.
 pub const Cell = struct {
     value: CellValue,
-    given: bool,
 
-    /// Create a Cell with explicit initial value and given flag.
-    pub fn init(initial_value: CellValue, is_given: bool) Cell {
-        return .{
-            .value = initial_value,
-            .given = is_given,
-        };
+    /// Create a Cell with an initial value.
+    pub fn init(initial_value: CellValue) Cell {
+        return .{ .value = initial_value };
     }
 
     /// Return the display character for this cell's value (0x20 for empty, '1'–'9' otherwise).
@@ -62,16 +59,14 @@ pub const Cell = struct {
 // Tests (co-located, Ziglings 105 style)
 // ---------------------------------------------------------------------------
 
-test "Cell: init produces non-given cell with given value" {
-    const c = Cell.init(.zero, false);
+test "Cell: init produces empty cell" {
+    const c = Cell.init(.zero);
     try std.testing.expect(c.value == .zero);
-    try std.testing.expect(!c.given);
 }
 
-test "Cell: given cell retains its digit" {
-    const c = Cell.init(.eight, true);
+test "Cell: retains its digit after init" {
+    const c = Cell.init(.eight);
     try std.testing.expect(c.value == .eight);
-    try std.testing.expect(c.given);
 }
 
 test "rawToCellValue maps 0..9 to correct CellValue enum members" {
@@ -85,7 +80,7 @@ test "rawToCellValue maps 0..9 to correct CellValue enum members" {
 }
 
 test "Cell charOf returns display character" {
-    var c = Cell.init(.zero, false);
+    var c = Cell.init(.zero);
     try std.testing.expectEqual(0x20, c.charOf());
 
     c.value = .four;
