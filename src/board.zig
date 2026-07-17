@@ -12,26 +12,35 @@ pub const BOX_DIMENSION: u4 = 3;
 // Cells per box = 9.
 pub const BoxCellCount = BOX_DIMENSION * BOX_DIMENSION;
 
-
-/// Read-only borrowed lens over Board flat storage.
-pub const BoardView = struct {
-    board: *const Board,
-
-    /// Return the value at (row, col).
-    pub fn get(self: BoardView, row: u4, col: u4) CellValue {
-        return self.board.getCellValue(row, col);
-    }
-
-    /// Is this cell a puzzle clue (immutable)?
-    pub fn isGiven(self: BoardView, row: u4, col: u4) bool {
-        return self.board.isGiven(row, col);
-    }
-};
 /// The canonical 9×9 Sudoku board state, backed by flat storage + a given-bitmask.
 pub const Board = struct {
     cells: [CELL_COUNT]Cell,
     given_bits: u128, // bit-per-cell mask of immutable puzzle clues
     digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
+
+    /// Read-only borrowed lens over Board flat storage.
+    pub const BoardView = struct {
+        board: *const Board,
+
+        /// Return the value at (row, col).
+        pub fn get(self: BoardView, row: u4, col: u4) CellValue {
+            return self.board.getCellValue(row, col);
+        }
+
+        /// Is this cell a puzzle clue (immutable)?
+        pub fn isGiven(self: BoardView, row: u4, col: u4) bool {
+            return self.board.isGiven(row, col);
+        }
+
+        /// Bulk resolve against flat storage by index list.
+        pub fn resolve(self: BoardView, indices: []const usize) [9]CellValue {
+            var vals: [9]CellValue = undefined;
+            for (indices, 0..) |idx, i| {
+                vals[i] = self.board.cells[idx].value;
+            }
+            return vals;
+        }
+    };
 
     /// Create an empty Board (all zeros, no givens).
     pub fn init() Board {
@@ -424,6 +433,7 @@ test "Board: init sets all box digit bitmasks to zero" {
         try std.testing.expectEqual(@as(u32, 0), b.digit_bits[box_idx]);
     }
 }
+
 test "Board: fromFlat initializes digit_bits for given cells" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
@@ -478,15 +488,17 @@ test "Board: clearCell clears the digit bit from the owning box" {
     try std.testing.expectEqual(@as(u32, 0), b.getBoxDigitBits(0, 1));
 }
 
-test "Board: asView resolves same values as getCellValue" {
+test "Board.BoardView.resolve() resolves same values as getCellValue" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
-    flat[0] = 5; // A1 = 5
+    flat[0] = 5;  // A1 (row 0, col 0) = 5
+    flat[1] = 6;  // A2 (row 0, col 1) = 6
     flat[9 + 4] = 3; // J5 (row 1, col 4) = 3
 
     var b = try fromFlat(flat);
     const view = b.asView();
 
+    // Point resolution through Board.BoardView delegates to Board's own seam
     try std.testing.expectEqual(CellValue.five, view.get(0, 0));
     try std.testing.expectEqual(CellValue.three, view.get(1, 4));
     try std.testing.expectEqual(CellValue.zero, view.get(8, 8));
@@ -494,4 +506,17 @@ test "Board: asView resolves same values as getCellValue" {
     // isGiven consistency: same as Board.isGiven(row, col)
     try std.testing.expect(view.isGiven(0, 0));
     try std.testing.expect(!view.isGiven(1, 5));
+
+    // Bulk resolve row 0 indices against flat storage -> matches individual gets
+    const row_0_indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    const vals = view.resolve(&row_0_indices);
+    try std.testing.expectEqual(CellValue.five, vals[0]);   // flat[0] has value 5
+    try std.testing.expectEqual(CellValue.six, vals[1]);    // flat[1] has value 6
+    try std.testing.expectEqual(CellValue.zero, vals[2]);   // empty cell in row 0
+
+    // Bulk resolve matches individual get() calls for every position in the range
+    for (vals, 0..) |val, i| {
+        const col: u4 = @intCast(i);
+        try std.testing.expectEqual(val, view.get(0, col));
+    }
 }
