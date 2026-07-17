@@ -77,11 +77,9 @@ pub fn fromFlat(flat: [81]u8) BoardError!Board {
     for (flat, 0..) |v, i| {
         const globalRow: u4 = @intCast(@divTrunc(i, 9));
         const globalCol: u4 = @intCast(@mod(i, 9));
-        if (v != 0) {
-            const c = b.cellAt(globalRow, globalCol);
-            c.value = cell.rawToCellValue(v);
-            c.given = true;
-        }
+        const c = b.cellAt(globalRow, globalCol);
+        c.value = cell.rawToCellValue(v);
+        c.given = v != 0;
     }
     return b;
 }
@@ -327,3 +325,23 @@ test "Board: clearCell resets both value and given flag" {
     try std.testing.expect(!b.cells[10].given);
 }
 
+
+test "Board: fromFlat computes given flag from data for every cell" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[5] = 6;   // row 0, col 5
+    flat[67] = 3;  // row 7, col 4
+
+    const b = try fromFlat(flat);
+
+    // Every cell must derive given from its value: non-zero → given, zero → not given
+    for (flat, 0..) |v, i| {
+        const expected_given = v != 0;
+        const c = b.cells[i];
+        try std.testing.expectEqual(expected_given, c.given);
+    }
+
+    // Values also correct at known positions
+    try std.testing.expectEqual(cell.CellValue.six, b.cells[5].value);
+    try std.testing.expectEqual(cell.CellValue.three, b.cells[67].value);
+}
