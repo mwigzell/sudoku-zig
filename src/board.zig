@@ -72,14 +72,9 @@ pub fn fromFlat(flat: [81]u8) BoardError!Board {
     for (flat) |v| {
         if (v > 9) return BoardError.BadCellValue;
     }
-
-    var b = Board.init();
+    var b: Board = undefined;
     for (flat, 0..) |v, i| {
-        const globalRow: u4 = @intCast(@divTrunc(i, 9));
-        const globalCol: u4 = @intCast(@mod(i, 9));
-        const c = b.cellAt(globalRow, globalCol);
-        c.value = cell.rawToCellValue(v);
-        c.given = v != 0;
+        b.cells[i] = cell.Cell.init(cell.rawToCellValue(v), v != 0);
     }
     return b;
 }
