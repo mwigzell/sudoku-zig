@@ -1,33 +1,41 @@
 const std = @import("std");
 const cell = @import("cell.zig");
-const grid = @import("grid.zig");
 const renderer = @import("renderer.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 
 /// Board dimension — a standard Sudoku grid is 9×9.
 pub const DIMENSION_SIZE: u8 = 9;
+pub const CELL_COUNT = DIMENSION_SIZE * DIMENSION_SIZE;
 
-/// The canonical 9×9 Sudoku board state, backed by a Grid whose Boxes own Cell data.
+/// The canonical 9×9 Sudoku board state, backed by flat [81]Cell storage.
 pub const Board = struct {
-    grid: grid.Grid,
+    cells: [CELL_COUNT]cell.Cell,
 
-    /// Create an empty Board (all zeros, nothing locked).
+    /// Create an empty Board (all zeros, nothing given).
     pub fn init() Board {
-        return .{ .grid = grid.Grid.init() };
+        var b: Board = undefined;
+        for (0..CELL_COUNT) |i| {
+            b.cells[i] = cell.Cell.init(.zero, false);
+        }
+        return b;
     }
 
-    /// Walk the Grid and produce a render-ready snapshot of every cell's
-    /// value, lock state, and conflict flag. Returns an owned RenderSnapshot;
-    /// safe to discard after renderer consumes it.
+    /// Return a mutable pointer to the Cell at (row, col).
+    pub fn cellAt(self: *Board, row: u4, col: u4) *cell.Cell {
+        const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
+        return &self.cells[idx];
+    }
+
+    /// Walk the flat cells and produce a render-ready snapshot.
     pub fn assembleRenderSnapshot(self: *Board) renderer.RenderSnapshot {
         var snap: renderer.RenderSnapshot = undefined;
         for (0..DIMENSION_SIZE) |row| {
             for (0..DIMENSION_SIZE) |col| {
-                const actual = self.grid.cellAt(@intCast(row), @intCast(col));
+                const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
                 snap.cells[row][col] = renderer.RenderCell{
-                    .value = actual.value,
-                    .locked = actual.locked,
-                    .conflicting = false, // validator not yet shipped
+                    .value = self.cells[idx].value,
+                    .locked = self.cells[idx].given,
+                    .conflicting = false,
                 };
             }
         }
@@ -46,7 +54,7 @@ pub const BoardError = error{
 };
 
 /// Construct a Board from a flat 81-element u8 array.
-/// Values 0 mean empty/unlocked; values 1–9 are given digits and locked.
+/// Values 0 mean empty; values 1–9 are given digits and marked as given.
 /// Returns an error if any cell value is outside 0–9.
 pub fn fromFlat(flat: [81]u8) BoardError!Board {
     for (flat) |v| {
@@ -58,16 +66,16 @@ pub fn fromFlat(flat: [81]u8) BoardError!Board {
         const globalRow: u4 = @intCast(@divTrunc(i, 9));
         const globalCol: u4 = @intCast(@mod(i, 9));
         if (v != 0) {
-            const ptr = b.grid.cellAt(globalRow, globalCol);
-            ptr.value = cell.rawToCellValue(v);
-            ptr.locked = true;
+            const c = b.cellAt(globalRow, globalCol);
+            c.value = cell.rawToCellValue(v);
+            c.given = true;
         }
     }
     return b;
 }
 
 /// Construct a Board from a one-line Sudoku string like "53..7........6.....98..".
-/// Digits '1'–'9' are locked givens; '.' or '0' are empty/unlocked.
+/// Digits '1'–'9' are given; '.' or '0' are empty.
 /// Returns an error if the string is not exactly 81 characters
 /// or contains any character outside those ranges.
 pub fn fromOneLineString(oneLine: []const u8) BoardError!Board {
@@ -89,6 +97,15 @@ pub fn fromOneLineString(oneLine: []const u8) BoardError!Board {
 // Tests (co-located, Ziglings 105 style)
 // ---------------------------------------------------------------------------
 
+test "Board: init produces 81 empty, non-given cells" {
+    const b = Board.init();
+
+    for (0..CELL_COUNT) |i| {
+        try std.testing.expectEqual(cell.CellValue.zero, b.cells[i].value);
+        try std.testing.expect(!b.cells[i].given);
+    }
+}
+
 test "Board: assembleRenderSnapshot on an empty board yields all-zeroes snapshot" {
     var b = Board.init();
 
@@ -103,7 +120,7 @@ test "Board: assembleRenderSnapshot on an empty board yields all-zeroes snapshot
     }
 }
 
-test "Board: assembleRenderSnapshot reflects locked givens populated by fromFlat" {
+test "Board: assembleRenderSnapshot reflects given givens populated by fromFlat" {
     var flat: [81]u8 = undefined;
     @memset(&flat, 0);
     flat[0] = 6; // A1
@@ -113,7 +130,7 @@ test "Board: assembleRenderSnapshot reflects locked givens populated by fromFlat
     var b = try fromFlat(flat);
     const snap = b.assembleRenderSnapshot();
 
-    // Locked givens present in snapshot
+    // Given cells present in snapshot
     try std.testing.expectEqual(cell.CellValue.six, snap.cells[0][0].value);
     try std.testing.expect(snap.cells[0][0].locked);
     try std.testing.expectEqual(cell.CellValue.seven, snap.cells[0][1].value);
@@ -127,14 +144,14 @@ test "Board: assembleRenderSnapshot reflects locked givens populated by fromFlat
     try std.testing.expectEqual(cell.CellValue.zero, snap.cells[8][8].value);
     try std.testing.expect(!snap.cells[8][8].locked);
 
-    // Snap is a copy — mutating Board after capture doesn't affect it
-    b.grid.cellAt(0, 4).value = .one;
+    // Snap is a copy - mutating Board after capture doesn't affect it
+    b.cellAt(0, 4).value = .one;
     try std.testing.expectEqual(cell.CellValue.five, snap.cells[0][4].value);
 }
 
 test "Board: constructs from flat puzzle array with correct givens and empties" {
     const easy: [81]u8 = blk: {
-        // Classic easy Sudoku — pre-filled cells as digits, blanks as 0.
+        // Classic easy Sudoku - pre-filled cells as digits, blanks as 0.
         var data: [81]u8 = undefined;
         @memset(&data, 0);
 
@@ -181,40 +198,38 @@ test "Board: constructs from flat puzzle array with correct givens and empties" 
         break :blk data;
     };
 
-    var b = try fromFlat(easy);
+    const b = try fromFlat(easy);
 
     // Total givens: count non-zero in the flat array (independent known-good literal)
-    var expected_locked_count: usize = 0;
+    var expected_given_count: usize = 0;
     for (&easy) |v| {
-        if (v != 0) expected_locked_count += 1;
+        if (v != 0) expected_given_count += 1;
     }
-    try std.testing.expectEqual(30, expected_locked_count);
+    try std.testing.expectEqual(30, expected_given_count);
 
-    // All 81 cells populated — accessed through Grid.cellAt() to verify Box ownership path.
-    var actual_locked_count: usize = 0;
+    // All 81 cells populated - accessed through flat array to verify row-major indexing.
+    var actual_given_count: usize = 0;
     for (0..81) |i| {
         const raw_val = easy[i];
-        const globalRow: u4 = @intCast(@divTrunc(i, 9));
-        const globalCol: u4 = @intCast(@mod(i, 9));
-        const c = b.grid.cellAt(globalRow, globalCol).*; // copy of Cell via pointer
+        const c = b.cells[i];
         if (raw_val != 0) {
-            try std.testing.expect(c.locked);
-            actual_locked_count += 1;
+            try std.testing.expect(c.given);
+            actual_given_count += 1;
             try std.testing.expect(c.value == cell.rawToCellValue(raw_val));
         } else {
-            try std.testing.expect(!c.locked);
+            try std.testing.expect(!c.given);
             try std.testing.expect(c.value == .zero);
         }
     }
-    try std.testing.expectEqual(expected_locked_count, actual_locked_count);
+    try std.testing.expectEqual(expected_given_count, actual_given_count);
 }
 
-test "Board: fromOneLineString parses digits and dots into locked/unlocked cells" {
+test "Board: fromOneLineString parses digits and dots into given/non-given cells" {
     const fixture = puzzle_gen.PuzzleGen.default();
     var b = try fromOneLineString(fixture);
 
-    // Sample locked cells at known positions (taken from fixture above)
-    const locked_specs: []const struct { row: u4, col: u4, expected: cell.CellValue } = &.{
+    // Sample given cells at known positions (taken from fixture above)
+    const given_specs: []const struct { row: u4, col: u4, expected: cell.CellValue } = &.{
         .{ .row = 0, .col = 0, .expected = .six },
         .{ .row = 0, .col = 1, .expected = .seven },
         .{ .row = 2, .col = 4, .expected = .eight },
@@ -222,26 +237,26 @@ test "Board: fromOneLineString parses digits and dots into locked/unlocked cells
         .{ .row = 7, .col = 0, .expected = .five },
         .{ .row = 8, .col = 6, .expected = .three },
     };
-    for (locked_specs) |spec| {
-        const c = b.grid.cellAt(spec.row, spec.col).*;
-        try std.testing.expect(c.locked);
+    for (given_specs) |spec| {
+        const c = b.cellAt(spec.row, spec.col).*;
+        try std.testing.expect(c.given);
         try std.testing.expectEqual(spec.expected, c.value);
     }
 
     // Total givens: fixture has exactly 39 non-dot characters
-    var locked_count: usize = 0;
+    var given_count: usize = 0;
     for (fixture) |ch| {
-        if (ch != '.' and ch != '0') locked_count += 1;
+        if (ch != '.' and ch != '0') given_count += 1;
     }
-    try std.testing.expectEqual(39, locked_count);
+    try std.testing.expectEqual(39, given_count);
 
-    // Check a few dot positions are unlocked and zero
-    const c13 = b.grid.cellAt(1, 3).*;
-    try std.testing.expect(!c13.locked);
+    // Check a few dot positions are non-given and zero
+    const c13 = b.cellAt(1, 3).*;
+    try std.testing.expect(!c13.given);
     try std.testing.expectEqual(.zero, c13.value);
 
-    const c40 = b.grid.cellAt(4, 0).*;
-    try std.testing.expect(!c40.locked);
+    const c40 = b.cellAt(4, 0).*;
+    try std.testing.expect(!c40.given);
     try std.testing.expectEqual(.zero, c40.value);
 }
 

@@ -19,3 +19,28 @@ Zig 0.17 dev rejects `@src()` as a default parameter value (parser error: expect
 6. [ ] Integration test with GameEngine logging at least two messages as spec'd
 
 ## Next: Cycle 2 — custom logFn formatting wired through std.options.logF
+
+---
+
+## Issue #15
+
+Working from `.scratch/sudoku/issues/15-refactor/`.
+Current sub-issue: **15.1** (`15.1-refactor.md`) — Flat `[81]Cell` storage + accessor methods (HITL)
+
+## Issue 15.1 Session
+
+### Completed
+| Test | Status | Notes |
+|------|--------|-------|
+| Test 2: cellAt row-major math + pointer aliasing | ✅ Green | `cellAt` implementation already correct; test added as coverage proof |
+
+---
+
+### In Progress: Test 3 — setCell / clearCell lifecycle
+
+**Goal:** Verify `setCell` places a digit, doesn't mark it as given; then `clearCell` resets both value and given flag.
+
+**Red phase:** Write the test first → will fail to compile because `Board.setCell` and `Board.clearCell` don't exist yet.
+**Green phase:** Add minimal implementations of both methods.
+
+Halt after green, wait for direction.

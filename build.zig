@@ -18,7 +18,10 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-
+    // clean step — remove local cache so subsequent builds are fresh
+    const rm_cache = b.addSystemCommand(&.{ "rm", "-rf", "./.zig-cache" });
+    const clean_step = b.step("clean", "Remove the local .zig-cache");
+    clean_step.dependOn(&rm_cache.step);
 
     // run step
     const run_cmd = b.addRunArtifact(exe);
@@ -41,8 +44,6 @@ pub fn build(b: *std.Build) void {
     });
 
     // Run the compiled test binary via addRunArtifact (server-mode IPC).
-
-
     // Works because no tests touch std.testing.io — InMemoryOutput is used for I/O tests.
     const run_tests = b.addRunArtifact(check);
     const test_step = b.step("test", "Run unit tests");

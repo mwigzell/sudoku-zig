@@ -25,6 +25,14 @@
       {
         "kind": "file",
         "path": "/usr/bin/kcov"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.cache/zig/lib/std"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.local/tools"
       }
     ]
   },

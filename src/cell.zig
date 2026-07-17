@@ -39,16 +39,16 @@ pub fn displayChar(cv: CellValue) u8 {
     };
 }
 
-/// A single position on the 9×9 board holding a value and a locked flag.
+/// A single position on the 9×9 board holding a value and a given flag.
 pub const Cell = struct {
     value: CellValue,
-    locked: bool,
+    given: bool,
 
-    /// Create a Cell with given initial value; locked defaults to false.
-    pub fn init(initial_value: CellValue) Cell {
+    /// Create a Cell with explicit initial value and given flag.
+    pub fn init(initial_value: CellValue, is_given: bool) Cell {
         return .{
             .value = initial_value,
-            .locked = false,
+            .given = is_given,
         };
     }
 
@@ -62,17 +62,16 @@ pub const Cell = struct {
 // Tests (co-located, Ziglings 105 style)
 // ---------------------------------------------------------------------------
 
-test "Cell: init produces unlocked cell with given value" {
-    const c = Cell.init(.zero);
+test "Cell: init produces non-given cell with given value" {
+    const c = Cell.init(.zero, false);
     try std.testing.expect(c.value == .zero);
-    try std.testing.expect(!c.locked);
+    try std.testing.expect(!c.given);
 }
 
-test "Cell: locked given cell retains its digit" {
-    var c = Cell.init(.eight);
-    c.locked = true;
+test "Cell: given cell retains its digit" {
+    const c = Cell.init(.eight, true);
     try std.testing.expect(c.value == .eight);
-    try std.testing.expect(c.locked);
+    try std.testing.expect(c.given);
 }
 
 test "rawToCellValue maps 0..9 to correct CellValue enum members" {
@@ -86,7 +85,7 @@ test "rawToCellValue maps 0..9 to correct CellValue enum members" {
 }
 
 test "Cell charOf returns display character" {
-    var c = Cell.init(.zero);
+    var c = Cell.init(.zero, false);
     try std.testing.expectEqual(0x20, c.charOf());
 
     c.value = .four;

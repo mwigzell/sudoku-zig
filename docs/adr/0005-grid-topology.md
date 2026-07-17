@@ -1,3 +1,8 @@
+Status: superseded (see ADR-0006)
+Date: 2026-07-11
+
+Superseded by ADR-0006 — during Issue 15 we moved from Box-owned topology to flat `[81]Cell` storage with computed views, as justified by renderer indirection, cache locality for row/col scans, and adding bitmask cache for solver work.
+
 # ADR-0005 — Grid topology as Box-with-lens-row-column
 
 **Decision**: The Board owns a Grid whose canonical storage is `box[3][3]`, each owning `cell[3][3]`. Rows and Columns are not owned structures but computed views (RowView, ColView) that assemble cell references across the Boxes they traverse.

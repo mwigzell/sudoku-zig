@@ -19,7 +19,7 @@ pub const Box = struct {
                 var cells_arr: [3][3]cell.Cell = undefined;
                 for (0..3) |row| {
                     for (0..3) |col| {
-                        cells_arr[row][col] = cell.Cell.init(.zero);
+                        cells_arr[row][col] = cell.Cell.init(.zero, false);
                     }
                 }
                 break :blk cells_arr;
@@ -45,7 +45,7 @@ test "Box: holds a 3x3 cell array and remembers its meta-grid position" {
         for (0..3) |c| {
             const cell_entry = b.cells[r][c];
             try std.testing.expectEqual(cell.CellValue.zero, cell_entry.value);
-            try std.testing.expect(!cell_entry.locked);
+            try std.testing.expect(!cell_entry.given);
         }
     }
 }

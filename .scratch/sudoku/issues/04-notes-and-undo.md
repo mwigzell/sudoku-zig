@@ -1,4 +1,5 @@
 Status: ready-for-agent
+Blocked By: Issue 15 — Board topology refactor (ADR-0006)
 
 ## Parent
 

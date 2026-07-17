@@ -21,10 +21,10 @@ pub fn GameEngine(comptime R: type) type {
         }
 
         /// Set a single cell on the Board to the given raw digit (1–9).
-        /// Silently skips locked/given cells.
+        /// Silently skips given cells.
         pub fn fill(self: *@This(), row_idx: usize, col_idx: usize, value: u8) void {
-            const ptr = self.board.grid.cellAt(@intCast(row_idx), @intCast(col_idx));
-            if (!ptr.locked) {
+            const ptr = self.board.cellAt(@intCast(row_idx), @intCast(col_idx));
+            if (!ptr.given) {
                 ptr.value = cell.rawToCellValue(value);
             }
         }
