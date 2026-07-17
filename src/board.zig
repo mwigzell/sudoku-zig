@@ -6,6 +6,10 @@ const puzzle_gen = @import("puzzle_gen.zig");
 
 pub const DIMENSION_SIZE: u8 = 9;
 pub const CELL_COUNT = DIMENSION_SIZE * DIMENSION_SIZE;
+// Box dimension: a standard Sudoku box is 3x3.
+pub const BOX_DIMENSION: u4 = 3;
+// Cells per box = 9.
+pub const BoxCellCount = BOX_DIMENSION * BOX_DIMENSION;
 
 // Internal cell type — value only. No "given" flag (that lives in Board.given_bits).
 // Hidden from external modules so .value can never be mutated outside Board methods.
@@ -21,6 +25,7 @@ const Cell = struct {
 pub const Board = struct {
     cells: [CELL_COUNT]Cell,
     given_bits: u128, // bit-per-cell mask of immutable puzzle clues
+digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
 
     /// Create an empty Board (all zeros, no givens).
     pub fn init() Board {
@@ -29,7 +34,35 @@ pub const Board = struct {
             b.cells[i] = Cell.init(.zero);
         }
         b.given_bits = 0;
+@memset(&b.digit_bits, 0);
         return b;
+    }
+
+    /// Read-only accessor for the raw digit-bitmask of a box at (box_row, box_col).
+    pub fn getBoxDigitBits(self: Board, box_row: u2, box_col: u2) u32 {
+        const box_idx: usize = @as(usize, @intCast(box_row)) * BOX_DIMENSION + @as(usize, @intCast(box_col));
+        return self.digit_bits[box_idx];
+    }
+
+    /// Returns bit mask (1 << (digit - 1)) for a CellValue (skip .zero).
+    fn digitToBit(val: CellValue) u32 {
+        return if (val == .zero) 0 else @as(u32, 1) << @intCast(@intFromEnum(val) - 1);
+    }
+
+    /// Return the box index (0..8) for a cell at (row, col).
+    fn cellToBoxIndex(row: u4, col: u4) u4 {
+        return @as(u4, @intCast(@divTrunc(@as(usize, @intCast(row)), BOX_DIMENSION))) * BOX_DIMENSION +
+               @as(u4, @intCast(@divTrunc(@as(usize, @intCast(col)), BOX_DIMENSION)));
+    }
+
+    /// Update the digit-bitmask for the box containing cell at (row, col).
+    /// Remove bit for `old_val`, add bit for `new_val`. Idempotent when old==new.
+    fn updateDigitBits(self: *Board, row: u4, col: u4, old_val: CellValue, new_val: CellValue) void {
+        const box_idx: usize = @intCast(Board.cellToBoxIndex(row, col));
+        const old_bit = Board.digitToBit(old_val);
+        const new_bit = Board.digitToBit(new_val);
+        if (old_bit != 0) self.digit_bits[box_idx] &= ~old_bit;
+        if (new_bit != 0) self.digit_bits[box_idx] |= new_bit;
     }
 
     /// Return the value at (row, col).
@@ -98,6 +131,9 @@ pub fn fromFlat(flat: [81]u8) BoardError!Board {
         b.cells[i] = Cell.init(rawToCellValue(v));
         if (v != 0) {
             mask |= @as(u128, 1) << @intCast(i);
+            const row: u4 = @intCast(@divTrunc(i, DIMENSION_SIZE));
+            const col: u4 = @intCast(@mod(i, DIMENSION_SIZE));
+            b.updateDigitBits(row, col, .zero, rawToCellValue(v));
         }
     }
     b.given_bits = mask;
@@ -368,3 +404,36 @@ test "Board: setCell errors when modifying a given cell" {
     try std.testing.expectEqual(CellValue.six, b.getCellValue(0, 5));
 }
 
+test "Board: init sets all box digit bitmasks to zero" {
+    const b = Board.init();
+    for (0..BoxCellCount) |box_idx| {
+        try std.testing.expectEqual(@as(u32, 0), b.digit_bits[box_idx]);
+    }
+}
+test "Board: fromFlat initializes digit_bits for given cells" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    // All in box 0 (rows 0..2, cols 0..2)
+    flat[1] = 3;   // row 0, col 1 -> digit bit 2 set
+    flat[11] = 7;   // row 1, col 2 -> digit bit 6 set
+
+    const b = try fromFlat(flat);
+
+    // Box 0 should have bits for digits 3 and 7 set
+    const box0_bits = b.getBoxDigitBits(0, 0);
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.three) - 1))) != 0);
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.seven) - 1))) != 0);
+    // No other bits set in box 0
+    try std.testing.expectEqual(@as(u32, (1 << (@intFromEnum(CellValue.three) - 1)) |
+                                       (1 << (@intFromEnum(CellValue.seven) - 1))),
+        box0_bits);
+
+    // All other boxes should be zero
+    for (0..BoxCellCount) |box_idx| {
+        const br: u2 = @intCast(box_idx / BOX_DIMENSION);
+        const bc: u2 = @intCast(box_idx % BOX_DIMENSION);
+        if (br != 0 or bc != 0) {
+            try std.testing.expectEqual(@as(u32, 0), b.getBoxDigitBits(br, bc));
+        }
+    }
+}
