@@ -1,5 +1,6 @@
 const std = @import("std");
 const CellValue = @import("cell.zig").CellValue;
+const Cell = @import("cell.zig").Cell;
 const rawToCellValue = @import("cell.zig").rawToCellValue;
 const renderer = @import("renderer.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
@@ -11,21 +12,26 @@ pub const BOX_DIMENSION: u4 = 3;
 // Cells per box = 9.
 pub const BoxCellCount = BOX_DIMENSION * BOX_DIMENSION;
 
-// Internal cell type — value only. No "given" flag (that lives in Board.given_bits).
-// Hidden from external modules so .value can never be mutated outside Board methods.
-const Cell = struct {
-    value: CellValue,
 
-    fn init(initial_value: CellValue) Cell {
-        return .{ .value = initial_value };
+/// Read-only borrowed lens over Board flat storage.
+pub const BoardView = struct {
+    board: *const Board,
+
+    /// Return the value at (row, col).
+    pub fn get(self: BoardView, row: u4, col: u4) CellValue {
+        return self.board.getCellValue(row, col);
+    }
+
+    /// Is this cell a puzzle clue (immutable)?
+    pub fn isGiven(self: BoardView, row: u4, col: u4) bool {
+        return self.board.isGiven(row, col);
     }
 };
-
 /// The canonical 9×9 Sudoku board state, backed by flat storage + a given-bitmask.
 pub const Board = struct {
     cells: [CELL_COUNT]Cell,
     given_bits: u128, // bit-per-cell mask of immutable puzzle clues
-digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
+    digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
 
     /// Create an empty Board (all zeros, no givens).
     pub fn init() Board {
@@ -34,7 +40,7 @@ digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
             b.cells[i] = Cell.init(.zero);
         }
         b.given_bits = 0;
-@memset(&b.digit_bits, 0);
+        @memset(&b.digit_bits, 0);
         return b;
     }
 
@@ -52,7 +58,7 @@ digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
     /// Return the box index (0..8) for a cell at (row, col).
     fn cellToBoxIndex(row: u4, col: u4) u4 {
         return @as(u4, @intCast(@divTrunc(@as(usize, @intCast(row)), BOX_DIMENSION))) * BOX_DIMENSION +
-               @as(u4, @intCast(@divTrunc(@as(usize, @intCast(col)), BOX_DIMENSION)));
+            @as(u4, @intCast(@divTrunc(@as(usize, @intCast(col)), BOX_DIMENSION)));
     }
 
     /// Update the digit-bitmask for the box containing cell at (row, col).
@@ -75,6 +81,11 @@ digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
     pub fn isGiven(self: Board, row: u4, col: u4) bool {
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
         return ((self.given_bits >> @intCast(idx)) & 1) == 1;
+    }
+
+    /// Return a borrowed read-only view of this board's cells.
+    pub fn asView(self: *Board) BoardView {
+        return BoardView{ .board = self };
     }
 
     /// Set the value at (row, col). Returns error.NotGiven if the cell is a puzzle clue.
@@ -357,7 +368,7 @@ test "Board: setCell places a digit on an empty cell" {
 test "Board: clearCell resets value and clears given bit" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
-    flat[10] = 7;   // row 1, col 1 — index 10
+    flat[10] = 7; // row 1, col 1 — index 10
 
     var b = try fromFlat(flat);
 
@@ -374,8 +385,8 @@ test "Board: clearCell resets value and clears given bit" {
 test "Board: fromFlat derives given bits dynamically per cell" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
-    flat[5] = 6;   // row 0, col 5
-    flat[67] = 3;  // row 7, col 4
+    flat[5] = 6; // row 0, col 5
+    flat[67] = 3; // row 7, col 4
 
     const b = try fromFlat(flat);
 
@@ -394,7 +405,7 @@ test "Board: fromFlat derives given bits dynamically per cell" {
 test "Board: setCell errors when modifying a given cell" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
-    flat[5] = 6;   // row 0, col 5 is a given
+    flat[5] = 6; // row 0, col 5 is a given
 
     var b = try fromFlat(flat);
 
@@ -417,8 +428,8 @@ test "Board: fromFlat initializes digit_bits for given cells" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
     // All in box 0 (rows 0..2, cols 0..2)
-    flat[1] = 3;   // row 0, col 1 -> digit bit 2 set
-    flat[11] = 7;   // row 1, col 2 -> digit bit 6 set
+    flat[1] = 3; // row 0, col 1 -> digit bit 2 set
+    flat[11] = 7; // row 1, col 2 -> digit bit 6 set
 
     const b = try fromFlat(flat);
 
@@ -428,8 +439,7 @@ test "Board: fromFlat initializes digit_bits for given cells" {
     try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.seven) - 1))) != 0);
     // No other bits set in box 0
     try std.testing.expectEqual(@as(u32, (1 << (@intFromEnum(CellValue.three) - 1)) |
-                                       (1 << (@intFromEnum(CellValue.seven) - 1))),
-        box0_bits);
+        (1 << (@intFromEnum(CellValue.seven) - 1))), box0_bits);
 
     // All other boxes should be zero
     for (0..BoxCellCount) |box_idx| {
@@ -458,7 +468,7 @@ test "Board: setCell updates box digit bitmask when changing a value" {
 test "Board: clearCell clears the digit bit from the owning box" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
-    flat[3] = 5;   // row 0, col 3 -> inside box 1
+    flat[3] = 5; // row 0, col 3 -> inside box 1
 
     var b = try fromFlat(flat);
     try std.testing.expect((b.getBoxDigitBits(0, 1) & (@as(u32, 1) << (@intFromEnum(CellValue.five) - 1))) != 0);
@@ -466,4 +476,22 @@ test "Board: clearCell clears the digit bit from the owning box" {
     // Clear it — clearCell resets value AND clears the given bit; must also strip digit bit
     b.clearCell(0, 3);
     try std.testing.expectEqual(@as(u32, 0), b.getBoxDigitBits(0, 1));
+}
+
+test "Board: asView resolves same values as getCellValue" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 5; // A1 = 5
+    flat[9 + 4] = 3; // J5 (row 1, col 4) = 3
+
+    var b = try fromFlat(flat);
+    const view = b.asView();
+
+    try std.testing.expectEqual(CellValue.five, view.get(0, 0));
+    try std.testing.expectEqual(CellValue.three, view.get(1, 4));
+    try std.testing.expectEqual(CellValue.zero, view.get(8, 8));
+
+    // isGiven consistency: same as Board.isGiven(row, col)
+    try std.testing.expect(view.isGiven(0, 0));
+    try std.testing.expect(!view.isGiven(1, 5));
 }
