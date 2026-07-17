@@ -303,12 +303,11 @@ test "Board: setCell places a digit without marking it given" {
 }
 
 test "Board: clearCell resets both value and given flag" {
-    var b = Board.init();
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[10] = 7;   // row 1, col 1 — index 9 + 1 = 10
 
-    // Prime a cell as a given (simulating a puzzle clue)
-    const c1 = b.cellAt(1, 1);
-    c1.value = .seven;
-    c1.given = true;
+    var b = try fromFlat(flat);
 
     try std.testing.expectEqual(.seven, b.cells[10].value);
     try std.testing.expect(b.cells[10].given);
