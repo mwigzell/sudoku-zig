@@ -8,7 +8,11 @@ Triage notes:
 
 ## Blocked By
 
-None.
+- [x] 15.1 (Flat `[81]Cell` storage) — closed
+- [x] 15.2 (Box digit bitmask cache) — closed
+- [ ] 15.3 (BoardView + Row/Col/Box lenses) — not yet closed
+- [ ] 15.4 (AsciiRenderer replacing StdoutRenderer) — not yet closed
+- [ ] 15.5 (main.zig rewire + cleanup) — not yet closed
 
 ## Working mode
 HITL (Human In The Loop). One TDD cycle per sub-issue. Agent enumerates plan with code diffs, human reviews on paper before coding. See `.coding-standards.md` → "TDD methodology (HITL)".
@@ -39,9 +43,9 @@ Each sub-issue must be reviewed against this parent's acceptance criteria and ex
 |-------|-------|------|
 | [15.1 Flat `[81]Cell` storage](./15.1-refactor.md) | Drop Grid-as-storage, standalone Box. Add `setCell`, `clearCell`, `cellAt`. Update constructors. Rename `locked` → `given`. | `15.1-refactor.md` |
 | [15.2 Box digit bitmask cache](./15.2-refactor.md) | `[9]u32` bitmask on Board, updated in mutation chokepoints. O(1) `hasValueInBox`. | `15.2-refactor.md` |
-| [15.3 BoardView + Row/Col/Box lenses](./15.3-refactor.md) | Borrowed `BoardView`, 9-cell view structs for each axis. Intersection tests. | — |
-| [15.4 AsciiRenderer replacing StdoutRenderer](./15.4-refactor.md) | Drop `RenderCell`/`RenderSnapshot`/`assembleRenderSnapshot`. Injected `std.Io.File.Writer`. Buffer-backed render tests. | — |
-| [15.5 main.zig rewire + cleanup](./15.5-refactor.md) | Wire AsciiRenderer via Writer. Update root.zig imports. Drop obsolete files (box.zig, grid.zig → leaner, renderer.zig, collapse std_renderer.zig). Full test suite green. | — |
+| [15.3 BoardView + Row/Col/Box lenses](./15.3-refactor.md) | Borrowed `BoardView`, 9-cell view structs for each axis. Intersection tests. | `15.3-refactor.md` |
+| [15.4 AsciiRenderer replacing StdoutRenderer](./15.4-refactor.md) | Drop `RenderCell`/`RenderSnapshot`/`assembleRenderSnapshot`. Injected `std.Io.File.Writer`. Buffer-backed render tests. | `15.4-refactor.md` |
+| [15.5 main.zig rewire + cleanup](./15.5-refactor.md) | Wire AsciiRenderer via Writer. Update root.zig imports. Drop obsolete files (box.zig, grid.zig → leaner, renderer.zig, collapse std_renderer.zig). Full test suite green. | `15.5-refactor.md` |
 
 ## Acceptance criteria
 

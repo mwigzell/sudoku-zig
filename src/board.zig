@@ -81,14 +81,17 @@ digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
     pub fn setCell(self: *Board, row: u4, col: u4, val: CellValue) !void {
         if (self.isGiven(row, col)) return error.NotGiven;
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
+        const old_val = self.cells[idx].value;
         self.cells[idx].value = val;
+        self.updateDigitBits(row, col, old_val, val);
     }
-
     /// Reset a cell at (row, col) to empty and clear its given-bit.
     pub fn clearCell(self: *Board, row: u4, col: u4) void {
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
+        const old_val = self.cells[idx].value;
         self.cells[idx].value = .zero;
         self.given_bits &= ~(@as(u128, 1) << @intCast(idx));
+        self.updateDigitBits(row, col, old_val, .zero);
     }
 
     /// Walk the flat cells and produce a render-ready snapshot.
@@ -436,4 +439,31 @@ test "Board: fromFlat initializes digit_bits for given cells" {
             try std.testing.expectEqual(@as(u32, 0), b.getBoxDigitBits(br, bc));
         }
     }
+}
+
+test "Board: setCell updates box digit bitmask when changing a value" {
+    var b = Board.init();
+
+    // Place digit 3 in a cell inside box 0
+    try b.setCell(0, 1, .three);
+    try std.testing.expect((b.getBoxDigitBits(0, 0) & (@as(u32, 1) << (@intFromEnum(CellValue.three) - 1))) != 0);
+
+    // Change the same cell to digit 7 — bit 3 should disappear, bit 7 appear
+    try b.setCell(0, 1, .seven);
+    const box0_bits = b.getBoxDigitBits(0, 0);
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.three) - 1))) == 0); // three gone
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.seven) - 1))) != 0); // seven present
+}
+
+test "Board: clearCell clears the digit bit from the owning box" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[3] = 5;   // row 0, col 3 -> inside box 1
+
+    var b = try fromFlat(flat);
+    try std.testing.expect((b.getBoxDigitBits(0, 1) & (@as(u32, 1) << (@intFromEnum(CellValue.five) - 1))) != 0);
+
+    // Clear it — clearCell resets value AND clears the given bit; must also strip digit bit
+    b.clearCell(0, 3);
+    try std.testing.expectEqual(@as(u32, 0), b.getBoxDigitBits(0, 1));
 }
