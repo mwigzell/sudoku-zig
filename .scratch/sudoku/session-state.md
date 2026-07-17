@@ -44,3 +44,10 @@ Current sub-issue: **15.1** (`15.1-refactor.md`) — Flat `[81]Cell` storage + a
 **Green phase:** Add minimal implementations of both methods.
 
 Halt after green, wait for direction.
+
+---
+
+## Tool Notes
+
+**edit vs write — when to use which:** Large structural rewrites (replacing >50% of a file, adding/removing multiple functions/tests) → `write` the whole file. Small surgical touches (1–3 non-adjacent lines, swap an identifier, add inline comment) → `edit`. Always re-read after a write or failed edit; never chain edits on stale anchors.
+
