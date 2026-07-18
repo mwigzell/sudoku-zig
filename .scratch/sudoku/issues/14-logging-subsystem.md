@@ -1,5 +1,4 @@
 Status: draft (logger module working, full severity set done, stack opt-in deferred as not possible in Zig, pending GameEngine integration)
-Blocked By: Issue 15 — Board topology refactor (ADR-0006)
 
 ## Working mode
 HITL (Human In The Loop). One TDD cycle per session. Agent enumerates its plan, does one iteration, pauses for explicit direction before proceeding. See `.coding-standards.md` → "TDD methodology (HITL)".

@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 Triage date: 2026-07-16
 Triage notes:
   - Parent index complete: scope, why, acceptance criteria, ADR-0006 reference all present.
@@ -16,7 +16,7 @@ Triage notes:
 
 - [x] 15.4 (AsciiRenderer replacing StdoutRenderer) — closed
 
-- [x] 15.5 (main.zig rewire + cleanup) — ready-for-agent
+- [x] 15.5 (main.zig rewire + cleanup) — closed
 
 
 ## Working mode
