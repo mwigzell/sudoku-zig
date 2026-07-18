@@ -110,53 +110,30 @@ test "cell row (digits placed)" {
 
 
 test "AsciiRenderer renders empty board end-to-end" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
 
-    const io = std.testing.io;
-    var tmp_dir = try std.Io.Dir.openDirAbsolute(io, "/tmp", .{});
-    defer tmp_dir.close(io);
-    
-    const outfile = try tmp_dir.createFile(io, ".sudoku_test_empty.txt", .{});
-    defer outfile.close(io);
-    
-    {
-        var w = outfile.writer(io, &.{});
-        var renderer = AsciiRenderer.init(&w.interface);
-        var b = board.Board.init();
-        try renderer.render(b.asView());
-        try w.flush();
-    }
+    var renderer = AsciiRenderer.init(&aw.writer);
+    var b = board.Board.init();
+    try renderer.render(b.asView());
 
-    // Read back using Io.File reader
-    {
-        var dir2 = try Io.Dir.openDirAbsolute(io, "/tmp", .{});
-        defer dir2.close(io);
+    const contents = aw.writer.buffered();
 
-         const f2 = try dir2.openFile(io, ".sudoku_test_empty.txt", .{});
-        defer f2.close(io);
+    // expected: column header, 4 borders, 9 empty data rows
+    const expected = "   A B C | D E F | G H I \n" ++
+        " +-------+-------+-------+\n" ++
+        "1|       |       |       |\n" ++
+        "2|       |       |       |\n" ++
+        "3|       |       |       |\n" ++
+        " +-------+-------+-------+\n" ++
+        "4|       |       |       |\n" ++
+        "5|       |       |       |\n" ++
+        "6|       |       |       |\n" ++
+        " +-------+-------+-------+\n" ++
+        "7|       |       |       |\n" ++
+        "8|       |       |       |\n" ++
+        "9|       |       |       |\n" ++
+        " +-------+-------+-------+\n";
 
-
-        // expected: column header, 4 borders, 9 empty data rows
-        const expected = "   A B C | D E F | G H I \n" ++
-            " +-------+-------+-------+\n" ++
-            "1|       |       |       |\n" ++
-            "2|       |       |       |\n" ++
-            "3|       |       |       |\n" ++
-            " +-------+-------+-------+\n" ++
-            "4|       |       |       |\n" ++
-            "5|       |       |       |\n" ++
-            "6|       |       |       |\n" ++
-            " +-------+-------+-------+\n" ++
-            "7|       |       |       |\n" ++
-            "8|       |       |       |\n" ++
-            "9|       |       |       |\n" ++
-            " +-------+-------+-------+\n";
-        
-        var readBuf: [512]u8 = undefined;
-        var reader = Io.File.reader(f2, io, &readBuf);
-        const contents = try std.Io.Reader.readAlloc(&reader.interface, std.testing.allocator,
-            expected.len);
-        defer std.testing.allocator.free(contents);
-
-        try std.testing.expectEqualStrings(expected, contents);
-    }
+    try std.testing.expectEqualStrings(expected, contents);
 }
