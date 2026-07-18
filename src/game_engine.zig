@@ -27,10 +27,10 @@ pub fn GameEngine(comptime R: type) type {
             }
         }
 
-        /// Delegate snapshot assembly to Board and emit through renderer.
+        /// Delegate view construction to Board and emit through renderer.
         pub fn render(self: *@This()) anyerror!void {
-            const snap = self.board.assembleRenderSnapshot();
-            try self.renderer.render(snap);
+            const view = self.board.asView();
+            try self.renderer.render(view);
         }
 
         /// Set a cell and immediately re-render. Convenience wrapper over `fill` + `render`.
@@ -52,9 +52,8 @@ test "GameEngine fill updates cell in snapshot" {
     engine.fill(0, 3, 7);
     try engine.render();
 
-    const snap = mock.last_snapshot orelse unreachable;
-    try std.testing.expectEqual(cell.CellValue.seven, snap.cells[0][3].value);
-    try std.testing.expect(!snap.cells[0][3].locked);
+    const cells = mock.last_rendered_cells orelse unreachable;
+    try std.testing.expectEqual(cell.CellValue.seven, cells[0][3]);
 }
 
 
@@ -69,12 +68,12 @@ test "GameEngine init builds board, explicit render emits snapshot" {
     try engine.render();
     try std.testing.expectEqual(1, mock.call_count);
 
-    const snap = mock.last_snapshot orelse unreachable;
-    // puzzle[0..2] is '6' → A1 should be locked six
-    try std.testing.expect(snap.cells[0][0].locked);
-    try std.testing.expectEqual(cell.CellValue.six, snap.cells[0][0].value);
+    const cells = mock.last_rendered_cells orelse unreachable;
+    // puzzle[0..2] is '6' → A1 should be a given (six)
+    try std.testing.expect(engine.board.isGiven(0, 0));
+    try std.testing.expectEqual(cell.CellValue.six, cells[0][0]);
 
-    // puzzle[2] is '.' → A3 should be empty and unlocked
-    try std.testing.expect(!snap.cells[0][2].locked);
-    try std.testing.expectEqual(cell.CellValue.zero, snap.cells[0][2].value);
+    // puzzle[2] is '.' → A3 should be non-given and empty
+    try std.testing.expect(!engine.board.isGiven(0, 2));
+    try std.testing.expectEqual(cell.CellValue.zero, cells[0][2]);
 }
