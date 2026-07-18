@@ -62,6 +62,17 @@ pub const Board = struct {
         }
     };
 
+    /// 3x3 box lens — carries scattered flat-storage indices for one box.
+    pub const BoxView = struct {
+        boxRow: u2,
+        boxCol: u2,
+        indices: [9]usize,
+
+        fn getValues(self: BoxView, bv: BoardView) [9]CellValue {
+            return bv.resolve(&self.indices);
+        }
+    };
+
     /// Create an empty Board (all zeros, no givens).
     pub fn init() Board {
         var b: Board = undefined;
@@ -138,6 +149,25 @@ pub const Board = struct {
             cv.indices[i] = offset + @as(usize, @intCast(i)) * DIMENSION_SIZE;
         }
         return cv;
+    }
+
+    /// Return a BoxView for the 3x3 box at (box_row, box_col).
+    pub fn asBox(br: u2, bc: u2) BoxView {
+        var xv = BoxView{
+            .boxRow = br,
+            .boxCol = bc,
+            .indices = undefined,
+        };
+        var ci: usize = 0;
+        for (0..BOX_DIMENSION) |r| {
+            for (0..BOX_DIMENSION) |c| {
+                const row: usize = @as(usize, br) * BOX_DIMENSION + r;
+                const col: usize = @as(usize, bc) * BOX_DIMENSION + c;
+                xv.indices[ci] = row * DIMENSION_SIZE + col;
+                ci += 1;
+            }
+        }
+        return xv;
     }
 
     /// Return a borrowed read-only view of this board's cells.
@@ -632,4 +662,41 @@ test "Board: asCol produces strided indices for column n" {
     for (6..9) |i| {
         try std.testing.expectEqual(CellValue.zero, vals[i]);
     }
+}
+
+test "Board: asBox(0, 1) produces correct scattered indices for top-middle box" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    // Top-middle box covers rows 0..2 × cols 3..5 (indices 3,4,5 / 12,13,14 / 21,22,23)
+    flat[0 * 9 + 4] = 6; // row 0, col 4 = six
+    flat[1 * 9 + 3] = 2; // row 1, col 3 = two
+    flat[1 * 9 + 5] = 8; // row 1, col 5 = eight
+    flat[2 * 9 + 3] = 4; // row 2, col 3 = four
+
+    var b = try fromFlat(flat);
+    const view = b.asView();
+    const box = Board.asBox(0, 1);
+
+    // Identity fields
+    try std.testing.expectEqual(@as(u2, 0), box.boxRow);
+    try std.testing.expectEqual(@as(u2, 1), box.boxCol);
+
+    // Scattered indices: rows 0..2 × cols 3..5 -> {3,4,5,12,13,14,21,22,23}
+    const expected_indices: [9]usize = .{ 3, 4, 5, 12, 13, 14, 21, 22, 23 };
+    for (box.indices, expected_indices, 0..) |got, expected, i| {
+        _ = i;
+        try std.testing.expectEqual(expected, got);
+    }
+
+    // Resolution through BoardView: [0,6,0, 2,0,8, 4,0,0]
+    const vals = box.getValues(view);
+    try std.testing.expectEqual(CellValue.zero, vals[0]);   // (0,3)
+    try std.testing.expectEqual(CellValue.six, vals[1]);     // (0,4)
+    try std.testing.expectEqual(CellValue.zero, vals[2]);   // (0,5)
+    try std.testing.expectEqual(CellValue.two, vals[3]);     // (1,3)
+    try std.testing.expectEqual(CellValue.zero, vals[4]);   // (1,4)
+    try std.testing.expectEqual(CellValue.eight, vals[5]);  // (1,5)
+    try std.testing.expectEqual(CellValue.four, vals[6]);   // (2,3)
+    try std.testing.expectEqual(CellValue.zero, vals[7]);   // (2,4)
+    try std.testing.expectEqual(CellValue.zero, vals[8]);   // (2,5)
 }
