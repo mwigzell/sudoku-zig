@@ -700,3 +700,30 @@ test "Board: asBox(0, 1) produces correct scattered indices for top-middle box" 
     try std.testing.expectEqual(CellValue.zero, vals[7]);   // (2,4)
     try std.testing.expectEqual(CellValue.zero, vals[8]);   // (2,5)
 }
+
+test "Board: BoardView reflects mutation on reborrow" {
+    var b = Board.init();
+
+    // Place a value — setCell (non-given cell)
+    try b.setCell(3, 4, .five);
+
+    // Capture view before mutation
+    const v1 = b.asView();
+    try std.testing.expectEqual(CellValue.five, v1.get(3, 4));
+    try std.testing.expect(!v1.isGiven(3, 4));
+
+    // Mutate: overwrite the cell with a different value
+    try b.setCell(3, 4, .nine);
+    // Clear another cell first to have something non-zero then zeroed
+    try b.setCell(7, 0, .three);
+    b.clearCell(7, 0);
+
+    // Fresh view after mutation sees updated state
+    const v2 = b.asView();
+    try std.testing.expectEqual(CellValue.nine, v2.get(3, 4));
+    try std.testing.expect(!v2.isGiven(3, 4));
+
+    // Cleared cell is zero on fresh view
+    try std.testing.expectEqual(CellValue.zero, v2.get(7, 0));
+    try std.testing.expect(!v2.isGiven(7, 0));
+}
