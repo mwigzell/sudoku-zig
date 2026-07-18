@@ -52,6 +52,16 @@ pub const Board = struct {
         }
     };
 
+    /// Vertical column lens — carries strided flat-storage indices for one column.
+    pub const ColView = struct {
+        colNum: u4,
+        indices: [9]usize,
+
+        fn getValues(self: ColView, bv: BoardView) [9]CellValue {
+            return bv.resolve(&self.indices);
+        }
+    };
+
     /// Create an empty Board (all zeros, no givens).
     pub fn init() Board {
         var b: Board = undefined;
@@ -115,6 +125,19 @@ pub const Board = struct {
             rv.indices[i] = base + i;
         }
         return rv;
+    }
+
+    /// Return a ColView for column n (0..8).
+    pub fn asCol(n: u4) ColView {
+        var cv = ColView{
+            .colNum = n,
+            .indices = undefined,
+        };
+        const offset: usize = @intCast(n);
+        for (0..9) |i| {
+            cv.indices[i] = offset + @as(usize, @intCast(i)) * DIMENSION_SIZE;
+        }
+        return cv;
     }
 
     /// Return a borrowed read-only view of this board's cells.
@@ -572,6 +595,41 @@ test "Board: asRow produces contiguous indices for row n" {
     try std.testing.expectEqual(CellValue.nine, vals[1]);
     try std.testing.expectEqual(CellValue.eight, vals[2]);
     for (3..9) |i| {
+        try std.testing.expectEqual(CellValue.zero, vals[i]);
+    }
+}
+
+test "Board: asCol produces strided indices for column n" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0 * 9 + 4] = 7; // row 0, col 4 = seven
+    flat[2 * 9 + 4] = 3; // row 2, col 4 = three
+    flat[5 * 9 + 4] = 1; // row 5, col 4 = one
+
+    var b = try fromFlat(flat);
+    const view = b.asView();
+    const col = Board.asCol(4);
+
+    // Identity field
+    try std.testing.expectEqual(@as(u4, 4), col.colNum);
+
+    // Strided indices: offset = col index, stride = CELL_COUNT -> {4, 13, 22, 31, 40, 49, 58, 67, 76}
+    const expected_indices: [9]usize = .{ 4, 13, 22, 31, 40, 49, 58, 67, 76 };
+    for (col.indices, expected_indices, 0..) |got, expected, i| {
+        _ = i;
+        try std.testing.expectEqual(expected, got);
+    }
+
+    // Resolution through BoardView: column 4 values [7, 0, 3, 0, 0, 1, 0, 0, 0]
+    const vals = col.getValues(view);
+    try std.testing.expectEqual(CellValue.seven, vals[0]);
+    try std.testing.expectEqual(CellValue.zero, vals[1]);
+    try std.testing.expectEqual(CellValue.three, vals[2]);
+    for (3..5) |i| {
+        try std.testing.expectEqual(CellValue.zero, vals[i]);
+    }
+    try std.testing.expectEqual(CellValue.one, vals[5]);
+    for (6..9) |i| {
         try std.testing.expectEqual(CellValue.zero, vals[i]);
     }
 }
