@@ -2,7 +2,6 @@ const std = @import("std");
 const CellValue = @import("cell.zig").CellValue;
 const Cell = @import("cell.zig").Cell;
 const rawToCellValue = @import("cell.zig").rawToCellValue;
-const renderer = @import("renderer.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 
 pub const DIMENSION_SIZE: u8 = 9;
@@ -192,21 +191,6 @@ pub const Board = struct {
         self.updateDigitBits(row, col, old_val, .zero);
     }
 
-    /// Walk the flat cells and produce a render-ready snapshot.
-    pub fn assembleRenderSnapshot(self: Board) renderer.RenderSnapshot {
-        var snap: renderer.RenderSnapshot = undefined;
-        for (0..DIMENSION_SIZE) |row| {
-            for (0..DIMENSION_SIZE) |col| {
-                const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
-                snap.cells[row][col] = renderer.RenderCell{
-                    .value = self.cells[idx].value,
-                    .locked = self.isGiven(@intCast(row), @intCast(col)),
-                    .conflicting = false,
-                };
-            }
-        }
-        return snap;
-    }
 };
 
 /// Errors returned when parsing puzzle data into a Board.
@@ -267,50 +251,6 @@ test "Board: init produces 81 empty cells and no givens" {
     for (0..CELL_COUNT) |i| {
         try std.testing.expectEqual(CellValue.zero, b.cells[i].value);
     }
-}
-
-test "Board: assembleRenderSnapshot on an empty board yields all-zeroes snapshot" {
-    var b = Board.init();
-
-    const snap = b.assembleRenderSnapshot();
-
-    for (0..9) |row| {
-        for (0..9) |col| {
-            try std.testing.expectEqual(CellValue.zero, snap.cells[row][col].value);
-            try std.testing.expect(!snap.cells[row][col].locked);
-            try std.testing.expect(!snap.cells[row][col].conflicting);
-        }
-    }
-}
-
-test "Board: assembleRenderSnapshot reflects givens populated by fromFlat" {
-    var flat: [81]u8 = undefined;
-    @memset(&flat, 0);
-    flat[0] = 6; // A1
-    flat[1] = 7; // B1
-    flat[4] = 5; // E1
-
-    var b = try fromFlat(flat);
-    const snap = b.assembleRenderSnapshot();
-
-    // Given cells present in snapshot
-    try std.testing.expectEqual(CellValue.six, snap.cells[0][0].value);
-    try std.testing.expect(snap.cells[0][0].locked);
-    try std.testing.expectEqual(CellValue.seven, snap.cells[0][1].value);
-    try std.testing.expect(snap.cells[0][1].locked);
-    try std.testing.expectEqual(CellValue.five, snap.cells[0][4].value);
-    try std.testing.expect(snap.cells[0][4].locked);
-
-    // All other cells empty and unlocked
-    try std.testing.expectEqual(CellValue.zero, snap.cells[0][2].value);
-    try std.testing.expect(!snap.cells[0][2].locked);
-    try std.testing.expectEqual(CellValue.zero, snap.cells[8][8].value);
-    try std.testing.expect(!snap.cells[8][8].locked);
-
-    // Snap is a copy — mutating Board after capture doesn't affect it
-    try b.setCell(0, 2, .one);
-    try std.testing.expectEqual(CellValue.zero, snap.cells[0][2].value);
-    try std.testing.expectEqual(CellValue.five, snap.cells[0][4].value);
 }
 
 test "Board: constructs from flat puzzle array with correct values" {

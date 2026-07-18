@@ -16,7 +16,7 @@ Triage notes:
 
 - [x] 15.4 (AsciiRenderer replacing StdoutRenderer) — closed
 
-- [ ] 15.5 (main.zig rewire + cleanup) — needs-triage
+- [x] 15.5 (main.zig rewire + cleanup) — ready-for-agent
 
 
 ## Working mode
