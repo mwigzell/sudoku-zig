@@ -10,7 +10,8 @@ const std_renderer = @import("std_renderer.zig");
 const io_sink = @import("io_sink.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
+const ascii_renderer = @import("ascii_renderer.zig");
 
 test {
-    _ = .{ box, cell, grid, board, renderer, game_engine, mock_renderer, std_renderer, io_sink, puzzle_gen, logger };
+    _ = .{ box, cell, grid, board, renderer, game_engine, mock_renderer, std_renderer, io_sink, puzzle_gen, logger, ascii_renderer };
 }
