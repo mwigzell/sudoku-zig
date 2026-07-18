@@ -10,6 +10,8 @@ Issues and PRDs for this repo live as markdown files in `.scratch/`.
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 - When closing an issue, acceptance criteria will have already been verified and checked off during triage (see `/triage` skill, step 3). Set `Status: closed`, then scan all other open issues for blocking references to it, removing them from those lists.
+## sub issues
+- When an issue or sub-issue closes, remove it from any issue that is blocked by it in the "Blocked By" section
 
 ## When a skill says "publish to the issue tracker"
 
