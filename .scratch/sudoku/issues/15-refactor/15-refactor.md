@@ -9,10 +9,15 @@ Triage notes:
 ## Blocked By
 
 - [x] 15.1 (Flat `[81]Cell` storage) — closed
+
 - [x] 15.2 (Box digit bitmask cache) — closed
+
 - [x] 15.3 (BoardView + Row/Col/Box lenses) — closed
-- [ ] 15.4 (AsciiRenderer replacing StdoutRenderer) — ready-for-agent
-- [ ] 15.5 (main.zig rewire + cleanup) — not yet closed
+
+- [x] 15.4 (AsciiRenderer replacing StdoutRenderer) — closed
+
+- [ ] 15.5 (main.zig rewire + cleanup) — needs-triage
+
 
 ## Working mode
 HITL (Human In The Loop). One TDD cycle per sub-issue. Agent enumerates plan with code diffs, human reviews on paper before coding. See `.coding-standards.md` → "TDD methodology (HITL)".
@@ -52,8 +57,8 @@ Each sub-issue must be reviewed against this parent's acceptance criteria and ex
 - [x] `zig build run` produces identical ASCII board output. Verifies current grid layout (12-line border + row/col headers) matches pre-refactor exactly.
 - [x] All 43 tests pass; new tests for flat storage, bitmask cache, view lenses added across modules. Buffer-backed renderer tests deferred to 15.4.
 - [x] Coverage improved from baseline (99.16% vs ~98.97%). board.zig at 100%, cell.zig 96.43%.
-- [ ] Obsolete files removed; `src/root.zig` imports final module set — blocked pending 15.4 + 15.5.
-- [ ] No wrapper-only test paths — all tests exercise same code main() uses — blocked pending MockRenderer update in 15.4.
+- [ ] Obsolete files removed; `src/root.zig` imports final module set — blocked pending 15.5.
+- [ ] No wrapper-only test paths — all tests exercise same code main() uses — blocked pending MockRenderer update in 15.5.
 
 ## ADR
 
