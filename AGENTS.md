@@ -65,3 +65,5 @@ zig build test
 or
 zig test src/root.zig
 - don't pass --summary it does nothing
+## zig version
+zig -version
