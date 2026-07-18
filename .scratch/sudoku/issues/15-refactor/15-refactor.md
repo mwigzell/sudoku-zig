@@ -10,7 +10,7 @@ Triage notes:
 
 - [x] 15.1 (Flat `[81]Cell` storage) — closed
 - [x] 15.2 (Box digit bitmask cache) — closed
-- [ ] 15.3 (BoardView + Row/Col/Box lenses) — not yet closed
+- [x] 15.3 (BoardView + Row/Col/Box lenses) — closed
 - [ ] 15.4 (AsciiRenderer replacing StdoutRenderer) — not yet closed
 - [ ] 15.5 (main.zig rewire + cleanup) — not yet closed
 

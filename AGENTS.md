@@ -49,6 +49,7 @@ Failure to do this means your tests are invisible to the test runner. Always ver
 
 ## clean build cache 
 zig build clean
+-- don't run "rm -rf .zig-cache kcov-out"
 
 ### Coverage discipline (`zig build cov`)
 Coverage report lives in this project's build system. After every cycle, run:
@@ -59,3 +60,8 @@ at `/home/mark/Dev/src/sudoku/`. This runs all 16+ tests and produces JSON showi
 ## run build
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.
+## run test
+zig build test
+or
+zig test src/root.zig
+- don't pass --summary it does nothing
