@@ -47,9 +47,15 @@ Whenever you create a new source file or rewrite an existing one that contains i
 
 Failure to do this means your tests are invisible to the test runner. Always verify after changes by running `zig test src/grid.zig` (or the relevant file) and confirming all expected tests appear.
 
+## clean build cache 
+zig build clean
+
 ### Coverage discipline (`zig build cov`)
 Coverage report lives in this project's build system. After every cycle, run:
 ```bash
 zig build cov
 ```
 at `/home/mark/Dev/src/sudoku/`. This runs all 16+ tests and produces JSON showing per-file `percent_covered`. Use it to spot untested code after each change.
+## run build
+zig build run
+- expect that the output is a message and an ascii cell matrix of the initial puzzle.
