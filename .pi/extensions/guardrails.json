@@ -33,6 +33,10 @@
       {
         "kind": "directory",
         "path": "~/.local/tools"
+      },
+      {
+        "kind": "file",
+        "path": "~/.pi/agent/AGENTS.md"
       }
     ]
   },
