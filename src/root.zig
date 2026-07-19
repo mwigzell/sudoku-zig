@@ -7,7 +7,9 @@ const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
 const ascii_renderer = @import("ascii_renderer.zig");
 const styler = @import("styler.zig");
+const command = @import("command.zig");
 
+// You MUST enter module name in this test struct so that the reference pulls in the tests transitively
 test {
-    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler };
+    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler, command };
 }
