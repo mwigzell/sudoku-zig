@@ -172,7 +172,7 @@ pub const Board = struct {
     }
 
     /// Return a borrowed read-only view of this board's cells.
-    pub fn asView(self: *Board) BoardView {
+    pub fn asView(self: *const Board) BoardView {
         return BoardView{ ._board = self };
 
     }

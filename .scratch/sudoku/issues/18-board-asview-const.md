@@ -1,4 +1,5 @@
-Status: needs-triage
+Status: closed
+triaged: 2025-01 — const-correctness fix, all AC met
 
 ## Problem
 
@@ -20,9 +21,10 @@ The fix is simple: make the read-only accessor const-correct so Zig enforces the
 
 ## Acceptance Criteria
 
-- [ ] `asView()` signature changed from `self: *Board` to `self: *const Board`
-- [ ] All call sites still compile (no changes needed — callers can coerce `*const` into the parameter)
-- [ ] All 41 tests pass
+- [x] `asView()` signature changed from `self: *Board` to `self: *const Board`
+- [x] All call sites still compile (no changes needed — callers can coerce `*const` into the parameter)
+- [x] All 41 tests pass
+**Commit:** see below
 
 ## Open Question (deferred)
 
