@@ -1,6 +1,7 @@
 const cell = @import("cell.zig");
 const board = @import("board.zig");
 const std = @import("std");
+const text_util = @import("text.zig");
 
 // ---------------------------------------------------------------------------
 /// Plain styler — produces unadorned layout identical to original cellRow output.
@@ -128,23 +129,11 @@ test "AnsiStyler wraps given digits in dim CSI codes" {
     var styler = AnsiStyler{};
     const line = try styler.formatRow(0, view, &buf);
 
-    const dim_count = countOccurrences(line, DIM_ON);
-    const reset_count = countOccurrences(line, RESET);
+    const dim_count = text_util.countOccurrences(line, DIM_ON);
+    const reset_count = text_util.countOccurrences(line, RESET);
     try std.testing.expectEqual(@as(usize, 3), dim_count);
     try std.testing.expectEqual(@as(usize, 3), reset_count);
 }
 
 
-// ============================================================================
-/// helper: count non-overlapping occurrences of needle in haystack
-fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
-    var count: usize = 0;
-    var start: usize = 0;
-    while (start < haystack.len) {
-        const idx = std.mem.indexOf(u8, haystack[start..], needle) orelse break;
-        count += 1;
-        start += idx + needle.len;
-    }
-    return count;
-}
 
