@@ -45,7 +45,7 @@ pub fn asView(self: *Board) BoardView {
 ```
 
 This never mutates anything. Should be `self: *const Board`. Also, `asRow`, `asCol`, `asBox` (lines 128, 141, 154) take no `self` at all — they're free methods on the `Board` struct that don't need an instance. The comment says "Return a RowView for row n" but nothing ties them to the Board data model — any board can use the same indices. This is fine in practice (the indices are static) but it's confusing structurally: why live inside `Board` if they don't depend on it?
-**Status:** Captured as issue 11 (`.scratch/sudoku/issues/11-board-asview-const.md`) — const-correctness fix + deferred Grid topology question.
+**Status:** Captured as issue 18 (`.scratch/sudoku/issues/18-board-asview-const.md`) — const-correctness fix + deferred Grid topology question.
 
 ### S4 — Documentation gaps on public surfaces (coding standard #1) {#s4}
 
@@ -56,7 +56,7 @@ Missing:
 - **`game_engine.zig`** — `fill()`, `fillAndRender()` have inline comments but no proper header docs like `init()`.
 - **`board.zig`** — `getBoxDigitBits`, `setCell`, `clearCell` lack doc headers.
 - **`logger.zig`** — the `Logger` generator itself is undocumented.
-**Status:** Captured as issue 12 (`.scratch/sudoku/issues/12-documentation-gaps.md`)
+**Status:** Captured as issue 19 (`.scratch/sudoku/issues/19-documentation-gaps.md`)
 
 ---
 
@@ -94,7 +94,7 @@ Several board tests verify internal representation:
 - `"Board: fromFlat initializes digit_bits for given cells"` inspects per-box bitmask state.
 - Tests like `"Board: asRow produces contiguous indices"` verify internal index arrays.
 
-**Status note:** Sp1 is already known from existing issues. Sp3 → issue 13, Sp4 → issue 14.
+**Status note:** Sp1 is already known from existing issues. Sp3 → issue 20, Sp4 → issue 21.
 
 ---
 
