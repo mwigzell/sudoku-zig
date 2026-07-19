@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 ## Triage
 Date: 2026-07-18
