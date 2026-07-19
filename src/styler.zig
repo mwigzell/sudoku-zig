@@ -47,8 +47,8 @@ test "PlainStyler formats empty board row 0 identically to cellRow" {
 }
 
 // ============================================================================
-/// ANSI constants — Bold ON / Reset
-const BOLD_ON = "\x1b[1m";
+/// ANSI constants — Dim ON (givens) / Reset
+const BOLD_ON = "\x1b[2m";
 const RESET = "\x1b[0m";
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ pub const AnsiStyler = struct {
 };
 
 // ============================================================================
-// Tests — AnsiStyler wraps given digits in bold CSI codes
+// Tests — AnsiStyler wraps given digits in dim CSI codes
 // ---------------------------------------------------------------------------
 
 test "AnsiStyler wraps given digits in bold CSI codes" {
@@ -128,9 +128,9 @@ test "AnsiStyler wraps given digits in bold CSI codes" {
     var styler = AnsiStyler{};
     const line = try styler.formatRow(0, view, &buf);
 
-    const bold_count = countOccurrences(line, BOLD_ON);
+    const dim_count = countOccurrences(line, BOLD_ON);
     const reset_count = countOccurrences(line, RESET);
-    try std.testing.expectEqual(@as(usize, 3), bold_count);
+    try std.testing.expectEqual(@as(usize, 3), dim_count);
     try std.testing.expectEqual(@as(usize, 3), reset_count);
 }
 
