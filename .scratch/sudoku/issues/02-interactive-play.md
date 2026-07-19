@@ -1,138 +1,106 @@
 Status: ready-for-agent
 
 ## Working mode
-HITL (Human In The Loop). One TDD cycle per session. Agent enumerates its plan, does one iteration, pauses for explicit direction before proceeding. See `.coding-standards.md` → "TDD methodology (HITL)".
+HITL. One TDD cycle per session.
 
 ## Parent
-
-`.scratch/sudoku/prd.md`
+`.scratch/sudoku/prd.md` — US1: Interactive terminal Sudoku game
 
 ## What to build
+A command-driven loop in `main()` that repeatedly prompts for input, reads stdin, parses a Command, sends it to GameEngine, and re-renders the board.
 
-Player interactivity: accept Commands to fill/clear cells, validate board state after each move via the Validator, and re-render through the Renderer interface. Introduce **GameEngine** as the Command→Event orchestrator — receives a Command, mutates Board state through its Grid topology, runs constraint validation across RowView/ColView/Box axes, and emits an Event snapshot. Renderer consumes Events and draws the updated grid.
+Current main bootstraps GameEngine and renders once — then exits. We need it to enter this loop instead:
 
-### GameEngine
-- Commands (stdin): e.g., `fill 3 5 7`, `clear 3 5`. Input format via line-based reader for now.
-- On mutation, queries Grid topology: row(n).cells + col(n).cells + box at that coordinate → detect conflicts.
-- Given/prefilled cells are immutable (filling a given cell is rejected).
-- Emits full-state Event after each command; Renderer calls render(Event) to re-draw.
-
-### Validator
-- Iterates row(n), col(n), and box-owned cells for uniqueness checks.
-- Marks conflicting cells on the Board; Renderer visualizes conflicts distinctly (red/unicode highlight — implementation choice).
-
-### Game loop in main.zig
-1. Load embedded puzzle → construct Board with Grid topology
-2. Renderer renders initial Board to stdout
-3. stdin line reader loops: parse Command → GameEngine.execute(Command, &board) → Event emitted → Renderer.renderEvent(Event)
-
-## StdoutRenderer Design
-
-ASCII box grid with column labels (A–I) across top, row labels (1–9) down the left. Cell addressing uses chess-style <col><row> — so cell A7 = column A, row 7.
 ```
-   A B C | D E F | G H I 
- +-------+-------+-------+
-1|       |       |       |
-2|       |       |       |
-3|       |       |       |
- +-------+-------+-------+
-4|       |       |       |
-5|       |       |       |
-6|       |       |       |
- +-------+-------+-------+
-7| 7 2   |     9 |     5 |
-8| 5 1 3 | 6 7 8 | 2 4 9 |
-9|     4 |   5 7 | 3   6 |
- +-------+-------+-------+
+1. engine.render()            // render BoardView via AsciiRenderer (already works)
+2. prompt "> "
+3. read line from stdin
+4. parse(line) → Command
+5. engine.exec(cmd)
+   ├─ fill  → mutate cell + validate + re-render
+   ├─ clear → clear cell + validate + re-render
+   └─ quit  → return Quit signal, main breaks loop
 ```
 
-Cell rendering (each cell occupies exactly one display position):
-- `0` / empty → `' '` (space)
-- `1`–`9` → the digit character (`'1'` through `'9'`)
+`BoardView` (from `Board.asView()`) is the snapshot GameEngine passes to Renderer. No separate Event type — that was leftover terminology from an earlier design.
 
-No locked/user visual distinction at this stage — every value renders as itself. The `RenderCell.locked` and `RenderCell.conflicting` fields stay in the contract for future UI passes (e.g., TUI dimming, ANSI conflict highlight) but StdoutRenderer treats all values identically.
+### Current state (as of 2026-07-18)
+- ✅ `Board` owns Grid topology, can mutate cells via `setCell()`/`clearCell()`, has `isGiven()` guard
+- ✅ `GameEngine(R)` wraps Board + Renderer — `fill()`, `render()`, `fillAndRender()`
+- ✅ `AsciiRenderer(StylerType)` renders the full 9×9 grid with unicode borders, Styler seam for givens highlighting
+- ✅ `main()` bootstraps GameEngine and renders initial board once
+- ❌ No stdin command parsing — game exits after initial render
+- ❌ No Validator — conflicts between digits across row/col/box are not detected or marked
 
-Border layout:
-- Column header row: letter spacing aligned directly above each cell position.
-- Row label digit + `|` at left margin of every data line.
-- Box dividers across top and between box bands (after rows 3 and 6), plus final closing border.
-- Vertical separators (`|`) between 3-cell groups within each row.
+### Command Type + Parser
 
-Render flow:
-1. Column header across top with letters A–I.
-2. Top border line.
-3. For each data row (1–9): row label + `|` + 9 display chars (space for empty, one digit char per cell).
-4. Box-band dividers after rows 3 and 6.
-5. Final closing border.
+_New module: `src/command.zig`_
+
+A `Command` tagged union and a parser that turns player input lines into commands.
 
 
-
-Methods:
 ```zig
-/// Main public entry — draws full 9×9 grid from a snapshot.
-pub fn render(self: *StdoutRenderer, snap: renderer.RenderSnapshot) anyerror!void {
-    // delegates to helpers below
-}
-
-/// Format one cell as `[]u3` ("[7]", " 7 ", or " ✗7 ✗")
-fn renderCell(cell: renderer.RenderCell) [4]u8
-
-/// Build a single row line with horizontal box separators.
-/// Called for each of the 3 sub-bands per row (top border, cells, bottom separator).
-fn renderRowLine(
-    self: *StdoutRenderer,
-    snap: renderer.RenderSnapshot,
-    row_idx: usize,
-) anyerror!void
+pub const Command = union(enum) {
+    fill,   /// cell reference + digit  (e.g. "fill A1 7")
+    clear,  /// cell reference  (e.g. "clear A3")
+    quit,
+};
 ```
 
-Render flow:
-1. Column header line: letters A–I with spacing directly above cell positions.
-2. Top border: ` +-------+-------+-------+`
-3. For each row (1–9): row label digit + cells in 9x1 grid slots.
-4. Box dividers after rows 3 and 6.
-5. Final closing border.
 
-### Error handling for `try` in render()
+Coordinate addressing: chess-style (A1 = column A, row 1 through I9) mapped to `(row, col)` 0-based indices. Parser returns `ParseError!Command` — bad input is a parse error handled at the stdin boundary in main, not folded into Command itself.
 
-Change `render` return type from `void` to `anyerror!void`. Io.Writer always has an error set (`WriteFailed`) — propagating it is the only correct option.
+### GameEngine extensions
+- Introduce `exec(cmd: Command) anyerror!void` — routes fill/clear/quit through existing Board mutations, re-renders on success.
+- Existing `fill()` and `clearCell()` become internal helpers behind the new `exec()` gate.
+- `quit` command returns a control signal that main's loop interprets as exit.
 
-- **GameEngine.renderOnce()**: propagate via `try` and bubble out. If stdout dies, the game loop terminates — appropriate behaviour.
-- **StdoutRenderer test**: use `_ = r.render(snap) catch unreachable;` — fixed buffer won't overflow under test conditions.
+### Validator (new module: `src/validator.zig`)
+_Wired into GameEngine after each mutation._
 
-### Test seams
-- No TUI assertions. Tests feed Commands into GameEngine and assert emitted Event snapshots match expected state.
-- Validator tested in isolation: construct Board with known conflicts → assert which cells are flagged.
-- RowView/ColView constraint queries verified by unit tests (correct 9-cell membership).
+Given Board state, walks all 9 rows, 9 columns, and 9 Boxes via Grid topology views. Flags any cell whose digit appears more than once in its row/col/box scope. Returns conflict information back to GameEngine, which marks cells on the Board's conflict state so the Styler can decorate them.
+
+Validator responsibilities:
+- Check each non-empty cell against its peer set (row + col + box)
+- Report per-cell conflict: is this cell's digit duplicated in any of its three scopes?
+- Not fallible — always returns a result, never errors
+
+### Main command loop
+
+_Updated `src/main.zig`_
+
+
+```zig
+// pseudo-code
+var engine = try GameEngine(R).init(puzzle_str, &renderer);
+while (true) {
+    print(">");
+    line = reader.readUntilDelimiterOrEof(buf, '\n') catch break;
+    cmd = parse(line) catch |err| { std.log.warn("bad command: {}", .{err}); continue; };
+    switch (cmd) {
+        .quit => break,
+        else => try engine.exec(cmd),
+    }
+}
+```
+
+
+Loop stays tight — no curses/TUI. Stdin/stdout is sufficient for interactive play validation.
 
 ## Acceptance criteria
+- [ ] `Command` tagged union defined with fill/clear/quit variants
 
-- [ ] Player can fill an empty cell with a digit 1–9 via stdin input
-- [ ] Player can clear a filled cell back to empty
-- [ ] Given/prefilled cells cannot be altered
-- [ ] Validator detects conflicts (duplicate digits across row, column, or Box) using Grid topology views
-- [ ] Conflicting cells are visually highlighted in the rendered grid
-- [ ] GameEngine runs validation after each mutation and emits a full-state Event
-- [ ] Integration tests exercise Command→Event seam for fill, clear, and conflict detection
+- [ ] Parser converts chess-style input (e.g., "fill A1 7") to Command struct
+- [ ] GameEngine gains `exec(Command)` entry point behind the event loop
+- [ ] Validator detects conflicts across row/col/box using Grid RowView/ColView topology
+- [ ] Conflicting cells are visually distinguished in the rendered output (via Styler)
+- [ ] Given/prefilled cells cannot be altered by player input
+- [ ] Main event loop runs: render → read input → exec command → re-render
+- [ ] quit command exits cleanly
+- [ ] Parse errors are caught in main and reported without crashing
 
 ## Blocked by
+(none — Board, GameEngine, AsciiRenderer, Styler seam all delivered)
 
-Issue 16 — Styler seam (Ansi/Piano rendering) needed to distinguish given cells from player input in interactive terminal output
-
-### Dependencies resolved
-- ✅ Issue 09: renderer interface exists, StdoutRenderer implemented, conflict marking shape in place
-
-## Comments
-
-### 2026-07-13 — Dep blocked cleared
-Issue 09 (Renderer interface) completed. Dependency satisfied:
-- `renderer.zig`: `RenderSnapshot` + `RenderCell{ value, locked, conflicting }` contract in place
-- `StdoutRenderer.init()` now takes no writer dependency; handles its own stdout
-- All 18 tests passing at 99.67% coverage
-
-Issue 02 is free to build the Validator and interactive game loop next.
-
-### 2026-07-13 — Session resume, StdoutRenderer test fix
-- Fixed `StdoutRenderer` smoke test: `[9][9]RenderCell` literal was only 1 element (81 expected). Replaced with `{.cells = undefined}` — the placeholder render body ignores cell contents anyway so all-zero or all-undefined is equivalent.
-- Kept `try self.w.print(...)` bug (void return vs `!void`) per user direction. Design plan added above under "Error plan" section.
-- Tests won't compile until that `try` / return-type mismatch is addressed.
+### Note on issue 05
+Issue 05 (puzzle loading and difficulty levels) is a sibling concern, not a blocker. The command loop in this issue will start with a single embedded puzzle; once the Command/Parser infrastructure exists, `new_puzzle <difficulty>` becomes a natural extension of that same layer.
