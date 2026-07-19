@@ -16,7 +16,7 @@ pub const PlainStyler = struct {
 
         return std.fmt.bufPrint(
             buf,
-            "{d}| {c} {c} {c} | {c} {c} {c} | {c} {c} {c} |\n", .{
+            "{d}│ {c} {c} {c} │ {c} {c} {c} │ {c} {c} {c} │\n", .{
                 row_idx + 1,
                 cell.displayChar(vals[0]),
                 cell.displayChar(vals[1]),
@@ -43,7 +43,7 @@ test "PlainStyler formats empty board row 0 identically to cellRow" {
     var styler = PlainStyler{};
     const line = try styler.formatRow(0, view, &buf);
 
-    try std.testing.expectEqualStrings("1|       |       |       |\n", line);
+    try std.testing.expectEqualStrings("1│       │       │       │\n", line);
 }
 
 // ============================================================================
@@ -91,7 +91,7 @@ pub const AnsiStyler = struct {
     var s7: [10]u8 = undefined;
     var s8: [10]u8 = undefined;
 
-        return std.fmt.bufPrint(buf, "{d}| {s} {s} {s} | {s} {s} {s} | {s} {s} {s} |\n", .{
+        return std.fmt.bufPrint(buf, "{d}│ {s} {s} {s} │ {s} {s} {s} │ {s} {s} {s} │\n", .{
             row_idx + 1,
             s0[0..style_cell(vals[0], gives[0], &s0)],
             s1[0..style_cell(vals[1], gives[1], &s1)],

@@ -3,13 +3,21 @@ const cell = @import("cell.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
+
 pub fn columnHeader() []const u8 {
-    return "   A B C | D E F | G H I \n";
+    return "   A B C │ D E F │ G H I \n";
 }
 
-/// Return the horizontal box-border line.
-pub fn horizBorder() []const u8 {
-    return " +-------+-------+-------+\n";
+pub fn topBorder() []const u8 {
+    return " ╭───────┼───────┼───────╮\n";
+}
+
+pub fn midBorder() []const u8 {
+    return " ├───────┼───────┼───────┤\n";
+}
+
+pub fn bottomBorder() []const u8 {
+    return " ╰───────┴───────┴───────╯\n";
 }
 
 pub fn AsciiRenderer(StylerType: type) type {
@@ -20,62 +28,61 @@ pub fn AsciiRenderer(StylerType: type) type {
         pub fn init(writer: *Io.Writer, styler_ptr: *StylerType) @This() {
             return .{ .writer = writer, .styler = styler_ptr };
         }
+
         pub fn render(self: *@This(), view: board.Board.BoardView) !void {
             try std.Io.Writer.writeAll(self.writer, columnHeader());
-            try std.Io.Writer.writeAll(self.writer, horizBorder());
+            try std.Io.Writer.writeAll(self.writer, topBorder());
+
             for (0..9) |row| {
                 var rowBuf: [256]u8 = undefined;
                 const line = try self.styler.formatRow(row, view, &rowBuf);
                 try std.Io.Writer.writeAll(self.writer, line);
 
                 if (row == 2 or row == 5) {
-                    try std.Io.Writer.writeAll(self.writer, horizBorder());
+                    try std.Io.Writer.writeAll(self.writer, midBorder());
                 }
             }
 
-            try std.Io.Writer.writeAll(self.writer, horizBorder());
+            try std.Io.Writer.writeAll(self.writer, bottomBorder());
         }
     };
 }
 
-fn cellRow(row: usize, view: board.Board.BoardView, buf: []u8) ![]u8 {
-    const rv = board.Board.asRow(@intCast(row));
-    const vals: [9]cell.CellValue = blk: {
-        var v: [9]cell.CellValue = undefined;
-        for (0..9) |i| {
-            v[i] = view.board.cells[rv.indices[i]].value;
-        }
-        break :blk v;
-    };
-
-    return std.fmt.bufPrint(
-        buf,
-        "{d}| {c} {c} {c} | {c} {c} {c} | {c} {c} {c} |\n", .{
-            row + 1,
-            cell.displayChar(vals[0]), cell.displayChar(vals[1]), cell.displayChar(vals[2]),
-            cell.displayChar(vals[3]), cell.displayChar(vals[4]), cell.displayChar(vals[5]),
-            cell.displayChar(vals[6]), cell.displayChar(vals[7]), cell.displayChar(vals[8]),
-        });
-}
-
-// ---------------------------------------------------------------------------
-// Tests (co-located) — each helper tested before render() assembles them
-// ---------------------------------------------------------------------------
-
+// Tests (co-located) — helper functions + render path
+//
+// These are foundational: columnHeader / topBorder / midBorder / bottomBorder
+// and the row-level tests feed directly into AsciiRenderer.render(). The higher
+// level end-to-end test auto-passes when these lower-level primitives are correct.
+// DO NOT REMOVE these tests if you think "it's duplicated end-to-end" — they're
+// not; they're what make the end-to-end pass. Without them a regression in a
+// helper string or separator goes undetected until someone spots a visual glitch.
 test "column header" {
     try std.testing.expectEqualStrings(
-        "   A B C | D E F | G H I \n",
+        "   A B C │ D E F │ G H I \n",
         columnHeader(),
     );
 }
 
-test "horizontal border" {
+test "top border" {
     try std.testing.expectEqualStrings(
-        " +-------+-------+-------+\n",
-        horizBorder(),
+        " ╭───────┼───────┼───────╮\n",
+        topBorder(),
     );
 }
 
+test "mid border" {
+    try std.testing.expectEqualStrings(
+        " ├───────┼───────┼───────┤\n",
+        midBorder(),
+    );
+}
+
+test "bottom border" {
+    try std.testing.expectEqualStrings(
+        " ╰───────┴───────┴───────╯\n",
+        bottomBorder(),
+    );
+}
 
 
 test "cell row (empty)" {
@@ -83,8 +90,9 @@ test "cell row (empty)" {
     const view = b.asView();
 
     var buf: [64]u8 = undefined;
-    const line = cellRow(0, view, &buf);
-    try std.testing.expectEqualStrings("1|       |       |       |\n", try line);
+    var styler_inst = styler.PlainStyler{};
+    const line = try styler_inst.formatRow(0, view, &buf);
+    try std.testing.expectEqualStrings("1│       │       │       │\n", line);
 }
 
 test "cell row (digits placed)" {
@@ -107,12 +115,11 @@ test "cell row (digits placed)" {
     const view = b.asView();
 
     var buf: [64]u8 = undefined;
-    const line = cellRow(7, view, &buf);
-    try std.testing.expectEqualStrings("8| 5 1 3 | 6 7 8 | 2 4 9 |\n", try line);
+    var styler_inst = styler.PlainStyler{};
+    const line = try styler_inst.formatRow(7, view, &buf);
+    try std.testing.expectEqualStrings("8│ 5 1 3 │ 6 7 8 │ 2 4 9 │\n", line);
 }
-
-
-test "AsciiRenderer renders empty board end-to-end" {
+test "AsciiRenderer renders empty board end-to-end via PlainStyler" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -123,21 +130,62 @@ test "AsciiRenderer renders empty board end-to-end" {
 
     const contents = aw.writer.buffered();
 
-    // expected: column header, 4 borders, 9 empty data rows
-    const expected = "   A B C | D E F | G H I \n" ++
-        " +-------+-------+-------+\n" ++
-        "1|       |       |       |\n" ++
-        "2|       |       |       |\n" ++
-        "3|       |       |       |\n" ++
-        " +-------+-------+-------+\n" ++
-        "4|       |       |       |\n" ++
-        "5|       |       |       |\n" ++
-        "6|       |       |       |\n" ++
-        " +-------+-------+-------+\n" ++
-        "7|       |       |       |\n" ++
-        "8|       |       |       |\n" ++
-        "9|       |       |       |\n" ++
-        " +-------+-------+-------+\n";
+    // expected: column header, top/mid/bottom borders, 9 empty data rows
+    // PlainStyler formatRow uses │ separators and template "{d}| {c}..."
+    const expected = "   A B C │ D E F │ G H I \n" ++
+        " ╭───────┼───────┼───────╮\n" ++
+        "1│       │       │       │\n" ++
+        "2│       │       │       │\n" ++
+        "3│       │       │       │\n" ++
+        " ├───────┼───────┼───────┤\n" ++
+        "4│       │       │       │\n" ++
+        "5│       │       │       │\n" ++
+        "6│       │       │       │\n" ++
+        " ├───────┼───────┼───────┤\n" ++
+        "7│       │       │       │\n" ++
+        "8│       │       │       │\n" ++
+        "9│       │       │       │\n" ++
+        " ╰───────┴───────┴───────╯\n";
 
     try std.testing.expectEqualStrings(expected, contents);
+}
+
+test "AsciiRenderer renders via AnsiStyler - bold givens preserved" {
+    const givens_row = [_]u8{
+        5, 3, 0, 0, 7, 0, 0, 0, 0,
+        6, 0, 0, 1, 9, 5, 0, 0, 0,
+        0, 9, 8, 0, 0, 0, 0, 6, 0,
+    };
+    var rest: [54]u8 = undefined;
+    @memset(&rest, 0);
+
+    var flat: [81]u8 = undefined;
+    @memcpy(flat[0..27], &givens_row);
+    @memcpy(flat[27..], &rest);
+
+    var b = try board.fromFlat(flat);
+    const view = b.asView();
+
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.AnsiStyler{};
+    var renderer = AsciiRenderer(styler.AnsiStyler).init(&aw.writer, &s);
+    try renderer.render(view);
+
+    const contents = aw.writer.buffered();
+
+    const bold_count = fnCount(contents, "\x1b[1m");
+    try std.testing.expect(bold_count > 0);
+}
+
+fn fnCount(haystack: []const u8, needle: []const u8) usize {
+    var count: usize = 0;
+    var start: usize = 0;
+    while (start < haystack.len) {
+        const idx = std.mem.indexOf(u8, haystack[start..], needle) orelse break;
+        count += 1;
+        start += idx + needle.len;
+    }
+    return count;
 }
