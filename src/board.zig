@@ -19,23 +19,25 @@ pub const Board = struct {
 
     /// Read-only borrowed lens over Board flat storage.
     pub const BoardView = struct {
-        board: *const Board,
+        _board: *const Board,
 
         /// Return the value at (row, col).
         pub fn get(self: BoardView, row: u4, col: u4) CellValue {
-            return self.board.getCellValue(row, col);
+            return self._board.getCellValue(row, col);
+
         }
 
         /// Is this cell a puzzle clue (immutable)?
         pub fn isGiven(self: BoardView, row: u4, col: u4) bool {
-            return self.board.isGiven(row, col);
+            return self._board.isGiven(row, col);
+
         }
 
         /// Bulk resolve against flat storage by index list.
         pub fn resolve(self: BoardView, indices: []const usize) [9]CellValue {
             var vals: [9]CellValue = undefined;
             for (indices, 0..) |idx, i| {
-                vals[i] = self.board.cells[idx].value;
+                vals[i] = self._board.cells[idx].value;
             }
             return vals;
         }
@@ -171,7 +173,8 @@ pub const Board = struct {
 
     /// Return a borrowed read-only view of this board's cells.
     pub fn asView(self: *Board) BoardView {
-        return BoardView{ .board = self };
+        return BoardView{ ._board = self };
+
     }
 
     /// Set the value at (row, col). Returns error.NotGiven if the cell is a puzzle clue.

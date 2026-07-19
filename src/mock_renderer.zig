@@ -19,8 +19,8 @@ pub const MockRenderer = struct {
         var cells: [9][9]cell.CellValue = undefined;
         for (0..board.DIMENSION_SIZE) |row| {
             for (0..board.DIMENSION_SIZE) |col| {
-                const idx: usize = @as(usize, @intCast(row)) * board.DIMENSION_SIZE + @as(usize, @intCast(col));
-                cells[row][col] = view.board.cells[idx].value;
+                cells[row][col] = view.get(@intCast(row), @intCast(col));
+
             }
         }
         self.last_rendered_cells = cells;

@@ -9,10 +9,7 @@ pub const PlainStyler = struct {
     pub fn formatRow(self: *PlainStyler, row_idx: usize, view: board.Board.BoardView, buf: []u8) ![]u8 {
         _ = self;
         const rv = board.Board.asRow(@intCast(row_idx));
-        var vals: [9]cell.CellValue = undefined;
-        for (0..9) |i| {
-            vals[i] = view.board.cells[rv.indices[i]].value;
-        }
+        const vals = view.resolve(&rv.indices);
 
         return std.fmt.bufPrint(
             buf,
@@ -74,10 +71,9 @@ pub const AnsiStyler = struct {
         _ = self;
         const rv = board.Board.asRow(@intCast(row_idx));
 
-        var vals: [9]cell.CellValue = undefined;
+        const vals = view.resolve(&rv.indices);
         var gives: [9]bool = undefined;
         for (0..9) |i| {
-            vals[i] = view.board.cells[rv.indices[i]].value;
             gives[i] = view.isGiven(@intCast(row_idx), @intCast(i));
         }
 
