@@ -61,10 +61,10 @@ Import styler module, create Ansi/Styler instance, pass to AsciiRenderer.init al
 Add styler import and reference inside test tuple discovery block. Imports grow from 7 to 8 modules verified through zig test src/root.zig passing across all newly discovered co-located blocks including styler tests.
 
 ## Acceptance criteria
-- [ ] Styler concept defined implementing shared row layout contract via formatRow method — non-fallible, fills passed buffer  
-- [ ] Plain/Styler renders identically to unmodified AsciiRenderer output (bit-for-bit validation against current cell row string generation)
+- [x] Styler concept defined implementing shared row layout contract via formatRow method — non-fallible, fills passed buffer
+- [x] Plain/Styler renders identically to unmodified AsciiRenderer output (bit-for-bit validation against current cell row string generation)
 - [ ] Ansi/Styler produces bold styling only around *given* cells without distorting rendered layout spacing 
-- [ ] Test suite passes with both Styler variants injected alongside current renderer tests covering identical/unadorned emission
+- [x] Test suite passes with both Styler variants injected alongside current renderer tests covering identical/unadorned emission
 
 ## Blocked by
 (none — issue 15 closed)

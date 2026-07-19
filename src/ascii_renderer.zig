@@ -1,5 +1,6 @@
 const board = @import("board.zig");
 const cell = @import("cell.zig");
+const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
 pub fn columnHeader() []const u8 {
@@ -11,29 +12,31 @@ pub fn horizBorder() []const u8 {
     return " +-------+-------+-------+\n";
 }
 
-/// Writer-injected renderer that renders from BoardView directly.
-pub const AsciiRenderer = struct {
-    writer: *Io.Writer,
+pub fn AsciiRenderer(StylerType: type) type {
+    return struct {
+        writer: *Io.Writer,
+        styler: *StylerType,
 
-    pub fn init(writer: *Io.Writer) AsciiRenderer {
-        return .{ .writer = writer };
-    }
-    pub fn render(self: *AsciiRenderer, view: board.Board.BoardView) !void {
-        try std.Io.Writer.writeAll(self.writer, columnHeader());
-        try std.Io.Writer.writeAll(self.writer, horizBorder());
-        for (0..9) |row| {
-            var rowBuf: [64]u8 = undefined;
-            const line = try cellRow(row, view, &rowBuf);
-            try std.Io.Writer.writeAll(self.writer, line);
-
-            if (row == 2 or row == 5) {
-                try std.Io.Writer.writeAll(self.writer, horizBorder());
-            }
+        pub fn init(writer: *Io.Writer, styler_ptr: *StylerType) @This() {
+            return .{ .writer = writer, .styler = styler_ptr };
         }
+        pub fn render(self: *@This(), view: board.Board.BoardView) !void {
+            try std.Io.Writer.writeAll(self.writer, columnHeader());
+            try std.Io.Writer.writeAll(self.writer, horizBorder());
+            for (0..9) |row| {
+                var rowBuf: [256]u8 = undefined;
+                const line = try self.styler.formatRow(row, view, &rowBuf);
+                try std.Io.Writer.writeAll(self.writer, line);
 
-        try std.Io.Writer.writeAll(self.writer, horizBorder());
-    }
-};
+                if (row == 2 or row == 5) {
+                    try std.Io.Writer.writeAll(self.writer, horizBorder());
+                }
+            }
+
+            try std.Io.Writer.writeAll(self.writer, horizBorder());
+        }
+    };
+}
 
 fn cellRow(row: usize, view: board.Board.BoardView, buf: []u8) ![]u8 {
     const rv = board.Board.asRow(@intCast(row));
@@ -113,7 +116,8 @@ test "AsciiRenderer renders empty board end-to-end" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
-    var renderer = AsciiRenderer.init(&aw.writer);
+    var s = styler.PlainStyler{};
+    var renderer = AsciiRenderer(styler.PlainStyler).init(&aw.writer, &s);
     var b = board.Board.init();
     try renderer.render(b.asView());
 
