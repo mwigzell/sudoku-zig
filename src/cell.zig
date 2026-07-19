@@ -27,6 +27,7 @@ pub fn rawToCellValue(raw: u8) CellValue {
         7 => .seven,
         8 => .eight,
         9 => .nine,
+        // LCOV_EXCL_LINE -- unreachable sentinel, provably dead code
         else => unreachable,
     };
 }
