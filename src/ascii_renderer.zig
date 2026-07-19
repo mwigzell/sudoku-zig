@@ -3,7 +3,6 @@ const cell = @import("cell.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
-const text_util = @import("text.zig");
 
 pub fn columnHeader() []const u8 {
     return "   A B C │ D E F │ G H I \n";
@@ -176,7 +175,7 @@ test "AsciiRenderer renders via AnsiStyler - dim givens preserved" {
 
     const contents = aw.writer.buffered();
 
-    const dim_count = text_util.countOccurrences(contents, "\x1b[2m");
+    const dim_count = std.mem.count(u8, contents, "\x1b[2m");
     try std.testing.expect(dim_count > 0);
 }
 
