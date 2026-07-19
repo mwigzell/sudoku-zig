@@ -6,7 +6,8 @@ const mock_renderer = @import("mock_renderer.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
 const ascii_renderer = @import("ascii_renderer.zig");
+const styler = @import("styler.zig");
 
 test {
-    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer };
+    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler };
 }

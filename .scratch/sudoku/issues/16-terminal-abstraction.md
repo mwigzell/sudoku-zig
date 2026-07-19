@@ -1,55 +1,70 @@
-Status: needs-triage
+Status: ready-for-agent
 
-## Working mode
-HITL. Design first; implementation when 15.5 sub-issues are clear.
+## Triage
+Date: 2026-07-18
+
+Blocked by issue 15, cleared (closed).
+
+### Notes
+- Scope narrow per PRD. Styler owns buffer; no cursor logic here, still pure ASCII output
+- Design sketch locked after session review: Plain/Ansi impls via shared row formatting contract
+- Tests cover both variants injected into AsciiRenderer (plain for bit-for-bit identity, ansi adds bold styling around given digits)
 
 ## Parent
 `.scratch/sudoku/prd.md`
 
+## Working mode
+HITL. Design first; implementation after issue 15 (closed).
+
 ## What to build
-Introduce a `Terminal` seam so AsciiRenderer can target different output modes (plain ASCII vs. ANSI escape codes) without changing rendering logic.
+Introduce a **Styler** seam so AsciiRenderer can target different *byte encodings* (plain ASCII vs ANSI decoration) without changing rendering decisions or layout logic.
 
-Currently the renderer writes directly to an `Io.Writer`. Adding bold/red/colour for givens, conflicts, selections etc. means mixing terminal-specific escape sequences into the renderer — or not if running in tests / CI where raw output matters.
+Currently the renderer writes directly to an `Io.Writer` via single format string per row. To distinguish givens from player input, Styler owns per-row buffer fill: it walks board positions inside `formatRow(row_idx, view, buf) []u8`, decides whether to decorate digit runs with CSI codes around given values, and returns filled slice. Static text (borders, column header) still emits via AsciiRenderer; only data rows go through Styler.
 
-Zig doesn't have inheritance, so composition is the way to parameterize emission style:
+## Shape & Contract
+Plain/Styler writes unadorned layout into passed buffer — bit-for-bit identical to current AsciiRenderer output (key invariant).  
+Ansi/Styler wraps decorated runs (given digits inside bold CSI codes) around styled cells. Future styling flags query BoardView/Cell inside same loop — signature stays unchanged as it is now.
 
 ```zig
-const Terminal = struct {
-    fn writeChar(self: *Terminal, ch: u8) !void;
-    fn beginBold(self: *Terminal) !void;
-    fn endStyle(self: *Terminal) !void;
-    fn beginRed(self: *Terminal) !void;
-};
+pub const PlainStyler = struct { ... };
+pub const AnsiStyler = struct { ... };
+
+fn formatRow(self: *Styler, row_idx: usize, view: board.BoardView, buf: []u8) []u8;
 ```
 
-Two concrete implementations from day one:
-| Type | Writes raw chars | Escape codes | Use case |
-|------|-----------------|-------------|----------|
-| `PlainTerminal` (current behaviour) | ✓ | no-ops | tests, validation, CI |
-| `AnsiTerminal` | ✓ | CSI codes (`\033[1m`, `\033[31m`, etc.) | production / default |
+## Scope (step-by-step)
 
-Renderer logic stays identical — only the emission layer differs. This is the same pattern we used for `IoSink` in issue 15.4.
+**16.1 — New file `src/styler.zig`: Plain + Ansi Styler impls**  
+Both structs implement shared contract:
+- `formatRow(self, row_idx: usize, view: board.BoardView, buf: []u8) []u8` — non-fallible, fills buffer with layout string for that data row
 
-### Scope
-- Design the Terminal interface shape (what style methods are needed)
-- Implement PlainTerminal and AnsiTerminal
-- Wire AsciiRenderer through Terminal instead of writing values directly to the writer buffer
-- Default to AnsiTerminal in prod; PlainTerminal in tests
-- Ensure all 32+ renderer tests pass against PlainTerminal
+Plain/Styler delegates through unchanged. Ansi/Styler queries `view.isGiven(r,c)` per cell position and wraps the digit character run in bold CSI codes when given is true.
 
-### Not in scope
-- Colour theme / palette selection
-- Terminal capability detection (tput, etc.) — hardcode for now
-- Selection cursor rendering (that's a UI concern further down)
+Tests (co-located):
+- *PlainStyler produces unadorned row string — assert returned slice matches current `cellRow` bufPrint output exactly*
+- *AnsiStyler wraps given digits in bold CSI codes — parse filled buffer for decoration markers only around expected digit positions*
+
+**16.2 — Modify `src/ascii_renderer.zig`: inject Styler into render path**  
+AsciiRenderer init gains second param: styler pointer. Static lines still emit via AsciiRenderer; row formatting delegates through cellRow into Styler via per-call invocation like:
+```zig
+const line = try self.styler.formatRow(...);
+```
+
+Tests:
+- All 4 existing tests remain green using Plain/Styler injected instead of raw buffer print
+- New test confirms renderer delegates row layout through Styler contract
+
+**16.3 — Modify `src/main.zig`: wire Ansi Styler in prod**  
+Import styler module, create Ansi/Styler instance, pass to AsciiRenderer.init alongside stdout writer. Verified via `zig build run` visual check for ANSI bold styling around given cells in terminal output.
+
+**16.4 — Update `src/root.zig`: add styler module import**  
+Add styler import and reference inside test tuple discovery block. Imports grow from 7 to 8 modules verified through zig test src/root.zig passing across all newly discovered co-located blocks including styler tests.
 
 ## Acceptance criteria
-- [ ] `Terminal` concept defined as a struct with style-emission methods
-- [ ] PlainTerminal renders identically to current AsciiRenderer output
-- [ ] AnsiTerminal produces bold/style wrapping around cell content
-- [ ] Full renderer test suite passes against PlainTerminal (validates visual output unchanged)
-- [ ] Production path defaults to AnsiTerminal
+- [ ] Styler concept defined implementing shared row layout contract via formatRow method — non-fallible, fills passed buffer  
+- [ ] Plain/Styler renders identically to unmodified AsciiRenderer output (bit-for-bit validation against current cell row string generation)
+- [ ] Ansi/Styler produces bold styling only around *given* cells without distorting rendered layout spacing 
+- [ ] Test suite passes with both Styler variants injected alongside current renderer tests covering identical/unadorned emission
 
 ## Blocked by
-Issue 15.5 resolution
-
-## Comments
+(none — issue 15 closed)

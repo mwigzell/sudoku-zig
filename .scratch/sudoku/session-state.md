@@ -1,20 +1,26 @@
-# 15.3 TDD Session State
+# Session 16.1 TDD State — 2024-13-08
 
-**Date:** Fri 17 Jul 2026  
-**Issue:** `.scratch/sudoku/issues/15-refactor/15.3-refactor.md`  
-**Commit:** `0bbb458 refactor(board): nest BoardView inside Board, add resolve() for bulk index resolution`
+## Issue
+#16 — Styler seam (styler.zig: Plain + Ansi variants)
 
-## Completed
-- [x] Test 1: `"Board.BoardView.resolve() resolves same values as getCellValue"` — GREEN
-- [x] BoardView nested inside Board as `Board.BoardView`
-- [x] `resolve(indices: []const usize) [9]CellValue` implemented on BoardView
-- All 39 tests passing, coverage at 99% (board.zig 100%)
+## Completed Cycles
 
-## Pending (Tests 2-5)
-- [ ] Test 2: `"Board: asRow produces contiguous indices for row n"` — needs `Board.RowView`, `asRow()` factory, `getValues()` on RowView
-- [ ] Test 3: `"Board: asCol produces strided indices for column n"` — needs `Board.ColView`, `asCol()` factory, `getValues()` on ColView
-- [ ] Test 4: `"Board: asBox(0, 1) produces correct scattered indices for top-middle box"` — needs `Board.BoxView`, `asBox()` factory, `getValues()` on BoxView
-- [ ] Test 5: `"Board: BoardView reflects mutation on reborrow"` — verify fresh `asView()` after mutations sees updated state
+### Cycle 1: PlainStyler formats empty board row
+- **Red**: Test in `src/styler.zig` asserting `PlainStyler.formatRow(0, view, &buf)` on empty board returns `"1|       |       |       |\n"`
+- **Green**: Minimal PlainStyler with `formatRow(self, row_idx, view, buf) ![]u8` — same algorithm as existing `cellRow`, reusing the RowView + flat-index resolution path
+- **Root updated**: Added styler module import to `src/root.zig` test discovery tuple (7 → 8 modules)
+- **Coverage**: styler.zig at 100%, overall project at 99.82%
 
-## Previous agent note
-Previous session broke board.zig (BoardBoard typos, broken tests, missing resolve() implementation). Restored from `cb37abd` cleanly.
+## Next Steps (per issue #16 scope)
+
+### 16.1 remaining:
+- [ ] Add more PlainStyler tests (row with digits, all 9 rows end-to-end — bit-for-bit match with ascii_renderer output)
+- [ ] AnsiStyler with bold CSI codes around given digits
+- [ ] Test AnsiStyler wraps given digits in `\033[1m` ... `\033[0m`
+
+### 16.2 (after 16.1):
+Modify `src/ascii_renderer.zig` to inject Styler into render path
+
+## Current Files Changed
+- **NEW**: `src/styler.zig` — PlainStyler struct + 1 test
+- **MODIFIED**: `src/root.zig` — added styler import for test discovery

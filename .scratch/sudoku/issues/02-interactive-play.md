@@ -117,7 +117,7 @@ Change `render` return type from `void` to `anyerror!void`. Io.Writer always has
 
 ## Blocked by
 
-(none)
+Issue 16 — Styler seam (Ansi/Piano rendering) needed to distinguish given cells from player input in interactive terminal output
 
 ### Dependencies resolved
 - ✅ Issue 09: renderer interface exists, StdoutRenderer implemented, conflict marking shape in place
