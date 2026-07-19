@@ -48,7 +48,7 @@ test "PlainStyler formats empty board row 0 identically to cellRow" {
 
 // ============================================================================
 /// ANSI constants — Dim ON (givens) / Reset
-const BOLD_ON = "\x1b[2m";
+const DIM_ON = "\x1b[2m";
 const RESET = "\x1b[0m";
 
 // ---------------------------------------------------------------------------
@@ -56,10 +56,10 @@ const RESET = "\x1b[0m";
 /// Writes the display character (optionally CSI-wrapped) into `out` buffer.
 fn style_cell(val: cell.CellValue, is_given: bool, out: []u8) usize {
     if (is_given and val != .zero) {
-        @memcpy(out[0..BOLD_ON.len], BOLD_ON);
-        out[BOLD_ON.len] = cell.displayChar(val);
-        @memcpy(out[BOLD_ON.len + 1 .. BOLD_ON.len + 1 + RESET.len], RESET);
-        return BOLD_ON.len + 1 + RESET.len;
+        @memcpy(out[0..DIM_ON.len], DIM_ON);
+        out[DIM_ON.len] = cell.displayChar(val);
+        @memcpy(out[DIM_ON.len + 1 .. DIM_ON.len + 1 + RESET.len], RESET);
+        return DIM_ON.len + 1 + RESET.len;
     } else {
         out[0] = cell.displayChar(val);
         return 1;
@@ -110,7 +110,7 @@ pub const AnsiStyler = struct {
 // Tests — AnsiStyler wraps given digits in dim CSI codes
 // ---------------------------------------------------------------------------
 
-test "AnsiStyler wraps given digits in bold CSI codes" {
+test "AnsiStyler wraps given digits in dim CSI codes" {
     var givens_row = [_]u8{
         5, 3, 0, 0, 7, 0, 0, 0, 0,
     };
@@ -128,7 +128,7 @@ test "AnsiStyler wraps given digits in bold CSI codes" {
     var styler = AnsiStyler{};
     const line = try styler.formatRow(0, view, &buf);
 
-    const dim_count = countOccurrences(line, BOLD_ON);
+    const dim_count = countOccurrences(line, DIM_ON);
     const reset_count = countOccurrences(line, RESET);
     try std.testing.expectEqual(@as(usize, 3), dim_count);
     try std.testing.expectEqual(@as(usize, 3), reset_count);

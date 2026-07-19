@@ -150,7 +150,7 @@ test "AsciiRenderer renders empty board end-to-end via PlainStyler" {
     try std.testing.expectEqualStrings(expected, contents);
 }
 
-test "AsciiRenderer renders via AnsiStyler - bold givens preserved" {
+test "AsciiRenderer renders via AnsiStyler - dim givens preserved" {
     const givens_row = [_]u8{
         5, 3, 0, 0, 7, 0, 0, 0, 0,
         6, 0, 0, 1, 9, 5, 0, 0, 0,
@@ -175,8 +175,8 @@ test "AsciiRenderer renders via AnsiStyler - bold givens preserved" {
 
     const contents = aw.writer.buffered();
 
-    const bold_count = fnCount(contents, "\x1b[1m");
-    try std.testing.expect(bold_count > 0);
+    const dim_count = fnCount(contents, "\x1b[2m");
+    try std.testing.expect(dim_count > 0);
 }
 
 fn fnCount(haystack: []const u8, needle: []const u8) usize {
