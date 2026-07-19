@@ -134,22 +134,6 @@ test "AnsiStyler wraps given digits in bold CSI codes" {
     try std.testing.expectEqual(@as(usize, 3), reset_count);
 }
 
-// ============================================================================
-/// helper: strip ANSI escape sequences from a string for comparison
-fn stripAnsi(input: []const u8, result_buf: []u8) []u8 {
-    var pos: usize = 0;
-    var i: usize = 0;
-    while (i < input.len) : (i += 1) {
-        if (input[i] == 0x1B and i + 1 < input.len and input[i + 1] == '[') {
-            i += 2;
-            while (i < input.len and input[i] < 0x40) : (i += 1) {}
-            continue;
-        }
-        result_buf[pos] = input[i];
-        pos += 1;
-    }
-    return result_buf[0..pos];
-}
 
 // ============================================================================
 /// helper: count non-overlapping occurrences of needle in haystack
