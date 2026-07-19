@@ -1,6 +1,8 @@
 const board = @import("board.zig");
 const std = @import("std");
 
+/// Canonical puzzle difficulty levels. .default is the legacy dot-blanked fixture.
+
 pub const Difficulty = enum { default, easy, medium, hard };
 
 pub const PuzzleGen = struct {

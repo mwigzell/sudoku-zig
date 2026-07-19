@@ -1,5 +1,8 @@
 const std = @import("std");
 
+/// Scoped logger generator.
+/// Pass a comptime enum literal for the log scope; returns a struct with five
+/// severity methods: `.debug()`, `.info()`, `.warn()`, `.err()`, and `.fatal()`.
 pub fn Logger(comptime scope: @EnumLiteral()) type {
     const log = std.log.scoped(scope);
     return struct {

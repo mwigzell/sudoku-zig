@@ -1,4 +1,6 @@
-Status: needs-triage
+Status: closed
+
+Closed: 2025-06-28 — added `///` doc to `Logger` generator in `logger.zig`. All other items (`Difficulty`, `PuzzleGen.generate()`, `countGivens()`, `fill()`, `fillAndRender()`, `getBoxDigitBits`, `setCell`, `clearCell`) already had docs from earlier review work.
 
 ## Problem
 
@@ -17,5 +19,6 @@ Status: needs-triage
 
 ## Acceptance Criteria
 
-- [ ] Each listed public function/type has a `///` doc comment covering purpose and parameters
-- [ ] No other undocumented public surfaces introduced during work
+- [x] Each listed public function/type has a `///` doc comment covering purpose and parameters
+
+- [x] No other undocumented public surfaces introduced during work
