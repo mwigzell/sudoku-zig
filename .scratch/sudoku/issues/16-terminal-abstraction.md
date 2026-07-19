@@ -63,7 +63,7 @@ Add styler import and reference inside test tuple discovery block. Imports grow 
 ## Acceptance criteria
 - [x] Styler concept defined implementing shared row layout contract via formatRow method — non-fallible, fills passed buffer
 - [x] Plain/Styler renders identically to unmodified AsciiRenderer output (bit-for-bit validation against current cell row string generation)
-- [ ] Ansi/Styler produces bold styling only around *given* cells without distorting rendered layout spacing 
+- [x] Ansi/Styler produces bold styling only around *given* cells without distorting rendered layout spacing
 - [x] Test suite passes with both Styler variants injected alongside current renderer tests covering identical/unadorned emission
 
 ## Blocked by
