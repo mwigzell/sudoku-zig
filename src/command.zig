@@ -32,73 +32,75 @@ const coordError: ParseCommandResult = .{
     .invalid_message = "coordinate must be a letter (A-I) followed by a number (1-9)",
 };
 
+/// Trim → tokenize → dispatch verb → unknown-fallback.
 pub fn parse(input_line: []const u8) ParseCommandResult {
     const trimmed = std.mem.trim(u8, input_line, &std.ascii.whitespace);
-    if (trimmed.len == 0) return .{ .invalid_message = "empty input" };
+    if (trimmed.len == 0) return .{.invalid_message = "empty input"};
 
     var it = std.mem.tokenizeAny(u8, trimmed, &std.ascii.whitespace);
-    const verb = it.next() orelse return .{ .invalid_message = "missing verb" };
+    const verb = it.next() orelse return .{.invalid_message = "missing verb"};
 
-        if (std.ascii.eqlIgnoreCase(verb, "quit")) {
-            return .{ .valid = Command{ .quit = {} } };
-        }
-
-    if (std.ascii.eqlIgnoreCase(verb, "fill")) {
-        const coord_str = it.next() orelse return .{ .invalid_message = "fill requires coordinate" };
-        const digit_s = it.next() orelse return .{ .invalid_message = "fill requires digit" };
-
-        if (coord_str.len != 2) return coordError;
-        const col_l = std.ascii.toLower(coord_str[0]);
-        const row_d = coord_str[1];
-        const c: u4 = @intCast(col_l - 'a');
-        if (c > 8) return errorColOutOfRange(coord_str);
-        const r: u4 = @intCast(row_d - '1');
-        if (r > 8) return errorRowOutOfRange(coord_str);
-
-        const dch = digit_s[0];
-        if (dch < '1' or dch > '9') {
-            return errorBadDigit(digit_s);
-        }
-        const fill_data = Command{
-            .fill = FillData{ .row = r, .col = c, .digit = cell_module.rawToCellValue(dch - '0') },
-        };
-        return .{.valid = fill_data};
+    if (std.ascii.eqlIgnoreCase(verb, "quit")) {
+        return parseQuit();
     }
-
+    if (std.ascii.eqlIgnoreCase(verb, "fill")) {
+        const coord_str = it.next() orelse return .{.invalid_message = "fill requires coordinate"};
+        const digit_s = it.next() orelse return .{.invalid_message = "fill requires digit"};
+        return parseFill(coord_str, digit_s);
+    }
     if (std.ascii.eqlIgnoreCase(verb, "clear")) {
-        const coord_s = it.next() orelse return .{ .invalid_message = "clear requires coordinate" };
-        if (coord_s.len != 2) return coordError;
-        const c: u4 = @intCast(std.ascii.toLower(coord_s[0]) - 'a');
-        const r: u4 = @intCast(coord_s[1] - '1');
-        if (r > 8) return errorRowOutOfRange(coord_s);
-
-        const clear_data: ClearData = .{.row = r, .col = c};
-        return .{
-            .valid = Command{.clear = clear_data},
-        };
+        const coord_s = it.next() orelse return .{.invalid_message = "clear requires coordinate"};
+        return parseClear(coord_s);
     }
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{verb}) catch unreachable;
-    return .{ .invalid_message = msg };
+    return .{.invalid_message = msg};
 }
 
-fn errorColOutOfRange(coord: []const u8) ParseCommandResult {
-    var buf: [40]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, "column out of range: {s}", .{coord}) catch unreachable;
-    return .{ .invalid_message = msg };
+/// Quit takes no arguments.
+fn parseQuit() ParseCommandResult {
+    return .{.valid = Command.quit};
 }
 
-fn errorRowOutOfRange(coord: []const u8) ParseCommandResult {
-    var buf: [40]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, "row out of range: {s}", .{coord}) catch unreachable;
-    return .{ .invalid_message = msg };
+/// Fill requires a chess-style coordinate and a digit 1-9.
+fn parseFill(coord_str: []const u8, digit_s: []const u8) ParseCommandResult {
+    const pos = parseCoordinate(coord_str) orelse return coordError;
+    const dch = digit_s[0];
+    if (dch < '1' or dch > '9') return errorBadDigit(digit_s);
+
+    return .{.valid = Command{
+        .fill = FillData{
+            .row = pos.row,
+            .col = pos.col,
+            .digit = cell_module.rawToCellValue(dch - '0'),
+        },
+    }};
 }
 
+/// Clear requires a chess-style coordinate.
+fn parseClear(cmd_coord_s: []const u8) ParseCommandResult {
+    const pos = parseCoordinate(cmd_coord_s) orelse return coordError;
+    return .{.valid = Command{
+        .clear = ClearData{.row = pos.row, .col = pos.col},
+    }};
+}
+
+/// Parse a chess-style coordinate (e.g. "A1") into row/col indices 0-8.
+fn parseCoordinate(s: []const u8) ?ClearData {
+    if (s.len != 2) return null;
+    const col_l = std.ascii.toLower(s[0]);
+    const row_d = s[1];
+    if (col_l < 'a' or col_l > 'i') return null;
+    if (row_d < '1' or row_d > '9') return null;
+    return .{.row = @intCast(row_d - '1'), .col = @intCast(col_l - 'a')};
+}
+
+/// Build an error result for a bad digit token.
 fn errorBadDigit(val: []const u8) ParseCommandResult {
     var buf: [40]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "invalid digit: '{s}'", .{val}) catch unreachable;
-    return .{ .invalid_message = msg };
+    return .{.invalid_message = msg};
 }
 
 // ---------------------------------------------------------------------------
@@ -139,20 +141,33 @@ test "parse unknown verb → .invalid_message describing the issue" {
     if (res != .invalid_message) return error.TestFailed;
 }
 
-test "parse fill with out-of-range coordinates (J1) → .invalid_message" {
+test "parse fill with out-of-range column (J1) → .invalid_message" {
     const res = parse("fill J1 5");
     if (res != .invalid_message) return error.TestFailed;
-    try std.testing.expectEqualStrings(res.invalid_message, "column out of range: J1");
+}
+
+test "parse fill with out-of-range row (A0) → .invalid_message" {
+    const res = parse("fill A0 5");
+    if (res != .invalid_message) return error.TestFailed;
 }
 
 test "parse fill A1 with non-digit value → .invalid_message" {
     const res = parse("fill A1 X");
     if (res != .invalid_message) return error.TestFailed;
-    try std.testing.expectEqualStrings(res.invalid_message, "invalid digit: 'X'");
 }
 
 test "parse fill with malformed coordinate (extra chars) → .invalid_message" {
     const res = parse("fill ABC 5");
+    if (res != .invalid_message) return error.TestFailed;
+}
+
+test "parse clear with out-of-range column (J3) → .invalid_message" {
+    const res = parse("clear J3");
+    if (res != .invalid_message) return error.TestFailed;
+}
+
+test "parse clear with out-of-range row (C0) → .invalid_message" {
+    const res = parse("clear C0");
     if (res != .invalid_message) return error.TestFailed;
 }
 

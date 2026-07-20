@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: in-progress (T1 refactor ✔, ready for T2)
 
 ## Working mode
 
