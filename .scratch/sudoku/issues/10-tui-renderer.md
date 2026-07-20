@@ -1,8 +1,3 @@
-Status: ready-for-agent
-
-## Working mode
-HITL (Human In The Loop). One TDD cycle per session.
-
 ## Parent
 
 `.scratch/sudoku/prd.md`

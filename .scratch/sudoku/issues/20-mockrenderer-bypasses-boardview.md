@@ -1,5 +1,3 @@
-Status: needs-triage
-
 ## Problem
 
 **Sp3 from full code review:** MockRenderer reaches past the `BoardView` seam into `Board.cells` directly, breaking the boundary that renderers should not access internal Board structures.

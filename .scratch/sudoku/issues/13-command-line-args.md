@@ -1,5 +1,3 @@
-Status: needs-triage
-
 ## Parent
 
 `.scratch/sudoku/prd.md`

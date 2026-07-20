@@ -1,4 +1,4 @@
-Status: resolved
+Status: closed
 Resolved in d58a0ef + 882dbbc
 
 ## Parent

@@ -40,6 +40,7 @@ pub fn GameEngine(comptime R: type) type {
             self.fill(row_idx, col_idx, value);
             try self.render();
         }
+
         /// Route a parsed command through Board mutation + render update.
         pub fn exec(self: *@This(), cmd: command.Command) anyerror!CommandResult {
             switch (cmd) {
@@ -72,8 +73,6 @@ pub fn GameEngine(comptime R: type) type {
             self.renderer.render(self.board.asView()) catch {};
             return CommandResult.ok;
         }
-
-
     };
     return Engine;
 }
@@ -92,8 +91,6 @@ test "GameEngine fill updates cell in snapshot" {
     const cells = mock.last_rendered_cells orelse unreachable;
     try std.testing.expectEqual(cell.CellValue.seven, cells[0][3]);
 }
-
-
 
 test "GameEngine init builds board, explicit render emits snapshot" {
     var mock = mock_renderer.MockRenderer.init();
@@ -120,7 +117,8 @@ test "GameEngine init builds board, explicit render emits snapshot" {
 test "exec fill non-given cell → .ok" {
     var mock = mock_renderer.MockRenderer.init();
     var engine = try GameEngine(mock_renderer.MockRenderer).init(
-        puzzle_gen.PuzzleGen.default(), &mock,
+        puzzle_gen.PuzzleGen.default(),
+        &mock,
     );
 
     const fill_cmd = command.Command{
@@ -135,7 +133,8 @@ test "exec fill non-given cell → .ok" {
 test "exec fill given cell → .error_msg" {
     var mock = mock_renderer.MockRenderer.init();
     var engine = try GameEngine(mock_renderer.MockRenderer).init(
-        puzzle_gen.PuzzleGen.default(), &mock,
+        puzzle_gen.PuzzleGen.default(),
+        &mock,
     );
 
     // A1 (0, 0) is a given ('6'.)
@@ -155,7 +154,8 @@ test "exec fill given cell → .error_msg" {
 test "exec clear given cell → .error_msg" {
     var mock = mock_renderer.MockRenderer.init();
     var engine = try GameEngine(mock_renderer.MockRenderer).init(
-        puzzle_gen.PuzzleGen.default(), &mock,
+        puzzle_gen.PuzzleGen.default(),
+        &mock,
     );
 
     const clear_cmd = command.Command{
@@ -168,10 +168,11 @@ test "exec clear given cell → .error_msg" {
 
 test "exec quit → .ok" {
     var mock = mock_renderer.MockRenderer.init();
-    _ = mock.call_count;  // silence unused warning on variable we check below
+    _ = mock.call_count; // silence unused warning on variable we check below
 
     var engine = try GameEngine(mock_renderer.MockRenderer).init(
-        puzzle_gen.PuzzleGen.default(), &mock,
+        puzzle_gen.PuzzleGen.default(),
+        &mock,
     );
 
     const quit_cmd: command.Command = .{ .quit = {} };
@@ -179,4 +180,3 @@ test "exec quit → .ok" {
 
     if (result != .ok) return error.TestFailed;
 }
-

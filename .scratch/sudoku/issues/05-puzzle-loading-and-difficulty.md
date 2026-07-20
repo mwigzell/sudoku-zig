@@ -1,5 +1,3 @@
-Status: ready-for-agent
-
 ## Parent
 
 `.scratch/sudoku/prd.md`

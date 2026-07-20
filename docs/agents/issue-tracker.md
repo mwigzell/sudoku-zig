@@ -11,7 +11,10 @@ Issues and PRDs for this repo live as markdown files in `.scratch/`.
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 - When closing an issue, acceptance criteria will have already been verified and checked off during triage (see `/triage` skill, step 3). Set `Status: closed`, then scan all other open issues for blocking references to it, removing them from those lists.
 ## sub issues
-- When an issue or sub-issue closes, remove it from any issue that is blocked by it in the "Blocked By" section
+- issues/NN-slug/ = nested steps for parent NN-slug.md
+- Parent Status: never ready-for-agent if it has a subfolder
+- Leaf filename prefix: 01-red-, 02-green-, 03-refactor-
+- When asub-issue closes, remove it from any issue that is blocked by it in the "Blocked By" section
 
 ## When a skill says "publish to the issue tracker"
 

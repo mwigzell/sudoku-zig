@@ -15,6 +15,7 @@ pub const BoxCellCount = BOX_DIMENSION * BOX_DIMENSION;
 pub const Board = struct {
     cells: [CELL_COUNT]Cell,
     given_bits: u128, // bit-per-cell mask of immutable puzzle clues
+    _conflict_bits: u128, // bit-per-cell mask of cells with duplicates
     digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
 
     /// Read-only borrowed lens over Board flat storage.
@@ -81,6 +82,7 @@ pub const Board = struct {
             b.cells[i] = Cell.init(.zero);
         }
         b.given_bits = 0;
+        b._conflict_bits = 0;
         @memset(&b.digit_bits, 0);
         return b;
     }
@@ -122,6 +124,21 @@ pub const Board = struct {
     pub fn isGiven(self: Board, row: u4, col: u4) bool {
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
         return ((self.given_bits >> @intCast(idx)) & 1) == 1;
+    }
+
+    /// Is this cell flagged in conflict with another cell?
+    pub fn isConflicting(self: Board, idx: usize) bool {
+        return ((self._conflict_bits >> @intCast(idx)) & 1) == 1;
+    }
+
+    /// Mark cell at flat index `idx` as conflicting.
+    pub fn setConflictBit(self: *Board, idx: usize) void {
+        self._conflict_bits |= @as(u128, 1) << @intCast(idx);
+    }
+
+    /// Clear all conflict bits (called before re-validation).
+    pub fn clearConflicts(self: *Board) void {
+        self._conflict_bits = 0;
     }
 
     /// Return a RowView for row n (0..8).
@@ -669,4 +686,27 @@ test "Board: BoardView reflects mutation on reborrow" {
     // Cleared cell is zero on fresh view
     try std.testing.expectEqual(CellValue.zero, v2.get(7, 0));
     try std.testing.expect(!v2.isGiven(7, 0));
+}
+
+test "Board: conflict bits start clear and can be set/cleared individually" {
+    var b = Board.init();
+
+    // All cells clear to begin with
+    for (0..CELL_COUNT) |i| {
+        try std.testing.expect(!b.isConflicting(i));
+    }
+
+    // Mark two arbitrary cells as conflicting
+    b.setConflictBit(10);  // row 1, col 1
+    b.setConflictBit(50);  // row 5, col 5
+
+    try std.testing.expect(b.isConflicting(10));
+    try std.testing.expect(b.isConflicting(50));
+    try std.testing.expect(!b.isConflicting(0));   // untouched
+
+    // Clear all conflicts
+    b.clearConflicts();
+
+    try std.testing.expect(!b.isConflicting(10));
+    try std.testing.expect(!b.isConflicting(50));
 }
