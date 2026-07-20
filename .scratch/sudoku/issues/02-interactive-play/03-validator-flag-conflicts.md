@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 Type: task
 Blocked by: (none — independent of exec path wiring)
 
