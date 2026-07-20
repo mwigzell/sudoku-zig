@@ -1,4 +1,4 @@
-Status: in-progress (T1 refactor ✔, ready for T2)
+Status: in-progress (T1 ✔, T2 ✔, ready for T3)
 
 ## Working mode
 
