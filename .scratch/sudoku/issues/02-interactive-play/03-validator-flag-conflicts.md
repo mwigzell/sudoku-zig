@@ -12,9 +12,9 @@ Confirm no validator module exists; confirm Board has no conflict-tracking field
 ### Test (write first)
 - [x] `"validate empty board → all clear"` — 81 cells, zero conflicts
 - [x] `"validate row conflict → both duplicate cells flagged"` — two cells in same row share digit, both marked
-- [ ] `"validate column conflict → duplicates flagged"`
-- [ ] `"validate box conflict → duplicates within 3×3 flagged"`
-- [ ] `"validate no false positives — unique digits across all scopes"`
+- [x] `"validate column conflict → duplicates flagged"`
+- [x] `"validate box conflict → duplicates within 3×3 flagged"`
+- [x] `"validate no false positives — unique digits across all scopes"`
 ### Code (write after test)
 New `src/validator.zig`:
 - Walk each RowView (9), ColView (9), BoxView (9)
