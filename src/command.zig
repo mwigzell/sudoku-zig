@@ -5,8 +5,8 @@ const cell_module = @import("cell.zig");
 // Types
 // ---------------------------------------------------------------------------
 
-const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
-const ClearData = struct { row: u4, col: u4 };
+pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
+pub const ClearData = struct { row: u4, col: u4 };
 pub const CommandTag = enum { fill, clear, quit };
 
 /// Command a player can issue to the game.
