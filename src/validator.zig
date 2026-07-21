@@ -291,3 +291,56 @@ test "refreshConflictsForCell updates only affected scopes" {
     try std.testing.expect(b.isConflicting(43));
 }
 
+test "refreshConflictsForCell creates new conflict" {
+    var b = board.Board.init();
+    // Set up: row 0 has five at (0,3); row 4 has three at (4,1) and (4,7)
+    try b.setCell(0, 3, .five);
+    try b.setCell(4, 1, .three);
+    try b.setCell(4, 7, .three);
+
+    validateBoard(&b);
+
+    // Only the row-4 pair is conflicting
+    try std.testing.expect(!b.isConflicting(3));  // (0,3) — five, unique in row 0
+    try std.testing.expect(b.isConflicting(37));  // (4,1)
+    try std.testing.expect(b.isConflicting(43));  // (4,7)
+
+    // Now make (0,5) also five → creates row-0 conflict for both (0,3) and (0,5)
+    b.cells[5].value = .five;
+    refreshConflictsForCell(&b, 0, 5);
+
+    // New conflict pair flagged in row 0
+    try std.testing.expect(b.isConflicting(3));   // (0,3) now conflicts with (0,5)
+    try std.testing.expect(b.isConflicting(5));   // (0,5) conflicts with (0,3)
+
+    // Unrelated row-4 conflict still intact
+    try std.testing.expect(b.isConflicting(37));
+    try std.testing.expect(b.isConflicting(43));
+} 
+test "refreshConflictsForCell does not touch unrelated cells" {
+    var b = board.Board.init();
+    // Conflicts in row 2: eight at (2,0) and (2,5)
+    try b.setCell(2, 0, .eight);
+    try b.setCell(2, 5, .eight);
+    // And a unique cell in row 6 that should never be flagged:
+    try b.setCell(6, 3, .one);
+
+    validateBoard(&b);
+
+    // Row-2 pair flagged; row-6 cell is clear
+    try std.testing.expect(b.isConflicting(18));   // (2,0)
+    try std.testing.expect(b.isConflicting(23));   // (2,5)
+    try std.testing.expect(!b.isConflicting(59));  // (6,3) — unique
+
+    // Change an unrelated cell in col 7: set (1,7) to nine
+    b.cells[16].value = .nine;  // flat index 1*9+7 = 16
+    refreshConflictsForCell(&b, 1, 7);
+
+    // Row-2 conflicts untouched
+    try std.testing.expect(b.isConflicting(18));
+    try std.testing.expect(b.isConflicting(23));
+
+    // (6,3) still not flagged — refresh on (1,7) doesn't reach row 6 / col 3 / box 5
+    try std.testing.expect(!b.isConflicting(59));
+}
+

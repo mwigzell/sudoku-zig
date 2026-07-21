@@ -1,32 +1,57 @@
-Status: closed
+Status: ready-for-agent
 Type: task
-Blocked by: (none — independent of exec path wiring)
+Blocked by: (none — validator.zig compiles but has stale code to replace)
 
 ## What to build
 
-New file `src/validator.zig` — walk Board's RowView/ColView/BoxView scopes and flag cells whose digit is duplicated within any scope. Conflict state lives on Board as a new field (e.g. `conflict_bits: u128`) so it is captured in BoardView and flows through to Styler.
+Refactor `src/validator.zig` to use a single, lens-agnostic scope conflict detector powered by Board's RowView/ColView/BoxView indices. Borrow the count-array pattern from `.scratch/sudoku/issues/02-interactive-play/sudoku-conflict-api.zig` (read-only reference — do not copy as-is).
 
-### Verify before code
-Confirm no validator module exists; confirm Board has no conflict-tracking field yet.
+### Design decision
 
-### Test (write first)
-- [x] `"validate empty board → all clear"` — 81 cells, zero conflicts
-- [x] `"validate row conflict → both duplicate cells flagged"` — two cells in same row share digit, both marked
-- [x] `"validate column conflict → duplicates flagged"`
-- [x] `"validate box conflict → duplicates within 3×3 flagged"`
-- [x] `"validate no false positives — unique digits across all scopes"`
-### Code (write after test)
-New `src/validator.zig`:
-- Walk each RowView (9), ColView (9), BoxView (9)
-- For each scope, scan 9 cells, detect any digit appearing more than once among non-empty cells
-- Mark all conflicting positions (the cell and its peer(s))
-- `pub fn flagConflicts(board: *Board) void` — modifies Board; always succeeds
+Validator knows Cell only (no Board import). One pure function:
+```zig
+pub fn flagScopeConflicts(cells: []const Cell, indices: []const usize) u128
+```
+Takes 81 cells + 9 flat-storage indices, scans with a `[10]u8` count array, returns bits 0..8 where bit `i` means the cell at `indices[i]` is duplicated. Works for ANY scope — no row/col/box-specific code.
 
-Also modify `src/board.zig`:
-- Add `conflict_bits: u128` field to Board struct for per-cell conflict tracking
+Board owns:
+- `validateBoard(b: *Board)` — full revalidation across all 27 scopes (9 rows + 9 cols + 9 boxes)
+- `refreshConflictsForCell(row, col)` — incremental: clear only the affected row+col+box bits via a units mask, re-run detector on just those 3 scopes, OR results back
+- Small helper to translate scope-relative bits (0..8) into full u128 board positions using the View indices
+
+### Session plan (step by step)
+
+**Step 1 — Write tests for `flagScopeConflicts` (TDD)**
+Replace existing 6 tests with cleaner equivalents against the new signature:
+- empty scope → 0
+- row duplicate at positions 0 and 3 → bits 0|3 set
+- column duplicate at positions 2 and 7 → bits 2|7 set
+- box duplicate at positions 1 and 6 → bits 1|6 set
+- unique digits → no false positives
+- three-of-a-kind (same digit appears 3x) → all 3 flagged
+
+**Step 2 — Implement `flagScopeConflicts`**
+Count-array scan (`[10]u8`). Remove dead code: the old double-loop `flagConflicts`, the stale comments at line 92-95, the private `flagScope`/`flagScopeInPlace`.
+
+**Step 3 — Wire Board side (validateBoard)**
+Replace current validateBoard + flagScopeInPlace loop with a helper that:
+1. Takes `(b: *const Board, indices: []const usize)`
+2. Calls `flagScopeConflicts`
+3. Translates scope bits 0..8 → full u128 board mask
+4. Returns the board mask for OR-ing into `conflict_bits`
+
+**Step 4 — Add incremental path (refreshConflictsForCell)**
+- `unitsMask(row, col)` — precomputes which of the 9 cells in a given row/col/box map to (max 27 bits across all 3 scopes)
+- Clear those bits from `conflict_bits` via `&= ~mask`
+- Re-detect just the affected row, column, and box
+- OR results back into `conflict_bits`
+
+**Step 5 — Integration tests for full + incremental paths**
+Tests already exist (validateBoard flags row/col/box conflicts) — adapt if API shape changed. Add:
+- "refreshConflictsForCell updates only affected scopes"
+- "refreshConflictsForCell does not touch unrelated cells"
 
 ### Verify after
-`zig test src/validator.zig` passes. Coverage on validator logic > 90%.
+- [ ] `zig test src/validator.zig` passes with 7+ unit tests (flagScopeConflicts)
+- [ ] `zig build cov` — validator.zig > 95% coverage
 
-### root.zig update
-Add `const validator = @import("validator.zig");` and reference inside root `test {}` tuple.

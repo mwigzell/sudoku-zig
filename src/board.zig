@@ -15,7 +15,7 @@ pub const BoxCellCount = BOX_DIMENSION * BOX_DIMENSION;
 pub const Board = struct {
     cells: [CELL_COUNT]Cell,
     given_bits: u128, // bit-per-cell mask of immutable puzzle clues
-    _conflict_bits: u128, // bit-per-cell mask of cells with duplicates
+    conflict_bits: u128, // bit-per-cell mask of cells with duplicates
     digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
 
     /// Read-only borrowed lens over Board flat storage.
@@ -82,7 +82,7 @@ pub const Board = struct {
             b.cells[i] = Cell.init(.zero);
         }
         b.given_bits = 0;
-        b._conflict_bits = 0;
+        b.conflict_bits = 0;
         @memset(&b.digit_bits, 0);
         return b;
     }
@@ -128,17 +128,17 @@ pub const Board = struct {
 
     /// Is this cell flagged in conflict with another cell?
     pub fn isConflicting(self: Board, idx: usize) bool {
-        return ((self._conflict_bits >> @intCast(idx)) & 1) == 1;
+        return ((self.conflict_bits >> @intCast(idx)) & 1) == 1;
     }
 
     /// Mark cell at flat index `idx` as conflicting.
     pub fn setConflictBit(self: *Board, idx: usize) void {
-        self._conflict_bits |= @as(u128, 1) << @intCast(idx);
+        self.conflict_bits |= @as(u128, 1) << @intCast(idx);
     }
 
     /// Clear all conflict bits (called before re-validation).
     pub fn clearConflicts(self: *Board) void {
-        self._conflict_bits = 0;
+        self.conflict_bits = 0;
     }
 
     /// Return a RowView for row n (0..8).
