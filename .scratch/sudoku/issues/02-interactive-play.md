@@ -1,5 +1,5 @@
 Status: needs-triage
-Triage date: 
+Triage date: 2025-07-18
 Triage notes:
   - Parent umbrella for interactive play loop (US1/US2/US3 from PRD).
   - Sub-steps broken into T1–T6 per README spec.
@@ -9,7 +9,7 @@ Triage notes:
 
 - [x] 01-command-parser (T1) — command union + parser returning ParseCommandResult
 - [x] 02-game-engine-exec (T2) — exec(Command) returns CommandResult with given-cell feedback
-- [ ] 03-validator-flag-conflicts (T3) — walk Board views and flag conflicting cells
+- [x] 03-validator-flag-conflicts (T3) — walk Board views and flag conflicting cells
 - [ ] 04-exec-wires-validator (T4) — wire validator into exec path post-mutation
 - [ ] 05-styler-conflict-decoration (T5) — AnsiStyler decorates conflicting cells
 - [ ] 06-main-command-loop (T6) — full command loop with acknowledge gate
@@ -40,7 +40,7 @@ Replace the "render once and exit" main with a command-driven loop. The player t
 - [x] Command tagged union defined with fill/clear/quit variants and chess-style coordinate parse
 - [x] Parser returns ParseCommandResult — valid commands carry structure, invalid inputs carry rejection message
 - [x] GameEngine gains exec(Command) !CommandResult entry point; given-cell rejections surface as .error_msg
-- [ ] Validator detects digit conflicts across row/col/box using Board topology
+- [x] Validator detects digit conflicts across row/col/box using Board topology
 - [ ] Conflicting cells are visually distinguished via AnsiStyler
 - [ ] Main event loop: render → prompt → read → parse → switch → exec → acknowledge (on failures)
 - [ ] quit command exits cleanly

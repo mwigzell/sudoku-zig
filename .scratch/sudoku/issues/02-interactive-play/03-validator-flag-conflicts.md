@@ -1,4 +1,4 @@
-Status: done
+Status: closed
 Type: task
 Blocked by: (none — validator.zig compiles but has stale code to replace)
 
