@@ -3,6 +3,8 @@ const board = @import("board.zig");
 const cell = @import("cell.zig");
 
 pub const CommandResult = union(enum) { ok, error_msg: []const u8 };
+pub const GameEngineErrorSet = error{RenderFailed};
+
 
 /// GameEngine is generic over the Renderer type it receives at init.
 /// Holds Board state and delegates snapshot emission to the renderer.
@@ -10,7 +12,7 @@ pub fn GameEngine(comptime R: type) type {
     const Engine = struct {
         board: board.Board,
 
-        /// Render delegate — must satisfy `render(RenderSnapshot) anyerror!void` contract.
+        /// Render delegate — must satisfy `render(BoardView) anyerror!void` contract.
         renderer: *R,
 
         /// Construct from a one-line puzzle string.
@@ -44,7 +46,7 @@ pub fn GameEngine(comptime R: type) type {
         }
 
         /// Route a parsed command through Board mutation + render update.
-        pub fn exec(self: *@This(), cmd: command.Command) anyerror!CommandResult {
+        pub fn exec(self: *@This(), cmd: command.Command) GameEngineErrorSet!CommandResult {
             switch (cmd) {
                 .fill => |f| {
                     return self.tryFill(f.row, f.col, f.digit);
@@ -59,22 +61,29 @@ pub fn GameEngine(comptime R: type) type {
         }
 
         /// Attempt to fill a cell — surfaces given-cell rejections as error_msg.
-        fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) CommandResult {
+        fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) GameEngineErrorSet!CommandResult {
             self.board.setCell(row, col, digit) catch {
                 return CommandResult{ .error_msg = "cannot overwrite a given cell" };
             };
             self.board.refreshConflictsForCell(row, col);
-            self.renderer.render(self.board.asView()) catch {};
+            // Narrow renderer's anyerror to our explicit error set
+            self.renderer.render(self.board.asView()) catch {
+                return GameEngineErrorSet.RenderFailed;
+            };
             return CommandResult.ok;
         }
+
         /// Attempt to clear a cell — refuses if the cell is given.
-        fn tryClear(self: *@This(), row: u4, col: u4) CommandResult {
+        fn tryClear(self: *@This(), row: u4, col: u4) GameEngineErrorSet!CommandResult {
             if (self.board.isGiven(row, col)) {
                 return CommandResult{ .error_msg = "cannot clear a given cell" };
             }
             self.board.clearCell(row, col);
             self.board.refreshConflictsForCell(row, col);
-            self.renderer.render(self.board.asView()) catch {};
+            // Narrow renderer's anyerror to our explicit error set
+            self.renderer.render(self.board.asView()) catch {
+                return GameEngineErrorSet.RenderFailed;
+            };
             return CommandResult.ok;
         }
     };
