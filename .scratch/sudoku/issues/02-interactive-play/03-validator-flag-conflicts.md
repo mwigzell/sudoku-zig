@@ -53,6 +53,4 @@ Tests already exist (validateBoard flags row/col/box conflicts) — adapt if API
 
 ### Verify after
 - [x] `zig test src/validator.zig` passes with 7+ unit tests (flagScopeConflicts)
-
-
 - [x] `zig build cov` — validator.zig > 95% coverage
