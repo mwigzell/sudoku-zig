@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 Type: task
 Blocked by: 02-game-engine-exec, 03-validator-flag-conflicts
 
