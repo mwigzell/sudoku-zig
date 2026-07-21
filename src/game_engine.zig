@@ -3,7 +3,6 @@ const board = @import("board.zig");
 const cell = @import("cell.zig");
 
 pub const CommandResult = union(enum) { ok, error_msg: []const u8 };
-pub const GameEngineErrorSet = error{RenderFailed};
 
 
 /// GameEngine is generic over the Renderer type it receives at init.
@@ -46,7 +45,7 @@ pub fn GameEngine(comptime R: type) type {
         }
 
         /// Route a parsed command through Board mutation + render update.
-        pub fn exec(self: *@This(), cmd: command.Command) GameEngineErrorSet!CommandResult {
+        pub fn exec(self: *@This(), cmd: command.Command) anyerror!CommandResult {
             switch (cmd) {
                 .fill => |f| {
                     return self.tryFill(f.row, f.col, f.digit);
@@ -61,29 +60,23 @@ pub fn GameEngine(comptime R: type) type {
         }
 
         /// Attempt to fill a cell — surfaces given-cell rejections as error_msg.
-        fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) GameEngineErrorSet!CommandResult {
+        fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!CommandResult {
             self.board.setCell(row, col, digit) catch {
                 return CommandResult{ .error_msg = "cannot overwrite a given cell" };
             };
             self.board.refreshConflictsForCell(row, col);
-            // Narrow renderer's anyerror to our explicit error set
-            self.renderer.render(self.board.asView()) catch {
-                return GameEngineErrorSet.RenderFailed;
-            };
+            try self.renderer.render(self.board.asView());
             return CommandResult.ok;
         }
 
         /// Attempt to clear a cell — refuses if the cell is given.
-        fn tryClear(self: *@This(), row: u4, col: u4) GameEngineErrorSet!CommandResult {
+        fn tryClear(self: *@This(), row: u4, col: u4) anyerror!CommandResult {
             if (self.board.isGiven(row, col)) {
                 return CommandResult{ .error_msg = "cannot clear a given cell" };
             }
             self.board.clearCell(row, col);
             self.board.refreshConflictsForCell(row, col);
-            // Narrow renderer's anyerror to our explicit error set
-            self.renderer.render(self.board.asView()) catch {
-                return GameEngineErrorSet.RenderFailed;
-            };
+            try self.renderer.render(self.board.asView());
             return CommandResult.ok;
         }
     };
@@ -304,4 +297,16 @@ test "init calls validate so initial conflicts are detected" {
     // (If validate were NOT called, we can't prove it via absence of conflicts,
     // but a well-formed puzzle confirms at least that validate runs without crashing.)
     try std.testing.expect(mock.call_count == 0);
+}
+
+// ---------------------------------------------------------------------------
+// Integration test — game engine init propagates board error from puzzle
+// ---------------------------------------------------------------------------
+
+test "GameEngine.init propagates invalid puzzle error" {
+    var mock = mock_renderer.MockRenderer.init();
+    try std.testing.expectError(
+        board.BoardError.WrongLength,
+        GameEngine(mock_renderer.MockRenderer).init("too-short", &mock),
+    );
 }

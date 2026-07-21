@@ -35,6 +35,12 @@ pub const Board = struct {
 
         }
 
+        /// Is this cell flagged in conflict?
+        pub fn isConflictingRowCol(self: BoardView, row: u4, col: u4) bool {
+            const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
+            return self._board.isConflicting(idx);
+        }
+
         /// Bulk resolve against flat storage by index list.
         pub fn resolve(self: BoardView, indices: []const usize) [9]CellValue {
             var vals: [9]CellValue = undefined;

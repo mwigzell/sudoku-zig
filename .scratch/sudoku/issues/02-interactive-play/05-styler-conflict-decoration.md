@@ -1,4 +1,4 @@
-Status: needs-triage
+Status: closed
 Type: task
 Blocked by: 04-exec-wires-validator
 
