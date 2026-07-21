@@ -1,4 +1,4 @@
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: 02-game-engine-exec, 03-validator-flag-conflicts
 
