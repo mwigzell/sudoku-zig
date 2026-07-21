@@ -4,10 +4,10 @@ Blocked by: 02-game-engine-exec, 03-validator-flag-conflicts
 
 ## What to build
 
-Modify `game_engine.zig` — wire `validator.flagConflicts()` into the exec path. After every Board mutation (setCell/clearCell), call the validator so conflict state is fresh before render copies BoardView and Styler accesses it.
+Modify `game_engine.zig` — wire validator into the exec path. After every Board mutation (setCell/clearCell), call the incremental validator so conflict state is fresh before render copies BoardView and Styler accesses it.
 
 ### Verify before code
-After T3 lands, confirm `flagConflicts()` exists and Board has conflict bits but they are not yet called from exec.
+After 03-validator lands, confirm `validateBoard()` (full scan) and `refreshConflictsForCell(row, col)` (incremental) exist. Neither is called from exec yet.
 
 ### Test (write first)
 - `"exec fill creates conflict → cell marked after render"` — fill a digit conflicting with existing row; MockRenderer snapshot should show conflict bit set on both cells
@@ -17,7 +17,8 @@ After T3 lands, confirm `flagConflicts()` exists and Board has conflict bits but
 ### Code (write after test)
 Modify `game_engine.zig`:
 - Import validator module
-- In `exec()`: after the Board mutation (`setCell`/`clearCell`), call `validator.flagConflicts(&self.board)`
+- In `init()`: after parsing the puzzle board, call `validator.validateBoard(&self.board)` so initial conflicts are detected before first render
+- In `exec()` (fill/clear paths): after a successful Board mutation, call `validator.refreshConflictsForCell(&self.board, row, col)` — incremental update only touching affected row+col+box scopes
 - This ensures conflict state is fresh before `render()` copies BoardView
 
 ### Verify after

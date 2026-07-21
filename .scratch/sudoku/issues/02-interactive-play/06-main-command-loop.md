@@ -20,6 +20,8 @@ Rewrite `main.zig` to the command loop anatomy from the parent issue's preamble.
 ### Verify before code
 Current `main()` calls `engine.render()` once then returns. P, L, Pr, Sw, A pieces don't exist yet as code.
 
+Validator is now wired in engine.init() (`validateBoard` — full scan) and engine.exec() (`refreshConflictsForCell` — incremental).
+
 ### Test (write first)
 T6 is too integration-heavy for inline tests — verify via manual run instead.
 

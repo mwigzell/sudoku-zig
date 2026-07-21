@@ -4,10 +4,10 @@ Blocked by: 04-exec-wires-validator
 
 ## What to build
 
-Modify `styler.zig` — AnsiStyler decorations for conflicting cells. After wiring from T4, BoardView exposes conflict info but Styler only highlights givens with DIM_ON codes. Add reverse-video decoration for player-set cells in conflict; given cells take visual precedence (they can't be changed, so the dim wins even if flagged).
+Modify `styler.zig` — AnsiStyler decorations for conflicting cells. After wiring from T4, Board exposes conflict info via `isConflicting(idx)` but Styler only highlights givens with DIM_ON codes. Add reverse-video decoration for player-set cells in conflict; given cells take visual precedence (they can't be changed, so the dim wins even if flagged).
 
 ### Verify before code
-After T4, confirm BoardView exposes conflict info but Styler only highlights givens.
+After T4, confirm Board has `isConflicting(idx: usize)` but Styler only highlights givens.
 
 ### Test (write first)
 - `"AnsiStyler: conflicting non-given cell gets distinct ANSI wrapping"` — format a row where one player-set cell is flagged; output should contain the conflict marker sequence, not just DIM_ON
