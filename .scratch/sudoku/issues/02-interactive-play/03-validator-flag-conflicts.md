@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 Type: task
 Blocked by: (none — validator.zig compiles but has stale code to replace)
 
@@ -52,6 +52,7 @@ Tests already exist (validateBoard flags row/col/box conflicts) — adapt if API
 - "refreshConflictsForCell does not touch unrelated cells"
 
 ### Verify after
-- [ ] `zig test src/validator.zig` passes with 7+ unit tests (flagScopeConflicts)
-- [ ] `zig build cov` — validator.zig > 95% coverage
+- [x] `zig test src/validator.zig` passes with 7+ unit tests (flagScopeConflicts)
 
+
+- [x] `zig build cov` — validator.zig > 95% coverage
