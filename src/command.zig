@@ -7,13 +7,15 @@ const cell_module = @import("cell.zig");
 
 pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
 pub const ClearData = struct { row: u4, col: u4 };
-pub const CommandTag = enum { fill, clear, quit };
+pub const CommandTag = enum { fill, clear, quit, undo, redo };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
     fill: FillData,
     clear: ClearData,
     quit: void,
+    undo: void,
+    redo: void,
 };
 
 pub const ParseResultTag = enum { valid, error_msg };
@@ -40,6 +42,19 @@ pub fn parse(input_line: []const u8) ParseCommandResult {
     var it = std.mem.tokenizeAny(u8, trimmed, &std.ascii.whitespace);
     const verb = it.next() orelse return .{.error_msg = "missing verb"};
 
+
+    if (trimmed.len == 1) {
+        const c = std.ascii.toUpper(trimmed[0]);
+        switch (c) {
+            'U' => {
+                return .{.valid = Command.undo};
+            },
+            'R' => {
+                return .{.valid = Command.redo};
+            },
+            else => {},
+        }
+    }
     if (std.ascii.eqlIgnoreCase(verb, "quit")) {
         return parseQuit();
     }
@@ -189,4 +204,28 @@ test "parse error cases return .error_msg tag (not .invalid_message)" {
 
     const bad_digit = parse("fill A1 X");
     if (bad_digit != .error_msg) return error.TestFailed;
+}
+
+test "parse undo command (upper U) → .valid .undo" {
+    const res = parse("U");
+    if (res != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings(@tagName(res.valid), "undo");
+}
+
+test "parse undo command (lower u) → .valid .undo" {
+    const res = parse("u");
+    if (res != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings(@tagName(res.valid), "undo");
+}
+
+test "parse redo command (upper R) → .valid .redo" {
+    const res = parse("R");
+    if (res != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings(@tagName(res.valid), "redo");
+}
+
+test "parse redo command (lower r) → .valid .redo" {
+    const res = parse("r");
+    if (res != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings(@tagName(res.valid), "redo");
 }

@@ -40,6 +40,8 @@ pub const GameEngine = struct {
             .quit => {
                 return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
             },
+            .undo => return Event{ .error_msg = "not implemented" },
+            .redo => return Event{ .error_msg = "not implemented" },
         }
     }
 
