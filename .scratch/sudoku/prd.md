@@ -18,12 +18,13 @@ A playable Sudoku game delivered as a Zig WASM module running in the browser, wi
 4. As a player, I want to load a new puzzle, so that I have fresh content to solve
 5. As a player, I want notes/pencil marks support (candidate digits per cell), so that I can track possibilities
 6. As a player, I want an undo action, so that I can back out of wrong moves
-7. As a player, I want puzzles generated automatically (not just static hand-written ones), so that there's always something new to play
-8. As a player, I want difficulty selection when generating a puzzle, so that I can control how hard the game is
-9. As a player, I want a "solve it for me" button that runs a solver and reveals the completed grid, so that I can finish a stuck puzzle or verify my progress
-10. As a player, I want highlighted row/column/box regions when I select a cell, so that I can focus on related cells more easily
-11. As a player, I want a timer showing how long I've been working on it, so that I can track speed per puzzle
-12. As a developer, I want the domain logic in Zig to be renderer-agnostic (behind interfaces), so that the TUI and WASM browser are interchangeable — but those interfaces are extracted only when duplication exists, not stubbed from day one.
+7. As a player, I want to save my current game state to a file and restore it later, so that I can pause and resume with full undo/redo history intact
+8. As a player, I want puzzles generated automatically (not just static hand-written ones), so that there's always something new to play
+9. As a player, I want difficulty selection when generating a puzzle, so that I can control how hard the game is
+10. As a player, I want a "solve it for me" button that runs a solver and reveals the completed grid, so that I can finish a stuck puzzle or verify my progress
+11. As a player, I want highlighted row/column/box regions when I select a cell, so that I can focus on related cells more easily
+12. As a player, I want a timer showing how long I've been working on it, so that I can track speed per puzzle
+13. As a developer, I want the domain logic in Zig to be renderer-agnostic (behind interfaces), so that the TUI and WASM browser are interchangeable — but those interfaces are extracted only when duplication exists, not stubbed from day one.
 
 ## Implementation Decisions
 
@@ -33,10 +34,11 @@ The Zig code is organized into modular layers that emerge iteratively. We do **n
 
 1. **Domain Core** — `Board`, `Cell`, `Grid` struct models. Encapsulates a 9×9 puzzle state. Pure structs, no I/O.
 2. **Validator** — conflict detection logic. Given a Board state, reports which cells are in error (duplicate digits in shared row/column/box).
-3. **GameEngine** — orchestrates player turns. Receives commands (`fill_cell`, `clear_cell`, `toggle_note`), mutates Board state, runs Validation, and emits an event describing the new state.
+3. **GameEngine** — orchestrates player turns. Receives commands (`fill_cell`, `clear_cell`, `toggle_note`, `save`, `load`), mutates Board state, runs Validation, and emits an event describing the new state.
 4. **Renderer** — starts as a direct call to print-to-terminal from `main.zig`. When WASM browser renderer is needed, the rendering logic is factored behind an interface so TUI and DOM are interchangeable. Interface extracted only when duplication exists (TUI + browser), not stubbed upfront.
 5. **Puzzle Repository** — starts as inline static puzzle data in `main.zig` or a simple array file. Extracted to a swappable repository slot only when auto-generation arrives. No empty interface stubs — the seam appears when a second source is needed.
-6. **Solver Service** — not needed until user stories 9 (solve-for-me) and 7 (auto generation, which depends on a solver for verification). Built then, not stubbed earlier.
+6. **Solver Service** — not needed until user stories 10 (solve-for-me) and 8 (auto generation, which depends on a solver for verification). Built then, not stubbed earlier.
+7. **Save/Restore** — explicit file-based persistence via Command→Event seam. Board exposes a serialisation seam (`toFlat()`) for dumping cell values and given-mask to disk; GameEngine handles file I/O through `exec()` and returns Event.ok/error_msg. Uses std.fs on native, separate path later for WASM if needed.
 
 ### WASM Boundary (slice 2 onward)
 
@@ -60,7 +62,8 @@ Zig (stable/0.13 or latest stable). Zig build system (`build.zig`) manages compi
 
 ## Out of Scope
 
-- Account system, leaderboards, persistence across sessions (localStorage persistence could be added later but is not MVP)
+- Account system, leaderboards
+- Implicit persistence (autosave, session-local storage) — explicit SAVE/LOAD commands are in scope; browser localStorage / cross-device sync is not
 - Mobile-responsive layout optimisation (clean desktop-first responsive OK, but no pinch/zoom gesture handling)
 - Multiple puzzle themes or variant Sudoku rules (Killer, Jigsaw, etc.)
 - Multi-language/i18n

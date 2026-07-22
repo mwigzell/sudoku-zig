@@ -2,16 +2,13 @@
 
 Status: closed
 
-Triage date: 2025-07-23
+Triage date: 2026-07-23
 
 Triage notes:
 - Spec is thorough — well-scoped 6-step plan, clear Event shape, detailed acceptance criteria
-- All 6 steps NOT STARTED in code; CommandResult still return type (game_engine.zig:5)
-
-- GameEngine still generic over renderer with internal render() calls (game_engine.zig:9, line 68)
-
-- Tests still use MockRenderer and assert on internal Board state via engine.board.isConflicting()
-
+- All 6 steps COMPLETE in code; CommandResult fully replaced by Event union
+- GameEngine no longer generic over renderer type
+- Tests use eventBoard()/expectOk — MockRenderer removed from game_engine.zig tests
 - Issue 21 would resolve naturally alongside this once Event seam lands, but is separate work
 - Issue 13 is a sibling (both touch the wiring layer), not a dependency. After issue 20,
    main.zig still passes `*R` to Sudoku.init — Sudoku just stops forwarding it to GameEngine

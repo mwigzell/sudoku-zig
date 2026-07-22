@@ -1,4 +1,4 @@
-Status: in-progress (Step 1 done, Steps 2-7 remain)
+Status: in-progress (Steps 1-2 done, Steps 3-7 remain)
 
 ## Parent
 `.scratch/sudoku/prd.md`

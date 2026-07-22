@@ -2,6 +2,56 @@ const std = @import("std");
 const board = @import("board.zig");
 const cell = @import("cell.zig");
 
+/// Records one player mutation (fill or clear) so it can be undone/redone.
+pub const MutationEntry = struct {
+    row: u4,
+    col: u4,
+    old_value: cell.CellValue,
+    new_value: cell.CellValue,
+};
+
+/// Mutable list of mutation entries with a forward pointer for undo/redo.
+pub const MutationHistory = struct {
+    entries: std.ArrayList(MutationEntry),
+    pointer: usize,
+    gpa: std.mem.Allocator,
+
+    pub fn init(gpa: std.mem.Allocator) @This() {
+        return .{
+            .entries = .empty,
+            .pointer = 0,
+            .gpa = gpa,
+        };
+    }
+
+    pub fn deinit(self: *@This()) void {
+        self.entries.deinit(self.gpa);
+    }
+
+    /// Number of committed mutations.
+    pub fn count(self: *const @This()) usize {
+        return self.pointer;
+    }
+
+    /// Append a mutation, advancing pointer past it.
+    pub fn push(self: *@This(), row: u4, col: u4, old_value: cell.CellValue, new_value: cell.CellValue) !void {
+        try self.entries.append(self.gpa, .{
+            .row = row,
+            .col = col,
+            .old_value = old_value,
+            .new_value = new_value,
+        });
+        self.pointer = self.entries.items.len;
+    }
+
+    /// Return the entry just before pointer (last committed mutation). Returns null if none.
+    pub fn peakPast(self: *const @This()) ?MutationEntry {
+        if (self.pointer == 0) return null;
+        return self.entries.items[self.pointer - 1];
+    }
+
+};
+
 pub const Event = union(enum) {
     ok: struct {
         board_view: board.Board.BoardView,
@@ -12,16 +62,21 @@ pub const Event = union(enum) {
 
 pub const GameEngine = struct {
     board: board.Board,
+    history: MutationHistory,
 
     /// Construct from a one-line puzzle string.
     pub fn init(puzzle_str: []const u8) board.BoardError!@This() {
         var self = @This(){
             .board = try board.fromOneLineString(puzzle_str),
+            .history = MutationHistory.init(std.heap.page_allocator),
         };
         self.board.validate();
         return self;
     }
 
+    pub fn deinit(self: *@This()) void {
+        self.history.deinit();
+    }
 
     /// Return a snapshot of the current board view.
     pub fn eventBoard(self: *@This()) board.Board.BoardView {
@@ -76,6 +131,7 @@ const command = @import("command.zig");
 
 test "GameEngine fill updates cell value" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     const view = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.seven },
@@ -85,6 +141,7 @@ test "GameEngine fill updates cell value" {
 
 test "GameEngine init builds board from puzzle string" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
     const view = engine.eventBoard();
 
     // puzzle[0..2] is '6' → A1 should be a given (six)
@@ -100,6 +157,7 @@ test "GameEngine init builds board from puzzle string" {
 
 test "exec fill non-given cell → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     _ = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
@@ -108,6 +166,7 @@ test "exec fill non-given cell → .ok" {
 
 test "exec fill given cell → .error_msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     const result = try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 0, .digit = cell.CellValue.nine },
@@ -117,6 +176,7 @@ test "exec fill given cell → .error_msg" {
 
 test "exec clear given cell → .error_msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     const result = try engine.exec(command.Command{
         .clear = command.ClearData{ .row = 0, .col = 0 },
@@ -126,6 +186,7 @@ test "exec clear given cell → .error_msg" {
 
 test "exec quit → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     const view = try expectOk(try engine.exec(command.Command{ .quit = {} }));
     // quit returns board_view with no message
@@ -138,6 +199,7 @@ test "exec quit → .ok" {
 
 test "exec fill creates conflict → cell marked" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     // Row 0: cells (0,2) and (0,3) are both empty — fill both with eight
     const fill1 = command.Command{
@@ -160,6 +222,7 @@ test "exec fill creates conflict → cell marked" {
 
 test "exec clear resolves conflict → previously-conflicting peer now clean" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     // Create a row-0 conflict pair: (0,2) and (0,3) both eight
     _ = try expectOk(try engine.exec(command.Command{
@@ -186,6 +249,7 @@ test "exec clear resolves conflict → previously-conflicting peer now clean" {
 
 test "exec fill no conflict → no bits set" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     // Row 0 already has six at (0,0) and seven at (0,1).
     // Fill (0,2) with one — unique across its row, col, and box → clean.
@@ -209,7 +273,8 @@ test "exec fill no conflict → no bits set" {
 }
 
 test "init calls validate so initial conflicts are detected" {
-    _ = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     // A well-formed puzzle confirms at least that validate runs without crashing.
 }
@@ -259,6 +324,7 @@ test "GameEngine.init propagates invalid puzzle error" {
 
 test "GameEngine is non-generic, init takes only puzzle string" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
     const view = engine.eventBoard();
 
     // Board was built correctly from the puzzle string
@@ -269,6 +335,7 @@ test "GameEngine is non-generic, init takes only puzzle string" {
 
 test "exec fill returns Event.ok with board_view" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
     const view = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
@@ -279,6 +346,7 @@ test "exec fill returns Event.ok with board_view" {
 
 test "eventBoard returns current board view" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
 
     const view1 = engine.eventBoard();
     // A1 is a given (six)
@@ -292,4 +360,44 @@ test "eventBoard returns current board view" {
     const view2 = engine.eventBoard();
     // A3 now reflects the fill
     try std.testing.expectEqual(cell.CellValue.seven, view2.get(0, 2));
+}
+
+// Step 2 — MutationHistory struct tests
+
+test "MutationHistory: initially empty" {
+    var h = MutationHistory.init(std.testing.allocator);
+    defer h.deinit();
+
+    try std.testing.expectEqual(@as(usize, 0), h.count());
+}
+
+test "MutationHistory: push and count" {
+    var h = MutationHistory.init(std.testing.allocator);
+    defer h.deinit();
+
+    _ = h.push(2, 5, .three, .seven) catch unreachable;
+    _ = h.push(4, 1, .zero, .one) catch unreachable;
+
+    try std.testing.expectEqual(@as(usize, 2), h.count());
+}
+
+test "MutationHistory: peakPast returns last committed" {
+    var h = MutationHistory.init(std.testing.allocator);
+    defer h.deinit();
+
+    _ = h.push(0, 3, .zero, .eight) catch unreachable;
+    _ = h.push(1, 2, .five, .nine) catch unreachable;
+
+    const item = h.peakPast() orelse return error.TestFailed;
+    try std.testing.expectEqual(@as(u4, 1), item.row);
+    try std.testing.expectEqual(@as(u4, 2), item.col);
+    try std.testing.expectEqual(cell.CellValue.five, item.old_value);
+    try std.testing.expectEqual(cell.CellValue.nine, item.new_value);
+}
+
+test "MutationHistory: peakPast returns null when empty" {
+    var h = MutationHistory.init(std.testing.allocator);
+    defer h.deinit();
+
+    try std.testing.expect(h.peakPast() == null);
 }

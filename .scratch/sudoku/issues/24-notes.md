@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 ## Parent
 `.scratch/sudoku/prd.md` — User Story #11
@@ -49,4 +49,4 @@ This is a larger refactor than undo — defer until after simpler features land.
 - [ ] TUI renders notes visibly (decision: multi-line or side-panel)
 
 ## Blocked by
-_(none — but deferred until after undo, solver, etc. are landing_)
+_(none — but deferred until after undo, solver, etc. are landing)_

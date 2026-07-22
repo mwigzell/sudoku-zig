@@ -1,6 +1,6 @@
 Status: closed
 
-Triage date: 2025-07-23
+Triage date: 2026-07-23
 
 **Sp4 from full code review:** Testing guideline says *"Tests exercise external behavior only, not internal implementation details"* but several Board tests directly inspect internal representation like `digit_bits` arrays and index lists rather than asserting observable behavior through the command→event seam.
 
