@@ -22,6 +22,12 @@ pub const GameEngine = struct {
         return self;
     }
 
+
+    /// Return a snapshot of the current board view.
+    pub fn eventBoard(self: *@This()) board.Board.BoardView {
+        return self.board.asView();
+    }
+
     /// Route a parsed command through Board mutation + render update.
     pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
         switch (cmd) {
@@ -265,4 +271,21 @@ test "exec fill returns Event.ok with board_view" {
 
     // board_view reflects the mutation
     try std.testing.expectEqual(cell.CellValue.seven, view.get(0, 2));
+}
+
+test "eventBoard returns current board view" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+
+    const view1 = engine.eventBoard();
+    // A1 is a given (six)
+    try std.testing.expectEqual(cell.CellValue.six, view1.get(0, 0));
+
+    // Mutate the board
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+
+    const view2 = engine.eventBoard();
+    // A3 now reflects the fill
+    try std.testing.expectEqual(cell.CellValue.seven, view2.get(0, 2));
 }
