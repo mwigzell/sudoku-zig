@@ -1,27 +1,34 @@
-# Session State — Issue 02
+# Session State — Issue 20: Event Seam Remediation
 
-Date: after T2 exec() implementation
+**Date:** 2025-07-23
+**Cycle:** Step 3 of 6 completed (TDD red→green)
+**Commit:** 6adc722 refactor(20): remove renderer dependency from GameEngine
 
-## What's Done
-- [x] T1: `parse()` refactored to thin dispatch, three module-level handlers (parseQuit, parseFill, parseClear)
-- [x] T1: All 53 tests passing, coverage clean
-- [x] T2: Added `CommandResult = union(enum){ ok, error_msg: []const u8 }`
-- [x] T2: Added `exec(Command) !CommandResult` with tryFill/tryClear helpers
-- [x] T2: Given-cell rejections surfaced as `.error_msg` instead of silently swallowed via catch
-- [x] T2: Made FillData and ClearData public in command.zig for test access
-- [x] All 57 tests passing (4 new T2 tests), game_engine coverage 95.65%
+## Completed Steps
+| Step | Status | Description |
+|------|--------|-------------|
+| 1 | ✅ Done (prev session) | Define Event union in game_engine.zig |
+| 2 | ✅ Done (prev session) | Rename invalid_message → error_msg |
+| 3 | ✅ Done (this session) | Drop comptime R, remove renderer field, kill render/fillAndRender |
 
-## What's Next
-- **T3**: NEW `src/validator.zig` — walk Board views and flag conflicting cells
-  - Write tests for empty board, row/col/box conflict detection, no false positives
-  - Implement flagConflicts(board), add conflict_bits field to Board
+## Remaining Steps
+| Step | File(s) | Description |
+|------|---------|-------------|
+| 4 | game_engine.zig, sudoku.zig | Replace internal render() calls with Event returns from exec() |
+| 5 | game_engine.zig (tests) | Already done — MockRenderer removed in Step 3 |
+| 6 | sudoku.zig, root.zig | Clean up integration tests, remove MockRenderer if unused |
 
-## Architectural Notes
-- Zig 0.17 doesn't support nested functions — handlers must be module-level with explicit params
-- parse() feeds plain string tokens to helpers (not the tokenizer itself)
-- Pattern: `if (verb == "X") { fetch args; return parseX(args); }`
-- exec routes fill/clear/quit through tryFill/tryClear helpers after switching on command tag
+## TDD Cycle Summary
+**Red:** Wrote tracer test `test "GameEngine is non-generic, init takes only puzzle string"` asserting single-arg init — failed with `no field or member function named 'init' in 'fn (comptime type) type'`.
 
-## File State
-- `src/command.zig`: FillData/ClearData now public for cross-module test access
-- `src/game_engine.zig`: Added CommandResult type, exec(), tryFill(), tryClear() + 4 T2 tests
+**Green:** 
+- Replaced `GameEngine(comptime R: type) type { const Engine = struct{...} }` → plain `pub const GameEngine = struct { ... }`
+- Removed `renderer: *R` field, `.render()`, `.fillAndRender()` methods
+- Updated `tryFill()` — removed `self.renderer.render(...)` side effect
+- Updated all 12 caller tests (dropped MockRenderer setup)
+- Updated sudoku.zig engine field + init call + discarded renderer param
+
+**Result:** 87/87 tests pass, game_engine.zig at 100% coverage, overall 99.91%.
+
+## Notes for Next Cycle
+Step 4: exec() should return `Event` instead of `CommandResult`, and sudoku.run() switches on Event to render via renderer.render(event.board_view). The initial render (currently commented out TODO) will be restored as part of that loop.

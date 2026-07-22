@@ -38,7 +38,7 @@ pub const GameEngine = struct {
     }
 
     /// Route a parsed command through Board mutation + render update.
-    pub fn exec(self: *@This(), cmd: command.Command) anyerror!CommandResult {
+pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
         switch (cmd) {
             .fill => |f| {
                 return self.tryFill(f.row, f.col, f.digit);
@@ -47,23 +47,23 @@ pub const GameEngine = struct {
                 return self.tryClear(c.row, c.col);
             },
             .quit => {
-                return CommandResult.ok;
+                return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
             },
         }
     }
 
-    fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!CommandResult {
+    fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!Event {
         self.board.setCell(row, col, digit) catch |err| {
             var buf: [80]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, "set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) }) catch unreachable;
-            return CommandResult{ .error_msg = msg };
+            return Event{ .error_msg = msg };
         };
         self.board.refreshConflictsForCell(row, col);
-        return CommandResult.ok;
+        return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
     }
 
     /// Attempt to clear a cell - delegates to tryFill with .zero.
-    fn tryClear(self: *@This(), row: u4, col: u4) anyerror!CommandResult {
+    fn tryClear(self: *@This(), row: u4, col: u4) anyerror!Event {
         return self.tryFill(row, col, .zero);
     }
 };
@@ -102,9 +102,10 @@ test "exec fill non-given cell → .ok" {
     const fill_cmd = command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     };
-    const result = try engine.exec(fill_cmd);
-
-    if (result != .ok) return error.TestFailed;
+    switch (try engine.exec(fill_cmd)) {
+        .ok => {},
+        .error_msg => return error.TestFailed,
+    }
 }
 
 
@@ -117,9 +118,11 @@ test "exec fill given cell → .error_msg" {
     const fill_cmd = command.Command{
         .fill = command.FillData{ .row = 0, .col = 0, .digit = cell.CellValue.nine },
     };
-    const result: CommandResult = try engine.exec(fill_cmd);
-
-    if (result != .error_msg) return error.TestFailed;
+    const result = try engine.exec(fill_cmd);
+    switch (result) {
+        .error_msg => {},
+        .ok => return error.TestFailed,
+    }
 }
 
 
@@ -129,9 +132,11 @@ test "exec clear given cell → .error_msg" {
     const clear_cmd = command.Command{
         .clear = command.ClearData{ .row = 0, .col = 0 },
     };
-    const result: CommandResult = try engine.exec(clear_cmd);
-
-    if (result != .error_msg) return error.TestFailed;
+    const result = try engine.exec(clear_cmd);
+    switch (result) {
+        .error_msg => {},
+        .ok => return error.TestFailed,
+    }
 }
 
 
@@ -139,9 +144,14 @@ test "exec quit → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
     const quit_cmd: command.Command = .{ .quit = {} };
-    const result: CommandResult = try engine.exec(quit_cmd);
-
-    if (result != .ok) return error.TestFailed;
+    const event = try engine.exec(quit_cmd);
+    switch (event) {
+        .ok => |ev| {
+            // quit returns board_view with no message
+            _ = ev;
+        },
+        .error_msg => return error.TestFailed,
+    }
 }
 // ---------------------------------------------------------------------------
 // T3 — exec wires validator into mutation path (04-exec-wires-validator)
@@ -290,4 +300,19 @@ test "GameEngine is non-generic, init takes only puzzle string" {
     try std.testing.expect(engine.board.isGiven(0, 0));
 
     // No renderer field exists (compile-time guarantee if struct is non-generic)
+}
+
+// Step 4 — exec returns Event, not CommandResult
+
+test "exec fill returns Event.ok with board_view" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    const fill_cmd: command.Command = .{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    };
+
+    const event: Event = try engine.exec(fill_cmd);
+
+    if (event != .ok) return error.TestFailed;
+    // board_view reflects the mutation
+    try std.testing.expectEqual(cell.CellValue.seven, event.ok.board_view.get(0, 2));
 }

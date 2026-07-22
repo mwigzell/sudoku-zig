@@ -32,18 +32,47 @@ pub fn Sudoku(comptime R: type) type {
             _ = try readLine(reader);
         }
 
-        /// R → P → L → Pr → Sw → E command loop.
-        pub fn run(self: *@This(), io: std.Io) anyerror!void {
+        /// Handle one parsed result. Returns true when the command loop should end.
+        fn handleResult(self: *@This(), out: anytype, in_: anytype,
+            renderer: anytype, result: command.ParseCommandResult) anyerror!bool
+        {
+            switch (result) {
+                .error_msg => |msg| {
+                    try self.waitAck(out, in_, msg);
+                    return false; // continue looping
+                },
+                .valid => |cmd| {
+                    if (cmd == .quit) return true;
+
+                    const event = try self.engine.exec(cmd);
+                    switch (event) {
+                        .ok => |ev| {
+                            if (ev.msg) |m| try out.print("{s}\n", .{m});
+                            try renderer.render(ev.board_view);
+                            return false; // continue looping
+                        },
+                        .error_msg => |msg| {
+                            try self.waitAck(out, in_, msg);
+                            return false; // continue looping
+                        },
+                    }
+                },
+            }
+        }
+
+        /// Read → Parse → Loop command interface.
+        pub fn run(self: *@This(), io: std.Io, renderer: anytype) anyerror!void {
             var stdout_writer = std.Io.File.stdout().writer(io, &.{});
             const out = &stdout_writer.interface;
             var stdin_buf: [1024]u8 = undefined;
             var stdin_reader = std.Io.File.stdin().reader(io, &stdin_buf);
-
             const in_ = &stdin_reader.interface;
 
-            // TODO: initial render — Step 4 will wire this through exec() returning Event
+            // Initial render — show starting board via Event seam
+            try renderer.render(self.engine.board.asView());
 
-            while (true) {
+            var isDone: bool = false;
+            while (!isDone) {
                 // P — prompt
                 try out.print("> ", .{});
 
@@ -55,27 +84,8 @@ pub fn Sudoku(comptime R: type) type {
                 const tokens = std.mem.trim(u8, line, &std.ascii.whitespace);
                 const result = command.parse(tokens);
 
-                // Sw — switch on parse outcome
-                switch (result) {
-                    .error_msg => |msg| {
-                        try self.waitAck(out, in_, msg);
-                        continue;
-                    },
-                    .valid => |cmd| {
-                        if (cmd == .quit) return; // quit detected at command level
-
-                        const exec_result = try self.engine.exec(cmd);
-                        switch (exec_result) {
-                            .ok => {},
-                            .error_msg => |msg| {
-                                try self.waitAck(out, in_, msg);
-                                continue;
-                            },
-                        }
-                    },
-                }
-
-                // R — re-render at start of next iteration (top of while)
+                // Sw — handle the parse outcome
+                isDone = try self.handleResult(out, in_, renderer, result);
             }
         }
     };

@@ -18,7 +18,7 @@ pub fn main(init: std.process.Init) anyerror!void {
     var renderer = R.init(&stdout_writer.interface, &s);
 
     var game = try sudoku.Sudoku(R).init(cfg, &renderer);
-    game.run(init.io) catch |err| {
+    game.run(init.io, &renderer) catch |err| {
         if (err == error.ReadEOF) {
             log.debug("bye!", .{});
             return; // EOF — user pressed Ctrl-D, normal exit.
