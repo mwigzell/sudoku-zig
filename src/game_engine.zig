@@ -25,16 +25,6 @@ pub const GameEngine = struct {
     }
 
     /// Set a single cell on the Board to the given raw digit (1-9).
-    /// Silently skips given cells.
-    pub fn fill(self: *@This(), row_idx: usize, col_idx: usize, value: u8) void {
-        if (!self.board.isGiven(@intCast(row_idx), @intCast(col_idx))) {
-            _ = self.board.setCell(
-                @intCast(row_idx),
-                @intCast(col_idx),
-                cell.rawToCellValue(value),
-            ) catch {};
-        }
-    }
 
     /// Route a parsed command through Board mutation + render update.
     pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
