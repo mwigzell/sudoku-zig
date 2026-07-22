@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 Triage date: 2025-07-23
 
@@ -17,9 +17,13 @@ These are valuable structural tests now, but they tie the test suite closer to i
 
 ## Acceptance Criteria
 
-- [ ] Identify which internal-state assertions can be expressed through public seam methods instead
-- [ ] Refactor at least one heavily-coupled test to use GameEngine command→event flow where practical
-- [ ] Keep structural tests that prove correctness of internal invariants (not every test needs to go through GameEngine)
+- [x] Identify which internal-state assertions can be expressed through public seam methods instead
+- [x] Refactor at least one heavily-coupled test to use GameEngine command→event flow where practical
+- [x] Keep structural tests that prove correctness of internal invariants (not every test needs to go through GameEngine)
+
+## Done
+- `97dd498` — refactored two remaining game_engine tests (`"GameEngine init builds board from puzzle string"`, `"GameEngine is non-generic, init takes only puzzle string"`) from `engine.board.*` to `engine.eventBoard()`.
+- All 89 tests pass; coverage maintained. Board.zig invariant tests kept as-is (correct layer).
 
 ## Triage notes:
 - Blocker (issue 20) is `Status: closed` — Event seam is implemented.
