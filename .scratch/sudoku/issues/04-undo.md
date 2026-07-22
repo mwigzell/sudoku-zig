@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: in-progress (Step 1 done, Steps 2-7 remain)
 
 ## Parent
 `.scratch/sudoku/prd.md`
@@ -64,8 +64,8 @@ Renderer requires zero changes — `Event.ok { board_view, msg }` already carrie
 
 ## Acceptance criteria
 
-- [ ] `Command.undo = struct {}` defined and parseable as `"U"` (or `"u"`)
-- [ ] `Command.redo = struct {}` defined and parseable as `"R"` (or `"r"`, `"redo"`)
+- [x] `Command.undo = struct {}` defined and parseable as `"U"` (or `"u"`)
+- [x] `Command.redo = struct {}` defined and parseable as `"R"` (or `"r"`, `"redo"`)
 - [ ] History stack tracks fill/clear mutations inside GameEngine with a pointer that moves back/forward
 - [ ] Single undo reverts the most recent mutation (fill, clear) through `exec(Command{ .undo }) → Event.ok { ... }`
 - [ ] Single redo re-applies the last undone mutation through `exec(Command{ .redo }) → Event.ok { ... }`
