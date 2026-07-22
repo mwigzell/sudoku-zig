@@ -1,6 +1,6 @@
 /** Origin: grilling — Command → Event seam (ADR-0002) was aspirational and diverged from implementation */
 
-Status: ready-for-agent
+Status: closed
 
 Triage date: 2025-07-23
 
@@ -97,11 +97,11 @@ pub const Event = union(enum) {
 ---
 
 ## Acceptance Criteria
-- [ ] `Event` union defined in `game_engine.zig`, replacing `CommandResult`
-- [ ] GameEngine no longer generic over renderer type — just `GameEngine`
-- [ ] Renderer param removed from `GameEngine.init()` signature
-- [ ] All internal `self.renderer.render(...)` calls replaced with returning `Event.ok { board_view, null }`
-- [ ] `.error_msg` path in exec still works (e.g., attempt to modify a given cell)
-- [ ] `Sudoku.run()` main loop switched: on `.ok` it calls renderer.render(board_view), no longer empty
-- [ ] GameEngine tests inspect `Event.ok.board_view` directly — MockRenderer removed from game_engine.zig test suite
-- [ ] All tests pass; coverage maintained (`zig build cov`)
+- [x] `Event` union defined in `game_engine.zig`, replacing `CommandResult`
+- [x] GameEngine no longer generic over renderer type — just `GameEngine`
+- [x] Renderer param removed from `GameEngine.init()` signature
+- [x] All internal `self.renderer.render(...)` calls replaced with returning `Event.ok { board_view, null }`
+- [x] `.error_msg` path in exec still works (e.g., attempt to modify a given cell)
+- [x] `Sudoku.run()` main loop switched: on `.ok` it calls renderer.render(board_view), no longer empty
+- [x] GameEngine tests inspect `Event.ok.board_view` directly — MockRenderer removed from game_engine.zig test suite
+- [x] All tests pass; coverage maintained (`zig build cov`)
