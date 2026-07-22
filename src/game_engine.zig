@@ -2,8 +2,6 @@ const std = @import("std");
 const board = @import("board.zig");
 const cell = @import("cell.zig");
 
-pub const CommandResult = union(enum) { ok, error_msg: []const u8 };
-
 pub const Event = union(enum) {
     ok: struct {
         board_view: board.Board.BoardView,
@@ -24,8 +22,6 @@ pub const GameEngine = struct {
         return self;
     }
 
-    /// Set a single cell on the Board to the given raw digit (1-9).
-
     /// Route a parsed command through Board mutation + render update.
     pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
         switch (cmd) {
@@ -33,7 +29,7 @@ pub const GameEngine = struct {
                 return self.tryFill(f.row, f.col, f.digit);
             },
             .clear => |c| {
-                return self.tryClear(c.row, c.col);
+                return self.tryFill(c.row, c.col, .zero);
             },
             .quit => {
                 return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
@@ -50,30 +46,33 @@ pub const GameEngine = struct {
         self.board.refreshConflictsForCell(row, col);
         return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
     }
-
-    /// Attempt to clear a cell - delegates to tryFill with .zero.
-    fn tryClear(self: *@This(), row: u4, col: u4) anyerror!Event {
-        return self.tryFill(row, col, .zero);
-    }
 };
 
 const puzzle_gen = @import("puzzle_gen.zig");
+
+fn expectOk(event: Event) !board.Board.BoardView {
+    return switch (event) {
+        .ok => |data| data.board_view,
+        .error_msg => return error.TestFailed,
+    };
+}
+
+fn expectErrorResult(event: Event) !void {
+    switch (event) {
+        .error_msg => {},
+        .ok => return error.TestFailed,
+    }
+}
 
 const command = @import("command.zig");
 
 test "GameEngine fill updates cell value" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
-    const event = try engine.exec(command.Command{
+    const view = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.seven },
-    });
-
-    switch (event) {
-        .ok => |ev| {
-            try std.testing.expectEqual(cell.CellValue.seven, ev.board_view.get(0, 3));
-        },
-        .error_msg => return error.TestFailed,
-    }
+    }));
+    try std.testing.expectEqual(cell.CellValue.seven, view.get(0, 3));
 }
 
 test "GameEngine init builds board from puzzle string" {
@@ -93,53 +92,35 @@ test "GameEngine init builds board from puzzle string" {
 test "exec fill non-given cell → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
-    const fill_cmd = command.Command{
+    _ = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    };
-    switch (try engine.exec(fill_cmd)) {
-        .ok => {},
-        .error_msg => return error.TestFailed,
-    }
+    }));
 }
 
 test "exec fill given cell → .error_msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
-    const fill_cmd = command.Command{
+    const result = try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 0, .digit = cell.CellValue.nine },
-    };
-    const result = try engine.exec(fill_cmd);
-    switch (result) {
-        .error_msg => {},
-        .ok => return error.TestFailed,
-    }
+    });
+    try expectErrorResult(result);
 }
 
 test "exec clear given cell → .error_msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
-    const clear_cmd = command.Command{
+    const result = try engine.exec(command.Command{
         .clear = command.ClearData{ .row = 0, .col = 0 },
-    };
-    const result = try engine.exec(clear_cmd);
-    switch (result) {
-        .error_msg => {},
-        .ok => return error.TestFailed,
-    }
+    });
+    try expectErrorResult(result);
 }
 
 test "exec quit → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
-    const quit_cmd: command.Command = .{ .quit = {} };
-    const event = try engine.exec(quit_cmd);
-    switch (event) {
-        .ok => |ev| {
-            // quit returns board_view with no message
-            _ = ev;
-        },
-        .error_msg => return error.TestFailed,
-    }
+    const view = try expectOk(try engine.exec(command.Command{ .quit = {} }));
+    // quit returns board_view with no message
+    _ = view;
 }
 
 // T3 — exec wires validator into mutation path
@@ -154,59 +135,43 @@ test "exec fill creates conflict → cell marked" {
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
     };
 
-    _ = try engine.exec(fill1);
+    _ = try expectOk(try engine.exec(fill1));
 
-    const fill2 = command.Command{
+    const view = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
-    };
-    const event = try engine.exec(fill2);
-    switch (event) {
-        .ok => |ev| {
-            // Both cells in row 0 must now be flagged as conflicting
-            try std.testing.expect(ev.board_view.isConflictingRowCol(0, 2));
-            try std.testing.expect(ev.board_view.isConflictingRowCol(0, 3));
+    }));
 
-            // A cell not in the conflict path should be clean (row 5, col 5)
-            try std.testing.expect(!ev.board_view.isConflictingRowCol(5, 5));
-        },
-        .error_msg => return error.TestFailed,
-    }
+    // Both cells in row 0 must now be flagged as conflicting
+    try std.testing.expect(view.isConflictingRowCol(0, 2));
+    try std.testing.expect(view.isConflictingRowCol(0, 3));
+
+    // A cell not in the conflict path should be clean (row 5, col 5)
+    try std.testing.expect(!view.isConflictingRowCol(5, 5));
 }
 
 test "exec clear resolves conflict → previously-conflicting peer now clean" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
     // Create a row-0 conflict pair: (0,2) and (0,3) both eight
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
+    }));
+
     {
-        _ = try engine.exec(command.Command{
-            .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
-        });
-    }
-    {
-        const ev1 = try engine.exec(command.Command{
+        const view = try expectOk(try engine.exec(command.Command{
             .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
-        });
-        switch (ev1) {
-            .ok => |view| {
-                try std.testing.expect(view.board_view.isConflictingRowCol(0, 2));
-                try std.testing.expect(view.board_view.isConflictingRowCol(0, 3));
-            },
-            .error_msg => return error.TestFailed,
-        }
+        }));
+        try std.testing.expect(view.isConflictingRowCol(0, 2));
+        try std.testing.expect(view.isConflictingRowCol(0, 3));
     }
 
     // Clear (0,3) → its peer (0,2) should no longer be flagged either
     {
-        const ev2 = try engine.exec(command.Command{
+        const view = try expectOk(try engine.exec(command.Command{
             .clear = command.ClearData{ .row = 0, .col = 3 },
-        });
-        switch (ev2) {
-            .ok => |view| {
-                try std.testing.expect(!view.board_view.isConflictingRowCol(0, 2));
-                try std.testing.expect(!view.board_view.isConflictingRowCol(0, 3));
-            },
-            .error_msg => return error.TestFailed,
-        }
+        }));
+        try std.testing.expect(!view.isConflictingRowCol(0, 2));
+        try std.testing.expect(!view.isConflictingRowCol(0, 3));
     }
 }
 
@@ -215,29 +180,25 @@ test "exec fill no conflict → no bits set" {
 
     // Row 0 already has six at (0,0) and seven at (0,1).
     // Fill (0,2) with one — unique across its row, col, and box → clean.
-    const event = try engine.exec(command.Command{
+    const view = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
-    });
+    }));
 
-    switch (event) {
-        .ok => |ev| {
-            // The filled cell must be conflict-free
-            try std.testing.expect(!ev.board_view.isConflictingRowCol(0, 2));
+    // The filled cell must be conflict-free
+    try std.testing.expect(!view.isConflictingRowCol(0, 2));
 
-            // Row 0 cells must all be conflict-free
-            for (0..board.DIMENSION_SIZE) |c| {
-                const c4: u4 = @intCast(c);
-                try std.testing.expect(!ev.board_view.isConflictingRowCol(0, c4));
-            }
-            // Column 2 cells must all be conflict-free
-            for (0..board.DIMENSION_SIZE) |r| {
-                const r4: u4 = @intCast(r);
-                try std.testing.expect(!ev.board_view.isConflictingRowCol(r4, 2));
-            }
-        },
-        .error_msg => return error.TestFailed,
+    // Row 0 cells must all be conflict-free
+    for (0..board.DIMENSION_SIZE) |c| {
+        const c4: u4 = @intCast(c);
+        try std.testing.expect(!view.isConflictingRowCol(0, c4));
+    }
+    // Column 2 cells must all be conflict-free
+    for (0..board.DIMENSION_SIZE) |r| {
+        const r4: u4 = @intCast(r);
+        try std.testing.expect(!view.isConflictingRowCol(r4, 2));
     }
 }
+
 test "init calls validate so initial conflicts are detected" {
     _ = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
@@ -298,13 +259,10 @@ test "GameEngine is non-generic, init takes only puzzle string" {
 
 test "exec fill returns Event.ok with board_view" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
-    const fill_cmd: command.Command = .{
+    const view = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    };
+    }));
 
-    const event: Event = try engine.exec(fill_cmd);
-
-    if (event != .ok) return error.TestFailed;
     // board_view reflects the mutation
-    try std.testing.expectEqual(cell.CellValue.seven, event.ok.board_view.get(0, 2));
+    try std.testing.expectEqual(cell.CellValue.seven, view.get(0, 2));
 }
