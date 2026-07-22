@@ -88,11 +88,12 @@ pub const Event = union(enum) {
 - Remove `const mock_renderer = @import("...")` from game_engine.zig tests.
 - Run `zig build test` — all GameEngine tests pass through BoardView directly.
 
+- Run full test suite + `zig build cov`.
+
 ### Step 6: Clean up Sudoku integration tests and MockRenderer usage
 **Files**: `src/sudoku.zig`, `src/root.zig`
 - Update Sudoku's `init()` to not pass renderer to engine anymore.
 - If MockRenderer is no longer needed anywhere, remove it (or keep for non-engine tests only).
-- Run full test suite + `zig build cov`.
 
 ---
 

@@ -12,7 +12,6 @@ pub const Event = union(enum) {
     error_msg: []const u8,
 };
 
-
 pub const GameEngine = struct {
     board: board.Board,
 
@@ -38,7 +37,7 @@ pub const GameEngine = struct {
     }
 
     /// Route a parsed command through Board mutation + render update.
-pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
+    pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
         switch (cmd) {
             .fill => |f| {
                 return self.tryFill(f.row, f.col, f.digit);
@@ -75,11 +74,17 @@ const command = @import("command.zig");
 test "GameEngine fill updates cell value" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
-    engine.fill(0, 3, 7);
+    const event = try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.seven },
+    });
 
-    try std.testing.expectEqual(cell.CellValue.seven, engine.board.getCellValue(0, 3));
+    switch (event) {
+        .ok => |ev| {
+            try std.testing.expectEqual(cell.CellValue.seven, ev.board_view.get(0, 3));
+        },
+        .error_msg => return error.TestFailed,
+    }
 }
-
 
 test "GameEngine init builds board from puzzle string" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
@@ -95,7 +100,6 @@ test "GameEngine init builds board from puzzle string" {
 
 // T2: exec(Command) returns structured results with given-cell feedback
 
-
 test "exec fill non-given cell → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
@@ -108,12 +112,8 @@ test "exec fill non-given cell → .ok" {
     }
 }
 
-
 test "exec fill given cell → .error_msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
-
-    // A1 (0, 0) is a given ('6'.)
-    try std.testing.expect(engine.board.isGiven(0, 0));
 
     const fill_cmd = command.Command{
         .fill = command.FillData{ .row = 0, .col = 0, .digit = cell.CellValue.nine },
@@ -124,7 +124,6 @@ test "exec fill given cell → .error_msg" {
         .ok => return error.TestFailed,
     }
 }
-
 
 test "exec clear given cell → .error_msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
@@ -139,7 +138,6 @@ test "exec clear given cell → .error_msg" {
     }
 }
 
-
 test "exec quit → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
@@ -153,98 +151,110 @@ test "exec quit → .ok" {
         .error_msg => return error.TestFailed,
     }
 }
-// ---------------------------------------------------------------------------
-// T3 — exec wires validator into mutation path (04-exec-wires-validator)
-// Integration chain: exec → board mutation → conflict refresh → render
-// Check conflict bits through engine.board.isConflicting() after exec+render
-// ---------------------------------------------------------------------------
 
+// T3 — exec wires validator into mutation path
+// Integration chain: exec → board mutation → conflict refresh → event emission
+// Check conflict bits through the returned Event board_view
 
 test "exec fill creates conflict → cell marked" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
     // Row 0: cells (0,2) and (0,3) are both empty — fill both with eight
-    { const fill1 = command.Command{
+    const fill1 = command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
     };
+
     _ = try engine.exec(fill1);
-    }
-    { const fill2 = command.Command{
+
+    const fill2 = command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
     };
-    _ = try engine.exec(fill2);
+    const event = try engine.exec(fill2);
+    switch (event) {
+        .ok => |ev| {
+            // Both cells in row 0 must now be flagged as conflicting
+            try std.testing.expect(ev.board_view.isConflictingRowCol(0, 2));
+            try std.testing.expect(ev.board_view.isConflictingRowCol(0, 3));
+
+            // A cell not in the conflict path should be clean (row 5, col 5)
+            try std.testing.expect(!ev.board_view.isConflictingRowCol(5, 5));
+        },
+        .error_msg => return error.TestFailed,
     }
-
-    // Both cells in row 0 must now be flagged as conflicting (flat indices 2 and 3)
-    try std.testing.expect(engine.board.isConflicting(2));
-    try std.testing.expect(engine.board.isConflicting(3));
-
-    // A cell not in the conflict path should be clean
-    try std.testing.expect(!engine.board.isConflicting(50));
 }
-
 
 test "exec clear resolves conflict → previously-conflicting peer now clean" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
     // Create a row-0 conflict pair: (0,2) and (0,3) both eight
-    { _ = try engine.exec(command.Command{
-        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
-    });
+    {
+        _ = try engine.exec(command.Command{
+            .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
+        });
     }
-    { _ = try engine.exec(command.Command{
-        .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
-    });
+    {
+        const ev1 = try engine.exec(command.Command{
+            .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
+        });
+        switch (ev1) {
+            .ok => |view| {
+                try std.testing.expect(view.board_view.isConflictingRowCol(0, 2));
+                try std.testing.expect(view.board_view.isConflictingRowCol(0, 3));
+            },
+            .error_msg => return error.TestFailed,
+        }
     }
-
-    // Confirmed conflicting
-    try std.testing.expect(engine.board.isConflicting(2));
-    try std.testing.expect(engine.board.isConflicting(3));
 
     // Clear (0,3) → its peer (0,2) should no longer be flagged either
-    { _ = try engine.exec(command.Command{
-        .clear = command.ClearData{ .row = 0, .col = 3 },
-    });
+    {
+        const ev2 = try engine.exec(command.Command{
+            .clear = command.ClearData{ .row = 0, .col = 3 },
+        });
+        switch (ev2) {
+            .ok => |view| {
+                try std.testing.expect(!view.board_view.isConflictingRowCol(0, 2));
+                try std.testing.expect(!view.board_view.isConflictingRowCol(0, 3));
+            },
+            .error_msg => return error.TestFailed,
+        }
     }
-
-    try std.testing.expect(!engine.board.isConflicting(2));
-    try std.testing.expect(!engine.board.isConflicting(3));
 }
-
 
 test "exec fill no conflict → no bits set" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
     // Row 0 already has six at (0,0) and seven at (0,1).
     // Fill (0,2) with one — unique across its row, col, and box → clean.
-    { _ = try engine.exec(command.Command{
+    const event = try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
     });
-    }
 
-    // The filled cell and its row/col/box peers must all be conflict-free
-    try std.testing.expect(!engine.board.isConflicting(2));
+    switch (event) {
+        .ok => |ev| {
+            // The filled cell must be conflict-free
+            try std.testing.expect(!ev.board_view.isConflictingRowCol(0, 2));
 
-    // Spot-check other cells in the affected scopes (row 0 indices, col 2 indices, box 0 indices)
-    for (0..board.DIMENSION_SIZE) |c| {
-        const idx: usize = @intCast(c);
-        try std.testing.expect(!engine.board.isConflicting(idx));
-    }
-    for (0..board.DIMENSION_SIZE) |r| {
-        const idx: usize = (@as(usize, @intCast(r)) * board.DIMENSION_SIZE) + 2;
-        try std.testing.expect(!engine.board.isConflicting(idx));
+            // Row 0 cells must all be conflict-free
+            for (0..board.DIMENSION_SIZE) |c| {
+                const c4: u4 = @intCast(c);
+                try std.testing.expect(!ev.board_view.isConflictingRowCol(0, c4));
+            }
+            // Column 2 cells must all be conflict-free
+            for (0..board.DIMENSION_SIZE) |r| {
+                const r4: u4 = @intCast(r);
+                try std.testing.expect(!ev.board_view.isConflictingRowCol(r4, 2));
+            }
+        },
+        .error_msg => return error.TestFailed,
     }
 }
-
-
 test "init calls validate so initial conflicts are detected" {
     _ = try GameEngine.init(puzzle_gen.PuzzleGen.default());
 
     // A well-formed puzzle confirms at least that validate runs without crashing.
 }
-// ---------------------------------------------------------------------------
-// Step 1 test — Event union shape
-// ---------------------------------------------------------------------------
+
+// Event union shape tests
 
 test "Event.ok carries board_view and optional msg" {
     const puzzle_str: []const u8 = puzzle_gen.PuzzleGen.default();
@@ -278,10 +288,7 @@ test "Event.error_msg carries an error string" {
     };
 }
 
-// ---------------------------------------------------------------------------
 // Integration test — game engine init propagates board error from puzzle
-// ---------------------------------------------------------------------------
-
 
 test "GameEngine.init propagates invalid puzzle error" {
     try std.testing.expectError(
@@ -289,9 +296,6 @@ test "GameEngine.init propagates invalid puzzle error" {
         GameEngine.init("too-short"),
     );
 }
-// ---------------------------------------------------------------------------
-// Step 3 test — GameEngine no longer requires a renderer type parameter
-// ---------------------------------------------------------------------------
 
 test "GameEngine is non-generic, init takes only puzzle string" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
@@ -301,8 +305,6 @@ test "GameEngine is non-generic, init takes only puzzle string" {
 
     // No renderer field exists (compile-time guarantee if struct is non-generic)
 }
-
-// Step 4 — exec returns Event, not CommandResult
 
 test "exec fill returns Event.ok with board_view" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
