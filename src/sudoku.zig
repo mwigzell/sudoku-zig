@@ -57,7 +57,7 @@ pub fn Sudoku(comptime R: type) type {
 
                 // Sw — switch on parse outcome
                 switch (result) {
-                    .invalid_message => |msg| {
+                    .error_msg => |msg| {
                         try self.waitAck(out, in_, msg);
                         continue;
                     },

@@ -16,12 +16,12 @@ pub const Command = union(CommandTag) {
     quit: void,
 };
 
-pub const ParseResultTag = enum { valid, invalid_message };
+pub const ParseResultTag = enum { valid, error_msg };
 
 /// Result of parsing one line.
 pub const ParseCommandResult = union(ParseResultTag) {
     valid: Command,
-    invalid_message: []const u8,
+    error_msg: []const u8,
 };
 
 // ---------------------------------------------------------------------------
@@ -29,33 +29,33 @@ pub const ParseCommandResult = union(ParseResultTag) {
 // ---------------------------------------------------------------------------
 
 const coordError: ParseCommandResult = .{
-    .invalid_message = "coordinate must be a letter (A-I) followed by a number (1-9)",
+    .error_msg = "coordinate must be a letter (A-I) followed by a number (1-9)",
 };
 
 /// Trim → tokenize → dispatch verb → unknown-fallback.
 pub fn parse(input_line: []const u8) ParseCommandResult {
     const trimmed = std.mem.trim(u8, input_line, &std.ascii.whitespace);
-    if (trimmed.len == 0) return .{.invalid_message = "empty input"};
+    if (trimmed.len == 0) return .{.error_msg = "empty input"};
 
     var it = std.mem.tokenizeAny(u8, trimmed, &std.ascii.whitespace);
-    const verb = it.next() orelse return .{.invalid_message = "missing verb"};
+    const verb = it.next() orelse return .{.error_msg = "missing verb"};
 
     if (std.ascii.eqlIgnoreCase(verb, "quit")) {
         return parseQuit();
     }
     if (std.ascii.eqlIgnoreCase(verb, "fill")) {
-        const coord_str = it.next() orelse return .{.invalid_message = "fill requires coordinate"};
-        const digit_s = it.next() orelse return .{.invalid_message = "fill requires digit"};
+        const coord_str = it.next() orelse return .{.error_msg = "fill requires coordinate"};
+        const digit_s = it.next() orelse return .{.error_msg = "fill requires digit"};
         return parseFill(coord_str, digit_s);
     }
     if (std.ascii.eqlIgnoreCase(verb, "clear")) {
-        const coord_s = it.next() orelse return .{.invalid_message = "clear requires coordinate"};
+        const coord_s = it.next() orelse return .{.error_msg = "clear requires coordinate"};
         return parseClear(coord_s);
     }
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{verb}) catch unreachable;
-    return .{.invalid_message = msg};
+    return .{.error_msg = msg};
 }
 
 /// Quit takes no arguments.
@@ -100,7 +100,7 @@ fn parseCoordinate(s: []const u8) ?ClearData {
 fn errorBadDigit(val: []const u8) ParseCommandResult {
     var buf: [40]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "invalid digit: '{s}'", .{val}) catch unreachable;
-    return .{.invalid_message = msg};
+    return .{.error_msg = msg};
 }
 
 // ---------------------------------------------------------------------------
@@ -127,51 +127,66 @@ test "parse quit → .valid quit" {
     if (res != .valid) return error.TestFailed;
 }
 
-test "parse empty line → .invalid_message" {
+test "parse empty line → .error_msg" {
     const res = parse("   ");
-    if (res == .invalid_message) {
-        try std.testing.expectEqualStrings(res.invalid_message, "empty input");
+    if (res == .error_msg) {
+        try std.testing.expectEqualStrings(res.error_msg, "empty input");
     } else {
         return error.TestFailed;
     }
 }
 
-test "parse unknown verb → .invalid_message describing the issue" {
+test "parse unknown verb → .error_msg describing the issue" {
     const res = parse("foobar");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
 }
 
-test "parse fill with out-of-range column (J1) → .invalid_message" {
+test "parse fill with out-of-range column (J1) → .error_msg" {
     const res = parse("fill J1 5");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
 }
 
-test "parse fill with out-of-range row (A0) → .invalid_message" {
+test "parse fill with out-of-range row (A0) → .error_msg" {
     const res = parse("fill A0 5");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
 }
 
-test "parse fill A1 with non-digit value → .invalid_message" {
+test "parse fill A1 with non-digit value → .error_msg" {
     const res = parse("fill A1 X");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
 }
 
-test "parse fill with malformed coordinate (extra chars) → .invalid_message" {
+test "parse fill with malformed coordinate (extra chars) → .error_msg" {
     const res = parse("fill ABC 5");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
 }
 
-test "parse clear with out-of-range column (J3) → .invalid_message" {
+test "parse clear with out-of-range column (J3) → .error_msg" {
     const res = parse("clear J3");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
 }
 
-test "parse clear with out-of-range row (C0) → .invalid_message" {
+test "parse clear with out-of-range row (C0) → .error_msg" {
     const res = parse("clear C0");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
 }
 
-test "parse clear with single-char coordinate → .invalid_message" {
+test "parse clear with single-char coordinate → .error_msg" {
     const res = parse("clear Z");
-    if (res != .invalid_message) return error.TestFailed;
+    if (res != .error_msg) return error.TestFailed;
+}
+
+test "parse error cases return .error_msg tag (not .invalid_message)" {
+    // This test proves the rename: all error paths use .error_msg.
+    const empty = parse("");
+    if (empty != .error_msg) return error.TestFailed;  // was .invalid_message
+
+    const unknown = parse("foobar");
+    if (unknown != .error_msg) return error.TestFailed;
+
+    const bad_coord = parse("fill J1 5");
+    if (bad_coord != .error_msg) return error.TestFailed;
+
+    const bad_digit = parse("fill A1 X");
+    if (bad_digit != .error_msg) return error.TestFailed;
 }
