@@ -6,12 +6,13 @@ const command = @import("command.zig");
 
 pub fn Sudoku(comptime R: type) type {
     return struct {
-        engine: game_engine.GameEngine(R),
+        engine: game_engine.GameEngine,
         cfg: config.Config,
 
-        pub fn init(cfg: config.Config, r: *R) anyerror!@This() {
+        pub fn init(cfg: config.Config, _r: *R) anyerror!@This() {
+            _ = _r; // not forwarded to engine anymore — renderer lives in run()
             const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
-            const engine = try game_engine.GameEngine(R).init(puzzle_str, r);
+            const engine = try game_engine.GameEngine.init(puzzle_str);
             return .{
                 .engine = engine,
                 .cfg = cfg,
@@ -40,8 +41,7 @@ pub fn Sudoku(comptime R: type) type {
 
             const in_ = &stdin_reader.interface;
 
-            // R — initial render
-            try self.engine.render();
+            // TODO: initial render — Step 4 will wire this through exec() returning Event
 
             while (true) {
                 // P — prompt
