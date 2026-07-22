@@ -83,14 +83,15 @@ test "GameEngine fill updates cell value" {
 
 test "GameEngine init builds board from puzzle string" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    const view = engine.eventBoard();
 
     // puzzle[0..2] is '6' → A1 should be a given (six)
-    try std.testing.expect(engine.board.isGiven(0, 0));
-    try std.testing.expectEqual(cell.CellValue.six, engine.board.getCellValue(0, 0));
+    try std.testing.expect(view.isGiven(0, 0));
+    try std.testing.expectEqual(cell.CellValue.six, view.get(0, 0));
 
     // puzzle[2] is '.' → A3 should be non-given and empty
-    try std.testing.expect(!engine.board.isGiven(0, 2));
-    try std.testing.expectEqual(cell.CellValue.zero, engine.board.getCellValue(0, 2));
+    try std.testing.expect(!view.isGiven(0, 2));
+    try std.testing.expectEqual(cell.CellValue.zero, view.get(0, 2));
 }
 
 // T2: exec(Command) returns structured results with given-cell feedback
@@ -256,9 +257,10 @@ test "GameEngine.init propagates invalid puzzle error" {
 
 test "GameEngine is non-generic, init takes only puzzle string" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    const view = engine.eventBoard();
 
     // Board was built correctly from the puzzle string
-    try std.testing.expect(engine.board.isGiven(0, 0));
+    try std.testing.expect(view.isGiven(0, 0));
 
     // No renderer field exists (compile-time guarantee if struct is non-generic)
 }

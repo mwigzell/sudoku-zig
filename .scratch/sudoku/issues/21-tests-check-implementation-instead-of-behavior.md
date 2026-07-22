@@ -1,4 +1,4 @@
-
+Status: ready-for-agent
 
 Triage date: 2025-07-23
 
@@ -21,10 +21,9 @@ These are valuable structural tests now, but they tie the test suite closer to i
 - [ ] Refactor at least one heavily-coupled test to use GameEngine command→event flow where practical
 - [ ] Keep structural tests that prove correctness of internal invariants (not every test needs to go through GameEngine)
 
-#Triage notes:
-
-- Cannot refactor tests to use command→event flow until issue 20 implements that seam
-
-## Blocked by
-
-20 — Event seam remediation. The GameEngine `exec()` path must return an Event with a BoardView snapshot before any tests can be refactored to exercise that boundary instead of poking internal state.
+## Triage notes:
+- Blocker (issue 20) is `Status: closed` — Event seam is implemented.
+- Issue 20's Step 5 already converted most GameEngine tests to use `Event.ok.board_view`.
+- **Remaining scope:** two game_engine tests (`"GameEngine init builds board from puzzle string"`, `"GameEngine is non-generic, init takes only puzzle string"`) still access `engine.board.` directly and should use `eventBoard()` instead.
+- Board.zig tests checking `digit_bits` and `isConflicting(idx)` are legitimate low-level invariant tests — per AC #3 these are kept as-is (they test module-local invariants at the right layer).
+## Blocked by: _none_ (issue 20 is closed)
