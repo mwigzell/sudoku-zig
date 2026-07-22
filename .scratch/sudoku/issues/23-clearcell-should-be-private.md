@@ -28,8 +28,8 @@ The problem:
 - [x] `clearCell` is called from zero production sites (only co-located Board tests)
 - [x] Make `clearCell` non-public (remove `pub`) so it exists only as a test helper / internal reset primitive on the Board struct
 - [x] All tests pass
-- [ ] Make `clearCell` non-public (remove `pub`) so it exists only as a test helper / internal reset primitive on the Board struct
-- [ ] All tests pass
+- [x] Make `clearCell` non-public (remove `pub`) so it exists only as a test helper / internal reset primitive on the Board struct
+- [x] All tests pass
 ## Working Log
 
 **`error.NotGiven` → `error.IsGiven` (Board.setCell)** — comptime error tag is created inline on the return expression at board.zig:206. Renamed so the name reads naturally: if the cell **is** given, return error.IsGiven. Updated all 3 references.

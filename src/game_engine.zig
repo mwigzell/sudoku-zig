@@ -4,6 +4,13 @@ const cell = @import("cell.zig");
 
 pub const CommandResult = union(enum) { ok, error_msg: []const u8 };
 
+pub const Event = union(enum) {
+    ok: struct {
+        board_view: board.Board.BoardView,
+        msg: ?[]const u8,
+    },
+    error_msg: []const u8,
+};
 
 /// GameEngine is generic over the Renderer type it receives at init.
 /// Holds Board state and delegates snapshot emission to the renderer.
@@ -28,7 +35,7 @@ pub fn GameEngine(comptime R: type) type {
         /// Silently skips given cells.
         pub fn fill(self: *@This(), row_idx: usize, col_idx: usize, value: u8) void {
             if (!self.board.isGiven(@intCast(row_idx), @intCast(col_idx))) {
-                self.board.setCell(@intCast(row_idx), @intCast(col_idx), cell.rawToCellValue(value)) catch {};
+                _ = self.board.setCell( @intCast(row_idx), @intCast(col_idx), cell.rawToCellValue(value) ) catch {};
             }
         }
 
@@ -59,25 +66,19 @@ pub fn GameEngine(comptime R: type) type {
             }
         }
 
-        /// Attempt to fill a cell — surfaces given-cell rejections as error_msg.
         fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!CommandResult {
-            self.board.setCell(row, col, digit) catch {
-                return CommandResult{ .error_msg = "cannot overwrite a given cell" };
+            self.board.setCell(row, col, digit) catch |err| {
+                var buf: [80]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) }) catch unreachable;
+                return CommandResult{ .error_msg = msg };
             };
             self.board.refreshConflictsForCell(row, col);
             try self.renderer.render(self.board.asView());
             return CommandResult.ok;
         }
-
-        /// Attempt to clear a cell — refuses if the cell is given.
+        /// Attempt to clear a cell — delegates to tryFill with .zero.
         fn tryClear(self: *@This(), row: u4, col: u4) anyerror!CommandResult {
-            if (self.board.isGiven(row, col)) {
-                return CommandResult{ .error_msg = "cannot clear a given cell" };
-            }
-            self.board.clearCell(row, col);
-            self.board.refreshConflictsForCell(row, col);
-            try self.renderer.render(self.board.asView());
-            return CommandResult.ok;
+            return self.tryFill(row, col, .zero);
         }
     };
     return Engine;
@@ -297,6 +298,41 @@ test "init calls validate so initial conflicts are detected" {
     // (If validate were NOT called, we can't prove it via absence of conflicts,
     // but a well-formed puzzle confirms at least that validate runs without crashing.)
     try std.testing.expect(mock.call_count == 0);
+}
+// ---------------------------------------------------------------------------
+// Step 1 test — Event union shape
+// ---------------------------------------------------------------------------
+
+test "Event.ok carries board_view and optional msg" {
+    const puzzle_str: []const u8 = puzzle_gen.PuzzleGen.default();
+    var board_inst = try board.fromOneLineString(puzzle_str);
+    const view = board_inst.asView();
+
+    _ = Event{
+        .ok = .{
+            .board_view = view,
+            .msg = null,
+        },
+    };
+}
+
+test "Event.ok can carry a message" {
+    const puzzle_str: []const u8 = puzzle_gen.PuzzleGen.default();
+    var board_inst = try board.fromOneLineString(puzzle_str);
+    const view = board_inst.asView();
+
+    _ = Event{
+        .ok = .{
+            .board_view = view,
+            .msg = "puzzle complete!",
+        },
+    };
+}
+
+test "Event.error_msg carries an error string" {
+    _ = Event{
+        .error_msg = "cannot modify a given cell",
+    };
 }
 
 // ---------------------------------------------------------------------------

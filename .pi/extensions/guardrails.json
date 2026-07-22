@@ -37,6 +37,10 @@
       {
         "kind": "file",
         "path": "~/.pi/agent/AGENTS.md"
+      },
+      {
+        "kind": "directory",
+        "path": "~/Dev/src"
       }
     ]
   },

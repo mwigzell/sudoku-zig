@@ -201,16 +201,16 @@ pub const Board = struct {
 
     }
 
-    /// Set the value at (row, col). Returns error.NotGiven if the cell is a puzzle clue.
+    /// Set the value at (row, col). Returns error.IsGiven if the cell is a puzzle clue.
     pub fn setCell(self: *Board, row: u4, col: u4, val: CellValue) !void {
-        if (self.isGiven(row, col)) return error.NotGiven;
+        if (self.isGiven(row, col)) return error.IsGiven;
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
         const old_val = self.cells[idx].value;
         self.cells[idx].value = val;
         self.updateDigitBits(row, col, old_val, val);
     }
     /// Reset a cell at (row, col) to empty and clear its given-bit.
-    pub fn clearCell(self: *Board, row: u4, col: u4) void {
+    fn clearCell(self: *Board, row: u4, col: u4) void {
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
         const old_val = self.cells[idx].value;
         self.cells[idx].value = .zero;
@@ -566,7 +566,7 @@ test "Board: setCell errors when modifying a given cell" {
     try std.testing.expect(b.isGiven(0, 5));
 
     // Attempting to overwrite a given must fail
-    try std.testing.expectError(error.NotGiven, b.setCell(0, 5, .nine));
+    try std.testing.expectError(error.IsGiven, b.setCell(0, 5, .nine));
 
     // The given cell's value is unchanged, read via seam
     try std.testing.expectEqual(CellValue.six, b.getCellValue(0, 5));

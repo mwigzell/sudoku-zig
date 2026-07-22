@@ -1,4 +1,3 @@
-Status: needs-triage
 
 ## Working mode
 

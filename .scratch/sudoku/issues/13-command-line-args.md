@@ -1,66 +1,72 @@
-## Parent
+/** Origin: Phase-based issue rewritten after triage — removed self-blocking phase structure */
 
-`.scratch/sudoku/prd.md`
+Triage date: 2025-07-23
 
-## What to build
+Triage notes:
+- Logger module is done (five severity methods shipped, co-located tests in logger.zig)
+- Config struct exists with difficulty/preferred_renderer/fallback_renderer fields and `default()`
+- CLI argument parsing is absent — main.zig calls `Config.default()`; no flag support yet
 
-Replace `main.zig`'s hard-wired adapter choices with proper command-line argument parsing, a dedicated Config seam, and a Logging subsystem that routes all diagnostics. Currently every invocation loads easy via StdoutRenderer regardless of how the program was invoked; all real-world configuration decisions are baked into code rather than being pluggable.
+## Goal
 
-### Vision (target architecture)
+Add CLI argument parsing so users control difficulty, log level, and help output from the command line. Config module owns arg parsing and exposes a typed struct to the wiring layer. When flags are omitted, Config preserves its existing defaults — arguments overlay rather than replace.
 
-`main()` should be a thin wire job that:
-- Accepts only `std.process.Init` as argument
-- Delegates external environment / parsed CLI flags to a dedicated **Config module**
-- Wires the real-world deps into GameEngine once configuration has been resolved  
-- Does *not* embed business logic, rendering logic, puzzle loading, or stdout/stderr prints itself
+---
 
-The "splash" phase is: parse args → produce `ProgramConfig` struct → pass that to whatever wiring layer follows. The "big time" architecture will add more behind the config seam (renderer pool registration, logging initialization, event loop setup) but main()'s shape already needs to be set right.
+## Context
 
-### Concretely (phase 1 — splash + config boundary)
+`main()` currently calls `Config.default()` — every run uses easy difficulty and info-level logging regardless of how the program was invoked. Logger is shipped (debug/info/warn/err/fatal). Config struct is shaped but doesn't parse args yet — stdlib `std.process.ArgIterator` (via `init.args`) provides the argument stream; nothing consumes it.
 
-- Create `src/config.zig` with a `Config.init(args)` method that returns a typed struct containing:
-  - Selected `Difficulty` enum  
-  - Selected frontend string name (`"stdout"`, `"tui"`, future `"wasm"`)  
-  - Verbosity/debug logging level  
-- Supported flags parsed by Config:
-  - `-d <difficulty>` → values: `easy` (default), `medium`, `hard`. Invalid value emits via Log and exits non-zero.
-  - `-f <frontend>` → values as above, invalid name prints an available-hint via Log and exits non-zero.  
-  - `-h` / `--help` → prints concise usage summary to Log and exits cleanly (0).
-- Difficulty & frontend are independent axes on CLI (you can pick any combo).
+---
 
-### Concretely (phase 2 — logging subsystem)
+## Steps (each builds on previous, each is a vertical slice)
 
-- All program output and error messages route through a **Log** subsystem. Stdout/stderr are *not* dumped directly; they emit via the Log adapter.  
-- Severity levels from highest to lowest: `fatal`, `error`, `warning`, `info`, `debug/verbose`.
-- Verbosity flag `-v <verbosity>` controls threshold only (if set to debug, all show; if error, only fatal+error show). Default is info unless explicitly changed.
-- Stderr output *should* probably go through the log adapter rather than bypassing it entirely so diagnostics stay consistent when file or rotating logs land later.
+### Step 1: Add `-d <difficulty>` flag parsing to Config
 
-### Concretely (phase 3 — frontend splash & event coordination)
+**File**: `src/config.zig`
 
-- Add a **splash slot** to renderers: a lightweight first-render hook that emits immediately after GameEngine wires up but before the command/event loop begins processing user moves.
-- Coordination point established between `main()` and GameEngine for the command/event loop so main stays thin instead of accumulating boilerplate as features land.
+- Start from `Config.default()` values and overlay only the fields whose flags were provided 
+- Parse `-d` / `--difficulty` for values: `easy`, `medium`, `hard`; absent leaves difficulty at `.easy`
+- Invalid difficulty value emits error via Logger and exits non-zero
 
-## Acceptance criteria
+### Step 2: Add log-level flag `-v <level>` to Config
 
-### Phase 1 (mandatory)
-- [ ] Config module parses difficulty and frontend flags into a typed struct  
+**File**: `src/config.zig`
+
+- Parse `-v` / `--log-level` for values matching Logger severity enum 
+- Only overlays the log-level field; all other defaults (difficulty, renderer) stay intact when absent
+- Default log level remains info-equivalent unless explicitly changed  
+- Add log level field to Config struct (e.g. `log_level: LogLevel`)
+
+### Step 3: Add `-h` / `--help` usage summary
+
+**File**: `src/config.zig`
+
+- Emit concise usage summary listing supported flags and their valid values
+- Exit cleanly with code 0
+- Route output through Logger
+
+### Step 4: Wire Config.init into main
+
+**Files**: `src/main.zig`, `src/root.zig` 
+
+- Replace `Config.default()` call in main with `Config.init(init.args)` 
+- Verify via `zig build run -d medium` launches with medium puzzle
+- Add test covering parsed config values reach main as expected
+
+---
+
+## Acceptance Criteria
+
 - [ ] `zig build run -d medium` launches with a medium-difficulty generated puzzle
-- [ ] `-f stdout` selects StdoutRenderer explicitly; unknown frontends emit a hint via Log
-- [ ] `zig build run` (no arguments) still defaults to easy + stdout  
-- [ ] `-h` / `--help` prints concise usage summary and exits cleanly  
-- [ ] Invalid flags or mismatched values produce diagnostic output via logging, then exit non-zero  
+- [ ] `zig build run` (no arguments) preserves all current defaults from Config.default()
+- [ ] Individual flags overlay defaults without overwriting untouched fields
+- [ ] `-v <log_level>` controls which severity messages get emitted
+- [ ] Invalid flags or values produce diagnostic output via Logger, then exit non-zero
+- [ ] `-h` / `--help` prints concise usage summary and exits cleanly (0)
 
-### Phase 2 (logging subsystem)
-- [ ] Fatal/Error/Warning/Info/Debug logging hierarchy implemented behind a single Log seam  
-- [ ] Verbosity flag `-v <verbose_level>` gates what gets emitted based on threshold  
-- [ ] No direct `std.debug.print` or raw stdout/error writes live outside the Log adapter (including main.zig)  
-
-### Phase 3 (frontend splash + event coordination)
-- [ ] Splash hook emits immediately after GameEngine wiring, before command/event loop starts processing input
-- [ ] Command/event loop responsibility cleanly assigned and documented so future features don't leak into `main()` 
+---
 
 ## Blocked by
 
-Phase 1: Nothing. Pulls args from `std.process.Init.minimal.args`, which is already available through `main(init: std.process.Init)`. I/O routing handled via IoSink.  
-Phase 2: Independent of external deps; self-contained logging module creation.  
-Phase 3: TUI renderer (issue 10) + event loop design work.
+(none — Logger is shipped; Config struct exists; arg iterator available via `init.args`)
