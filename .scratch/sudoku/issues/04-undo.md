@@ -1,4 +1,4 @@
-Status: in-progress (Steps 1-2 done, Steps 3-7 remain)
+Status: closed
 
 ## Parent
 `.scratch/sudoku/prd.md`
@@ -60,19 +60,25 @@ Renderer requires zero changes — `Event.ok { board_view, msg }` already carrie
 **File:** `src/sudoku.zig` (`run`)
 - Add `"U"` / `"u"` and `"R"` / `"r"` keystroke parsing in the input dispatch so the player can actually trigger them from TUI.
 
----
+### Step 8: Extract `Event` → `event.zig` + `MutationHistory` → `undo.zig`
+**Files:** `src/event.zig`, `src/undo.zig`, update imports in `game_engine.zig`, `sudoku.zig`, `root.zig`
+- Move `Event` union from `game_engine.zig` to new `event.zig` — it's the public output contract of `exec()`, consumed by both `GameEngine` and `Sudoku.run()`.
+- Move `MutationEntry` + `MutationHistory` from `game_engine.zig` to new `undo.zig` — clarifies that undo state model is its own concern; lets undo test suite live co-located without a loaded board.
+- Update all imports (`game_engine.zig`, `sudoku.zig`, `root.zig` entry point) and verify full compile + test pass.
+
 
 ## Acceptance criteria
 
 - [x] `Command.undo = struct {}` defined and parseable as `"U"` (or `"u"`)
 - [x] `Command.redo = struct {}` defined and parseable as `"R"` (or `"r"`, `"redo"`)
-- [ ] History stack tracks fill/clear mutations inside GameEngine with a pointer that moves back/forward
-- [ ] Single undo reverts the most recent mutation (fill, clear) through `exec(Command{ .undo }) → Event.ok { ... }`
-- [ ] Single redo re-applies the last undone mutation through `exec(Command{ .redo }) → Event.ok { ... }`
-- [ ] Multiple sequential undos walk back correctly through history
-- [ ] Multiple sequential redos walk forward correctly through future
-- [ ] Undo on empty past returns `.error_msg("nothing to undo")`; redo on empty future returns `.error_msg("nothing to redo")`
-- [ ] New mutation after undo truncates the redo path (futures from branches are destroyed)
+- [x] History stack tracks fill/clear mutations inside GameEngine with a pointer that moves back/forward
+- [x] Single undo reverts the most recent mutation (fill, clear) through `exec(Command{ .undo }) → Event.ok { ... }
+- [x] Single redo re-applies the last undone mutation through `exec(Command{ .redo }) → Event.ok { ... }
+- [x] Multiple sequential undos walk back correctly through history
+- [x] Multiple sequential redos walk forward correctly through future
+- [x] Undo on empty past returns `.error_msg("nothing to undo")`; redo on empty future returns `.error_msg("nothing to redo")`
+- [x] New mutation after undo truncates the redo path (futures from branches are destroyed)
+- [x] `Event` lives in `src/event.zig`; `MutationHistory` / `MutationEntry` live in `src/undo.zig`
 
 ## Blocked by
 _(none)_
