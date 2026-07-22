@@ -18,14 +18,17 @@ pub fn Sudoku(comptime R: type) type {
             };
         }
 
+        fn readLine(reader: anytype) anyerror![]const u8 {
+            return try reader.takeDelimiter('\n') orelse return error.ReadEOF;
+        }
+
         /// Show an error message and wait for Enter to continue.
         fn waitAck(self: *@This(), writer: anytype, reader: anytype, msg: []const u8) anyerror!void {
             _ = self;
             try writer.print("{s}\n", .{msg});
             try writer.print("Press Enter to continue... ", .{});
 
-            _ = try reader.takeDelimiterExclusive('\n');
-
+            _ = try readLine(reader);
         }
 
         /// R → P → L → Pr → Sw → E command loop.
@@ -45,11 +48,9 @@ pub fn Sudoku(comptime R: type) type {
                 try out.print("> ", .{});
 
                 // L — read line from stdin
-                const line = in_.takeDelimiterExclusive('\n') catch |err| switch (err) {
-                    error.EndOfStream => return, // EOF → clean exit
-                    else => return err,          // other error → propagate
-                };
-                if (line.len == 0) return; // end of input - no more data from stdin
+                const line = try readLine(in_);
+                if (line.len == 0) continue;
+
                 // Pr — parse line
                 const tokens = std.mem.trim(u8, line, &std.ascii.whitespace);
                 const result = command.parse(tokens);

@@ -7,10 +7,12 @@ const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
 const ascii_renderer = @import("ascii_renderer.zig");
 const styler = @import("styler.zig");
+const config = @import("config.zig");
 const command = @import("command.zig");
+const sudoku = @import("sudoku.zig");
 const validator = @import("validator.zig");
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
 test {
-    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler, command, validator };
+    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler, config, command, validator, sudoku };
 }
