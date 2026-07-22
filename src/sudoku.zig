@@ -68,6 +68,20 @@ pub fn Sudoku(comptime R: type) type {
             }
         }
 
+        /// Prompt the user, read a line, parse it, and dispatch. Returns true on quit.
+        fn promptForAndRunCommand(self: *@This(), out: anytype, in_: anytype,
+            renderer: anytype) anyerror!bool
+        {
+            try out.print("> ", .{});
+
+            const line = try readLine(in_);
+            if (line.len == 0) return false; // empty input → stay in loop
+
+            const tokens = std.mem.trim(u8, line, &std.ascii.whitespace);
+            const result = command.parse(tokens);
+            return try self.handleResult(out, in_, renderer, result);
+        }
+
         /// Read → Parse → Loop command interface.
         pub fn run(self: *@This(), io: std.Io, renderer: anytype) anyerror!void {
             var stdout_writer = std.Io.File.stdout().writer(io, &.{});
@@ -81,19 +95,7 @@ pub fn Sudoku(comptime R: type) type {
 
             var isDone: bool = false;
             while (!isDone) {
-                // P — prompt
-                try out.print("> ", .{});
-
-                // L — read line from stdin
-                const line = try readLine(in_);
-                if (line.len == 0) continue;
-
-                // Pr — parse line
-                const tokens = std.mem.trim(u8, line, &std.ascii.whitespace);
-                const result = command.parse(tokens);
-
-                // Sw — handle the parse outcome
-                isDone = try self.handleResult(out, in_, renderer, result);
+                isDone = try self.promptForAndRunCommand(out, in_, renderer);
             }
         }
     };
