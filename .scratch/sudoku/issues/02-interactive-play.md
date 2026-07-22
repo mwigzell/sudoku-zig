@@ -1,4 +1,4 @@
-Status: needs-triage
+Status: closed
 Triage date: 2025-07-18
 Triage notes:
   - Parent umbrella for interactive play loop (US1/US2/US3 from PRD).
@@ -10,9 +10,9 @@ Triage notes:
 - [x] 01-command-parser (T1) — command union + parser returning ParseCommandResult
 - [x] 02-game-engine-exec (T2) — exec(Command) returns CommandResult with given-cell feedback
 - [x] 03-validator-flag-conflicts (T3) — walk Board views and flag conflicting cells
-- [ ] 04-exec-wires-validator (T4) — wire validator into exec path post-mutation
-- [ ] 05-styler-conflict-decoration (T5) — AnsiStyler decorates conflicting cells
-- [ ] 06-main-command-loop (T6) — full command loop with acknowledge gate
+- [x] 04-exec-wires-validator (T4) — wire validator into exec path post-mutation
+- [x] 05-styler-conflict-decoration (T5) — AnsiStyler decorates conflicting cells
+- [x] 06-main-command-loop (T6) — full command loop with acknowledge gate
 
 ## Working mode
 TDD per TDD skill. Agent writes tests first, then code for each step. T6 is integration-heavy — verified by manual `zig build run`.
@@ -41,11 +41,11 @@ Replace the "render once and exit" main with a command-driven loop. The player t
 - [x] Parser returns ParseCommandResult — valid commands carry structure, invalid inputs carry rejection message
 - [x] GameEngine gains exec(Command) !CommandResult entry point; given-cell rejections surface as .error_msg
 - [x] Validator detects digit conflicts across row/col/box using Board topology
-- [ ] Conflicting cells are visually distinguished via AnsiStyler
-- [ ] Main event loop: render → prompt → read → parse → switch → exec → acknowledge (on failures)
-- [ ] quit command exits cleanly
-- [ ] Parse errors handled without crashing
-- [ ] zig test passes all prior tests
+- [x] Conflicting cells are visually distinguished via AnsiStyler
+- [x] Main event loop: render → prompt → read → parse → switch → exec → acknowledge (on failures)
+- [x] quit command exits cleanly
+- [x] Parse errors handled without crashing
+- [x] zig test passes all prior tests
 
 ## Blocked by
 
