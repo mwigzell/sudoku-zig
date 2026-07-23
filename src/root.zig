@@ -13,8 +13,9 @@ const sudoku = @import("sudoku.zig");
 const validator = @import("validator.zig");
 const event = @import("event.zig");
 const undo = @import("undo.zig");
+const disambiguate = @import("disambiguate.zig");
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
 test {
-    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler, config, command, validator, sudoku, event, undo };
+    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler, config, command, validator, sudoku, event, undo, disambiguate };
 }
