@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: Step 1 complete — disambiguation algorithm wired up and all tests green.
 
 ## Parent
 `.scratch/sudoku/prd.md` (Interactive Play — command UX improvement)

@@ -17,5 +17,11 @@ const disambiguate = @import("disambiguate.zig");
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
 test {
-    _ = .{ cell, board, game_engine, mock_renderer, puzzle_gen, logger, ascii_renderer, styler, config, command, validator, sudoku, event, undo, disambiguate };
+    _ = .{
+        cell, board, game_engine,
+        mock_renderer, puzzle_gen,
+        logger, ascii_renderer, styler,
+        config, command, validator,
+        sudoku, event, undo, disambiguate,
+    };
 }
