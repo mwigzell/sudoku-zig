@@ -5,6 +5,14 @@ const cell = @import("cell.zig");
 // Moved to src/event.zig, re-exported for backward compat
 const event = @import("event.zig");
 pub const Event = event.Event;
+// Step 3 — context-aware command availability
+pub const AvailableCommands = struct {
+    fill: bool,
+    clear: bool,
+    quit: bool,
+    undo: bool,
+    redo: bool,
+};
 
 // Moved to src/undo.zig, re-exported for backward compat
 const undo = @import("undo.zig");
@@ -33,6 +41,17 @@ pub const GameEngine = struct {
     /// Return a snapshot of the current board view.
     pub fn eventBoard(self: *@This()) board.Board.BoardView {
         return self.board.asView();
+    }
+
+    /// Which commands are available in the current game state.
+    pub fn getAvailableCommands(self: *const @This()) AvailableCommands {
+        return AvailableCommands{
+            .fill = true,
+            .clear = true,
+            .quit = true,
+            .undo = self.history.pointer > 0,
+            .redo = self.history.pointer < self.history.entries.items.len,
+        };
     }
 
     /// Route a parsed command through Board mutation + render update.
@@ -600,4 +619,93 @@ test "redo on empty future returns .error_msg" {
     // Redo with nothing undone should fail
     const result = try engine.exec(command.Command{ .redo = {} });
     try expectErrorResult(result);
+}
+
+test "getAvailableCommands: fresh engine has Fill/Clear/Quit only" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const cmds = engine.getAvailableCommands();
+    try std.testing.expect(cmds.fill);
+    try std.testing.expect(cmds.clear);
+    try std.testing.expect(cmds.quit);
+    try std.testing.expect(!cmds.undo);
+    try std.testing.expect(!cmds.redo);
+}
+
+test "getAvailableCommands: after fill Undo appears" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+
+    const cmds = engine.getAvailableCommands();
+    try std.testing.expect(cmds.fill);
+    try std.testing.expect(cmds.clear);
+    try std.testing.expect(cmds.quit);
+    try std.testing.expect(cmds.undo);
+    try std.testing.expect(!cmds.redo);
+}
+
+test "getAvailableCommands: after undo-one-of-one Redo appears Undo disappears" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+
+    _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
+
+    const cmds = engine.getAvailableCommands();
+    try std.testing.expect(cmds.fill);
+    try std.testing.expect(cmds.clear);
+    try std.testing.expect(cmds.quit);
+    try std.testing.expect(!cmds.undo);
+    try std.testing.expect(cmds.redo);
+}
+
+test "getAvailableCommands: after partial undo both Undo and Redo available" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
+    }));
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
+    }));
+
+    _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
+
+    const cmds = engine.getAvailableCommands();
+    try std.testing.expect(cmds.fill);
+    try std.testing.expect(cmds.clear);
+    try std.testing.expect(cmds.quit);
+    try std.testing.expect(cmds.undo);
+    try std.testing.expect(cmds.redo);
+}
+
+test "getAvailableCommands: after full undo Undo hidden Redo replays" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
+    }));
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
+    }));
+
+    _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
+
+    const cmds = engine.getAvailableCommands();
+    try std.testing.expect(cmds.fill);
+    try std.testing.expect(cmds.clear);
+    try std.testing.expect(cmds.quit);
+    try std.testing.expect(!cmds.undo);
+    try std.testing.expect(cmds.redo);
 }
