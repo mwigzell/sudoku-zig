@@ -1,4 +1,4 @@
-Status: Step 1 complete — disambiguation algorithm wired up and all tests green.
+Status: Steps 1 and 3 complete — disambiguation algorithm + context-aware command availability.
 
 ## Parent
 `.scratch/sudoku/prd.md` (Interactive Play — command UX improvement)
@@ -105,9 +105,9 @@ Architectural note: keeping prefix-resolved dispatch as the only path — not ar
 
 ## Acceptance criteria
 
-- [ ] Disambiguation algorithm correctly computes minimum unique prefixes for any command set
-- [ ] Shared-prefix collision handled: `"Save"` vs `"SaveAs"` produces distinct minimal prefixes via hump-seed disambiguation
-- [ ] GameEngine exposes `getAvailableCommands()` returning context-aware list (undo/redo hidden when not applicable)
+- [x] Disambiguation algorithm correctly computes minimum unique prefixes for any command set
+- [x] Shared-prefix collision handled: `"Save"` vs `"SaveAs"` produces distinct minimal prefixes via hump-seed disambiguation
+- [x] GameEngine exposes `getAvailableCommands()` returning context-aware list (undo/redo hidden when not applicable)
 - [ ] Parser resolves partial prefixes unambiguously and dispatches to correct argument parser
 - [ ] Ambiguous input returns `.error_msg` with helpful description
 - [ ] Legend prints each cycle showing available commands with parenthesized minimum unique prefix
