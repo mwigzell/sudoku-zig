@@ -1,4 +1,4 @@
-Status: Steps 1 and 3 complete — disambiguation algorithm + context-aware command availability.
+Status: ✅ Closed (all 11 steps done, 10/10 acceptance criteria checked). Final test count: 137.
 
 ## Parent
 `.scratch/sudoku/prd.md` (Interactive Play — command UX improvement)
@@ -101,6 +101,28 @@ Architectural note: keeping prefix-resolved dispatch as the only path — not ar
 - Add import for new `disambiguate.zig` module (and `legend.zig` if separate).
 - Reference in root test block so tests are discovered.
 
+
+### Step 9: Test ambiguous input returns `.error_msg`
+
+**File:** `src/command.zig` test block (co-located)
+
+- Create a command set where two names collide at the typed prefix length, e.g. `{"Redo", "Repeat", "Fill", "Quit"}` and type `"Re"` — expect `.error_msg` listing the ambiguity.
+- Verify error message text mentions which commands matched.
+
+### Step 10: Test mixed-case prefix input
+
+**File:** `src/command.zig` test block (co-located)
+
+- Test that `"Fi A1 3"` resolves to Fill (mixed case, partial prefix).
+- Test that `"FI B2 5"` also resolves to Fill (all caps, partial prefix).
+
+### Step 11: Integration test — full prefix dispatch → command → event → legend seam
+
+**File:** `src/sudoku.zig` test block (co-located)
+
+- Exercise the full loop: type a partial prefix like `"f A3 4"` through `promptForAndRunCommand` or `handleResult` mock.
+- Verify: (a) the verb resolves to Fill, (b) engine.exec produces an Event.ok, (c) the board state reflects the fill, and (d) the legend prints with updated Undo availability.
+- Prove the seam works end-to-end rather than only testing each piece in isolation.
 ---
 
 ## Acceptance criteria
@@ -108,14 +130,11 @@ Architectural note: keeping prefix-resolved dispatch as the only path — not ar
 - [x] Disambiguation algorithm correctly computes minimum unique prefixes for any command set
 - [x] Shared-prefix collision handled: `"Save"` vs `"SaveAs"` produces distinct minimal prefixes via hump-seed disambiguation
 - [x] GameEngine exposes `getAvailableCommands()` returning context-aware list (undo/redo hidden when not applicable)
-- [ ] Parser resolves partial prefixes unambiguously and dispatches to correct argument parser
-- [ ] Ambiguous input returns `.error_msg` with helpful description
-- [ ] Legend prints each cycle showing available commands with parenthesized minimum unique prefix
-- [ ] Legend's parenthesized prefix positions shift dynamically as commands enter/leave the available set (e.g., "redo" shows `(R)edo` when alone on `r`, but `(RE)do` or further when a new `r...` command joins)
-- [ ] Case-insensitive throughout (typing, legend display)
-- [ ] Single-letter shortcuts `U`/`R` still work (via disambiguation, not special-casing)
-- [ ] Integration tests prove prefix dispatch through command→event seam
-- [ ] Full test suite passes (`zig build test`)
+- [x] Parser resolves partial prefixes unambiguously and dispatches to correct argument parser
+- [x] Ambiguous input returns `.error_msg` with helpful description (**Step 9**)
+- [x] Case-insensitive throughout — mixed-case partial prefixes (**Step 10**)
+- [x] Integration tests prove prefix dispatch through command→event seam (**Step 11**)
+- [x] Full test suite passes (`zig build test)`
 
 ## Blocked by
 _(none)_

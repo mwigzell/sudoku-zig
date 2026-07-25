@@ -1,0 +1,153 @@
+//! Legend printer — formats disambiguation entries into a single-line legend string.
+//!
+//! Example: "(F)ill (C)lear (U)ndo (R)edo (Q)uit"
+
+const std = @import("std");
+const mem = std.mem;
+const disambiguate = @import("disambiguate.zig");
+
+// ---------------------------------------------------------------------------
+// Public API
+
+/// Format a list of disambiguation entries into a single-line legend string.
+/// Each entry becomes "(PREFIX)rest_of_name" joined by spaces.
+/// Caller must free the returned string.
+pub fn formatLegend(allocator: mem.Allocator, entries: []const disambiguate.DisambigEntry) mem.Allocator.Error![]u8 {
+    if (entries.len == 0) return allocator.dupe(u8, "");
+
+    var list: std.ArrayList(u8) = .empty;
+    errdefer list.deinit(allocator);
+
+    for (0..entries.len) |i| {
+        const entry = entries[i];
+        const cmd = entry.command;
+        const plen = @min(entry.prefix_len, cmd.len);
+
+        try list.append(allocator, '(');
+        try list.appendSlice(allocator, cmd[0..plen]);
+        try list.append(allocator, ')');
+        if (plen < cmd.len) {
+            try list.appendSlice(allocator, cmd[plen..]);
+        }
+
+        if (i + 1 < entries.len) {
+            try list.append(allocator, ' ');
+        }
+    }
+
+    return list.toOwnedSlice(allocator);
+}
+
+// ---------------------------------------------------------------------------
+// Tests (co-located)
+// ---------------------------------------------------------------------------
+
+test "formatLegend: five non-colliding commands → each prefix is 1 char" {
+    const allocator = std.testing.allocator;
+
+    const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
+        .{ .command = "Fill", .prefix_len = 1 },
+        .{ .command = "Clear", .prefix_len = 1 },
+        .{ .command = "Undo", .prefix_len = 1 },
+        .{ .command = "Redo", .prefix_len = 1 },
+        .{ .command = "Quit", .prefix_len = 1 },
+    };
+
+    const result = try formatLegend(allocator, entries);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(
+        "(F)ill (C)lear (U)ndo (R)edo (Q)uit",
+        result,
+    );
+}
+
+test "formatLegend: hump-seed collision Save vs SaveAs" {
+    const allocator = std.testing.allocator;
+
+    const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
+        .{ .command = "Save", .prefix_len = 1 },
+        .{ .command = "SaveAs", .prefix_len = 2 },
+    };
+
+    const result = try formatLegend(allocator, entries);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("(S)ave (Sa)veAs", result);
+}
+
+test "formatLegend: empty list returns empty string" {
+    const allocator = std.testing.allocator;
+
+    const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{};
+
+    const result = try formatLegend(allocator, entries);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("", result);
+}
+
+test "formatLegend: single command returns parenthesized name" {
+    const allocator = std.testing.allocator;
+
+    const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
+        .{ .command = "Quit", .prefix_len = 1 },
+    };
+
+    const result = try formatLegend(allocator, entries);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("(Q)uit", result);
+}
+
+test "formatLegend: prefix_len equals command length → whole word in parens" {
+    const allocator = std.testing.allocator;
+
+    // When a collision pushes prefix_len to the full command length
+    const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
+        .{ .command = "Fill", .prefix_len = 4 },
+    };
+
+    const result = try formatLegend(allocator, entries);
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("(Fill)", result);
+}
+
+test "formatLegend: redo alone on R vs competing → dynamic prefix shift" {
+    const allocator = std.testing.allocator;
+
+    // When Redo is alone on 'R': prefix_len=1 → (R)edo
+    const solo_entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
+        .{ .command = "Fill", .prefix_len = 1 },
+        .{ .command = "Clear", .prefix_len = 1 },
+        .{ .command = "Undo", .prefix_len = 1 },
+        .{ .command = "Redo", .prefix_len = 1 },
+        .{ .command = "Quit", .prefix_len = 1 },
+    };
+
+    {
+        const result = try formatLegend(allocator, solo_entries);
+        defer allocator.free(result);
+
+        // Should contain "(R)edo" when prefix_len is 1
+        try std.testing.expect(std.mem.indexOf(u8, result, "(R)edo") != null);
+    }
+
+    // When Recents joins: Redo needs prefix_len=2 → (RE)do
+    const competing_entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
+        .{ .command = "Fill", .prefix_len = 1 },
+        .{ .command = "Clear", .prefix_len = 1 },
+        .{ .command = "Undo", .prefix_len = 1 },
+        .{ .command = "Redo", .prefix_len = 2 }, // needs RE now
+        .{ .command = "Quit", .prefix_len = 1 },
+    };
+
+    {
+        const result = try formatLegend(allocator, competing_entries);
+        defer allocator.free(result);
+
+        // Redo should show (Re)do when prefix_len is 2
+        try std.testing.expect(std.mem.indexOf(u8, result, "(Re)do") != null);
+    }
+}
