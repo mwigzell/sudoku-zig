@@ -201,6 +201,16 @@ pub const Board = struct {
 
     }
 
+    /// Serialize current cell values to a flat [81]u8 array for saving.
+    /// Each element is the raw digit: 0 for empty, 1-9 for filled.
+    pub fn toFlat(self: Board) [CELL_COUNT]u8 {
+        var flat: [CELL_COUNT]u8 = undefined;
+        for (self.cells, 0..) |cell, i| {
+            flat[i] = @as(u8, @intFromEnum(cell.value));
+        }
+        return flat;
+    }
+
     /// Set the value at (row, col). Returns error.IsGiven if the cell is a puzzle clue.
     pub fn setCell(self: *Board, row: u4, col: u4, val: CellValue) !void {
         if (self.isGiven(row, col)) return error.IsGiven;
@@ -965,4 +975,49 @@ test "Board: refreshConflictsForCell does not touch unrelated cells" {
 
     // (6,3) still not flagged — refresh on (1,7) doesn't reach row 6 / col 3 / box 5
     try std.testing.expect(!b.isConflicting(59));
+}
+
+test "Board: toFlat produces [81]u8 matching current cell values" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 5;
+    flat[12] = 3;
+    flat[40] = 7;
+    flat[80] = 9;
+
+    var b = try fromFlat(flat);
+    const out = b.toFlat();
+
+    for (out, 0..) |v, i| {
+        const row: u4 = @intCast(@divTrunc(i, DIMENSION_SIZE));
+        const col: u4 = @intCast(@mod(i, DIMENSION_SIZE));
+        const cv = b.getCellValue(row, col);
+        if (v == 0) {
+            try std.testing.expectEqual(CellValue.zero, cv);
+        } else {
+            try std.testing.expectEqual(rawToCellValue(v), cv);
+        }
+    }
+}
+
+test "Board: toFlat -> fromFlat round-trip preserves cell values" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[3] = 6;
+    flat[30] = 2;
+
+    var b = try fromFlat(flat);
+    try b.setCell(0, 0, .one);
+    try b.setCell(1, 1, .four);
+    try b.setCell(8, 8, .nine);
+
+    const out = b.toFlat();
+    const r = try fromFlat(out);
+
+    for (0..CELL_COUNT) |i| {
+        const row: u4 = @intCast(@divTrunc(i, DIMENSION_SIZE));
+        const col: u4 = @intCast(@mod(i, DIMENSION_SIZE));
+
+        try std.testing.expectEqual(b.getCellValue(row, col), r.getCellValue(row, col));
+    }
 }
