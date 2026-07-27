@@ -84,6 +84,8 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     return .{.error_msg = msg};
 }
 
+const MaxMatchedCommands = 32;
+
 /// Public entry point — accepts available command names for prefix dispatch.
 pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) ParseCommandResult {
     const trimmed = std.mem.trim(u8, input_line, &std.ascii.whitespace);
@@ -91,8 +93,6 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
 
     var it = std.mem.tokenizeAny(u8, trimmed, &std.ascii.whitespace);
     const verb = it.next() orelse return .{.error_msg = "missing verb"};
-
-const MaxMatchedCommands = 32;
 
     // Check each command for prefix match — collect matches to report ambiguity
     var matched_cmds: [MaxMatchedCommands][]const u8 = undefined;
