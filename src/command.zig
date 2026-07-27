@@ -92,8 +92,10 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
     var it = std.mem.tokenizeAny(u8, trimmed, &std.ascii.whitespace);
     const verb = it.next() orelse return .{.error_msg = "missing verb"};
 
+const MaxMatchedCommands = 32;
+
     // Check each command for prefix match — collect matches to report ambiguity
-    var matched_cmds: [32][]const u8 = undefined;
+    var matched_cmds: [MaxMatchedCommands][]const u8 = undefined;
     var match_count: usize = 0;
     for (cmd_names) |name| {
         const min_len = @min(verb.len, name.len);
