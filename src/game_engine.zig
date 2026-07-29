@@ -13,6 +13,15 @@ pub const AvailableCommands = struct {
     undo: bool,
     redo: bool,
 };
+// Step 3 — binary save file format
+pub const SaveFileMagic = [_]u8{ 'S', 'U', 'D', '0' };
+pub const SaveFileVersion: u8 = 1;
+
+/// Packed mutation entry for save file (row+col in byte 0, old+new in byte 1).
+pub const SaveEntry = struct {
+    coords: u8,
+    values: u8,
+};
 
 // Moved to src/undo.zig, re-exported for backward compat
 const undo = @import("undo.zig");
@@ -54,6 +63,44 @@ pub const GameEngine = struct {
         };
     }
 
+        /// Serialize game state to a binary save file via an Io handle.
+    pub fn saveGame(self: *const @This(), io: std.Io, path: []const u8) anyerror!void {
+        var file = try std.Io.Dir.createFileAbsolute(io, path, .{});
+        defer file.close(io);
+        var writer_buf: [1024]u8 = undefined;
+        var writer = file.writer(io, &writer_buf);
+        defer writer.flush() catch {};
+        // Header: magic + version (5 bytes)
+        const w = &writer.interface;
+        try w.writeAll(&SaveFileMagic);
+        try w.writeByte(SaveFileVersion);
+
+        // Pointer position (1 byte)
+        const pointer_u8: u8 = @as(u8, @intCast(@min(self.history.pointer, 255)));
+        try w.writeByte(pointer_u8);
+
+        // Total history count (2 bytes little-endian)
+        const ecount: u16 = @as(u16, @intCast(self.history.entries.items.len));
+        try w.writeInt(u16, ecount, .little);
+
+        // Mutation entries (2 bytes each)
+        for (self.history.entries.items) |entry| {
+            const se = SaveEntry{
+                .coords = (@as(u8, @intCast(entry.row)) << 4) | @as(u8, @intCast(entry.col)),
+                .values = (@as(u8, @intFromEnum(entry.old_value)) << 4) | @as(u8, @intFromEnum(entry.new_value)),
+            };
+            try w.writeAll(std.mem.toBytes(&se)[0..@sizeOf(SaveEntry)]);
+        }
+
+        // Given bits as u128 little-endian (16 bytes)
+        try w.writeInt(u128, self.board.given_bits, .little);
+
+        // Board cell values (81 bytes)
+        const flat = self.board.toFlat();
+        try w.writeAll(&flat);
+    }
+
+
     /// Route a parsed command through Board mutation + render update.
     pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
         switch (cmd) {
@@ -92,10 +139,16 @@ pub const GameEngine = struct {
                 self.board.refreshConflictsForCell(entry.row, entry.col);
                 self.history.pointer += 1;
                 return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
+            },
+            .save => {
+                return Event{ .error_msg = "save not yet implemented" };
+            },
+            .open => |o| {
+                _ = o;
+                return Event{ .error_msg = "load not yet implemented" };
             }
         }
     }
-
     fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!Event {
         // Snapshot old value before mutation (only recorded on success)
         const old_value = self.board.asView().get(row, col);
@@ -709,3 +762,116 @@ test "getAvailableCommands: after full undo Undo hidden Redo replays" {
     try std.testing.expect(!cmds.undo);
     try std.testing.expect(cmds.redo);
 }
+
+
+// Step 3 — Save file format tests
+test "SaveEntry: total size is 2 bytes" {
+    try std.testing.expectEqual(@as(usize, 2), @sizeOf(SaveEntry));
+}
+
+test "SaveEntry: pack and unpack coords (row col)" {
+    const entry = SaveEntry{ .coords = (@as(u8, @intCast(3 << 4)) | @as(u8, @intCast(7))), .values = 0 };
+    try std.testing.expectEqual(@as(u4, 3), @as(u4, @intCast(entry.coords >> 4)));
+    try std.testing.expectEqual(@as(u4, 7), @as(u4, @intCast(entry.coords & 0x0F)));
+}
+
+test "SaveEntry: pack and unpack values (old_value new_value)" {
+    const entry = SaveEntry{ .coords = 0, .values = (@as(u8, @intFromEnum(cell.CellValue.three)) << 4) | @as(u8, @intFromEnum(cell.CellValue.seven)) };
+    try std.testing.expectEqual(cell.CellValue.three, cell.rawToCellValue(entry.values >> 4));
+    try std.testing.expectEqual(cell.CellValue.seven, cell.rawToCellValue(entry.values & 0x0F));
+}
+
+test "SaveFileMagic is 4 bytes 'SUD0'" {
+    try std.testing.expectEqualStrings("SUD0", &SaveFileMagic);
+}
+
+test "Save file size: header + history_count(2) + N*entry_size + given_bits(16)" {
+    const HistoryCountBytes = @sizeOf(u16);
+    const GivenBitsBytes = @sizeOf(u128);
+    const HeaderBytes = SaveFileMagic.len + 1; // magic + version
+
+    // Empty game: header(5) + count(2) + 0 entries + given_bits(16) = 23
+    const empty_size = HeaderBytes + HistoryCountBytes + GivenBitsBytes;
+    try std.testing.expectEqual(@as(usize, 23), empty_size);
+
+    // Game with 3 mutations: header(5) + count(2) + 3*2 entries + given_bits(16) = 29
+    const three_mutations_size = HeaderBytes + HistoryCountBytes + (3 * @sizeOf(SaveEntry)) + GivenBitsBytes;
+    try std.testing.expectEqual(@as(usize, 29), three_mutations_size);
+}
+
+
+// Step 4 — saveGame() unit tests
+
+const CELL_COUNT = board.DIMENSION_SIZE * board.DIMENSION_SIZE;
+
+test "saveGame writes file with correct size (empty history)" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const tmp_path = "/tmp/sudoku_test_save_empty.dat";
+    _ = engine.saveGame(std.testing.io, tmp_path) catch |err| return err;
+
+    const stat = try std.Io.Dir.cwd().statFile(std.testing.io, tmp_path, .{});
+
+    // header: magic(4) + version(1) + pointer(1) + count(u16)=2 + given_bits(16) + cells(81) = 105
+    const expected_size: usize = @as(usize, SaveFileMagic.len) + 1 + 1 + @sizeOf(u16) + @sizeOf(u128) + CELL_COUNT;
+    try std.testing.expectEqual(expected_size, stat.size);
+
+    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+}
+
+test "saveGame writes file with correct size (3 history entries)" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
+    }));
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.two },
+    }));
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 3, .digit = cell.CellValue.three },
+    }));
+
+    const tmp_path = "/tmp/sudoku_test_save_3entries.dat";
+    _ = engine.saveGame(std.testing.io, tmp_path) catch |err| return err;
+
+    const stat = try std.Io.Dir.cwd().statFile(std.testing.io, tmp_path, .{});
+
+    // header(6) + count(2) + 3*2 entries + given_bits(16) + cells(81) = 111
+    const expected_size: usize = SaveFileMagic.len + 1 + 1 + @sizeOf(u16) + (3 * @sizeOf(SaveEntry)) + @sizeOf(u128) + CELL_COUNT;
+    try std.testing.expectEqual(expected_size, stat.size);
+
+    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+}
+
+test "saveGame writes correct header magic and version" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const tmp_path = "/tmp/sudoku_test_save_header.dat";
+    _ = engine.saveGame(std.testing.io, tmp_path) catch |err| return err;
+
+    var file = try std.Io.Dir.openFileAbsolute(std.testing.io, tmp_path, .{});
+    defer file.close(std.testing.io);
+
+    var header_buf: [5]u8 = undefined;
+    var readerbuf: [1024]u8 = undefined;
+    var reader = file.reader(std.testing.io, &readerbuf);
+    _ = try reader.interface.readSliceShort(&header_buf);
+
+    try std.testing.expectEqualStrings("SUD0", header_buf[0..4]);
+    try std.testing.expectEqual(@as(u8, 1), header_buf[4]);
+
+    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+}
+
+test "saveGame returns error on bad path" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const result = engine.saveGame(std.testing.io, "/nonexistent/dir/save.dat");
+    try std.testing.expectError(error.FileNotFound, result);
+}
+

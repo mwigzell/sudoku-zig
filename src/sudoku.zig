@@ -74,7 +74,7 @@ pub fn Sudoku(comptime R: type) type {
         }
 
         /// Handle one parsed result. Returns true when the command loop should end.
-        fn handleResult(self: *@This(), out: anytype, in_: anytype, renderer: anytype, result: command.ParseCommandResult) anyerror!bool {
+        fn handleResult(self: *@This(), out: anytype, in_: anytype, renderer: anytype, io: std.Io, result: command.ParseCommandResult) anyerror!bool {
             switch (result) {
                 .error_msg => |msg| {
                     try self.waitAck(out, in_, msg);
@@ -83,14 +83,31 @@ pub fn Sudoku(comptime R: type) type {
                 .valid => |cmd| {
                     if (cmd == .quit) return true;
 
-                    const event = try self.engine.exec(cmd);
-                    return try self.handleEvent(out, in_, renderer, event);
+                    switch (cmd) {
+                        .save => {
+                            self.engine.saveGame(io, ".sudoku_save.dat") catch |err| {
+                                try out.print("save failed: {s}\n", .{@errorName(err)});
+                                return false;
+                            };
+                            return false;
+                        },
+                        .open => |o_data| {
+                            _ = o_data;
+                            // loadGame not yet implemented
+                            try out.print("load not yet implemented\n", .{});
+                            return false;
+                        },
+                        else => {
+                            const event = try self.engine.exec(cmd);
+                            return try self.handleEvent(out, in_, renderer, event);
+                        },
+                    }
                 },
             }
         }
 
         /// Prompt the user, read a line, parse it, and dispatch. Returns true on quit.
-        fn promptForAndRunCommand(self: *@This(), out: anytype, in_: anytype, renderer: anytype) anyerror!bool {
+        fn promptForAndRunCommand(self: *@This(), out: anytype, in_: anytype, renderer: anytype, io: std.Io) anyerror!bool {
             try out.print("> ", .{});
 
             const line = try readLine(in_);
@@ -109,7 +126,7 @@ pub fn Sudoku(comptime R: type) type {
             if (avail.redo) { names[count] = "Redo"; count += 1; }
 
             const result = command.parseWithCommands(tokens, names[0..count]);
-            return try self.handleResult(out, in_, renderer, result);
+            return try self.handleResult(out, in_, renderer, io, result);
         }
 
         /// Read → Parse → Loop command interface.
@@ -126,7 +143,7 @@ pub fn Sudoku(comptime R: type) type {
 
             var isDone: bool = false;
             while (!isDone) {
-                isDone = try self.promptForAndRunCommand(out, in_, renderer);
+                isDone = try self.promptForAndRunCommand(out, in_, renderer, io);
             }
         }
     };
@@ -299,7 +316,7 @@ test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w
     var mw = MockWriter.initMockWriter();
 
     // Act: one cycle of prompt -> parse -> dispatch -> exec -> render -> legend
-    _ = try sudoku.promptForAndRunCommand(&mw, &mr, &mock);
+    _ = try sudoku.promptForAndRunCommand(&mw, &mr, &mock, std.testing.io);
 
     // Assert (a): engine has undo available after mutation.
     {
