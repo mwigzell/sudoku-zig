@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/@aliou/pi-guardrails@0.15.0/schema.json",
+  "$schema": "https://unpkg.com/@aliou/pi-guardrails@0.16.0/schema.json",
   "pathAccess": {
     "allowedPaths": [
       {
@@ -41,6 +41,10 @@
       {
         "kind": "directory",
         "path": "~/Dev/src"
+      },
+      {
+        "kind": "directory",
+        "path": "~/Documents/Obsidian"
       }
     ]
   },

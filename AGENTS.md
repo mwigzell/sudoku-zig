@@ -10,11 +10,25 @@ When proposing work or building features, prioritise end-to-end completeness ove
 4. **Wider than deeper.** Touch all layers once before perfecting any single layer. Tests exercise the same code paths `main()` uses — not wrapper functions only tests call.
 5. **Each cycle produces a runnable demo.** Even two commands working end-to-end, proven by `zig build run`.
 
+## Handoff
+- check the handoff folder for the last handoff. 
+- when asked to handoff put the handoff in the handoff folder. this is an override of Matt's skills.
 ## Zig version & stdlib notes
 
 We are on **Zig 0.17** (dev snapshot). Consult `.zig-testing.md` for the stdlib API surface
 (Io, testing, build system changes) **before** searching stdlib source files with grep.
 The zig stdlib source hierarchy is at /home/mark/.local/tools/zig-latest/lib/std/
+### Zig 0.17 changed interfaces from older Zig versions
+See ~/Documents/Obsidian/Zig 0.17 Code Guide.md. Covers:
+ - The Io threading model — every I/O call takes an explicit handle
+ - Production entry point — main(init: std.process.Init) → init.io
+ - Testing pattern — std.testing.io + Io.Dir.cwd()
+ - Dir API — create, open, stat, delete, walk (all take io)
+ - Writer methods cheat sheet — writeAll, writeInt, print via interface
+ - Before→After migration table — std.fs.cwd() → Io.Dir.cwd() etc.
+ - Common gotchas — fake convenience functions that don't exist, buffer requirements
+ - Build system 0.17 changes — configure/maker split, no more b.args
+ - cross-referenced against actual stdlib source at /home/mark/.local/tools/zig-latest/lib/std/Io/.
 
 ### Local working example: Ziglings
 `~/Dev/src/ziglings/exercises/` contains solved exercises against the same 0.17 toolchain.
@@ -27,7 +41,7 @@ Use as reference before guessing at syntax — especially `std.Io.Writer`, file 
 
 ### Issue tracker
 
-Local markdown issues live under `.scratch/<feature>/`. No external remote or PR triage surface. See `docs/agents/issue-tracker.md`.
+Local markdown issues live under `.scratch/sudoku/issues/`. No external remote or PR triage surface. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
