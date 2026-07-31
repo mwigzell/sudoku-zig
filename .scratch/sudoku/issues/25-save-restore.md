@@ -4,22 +4,7 @@ Status: in-progress
 `.scratch/sudoku/prd.md` (Out of Scope extension)
 
 ## What to build
-In-game `SAVE <path>` and `LOAD > Build the full game state (81-cell flat vector + entire `MutationHistory` stack + pointer index) to disk, and deserialize it back. Restoring a save continues exactly where you left off, with all prior undos/redos intact.
-
-**Architectural note:** Because persistence is now in scope, the `Board` domain model must expose a clean serialization seam (`toFlat()` / `fromSaveState()`) so saving doesn't reach into internal arrays later.
-
----
-
-## Context
-- Saves are explicit file writes; no implicit autosaving or session-local persistence.
-- Uses standard Zig `std.Io.File I/O (no network/WASM dependencies). WASM browser renderer will need a separate JS-backed save path later if needed.
-- The command structure (`Command`) already exists and needs `.save` / `.load` variants plus a simple filename argument parser.
-
----
-
-## Steps (vertical slice)
-
-### Step 1: ✅ Define `SAVE` and `LOAD > Build the full game state (81-cell flat vector + entire `MutationHistory` stack + pointer index) to disk, and deserialize it back. Restoring a save continues exactly where you left off, with all prior undos/redos intact.
+In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game state (81-cell flat vector + entire `MutationHistory` stack + pointer index) to disk, and deserialize it back. Restoring a save continues exactly where you left off, with all prior undos/redos intact.
 
 **Architectural note:** Because persistence is now in scope, the `Board` domain model must expose a clean serialization seam (`toFlat()` / `fromSaveState()`) so saving doesn't reach into internal arrays later.
 
@@ -28,7 +13,7 @@ In-game `SAVE <path>` and `LOAD > Build the full game state (81-cell flat vector
 ## Context
 - Saves are explicit file writes; no implicit autosaving or session-local persistence.
 - Uses standard Zig I/O (no network/WASM dependencies). WASM browser renderer will need a separate JS-backed save path later if needed.
-- The command structure (`Command`) already exists and needs `.save`/`.load` variants + simple filename argument parser.
+- The command structure (`Command`) already exists and needs `.save`/`.open` variants + simple filename argument parser.
 
 ---
 
@@ -36,13 +21,11 @@ In-game `SAVE <path>` and `LOAD > Build the full game state (81-cell flat vector
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 1 | ✅ Done | Define `SAVE` and `LOAD commands in command.zig; parse `SAVE <path>` / `LOAD <path>`. **File:** `src/command.zig` — Add `.save = struct{ path: []const u8 }` and `.load = struct{ path: []const u8 }`. Extend the string parser (case-insensitive recognition). |
-| 2 | ✅ Done | Add `Board.toFlat()`) helper. **File:** `src/board.zig` — Return `[81]u8` for cell values. Also export givens mask (`given_bits`). |
-| 3 | ⏳ In-progress | Define binary serialization format spec and implement structs. See `.scratch/sudoku/issues/25-save-restore/save-file-format.md`. Needs: `SaveFileHeader`, `SaveFileTrailer` packed). Reserved bytes in both structs for version stability (see below). All writes blob-level `writeAll(std.mem.toBytes(…))` — no sequential `.interface` small-Write Bug)`. The fix: use buffered writer's `writeAll` via I/O stack handle — one write per blob avoids vtable byte drift. |
+| 1 | ✅ Done | Define `SAVE` and `OPEN` commands in command.zig; parse `SAVE <path>` / `OPEN <path>`. **File:** `src/command.zig` — Add `.save = struct{ path: []const u8 }` and `.open = struct{ path: []const u8 }`. Extend the string parser (case-insensitive recognition). |
+| 2 | ✅ Done | Add `Board.toFlat()` helper. **File:** `src/board.zig` — Returns `[81]u8` for cell values. Also export givens mask (`given_bits`). |
+| 3 | ⏳ In-progress | Define binary serialization format spec and implement structs. See `.scratch/sudoku/issues/25-save-restore/save-file-format.md`. Needs: `SaveFileHeader`, `SaveFileTrailer` packed). Reserved bytes in both structs for version stability (see below). All writes blob-level `writeAll(std.mem.toBytes(…))` — no sequential `.interface` small-write bug. The fix: use buffered writer's `writeAll` via I/O stack handle — one write per blob avoids vtable byte drift. |
 | 4 | ⏳ Needs work | Rewrite `saveGame(io, path)` helper in GameEngine.**File:** `src/game_engine.zig` Open file using buffered writer (`std.Io`) to dump header → history entries → trailer (given_bits + flat board). If I/O error, fail gracefully. Current impl is broken due to `.interface` vtable bridge drops bytes past offset 8+. Needs rewrite. |
-| 5 | ⏳ Blocked | Wire `.save in exec().**File:** `src/game_engine.zig`. Call `self.saveGame(cmd`, return `Event.ok { .board_view = self.board.asView(), .msg = null }` on success. If file write fails, return `.error_msg("could not save"). **Blocker:** exec() references `std.testing.io` — won't compile outside tests. Solution: handle in sudoku.zig instead. |
-| 6 | ⏳ Pending | Implement `loadGame(io, path)` helper.**File:** `src/game_engine.zig (exec) Read header/metadata, restore the 81-cell flat state via existing `fromFlat()`, and rebuild the `MutationHistory` array + pointer from disk. Return `.error_msg("corrupt save") if file is bad or length mismatch). |
-| 7 | ⏳ Pending | Wire `.load > Build it (co-located) test "save/load round-trip preserves state" - fill a few cells, undo one, save to temp file, load it back. Assert board view matches exactly.)**File:** `src/game_engine.zig test block (co-located)**No internal poking.
+| 5 | ⏳ Blocked | Wire `.save > Build it (co-located) test "save/open round-trip preserves state" - fill a few cells, undo one, save to temp file, load it back. Assert board view matches exactly.)**File:** `src/game_engine.zig test block (co-located)**No internal poking.
 - [ ] test "save/load round-trip preserves pointer position".
 
 ---
@@ -59,7 +42,7 @@ In-game `SAVE <path>` and `LOAD > Build the full game state (81-cell flat vector
 |--------|-------------|-------|-------|
 | 0      | 8           | `SaveFileHeader` — packed struct; magic[4] + version_major(3) + pointer(u16) + entry_count(u16). No padding. |
 | :+1:   | N×2         | `SaveEntry[N]` — history entries in order of occurrence. Replayed on load via GameEngine.exec()). |
-| :+N:   | 48          | `SaveFileTrailer` — packed struct; given_bits(16B) + flat_board([81]u8 = 97 bytes total). |
+| :+N:   | 97          | `SaveFileTrailer` — packed struct; given_bits(16B) + flat_board([81]u8 = 97 bytes total). |
 
 → **Total size:** 108 + 2×N bytes (where N = number of history entries.)
 
