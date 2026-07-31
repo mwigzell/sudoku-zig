@@ -1,68 +1,84 @@
-Status: ready-for-agent
+Status: in-progress
 
 ## Parent
 `.scratch/sudoku/prd.md` (Out of Scope extension)
 
 ## What to build
-In-game `SAVE <path>` and `LOAD <path>` commands that serialize the full game state (81-cell flat vector + entire `MutationHistory` stack + pointer index) to disk, and deserialize it back. Restoring a save continues exactly where you left off, with all prior undos/redos intact.
+In-game `SAVE <path>` and `LOAD > Build the full game state (81-cell flat vector + entire `MutationHistory` stack + pointer index) to disk, and deserialize it back. Restoring a save continues exactly where you left off, with all prior undos/redos intact.
 
-**Architectural note:** Because persistence is now in scope, the `Board` domain model must expose a clean serialization seam (`toFlat()`) so saving doesn't reach into internal arrays later.
+**Architectural note:** Because persistence is now in scope, the `Board` domain model must expose a clean serialization seam (`toFlat()` / `fromSaveState()`) so saving doesn't reach into internal arrays later.
 
 ---
 
 ## Context
 - Saves are explicit file writes; no implicit autosaving or session-local persistence.
-- Uses standard Zig `std.fs` I/O (no network/WASM dependencies). WASM browser renderer will need a separate JS-backed save path later if needed.
-- The command structure (`Command`) already exists and needs two new variants plus a simple filename argument parser.
+- Uses standard Zig `std.Io.File I/O (no network/WASM dependencies). WASM browser renderer will need a separate JS-backed save path later if needed.
+- The command structure (`Command`) already exists and needs `.save` / `.load` variants plus a simple filename argument parser.
 
 ---
 
 ## Steps (vertical slice)
 
-### Step 1: Define `SAVE` and `LOAD` commands
-**File:** `src/command.zig`
-- Add `.save = struct { path: []const u8 }` and `.load = struct { path: []const u8 }`.
-- Extend the string parser in command.zig to recognize `"SAVE <path>"` and `"LOAD <path>"`, parsing out the filename argument.
+### Step 1: ✅ Define `SAVE` and `LOAD > Build the full game state (81-cell flat vector + entire `MutationHistory` stack + pointer index) to disk, and deserialize it back. Restoring a save continues exactly where you left off, with all prior undos/redos intact.
 
-### Step 2: Add Board serialization helper (`Board.toFlat()`)
-**File:** `src/board.zig`
-- Add `pub fn toFlat(self: Board) [81]u8` that walks `self.cells[]` and returns a raw `[81]u8` array. (We can also return/serialize `given_bits` or derive givens from the flat data, since non-zero values in the initial vector imply given-clues).
-- This gives us a trivial memory dump of the current board state for saving without touching GameEngine internals later.
+**Architectural note:** Because persistence is now in scope, the `Board` domain model must expose a clean serialization seam (`toFlat()` / `fromSaveState()`) so saving doesn't reach into internal arrays later.
 
-### Step 3: Decide on serialization format (binary is simplest)
-**File:** `src/game_engine.zig` internal helper type for saving/loading protocol.
-- File header/metadata (e.g., magic bytes or version, active_count: u8, pointer: u8). 
-- Dump the history entries (row:u4, col:u4, old_value:u4) one after another based on active count).
-- Finally write the 81 cell values.
+---
 
-### Step 4: Write `saveGame()` helper in GameEngine
-**File:** `src/game_engine.zig`
-- Implement `pub fn saveGame(path: []const u8) anyerror!void`. Open file using std.fs.File.writeAll/writeInt` helpers to dump state and history stack. If I/O error, fail gracefully.
+## Context
+- Saves are explicit file writes; no implicit autosaving or session-local persistence.
+- Uses standard Zig I/O (no network/WASM dependencies). WASM browser renderer will need a separate JS-backed save path later if needed.
+- The command structure (`Command`) already exists and needs `.save`/`.load` variants + simple filename argument parser.
 
-### Step 5: Wire `.save in exec()
-**File:** `src/game_engine.zig` (`exec`)
-- Call `self.saveGame(cmd.save.path)`, return `Event.ok { .board_view = self.board.asView(), .msg = null }` on success. If file write fails, return `.error_msg("could not save").
+---
 
-### Step 6: Implement `loadGame(path)` helper
-**File:** `src/game_engine.zig (exec)
-- Read header/metadata, restore the 81-cell flat state via existing `fromFlat()`, and rebuild the `MutationHistory` array + pointer from disk. 
-- Return `.error_msg("corrupt save") if file is bad or length mismatch).
+## Steps (vertical slice)
 
-### Step 7: Wire `.load in exec()
-**File:** `src/game_engine.zig` (`exec`) - Call self.loadGame(cmd.load.path), return Event.ok { .board_view = self.board.asView(), .msg = null } on success (or .error_msg(...).
+| Step | Status | Description |
+|------|--------|-------------|
+| 1 | ✅ Done | Define `SAVE` and `LOAD commands in command.zig; parse `SAVE <path>` / `LOAD <path>`. **File:** `src/command.zig` — Add `.save = struct{ path: []const u8 }` and `.load = struct{ path: []const u8 }`. Extend the string parser (case-insensitive recognition). |
+| 2 | ✅ Done | Add `Board.toFlat()`) helper. **File:** `src/board.zig` — Return `[81]u8` for cell values. Also export givens mask (`given_bits`). |
+| 3 | ⏳ In-progress | Define binary serialization format spec and implement structs. See `.scratch/sudoku/issues/25-save-restore/save-file-format.md`. Needs: `SaveFileHeader`, `SaveFileTrailer` packed). Reserved bytes in both structs for version stability (see below). All writes blob-level `writeAll(std.mem.toBytes(…))` — no sequential `.interface` small-Write Bug)`. The fix: use buffered writer's `writeAll` via I/O stack handle — one write per blob avoids vtable byte drift. |
+| 4 | ⏳ Needs work | Rewrite `saveGame(io, path)` helper in GameEngine.**File:** `src/game_engine.zig` Open file using buffered writer (`std.Io`) to dump header → history entries → trailer (given_bits + flat board). If I/O error, fail gracefully. Current impl is broken due to `.interface` vtable bridge drops bytes past offset 8+. Needs rewrite. |
+| 5 | ⏳ Blocked | Wire `.save in exec().**File:** `src/game_engine.zig`. Call `self.saveGame(cmd`, return `Event.ok { .board_view = self.board.asView(), .msg = null }` on success. If file write fails, return `.error_msg("could not save"). **Blocker:** exec() references `std.testing.io` — won't compile outside tests. Solution: handle in sudoku.zig instead. |
+| 6 | ⏳ Pending | Implement `loadGame(io, path)` helper.**File:** `src/game_engine.zig (exec) Read header/metadata, restore the 81-cell flat state via existing `fromFlat()`, and rebuild the `MutationHistory` array + pointer from disk. Return `.error_msg("corrupt save") if file is bad or length mismatch). |
+| 7 | ⏳ Pending | Wire `.load > Build it (co-located) test "save/load round-trip preserves state" - fill a few cells, undo one, save to temp file, load it back. Assert board view matches exactly.)**File:** `src/game_engine.zig test block (co-located)**No internal poking.
+- [ ] test "save/load round-trip preserves pointer position".
 
-### Step 8: Integration tests through command->event seam
-File: src/game_engine.zig test block (co-located)
-- test "save/load round-trip preserves state" - fill a few cells, undo one, save to temp file, load it back. Assert board view matches exactly. No internal poking. 
-- test "save/load round-trip preserves pointer position".
+---
 
-## Acceptance criteria
+## Binary Format Spec
 
-- [ ] Command.save and Command.load defined and parseable as SAVE /path/to/file" (case-insensitive)
-- [ ] Board exposes a trivial toFlat() seam for dumping cell values + given mask to disk reliably.
-- [ ] Loading restores state perfectly, including ability to undo/redo past actions.
-- [ ] Integration tests exercise save/load through command->event seam only (no internal state poking).
-- [ ] File errors gracefully return .error_msg so gameplay doesn't crash.
+### Layout Summary: N × SaveEntry(2 bytes each) → [SaveFileTrailer (given_bits(u128) + flat_board([81]u8, packed — avoid padding that shifts field offsets on some platforms.
+
+### `SaveEntry` — 2 bytes each (already exists as-is).
+
+- No versioning or schema change tracking. Format is positional blob dump. Reserved bytes give us headroom to add fields later without shifting offsets. The file layout table (for reference only, no auto-gen):
+
+| Offset | Size (bytes) | Field | Notes |
+|--------|-------------|-------|-------|
+| 0      | 8           | `SaveFileHeader` — packed struct; magic[4] + version_major(3) + pointer(u16) + entry_count(u16). No padding. |
+| :+1:   | N×2         | `SaveEntry[N]` — history entries in order of occurrence. Replayed on load via GameEngine.exec()). |
+| :+N:   | 48          | `SaveFileTrailer` — packed struct; given_bits(16B) + flat_board([81]u8 = 97 bytes total). |
+
+→ **Total size:** 108 + 2×N bytes (where N = number of history entries.)
+
+---
+
+## Open Decisions / Notes
+- `Board.fromSaveState(trailer: SaveFileTrailer)` — new method on Board to deserialize 9B trailer chunk. Avoids touching GameEngine internals later. |
+| Method | Where? | Why? |
+|--------|----------|------|
+| `saveGame(io: std.Io, path: []const u8) anyerror!void` | **GameEngine**. Owner of header + history — orchestrates full file write. Board contributes only its state (trailer chunk). |
+| `loadGame(io: std.Io, path: []const u8) anyerror!void` | **Board** — restore 9B trailer into board cells and given_bits. Returns error on mismatch with existing init pattern (`fromFlat` exists but BoardView drops givens mask. |
+
+---
+
+## What happened? Why the break?
+- Original commit `fcd0a62` implemented saveGame via sequential `.interface` small writes → byte drift after offset 8+. That was never caught until the round-trip test was actually written (Issue 25 Step 8). The format spec in this issue doc says "hand-wavy description of fields." It should have been formalised BEFORE we started writing code. We didn't.
+
+---
 
 ## Blocked by
-_(none)_
+- `.interface` byte drift bug — sequential small writes via vtable bridge lose sync past offset 8+. **Fix:** rewrite save/load to use buffered writer's `writeAll` via I/O stack handle — one write per blob avoids the bug (see Step 4 notes).
+- exec() switch can't reference `std.testing.io` — .save/.open must be handled in sudoku.zig, not exec(). Current code uses else branch panic as workaround.
