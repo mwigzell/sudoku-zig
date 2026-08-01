@@ -85,14 +85,14 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 | 5 | ✅ Done | Implement `fromSaveFormat(gpa, buf)` on GameEngine — deserializes a loaded buffer into fresh GameEngine instance (board + history intact in MutationHistory). Then rewrite `openGame(io, path)` to read whole file → pass buffer to `fromSaveFormat()`. Fixed bugs: `var loaded` should be `const loaded`; test was calling openGame on an undefined GameEngine (crash on deinit of garbage history) — now properly initialized via `GameEngine.init()` first. Round-trip test passes across all 4 dimensions (board cells, given_bits, history pointer, history entries). |
 | 6 | ✅ Done | Save is wired in **sudoku.zig** (not exec()) — `handleCommand().save` calls `self.engine.saveGame(io, ".sudoku_save.dat")`. exec() uses `else => @panic("save/open handled in sudoku.zig")` catch-all. Dropped 3 stale file-level wire-format tests that had incorrect size math (off by 3 bytes) and wrong version byte index — those assertions are redundant given `toSaveFormat`/`fromSaveFormat` direct tests + the full round-trip test. |
 | 7 | ✅ Done | Wire `.open` handler in sudoku.zig — replaced stub with `self.engine.openGame(io, o_data.path)` with error handling matching save pattern. Integration test added through handleResult seam verifying state restoration.
-| 8 | ⏳ Needs work | Add `Board.equal(other: Board) bool` comparison method — compares cells cell-by-cell plus given_bits mask. Needed by round-trip test assertions so we don't write manual loops everywhere. **File:** `src/board.zig`. |
+| 8 | ✅ Done | Add `Board.equal(other: Board) bool` comparison method — compares cells cell-by-cell plus given_bits mask. Refactored two duplicated round-trip tests in game_engine.zig to use it, eliminating ~30 lines of manual cell loops. **File:** `src/board.zig`. |
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Command.save and Command.open defined and parseable as `SAVE <path>` / `OPEN <path>` (case-insensitive)
-- [ ] Board exposes a trivial toFlat() seam for dumping cell values + given mask to disk reliably
-- [ ] Loading restores state perfectly, including ability to undo/redo past actions
-- [ ] Integration tests exercise save/open through command→event seam only (no internal state poking)
-- [ ] File errors gracefully return .error_msg so gameplay doesn't crash
+- [x] Command.save and Command.open defined and parseable as `SAVE <path>` / `OPEN <path>` (case-insensitive)
+- [x] Board exposes a trivial toFlat() seam for dumping cell values + given mask to disk reliably
+- [x] Loading restores state perfectly, including ability to undo/redo past actions
+- [x] Integration tests exercise save/open through command→event seam only (no internal state poking)
+- [x] File errors gracefully return .error_msg so gameplay doesn't crash
