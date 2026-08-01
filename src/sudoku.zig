@@ -7,8 +7,8 @@ const command = @import("command.zig");
 const disambiguate = @import("disambiguate.zig");
 const legend = @import("legend.zig");
 
-const SAVE_FILE_SUFFIX = ".sud";                 // our save file extension
-const DEFAULT_SAVE_FILE = ".sudoku_save.sud";    // uses SAVE_FILE_SUFFIX
+const SAVE_FILE_SUFFIX = ".sud"; // our save file extension
+const DEFAULT_SAVE_FILE = ".sudoku_save.sud"; // uses SAVE_FILE_SUFFIX
 pub fn Sudoku(comptime R: type) type {
     return struct {
         engine: game_engine.GameEngine,
@@ -44,13 +44,34 @@ pub fn Sudoku(comptime R: type) type {
 
             var names: [7][]const u8 = undefined;
             var count: usize = 0;
-            if (avail.fill) { names[count] = "Fill"; count += 1; }
-            if (avail.clear) { names[count] = "Clear"; count += 1; }
-            if (avail.quit) { names[count] = "Quit"; count += 1; }
-            if (avail.undo) { names[count] = "Undo"; count += 1; }
-            if (avail.redo) { names[count] = "Redo"; count += 1; }
-            if (avail.save) { names[count] = "Save"; count += 1; }
-            if (avail.open) { names[count] = "Open"; count += 1; }
+            if (avail.fill) {
+                names[count] = "Fill";
+                count += 1;
+            }
+            if (avail.clear) {
+                names[count] = "Clear";
+                count += 1;
+            }
+            if (avail.quit) {
+                names[count] = "Quit";
+                count += 1;
+            }
+            if (avail.undo) {
+                names[count] = "Undo";
+                count += 1;
+            }
+            if (avail.redo) {
+                names[count] = "Redo";
+                count += 1;
+            }
+            if (avail.save) {
+                names[count] = "Save";
+                count += 1;
+            }
+            if (avail.open) {
+                names[count] = "Open";
+                count += 1;
+            }
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
 
@@ -88,12 +109,13 @@ pub fn Sudoku(comptime R: type) type {
                     if (cmd == .quit) return true;
 
                     switch (cmd) {
-                        .save => {
+.save => {
                             self.engine.saveGame(io, DEFAULT_SAVE_FILE) catch |err| {
                                 try out.print("save failed: {s}\n", .{@errorName(err)});
                                 return false;
                             };
-                            return false;
+                            const event = game_engine.Event{.ok = .{.board_view = self.engine.eventBoard(), .msg = "saved to default file"}};
+                            return try self.handleEvent(out, in_, renderer, event);
                         },
                         .open => |o_data| {
                             self.engine.openGame(io, o_data.path) catch |err| {
@@ -123,14 +145,34 @@ pub fn Sudoku(comptime R: type) type {
             const avail = self.engine.getAvailableCommands();
             var names: [7][]const u8 = undefined;
             var count: usize = 0;
-            if (avail.fill) { names[count] = "Fill"; count += 1; }
-            if (avail.clear) { names[count] = "Clear"; count += 1; }
-            if (avail.quit) { names[count] = "Quit"; count += 1; }
-            if (avail.undo) { names[count] = "Undo"; count += 1; }
-            if (avail.redo) { names[count] = "Redo"; count += 1; }
-            if (avail.save) { names[count] = "Save"; count += 1; }
-            if (avail.open) { names[count] = "Open"; count += 1; }
-
+            if (avail.fill) {
+                names[count] = "Fill";
+                count += 1;
+            }
+            if (avail.clear) {
+                names[count] = "Clear";
+                count += 1;
+            }
+            if (avail.quit) {
+                names[count] = "Quit";
+                count += 1;
+            }
+            if (avail.undo) {
+                names[count] = "Undo";
+                count += 1;
+            }
+            if (avail.redo) {
+                names[count] = "Redo";
+                count += 1;
+            }
+            if (avail.save) {
+                names[count] = "Save";
+                count += 1;
+            }
+            if (avail.open) {
+                names[count] = "Open";
+                count += 1;
+            }
 
             const result = command.parseWithCommands(tokens, names[0..count]);
             return try self.handleResult(out, in_, renderer, io, result);
@@ -203,11 +245,26 @@ test "legend pipeline: fresh engine produces (F)ill (C)lear (Q)uit" {
     // Build command name list from AvailableCommands
     var names: [5][]const u8 = undefined;
     var count: usize = 0;
-    if (avail.fill) { names[count] = "Fill"; count += 1; }
-    if (avail.clear) { names[count] = "Clear"; count += 1; }
-    if (avail.quit) { names[count] = "Quit"; count += 1; }
-    if (avail.undo) { names[count] = "Undo"; count += 1; }
-    if (avail.redo) { names[count] = "Redo"; count += 1; }
+    if (avail.fill) {
+        names[count] = "Fill";
+        count += 1;
+    }
+    if (avail.clear) {
+        names[count] = "Clear";
+        count += 1;
+    }
+    if (avail.quit) {
+        names[count] = "Quit";
+        count += 1;
+    }
+    if (avail.undo) {
+        names[count] = "Undo";
+        count += 1;
+    }
+    if (avail.redo) {
+        names[count] = "Redo";
+        count += 1;
+    }
 
     // Disambiguate + format
     const entries = try disambiguate.getMinimumPrefixes(std.testing.allocator, names[0..count]);
@@ -246,11 +303,26 @@ test "legend pipeline: after fill then undo shows Undo AND Redo" {
 
     var names: [5][]const u8 = undefined;
     var count: usize = 0;
-    if (avail.fill) { names[count] = "Fill"; count += 1; }
-    if (avail.clear) { names[count] = "Clear"; count += 1; }
-    if (avail.quit) { names[count] = "Quit"; count += 1; }
-    if (avail.undo) { names[count] = "Undo"; count += 1; }
-    if (avail.redo) { names[count] = "Redo"; count += 1; }
+    if (avail.fill) {
+        names[count] = "Fill";
+        count += 1;
+    }
+    if (avail.clear) {
+        names[count] = "Clear";
+        count += 1;
+    }
+    if (avail.quit) {
+        names[count] = "Quit";
+        count += 1;
+    }
+    if (avail.undo) {
+        names[count] = "Undo";
+        count += 1;
+    }
+    if (avail.redo) {
+        names[count] = "Redo";
+        count += 1;
+    }
 
     const entries = try disambiguate.getMinimumPrefixes(std.testing.allocator, names[0..count]);
     defer std.testing.allocator.free(entries);
@@ -270,11 +342,26 @@ test "legend pipeline: fresh engine includes Save and Open in legend" {
     // Build command name list including save/open
     var names: [7][]const u8 = undefined;
     var count: usize = 0;
-    if (avail.fill) { names[count] = "Fill"; count += 1; }
-    if (avail.clear) { names[count] = "Clear"; count += 1; }
-    if (avail.quit) { names[count] = "Quit"; count += 1; }
-    if (avail.save) { names[count] = "Save"; count += 1; }
-    if (avail.open) { names[count] = "Open"; count += 1; }
+    if (avail.fill) {
+        names[count] = "Fill";
+        count += 1;
+    }
+    if (avail.clear) {
+        names[count] = "Clear";
+        count += 1;
+    }
+    if (avail.quit) {
+        names[count] = "Quit";
+        count += 1;
+    }
+    if (avail.save) {
+        names[count] = "Save";
+        count += 1;
+    }
+    if (avail.open) {
+        names[count] = "Open";
+        count += 1;
+    }
 
     const entries = try disambiguate.getMinimumPrefixes(std.testing.allocator, names[0..count]);
     defer std.testing.allocator.free(entries);
@@ -293,7 +380,7 @@ test "legend pipeline: fresh engine includes Save and Open in legend" {
 
     // Check the entries directly — same source of truth as formatLegend.
     // Don't assert on formatted strings; use the disambiguation result.
-   
+
     var found_save = false;
     var found_open = false;
     for (entries) |entry| {
@@ -365,7 +452,7 @@ test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w
     defer sudoku.engine.deinit();
 
     // Feed: "f A3 4" as the single typed command.
-    var mr = MockReader.initMockReader(&[_][]const u8{ "f A3 4" });
+    var mr = MockReader.initMockReader(&[_][]const u8{"f A3 4"});
     var mw = MockWriter.initMockWriter();
 
     // Act: one cycle of prompt -> parse -> dispatch -> exec -> render -> legend
@@ -445,4 +532,184 @@ test "full seam: open loads saved game" {
 
     // Assert: engine state restored to saved version (B2 should be back to empty, not seven)
     try std.testing.expectEqual(cell.CellValue.zero, sudoku.engine.eventBoard().get(1, 1));
+}
+
+// Step 10 — Save/Open must route through handleEvent() for feedback + re-render
+
+test "handleResult: save success produces status message, re-render, and legend refresh" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ascii_ansi,
+        .fallback_renderer = .ascii_ansi,
+    };
+    var mock = mock_renderer.MockRenderer.init();
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    defer sudoku.engine.deinit();
+
+    const call_count_before: usize = mock.call_count;
+
+    var mw = MockWriter.initMockWriter();
+    var mr = MockReader.initMockReader(&[_][]const u8{});
+
+    const parsed_save = command.parse("save");
+    _ = try sudoku.handleResult(&mw, &mr, &mock, std.testing.io, parsed_save);
+
+    // Assert: status message written confirming the save
+    {
+        const output = mw.getWritten();
+        try std.testing.expect(std.mem.indexOf(u8, output, "saved") != null or
+            std.mem.indexOf(u8, output, "Saved") != null);
+    }
+
+    // Assert: renderer called (board re-rendered after save)
+    try std.testing.expect(mock.call_count > call_count_before);
+
+    // Assert: legend refreshed on writer
+    {
+        const output = mw.getWritten();
+        try std.testing.expect(std.mem.indexOf(u8, output, "Command:") != null);
+    }
+}
+
+test "handleResult: open success produces status message, re-render, and legend refresh" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ascii_ansi,
+        .fallback_renderer = .ascii_ansi,
+    };
+
+    // Create a save file first
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    defer original.deinit();
+    const tmp_path = "/tmp/sudoku_seam_open_feedback_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+    try original.saveGame(std.testing.io, tmp_path);
+
+    var mock = mock_renderer.MockRenderer.init();
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    defer sudoku.engine.deinit();
+
+    const call_count_before: usize = mock.call_count;
+
+    var mw = MockWriter.initMockWriter();
+    var mr = MockReader.initMockReader(&[_][]const u8{});
+
+    const parsed_open = command.parse("open " ++ tmp_path);
+    _ = try sudoku.handleResult(&mw, &mr, &mock, std.testing.io, parsed_open);
+
+    // Assert: status message confirming the open
+    {
+        const output = mw.getWritten();
+        try std.testing.expect(std.mem.indexOf(u8, output, "opened") != null or
+            std.mem.indexOf(u8, output, "Opened") != null);
+    }
+
+    // Assert: renderer called (board re-rendered after open)
+    try std.testing.expect(mock.call_count > call_count_before);
+
+    // Assert: legend refreshed
+    {
+        const output = mw.getWritten();
+        try std.testing.expect(std.mem.indexOf(u8, output, "Command:") != null);
+    }
+}
+
+// Step 11 — Open with relative path must not crash (resolved against data dir)
+
+test "handleResult: open with relative path resolves without panic" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ascii_ansi,
+        .fallback_renderer = .ascii_ansi,
+    };
+
+    // Create save file at some known absolute path first
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    defer original.deinit();
+    const abs_path = "/tmp/sudoku_seam_relative_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, abs_path) catch {};
+    try original.saveGame(std.testing.io, abs_path);
+
+    var mock = mock_renderer.MockRenderer.init();
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    defer sudoku.engine.deinit();
+
+    var mw = MockWriter.initMockWriter();
+    var mr = MockReader.initMockReader(&[_][]const u8{});
+
+    const parsed_open = command.parse("open somename.sud");
+    _ = sudoku.handleResult(&mw, &mr, &mock, std.testing.io, parsed_open) catch |err| {
+        // FileNotFound is acceptable — file doesn't exist yet at resolved path.
+        // The bug is a PANIC from openFileAbsolute on relative paths; an error return proves that's fixed.
+        try std.testing.expect(err == error.FileNotFound);
+    };
+
+    // We got here without panic — test passes
+}
+
+// Step 12 — Save should prompt user for filename
+
+test "handleResult: save prompts user for filename" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ascii_ansi,
+        .fallback_renderer = .ascii_ansi,
+    };
+    var mock = mock_renderer.MockRenderer.init();
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    defer sudoku.engine.deinit();
+
+    // Feed filename response
+    var mr = MockReader.initMockReader(&[_][]const u8{"my_game.sud"});
+    var mw = MockWriter.initMockWriter();
+    const parsed_save = command.parse("save");
+    _ = try sudoku.handleResult(&mw, &mr, &mock, std.testing.io, parsed_save);
+
+    // Assert: writer contains a prompt asking for filename
+    {
+        const output = mw.getWritten();
+        try std.testing.expect(std.mem.indexOf(u8, output, "Save") != null and
+            std.mem.indexOf(u8, output, ":") != null);
+    }
+}
+
+// Step 12b — Subsequent saves reuse last filename, give feedback without prompting
+
+test "handleResult: subsequent save reuses previous filename with feedback" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ascii_ansi,
+        .fallback_renderer = .ascii_ansi,
+    };
+
+    var mock = mock_renderer.MockRenderer.init();
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    defer sudoku.engine.deinit();
+
+    // First save: feed filename + Enter to confirm prompt
+    var mr1 = MockReader.initMockReader(&[_][]const u8{ "second_save_test.sud" });
+    var mw1 = MockWriter.initMockWriter();
+    const parsed_save_1 = command.parse("save");
+    _ = try sudoku.handleResult(&mw1, &mr1, &mock, std.testing.io, parsed_save_1);
+
+    // Second save: should NOT prompt for filename — just confirm via handleEvent feedback
+    var mr2 = MockReader.initMockReader(&[_][]const u8{});
+    var mw2 = MockWriter.initMockWriter();
+    const call_count_before = mock.call_count;
+
+    const parsed_save_2 = command.parse("save");
+    _ = try sudoku.handleResult(&mw2, &mr2, &mock, std.testing.io, parsed_save_2);
+
+    // Assert: status message written confirming the save (no filename prompt)
+    {
+        const output = mw2.getWritten();
+        try std.testing.expect(std.mem.indexOf(u8, output, "saved") != null or
+            std.mem.indexOf(u8, output, "Saved") != null);
+        // No filename prompt on subsequent save
+        try std.testing.expect(std.mem.indexOf(u8, output, "filename") == null and
+            std.mem.indexOf(u8, output, "Filename") == null);
+    }
+
+    // Assert: board re-rendered + legend refreshed via handleEvent routing
+    try std.testing.expect(mock.call_count > call_count_before);
 }

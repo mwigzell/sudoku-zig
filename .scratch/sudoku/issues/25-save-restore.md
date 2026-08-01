@@ -1,4 +1,4 @@
-Status: closed
+Status: needs-triage
 
 ## Parent
 `.scratch/sudoku/prd.md` (Out of Scope extension)
@@ -14,6 +14,7 @@ In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game st
 - Saves are explicit file writes; no implicit autosaving or session-local persistence.
 - Uses standard Zig I/O (no network/WASM dependencies). WASM browser renderer will need a separate JS-backed save path later if needed.
 - The command structure (`Command`) already exists and needs `.save`/`.open` variants + simple filename argument parser.
+- Path resolution: saves go under `~/.local/share/sudoku/`. User can type a bare filename (appended to that base), or an absolute path (used as-is). Both `saveGame` and `openGame` must receive absolute paths. Resolution happens in `handleResult` (sudoku.zig) before calling the engine.
 
 ---
 
@@ -87,7 +88,9 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 | 7 | ✅ Done | Wire `.open` handler in sudoku.zig — replaced stub with `self.engine.openGame(io, o_data.path)` with error handling matching save pattern. Integration test added through handleResult seam verifying state restoration.
 | 8 | ✅ Done | Add `Board.equal(other: Board) bool` comparison method — compares cells cell-by-cell plus given_bits mask. Refactored two duplicated round-trip tests in game_engine.zig to use it, eliminating ~30 lines of manual cell loops. **File:** `src/board.zig`. |
 | 9 | ✅ Done | Add `.save` and `.open` to `AvailableCommands` struct so the command legend offers them to the player. Wire them into `sudoku.zig` `promptForAndRunCommand` names array + `renderLegend`. **Files:** `src/game_engine.zig` (struct), `src/sudoku.zig` (legend wiring). Test: `getAvailableCommands: Save and Open always available` + legend pipeline test. |
-
+| 10 | needs-triage | **Bug fix: Save/Open must route through handleEvent()** — Currently `.save` and `.open` in `handleResult` (sudoku.zig) bypass `handleEvent()` entirely. On success they silently return with no status message, no board re-render, no legend refresh. Both outcomes (success + failure) must produce an `Event` routed through `handleEvent()` for consistent UI feedback. **File:** `src/sudoku.zig`. |
+| 11 | needs-triage | **Bug B: Open crashes on relative paths** — `openGame()` calls `std.Io.Dir.openFileAbsolute(io, path, .{})` which panics on non-absolute paths. User types `o my_game.sud` → crash. Fix: resolve relative paths against `~/.local/share/sudoku/` in `handleResult` before passing to `openGame()`. **Files:** `src/game_engine.zig`, `src/sudoku.zig`. |
+| 12 | needs-triage | **Bug A: First save should prompt for filename** — Currently parsing bare `s` saves into a hardcoded default path. The first save should prompt user for a filename (defaulting to something sensible), subsequent saves can reuse that or prompt again depending on UX decision. Resolution of relative vs absolute paths per step 10 context. **Files:** `src/command.zig`, `src/sudoku.zig`. |
 ---
 
 ## Acceptance Criteria
@@ -98,3 +101,7 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 - [x] Integration tests exercise save/open through command→event seam only (no internal state poking)
 - [x] File errors gracefully return .error_msg so gameplay doesn't crash
 - [x] Save and Open appear in the command legend so the player sees them without typing blind
+- [ ] Save and Open success produces status message, board re-render, and legend refresh (routed through handleEvent())
+- [ ] Open works with relative paths (resolved against ~/.local/share/sudoku/)
+- [ ] First save prompts user for filename
+- [ ] Save files stored under ~/.local/share/sudoku/
