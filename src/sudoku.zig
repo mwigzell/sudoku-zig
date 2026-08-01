@@ -6,6 +6,9 @@ const command = @import("command.zig");
 
 const disambiguate = @import("disambiguate.zig");
 const legend = @import("legend.zig");
+
+const SAVE_FILE_SUFFIX = ".sud";                 // our save file extension
+const DEFAULT_SAVE_FILE = ".sudoku_save.sud";    // uses SAVE_FILE_SUFFIX
 pub fn Sudoku(comptime R: type) type {
     return struct {
         engine: game_engine.GameEngine,
@@ -39,14 +42,15 @@ pub fn Sudoku(comptime R: type) type {
         fn printLegend(self: *@This(), writer: anytype) !void {
             const avail = self.engine.getAvailableCommands();
 
-            var names: [5][]const u8 = undefined;
+            var names: [7][]const u8 = undefined;
             var count: usize = 0;
             if (avail.fill) { names[count] = "Fill"; count += 1; }
             if (avail.clear) { names[count] = "Clear"; count += 1; }
             if (avail.quit) { names[count] = "Quit"; count += 1; }
             if (avail.undo) { names[count] = "Undo"; count += 1; }
             if (avail.redo) { names[count] = "Redo"; count += 1; }
-
+            if (avail.save) { names[count] = "Save"; count += 1; }
+            if (avail.open) { names[count] = "Open"; count += 1; }
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
 
@@ -85,7 +89,7 @@ pub fn Sudoku(comptime R: type) type {
 
                     switch (cmd) {
                         .save => {
-                            self.engine.saveGame(io, ".sudoku_save.dat") catch |err| {
+                            self.engine.saveGame(io, DEFAULT_SAVE_FILE) catch |err| {
                                 try out.print("save failed: {s}\n", .{@errorName(err)});
                                 return false;
                             };
@@ -115,16 +119,18 @@ pub fn Sudoku(comptime R: type) type {
             if (line.len == 0) return false; // empty input -> stay in loop
 
             const tokens = std.mem.trim(u8, line, &std.ascii.whitespace);
-
             // Build available command names for context-aware prefix dispatch
             const avail = self.engine.getAvailableCommands();
-            var names: [5][]const u8 = undefined;
+            var names: [7][]const u8 = undefined;
             var count: usize = 0;
             if (avail.fill) { names[count] = "Fill"; count += 1; }
             if (avail.clear) { names[count] = "Clear"; count += 1; }
             if (avail.quit) { names[count] = "Quit"; count += 1; }
             if (avail.undo) { names[count] = "Undo"; count += 1; }
             if (avail.redo) { names[count] = "Redo"; count += 1; }
+            if (avail.save) { names[count] = "Save"; count += 1; }
+            if (avail.open) { names[count] = "Open"; count += 1; }
+
 
             const result = command.parseWithCommands(tokens, names[0..count]);
             return try self.handleResult(out, in_, renderer, io, result);
@@ -255,6 +261,52 @@ test "legend pipeline: after fill then undo shows Undo AND Redo" {
     // With all 5 commands, each prefix is 1 char (F/C/Q/U/R all distinct)
     try std.testing.expectEqualStrings("(F)ill (C)lear (Q)uit (U)ndo (R)edo", result);
 }
+test "legend pipeline: fresh engine includes Save and Open in legend" {
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const avail = engine.getAvailableCommands();
+
+    // Build command name list including save/open
+    var names: [7][]const u8 = undefined;
+    var count: usize = 0;
+    if (avail.fill) { names[count] = "Fill"; count += 1; }
+    if (avail.clear) { names[count] = "Clear"; count += 1; }
+    if (avail.quit) { names[count] = "Quit"; count += 1; }
+    if (avail.save) { names[count] = "Save"; count += 1; }
+    if (avail.open) { names[count] = "Open"; count += 1; }
+
+    const entries = try disambiguate.getMinimumPrefixes(std.testing.allocator, names[0..count]);
+    defer std.testing.allocator.free(entries);
+
+    const result = try legend.formatLegend(std.testing.allocator, entries);
+    defer std.testing.allocator.free(result);
+
+    // Fresh engine has 7 available commands (fill/clear/quit always true, save/open always true). Undo/redo start false.
+    try std.testing.expect(avail.fill);
+    try std.testing.expect(avail.clear);
+    try std.testing.expect(avail.quit);
+    try std.testing.expect(!avail.undo);
+    try std.testing.expect(!avail.redo);
+    try std.testing.expect(avail.save);
+    try std.testing.expect(avail.open);
+
+    // Check the entries directly — same source of truth as formatLegend.
+    // Don't assert on formatted strings; use the disambiguation result.
+   
+    var found_save = false;
+    var found_open = false;
+    for (entries) |entry| {
+        if (std.mem.eql(u8, entry.command, "Save")) {
+            found_save = true;
+        }
+        if (std.mem.eql(u8, entry.command, "Open")) {
+            found_open = true;
+        }
+    }
+    try std.testing.expect(found_save);
+    try std.testing.expect(found_open);
+}
 
 // Step 11 — mock I/O for full-seam integration test through promptForAndRunCommand.
 
@@ -350,7 +402,7 @@ test "full seam: open loads saved game" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    const tmp_path = "/tmp/sudoku_tdd_open_test.dat";
+    const tmp_path = "/tmp/sudoku_tdd_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
     // Create fresh engine with known state before mutations

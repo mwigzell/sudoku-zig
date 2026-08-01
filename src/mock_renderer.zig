@@ -37,7 +37,7 @@ test "MockRenderer: copies BoardView flat cells into [9][9]CellValue" {
     flat[12] = 3;  // row 1 col 3 = three (given)
     flat[80] = 9;  // row 8 col 8 = nine (given)
 
-    var b = try board.fromFlat(flat);
+    var b = try board.fromFlat(flat, .{});
     const view = b.asView();
 
     var mock = MockRenderer.init();

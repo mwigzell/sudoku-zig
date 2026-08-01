@@ -12,6 +12,8 @@ pub const AvailableCommands = struct {
     quit: bool,
     undo: bool,
     redo: bool,
+    save: bool,
+    open: bool,
 };
 // Step 3 — binary save file format
 pub const SaveFileMagic = [_]u8{ 'S', 'U', 'D', '0' };
@@ -118,6 +120,8 @@ pub const GameEngine = struct {
             .quit = true,
             .undo = self.history.pointer > 0,
             .redo = self.history.pointer < self.history.entries.items.len,
+            .save = true,
+            .open = true,
         };
     }
 
@@ -202,10 +206,9 @@ pub const GameEngine = struct {
         const entries_end = offset + (header.entry_count * @sizeOf(SaveEntry));
         const trailer = readSaveTrailer(buf[entries_end..]);
         var engine = GameEngine{
-            .board = try board.fromFlat(trailer.flat_board),
+            .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
             .history = history,
         };
-        engine.board.given_bits = trailer.given_bits;
         engine.history.pointer = header.pointer;
 
         return engine;
@@ -888,6 +891,15 @@ test "getAvailableCommands: after full undo Undo hidden Redo replays" {
     try std.testing.expect(!cmds.undo);
     try std.testing.expect(cmds.redo);
 }
+test "getAvailableCommands: Save and Open always available" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const cmds = engine.getAvailableCommands();
+    // Save and Open are always available like Fill/Clear/Quit (not state-contingent)
+    try std.testing.expect(cmds.save);
+    try std.testing.expect(cmds.open);
+}
 
 
 // Step 3 — Save file format tests
@@ -929,7 +941,7 @@ test "saveGame returns error on bad path" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    const result = engine.saveGame(std.testing.io, "/nonexistent/dir/save.dat");
+    const result = engine.saveGame(std.testing.io, "/nonexistent/dir/save.sud");
     try std.testing.expectError(error.FileNotFound, result);
 }
 
@@ -954,7 +966,7 @@ test "saveGame returns error on bad path" {
     _ = try expectOk(try original.exec(command.Command{ .undo = {} }));
 
     // Save to temp file using test I/O
-    const tmp_path = "/tmp/sudoku_roundtrip_test.dat";
+    const tmp_path = "/tmp/sudoku_roundtrip_test.sud";
     _ = original.saveGame(std.testing.io, tmp_path) catch |err| return err;
 
     // Open into a new engine

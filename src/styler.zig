@@ -125,7 +125,7 @@ test "AnsiStyler wraps given digits in dim CSI codes" {
     @memcpy(flat[0..9], &givens_row);
     @memcpy(flat[9..], &rest);
 
-    var b = try board.fromFlat(flat);
+    var b = try board.fromFlat(flat, .{});
     const view = b.asView();
 
     var buf: [256]u8 = undefined;
@@ -166,7 +166,7 @@ test "AnsiStyler: given cell takes precedence over conflict styling" {
     flat[0] = 5;   // row 0, col 0 — given
     flat[5] = 5;   // row 0, col 5 — given (conflicts with col 0)
 
-    var b = try board.fromFlat(flat);
+    var b = try board.fromFlat(flat, .{});
     b.validate();
 
     // Both should be flagged as conflicting by Board.

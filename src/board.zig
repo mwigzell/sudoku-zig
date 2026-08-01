@@ -350,9 +350,14 @@ pub const BoardError = error{
     InvalidCharacter,
 };
 
+
+pub const FlatOpts = struct {
+    // When provided, use explicit given_bits mask; otherwise derive from nonzero cells.
+    given_bits: ?u128 = null,
+};
+
 /// Construct a Board from a flat 81-element u8 array.
-/// Values 0 mean empty; values 1–9 are given digits and set their bit in given_bits.
-pub fn fromFlat(flat: [81]u8) BoardError!Board {
+pub fn fromFlat(flat: [81]u8, opts: FlatOpts) BoardError!Board {
     for (flat) |v| {
         if (v > 9) return BoardError.BadCellValue;
     }
@@ -368,7 +373,7 @@ pub fn fromFlat(flat: [81]u8) BoardError!Board {
             b.updateDigitBits(row, col, .zero, rawToCellValue(v));
         }
     }
-    b.given_bits = mask;
+    b.given_bits = if (opts.given_bits) |explicit| explicit else mask;
     return b;
 }
 
@@ -385,7 +390,7 @@ pub fn fromOneLineString(oneLine: []const u8) BoardError!Board {
             else => return BoardError.InvalidCharacter,
         };
     }
-    return fromFlat(flat);
+    return fromFlat(flat, .{});
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +453,7 @@ test "Board: constructs from flat puzzle array with correct values" {
         break :blk data;
     };
 
-    const b = try fromFlat(easy);
+    const b = try fromFlat(easy, .{});
 
     // Count givens via bitmask
     var given_count: usize = 0;
@@ -510,7 +515,7 @@ test "Board: fromFlat rejects out-of-range cell values" {
     @memset(&bad, 0);
     bad[5] = 42; // out of range
 
-    try std.testing.expectError(BoardError.BadCellValue, fromFlat(bad));
+    try std.testing.expectError(BoardError.BadCellValue, fromFlat(bad, .{}));
 }
 
 test "Board: fromOneLineString rejects wrong length" {
@@ -544,7 +549,7 @@ test "Board: clearCell resets value and clears given bit" {
     @memset(&flat, 0);
     flat[10] = 7; // row 1, col 1 — index 10
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
 
     try std.testing.expectEqual(.seven, b.getCellValue(1, 1));
     try std.testing.expect(b.isGiven(1, 1));
@@ -562,7 +567,7 @@ test "Board: fromFlat derives given bits dynamically per cell" {
     flat[5] = 6; // row 0, col 5
     flat[67] = 3; // row 7, col 4
 
-    const b = try fromFlat(flat);
+    const b = try fromFlat(flat, .{});
 
     // Every cell's given flag must match its data: non-zero → bit set, zero → clear
     for (flat, 0..) |v, i| {
@@ -581,7 +586,7 @@ test "Board: setCell errors when modifying a given cell" {
     @memset(&flat, 0);
     flat[5] = 6; // row 0, col 5 is a given
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
 
     try std.testing.expect(b.isGiven(0, 5));
 
@@ -606,7 +611,7 @@ test "Board: fromFlat initializes digit_bits for given cells" {
     flat[1] = 3; // row 0, col 1 -> digit bit 2 set
     flat[11] = 7; // row 1, col 2 -> digit bit 6 set
 
-    const b = try fromFlat(flat);
+    const b = try fromFlat(flat, .{});
 
     // Box 0 should have bits for digits 3 and 7 set
     const box0_bits = b.getBoxDigitBits(0, 0);
@@ -645,7 +650,7 @@ test "Board: clearCell clears the digit bit from the owning box" {
     @memset(&flat, 0);
     flat[3] = 5; // row 0, col 3 -> inside box 1
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
     try std.testing.expect((b.getBoxDigitBits(0, 1) & (@as(u32, 1) << (@intFromEnum(CellValue.five) - 1))) != 0);
 
     // Clear it — clearCell resets value AND clears the given bit; must also strip digit bit
@@ -660,7 +665,7 @@ test "Board.BoardView.resolve() resolves same values as getCellValue" {
     flat[1] = 6;  // A2 (row 0, col 1) = 6
     flat[9 + 4] = 3; // J5 (row 1, col 4) = 3
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
     const view = b.asView();
 
     // Point resolution through Board.BoardView delegates to Board's own seam
@@ -692,7 +697,7 @@ test "Board: asRow produces contiguous indices for row n" {
     flat[2 * 9 + 1] = 9; // row 2, col 1 = nine
     flat[2 * 9 + 2] = 8; // row 2, col 2 = eight
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
     const view = b.asView();
     const row = Board.asRow(2);
 
@@ -723,7 +728,7 @@ test "Board: asCol produces strided indices for column n" {
     flat[2 * 9 + 4] = 3; // row 2, col 4 = three
     flat[5 * 9 + 4] = 1; // row 5, col 4 = one
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
     const view = b.asView();
     const col = Board.asCol(4);
 
@@ -760,7 +765,7 @@ test "Board: asBox(0, 1) produces correct scattered indices for top-middle box" 
     flat[1 * 9 + 5] = 8; // row 1, col 5 = eight
     flat[2 * 9 + 3] = 4; // row 2, col 3 = four
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
     const view = b.asView();
     const box = Board.asBox(0, 1);
 
@@ -995,7 +1000,7 @@ test "Board: toFlat produces [81]u8 matching current cell values" {
     flat[40] = 7;
     flat[80] = 9;
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
     const out = b.toFlat();
 
     for (out, 0..) |v, i| {
@@ -1016,13 +1021,13 @@ test "Board: toFlat -> fromFlat round-trip preserves cell values" {
     flat[3] = 6;
     flat[30] = 2;
 
-    var b = try fromFlat(flat);
+    var b = try fromFlat(flat, .{});
     try b.setCell(0, 0, .one);
     try b.setCell(1, 1, .four);
     try b.setCell(8, 8, .nine);
 
     const out = b.toFlat();
-    const r = try fromFlat(out);
+    const r = try fromFlat(out, .{});
 
     for (0..CELL_COUNT) |i| {
         const row: u4 = @intCast(@divTrunc(i, DIMENSION_SIZE));
@@ -1039,8 +1044,8 @@ test "Board: equal returns true for identical boards" {
     flat[12] = 3;
     flat[40] = 7;
 
-    const b1 = try fromFlat(flat);
-    const b2 = try fromFlat(flat);
+    const b1 = try fromFlat(flat, .{});
+    const b2 = try fromFlat(flat, .{});
 
     try std.testing.expect(b1.equal(b2));
 }
@@ -1051,8 +1056,8 @@ test "Board: equal returns false when cell values differ" {
     flat[0] = 5;
     flat[12] = 3;
 
-    const b1 = try fromFlat(flat);
-    var b2 = try fromFlat(flat);
+    const b1 = try fromFlat(flat, .{});
+    var b2 = try fromFlat(flat, .{});
 
     // Mutate one cell of b2
     _ = b2.setCell(0, 1, .nine) catch {};
@@ -1064,8 +1069,8 @@ test "Board: equal returns false when given_bits differ" {
     @memset(&flat, 0);
     flat[0] = 5;
 
-    const b1 = try fromFlat(flat);
-    var b2 = try fromFlat(flat);
+    const b1 = try fromFlat(flat, .{});
+    var b2 = try fromFlat(flat, .{});
 
     // b1 has cell 0 as given (non-zero in flat), b2 does not
     b2.given_bits &= ~@as(u128, 1);

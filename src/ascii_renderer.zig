@@ -111,7 +111,7 @@ test "cell row (digits placed)" {
         0, 0, 0, 0, 0, 0, 0, 0, 0,
     };
 
-    var b = try board.fromFlat(givens_row);
+    var b = try board.fromFlat(givens_row, .{});
     const view = b.asView();
 
     var buf: [64]u8 = undefined;
@@ -163,7 +163,7 @@ test "AsciiRenderer renders via AnsiStyler - dim givens preserved" {
     @memcpy(flat[0..27], &givens_row);
     @memcpy(flat[27..], &rest);
 
-    var b = try board.fromFlat(flat);
+    var b = try board.fromFlat(flat, .{});
     const view = b.asView();
 
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
