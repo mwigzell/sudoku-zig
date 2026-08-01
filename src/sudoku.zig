@@ -92,9 +92,10 @@ pub fn Sudoku(comptime R: type) type {
                             return false;
                         },
                         .open => |o_data| {
-                            _ = o_data;
-                            // openGame not yet implemented
-                            try out.print("open not yet implemented \n", .{});
+                            self.engine.openGame(io, o_data.path) catch |err| {
+                                try out.print("open failed: {s}\n", .{@errorName(err)});
+                                return false;
+                            };
                             return false;
                         },
                         else => {
@@ -339,4 +340,57 @@ test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w
         // Legend formats as "(U)ndo" not plain "Undo" — search formatted form
         try std.testing.expect(std.mem.indexOf(u8, output, "(U)ndo") != null);
     }
+}
+
+// Step 7 — integration test: OPEN command wired through handleResult/promptForAndRunCommand
+
+test "full seam: open loads saved game" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ascii_ansi,
+        .fallback_renderer = .ascii_ansi,
+    };
+    const tmp_path = "/tmp/sudoku_tdd_open_test.dat";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+
+    // Create fresh engine with known state before mutations
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    defer original.deinit();
+
+    // Save pristine (mutated-then-undone) state to disk
+    // Mutate and undo to exercise history round-trip
+    _ = try original.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
+    });
+    _ = try original.exec(command.Command{ .undo = {} });
+    try original.saveGame(std.testing.io, tmp_path);
+
+    // Now open through handleResult to prove the handler is wired
+    var mock = mock_renderer.MockRenderer.init();
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    defer sudoku.engine.deinit();
+
+    // Fill a cell that was empty in the saved state — this proves divergence from saved state
+    _ = try sudoku.engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.seven },
+    });
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku.engine.eventBoard().get(1, 1));
+
+    // Parse open command and dispatch via handleResult seam
+    var mw = MockWriter.initMockWriter();
+    var mr = MockReader.initMockReader(&[_][]const u8{});
+    const parsed_open = command.parse("open " ++ tmp_path);
+    const is_done = try sudoku.handleResult(&mw, &mr, &mock, std.testing.io, parsed_open);
+
+    // Assert: loop continues (isDone = false)
+    try std.testing.expect(!is_done);
+
+    // Assert: stub message no longer present — handler calls openGame instead of placeholder print
+    {
+        const output = mw.getWritten();
+        try std.testing.expect(std.mem.indexOf(u8, output, "not yet implemented") == null);
+    }
+
+    // Assert: engine state restored to saved version (B2 should be back to empty, not seven)
+    try std.testing.expectEqual(cell.CellValue.zero, sudoku.engine.eventBoard().get(1, 1));
 }
