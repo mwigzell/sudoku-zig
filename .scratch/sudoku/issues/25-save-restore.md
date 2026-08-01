@@ -33,8 +33,6 @@ In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game st
 
 ## Binary Format Spec
 
-Full spec: `.scratch/sudoku/save-file-format.md`
-
 ### Layout
 
 ```

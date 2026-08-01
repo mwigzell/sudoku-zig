@@ -121,42 +121,60 @@ pub const GameEngine = struct {
         };
     }
 
-        /// Serialize game state to a binary save file via an Io handle.
+    /// Serialize game state to a binary save file via an Io handle.
+
     pub fn saveGame(self: *const @This(), io: std.Io, path: []const u8) anyerror!void {
+        const buf = try self.toSaveFormat(std.heap.page_allocator);
+        defer std.heap.page_allocator.free(buf);
+
         var file = try std.Io.Dir.createFileAbsolute(io, path, .{});
         defer file.close(io);
-        var writer_buf: [1024]u8 = undefined;
-        var writer = file.writer(io, &writer_buf);
-        defer writer.flush() catch {};
-        // Header: magic + version (5 bytes)
-        const w = &writer.interface;
-        try w.writeAll(&SaveFileMagic);
-        try w.writeByte(SaveFileVersion);
+        try std.Io.File.writeStreamingAll(file, io, buf);
+    }
 
-        // Pointer position (1 byte)
-        const pointer_u8: u8 = @as(u8, @intCast(@min(self.history.pointer, 255)));
-        try w.writeByte(pointer_u8);
 
-        // Total history count (2 bytes little-endian)
-        const ecount: u16 = @as(u16, @intCast(self.history.entries.items.len));
-        try w.writeInt(u16, ecount, .little);
 
-        // Mutation entries (2 bytes each)
+
+    /// Serialize full game state to a heap-allocated byte buffer.
+    /// Returns allocated []u8 — caller owns and must free with the same allocator.
+    pub fn toSaveFormat(self: *const @This(), gpa: std.mem.Allocator) ![]u8 {
+        const entry_count = self.history.entries.items.len;
+        const total_size = SAVE_HEADER_SIZE + (entry_count * @sizeOf(SaveEntry)) + SAVE_TRAILER_SIZE;
+
+        var buf = try gpa.alloc(u8, total_size);
+
+        // Write header
+        const header = SaveFileHeader{
+            .magic = SaveFileMagic,
+            .version_major = 0,
+            .version_minor = 0,
+            .version_patch = SaveFileVersion,
+            .pointer = @as(u16, @intCast(self.history.pointer)),
+            .entry_count = @as(u16, @intCast(entry_count)),
+        };
+        writeSaveHeader(buf[0..SAVE_HEADER_SIZE], &header);
+
+        // Write SaveEntry records
+        var offset: usize = SAVE_HEADER_SIZE;
         for (self.history.entries.items) |entry| {
             const se = SaveEntry{
                 .coords = (@as(u8, @intCast(entry.row)) << 4) | @as(u8, @intCast(entry.col)),
                 .values = (@as(u8, @intFromEnum(entry.old_value)) << 4) | @as(u8, @intFromEnum(entry.new_value)),
             };
-            try w.writeAll(std.mem.toBytes(&se)[0..@sizeOf(SaveEntry)]);
+            buf[offset + 0] = se.coords;
+            buf[offset + 1] = se.values;
+            offset += @sizeOf(SaveEntry);
         }
+        // Write trailer
+        const trailer = SaveFileTrailer{
+            .given_bits = self.board.given_bits,
+            .flat_board = self.board.toFlat(),
+        };
+        writeSaveTrailer(buf[offset..], &trailer);
 
-        // Given bits as u128 little-endian (16 bytes)
-        try w.writeInt(u128, self.board.given_bits, .little);
-
-        // Board cell values (81 bytes)
-        const flat = self.board.toFlat();
-        try w.writeAll(&flat);
+        return buf;
     }
+
 
     /// Deserialize game state from a binary save file via an Io handle.
     pub fn openGame(self: *@This(), io: std.Io, path: []const u8) anyerror!void {
@@ -1135,3 +1153,86 @@ test "SaveFileTrailer: round-trip write/read" {
     try std.testing.expectEqual(original.given_bits, loaded.given_bits);
     try std.testing.expectEqual(original.flat_board, loaded.flat_board);
 }
+
+// Step 4 — toSaveFormat / fromSaveFormat (in-memory blob serialization)
+
+test "toSaveFormat empty history produces buffer of correct size" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const buf = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    // header(11) + 0 entries + trailer(97) = 108
+    try std.testing.expectEqual(@as(usize, SAVE_HEADER_SIZE + SAVE_TRAILER_SIZE), buf.len);
+}
+
+
+test "toSaveFormat header has correct magic and version" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const buf = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
+    try std.testing.expectEqualStrings("SUD0", &header.magic);
+    try std.testing.expectEqual(@as(u8, 0), header.version_major);
+    try std.testing.expectEqual(@as(u8, 0), header.version_minor);
+    try std.testing.expectEqual(SaveFileVersion, header.version_patch);
+    try std.testing.expectEqual(@as(u16, 0), header.pointer);
+    try std.testing.expectEqual(@as(u16, 0), header.entry_count);
+}
+
+
+test "toSaveFormat includes history entries and correct trailer" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    // Make 3 mutations
+    // Make 3 mutations (same as existing round-trip test)
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
+    }));
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
+    }));
+
+
+
+    const buf = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    // Size check: header(11) + 3 entries(6) + trailer(97) = 114
+    try std.testing.expectEqual(@as(usize, SAVE_HEADER_SIZE + (3 * @sizeOf(SaveEntry)) + SAVE_TRAILER_SIZE), buf.len);
+
+    // Verify entry count from header
+    const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
+    try std.testing.expectEqual(@as(u16, 3), header.entry_count);
+    try std.testing.expectEqual(@as(u16, 3), header.pointer);
+
+    // Verify first entry (row=0, col=2, old=zero, new=seven)
+    const first_entry = buf[SAVE_HEADER_SIZE .. SAVE_HEADER_SIZE + @sizeOf(SaveEntry)];
+    const coords: u8 = first_entry[0];
+    const values: u8 = first_entry[1];
+    try std.testing.expectEqual(@as(u4, 0), @as(u4, @intCast(coords >> 4)));
+    try std.testing.expectEqual(@as(u4, 2), @as(u4, @intCast(coords & 0x0F)));
+    try std.testing.expectEqual(cell.CellValue.zero, cell.rawToCellValue(values >> 4));
+    try std.testing.expectEqual(cell.CellValue.seven, cell.rawToCellValue(values & 0x0F));
+
+    // Verify trailer flat_board has the mutations at correct cells
+    const off: usize = SAVE_HEADER_SIZE + (3 * @sizeOf(SaveEntry));
+    const trailer = readSaveTrailer(buf[off..]);
+    try std.testing.expectEqual(trailer.given_bits, engine.board.given_bits);
+    // Cell (0,2) should be seven in trailer
+    try std.testing.expectEqual(@as(u8, 7), trailer.flat_board[@as(usize, 0) * board.DIMENSION_SIZE + @as(usize, 2)]);
+    // Cell (1,1) should be three
+    try std.testing.expectEqual(@as(u8, 3), trailer.flat_board[@as(usize, 1) * board.DIMENSION_SIZE + @as(usize, 1)]);
+    // Cell (4,4) should be one
+    try std.testing.expectEqual(@as(u8, 1), trailer.flat_board[@as(usize, 4) * board.DIMENSION_SIZE + @as(usize, 4)]);
+
+}
+
