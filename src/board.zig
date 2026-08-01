@@ -211,6 +211,16 @@ pub const Board = struct {
         return flat;
     }
 
+    /// Compare two boards: same cell values and given_bits.
+    pub fn equal(self: Board, other: Board) bool {
+        if (self.given_bits != other.given_bits) return false;
+        for (self.cells, other.cells, 0..) |c1, c2, i| {
+            _ = i;
+            if (c1.value != c2.value) return false;
+        }
+        return true;
+    }
+
     /// Set the value at (row, col). Returns error.IsGiven if the cell is a puzzle clue.
     pub fn setCell(self: *Board, row: u4, col: u4, val: CellValue) !void {
         if (self.isGiven(row, col)) return error.IsGiven;
@@ -1020,4 +1030,45 @@ test "Board: toFlat -> fromFlat round-trip preserves cell values" {
 
         try std.testing.expectEqual(b.getCellValue(row, col), r.getCellValue(row, col));
     }
+}
+
+test "Board: equal returns true for identical boards" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 5;
+    flat[12] = 3;
+    flat[40] = 7;
+
+    const b1 = try fromFlat(flat);
+    const b2 = try fromFlat(flat);
+
+    try std.testing.expect(b1.equal(b2));
+}
+
+test "Board: equal returns false when cell values differ" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 5;
+    flat[12] = 3;
+
+    const b1 = try fromFlat(flat);
+    var b2 = try fromFlat(flat);
+
+    // Mutate one cell of b2
+    _ = b2.setCell(0, 1, .nine) catch {};
+
+    try std.testing.expect(!b1.equal(b2));
+}
+test "Board: equal returns false when given_bits differ" {
+    var flat: [CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 5;
+
+    const b1 = try fromFlat(flat);
+    var b2 = try fromFlat(flat);
+
+    // b1 has cell 0 as given (non-zero in flat), b2 does not
+    b2.given_bits &= ~@as(u128, 1);
+
+    try std.testing.expect(!b1.equal(b2));
 }

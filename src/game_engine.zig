@@ -962,20 +962,8 @@ test "saveGame returns error on bad path" {
     try loaded.openGame(std.testing.io, tmp_path);
     defer loaded.deinit();
 
-    // --- Assert DIMENSION 1: board cell values (all 81) ---
-    const orig_view = original.eventBoard();
-    const load_view = loaded.eventBoard();
-    for (0..(board.DIMENSION_SIZE * board.DIMENSION_SIZE)) |i| {
-        const row: u4 = @intCast(@divTrunc(i, board.DIMENSION_SIZE));
-        const col: u4 = @intCast(@mod(i, board.DIMENSION_SIZE));
-        try std.testing.expectEqual(
-            orig_view.get(row, col),
-            load_view.get(row, col),
-        );
-    }
-
-    // --- Assert DIMENSION 2: given_bits (explicitly written, not re-derived) ---
-    try std.testing.expectEqual(original.board.given_bits, loaded.board.given_bits);
+    // --- Assert board state (cells + given_bits) via Board.equal() ---
+    try std.testing.expect(original.board.equal(loaded.board));
 
     // --- Assert DIMENSION 3: history pointer position ---
     try std.testing.expectEqual(
@@ -1187,16 +1175,8 @@ test "fromSaveFormat round-trip: board state given_bits history" {
 
     var loaded = try GameEngine.fromSaveFormat(std.testing.allocator, buf);
     defer loaded.deinit();
-    const orig_view = original.eventBoard();
-    const load_view = loaded.eventBoard();
-    for (0..(board.DIMENSION_SIZE * board.DIMENSION_SIZE)) |i| {
-        const row: u4 = @intCast(@divTrunc(i, board.DIMENSION_SIZE));
-
-        const col: u4 = @intCast(@mod(i, board.DIMENSION_SIZE));
-        try std.testing.expectEqual(orig_view.get(row, col), load_view.get(row, col));
-    }
-
-    try std.testing.expectEqual(original.board.given_bits, loaded.board.given_bits);
+    // --- Assert board state (cells + given_bits) via Board.equal() ---
+    try std.testing.expect(original.board.equal(loaded.board));
     try std.testing.expectEqual(original.history.pointer, loaded.history.pointer);
     try std.testing.expectEqual(
         original.history.entries.items.len,
