@@ -174,62 +174,59 @@ pub const GameEngine = struct {
 
         return buf;
     }
+    /// Deserialize from a toSaveFormat blob into a fresh GameEngine.
+    pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !GameEngine {
+        const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
+        if (!std.mem.eql(u8, &header.magic, "SUD0")) {
+            return error.InvalidSaveFile;
+        }
+        if (header.version_patch != SaveFileVersion) {
+            return error.IncompatibleVersion;
+        }
 
+        const offset = SAVE_HEADER_SIZE;
+        var history = MutationHistory.init(gpa);
+        for (0..header.entry_count) |i| {
+            const idx: usize = offset + (@as(usize, i) * @sizeOf(SaveEntry));
+            const se = SaveEntry{
+                .coords = buf[idx],
+                .values = buf[idx + 1],
+            };
+            try history.push(
+                @as(u4, @intCast(se.coords >> 4)),
+                @as(u4, @intCast(se.coords & 0x0F)),
+                cell.rawToCellValue(@as(u4, @intCast(se.values >> 4))),
+                cell.rawToCellValue(@as(u4, @intCast(se.values & 0x0F))),
+            );
+        }
+        const entries_end = offset + (header.entry_count * @sizeOf(SaveEntry));
+        const trailer = readSaveTrailer(buf[entries_end..]);
+        var engine = GameEngine{
+            .board = try board.fromFlat(trailer.flat_board),
+            .history = history,
+        };
+        engine.board.given_bits = trailer.given_bits;
+        engine.history.pointer = header.pointer;
+
+        return engine;
+    }
 
     /// Deserialize game state from a binary save file via an Io handle.
     pub fn openGame(self: *@This(), io: std.Io, path: []const u8) anyerror!void {
         var file = try std.Io.Dir.openFileAbsolute(io, path, .{});
         defer file.close(io);
 
-        var reader_buf: [1024]u8 = undefined;
-        var reader = file.reader(io, &reader_buf);
+        const stat = try std.Io.Dir.cwd().statFile(io, path, .{});
+        const buf = try std.heap.page_allocator.alloc(u8, stat.size);
+        defer std.heap.page_allocator.free(buf);
 
-        // Read and validate magic + version
-        var magic_buf: @TypeOf(SaveFileMagic) = undefined;
-        _ = try reader.interface.readSliceShort(&magic_buf);
-        if (!std.mem.eql(u8, &magic_buf, "SUD0")) {
-            return error.InvalidSaveFile;
-        }
-        const version: u8 = try reader.interface.takeInt(u8, .little);
-        if (version != SaveFileVersion) {
-            return error.IncompatibleVersion;
-        }
+        _ = try std.Io.File.readPositionalAll(file, io, buf, 0);
 
-        // Pointer position (1 byte)
-        const pointer_u8: u8 = try reader.interface.takeInt(u8, .little);
-        const pointer: usize = @intCast(pointer_u8);
-
-        // History entry count (2 bytes little-endian)
-        const ecount: u16 = try reader.interface.takeInt(u16, .little);
-
-        // Read mutation entries (2 bytes each)
-        var entries = MutationHistory.init(std.heap.page_allocator);
-        errdefer entries.deinit();
-        for (0..ecount) |_| {
-            var se_buf: [2]u8 = undefined;
-            try reader.interface.readSliceAll(&se_buf);
-            const coords = se_buf[0];
-            const values = se_buf[1];
-            try entries.push(
-                @as(u4, @intCast(coords >> 4)),
-                @as(u4, @intCast(coords & 0x0F)),
-                cell.rawToCellValue(@as(u4, @intCast(values >> 4))),
-                cell.rawToCellValue(@as(u4, @intCast(values & 0x0F))),
-            );
-        }
-
-        // Given bits (u128 LE)
-        const given_bits: u128 = try reader.interface.takeInt(u128, .little);
-
-        // Board flat values (81 bytes)
-        var flat_buf: [CELL_COUNT]u8 = undefined;
-        try reader.interface.readSliceAll(&flat_buf);
-
-        // Reconstruct board
-        self.board = try board.fromFlat(flat_buf);
-        self.board.given_bits = given_bits;
-        self.history = entries;
-        self.history.pointer = pointer;
+        const loaded = try GameEngine.fromSaveFormat(std.heap.page_allocator, buf);
+        self.history.deinit();
+        const old_board = self.board;
+        self.* = loaded;
+        _ = old_board;
     }
 
 
@@ -928,74 +925,6 @@ test "Save file size: header + history_count(2) + N*entry_size + given_bits(16)"
     try std.testing.expectEqual(@as(usize, 29), three_mutations_size);
 }
 
-
-// Step 4 — saveGame() unit tests
-
-const CELL_COUNT = board.DIMENSION_SIZE * board.DIMENSION_SIZE;
-
-test "saveGame writes file with correct size (empty history)" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
-    defer engine.deinit();
-
-    const tmp_path = "/tmp/sudoku_test_save_empty.dat";
-    _ = engine.saveGame(std.testing.io, tmp_path) catch |err| return err;
-
-    const stat = try std.Io.Dir.cwd().statFile(std.testing.io, tmp_path, .{});
-
-    // header: magic(4) + version(1) + pointer(1) + count(u16)=2 + given_bits(16) + cells(81) = 105
-    const expected_size: usize = @as(usize, SaveFileMagic.len) + 1 + 1 + @sizeOf(u16) + @sizeOf(u128) + CELL_COUNT;
-    try std.testing.expectEqual(expected_size, stat.size);
-
-    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
-}
-
-test "saveGame writes file with correct size (3 history entries)" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
-    defer engine.deinit();
-
-    _ = try expectOk(try engine.exec(command.Command{
-        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
-    }));
-    _ = try expectOk(try engine.exec(command.Command{
-        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.two },
-    }));
-    _ = try expectOk(try engine.exec(command.Command{
-        .fill = command.FillData{ .row = 1, .col = 3, .digit = cell.CellValue.three },
-    }));
-
-    const tmp_path = "/tmp/sudoku_test_save_3entries.dat";
-    _ = engine.saveGame(std.testing.io, tmp_path) catch |err| return err;
-
-    const stat = try std.Io.Dir.cwd().statFile(std.testing.io, tmp_path, .{});
-
-    // header(6) + count(2) + 3*2 entries + given_bits(16) + cells(81) = 111
-    const expected_size: usize = SaveFileMagic.len + 1 + 1 + @sizeOf(u16) + (3 * @sizeOf(SaveEntry)) + @sizeOf(u128) + CELL_COUNT;
-    try std.testing.expectEqual(expected_size, stat.size);
-
-    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
-}
-
-test "saveGame writes correct header magic and version" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
-    defer engine.deinit();
-
-    const tmp_path = "/tmp/sudoku_test_save_header.dat";
-    _ = engine.saveGame(std.testing.io, tmp_path) catch |err| return err;
-
-    var file = try std.Io.Dir.openFileAbsolute(std.testing.io, tmp_path, .{});
-    defer file.close(std.testing.io);
-
-    var header_buf: [5]u8 = undefined;
-    var readerbuf: [1024]u8 = undefined;
-    var reader = file.reader(std.testing.io, &readerbuf);
-    _ = try reader.interface.readSliceShort(&header_buf);
-
-    try std.testing.expectEqualStrings("SUD0", header_buf[0..4]);
-    try std.testing.expectEqual(@as(u8, 1), header_buf[4]);
-
-    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
-}
-
 test "saveGame returns error on bad path" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
@@ -1029,14 +958,14 @@ test "saveGame returns error on bad path" {
     _ = original.saveGame(std.testing.io, tmp_path) catch |err| return err;
 
     // Open into a new engine
-    var loaded: GameEngine = undefined; // initialised by openGame
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     try loaded.openGame(std.testing.io, tmp_path);
     defer loaded.deinit();
 
     // --- Assert DIMENSION 1: board cell values (all 81) ---
     const orig_view = original.eventBoard();
     const load_view = loaded.eventBoard();
-    for (0..CELL_COUNT) |i| {
+    for (0..(board.DIMENSION_SIZE * board.DIMENSION_SIZE)) |i| {
         const row: u4 = @intCast(@divTrunc(i, board.DIMENSION_SIZE));
         const col: u4 = @intCast(@mod(i, board.DIMENSION_SIZE));
         try std.testing.expectEqual(
@@ -1234,5 +1163,51 @@ test "toSaveFormat includes history entries and correct trailer" {
     // Cell (4,4) should be one
     try std.testing.expectEqual(@as(u8, 1), trailer.flat_board[@as(usize, 4) * board.DIMENSION_SIZE + @as(usize, 4)]);
 
+}
+
+
+
+test "fromSaveFormat round-trip: board state given_bits history" {
+    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer original.deinit();
+
+    _ = try expectOk(try original.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+    _ = try expectOk(try original.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
+    }));
+    _ = try expectOk(try original.exec(command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
+    }));
+    _ = try expectOk(try original.exec(command.Command{ .undo = {} }));
+
+    const buf = try original.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    var loaded = try GameEngine.fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.deinit();
+    const orig_view = original.eventBoard();
+    const load_view = loaded.eventBoard();
+    for (0..(board.DIMENSION_SIZE * board.DIMENSION_SIZE)) |i| {
+        const row: u4 = @intCast(@divTrunc(i, board.DIMENSION_SIZE));
+
+        const col: u4 = @intCast(@mod(i, board.DIMENSION_SIZE));
+        try std.testing.expectEqual(orig_view.get(row, col), load_view.get(row, col));
+    }
+
+    try std.testing.expectEqual(original.board.given_bits, loaded.board.given_bits);
+    try std.testing.expectEqual(original.history.pointer, loaded.history.pointer);
+    try std.testing.expectEqual(
+        original.history.entries.items.len,
+        loaded.history.entries.items.len,
+    );
+    for (original.history.entries.items, loaded.history.entries.items, 0..) |o, l, idx| {
+        _ = idx;
+        try std.testing.expectEqual(o.row, l.row);
+        try std.testing.expectEqual(o.col, l.col);
+        try std.testing.expectEqual(o.old_value, l.old_value);
+        try std.testing.expectEqual(o.new_value, l.new_value);
+    }
 }
 

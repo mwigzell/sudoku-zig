@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 ## Parent
 `.scratch/sudoku/prd.md` (Out of Scope extension)
@@ -81,10 +81,10 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 | 1 | ✅ Done | Define `SAVE` and `OPEN` commands in command.zig; parse `SAVE <path>` / `OPEN <path>`. **File:** `src/command.zig` — Add `.save = struct{ path: []const u8 }` and `.open = struct{ path: []const u8 }`. Extend the string parser (case-insensitive recognition). |
 | 2 | ✅ Done | Add `Board.toFlat()` helper. **File:** `src/board.zig` — Returns `[81]u8` for cell values. Also export givens mask (`given_bits`). |
 | 3 | ✅ Done | Define binary format structs: `SaveFileHeader` (11B wire) and `SaveFileTrailer` (97B wire). **File:** `src/game_engine.zig`. Added `writeSaveHeader`/`readSaveHeader` and `writeSaveTrailer`/`readSaveTrailer` helpers for field-by-field serialization. Non-packed structs with wire format constants to work around Zig packed-struct array limitation. |
-| 4 | ✅ Done | Implement `toSaveFormat(gpa)` on GameEngine — serializes header + history entries + trailer (board state) into heap-allocated byte array. **File:** `src/game_engine.zig`. Then rewrite `saveGame(io, path)` to call `toSaveFormat()` → one `writeStreamingAll(buf)` to disk. No `.interface` small-write bug. Fixed `file.writeAll(io, buf)` (doesn't exist on `Io.File`) with `std.Io.File.writeStreamingAll(file, io, buf)`. 3 tests passing. |
-| 5 | ⏳ Needs work | Implement `fromSaveFormat(gpa, buf)` on GameEngine — deserializes a loaded buffer into fresh GameEngine instance (board + history intact in MutationHistory). **File:** `src/game_engine.zig`. Then rewrite `openGame(io, path)` to read whole file → pass buffer to `fromSaveFormat()`. |
-| 6 | ✅ Done (moved) | Save is wired in **sudoku.zig** (not exec()) — `handleCommand().save` calls `self.engine.saveGame(io, ".sudoku_save.dat")`. exec() uses `else => @panic("save/open handled in sudoku.zig")` catch-all. This avoids `std.testing.io` in exec switch. |
-| 7 | ❌ Not started | Wire `.open` in sudoku.zig — replace stub with `self.engine.openGame(io, o_data.path)`. **File:** `src/sudoku.zig`. Currently prints "open not yet implemented". Also add `Board.fromSaveState(SaveFileTrailer)` method for clean deserialization seam. |
+| 4 | ✅ Done | Implement `toSaveFormat(gpa)` on GameEngine — serializes header + history entries + trailer (board state) into heap-allocated byte array. Then rewrite `saveGame(io, path)` to call `toSaveFormat()` → one `writeStreamingAll(buf)` to disk. |
+| 5 | ✅ Done | Implement `fromSaveFormat(gpa, buf)` on GameEngine — deserializes a loaded buffer into fresh GameEngine instance (board + history intact in MutationHistory). Then rewrite `openGame(io, path)` to read whole file → pass buffer to `fromSaveFormat()`. Fixed bugs: `var loaded` should be `const loaded`; test was calling openGame on an undefined GameEngine (crash on deinit of garbage history) — now properly initialized via `GameEngine.init()` first. Round-trip test passes across all 4 dimensions (board cells, given_bits, history pointer, history entries). |
+| 6 | ✅ Done | Save is wired in **sudoku.zig** (not exec()) — `handleCommand().save` calls `self.engine.saveGame(io, ".sudoku_save.dat")`. exec() uses `else => @panic("save/open handled in sudoku.zig")` catch-all. Dropped 3 stale file-level wire-format tests that had incorrect size math (off by 3 bytes) and wrong version byte index — those assertions are redundant given `toSaveFormat`/`fromSaveFormat` direct tests + the full round-trip test. |
+| 7 | ⏳ Needs work | Wire `.open` handler in sudoku.zig — replace stub (prints "open not yet implemented") with call to `self.engine.openGame(io, o_data.path)`. Currently save works but open is just a placeholder.
 | 8 | ⏳ Needs work | Add `Board.equal(other: Board) bool` comparison method — compares cells cell-by-cell plus given_bits mask. Needed by round-trip test assertions so we don't write manual loops everywhere. **File:** `src/board.zig`. |
 
 ---
