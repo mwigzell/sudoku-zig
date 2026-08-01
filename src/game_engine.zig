@@ -17,11 +17,69 @@ pub const AvailableCommands = struct {
 pub const SaveFileMagic = [_]u8{ 'S', 'U', 'D', '0' };
 pub const SaveFileVersion: u8 = 1;
 
+pub const SaveFileHeader = struct {
+    magic:         [4]u8,   // "SUD0"
+    version_major: u8,
+    version_minor: u8,
+    version_patch: u8,
+    pointer:       u16,
+    entry_count:   u16,
+};
+
+pub const SaveFileTrailer = struct {
+    given_bits:  u128,
+    flat_board:  [81]u8,
+};
+
+const SAVE_HEADER_SIZE: usize = 11; // magic(4) + ver_major(1) + ver_minor(1) + ver_patch(1) + pointer(2) + entry_count(2)
+const SAVE_TRAILER_SIZE: usize = 97; // given_bits(16) + flat_board(81)
+
+/// Write a SaveFileHeader as exactly 11 bytes into buf.
+fn writeSaveHeader(buf: []u8, header: *const SaveFileHeader) void {
+    @memcpy(buf[0..4], &header.magic);
+    buf[4] = header.version_major;
+    buf[5] = header.version_minor;
+    buf[6] = header.version_patch;
+    buf[7] = @truncate(header.pointer);
+    buf[8] = @truncate(header.pointer >> 8);
+    buf[9] = @truncate(header.entry_count);
+    buf[10] = @truncate(header.entry_count >> 8);
+}
+
+/// Read a SaveFileHeader from exactly 11 bytes. The file must be in little-endian order.
+fn readSaveHeader(buf: []const u8) SaveFileHeader {
+    return SaveFileHeader{
+        .magic = buf[0..4].*,
+        .version_major = buf[4],
+        .version_minor = buf[5],
+        .version_patch = buf[6],
+        .pointer = @as(u16, buf[7]) | (@as(u16, buf[8]) << 8),
+        .entry_count = @as(u16, buf[9]) | (@as(u16, buf[10]) << 8),
+    };
+}
+
+/// Write a SaveFileTrailer as exactly 97 bytes into buf.
+fn writeSaveTrailer(buf: []u8, trailer: *const SaveFileTrailer) void {
+    const bytes = std.mem.toBytes(trailer.given_bits);
+    @memcpy(buf[0..16], &bytes);
+    @memcpy(buf[16..97], &trailer.flat_board);
+}
+
+/// Read a SaveFileTrailer from exactly 97 bytes.
+fn readSaveTrailer(buf: []const u8) SaveFileTrailer {
+    var given_bits: u128 = undefined;
+    given_bits = std.mem.bytesToValue(u128, buf[0..16]);
+    return SaveFileTrailer{
+        .given_bits = given_bits,
+        .flat_board = buf[16..97].*,
+    };
+}
 /// Packed mutation entry for save file (row+col in byte 0, old+new in byte 1).
 pub const SaveEntry = struct {
     coords: u8,
     values: u8,
 };
+pub const TestStruct = struct {};
 
 // Moved to src/undo.zig, re-exported for backward compat
 const undo = @import("undo.zig");
@@ -100,6 +158,63 @@ pub const GameEngine = struct {
         try w.writeAll(&flat);
     }
 
+    /// Deserialize game state from a binary save file via an Io handle.
+    pub fn openGame(self: *@This(), io: std.Io, path: []const u8) anyerror!void {
+        var file = try std.Io.Dir.openFileAbsolute(io, path, .{});
+        defer file.close(io);
+
+        var reader_buf: [1024]u8 = undefined;
+        var reader = file.reader(io, &reader_buf);
+
+        // Read and validate magic + version
+        var magic_buf: @TypeOf(SaveFileMagic) = undefined;
+        _ = try reader.interface.readSliceShort(&magic_buf);
+        if (!std.mem.eql(u8, &magic_buf, "SUD0")) {
+            return error.InvalidSaveFile;
+        }
+        const version: u8 = try reader.interface.takeInt(u8, .little);
+        if (version != SaveFileVersion) {
+            return error.IncompatibleVersion;
+        }
+
+        // Pointer position (1 byte)
+        const pointer_u8: u8 = try reader.interface.takeInt(u8, .little);
+        const pointer: usize = @intCast(pointer_u8);
+
+        // History entry count (2 bytes little-endian)
+        const ecount: u16 = try reader.interface.takeInt(u16, .little);
+
+        // Read mutation entries (2 bytes each)
+        var entries = MutationHistory.init(std.heap.page_allocator);
+        errdefer entries.deinit();
+        for (0..ecount) |_| {
+            var se_buf: [2]u8 = undefined;
+            try reader.interface.readSliceAll(&se_buf);
+            const coords = se_buf[0];
+            const values = se_buf[1];
+            try entries.push(
+                @as(u4, @intCast(coords >> 4)),
+                @as(u4, @intCast(coords & 0x0F)),
+                cell.rawToCellValue(@as(u4, @intCast(values >> 4))),
+                cell.rawToCellValue(@as(u4, @intCast(values & 0x0F))),
+            );
+        }
+
+        // Given bits (u128 LE)
+        const given_bits: u128 = try reader.interface.takeInt(u128, .little);
+
+        // Board flat values (81 bytes)
+        var flat_buf: [CELL_COUNT]u8 = undefined;
+        try reader.interface.readSliceAll(&flat_buf);
+
+        // Reconstruct board
+        self.board = try board.fromFlat(flat_buf);
+        self.board.given_bits = given_bits;
+        self.history = entries;
+        self.history.pointer = pointer;
+    }
+
+
 
     /// Route a parsed command through Board mutation + render update.
     pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
@@ -140,13 +255,9 @@ pub const GameEngine = struct {
                 self.history.pointer += 1;
                 return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
             },
-            .save => {
-                return Event{ .error_msg = "save not yet implemented" };
+            else => {
+                @panic("save/open handled in sudoku.zig, not exec()");
             },
-            .open => |o| {
-                _ = o;
-                return Event{ .error_msg = "load not yet implemented" };
-            }
         }
     }
     fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!Event {
@@ -875,3 +986,152 @@ test "saveGame returns error on bad path" {
     try std.testing.expectError(error.FileNotFound, result);
 }
 
+// Step 6 — save → open round-trip (full saved state equality)
+
+ test "saveGame then openGame: full state round-trip equals original" {
+    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer original.deinit();
+
+    // Make mutations to populate history and alter board
+    _ = try expectOk(try original.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+    _ = try expectOk(try original.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
+    }));
+    _ = try expectOk(try original.exec(command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
+    }));
+
+    // Undo one mutation — tests that pointer position is preserved
+    _ = try expectOk(try original.exec(command.Command{ .undo = {} }));
+
+    // Save to temp file using test I/O
+    const tmp_path = "/tmp/sudoku_roundtrip_test.dat";
+    _ = original.saveGame(std.testing.io, tmp_path) catch |err| return err;
+
+    // Open into a new engine
+    var loaded: GameEngine = undefined; // initialised by openGame
+    try loaded.openGame(std.testing.io, tmp_path);
+    defer loaded.deinit();
+
+    // --- Assert DIMENSION 1: board cell values (all 81) ---
+    const orig_view = original.eventBoard();
+    const load_view = loaded.eventBoard();
+    for (0..CELL_COUNT) |i| {
+        const row: u4 = @intCast(@divTrunc(i, board.DIMENSION_SIZE));
+        const col: u4 = @intCast(@mod(i, board.DIMENSION_SIZE));
+        try std.testing.expectEqual(
+            orig_view.get(row, col),
+            load_view.get(row, col),
+        );
+    }
+
+    // --- Assert DIMENSION 2: given_bits (explicitly written, not re-derived) ---
+    try std.testing.expectEqual(original.board.given_bits, loaded.board.given_bits);
+
+    // --- Assert DIMENSION 3: history pointer position ---
+    try std.testing.expectEqual(
+        original.history.pointer,
+        loaded.history.pointer,
+    );
+
+    // --- Assert DIMENSION 4: history entries count + contents ---
+    const orig_count = original.history.entries.items.len;
+    const load_count = loaded.history.entries.items.len;
+    try std.testing.expectEqual(orig_count, load_count);
+
+    for (original.history.entries.items, loaded.history.entries.items, 0..) |orig_e, load_e, idx| {
+        _ = idx;
+        try std.testing.expectEqual(orig_e.row, load_e.row);
+        try std.testing.expectEqual(orig_e.col, load_e.col);
+        try std.testing.expectEqual(orig_e.old_value, load_e.old_value);
+        try std.testing.expectEqual(orig_e.new_value, load_e.new_value);
+    }
+
+    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+}
+
+// Step 3 — SaveFileHeader & SaveFileTrailer struct tests
+
+test "SaveFileHeader: wire format is 11 bytes" {
+    try std.testing.expectEqual(@as(usize, 11), SAVE_HEADER_SIZE);
+}
+
+test "SaveFileHeader: fields can be set and read back" {
+    const header = SaveFileHeader{
+        .magic = [_]u8{ 'S', 'U', 'D', '0' },
+        .version_major = 0,
+        .version_minor = 0,
+        .version_patch = 1,
+        .pointer = 2,
+        .entry_count = 5,
+    };
+    try std.testing.expectEqualStrings("SUD0", &header.magic);
+    try std.testing.expectEqual(@as(u8, 0), header.version_major);
+    try std.testing.expectEqual(@as(u8, 0), header.version_minor);
+    try std.testing.expectEqual(@as(u8, 1), header.version_patch);
+    try std.testing.expectEqual(@as(u16, 2), header.pointer);
+    try std.testing.expectEqual(@as(u16, 5), header.entry_count);
+}
+
+test "SaveFileHeader: round-trip write/read" {
+    const original = SaveFileHeader{
+        .magic = [_]u8{ 'S', 'U', 'D', '0' },
+        .version_major = 0,
+        .version_minor = 2,
+        .version_patch = 1,
+        .pointer = 3,
+        .entry_count = 42,
+    };
+
+    var buf: [SAVE_HEADER_SIZE]u8 = undefined;
+    writeSaveHeader(&buf, &original);
+
+    const loaded = readSaveHeader(&buf);
+    try std.testing.expectEqualStrings("SUD0", &loaded.magic);
+    try std.testing.expectEqual(original.version_major, loaded.version_major);
+    try std.testing.expectEqual(original.version_minor, loaded.version_minor);
+    try std.testing.expectEqual(original.version_patch, loaded.version_patch);
+    try std.testing.expectEqual(original.pointer, loaded.pointer);
+    try std.testing.expectEqual(original.entry_count, loaded.entry_count);
+}
+
+test "SaveFileTrailer: wire format is 97 bytes" {
+    try std.testing.expectEqual(@as(usize, 97), SAVE_TRAILER_SIZE);
+}
+
+test "SaveFileTrailer: fields can be set and read back" {
+    var board_vals: [81]u8 = undefined;
+    for (0..81) |i| {
+        board_vals[i] = @as(u8, @intCast(i % 10));
+    }
+
+    const trailer = SaveFileTrailer{
+        .given_bits = 0xFFFF_FFFF_FFFF_FFFF,
+        .flat_board = board_vals,
+    };
+
+    try std.testing.expectEqual(@as(u128, 0xFFFF_FFFF_FFFF_FFFF), trailer.given_bits);
+    try std.testing.expectEqual(board_vals, trailer.flat_board);
+}
+
+test "SaveFileTrailer: round-trip write/read" {
+
+    var board_vals: [81]u8 = undefined;
+    for (0..81) |i| {
+        board_vals[i] = @as(u8, @intCast(i % 10));
+    }
+
+    const original = SaveFileTrailer{
+        .given_bits = 0xCAFE_BABE_DEAD_BEEF_1234_5678_9ABC_DEF0,
+        .flat_board = board_vals,
+    };
+
+    var buf: [SAVE_TRAILER_SIZE]u8 = undefined;
+    writeSaveTrailer(&buf, &original);
+
+    const loaded = readSaveTrailer(&buf);
+    try std.testing.expectEqual(original.given_bits, loaded.given_bits);
+    try std.testing.expectEqual(original.flat_board, loaded.flat_board);
+}

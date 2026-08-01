@@ -93,8 +93,8 @@ pub fn Sudoku(comptime R: type) type {
                         },
                         .open => |o_data| {
                             _ = o_data;
-                            // loadGame not yet implemented
-                            try out.print("load not yet implemented\n", .{});
+                            // openGame not yet implemented
+                            try out.print("open not yet implemented \n", .{});
                             return false;
                         },
                         else => {
