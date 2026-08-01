@@ -1,4 +1,4 @@
-Status: in-progress
+Status: ready-for-agent
 
 ## Parent
 `.scratch/sudoku/prd.md` (Out of Scope extension)
@@ -6,7 +6,7 @@ Status: in-progress
 ## What to build
 In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game state (81-cell flat vector + entire `MutationHistory` stack + pointer index) to disk, and deserialize it back. Restoring a save continues exactly where you left off, with all prior undos/redos intact.
 
-**Architectural note:** Because persistence is now in scope, the `Board` domain model must expose a clean serialization seam (`toFlat()` / `fromSaveState()`) so saving doesn't reach into internal arrays later.
+**Architectural note:** Because persistence is now in scope, the `Board` domain model must expose a clean serialization seam (`toFlat()`) so saving doesn't reach into internal arrays later.
 
 ---
 
@@ -17,51 +17,79 @@ In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game st
 
 ---
 
+
+| `saveGame(io, path)` | **GameEngine** | Thin I/O wrapper — calls `toSaveFormat()`, writes result to disk via one `writeAll()` call. |
+| `openGame(io, path)` | **GameEngine** | Reads whole file into buffer → passes to `fromSaveFormat(buf)`. Don't go through exec(). |
+| `toSaveFormat(gpa: Allocator) []u8` | **GameEngine** | Serializes header + history entries + trailer (board state) into a heap-allocated byte array. Pure memory, no I/O. Enables easy testing and version migration. Returns error on allocation failure. Caller owns/freeing the buffer. |
+| `fromSaveFormat(gpa: Allocator, buf: []const u8) GameEngine` | **GameEngine** | Deserializes a save buffer into a fresh GameEngine instance (with board + history). Validates magic/version before proceeding. Returns error on corrupt/unsupported data. |
+| `fromSaveState(SaveFileTrailer)` | **Board** | Clean deserialization seam — restores board from trailer bytes. Avoids touching GameEngine internals later. Returns error on mismatch. |
+| `equal(original: Board) bool` | **Board** | Compares two boards cell-by-cell plus given_bits. Needed for round-trip test assertions. |
+---
+
+## Binary Format Spec
+
+Full spec: `.scratch/sudoku/save-file-format.md`
+
+### Layout
+
+```
+Offset 0        | Offset 11              | Offset 11+N×2                | End
+┌───────────────┬──────────────────────┬───────────────────────────┐
+│ Header(11B    │ History entries N×2   │ Trailer(97B)             │
+│ +version ptr │ bytes each           │                          │
+│ +entry_count  │                      │ given_bits(16) + flat_board(81) │
+└───────────────┴──────────────────────┴───────────────────────────┘
+
+Total size: **108 + 2×N** bytes (where N = entry count).
+```
+
+### `SaveFileHeader` — 11 bytes, packed
+
+| Field | Type | Notes |
+|-------|------|-------|
+| magic | `[4]u8` | ASCII `"SUD0"`; validates file type |
+| version_major | `u8` | 0 (bumps on format breakage) |
+| version_minor | `u8` | 0 |
+| version_patch | `u8` | 1 (bumps on additions/fixes) |
+| pointer | `u16` | undo/redo index into history entries |
+| entry_count | `u16` | number of SaveEntry records that follow |
+
+### `SaveFileTrailer` — 97 bytes, packed
+
+| Field | Type | Notes |
+|-------|------|-------|
+| given_bits | `u128` | givens bitmask (1 bit per cell; covers all 81 cells) |
+| flat_board | `[81]u8` | board values in row-major order |
+
+### `SaveEntry` — 2 bytes each
+
+Already exists as `pub const SaveEntry = struct { coords: u8, values: u8 };`. Packed mutation entry: row+col in byte 0 (4 bits each), old_value+new_value in byte 1 (4 bits each from `CellValue(u4)`).
+
+### Serialization Strategy
+
+No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer → one call to `writeAll(buf)` writes everything atomically.
+
+---
+
 ## Steps (vertical slice)
 
 | Step | Status | Description |
 |------|--------|-------------|
 | 1 | ✅ Done | Define `SAVE` and `OPEN` commands in command.zig; parse `SAVE <path>` / `OPEN <path>`. **File:** `src/command.zig` — Add `.save = struct{ path: []const u8 }` and `.open = struct{ path: []const u8 }`. Extend the string parser (case-insensitive recognition). |
 | 2 | ✅ Done | Add `Board.toFlat()` helper. **File:** `src/board.zig` — Returns `[81]u8` for cell values. Also export givens mask (`given_bits`). |
-| 3 | ⏳ In-progress | Define binary serialization format spec and implement structs. See `.scratch/sudoku/issues/25-save-restore/save-file-format.md`. Needs: `SaveFileHeader`, `SaveFileTrailer` packed). Reserved bytes in both structs for version stability (see below). All writes blob-level `writeAll(std.mem.toBytes(…))` — no sequential `.interface` small-write bug. The fix: use buffered writer's `writeAll` via I/O stack handle — one write per blob avoids vtable byte drift. |
-| 4 | ⏳ Needs work | Rewrite `saveGame(io, path)` helper in GameEngine.**File:** `src/game_engine.zig` Open file using buffered writer (`std.Io`) to dump header → history entries → trailer (given_bits + flat board). If I/O error, fail gracefully. Current impl is broken due to `.interface` vtable bridge drops bytes past offset 8+. Needs rewrite. |
-| 5 | ⏳ Blocked | Wire `.save > Build it (co-located) test "save/open round-trip preserves state" - fill a few cells, undo one, save to temp file, load it back. Assert board view matches exactly.)**File:** `src/game_engine.zig test block (co-located)**No internal poking.
-- [ ] test "save/load round-trip preserves pointer position".
+| 3 | ✅ Done | Define binary format structs: `SaveFileHeader` (11B wire) and `SaveFileTrailer` (97B wire). **File:** `src/game_engine.zig`. Added `writeSaveHeader`/`readSaveHeader` and `writeSaveTrailer`/`readSaveTrailer` helpers for field-by-field serialization. Non-packed structs with wire format constants to work around Zig packed-struct array limitation. |
+| 4 | ⏳ Needs work | Implement `toSaveFormat(gpa)` on GameEngine — serializes header + history entries + trailer (board state) into heap-allocated byte array. **File:** `src/game_engine.zig`. Then rewrite `saveGame(io, path)` to call `toSaveFormat()` → one `writeAll(buf)` to disk. No `.interface` small-write bug. |
+| 5 | ⏳ Needs work | Implement `fromSaveFormat(gpa, buf)` on GameEngine — deserializes a loaded buffer into fresh GameEngine instance (board + history intact in MutationHistory). **File:** `src/game_engine.zig`. Then rewrite `openGame(io, path)` to read whole file → pass buffer to `fromSaveFormat()`. |
+| 6 | ✅ Done (moved) | Save is wired in **sudoku.zig** (not exec()) — `handleCommand().save` calls `self.engine.saveGame(io, ".sudoku_save.dat")`. exec() uses `else => @panic("save/open handled in sudoku.zig")` catch-all. This avoids `std.testing.io` in exec switch. |
+| 7 | ❌ Not started | Wire `.open` in sudoku.zig — replace stub with `self.engine.openGame(io, o_data.path)`. **File:** `src/sudoku.zig`. Currently prints "open not yet implemented". Also add `Board.fromSaveState(SaveFileTrailer)` method for clean deserialization seam. |
+| 8 | ⏳ Needs work | Add `Board.equal(other: Board) bool` comparison method — compares cells cell-by-cell plus given_bits mask. Needed by round-trip test assertions so we don't write manual loops everywhere. **File:** `src/board.zig`. |
 
 ---
 
-## Binary Format Spec
+## Acceptance Criteria
 
-### Layout Summary: N × SaveEntry(2 bytes each) → [SaveFileTrailer (given_bits(u128) + flat_board([81]u8, packed — avoid padding that shifts field offsets on some platforms.
-
-### `SaveEntry` — 2 bytes each (already exists as-is).
-
-- No versioning or schema change tracking. Format is positional blob dump. Reserved bytes give us headroom to add fields later without shifting offsets. The file layout table (for reference only, no auto-gen):
-
-| Offset | Size (bytes) | Field | Notes |
-|--------|-------------|-------|-------|
-| 0      | 8           | `SaveFileHeader` — packed struct; magic[4] + version_major(3) + pointer(u16) + entry_count(u16). No padding. |
-| :+1:   | N×2         | `SaveEntry[N]` — history entries in order of occurrence. Replayed on load via GameEngine.exec()). |
-| :+N:   | 97          | `SaveFileTrailer` — packed struct; given_bits(16B) + flat_board([81]u8 = 97 bytes total). |
-
-→ **Total size:** 108 + 2×N bytes (where N = number of history entries.)
-
----
-
-## Open Decisions / Notes
-- `Board.fromSaveState(trailer: SaveFileTrailer)` — new method on Board to deserialize 9B trailer chunk. Avoids touching GameEngine internals later. |
-| Method | Where? | Why? |
-|--------|----------|------|
-| `saveGame(io: std.Io, path: []const u8) anyerror!void` | **GameEngine**. Owner of header + history — orchestrates full file write. Board contributes only its state (trailer chunk). |
-| `loadGame(io: std.Io, path: []const u8) anyerror!void` | **Board** — restore 9B trailer into board cells and given_bits. Returns error on mismatch with existing init pattern (`fromFlat` exists but BoardView drops givens mask. |
-
----
-
-## What happened? Why the break?
-- Original commit `fcd0a62` implemented saveGame via sequential `.interface` small writes → byte drift after offset 8+. That was never caught until the round-trip test was actually written (Issue 25 Step 8). The format spec in this issue doc says "hand-wavy description of fields." It should have been formalised BEFORE we started writing code. We didn't.
-
----
-
-## Blocked by
-- `.interface` byte drift bug — sequential small writes via vtable bridge lose sync past offset 8+. **Fix:** rewrite save/load to use buffered writer's `writeAll` via I/O stack handle — one write per blob avoids the bug (see Step 4 notes).
-- exec() switch can't reference `std.testing.io` — .save/.open must be handled in sudoku.zig, not exec(). Current code uses else branch panic as workaround.
+- [ ] Command.save and Command.open defined and parseable as `SAVE <path>` / `OPEN <path>` (case-insensitive)
+- [ ] Board exposes a trivial toFlat() seam for dumping cell values + given mask to disk reliably
+- [ ] Loading restores state perfectly, including ability to undo/redo past actions
+- [ ] Integration tests exercise save/open through command→event seam only (no internal state poking)
+- [ ] File errors gracefully return .error_msg so gameplay doesn't crash

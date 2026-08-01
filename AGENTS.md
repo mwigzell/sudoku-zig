@@ -11,8 +11,8 @@ When proposing work or building features, prioritise end-to-end completeness ove
 5. **Each cycle produces a runnable demo.** Even two commands working end-to-end, proven by `zig build run`.
 
 ## Handoff
-- check the handoff folder for the last handoff. 
-- when asked to handoff put the handoff in the handoff folder. this is an override of Matt's skills.
+- check the root ./handoffs folder for the last handoff. 
+- when asked to handoff put the handoff in the ./handoffs folder. this is an override of Matt's skills.
 ## Zig version & stdlib notes
 
 We are on **Zig 0.17** (dev snapshot). Consult `.zig-testing.md` for the stdlib API surface

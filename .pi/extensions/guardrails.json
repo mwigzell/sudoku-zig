@@ -45,6 +45,10 @@
       {
         "kind": "directory",
         "path": "~/Documents/Obsidian"
+      },
+      {
+        "kind": "directory",
+        "path": "/home.mark/Dev/src/sudoku/.scratch/sudoku/handoffs"
       }
     ]
   },
