@@ -17,9 +17,9 @@ In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game st
 
 ---
 
+### Save Signatures
 
-
-| | | |
+| Method | Owner | Description |
 | --- | --- | --- |
 | `saveGame(io, path)` | **GameEngine** | Thin I/O wrapper — calls `toSaveFormat()`, writes result to disk via one `writeAll()` call. |
 | `openGame(io, path)` | **GameEngine** | Reads whole file into buffer → passes to `fromSaveFormat(buf)`. Don't go through exec(). |
@@ -27,6 +27,8 @@ In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game st
 | `fromSaveFormat(gpa: Allocator, buf: []const u8) GameEngine` | **GameEngine** | Deserializes a save buffer into a fresh GameEngine instance (with board + history). Validates magic/version before proceeding. Returns error on corrupt/unsupported data. |
 | `fromSaveState(SaveFileTrailer)` | **Board** | Clean deserialization seam — restores board from trailer bytes. Avoids touching GameEngine internals later. Returns error on mismatch. |
 | `equal(original: Board) bool` | **Board** | Compares two boards cell-by-cell plus given_bits. Needed for round-trip test assertions. |
+
+
 ---
 
 ## Binary Format Spec
