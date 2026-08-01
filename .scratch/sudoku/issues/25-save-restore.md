@@ -18,6 +18,8 @@ In-game `SAVE <path>` and `OPEN <path>` commands that serialize the full game st
 ---
 
 
+| Method | Module | Description |
+|:--|:--|:--|
 | `saveGame(io, path)` | **GameEngine** | Thin I/O wrapper — calls `toSaveFormat()`, writes result to disk via one `writeAll()` call. |
 | `openGame(io, path)` | **GameEngine** | Reads whole file into buffer → passes to `fromSaveFormat(buf)`. Don't go through exec(). |
 | `toSaveFormat(gpa: Allocator) []u8` | **GameEngine** | Serializes header + history entries + trailer (board state) into a heap-allocated byte array. Pure memory, no I/O. Enables easy testing and version migration. Returns error on allocation failure. Caller owns/freeing the buffer. |
