@@ -1,4 +1,4 @@
-Status: closed
+Status: ready-for-agent
 
 ## Parent
 `.scratch/sudoku/prd.md` (Out of Scope extension)
@@ -86,6 +86,7 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 | 6 | ✅ Done | Save is wired in **sudoku.zig** (not exec()) — `handleCommand().save` calls `self.engine.saveGame(io, ".sudoku_save.dat")`. exec() uses `else => @panic("save/open handled in sudoku.zig")` catch-all. Dropped 3 stale file-level wire-format tests that had incorrect size math (off by 3 bytes) and wrong version byte index — those assertions are redundant given `toSaveFormat`/`fromSaveFormat` direct tests + the full round-trip test. |
 | 7 | ✅ Done | Wire `.open` handler in sudoku.zig — replaced stub with `self.engine.openGame(io, o_data.path)` with error handling matching save pattern. Integration test added through handleResult seam verifying state restoration.
 | 8 | ✅ Done | Add `Board.equal(other: Board) bool` comparison method — compares cells cell-by-cell plus given_bits mask. Refactored two duplicated round-trip tests in game_engine.zig to use it, eliminating ~30 lines of manual cell loops. **File:** `src/board.zig`. |
+| 9 | ⏳ Not done | Add `.save` and `.open` to `AvailableCommands` struct so the command legend offers them to the player. Wire them into `sudoku.zig` `promptForAndRunCommand` names array + `renderLegend`. **Files:** `src/game_engine.zig` (struct), `src/sudoku.zig` (legend wiring). |
 
 ---
 
@@ -96,3 +97,4 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 - [x] Loading restores state perfectly, including ability to undo/redo past actions
 - [x] Integration tests exercise save/open through command→event seam only (no internal state poking)
 - [x] File errors gracefully return .error_msg so gameplay doesn't crash
+- [ ] Save and Open appear in the command legend so the player sees them without typing blind
