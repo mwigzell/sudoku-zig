@@ -40,6 +40,16 @@ pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) ![]u8 {
 
     return data_dir;
 }
+
+/// Resolves a save file path. If `path` starts with `/`, returns an owned
+/// copy (passthrough). Otherwise joins it against `data_dir`.
+pub fn resolveSavePath(gpa: std.mem.Allocator, data_dir: []const u8, path: []const u8) ![]u8 {
+    if (path.len > 0 and path[0] == '/') {
+        return gpa.dupe(u8, path);
+    }
+    return std.fmt.allocPrint(gpa, "{s}/{s}", .{ data_dir, path });
+}
+
 test "getHomeDir returns HOME" {
     const gpa = std.testing.allocator;
     const home = try getHomeDir(gpa);
@@ -66,4 +76,31 @@ test "getDataDir returns ~/.local/share/sudoku and creates it" {
     const dir = std.Io.Dir.cwd();
     const stat = try dir.statFile(io, data_dir, .{});
     std.debug.assert(stat.kind == .directory);
+}
+
+test "resolveSavePath joins relative path against data_dir" {
+    const gpa = std.testing.allocator;
+
+    const result = try resolveSavePath(gpa, "/home/user/.local/share/sudoku", "game.sud");
+    defer gpa.free(result);
+
+    try std.testing.expectEqualStrings("/home/user/.local/share/sudoku/game.sud", result);
+}
+
+test "resolveSavePath passes absolute path through as owned copy" {
+    const gpa = std.testing.allocator;
+
+    const result = try resolveSavePath(gpa, "/data/sudoku", "/abs/save.sud");
+    defer gpa.free(result);
+
+    try std.testing.expectEqualStrings("/abs/save.sud", result);
+}
+
+test "resolveSavePath handles nested relative path" {
+    const gpa = std.testing.allocator;
+
+    const result = try resolveSavePath(gpa, "/data/sudoku", "backup/save1.sud");
+    defer gpa.free(result);
+
+    try std.testing.expectEqualStrings("/data/sudoku/backup/save1.sud", result);
 }
