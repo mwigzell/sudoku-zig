@@ -1,4 +1,4 @@
-Status: ready-for-human
+Status: ready-for-agent (Steps 1-2 done)
 
 
 
@@ -84,16 +84,15 @@ fn handleResult(...) {
 | `_filename: ?[]u8` | Sudoku | GameEngine | Persists filename across saves, accessed by save handler |
 | `_lastSaveMsg: ?[]u8` | Sudoku | GameEngine | Carries feedback message back through Event.ok.msg |
 
-## Steps (vertical slice)
-
 | Step | Description | Target file(s) | Tests |
 |------|-------------|----------------|-------|
-| 1 | Add `_io: std.Io` field to GameEngine struct; update `init(puzzle_str, io)` to accept and store Io. Also add `_dataDir`, `_filename`, `_lastSaveMsg` fields here (from Sudoku). No behavioral change — just the constructor signature + struct shape. | `game_engine.zig` | Compile + existing tests pass with new init signature |
-| 2 | Create `src/command/`. Move `undo.zig` → `command/mutation_history.zig`. Move `path.zig`, `legend.zig`, `disambiguate.zig` into `command/`. Update all import paths that reference them. | multiple (structural only) | Compile, 0 behavioral changes — pure import surgery |
+| 1 ✅ | Add `_io: std.Io` field to GameEngine struct; update `init(puzzle_str, io)` to accept and store Io. | `game_engine.zig` | Compile + existing tests pass with new init signature |
+| 2 ✅ | Create `src/command/`. Move `undo.zig → command/mutation_history.zig`, `command.zig → command/parse.zig`. Move `path.zig`, `legend.zig`, `disambiguate.zig` into `command/`. Update all import paths. | multiple (structural only) | Compile, 0 behavioral changes — pure import surgery |
 | 3 | Extract existing exec() cases: fill → `command/fill.zig`, clear → `command/clear.zig`, undo → `command/undo.zig`, redo → `command/redo.zig`. Each exports `fn execute(g: *GameEngine, ...) Event`. Replace inline switch bodies with calls. | `src/command/*.zig`, `game_engine.zig` | Existing fill/clear/undo/redo tests still pass — same behavior, different home |
 | 4 | Add `command/save.zig` and `command/open.zig` — move save/open logic from handleResult interception blocks into exec() cases. Uses GameEngine's `_io` field for disk I/O. Path resolution via `command/path.zig`. | `src/command/save.zig`, `src/command/open.zig`, `game_engine.zig` | Tests #154-#159 still pass; .save/.open now go through exec() |
 | 5 | Collapse handleResult: remove .save and .open interception blocks. Every command except quit → `exec(cmd)` + `handleEvent(event)`. Remove `_dataDir`, `_filename`, `_lastSaveMsg` from Sudoku struct (now on GameEngine). | `sudoku.zig`, `game_engine.zig` | All integration tests pass through simplified path |
-| 6 | Update all test sites constructing GameEngine to pass `std.testing.io` as second arg. ~50 call sites. Update root.zig imports for new module paths. Run full suite + coverage. | multiple | All 179+ tests pass, coverage holds |
+| 6 | Update all test sites constructing GameEngine to pass `std.testing.io` as second arg. ~50 call sites. Update root.zig imports for new module paths. Run full suite + coverage. | multiple | All 179+ tests pass, coverage holds
+
 
 ### What handleResult still intercepts (and why)
 
@@ -103,14 +102,16 @@ calls it through exec(). Acceptable — early exit is a control-flow necessity, 
 
 ## Acceptance Criteria
 
-- [ ] `GameEngine.init()` signature is `init(puzzle_str, io) → !GameEngine`
-- [ ] `_io` field stored on GameEngine struct  
+- [x] `GameEngine.init()` signature is `init(puzzle_str, io) → !GameEngine`
+- [x] `_io` field stored on GameEngine struct  
 - [ ] Each command (fill/clear/undo/redo/save/open) has its own file under `src/command/`
 - [ ] exec() switch is flat: one function call per case, no inline logic
-- [ ] MutationHistory moved to `command/mutation_history.zig`, lives beside undo handler
-- [ ] legend/disambiguate/path moved into `src/command/` sub-folder  
+- [x] MutationHistory moved to `command/mutation_history.zig`, lives beside undo handler
+- [x] legend/disambiguate/path move into `src/command/` sub-folder  
+- [x] parse types (Command enum, FillData etc) moved to `command/parse.zig`
 - [ ] handleResult dispatches every command except quit through exec() — no fat switch
 - [ ] `_dataDir`, `_filename`, `_lastSaveMsg` on GameEngine struct (removed from Sudoku)
 - [ ] Save and Open handled in exec() (no interception in handleResult)
-- [ ] All existing tests pass, no behavioral changes
-- [ ] Coverage holds at or above 98%
+- [x] All existing tests pass, no behavioral changes
+- [x] Coverage holds at or above 98%
+
