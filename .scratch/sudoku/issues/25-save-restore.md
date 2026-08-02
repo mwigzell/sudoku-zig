@@ -1,4 +1,4 @@
-Status: ready-for-human
+Status: closed
 ## Parent
 `.scratch/sudoku/prd.md` (Out of Scope extension)
 
@@ -88,8 +88,8 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 | 8 | ✅ Done | Add `Board.equal(other: Board) bool` comparison method — compares cells cell-by-cell plus given_bits mask. Refactored two duplicated round-trip tests in game_engine.zig to use it, eliminating ~30 lines of manual cell loops. **File:** `src/board.zig`. |
 | 9 | ✅ Done | Add `.save` and `.open` to `AvailableCommands` struct so the command legend offers them to the player. Wire them into `sudoku.zig` `promptForAndRunCommand` names array + `renderLegend`. **Files:** `src/game_engine.zig` (struct), `src/sudoku.zig` (legend wiring). Test: `getAvailableCommands: Save and Open always available` + legend pipeline test. |
 | 10 | ✅ Done | **Route Save/Open through handleEvent()** — `.save` success produces `"saved to default file"` message + board re-render + legend refresh via `handleEvent()`. `.open` success produces `"opened"` message + same UI updates. Both failure paths already routed. Commits: `fee1a9e`, `f201ff1`. Side benefit: Step 12b (subsequent save reuse) turned green free as routing consequence. |
-| 11 | 🔄 → Issue #27 | **Bug B: Open crashes on relative paths** — delegate to [Issue 27](./27-path-module.md): `path.zig` module with OS-aware data directory resolution. Blocks Step 11. When #27 lands, wire `resolveSavePath()` into `handleResult().save/.open`.
-| 12 | failed test | **Bug A: First save should prompt for filename** — Currently bare `s` saves to hardcoded default. First save should prompt user for filename; subsequent saves reuse that file and confirm with feedback message. Needs persistent `save_path: ?[]u8 = null` field on Sudoku struct + prompt logic when null. **Files:** `src/sudoku.zig`. Test: `handleResult: save prompts user for filename`. |
+| 11 | ✅ Done (via #27) | **Bug B: Open crashes on relative paths** — resolved by [Issue 27](./27-path-module.md): `path.zig` module with OS-aware data directory resolution. `resolveSavePath()` wired into `handleResult().save/.open`.
+| 12 | ✅ Done | **Bug A: First save should prompt for filename** — First save prompts user for filename; subsequent saves reuse that file and confirm with feedback message. Persistent `_filename: ?[]u8` field on Sudoku struct + prompt logic in `sudoku.zig`. Tests #158 and #159 pass.
 ---
 
 ## Acceptance Criteria
@@ -101,6 +101,6 @@ No sequential `.interface` small-write bug. Use `toSaveFormat()` → heap buffer
 - [x] File errors gracefully return .error_msg so gameplay doesn't crash
 - [x] Save and Open appear in the command legend so the player sees them without typing blind
 - [x] Save and Open success produces status message, board re-render, and legend refresh (routed through handleEvent())
-- [ ] Open works with relative paths (resolved against ~/.local/share/sudoku/)
-- [ ] First save prompts user for filename
-- [ ] Save files stored under ~/.local/share/sudoku/
+- [x] Open works with relative paths (resolved against ~/.local/share/sudoku/)
+- [x] First save prompts user for filename
+- [x] Save files stored under ~/.local/share/sudoku/

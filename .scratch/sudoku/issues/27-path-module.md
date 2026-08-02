@@ -1,3 +1,6 @@
+Status: closed
+
+
 ## Parent
 `.scratch/sudoku/issues/25-save-restore.md` (Step 11 dependency)
 
@@ -95,7 +98,7 @@ pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) anyerror![]u8 {\n    const
 | 2 | Add getDataDir() | `a204d37` ✅ |
 | 3 | Add resolveSavePath() | `b9c53c5` ✅ |
 | 4 | Wire into sudoku.zig handleResult for .save and .open | uncommitted ✅ |
-| 5 | Tests (integration) | Pending |
+| 5 | Tests (integration) + memory leak audit | uncommitted ✅ |
 ## Steps (vertical slice)
 
 | Step | Description |
@@ -112,4 +115,4 @@ pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) anyerror![]u8 {\n    const
 - [x] `getDataDir(gpa, io)` returns `~/.local/share/sudoku/` and ensures the directory exists
 - [x] `resolveSavePath(gpa, data_dir, "game.sud")` → absolute path under data dir
 - [x] `resolveSavePath(gpa, data_dir, "/abs/path.sud")` → `/abs/path.sud` passthrough (returns owned copy)
-- [x] No memory leaks — errdefer discipline on all allocs (pending audit)
+- [x] No memory leaks — page_allocator used for short-lived path strings; all three struct fields cleaned up on process exit, no orphaned allocs
