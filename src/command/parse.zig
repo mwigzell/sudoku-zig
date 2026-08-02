@@ -1,6 +1,6 @@
 
 const std = @import("std");
-const cell_module = @import("cell.zig");
+const cell_module = @import("../cell.zig");
 const disambiguate = @import("disambiguate.zig");
 
 // ---------------------------------------------------------------------------

@@ -8,14 +8,14 @@ const logger = @import("logger.zig");
 const ascii_renderer = @import("ascii_renderer.zig");
 const styler = @import("styler.zig");
 const config = @import("config.zig");
-const command = @import("command.zig");
+const parse = @import("command/parse.zig");
 const sudoku = @import("sudoku.zig");
 const validator = @import("validator.zig");
 const event = @import("event.zig");
-const undo = @import("undo.zig");
-const disambiguate = @import("disambiguate.zig");
-const legend = @import("legend.zig");
-const path = @import("path.zig");
+const mutation_history = @import("command/mutation_history.zig");
+const disambiguate = @import("command/disambiguate.zig");
+const legend = @import("command/legend.zig");
+const path = @import("command/path.zig");
 
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
@@ -24,7 +24,7 @@ test {
         cell, board, game_engine,
         mock_renderer, puzzle_gen,
         logger, ascii_renderer, styler,
-        config, command, validator,
-        sudoku, event, undo, disambiguate, legend, path,
+        config, parse, validator,
+        sudoku, event, mutation_history, disambiguate, legend, path,
     };
 }

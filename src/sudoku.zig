@@ -2,11 +2,11 @@ const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
-const command = @import("command.zig");
+const command = @import("command/parse.zig");
 
-const disambiguate = @import("disambiguate.zig");
-const legend = @import("legend.zig");
-const mypath = @import("path.zig");
+const disambiguate = @import("command/disambiguate.zig");
+const legend = @import("command/legend.zig");
+const mypath = @import("command/path.zig");
 
 const SAVE_FILE_SUFFIX = ".sud"; // our save file extension
 const DEFAULT_SAVE_FILE = ".sudoku_save.sud"; // uses SAVE_FILE_SUFFIX

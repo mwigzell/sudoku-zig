@@ -83,10 +83,10 @@ pub const SaveEntry = struct {
 };
 pub const TestStruct = struct {};
 
-// Moved to src/undo.zig, re-exported for backward compat
-const undo = @import("undo.zig");
-pub const MutationEntry = undo.MutationEntry;
-pub const MutationHistory = undo.MutationHistory;
+// Moved to src/command/mutation_history.zig, re-exported for backward compat
+const mutation_history = @import("command/mutation_history.zig");
+pub const MutationEntry = mutation_history.MutationEntry;
+pub const MutationHistory = mutation_history.MutationHistory;
 
 
 pub const GameEngine = struct {
@@ -317,7 +317,7 @@ fn expectErrorResult(e: Event) !void {
     }
 }
 
-const command = @import("command.zig");
+const command = @import("command/parse.zig");
 
 test "GameEngine fill updates cell value" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
