@@ -6,6 +6,7 @@ const command = @import("command.zig");
 
 const disambiguate = @import("disambiguate.zig");
 const legend = @import("legend.zig");
+const mypath = @import("path.zig");
 
 const SAVE_FILE_SUFFIX = ".sud"; // our save file extension
 const DEFAULT_SAVE_FILE = ".sudoku_save.sud"; // uses SAVE_FILE_SUFFIX
@@ -13,6 +14,9 @@ pub fn Sudoku(comptime R: type) type {
     return struct {
         engine: game_engine.GameEngine,
         cfg: config.Config,
+        _dataDir: ?[]u8,
+        _filename: ?[]u8,
+        _lastSaveMsg: ?[]u8,
 
         pub fn init(cfg: config.Config, _r: *R) anyerror!@This() {
             _ = _r; // not forwarded to engine anymore — renderer lives in run()
@@ -21,6 +25,9 @@ pub fn Sudoku(comptime R: type) type {
             return .{
                 .engine = engine,
                 .cfg = cfg,
+                ._dataDir = null,
+                ._filename = null,
+                ._lastSaveMsg = null,
             };
         }
 
@@ -109,16 +116,53 @@ pub fn Sudoku(comptime R: type) type {
                     if (cmd == .quit) return true;
 
                     switch (cmd) {
-.save => {
-                            self.engine.saveGame(io, DEFAULT_SAVE_FILE) catch |err| {
+                        .save => {
+                            const gpa = std.heap.page_allocator;
+
+                            if (self._dataDir == null) {
+                                self._dataDir = try mypath.getDataDir(gpa, io);
+                            }
+                            var resolved = try mypath.resolveSavePath(
+                                gpa,
+                                self._dataDir.?,
+                                DEFAULT_SAVE_FILE,
+                            );
+                            if (self._filename == null) {
+                                try out.print("Save to (.sud): ", .{});
+                                const reply = try readLine(in_);
+
+                                errdefer gpa.free(resolved);
+                                gpa.free(resolved);
+                                resolved = try mypath.resolveSavePath(
+                                    gpa, self._dataDir.?,
+                                    std.mem.trim(u8, reply, &std.ascii.whitespace),
+                                );
+                            }
+                            self._filename = resolved;
+                            if (self._lastSaveMsg) |old_m| gpa.free(old_m);
+                            const save_msg = std.fmt.allocPrint(gpa, "saved to: {s}", .{self._filename.?}) catch unreachable;
+                            self._lastSaveMsg = save_msg;
+                            self.engine.saveGame(io, resolved) catch |err| {
                                 try out.print("save failed: {s}\n", .{@errorName(err)});
                                 return false;
                             };
-                            const event = game_engine.Event{.ok = .{.board_view = self.engine.eventBoard(), .msg = "saved to default file"}};
+                            const event = game_engine.Event{.ok = .{
+                                .board_view = self.engine.eventBoard(),
+                                .msg = self._lastSaveMsg.?,
+                            }};
                             return try self.handleEvent(out, in_, renderer, event);
                         },
                         .open => |o_data| {
-                            self.engine.openGame(io, o_data.path) catch |err| {
+                            const gpa = std.heap.page_allocator;
+
+                            if (self._dataDir == null) {
+                                self._dataDir = try mypath.getDataDir(gpa, io);
+                            }
+                            const rp = try mypath.resolveSavePath(
+                                gpa, self._dataDir.?, o_data.path);
+                            errdefer gpa.free(rp);
+
+                            self.engine.openGame(io, rp) catch |err| {
 
                                 try out.print("open failed: {s}\n", .{@errorName(err)});
                                 return false;
@@ -551,7 +595,7 @@ test "handleResult: save success produces status message, re-render, and legend 
     const call_count_before: usize = mock.call_count;
 
     var mw = MockWriter.initMockWriter();
-    var mr = MockReader.initMockReader(&[_][]const u8{});
+    var mr = MockReader.initMockReader(&[_][]const u8{ "test_save.sud" });
 
     const parsed_save = command.parse("save");
     _ = try sudoku.handleResult(&mw, &mr, &mock, std.testing.io, parsed_save);
@@ -672,7 +716,11 @@ test "handleResult: save prompts user for filename" {
         const output = mw.getWritten();
         try std.testing.expect(std.mem.indexOf(u8, output, "Save") != null and
             std.mem.indexOf(u8, output, ":") != null);
+        // Status message from handleEvent should also appear
+        try std.testing.expect(std.mem.indexOf(u8, output, "saved") != null or
+            std.mem.indexOf(u8, output, "Saved") != null);
     }
+
 }
 
 // Step 12b — Subsequent saves reuse last filename, give feedback without prompting

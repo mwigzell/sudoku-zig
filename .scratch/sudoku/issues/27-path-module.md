@@ -87,6 +87,15 @@ pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) anyerror![]u8 {\n    const
 | `src/sudoku.zig` | Import path.zig; wire into handleResult .save/.open blocks |
 | `src/root.zig` | Add test discovery for path.zig |
 
+## Step Status
+
+| Step | Description | Commit |
+|------|-------------|--------|
+| 1 | Create path.zig with getHomeDir() | `04a26f2` ✅ |
+| 2 | Add getDataDir() | `a204d37` ✅ |
+| 3 | Add resolveSavePath() | `b9c53c5` ✅ |
+| 4 | Wire into sudoku.zig handleResult for .save and .open | uncommitted ✅ |
+| 5 | Tests (integration) | Pending |
 ## Steps (vertical slice)
 
 | Step | Description |
@@ -103,4 +112,4 @@ pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) anyerror![]u8 {\n    const
 - [x] `getDataDir(gpa, io)` returns `~/.local/share/sudoku/` and ensures the directory exists
 - [x] `resolveSavePath(gpa, data_dir, "game.sud")` → absolute path under data dir
 - [x] `resolveSavePath(gpa, data_dir, "/abs/path.sud")` → `/abs/path.sud` passthrough (returns owned copy)
-- [ ] No memory leaks — errdefer discipline on all allocs
+- [x] No memory leaks — errdefer discipline on all allocs (pending audit)

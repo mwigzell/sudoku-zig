@@ -15,6 +15,7 @@ const event = @import("event.zig");
 const undo = @import("undo.zig");
 const disambiguate = @import("disambiguate.zig");
 const legend = @import("legend.zig");
+const path = @import("path.zig");
 
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
@@ -24,6 +25,6 @@ test {
         mock_renderer, puzzle_gen,
         logger, ascii_renderer, styler,
         config, command, validator,
-        sudoku, event, undo, disambiguate, legend,
+        sudoku, event, undo, disambiguate, legend, path,
     };
 }
