@@ -18,10 +18,10 @@ pub fn Sudoku(comptime R: type) type {
         _filename: ?[]u8,
         _lastSaveMsg: ?[]u8,
 
-        pub fn init(cfg: config.Config, _r: *R) anyerror!@This() {
+        pub fn init(cfg: config.Config, _r: *R, io: std.Io) anyerror!@This() {
             _ = _r; // not forwarded to engine anymore — renderer lives in run()
             const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
-            const engine = try game_engine.GameEngine.init(puzzle_str);
+            const engine = try game_engine.GameEngine.init(puzzle_str, io);
             return .{
                 .engine = engine,
                 .cfg = cfg,
@@ -255,7 +255,7 @@ test "Sudoku.init uses config difficulty to build the board" {
         .fallback_renderer = .ascii_ansi,
     };
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
 
     // The hard puzzle has different given cells than the default puzzle.
     // For example, hard[0] is '0' (empty) whereas default[0] is '6'.
@@ -270,14 +270,14 @@ test "Sudoku.init with .medium difficulty loads medium puzzle" {
         .fallback_renderer = .ascii_ansi,
     };
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
 
     // medium[0] is '8' (given) — hard and easy both have '0' here.
     try std.testing.expect(sudoku.engine.board.isGiven(0, 0));
 }
 
 test "legend pipeline: fresh engine produces (F)ill (C)lear (Q)uit" {
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fresh engine has only fill, clear, quit (no undo/redo)
@@ -323,7 +323,7 @@ test "legend pipeline: fresh engine produces (F)ill (C)lear (Q)uit" {
 }
 
 test "legend pipeline: after fill then undo shows Undo AND Redo" {
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill a cell to enable Undo
@@ -380,7 +380,7 @@ test "legend pipeline: after fill then undo shows Undo AND Redo" {
     try std.testing.expectEqualStrings("(F)ill (C)lear (Q)uit (U)ndo (R)edo", result);
 }
 test "legend pipeline: fresh engine includes Save and Open in legend" {
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const avail = engine.getAvailableCommands();
@@ -494,7 +494,7 @@ test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w
         .fallback_renderer = .ascii_ansi,
     };
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku.engine.deinit();
 
     // Feed: "f A3 4" as the single typed command.
@@ -539,7 +539,7 @@ test "full seam: open loads saved game" {
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
     // Create fresh engine with known state before mutations
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), std.testing.io);
     defer original.deinit();
 
     // Save pristine (mutated-then-undone) state to disk
@@ -552,7 +552,7 @@ test "full seam: open loads saved game" {
 
     // Now open through handleResult to prove the handler is wired
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku.engine.deinit();
 
     // Fill a cell that was empty in the saved state — this proves divergence from saved state
@@ -589,7 +589,7 @@ test "handleResult: save success produces status message, re-render, and legend 
         .fallback_renderer = .ascii_ansi,
     };
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku.engine.deinit();
 
     const call_count_before: usize = mock.call_count;
@@ -625,14 +625,14 @@ test "handleResult: open success produces status message, re-render, and legend 
     };
 
     // Create a save file first
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), std.testing.io);
     defer original.deinit();
     const tmp_path = "/tmp/sudoku_seam_open_feedback_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
     try original.saveGame(std.testing.io, tmp_path);
 
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku.engine.deinit();
 
     const call_count_before: usize = mock.call_count;
@@ -670,14 +670,14 @@ test "handleResult: open with relative path resolves without panic" {
     };
 
     // Create save file at some known absolute path first
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), std.testing.io);
     defer original.deinit();
     const abs_path = "/tmp/sudoku_seam_relative_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, abs_path) catch {};
     try original.saveGame(std.testing.io, abs_path);
 
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku.engine.deinit();
 
     var mw = MockWriter.initMockWriter();
@@ -702,7 +702,7 @@ test "handleResult: save prompts user for filename" {
         .fallback_renderer = .ascii_ansi,
     };
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku.engine.deinit();
 
     // Feed filename response
@@ -733,7 +733,7 @@ test "handleResult: subsequent save reuses previous filename with feedback" {
     };
 
     var mock = mock_renderer.MockRenderer.init();
-    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock);
+    var sudoku = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku.engine.deinit();
 
     // First save: feed filename + Enter to confirm prompt

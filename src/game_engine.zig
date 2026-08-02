@@ -92,12 +92,13 @@ pub const MutationHistory = undo.MutationHistory;
 pub const GameEngine = struct {
     board: board.Board,
     history: MutationHistory,
-
+    _io: std.Io,
     /// Construct from a one-line puzzle string.
-    pub fn init(puzzle_str: []const u8) board.BoardError!@This() {
+    pub fn init(puzzle_str: []const u8, io: std.Io) board.BoardError!@This() {
         var self = @This(){
             .board = try board.fromOneLineString(puzzle_str),
             .history = MutationHistory.init(std.heap.page_allocator),
+            ._io = io,
         };
         self.board.validate();
         return self;
@@ -179,7 +180,7 @@ pub const GameEngine = struct {
         return buf;
     }
     /// Deserialize from a toSaveFormat blob into a fresh GameEngine.
-    pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !GameEngine {
+    pub fn fromSaveFormat(gpa: std.mem.Allocator, io: std.Io, buf: []const u8) !GameEngine {
         const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
         if (!std.mem.eql(u8, &header.magic, "SUD0")) {
             return error.InvalidSaveFile;
@@ -208,7 +209,9 @@ pub const GameEngine = struct {
         var engine = GameEngine{
             .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
             .history = history,
+            ._io = io,
         };
+
         engine.history.pointer = header.pointer;
 
         return engine;
@@ -225,7 +228,7 @@ pub const GameEngine = struct {
 
         _ = try std.Io.File.readPositionalAll(file, io, buf, 0);
 
-        const loaded = try GameEngine.fromSaveFormat(std.heap.page_allocator, buf);
+        const loaded = try GameEngine.fromSaveFormat(std.heap.page_allocator, io, buf);
         self.history.deinit();
         const old_board = self.board;
         self.* = loaded;
@@ -317,7 +320,7 @@ fn expectErrorResult(e: Event) !void {
 const command = @import("command.zig");
 
 test "GameEngine fill updates cell value" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const view = try expectOk(try engine.exec(command.Command{
@@ -327,7 +330,7 @@ test "GameEngine fill updates cell value" {
 }
 
 test "GameEngine init builds board from puzzle string" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
     const view = engine.eventBoard();
 
@@ -343,7 +346,7 @@ test "GameEngine init builds board from puzzle string" {
 // T2: exec(Command) returns structured results with given-cell feedback
 
 test "exec fill non-given cell → .ok" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     _ = try expectOk(try engine.exec(command.Command{
@@ -352,7 +355,7 @@ test "exec fill non-given cell → .ok" {
 }
 
 test "exec fill given cell → .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const result = try engine.exec(command.Command{
@@ -362,7 +365,7 @@ test "exec fill given cell → .error_msg" {
 }
 
 test "exec clear given cell → .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const result = try engine.exec(command.Command{
@@ -372,7 +375,7 @@ test "exec clear given cell → .error_msg" {
 }
 
 test "exec quit → .ok" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const view = try expectOk(try engine.exec(command.Command{ .quit = {} }));
@@ -385,7 +388,7 @@ test "exec quit → .ok" {
 // Check conflict bits through the returned Event board_view
 
 test "exec fill creates conflict → cell marked" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Row 0: cells (0,2) and (0,3) are both empty — fill both with eight
@@ -408,7 +411,7 @@ test "exec fill creates conflict → cell marked" {
 }
 
 test "exec clear resolves conflict → previously-conflicting peer now clean" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Create a row-0 conflict pair: (0,2) and (0,3) both eight
@@ -435,7 +438,7 @@ test "exec clear resolves conflict → previously-conflicting peer now clean" {
 }
 
 test "exec fill no conflict → no bits set" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Row 0 already has six at (0,0) and seven at (0,1).
@@ -460,7 +463,7 @@ test "exec fill no conflict → no bits set" {
 }
 
 test "init calls validate so initial conflicts are detected" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // A well-formed puzzle confirms at least that validate runs without crashing.
@@ -505,12 +508,12 @@ test "Event.error_msg carries an error string" {
 test "GameEngine.init propagates invalid puzzle error" {
     try std.testing.expectError(
         board.BoardError.WrongLength,
-        GameEngine.init("too-short"),
+        GameEngine.init("too-short", std.testing.io),
     );
 }
 
 test "GameEngine is non-generic, init takes only puzzle string" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
     const view = engine.eventBoard();
 
@@ -521,7 +524,7 @@ test "GameEngine is non-generic, init takes only puzzle string" {
 }
 
 test "exec fill returns Event.ok with board_view" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
     const view = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
@@ -532,7 +535,7 @@ test "exec fill returns Event.ok with board_view" {
 }
 
 test "eventBoard returns current board view" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const view1 = engine.eventBoard();
@@ -590,7 +593,7 @@ test "MutationHistory: peakPast returns null when empty" {
 }
 
 test "exec undo on empty history returns .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const result = switch (try engine.exec(command.Command{ .undo = {} })) {
@@ -601,7 +604,7 @@ test "exec undo on empty history returns .error_msg" {
 }
 
 test "exec then undo reverses a fill back to zero" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill A3 (row 0, col 2) with seven
@@ -616,7 +619,7 @@ test "exec then undo reverses a fill back to zero" {
 }
 
 test "exec then undo then redo re-applies the fill" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill A3 with seven
@@ -635,7 +638,7 @@ test "exec then undo then redo re-applies the fill" {
 }
 
 test "new mutation after undo truncates future redo path" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill 3 cells A, B, C all on different empty cells
@@ -669,7 +672,7 @@ test "new mutation after undo truncates future redo path" {
 }
 
 test "undo clear restores previous value" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill B1 (row 1, col 1) with three
@@ -691,7 +694,7 @@ test "undo clear restores previous value" {
 // Step 6 — remaining integration tests
 
 test "multiple undo walks history backwards" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill three cells: A=one at (1,1), B=two at (1,2), C=three at (1,3)
@@ -733,7 +736,7 @@ test "multiple undo walks history backwards" {
 }
 
 test "multiple redo walks forwards correctly" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill three cells: A=one at (1,1), B=two at (1,2), C=three at (1,3)
@@ -787,7 +790,7 @@ test "multiple redo walks forwards correctly" {
 }
 
 test "redo on empty future returns .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Fill some cells — no undo yet, so nothing to redo
@@ -804,7 +807,7 @@ test "redo on empty future returns .error_msg" {
 }
 
 test "getAvailableCommands: fresh engine has Fill/Clear/Quit only" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const cmds = engine.getAvailableCommands();
@@ -816,7 +819,7 @@ test "getAvailableCommands: fresh engine has Fill/Clear/Quit only" {
 }
 
 test "getAvailableCommands: after fill Undo appears" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     _ = try expectOk(try engine.exec(command.Command{
@@ -832,7 +835,7 @@ test "getAvailableCommands: after fill Undo appears" {
 }
 
 test "getAvailableCommands: after undo-one-of-one Redo appears Undo disappears" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     _ = try expectOk(try engine.exec(command.Command{
@@ -850,7 +853,7 @@ test "getAvailableCommands: after undo-one-of-one Redo appears Undo disappears" 
 }
 
 test "getAvailableCommands: after partial undo both Undo and Redo available" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     _ = try expectOk(try engine.exec(command.Command{
@@ -871,7 +874,7 @@ test "getAvailableCommands: after partial undo both Undo and Redo available" {
 }
 
 test "getAvailableCommands: after full undo Undo hidden Redo replays" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     _ = try expectOk(try engine.exec(command.Command{
@@ -892,7 +895,7 @@ test "getAvailableCommands: after full undo Undo hidden Redo replays" {
     try std.testing.expect(cmds.redo);
 }
 test "getAvailableCommands: Save and Open always available" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const cmds = engine.getAvailableCommands();
@@ -938,7 +941,7 @@ test "Save file size: header + history_count(2) + N*entry_size + given_bits(16)"
 }
 
 test "saveGame returns error on bad path" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const result = engine.saveGame(std.testing.io, "/nonexistent/dir/save.sud");
@@ -948,7 +951,7 @@ test "saveGame returns error on bad path" {
 // Step 6 — save → open round-trip (full saved state equality)
 
  test "saveGame then openGame: full state round-trip equals original" {
-    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer original.deinit();
 
     // Make mutations to populate history and alter board
@@ -970,7 +973,7 @@ test "saveGame returns error on bad path" {
     _ = original.saveGame(std.testing.io, tmp_path) catch |err| return err;
 
     // Open into a new engine
-    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     try loaded.openGame(std.testing.io, tmp_path);
     defer loaded.deinit();
 
@@ -1086,7 +1089,7 @@ test "SaveFileTrailer: round-trip write/read" {
 // Step 4 — toSaveFormat / fromSaveFormat (in-memory blob serialization)
 
 test "toSaveFormat empty history produces buffer of correct size" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const buf = try engine.toSaveFormat(std.testing.allocator);
@@ -1098,7 +1101,7 @@ test "toSaveFormat empty history produces buffer of correct size" {
 
 
 test "toSaveFormat header has correct magic and version" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     const buf = try engine.toSaveFormat(std.testing.allocator);
@@ -1115,7 +1118,7 @@ test "toSaveFormat header has correct magic and version" {
 
 
 test "toSaveFormat includes history entries and correct trailer" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
     // Make 3 mutations
@@ -1168,7 +1171,7 @@ test "toSaveFormat includes history entries and correct trailer" {
 
 
 test "fromSaveFormat round-trip: board state given_bits history" {
-    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer original.deinit();
 
     _ = try expectOk(try original.exec(command.Command{
@@ -1185,7 +1188,7 @@ test "fromSaveFormat round-trip: board state given_bits history" {
     const buf = try original.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    var loaded = try GameEngine.fromSaveFormat(std.testing.allocator, buf);
+    var loaded = try GameEngine.fromSaveFormat(std.testing.allocator, std.testing.io, buf);
     defer loaded.deinit();
     // --- Assert board state (cells + given_bits) via Board.equal() ---
     try std.testing.expect(original.board.equal(loaded.board));
@@ -1203,3 +1206,13 @@ test "fromSaveFormat round-trip: board state given_bits history" {
     }
 }
 
+
+
+// Issue 28 Step 1 — io threaded through GameEngine constructor
+test "GameEngine.init accepts io handle" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
+    defer engine.deinit();
+
+    // _io field stored on struct (compile-time proof if the field exists)
+    _ = engine._io;
+}
