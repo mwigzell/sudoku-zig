@@ -85,6 +85,10 @@ pub const TestStruct = struct {};
 
 // Moved to src/command/mutation_history.zig, re-exported for backward compat
 const mutation_history = @import("command/mutation_history.zig");
+const fill_command = @import("command/fill.zig");
+const clear_command = @import("command/clear.zig");
+const undo_command = @import("command/undo.zig");
+const redo_command = @import("command/redo.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 
@@ -241,47 +245,27 @@ pub const GameEngine = struct {
     pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
         switch (cmd) {
             .fill => |f| {
-                return self.tryFill(f.row, f.col, f.digit);
+                return fill_command.execute(self, f);
             },
             .clear => |c| {
-                return self.tryFill(c.row, c.col, .zero);
+                return clear_command.execute(self, c);
             },
             .quit => {
                 return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
             },
             .undo => {
-                if (self.history.pointer == 0) {
-                    return Event{ .error_msg = "nothing to undo" };
-                }
-                self.history.pointer -= 1;
-                const entry = self.history.entries.items[self.history.pointer];
-                self.board.setCell(entry.row, entry.col, entry.old_value) catch |err| {
-                    var buf: [80]u8 = undefined;
-                    return Event{ .error_msg = std.fmt.bufPrint(&buf, "undo fail: {s}", .{@errorName(err)}) catch "undo failed" };
-                };
-                self.board.refreshConflictsForCell(entry.row, entry.col);
-                return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
+                return undo_command.execute(self);
             },
             .redo => {
-                if (self.history.pointer >= self.history.entries.items.len) {
-                    return Event{ .error_msg = "nothing to redo" };
-                }
-                const entry = self.history.entries.items[self.history.pointer];
-                // Re-apply the stored mutation (restore new_value)
-                self.board.setCell(entry.row, entry.col, entry.new_value) catch |err| {
-                    var buf: [80]u8 = undefined;
-                    return Event{ .error_msg = std.fmt.bufPrint(&buf, "redo fail: {s}", .{@errorName(err)}) catch "redo failed" };
-                };
-                self.board.refreshConflictsForCell(entry.row, entry.col);
-                self.history.pointer += 1;
-                return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
+                return redo_command.execute(self);
             },
             else => {
                 @panic("save/open handled in sudoku.zig, not exec()");
             },
         }
     }
-    fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!Event {
+    /// Attempt to fill a cell with a digit. Records mutation in history.
+    pub fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!Event {
         // Snapshot old value before mutation (only recorded on success)
         const old_value = self.board.asView().get(row, col);
         self.board.setCell(row, col, digit) catch |err| {

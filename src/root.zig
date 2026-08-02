@@ -16,6 +16,10 @@ const mutation_history = @import("command/mutation_history.zig");
 const disambiguate = @import("command/disambiguate.zig");
 const legend = @import("command/legend.zig");
 const path = @import("command/path.zig");
+const fill = @import("command/fill.zig");
+const clear_command = @import("command/clear.zig");
+const undo_command = @import("command/undo.zig");
+const redo_command = @import("command/redo.zig");
 
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
@@ -25,6 +29,6 @@ test {
         mock_renderer, puzzle_gen,
         logger, ascii_renderer, styler,
         config, parse, validator,
-        sudoku, event, mutation_history, disambiguate, legend, path,
+        sudoku, event, mutation_history, disambiguate, legend, path, fill, clear_command, undo_command, redo_command,
     };
 }
