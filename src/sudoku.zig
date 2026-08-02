@@ -119,10 +119,12 @@ pub fn Sudoku(comptime R: type) type {
                         },
                         .open => |o_data| {
                             self.engine.openGame(io, o_data.path) catch |err| {
+
                                 try out.print("open failed: {s}\n", .{@errorName(err)});
                                 return false;
                             };
-                            return false;
+                            const event = game_engine.Event{.ok = .{.board_view = self.engine.eventBoard(), .msg = "opened"}};
+                            return try self.handleEvent(out, in_, renderer, event);
                         },
                         else => {
                             const event = try self.engine.exec(cmd);
