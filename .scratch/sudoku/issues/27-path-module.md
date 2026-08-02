@@ -99,8 +99,8 @@ pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) anyerror![]u8 {\n    const
 
 ## Acceptance Criteria
 
-- [ ] `getHomeDir()` returns `$HOME` on Linux, compile_error on other OSes
-- [ ] `getDataDir(gpa, io)` returns `~/.local/share/sudoku/` and ensures the directory exists
-- [ ] `resolveSavePath(gpa, data_dir, "game.sud")` → absolute path under data dir
-- [ ] `resolveSavePath(gpa, data_dir, "/abs/path.sud")` → `/abs/path.sud` passthrough (returns owned copy)
+- [x] `getHomeDir()` returns `$HOME` on Linux, compile_error on other OSes
+- [x] `getDataDir(gpa, io)` returns `~/.local/share/sudoku/` and ensures the directory exists
+- [x] `resolveSavePath(gpa, data_dir, "game.sud")` → absolute path under data dir
+- [x] `resolveSavePath(gpa, data_dir, "/abs/path.sud")` → `/abs/path.sud` passthrough (returns owned copy)
 - [ ] No memory leaks — errdefer discipline on all allocs
