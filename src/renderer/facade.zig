@@ -42,15 +42,15 @@ pub const RenderError = error{OutOfMemory, ReadEOF, UnexpectedEOF, WriteFault, F
 
 /// Vtable struct — dispatches through *anyopaque context to the concrete renderer.
 pub const Facade = struct {
-    context: *anyopaque
+    context: *anyopaque,
 
-    render_fn:         fn (*anyopaque, board.Board.BoardView, ?[]const u8) RenderError!void,
-    showLegend_fn:     fn (*anyopaque, AvailableCommands) RenderError!void,
-    showError_fn:      fn (*anyopaque, []const u8) RenderError!void,
-    saveDialog_fn:     fn (*anyopaque, []const u8, std.mem.Allocator) RenderError!SaveFileResult,
-    openDialog_fn:     fn (*anyopaque, std.mem.Allocator) RenderError!OpenFileResult,
-    newGameOptions_fn: fn (*anyopaque, std.mem.Allocator) RenderError!NewGameChoice,
-    getCommandInput_fn:fn (*anyopaque, AvailableCommands, std.mem.Allocator) RenderError!CommandInput
+    render_fn:          *const fn (*anyopaque, board.Board.BoardView, ?[]const u8) RenderError!void,
+    showLegend_fn:      *const fn (*anyopaque, AvailableCommands) RenderError!void,
+    showError_fn:       *const fn (*anyopaque, []const u8) RenderError!void,
+    saveDialog_fn:      *const fn (*anyopaque, []const u8, std.mem.Allocator) RenderError!SaveFileResult,
+    openDialog_fn:      *const fn (*anyopaque, std.mem.Allocator) RenderError!OpenFileResult,
+    newGameOptions_fn:  *const fn (*anyopaque, std.mem.Allocator) RenderError!NewGameChoice,
+    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands, std.mem.Allocator) RenderError!CommandInput
 
     pub fn render(self: *Facade, view: board.Board.BoardView, status_msg: ?[]const u8) RenderError!void {
         return self.render_fn(self.context, view, status_msg);
