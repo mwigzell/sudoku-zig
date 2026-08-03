@@ -7,14 +7,14 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
     const gpa = std.heap.page_allocator;
 
     // Resolve the path through the data dir
-    if (engine._data_dir == null) {
-        engine._data_dir = try mypath.getDataDir(gpa, engine.io);
-        errdefer gpa.free(engine._data_dir.?);
+    if (engine.data_dir == null) {
+        engine.data_dir = try mypath.getDataDir(gpa, engine.io);
+        errdefer gpa.free(engine.data_dir.?);
     }
 
     const resolved = try mypath.resolveSavePath(
         gpa,
-        engine._data_dir.?,
+        engine.data_dir.?,
         path,
     );
     defer gpa.free(resolved);
@@ -45,9 +45,9 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
     const old_board = engine.board;
 
     // Free old optional fields before overwriting self
-    if (engine._data_dir) |old_dir| gpa.free(old_dir);
-    if (engine._filename) |old_name| gpa.free(old_name);
-    if (engine._last_save_msg) |old_msg| gpa.free(old_msg);
+    if (engine.data_dir) |old_dir| gpa.free(old_dir);
+    if (engine.filename) |old_name| gpa.free(old_name);
+    if (engine.last_save_msg) |old_msg| gpa.free(old_msg);
 
     engine.* = loaded;
     _ = old_board;

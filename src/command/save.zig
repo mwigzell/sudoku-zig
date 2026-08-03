@@ -9,19 +9,19 @@ pub fn execute(engine: *game_engine.GameEngine) !game_engine.Event {
     const gpa = std.heap.page_allocator;
 
     // Ensure data dir is resolved
-    if (engine._data_dir == null) {
-        engine._data_dir = try mypath.getDataDir(gpa, engine.io);
+    if (engine.data_dir == null) {
+        engine.data_dir = try mypath.getDataDir(gpa, engine.io);
     }
 
     // Use last filename or default (make it owned for deinit safety)
-    if (engine._filename == null) {
-        engine._filename = try gpa.dupe(u8, DEFAULT_SAVE_FILE);
+    if (engine.filename == null) {
+        engine.filename = try gpa.dupe(u8, DEFAULT_SAVE_FILE);
     }
 
     const resolved = try mypath.resolveSavePath(
         gpa,
-        engine._data_dir.?,
-        engine._filename.?,
+        engine.data_dir.?,
+        engine.filename.?,
     );
     defer gpa.free(resolved);
 
@@ -31,12 +31,12 @@ pub fn execute(engine: *game_engine.GameEngine) !game_engine.Event {
     };
 
     // Free old save message if present
-    if (engine._last_save_msg) |old_m| gpa.free(old_m);
+    if (engine.last_save_msg) |old_m| gpa.free(old_m);
 
     const msg = std.fmt.allocPrint(gpa, "saved to: {s}", .{resolved}) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
-    engine._last_save_msg = msg;
+    engine.last_save_msg = msg;
 
     return game_engine.Event{ .ok = .{
         .board_view = engine.board.asView(),
@@ -56,8 +56,8 @@ test "command.save.execute saves file and returns ok with message" {
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
     // Set up the filename to our temp path (owned slice for deinit safety)
-    engine._filename = try std.heap.page_allocator.dupe(u8, tmp_path);
-    engine._data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
+    engine.filename = try std.heap.page_allocator.dupe(u8, tmp_path);
+    engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
 
     const event = execute(&engine) catch return error.SkipZigTest;
 

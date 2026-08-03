@@ -101,18 +101,18 @@ pub const GameEngine = struct {
     board: board.Board,
     history: MutationHistory,
     io: std.Io,
-    _data_dir: ?[]u8,
-    _filename: ?[]u8,
-    _last_save_msg: ?[]u8,
+    data_dir: ?[]u8,
+    filename: ?[]u8,
+    last_save_msg: ?[]u8,
     /// Construct from a one-line puzzle string.
     pub fn init(puzzle_str: []const u8, io: std.Io) board.BoardError!@This() {
         var self = @This(){
             .board = try board.fromOneLineString(puzzle_str),
             .history = MutationHistory.init(std.heap.page_allocator),
             .io = io,
-            ._data_dir = null,
-            ._filename = null,
-            ._last_save_msg = null,
+            .data_dir = null,
+            .filename = null,
+            .last_save_msg = null,
         };
         self.board.validate();
         return self;
@@ -122,9 +122,9 @@ pub const GameEngine = struct {
         self.history.deinit();
 
         // Free optional string fields
-        if (self._data_dir) |dir| std.heap.page_allocator.free(dir);
-        if (self._filename) |name| std.heap.page_allocator.free(name);
-        if (self._last_save_msg) |msg| std.heap.page_allocator.free(msg);
+        if (self.data_dir) |dir| std.heap.page_allocator.free(dir);
+        if (self.filename) |name| std.heap.page_allocator.free(name);
+        if (self.last_save_msg) |msg| std.heap.page_allocator.free(msg);
     }
 
     /// Return a snapshot of the current board view.
@@ -229,9 +229,9 @@ pub const GameEngine = struct {
             .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
             .history = history,
             .io = io,
-            ._data_dir = null,
-            ._filename = null,
-            ._last_save_msg = null,
+            .data_dir = null,
+            .filename = null,
+            .last_save_msg = null,
         };
 
         engine.history.pointer = header.pointer;
@@ -1230,8 +1230,8 @@ test "Save fields moved to GameEngine struct" {
     defer engine.deinit();
 
     // Fields exist on GameEngine (compile-time proof) and start null
-    try std.testing.expectEqual(@as(?[]u8, null), engine._data_dir);
-    try std.testing.expectEqual(@as(?[]u8, null), engine._filename);
+    try std.testing.expectEqual(@as(?[]u8, null), engine.data_dir);
+    try std.testing.expectEqual(@as(?[]u8, null), engine.filename);
 }
 
 test "exec save: delegates to save handler via command/save.zig" {
@@ -1240,9 +1240,9 @@ test "exec save: delegates to save handler via command/save.zig" {
 
     // Give a known data dir and filename so save handler has path
     const gpa = std.heap.page_allocator;
-    engine._data_dir = try mypath.getDataDir(gpa, std.testing.io);
-    errdefer gpa.free(engine._data_dir.?);
-    engine._filename = try gpa.dupe(u8, "issue28_step4_save.sud");
+    engine.data_dir = try mypath.getDataDir(gpa, std.testing.io);
+    errdefer gpa.free(engine.data_dir.?);
+    engine.filename = try gpa.dupe(u8, "issue28_step4_save.sud");
 
     // Make a mutation to save meaningful state
     _ = try expectOk(try engine.exec(command.Command{
