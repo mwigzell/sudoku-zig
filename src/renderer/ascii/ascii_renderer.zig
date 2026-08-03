@@ -1,5 +1,5 @@
-const board = @import("board.zig");
-const cell = @import("cell.zig");
+const board = @import("../../board.zig");
+const cell = @import("../../cell.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
@@ -178,4 +178,3 @@ test "AsciiRenderer renders via AnsiStyler - dim givens preserved" {
     const dim_count = std.mem.count(u8, contents, "\x1b[2m");
     try std.testing.expect(dim_count > 0);
 }
-

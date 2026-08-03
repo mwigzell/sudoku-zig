@@ -229,7 +229,7 @@ pub fn Sudoku(comptime R: type) type {
     };
 }
 
-const mock_renderer = @import("mock_renderer.zig");
+const mock_renderer = @import("renderer/mock/mock_renderer.zig");
 const board = @import("board.zig");
 const cell = @import("cell.zig");
 

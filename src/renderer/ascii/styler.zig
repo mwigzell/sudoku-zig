@@ -1,5 +1,5 @@
-const cell = @import("cell.zig");
-const board = @import("board.zig");
+const cell = @import("../../cell.zig");
+const board = @import("../../board.zig");
 const std = @import("std");
 
 // ---------------------------------------------------------------------------
@@ -186,4 +186,3 @@ test "AnsiStyler: given cell takes precedence over conflict styling" {
     const conflict_count = std.mem.count(u8, line, CONFLICT_ON);
     try std.testing.expectEqual(@as(usize, 0), conflict_count);
 }
-

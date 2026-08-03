@@ -3,3 +3,4 @@ zig-out/
 build.log
 kcov-out/
 handoffs/
+libdummy.a

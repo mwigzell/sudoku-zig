@@ -1,6 +1,6 @@
 const std = @import("std");
-const board = @import("board.zig");
-const cell = @import("cell.zig");
+const board = @import("../../board.zig");
+const cell = @import("../../cell.zig");
 
 /// Test helper: accepts BoardView and copies the 9×9 grid of CellValue for inspection.
 pub const MockRenderer = struct {

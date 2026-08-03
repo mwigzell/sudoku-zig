@@ -1,9 +1,9 @@
 const std = @import("std");
 const sudoku = @import("sudoku.zig");
 const config_module = @import("config.zig");
-const ascii_renderer = @import("ascii_renderer.zig");
+const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 const logger = @import("logger.zig");
-const styler = @import("styler.zig");
+const styler = @import("renderer/ascii/styler.zig");
 
 pub fn main(init: std.process.Init) anyerror!void {
     const log = logger.Logger(.sudoku);
