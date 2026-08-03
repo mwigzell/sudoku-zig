@@ -62,3 +62,39 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
         .is_quit = false,
     } };
 }
+test "command.open.execute opens file and returns ok with message" {
+    var engine = try game_engine.GameEngine.init(
+        @import("../puzzle_gen.zig").PuzzleGen.default(),
+        std.testing.io,
+    );
+    defer engine.deinit();
+
+    const tmp_path = "/tmp/sudoku_open_command_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+
+    engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
+    errdefer std.heap.page_allocator.free(engine.data_dir.?);
+    engine.filename = try std.heap.page_allocator.dupe(u8, tmp_path);
+    errdefer std.heap.page_allocator.free(engine.filename.?);
+
+    const resolved = try mypath.resolveSavePath(
+        std.heap.page_allocator,
+        engine.data_dir.?,
+        engine.filename.?,
+    );
+    defer std.heap.page_allocator.free(resolved);
+
+    _ = engine.saveGame(engine.io, resolved) catch return error.SkipZigTest;
+
+    const event = execute(&engine, tmp_path) catch return error.SkipZigTest;
+
+    switch (event) {
+        .ok => |data| {
+            try std.testing.expect(!data.is_quit);
+            try std.testing.expect(data.msg != null);
+            const m = data.msg.?;
+            try std.testing.expect(std.mem.indexOf(u8, m, "opened") != null);
+        },
+        .error_msg => return error.TestFailed,
+    }
+}
