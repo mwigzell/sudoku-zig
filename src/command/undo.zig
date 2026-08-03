@@ -14,7 +14,7 @@ pub fn execute(engine: *game_engine.GameEngine) anyerror!game_engine.Event {
         return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "undo fail: {s}", .{@errorName(err)}) catch "undo failed" };
     };
     engine.board.refreshConflictsForCell(entry.row, entry.col);
-    return game_engine.Event{ .ok = .{ .board_view = engine.board.asView(), .msg = null } };
+    return game_engine.Event{ .ok = .{ .board_view = engine.board.asView(), .msg = null, .is_quit = false } };
 }
 
 // ---------------------------------------------------------------------------

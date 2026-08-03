@@ -14,7 +14,7 @@ pub fn execute(engine: *game_engine.GameEngine) anyerror!game_engine.Event {
     };
     engine.board.refreshConflictsForCell(entry.row, entry.col);
     engine.history.pointer += 1;
-    return game_engine.Event{ .ok = .{ .board_view = engine.board.asView(), .msg = null } };
+    return game_engine.Event{ .ok = .{ .board_view = engine.board.asView(), .msg = null, .is_quit = false } };
 }
 
 // ---------------------------------------------------------------------------

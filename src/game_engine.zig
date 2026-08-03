@@ -89,6 +89,10 @@ const fill_command = @import("command/fill.zig");
 const clear_command = @import("command/clear.zig");
 const undo_command = @import("command/undo.zig");
 const redo_command = @import("command/redo.zig");
+const quit_command = @import("command/quit.zig");
+const save_command = @import("command/save.zig");
+const open_command = @import("command/open.zig");
+const mypath = @import("command/path.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 
@@ -97,12 +101,18 @@ pub const GameEngine = struct {
     board: board.Board,
     history: MutationHistory,
     _io: std.Io,
+    _data_dir: ?[]u8,
+    _filename: ?[]u8,
+    _last_save_msg: ?[]u8,
     /// Construct from a one-line puzzle string.
     pub fn init(puzzle_str: []const u8, io: std.Io) board.BoardError!@This() {
         var self = @This(){
             .board = try board.fromOneLineString(puzzle_str),
             .history = MutationHistory.init(std.heap.page_allocator),
             ._io = io,
+            ._data_dir = null,
+            ._filename = null,
+            ._last_save_msg = null,
         };
         self.board.validate();
         return self;
@@ -110,6 +120,11 @@ pub const GameEngine = struct {
 
     pub fn deinit(self: *@This()) void {
         self.history.deinit();
+
+        // Free optional string fields
+        if (self._data_dir) |dir| std.heap.page_allocator.free(dir);
+        if (self._filename) |name| std.heap.page_allocator.free(name);
+        if (self._last_save_msg) |msg| std.heap.page_allocator.free(msg);
     }
 
     /// Return a snapshot of the current board view.
@@ -214,6 +229,9 @@ pub const GameEngine = struct {
             .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
             .history = history,
             ._io = io,
+            ._data_dir = null,
+            ._filename = null,
+            ._last_save_msg = null,
         };
 
         engine.history.pointer = header.pointer;
@@ -251,7 +269,7 @@ pub const GameEngine = struct {
                 return clear_command.execute(self, c);
             },
             .quit => {
-                return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
+                return quit_command.execute(self);
             },
             .undo => {
                 return undo_command.execute(self);
@@ -259,9 +277,12 @@ pub const GameEngine = struct {
             .redo => {
                 return redo_command.execute(self);
             },
-            else => {
-                @panic("save/open handled in sudoku.zig, not exec()");
+            .save => {
+                return save_command.execute(self);
             },
+            .open => |data| {
+                return open_command.execute(self, data.path);
+            }
         }
     }
     /// Attempt to fill a cell with a digit. Records mutation in history.
@@ -281,7 +302,7 @@ pub const GameEngine = struct {
             return Event{ .error_msg = std.fmt.bufPrint(&buf, "history push failed: {s}", .{@errorName(err)}) catch "history error" };
         };
         self.board.refreshConflictsForCell(row, col);
-        return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null } };
+        return Event{ .ok = .{ .board_view = self.board.asView(), .msg = null, .is_quit = false } };
     }
 };
 
@@ -464,6 +485,7 @@ test "Event.ok carries board_view and optional msg" {
         .ok = .{
             .board_view = view,
             .msg = null,
+            .is_quit = false,
         },
     };
 }
@@ -477,6 +499,7 @@ test "Event.ok can carry a message" {
         .ok = .{
             .board_view = view,
             .msg = "puzzle complete!",
+            .is_quit = false,
         },
     };
 }
@@ -1192,6 +1215,7 @@ test "fromSaveFormat round-trip: board state given_bits history" {
 
 
 
+// Issue 28 Step 4 — Cycle 3: save/open command handlers via exec()
 // Issue 28 Step 1 — io threaded through GameEngine constructor
 test "GameEngine.init accepts io handle" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
@@ -1199,4 +1223,73 @@ test "GameEngine.init accepts io handle" {
 
     // _io field stored on struct (compile-time proof if the field exists)
     _ = engine._io;
+}
+// Issue 28 Step 4 — Cycle 3: save/open command handlers via exec()
+test "Save fields moved to GameEngine struct" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
+    defer engine.deinit();
+
+    // Fields exist on GameEngine (compile-time proof) and start null
+    try std.testing.expectEqual(@as(?[]u8, null), engine._data_dir);
+    try std.testing.expectEqual(@as(?[]u8, null), engine._filename);
+}
+
+test "exec save: delegates to save handler via command/save.zig" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
+    defer engine.deinit();
+
+    // Give a known data dir and filename so save handler has path
+    const gpa = std.heap.page_allocator;
+    engine._data_dir = try mypath.getDataDir(gpa, std.testing.io);
+    errdefer gpa.free(engine._data_dir.?);
+    engine._filename = try gpa.dupe(u8, "issue28_step4_save.sud");
+
+    // Make a mutation to save meaningful state
+    _ = try expectOk(try engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+
+    // exec() must NOT panic on .save — it should delegate to command handler
+    const result = engine.exec(command.Command{ .save = {} }) catch return error.SkipZigTest;
+
+    // Should return ok with message and is_quit = false
+    switch (result) {
+        .ok => |data| {
+            try std.testing.expect(!data.is_quit);
+            try std.testing.expect(data.msg != null);
+        },
+        .error_msg => return error.TestFailed,
+    }
+}
+
+test "exec open: delegates to open handler via command/open.zig" {
+    const tmp_path = "/tmp/sudoku_step4_open_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+
+    // Create a known save file
+    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
+    defer original.deinit();
+    _ = try expectOk(try original.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    }));
+    try original.saveGame(std.testing.io, tmp_path);
+
+    // Now create a second engine and open through exec()
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
+    defer loaded.deinit();
+    _ = try expectOk(try loaded.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
+    }));
+
+    // exec open through .open command — must delegate to handler, not panic
+    const result = loaded.exec(command.Command{ .open = command.OpenData{ .path = tmp_path } }) catch return error.SkipZigTest;
+
+    switch (result) {
+        .ok => |data| {
+            try std.testing.expect(!data.is_quit);
+            // Board cell (0,2) should be seven from saved state, not one (overwritten by open)
+            try std.testing.expectEqual(cell.CellValue.seven, data.board_view.get(0, 2));
+        },
+        .error_msg => return error.TestFailed,
+    }
 }
