@@ -10,7 +10,7 @@ pub fn execute(engine: *game_engine.GameEngine) !game_engine.Event {
 
     // Ensure data dir is resolved
     if (engine._data_dir == null) {
-        engine._data_dir = try mypath.getDataDir(gpa, engine._io);
+        engine._data_dir = try mypath.getDataDir(gpa, engine.io);
     }
 
     // Use last filename or default (make it owned for deinit safety)
@@ -26,7 +26,7 @@ pub fn execute(engine: *game_engine.GameEngine) !game_engine.Event {
     defer gpa.free(resolved);
 
     // Save to disk
-    engine.saveGame(engine._io, resolved) catch |err| {
+    engine.saveGame(engine.io, resolved) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 

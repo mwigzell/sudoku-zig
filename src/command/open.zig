@@ -8,7 +8,7 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
 
     // Resolve the path through the data dir
     if (engine._data_dir == null) {
-        engine._data_dir = try mypath.getDataDir(gpa, engine._io);
+        engine._data_dir = try mypath.getDataDir(gpa, engine.io);
         errdefer gpa.free(engine._data_dir.?);
     }
 
@@ -20,23 +20,23 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
     defer gpa.free(resolved);
 
     // Read file bytes
-    var file = std.Io.Dir.openFileAbsolute(engine._io, resolved, .{}) catch |err| {
+    var file = std.Io.Dir.openFileAbsolute(engine.io, resolved, .{}) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
-    defer file.close(engine._io);
+    defer file.close(engine.io);
 
-    const stat = std.Io.Dir.cwd().statFile(engine._io, resolved, .{}) catch |err| {
+    const stat = std.Io.Dir.cwd().statFile(engine.io, resolved, .{}) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
     const buf = try gpa.alloc(u8, stat.size);
     defer gpa.free(buf);
 
-    _ = std.Io.File.readPositionalAll(file, engine._io, buf, 0) catch |err| {
+    _ = std.Io.File.readPositionalAll(file, engine.io, buf, 0) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
     // Deserialize into a new engine
-    const loaded = game_engine.GameEngine.fromSaveFormat(gpa, engine._io, buf) catch |err| {
+    const loaded = game_engine.GameEngine.fromSaveFormat(gpa, engine.io, buf) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 

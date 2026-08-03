@@ -100,7 +100,7 @@ pub const MutationHistory = mutation_history.MutationHistory;
 pub const GameEngine = struct {
     board: board.Board,
     history: MutationHistory,
-    _io: std.Io,
+    io: std.Io,
     _data_dir: ?[]u8,
     _filename: ?[]u8,
     _last_save_msg: ?[]u8,
@@ -109,7 +109,7 @@ pub const GameEngine = struct {
         var self = @This(){
             .board = try board.fromOneLineString(puzzle_str),
             .history = MutationHistory.init(std.heap.page_allocator),
-            ._io = io,
+            .io = io,
             ._data_dir = null,
             ._filename = null,
             ._last_save_msg = null,
@@ -228,7 +228,7 @@ pub const GameEngine = struct {
         var engine = GameEngine{
             .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
             .history = history,
-            ._io = io,
+            .io = io,
             ._data_dir = null,
             ._filename = null,
             ._last_save_msg = null,
@@ -1221,8 +1221,8 @@ test "GameEngine.init accepts io handle" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
-    // _io field stored on struct (compile-time proof if the field exists)
-    _ = engine._io;
+    // io field stored on struct (compile-time proof if the field exists)
+    _ = engine.io;
 }
 // Issue 28 Step 4 — Cycle 3: save/open command handlers via exec()
 test "Save fields moved to GameEngine struct" {

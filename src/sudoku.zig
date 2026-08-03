@@ -12,13 +12,13 @@ pub fn Sudoku(comptime R: type) type {
     return struct {
         engine: game_engine.GameEngine,
         cfg: config.Config,
-        _io: std.Io,
-        _renderer: *R,
+        io: std.Io,
+        renderer: *R,
         pub fn init(cfg: config.Config, _r: *R, io: std.Io) anyerror!@This() {
             const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
             return @This(){
-                ._renderer = _r,
-                ._io = io,
+                .renderer = _r,
+                .io = io,
                 .cfg = cfg,
                 .engine = try game_engine.GameEngine.init(puzzle_str, io),
             };
@@ -89,7 +89,7 @@ pub fn Sudoku(comptime R: type) type {
                     if (ev.is_quit) return true;
 
                     if (ev.msg) |m| try out.print("{s}\n", .{m});
-                    try self._renderer.render(ev.board_view);
+                    try self.renderer.render(ev.board_view);
                     try self.printLegend(out);
                     return false;
                 },
@@ -171,14 +171,14 @@ pub fn Sudoku(comptime R: type) type {
 
         /// Read → Parse → Loop command interface.
         pub fn run(self: *@This()) anyerror!void {
-            var stdout_writer = std.Io.File.stdout().writer(self._io, &.{});
+            var stdout_writer = std.Io.File.stdout().writer(self.io, &.{});
             const out = &stdout_writer.interface;
             var stdin_buf: [1024]u8 = undefined;
-            var stdin_reader = std.Io.File.stdin().reader(self._io, &stdin_buf);
+            var stdin_reader = std.Io.File.stdin().reader(self.io, &stdin_buf);
             const in_ = &stdin_reader.interface;
 
             // Initial render — show starting board via Event seam
-            try self._renderer.render(self.engine.eventBoard());
+            try self.renderer.render(self.engine.eventBoard());
             try self.printLegend(out);
 
             var isDone: bool = false;
@@ -433,7 +433,7 @@ const MockWriter = struct {
 
 
   // Step 7 test placeholder
-test "Sudoku stores _io field during init" {
+test "Sudoku stores io field during init" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
@@ -442,7 +442,7 @@ test "Sudoku stores _io field during init" {
     var mock = mock_renderer.MockRenderer.init();
     var sudoku_instance = try Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io);
     defer sudoku_instance.engine.deinit();
-    _ = sudoku_instance._io;
+    _ = sudoku_instance.io;
 }
 test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w/ Undo" {
     // Arrange: fresh engine via Sudoku.init gives Fill/Clear/Quit only.
