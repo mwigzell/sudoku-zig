@@ -109,8 +109,8 @@ This keeps exec() as the single dispatch surface with zero exceptions.
 - [x] MutationHistory moved to `command/mutation_history.zig`, lives beside undo handler
 - [x] legend/disambiguate/path move into `src/command/` sub-folder  
 - [x] parse types (Command enum, FillData etc) moved to `command/parse.zig`
-- [ ] handleResult dispatches every command through exec() — no fat switch
-- [ ] `_dataDir`, `_filename`, `_lastSaveMsg` on GameEngine struct (removed from Sudoku)
+- [x] handleResult dispatches every command through exec() — no fat switch
+- [x] `_dataDir`, `_filename`, `_lastSaveMsg` on GameEngine struct (removed from Sudoku)
 - [x] Save, Open and Quit handled in exec() (no interception in handleResult) — quit sets `_is_quit: bool` on Event.ok to signal loop exit
 - [x] All existing tests pass, no behavioral changes
 - [x] Coverage holds at or above 98%
