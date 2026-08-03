@@ -166,6 +166,31 @@ pub fn Sudoku(comptime R: type) type {
             }
 
             const result = command.parseWithCommands(tokens, names[0..count]);
+
+            // First save: prompt for a filename.
+            switch (result) {
+                .valid => |cmd| {
+                    switch (cmd) {
+                        .save => {
+                            if (self.engine.filename == null) {
+                                const gpa = std.heap.page_allocator;
+                                try out.print("Save to [my_game]: ", .{});
+
+                                const save_input = try readLine(in_);
+                                const trimmed = std.mem.trim(u8, save_input, &std.ascii.whitespace);
+                                const chosen = if (trimmed.len > 0)
+                                    trimmed
+                                else
+                                    "my_game";
+                                self.engine.filename = try gpa.dupe(u8, chosen);
+                            }
+                        },
+                        else => {},
+                    }
+                    },
+                .error_msg => {},
+            }
+
             return try self.handleResult(out, in_, result);
         }
 
