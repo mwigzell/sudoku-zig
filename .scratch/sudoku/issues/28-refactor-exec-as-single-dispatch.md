@@ -89,29 +89,32 @@ fn handleResult(...) {
 | 2 ✅ | Create `src/command/`. Move `undo.zig → command/mutation_history.zig`, `command.zig → command/parse.zig`. Move `path.zig`, `legend.zig`, `disambiguate.zig` into `command/`. Update all import paths. | multiple (structural only) | Compile, 0 behavioral changes — pure import surgery |
 | 3 ✅ | Extract existing exec() cases: fill → `command/fill.zig`, clear → `command/clear.zig`, undo → `command/undo.zig`, redo → `command/redo.zig`. Each exports `fn execute(g: *GameEngine, ...) Event`. Replace inline switch bodies with calls. | `src/command/*.zig`, `game_engine.zig` | Existing fill/clear/undo/redo tests still pass — same behavior, different home |
 | 4 ✅ | Add `command/save.zig`, `command/open.zig` and wire .quit through exec() — move save/open/quit interception from handleResult into exec() cases. Uses GameEngine's `_io` field for disk I/O. Path resolution via `command/path.zig`. Quit handler sets `_is_quit: bool` on Event.ok to signal loop exit. | `src/command/save.zig`, `src/command/open.zig`, `game_engine.zig` | Acceptance Criteria: 1) Each command handler (fill/clear/undo/redo/save/open/quit) has its own file under `src/command/` 2) exec() switch delegates to those handlers, no inline bodies.
-| 5 | Collapse handleResult: remove all interception blocks. Every command → `exec(cmd)` + `handleEvent(event)`. Remove `_dataDir`, `_filename`, `_lastSaveMsg` from Sudoku struct (now on GameEngine). Quit breaks loop via `_is_quit` flag in Event.ok, not handleResult special-case. | `sudoku.zig`, `game_engine.zig` | All integration tests pass through simplified path
-| 6 | Update all test sites constructing GameEngine to pass `std.testing.io` as second arg. ~50 call sites. Update root.zig imports for new module paths. Run full suite + coverage. | multiple | All 179+ tests pass, coverage holds
+| 5 ✅ | Collapse handleResult: remove all interception blocks. Every command → `exec(cmd)` + `handleEvent(event)`. Remove `_dataDir`, `_filename`, `_lastSaveMsg` from Sudoku struct (now on GameEngine). Quit breaks loop via `_is_quit` flag in Event.ok, not handleResult special-case. | `sudoku.zig`, `game_engine.zig` | All integration tests pass through simplified path
+| 6 ✅ | Update all test sites constructing GameEngine to pass `std.testing.io` as second arg. ~50 call sites. Update root.zig imports for new module paths. Run full suite + coverage. | multiple | All 179+ tests pass, coverage holds
+| 7 ✅ | Remove `io: std.Io` from Sudoku helper methods and move into `Sudoku.init()`. Pass `io` to `Sudoku.init(puzzle_str, io)` instead of `run()`, store as `_io` on the Sudoku struct, and use it when calling `GameEngine.init()`. Store `_renderer: *R` in init() too. Then drop `io` and `renderer` from `run()` — they get what they need via `self._io`/`self._renderer`. Update ~7 test call sites passing `std.testing.io` through these methods. | `sudoku.zig`, `main.zig` | All tests pass, no behavioral changes
 
 
 ### How quit breaks the loop
 Quit processes through exec() like every other command — no interception in handleResult().
 The `event.ok` struct carries an `_is_quit: bool` flag set by the quit handler.
-handleResult() checks that flag and returns true to break the command loop.
+handleEvent() checks that flag and returns true to break the command loop.
 This keeps exec() as the single dispatch surface with zero exceptions.
-
 
 ## Acceptance Criteria
 
 - [x] `GameEngine.init()` signature is `init(puzzle_str, io) → !GameEngine`
-- [x] `_io` field stored on GameEngine struct  
+- [x] `_io` field stored on GameEngine struct
 - [x] Each command (fill/clear/undo/redo/save/open/quit) has its own handler under `src/command/`
 - [x] exec() switch is flat: one function call per case, no inline logic
 - [x] MutationHistory moved to `command/mutation_history.zig`, lives beside undo handler
-- [x] legend/disambiguate/path move into `src/command/` sub-folder  
+- [x] legend/disambiguate/path move into `src/command/` sub-folder
 - [x] parse types (Command enum, FillData etc) moved to `command/parse.zig`
 - [x] handleResult dispatches every command through exec() — no fat switch
 - [x] `_dataDir`, `_filename`, `_lastSaveMsg` on GameEngine struct (removed from Sudoku)
 - [x] Save, Open and Quit handled in exec() (no interception in handleResult) — quit sets `_is_quit: bool` on Event.ok to signal loop exit
 - [x] All existing tests pass, no behavioral changes
 - [x] Coverage holds at or above 98%
+- [x] `_io` stored on the Sudoku struct during `init()`, passed to `GameEngine.init()`
+- [x] `_renderer: *R` stored on the Sudoku struct during `init()`
+- [x] `Sudoku.run()` takes no extra params — reads I/O and renderer from `self`
 
