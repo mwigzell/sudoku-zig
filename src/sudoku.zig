@@ -7,6 +7,8 @@ const command = @import("command/parse.zig");
 const disambiguate = @import("command/disambiguate.zig");
 const legend = @import("command/legend.zig");
 
+const mypath = @import("command/path.zig");
+
 
 pub fn Sudoku(comptime R: type) type {
     return struct {
@@ -174,14 +176,27 @@ pub fn Sudoku(comptime R: type) type {
                         .save => {
                             if (self.engine.filename == null) {
                                 const gpa = std.heap.page_allocator;
-                                try out.print("Save to [my_game]: ", .{});
+
+                                // Resolve data dir first so we can show the full default path.
+                                if (self.engine.data_dir == null) {
+                                    self.engine.data_dir = try mypath.getDataDir(gpa, self.io);
+                                }
+
+                                const resolved_default = try mypath.resolveSavePath(
+                                     gpa,
+                                     self.engine.data_dir.?,
+                                     ".sudoku_save.sud",
+                                );
+                                defer gpa.free(resolved_default);
+
+                                try out.print("Save to [{s}]: ", .{resolved_default});
 
                                 const save_input = try readLine(in_);
                                 const trimmed = std.mem.trim(u8, save_input, &std.ascii.whitespace);
                                 const chosen = if (trimmed.len > 0)
                                     trimmed
                                 else
-                                    "my_game";
+                                    ".sudoku_save.sud";
                                 self.engine.filename = try gpa.dupe(u8, chosen);
                             }
                         },
