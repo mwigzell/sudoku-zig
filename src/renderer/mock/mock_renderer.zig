@@ -15,7 +15,8 @@ pub const MockRenderer = struct {
     }
 
     /// Accepts a BoardView, copies its flat cells into [9][9]CellValue.
-    pub fn render(self: *MockRenderer, view: board.Board.BoardView) anyerror!void {
+    pub fn render(self: *MockRenderer, view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
+        _ = status_msg;
         var cells: [9][9]cell.CellValue = undefined;
         for (0..board.DIMENSION_SIZE) |row| {
             for (0..board.DIMENSION_SIZE) |col| {
@@ -41,7 +42,7 @@ test "MockRenderer: copies BoardView flat cells into [9][9]CellValue" {
     const view = b.asView();
 
     var mock = MockRenderer.init();
-    try mock.render(view);
+    try mock.render(view, null);
 
     // call_count incremented
     try std.testing.expectEqual(@as(usize, 1), mock.call_count);
@@ -56,7 +57,7 @@ test "MockRenderer: copies BoardView flat cells into [9][9]CellValue" {
 
     // Mutate a non-given cell and re-render — mock should reflect update
     try b.setCell(2, 4, .seven);
-    try mock.render(view);
+    try mock.render(view, null);
 
     try std.testing.expectEqual(@as(usize, 2), mock.call_count);
 

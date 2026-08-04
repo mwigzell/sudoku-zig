@@ -91,7 +91,7 @@ pub fn Sudoku(comptime R: type) type {
                     if (ev.is_quit) return true;
 
                     if (ev.msg) |m| try out.print("{s}\n", .{m});
-                    try self.renderer.render(ev.board_view);
+                    try self.renderer.render(ev.board_view, null);
                     try self.printLegend(out);
                     return false;
                 },
@@ -218,7 +218,7 @@ pub fn Sudoku(comptime R: type) type {
             const in_ = &stdin_reader.interface;
 
             // Initial render — show starting board via Event seam
-            try self.renderer.render(self.engine.eventBoard());
+            try self.renderer.render(self.engine.eventBoard(), null);
             try self.printLegend(out);
 
             var isDone: bool = false;

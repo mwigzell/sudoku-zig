@@ -38,100 +38,63 @@ pub const CommandInput = union(enum) {
 
 
 /// Concrete error set for all Facade method signatures.
-pub const RenderError = error{OutOfMemory, ReadEOF, UnexpectedEOF, WriteFault, FileNotFound, AccessDenied};
+pub const Error = error{OutOfMemory, ReadEOF, UnexpectedEOF, WriteFault, FileNotFound, AccessDenied};
 
 /// Vtable struct — dispatches through *anyopaque context to the concrete renderer.
 pub const Facade = struct {
     context: *anyopaque,
 
-    render_fn:          *const fn (*anyopaque, board.Board.BoardView, ?[]const u8) RenderError!void,
-    showLegend_fn:      *const fn (*anyopaque, AvailableCommands) RenderError!void,
-    showError_fn:       *const fn (*anyopaque, []const u8) RenderError!void,
-    saveDialog_fn:      *const fn (*anyopaque, []const u8, std.mem.Allocator) RenderError!SaveFileResult,
-    openDialog_fn:      *const fn (*anyopaque, std.mem.Allocator) RenderError!OpenFileResult,
-    newGameOptions_fn:  *const fn (*anyopaque, std.mem.Allocator) RenderError!NewGameChoice,
-    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands, std.mem.Allocator) RenderError!CommandInput
+    render_fn:          *const fn (*anyopaque, board.Board.BoardView, ?[]const u8) Error!void,
 
-    pub fn render(self: *Facade, view: board.Board.BoardView, status_msg: ?[]const u8) RenderError!void {
+    // TODO(issue 29 step 1c): add showLegend_fn
+    //showLegend_fn:      *const fn (*anyopaque, AvailableCommands) Error!void,
+
+    // TODO(issue 29 step 1d): add showError_fn
+    //showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
+
+    // TODO(issue 29 step 1e): add saveDialog_fn
+    //saveDialog_fn:      *const fn (*anyopaque, []const u8) Error!SaveFileResult,
+
+    // TODO(issue 29 step 1f): add openDialog_fn
+    //openDialog_fn:      *const fn (*anyopaque) Error!OpenFileResult,
+
+    // TODO(issue 29 step 1g): add newGameOptions_fn
+    //newGameOptions_fn:  *const fn (*anyopaque) Error!NewGameChoice,
+
+    // TODO(issue 29 step 1h): add getCommandInput_fn
+    //getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!CommandInput
+
+
+    pub fn render(self: *Facade, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
         return self.render_fn(self.context, view, status_msg);
     }
 
-    pub fn showLegend(self: *Facade, commands: AvailableCommands) RenderError!void {
-        return self.showLegend_fn(self.context, commands);
-    }
-
-    pub fn showError(self: *Facade, msg: []const u8) RenderError!void {
-        return self.showError_fn(self.context, msg);
-    }
-
-    pub fn saveDialog(self: *Facade, default_name: []const u8, alloc: std.mem.Allocator) RenderError!SaveFileResult {
-        return self.saveDialog_fn(self.context, default_name, alloc);
-    }
-
-    pub fn openDialog(self: *Facade, alloc: std.mem.Allocator) RenderError!OpenFileResult {
-        return self.openDialog_fn(self.context, alloc);
-    }
-
-    pub fn newGameOptions(self: *Facade, alloc: std.mem.Allocator) RenderError!NewGameChoice {
-        return self.newGameOptions_fn(self.context, alloc);
-    }
-
-    pub fn getCommandInput(self: *Facade, avail: AvailableCommands, alloc: std.mem.Allocator) RenderError!CommandInput {
-        return self.getCommandInput_fn(self.context, avail, alloc);
-    }
+    // TODO(issue 29 step 1): add dispatcher methods as facade fields are uncommented
 };
 
 /// Auto-wraps any concrete renderer type into a Facade.
 pub fn Make(comptime CT: type) type {
     return struct {
 
-        pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8) RenderError!void {
+        pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.render(view, status_msg);
         }
 
-        pub fn showLegend_wrapper(ctx: *anyopaque, commands: AvailableCommands) RenderError!void {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.showLegend(commands);
-        }
-
-        pub fn showError_wrapper(ctx: *anyopaque, msg: []const u8) RenderError!void {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.showError(msg);
-        }
-
-        pub fn saveDialog_wrapper(ctx: *anyopaque, default_name: []const u8, alloc: std.mem.Allocator) RenderError!SaveFileResult {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.saveDialog(default_name, alloc);
-        }
-
-        pub fn openDialog_wrapper(ctx: *anyopaque, alloc: std.mem.Allocator) RenderError!OpenFileResult {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.openDialog(alloc);
-        }
-
-        pub fn newGameOptions_wrapper(ctx: *anyopaque, alloc: std.mem.Allocator) RenderError!NewGameChoice {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.newGameOptions(alloc);
-        }
-
-        pub fn getCommandInput_wrapper(ctx: *anyopaque, avail: AvailableCommands, alloc: std.mem.Allocator) RenderError!CommandInput {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(avail, alloc);
-        }
+        // TODO(issue 29 step 1c): add showLegend_wrapper
+        // TODO(issue 29 step 1d): add showError_wrapper
+        // TODO(issue 29 step 1e): add saveDialog_wrapper
+        // TODO(issue 29 step 1f): add openDialog_wrapper
+        // TODO(issue 29 step 1g): add newGameOptions_wrapper
+        // TODO(issue 29 step 1h): add getCommandInput_wrapper
 
         /// Build a Facade pointing to the concrete renderer instance.
         pub fn make(instance: *CT) Facade {
             return Facade{
                 .context = @ptrCast(@alignCast(instance)),
                 .render_fn = render_wrapper,
-                .showLegend_fn = showLegend_wrapper,
-                .showError_fn = showError_wrapper,
-                .saveDialog_fn = saveDialog_wrapper,
-                .openDialog_fn = openDialog_wrapper,
-                .newGameOptions_fn = newGameOptions_wrapper,
-                .getCommandInput_fn = getCommandInput_wrapper,
             };
         }
     };
+}
 }
