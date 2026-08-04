@@ -28,25 +28,26 @@ pub fn AsciiRenderer(StylerType: type) type {
         pub fn init(writer: *Io.Writer, styler_ptr: *StylerType) @This() {
             return .{ .writer = writer, .styler = styler_ptr };
         }
-    pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
-        _ = status_msg;  // reserved for status bar, not legend
 
-        try self.writer.writeAll(columnHeader());
-        try self.writer.writeAll(topBorder());
+        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
+            _ = status_msg; // reserved for status bar, not legend
 
-        for (0..9) |row| {
-            var rowBuf: [256]u8 = undefined;
-            const line = try self.styler.formatRow(row, view, &rowBuf);
-            try self.writer.writeAll(line);
+            try self.writer.writeAll(columnHeader());
+            try self.writer.writeAll(topBorder());
 
-            if (row == 2 or row == 5) {
-                try self.writer.writeAll(midBorder());
+            for (0..9) |row| {
+                var rowBuf: [256]u8 = undefined;
+                const line = try self.styler.formatRow(row, view, &rowBuf);
+                try self.writer.writeAll(line);
+
+                if (row == 2 or row == 5) {
+                    try self.writer.writeAll(midBorder());
+                }
             }
-        }
 
-        try self.writer.writeAll(bottomBorder());
-    }
-};
+            try self.writer.writeAll(bottomBorder());
+        }
+    };
 }
 
 // ---------------------------------------------------------------------------

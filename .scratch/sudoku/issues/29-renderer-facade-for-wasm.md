@@ -39,9 +39,18 @@ The command loop no longer reads stdin. It calls structured facade methods and g
 
 #### Risks (tracked)
 
-1. **Bare `fn` fields make struct comptime-only:** RESOLVED. All facade fn pointer fields use `*const fn`.
-2. **~10 test sites in sudoku.zig** need facade creation before `init()` calls — compiler errors will be explicit on breakage.
-3. **AsciiRenderer currently only holds a writer** — solved by passing reader/Io handle + Allocator in `init()`.
+#### I/O Ownership Decisions (confirmed with user)
+
+- **AsciiRenderer stores:** `io: std.Io`, `writer: *Io.Writer`, `allocator: std.mem.Allocator`, `styler: *StylerType`.
+- **Reader NOT stored as pointer.** Zig readers wrap stack buffers (`reader(io, &buf)`). A stored reader pointer would point at a stale buffer after the call returns. Instead, each method that needs to read creates a local stack buffer + reader inline:
+  ```zig
+  var buf: [512]u8 = undefined;
+  var in_ = Io.File.stdin().reader(self.io, &buf);
+  const line = try in_.takeDelimiter('\n') orelse return error.ReadEOF;
+  ```
+- **readLine() helper on AsciiRenderer returns `Error!?[]u8`** — uses stored allocator to dupe the slice (Option A). Caller owns the string and must `defer self.allocator.free(line)`. No bare buffer param leaking through method signatures.
+- **Why not caller-provided buffer?** Every prompt in this app is infrequent — maybe twice per command cycle max. The alloc/free overhead is nothing. Returns clean `[]u8` (standard Zig owned string pattern) instead of passing a buffer parameter through the Facade interface.
+- **Facade methods don't leak allocator params.** Allocator belongs in init() once, not repeated on every facade call signature.
 
 #### Vtable lessons proven (commit c4e63f2)
 
