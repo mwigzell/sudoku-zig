@@ -12,6 +12,18 @@ pub const ClearData = struct { row: u4, col: u4 };
 pub const SaveData = void;
 pub const OpenData = struct { path: []const u8 };
 pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open };
+
+/// Canonical display names for every command tag.
+pub const CommandNames = struct {
+    pub const fill: []const u8 = "Fill";
+    pub const clear: []const u8 = "Clear";
+    pub const quit: []const u8 = "Quit";
+    pub const undo: []const u8 = "Undo";
+    pub const redo: []const u8 = "Redo";
+    pub const save: []const u8 = "Save";
+    pub const open: []const u8 = "Open";
+};
+
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
     fill: FillData,
@@ -40,7 +52,7 @@ const coordError: ParseCommandResult = .{
 
 /// Trim → tokenize → re-dispatch through prefix dispatch (backward compat).
 pub fn parse(input_line: []const u8) ParseCommandResult {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit", "Undo", "Redo", "Save", "Open" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit, CommandNames.undo, CommandNames.redo, CommandNames.save, CommandNames.open };
     return parseWithCommands(input_line, &cmds);
 }
 
@@ -302,7 +314,7 @@ test "parse redo command (lower r) → .valid .redo" {
 
 
 test "parseWithCommands: partial prefix resolves to Fill" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit };
     const res = parseWithCommands("f A1 7", &cmds);
     if (res != .valid) return error.TestFailed;
     try std.testing.expectEqualStrings(@tagName(res.valid), "fill");
@@ -310,51 +322,51 @@ test "parseWithCommands: partial prefix resolves to Fill" {
 }
 
 test "parseWithCommands: u resolves to Undo naturally" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Undo", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.undo, CommandNames.quit };
     const res = parseWithCommands("u", &cmds);
     if (res != .valid) return error.TestFailed;
     try std.testing.expectEqualStrings(@tagName(res.valid), "undo");
 }
 
 test "parseWithCommands: r resolves to Redo naturally" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Redo", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.redo, CommandNames.quit };
     const res = parseWithCommands("r", &cmds);
     if (res != .valid) return error.TestFailed;
     try std.testing.expectEqualStrings(@tagName(res.valid), "redo");
 }
 
 test "parseWithCommands: single-char q resolves to Quit" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Undo", "Redo", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.undo, CommandNames.redo, CommandNames.quit };
     const res = parseWithCommands("q", &cmds);
     if (res != .valid) return error.TestFailed;
     try std.testing.expectEqualStrings(@tagName(res.valid), "quit");
 }
 
 test "parseWithCommands: unknown verb returns error_msg" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit };
     const res = parseWithCommands("foobar", &cmds);
     if (res != .error_msg) return error.TestFailed;
 }
 
 test "parseWithCommands: fill missing arguments still errors" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit };
     const res = parseWithCommands("fi A1", &cmds);
     if (res != .error_msg) return error.TestFailed;
 }
 
 
 test "parseWithCommands: ambiguous prefix returns error_msg listing matched commands" {
-    const cmds = [_][]const u8{ "Redo", "Repeat", "Fill", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.redo, "Repeat", CommandNames.fill, CommandNames.quit };
     const res = parseWithCommands("Re", &cmds);
     try std.testing.expect(res == .error_msg);
     // Error message should mention which commands matched (Redo and Repeat)
-    try std.testing.expect(std.mem.indexOf(u8, res.error_msg, "Redo") != null);
+    try std.testing.expect(std.mem.indexOf(u8, res.error_msg, CommandNames.redo) != null);
     try std.testing.expect(std.mem.indexOf(u8, res.error_msg, "Repeat") != null);
 }
 
 
 test "parseWithCommands: Fi A1 3 resolves to Fill (mixed case prefix)" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit };
     const res = parseWithCommands("Fi A1 3", &cmds);
     if (res != .valid) return error.TestFailed;
     try std.testing.expectEqualStrings(@tagName(res.valid), "fill");
@@ -364,7 +376,7 @@ test "parseWithCommands: Fi A1 3 resolves to Fill (mixed case prefix)" {
 }
 
 test "parseWithCommands: FI B2 5 resolves to Fill (all caps prefix)" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit };
     const res = parseWithCommands("FI B2 5", &cmds);
     if (res != .valid) return error.TestFailed;
     try std.testing.expectEqualStrings(@tagName(res.valid), "fill");
@@ -399,14 +411,14 @@ test "open with absolute path → .valid with full path" {
     try std.testing.expectEqualStrings(res.valid.open.path, "/home/user/game.dat");
 }
 test "parseWithCommands: sa resolves to Save with Save in commands" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit", "Undo", "Redo", "Save", "Open" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit, CommandNames.undo, CommandNames.redo, CommandNames.save, CommandNames.open };
     const res = parseWithCommands("sa", &cmds);
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
 }
 
 test "parseWithCommands: op resolves to Open with Open in commands" {
-    const cmds = [_][]const u8{ "Fill", "Clear", "Quit", "Undo", "Redo", "Save", "Open" };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit, CommandNames.undo, CommandNames.redo, CommandNames.save, CommandNames.open };
     const res = parseWithCommands("op my_save", &cmds);
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "open");

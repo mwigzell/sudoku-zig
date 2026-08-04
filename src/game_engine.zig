@@ -1,6 +1,7 @@
 const std = @import("std");
 const board = @import("board.zig");
 const cell = @import("cell.zig");
+const command = @import("command/parse.zig");
 
 // Moved to src/event.zig, re-exported for backward compat
 const event = @import("event.zig");
@@ -20,13 +21,13 @@ pub const AvailableCommands = struct {
     /// Caller owns the buffer; the strings point at comptime literals.
     pub fn getNames(self: AvailableCommands, names: *[7][]const u8) usize {
         var count: usize = 0;
-        if (self.fill) { names[count] = "Fill"; count += 1; }
-        if (self.clear) { names[count] = "Clear"; count += 1; }
-        if (self.quit) { names[count] = "Quit"; count += 1; }
-        if (self.undo) { names[count] = "Undo"; count += 1; }
-        if (self.redo) { names[count] = "Redo"; count += 1; }
-        if (self.save) { names[count] = "Save"; count += 1; }
-        if (self.open) { names[count] = "Open"; count += 1; }
+        if (self.fill) { names[count] = command.CommandNames.fill; count += 1; }
+        if (self.clear) { names[count] = command.CommandNames.clear; count += 1; }
+        if (self.quit) { names[count] = command.CommandNames.quit; count += 1; }
+        if (self.undo) { names[count] = command.CommandNames.undo; count += 1; }
+        if (self.redo) { names[count] = command.CommandNames.redo; count += 1; }
+        if (self.save) { names[count] = command.CommandNames.save; count += 1; }
+        if (self.open) { names[count] = command.CommandNames.open; count += 1; }
         return count;
     }
 };
@@ -337,7 +338,6 @@ fn expectErrorResult(e: Event) !void {
     }
 }
 
-const command = @import("command/parse.zig");
 
 test "GameEngine fill updates cell value" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
