@@ -56,7 +56,6 @@ The command loop no longer reads stdin. It calls structured facade methods and g
 
 1. **`.interface` vtable bridge loses bytes on sequential small writes** — AsciiRenderer calls `self.writer.writeAll()` directly on the raw writer stored from init, not through `.interface`.
 2. **`anytype` fields make structs non-@ptrCastable** — `Make(CT)` uses concrete `*CT`. AsciiRenderer holds `*Io.Writer` (concrete pointer) not `anytype`.
-3. **Make() calls instance methods not free functions** — wrapper does `self.render(view, status_msg)` matching the instance method shape exactly.
 4. **Bare `fn` vs `*const fn`** — all facade fields use `*const fn` pointers (runtime-assignable), proven working in Make generator.
 
 The proposed interface uses function pointers with a concrete error set and convenience dispatchers. Allocator, reader/writer handles are passed to the concrete renderer's `init()` once — never leak through facade method signatures.
@@ -76,6 +75,7 @@ pub const Facade = struct {
     getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!CommandInput
 };
 ```
+
 
 ### Implementation Steps
 
@@ -105,7 +105,6 @@ The Facade struct, shared types and convenience dispatchers remain. Allocator pa
 - **AsciiRenderer:** add `showError(self, msg: []const u8) Error!void` — prints message + "Press Enter" and waits on stored reader (currently `waitAck()`).
 - **Facade:** uncomment showError_fn, add dispatcher.
 - **Make(CT):** add showError_wrapper.
-- **Facade:** uncomment showError_fn, add dispatcher.
 
 
 **- [ ] Step 1e** — Add save dialog method.
@@ -120,7 +119,6 @@ The Facade struct, shared types and convenience dispatchers remain. Allocator pa
 - **AsciiRenderer:** add `openDialog(self) Error!OpenFileResult`. Same prompt pattern as save. Returns owned path string.
 - **Facade:** uncomment openDialog_fn, add dispatcher.
 - **Make(CT):** add openDialog_wrapper.
-- **Facade:** uncomment openDialog_fn, add dispatcher.
 
 
 **- [ ] Step 1g** — Add new-game options method.

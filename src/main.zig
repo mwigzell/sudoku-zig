@@ -15,7 +15,7 @@ pub fn main(init: std.process.Init) anyerror!void {
 
     var s = styler.AnsiStyler{};
     const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
-    var renderer = R.init(&stdout_writer.interface, &s);
+    var renderer = R.init(init.io, &stdout_writer.interface, &s);
 
     var game = try sudoku.Sudoku(R).init(cfg, &renderer, init.io);
     game.run() catch |err| {

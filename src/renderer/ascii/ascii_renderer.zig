@@ -3,6 +3,7 @@ const cell = @import("../../cell.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
+const facade = @import("../../renderer/facade.zig");
 
 pub fn columnHeader() []const u8 {
     return "   A B C │ D E F │ G H I \n";
@@ -24,9 +25,9 @@ pub fn AsciiRenderer(StylerType: type) type {
     return struct {
         writer: *Io.Writer,
         styler: *StylerType,
-
-        pub fn init(writer: *Io.Writer, styler_ptr: *StylerType) @This() {
-            return .{ .writer = writer, .styler = styler_ptr };
+        io: std.Io,
+        pub fn init(io: std.Io, writer: *Io.Writer, styler_ptr: *StylerType) @This() {
+            return .{ .io = io, .writer = writer, .styler = styler_ptr };
         }
 
         pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
@@ -59,6 +60,14 @@ pub fn AsciiRenderer(StylerType: type) type {
             const str = try legend.formatLegend(arena.allocator(), entries);
             _ = try self.writer.print("  Command: {s}\n", .{str});
         }
+        pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
+            try self.writer.print("{s}\n", .{msg});
+            try self.writer.print("Press Enter to continue... ", .{});
+
+            var buf: [512]u8 = undefined;
+            const in_ = Io.File.stdin().reader(self.io, &buf);
+            _ = try in_.takeDelimiter('\n') orelse return facade.Error.ReadEOF;
+        }
     };
 }
 
@@ -70,11 +79,12 @@ const disambiguate = @import("../../command/disambiguate.zig");
 const legend = @import("../../command/legend.zig");
 
 test "showLegend: writes Command: with Fill Clear Quit" {
+    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(&aw.writer, &s);
+    var renderer = AsciiRenderer(styler.PlainStyler).init(io, &aw.writer, &s);
 
     const cmds = game_engine.AvailableCommands{
         .fill = true,
@@ -93,13 +103,14 @@ test "showLegend: writes Command: with Fill Clear Quit" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "(C)lear") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "(Q)uit") != null);
 }
-
 test "render: renders empty board end-to-end" {
+    const io = std.testing.io;
+
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(&aw.writer, &s);
+    var renderer = AsciiRenderer(styler.PlainStyler).init(io, &aw.writer, &s);
 
     const b = board.Board.init();
     try renderer.render(b.asView(), null);
@@ -126,11 +137,13 @@ test "render: renders empty board end-to-end" {
 }
 
 test "render: renders with digits placed" {
+    const io = std.testing.io;
+
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(&aw.writer, &s);
+    var renderer = AsciiRenderer(styler.PlainStyler).init(io, &aw.writer, &s);
 
     const givens_row = [_]u8{
         0, 0, 0, 0, 0, 0, 0, 0, 0,

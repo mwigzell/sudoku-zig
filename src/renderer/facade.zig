@@ -1,10 +1,10 @@
 const std = @import("std");
-const board = @import("board.zig");
-const cell = @import("cell.zig");
+const board = @import("../board.zig");
+const cell = @import("../cell.zig");
 
 // Re-export for facade users; defined in game_engine.zig
-const AvailableCommands = @import("game_engine.zig").AvailableCommands;
-const config = @import("config.zig");
+const AvailableCommands = @import("../game_engine.zig").AvailableCommands;
+const config = @import("../config.zig");
 
 /// How to start a new game. Returned by saveDialog/openDialog/getCommandInput when needed.
 pub const NewGameChoice = union(enum) {
@@ -49,8 +49,7 @@ pub const Facade = struct {
     // TODO(issue 29 step 1c): add showLegend_fn
     showLegend_fn:      *const fn (*anyopaque, AvailableCommands) Error!void,
 
-    // TODO(issue 29 step 1d): add showError_fn
-    //showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
+    showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
 
     // TODO(issue 29 step 1e): add saveDialog_fn
     //saveDialog_fn:      *const fn (*anyopaque, []const u8) Error!SaveFileResult,
@@ -73,7 +72,9 @@ pub const Facade = struct {
         return self.showLegend_fn(self.context, commands);
     }
 
-    // TODO(issue 29 step 1): add dispatcher methods as facade fields are uncommented
+    pub fn showError(self: *Facade, msg: []const u8) Error!void {
+        return self.showError_fn(self.context, msg);
+    }
 };
 
 /// Auto-wraps any concrete renderer type into a Facade.
@@ -88,7 +89,10 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.showLegend(commands);
         }
-
+        pub fn showError_wrapper(ctx: *anyopaque, msg: []const u8) Error!void {
+            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
+            return self.showError(msg);
+        }
         // TODO(issue 29 step 1e): add saveDialog_wrapper
         // TODO(issue 29 step 1f): add openDialog_wrapper
         // TODO(issue 29 step 1g): add newGameOptions_wrapper
@@ -100,8 +104,8 @@ pub fn Make(comptime CT: type) type {
                 .context = @ptrCast(@alignCast(instance)),
                 .render_fn = render_wrapper,
                 .showLegend_fn = showLegend_wrapper,
+                .showError_fn = showError_wrapper,
             };
         }
     };
-}
 }
