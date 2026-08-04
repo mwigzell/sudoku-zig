@@ -93,19 +93,20 @@ The Facade struct, shared types and convenience dispatchers remain. Allocator pa
 - **Make(CT):** generates `render_wrapper` that does @ptrCast -> *CT -> self.render(). make() wires context + render_fn.
 
 
-**- [ ] Step 1c** — Add legend display method.
+**- [x] Step 1c** — Add legend display method. DONE (commit 320a048).
 
 - **AsciiRenderer:** add `showLegend(self, commands: AvailableCommands) Error!void` — writes legend line to stored writer (currently `printLegend(out)` in sudoku.zig).
 - **Facade:** uncomment showLegend_fn, add dispatcher `showLegend(commands)`.
 - **Make(CT):** add showLegend_wrapper.
 
 
-**- [ ] Step 1d** — Add error modal method.
+**- [x] Step 1d** — Add error modal method. DONE.
 
-- **AsciiRenderer:** add `showError(self, msg: []const u8) Error!void` — prints message + "Press Enter" and waits on stored reader (currently `waitAck()`).
-- **Facade:** uncomment showError_fn, add dispatcher.
-- **Make(CT):** add showError_wrapper.
 
+- **AsciiRenderer:** `showError(self, msg: []const u8) Error!void` prints message + "Press Enter to continue..." and waits on stdin reader (replaces `waitAck()`). Required adding `io: std.Io` field to AsciiRenderer struct so it can open stdin.
+- **Facade:** `showError_fn` field active, `showError()` dispatcher routes through it.
+- **Make(CT):** generates `showError_wrapper`.
+- **Breaking change:** `AsciiRenderer.init()` signature changed from `init(writer, styler)` to `init(io, writer, styler)`. Updated main.zig and all existing tests.
 
 **- [ ] Step 1e** — Add save dialog method.
 
@@ -152,7 +153,7 @@ Once all 7 methods are on AsciiRenderer and wired through Make():
 All 7 facade methods implemented on MockRenderer for testing widget-based flows. Wired through Make(MockRenderer). Update ~10 test sites in sudoku.zig to create facades before init.
 
 
-**- [x] Step 4** — Baseline regression + coverage (pre-step checkpoint).
+**- [ ] Step 4** — Baseline regression + coverage (post-step checkpoint).
 
 All 182+ existing tests pass. zig build run produces visually identical output. This checkpoint will be re-verified after Steps 1h–3 complete.
 
