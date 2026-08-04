@@ -47,11 +47,52 @@ pub fn AsciiRenderer(StylerType: type) type {
 
             try self.writer.writeAll(bottomBorder());
         }
+
+        pub fn showLegend(self: *@This(), commands: game_engine.AvailableCommands) anyerror!void {
+            var names: [7][]const u8 = undefined;
+            const count = commands.getNames(&names);
+
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+
+            const entries = try disambiguate.getMinimumPrefixes(arena.allocator(), names[0..count]);
+            const str = try legend.formatLegend(arena.allocator(), entries);
+            _ = try self.writer.print("  Command: {s}\n", .{str});
+        }
     };
 }
 
 // ---------------------------------------------------------------------------
 // Tests — go through the real renderer path, not a mock or wrapper
+
+const game_engine = @import("../../game_engine.zig");
+const disambiguate = @import("../../command/disambiguate.zig");
+const legend = @import("../../command/legend.zig");
+
+test "showLegend: writes Command: with Fill Clear Quit" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    var renderer = AsciiRenderer(styler.PlainStyler).init(&aw.writer, &s);
+
+    const cmds = game_engine.AvailableCommands{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .save = false,
+        .open = false,
+    };
+    try renderer.showLegend(cmds);
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "  Command:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(F)ill") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(C)lear") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(Q)uit") != null);
+}
 
 test "render: renders empty board end-to-end" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);

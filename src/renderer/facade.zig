@@ -47,7 +47,7 @@ pub const Facade = struct {
     render_fn:          *const fn (*anyopaque, board.Board.BoardView, ?[]const u8) Error!void,
 
     // TODO(issue 29 step 1c): add showLegend_fn
-    //showLegend_fn:      *const fn (*anyopaque, AvailableCommands) Error!void,
+    showLegend_fn:      *const fn (*anyopaque, AvailableCommands) Error!void,
 
     // TODO(issue 29 step 1d): add showError_fn
     //showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
@@ -69,6 +69,10 @@ pub const Facade = struct {
         return self.render_fn(self.context, view, status_msg);
     }
 
+    pub fn showLegend(self: *Facade, commands: AvailableCommands) Error!void {
+        return self.showLegend_fn(self.context, commands);
+    }
+
     // TODO(issue 29 step 1): add dispatcher methods as facade fields are uncommented
 };
 
@@ -80,9 +84,11 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.render(view, status_msg);
         }
+        pub fn showLegend_wrapper(ctx: *anyopaque, commands: AvailableCommands) Error!void {
+            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
+            return self.showLegend(commands);
+        }
 
-        // TODO(issue 29 step 1c): add showLegend_wrapper
-        // TODO(issue 29 step 1d): add showError_wrapper
         // TODO(issue 29 step 1e): add saveDialog_wrapper
         // TODO(issue 29 step 1f): add openDialog_wrapper
         // TODO(issue 29 step 1g): add newGameOptions_wrapper
@@ -93,6 +99,7 @@ pub fn Make(comptime CT: type) type {
             return Facade{
                 .context = @ptrCast(@alignCast(instance)),
                 .render_fn = render_wrapper,
+                .showLegend_fn = showLegend_wrapper,
             };
         }
     };

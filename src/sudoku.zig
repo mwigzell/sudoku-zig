@@ -45,35 +45,8 @@ pub fn Sudoku(comptime R: type) type {
             const avail = self.engine.getAvailableCommands();
 
             var names: [7][]const u8 = undefined;
-            var count: usize = 0;
-            if (avail.fill) {
-                names[count] = "Fill";
-                count += 1;
-            }
-            if (avail.clear) {
-                names[count] = "Clear";
-                count += 1;
-            }
-            if (avail.quit) {
-                names[count] = "Quit";
-                count += 1;
-            }
-            if (avail.undo) {
-                names[count] = "Undo";
-                count += 1;
-            }
-            if (avail.redo) {
-                names[count] = "Redo";
-                count += 1;
-            }
-            if (avail.save) {
-                names[count] = "Save";
-                count += 1;
-            }
-            if (avail.open) {
-                names[count] = "Open";
-                count += 1;
-            }
+            const count = avail.getNames(&names);
+
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
             defer arena.deinit();
 
@@ -136,36 +109,9 @@ pub fn Sudoku(comptime R: type) type {
             const tokens = std.mem.trim(u8, line, &std.ascii.whitespace);
             // Build available command names for context-aware prefix dispatch
             const avail = self.engine.getAvailableCommands();
+
             var names: [7][]const u8 = undefined;
-            var count: usize = 0;
-            if (avail.fill) {
-                names[count] = "Fill";
-                count += 1;
-            }
-            if (avail.clear) {
-                names[count] = "Clear";
-                count += 1;
-            }
-            if (avail.quit) {
-                names[count] = "Quit";
-                count += 1;
-            }
-            if (avail.undo) {
-                names[count] = "Undo";
-                count += 1;
-            }
-            if (avail.redo) {
-                names[count] = "Redo";
-                count += 1;
-            }
-            if (avail.save) {
-                names[count] = "Save";
-                count += 1;
-            }
-            if (avail.open) {
-                names[count] = "Open";
-                count += 1;
-            }
+            const count = avail.getNames(&names);
 
             const result = command.parseWithCommands(tokens, names[0..count]);
 

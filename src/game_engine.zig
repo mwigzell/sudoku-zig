@@ -14,6 +14,21 @@ pub const AvailableCommands = struct {
     redo: bool,
     save: bool,
     open: bool,
+
+
+    /// Fill `names` with the active command labels and return the count.
+    /// Caller owns the buffer; the strings point at comptime literals.
+    pub fn getNames(self: AvailableCommands, names: *[7][]const u8) usize {
+        var count: usize = 0;
+        if (self.fill) { names[count] = "Fill"; count += 1; }
+        if (self.clear) { names[count] = "Clear"; count += 1; }
+        if (self.quit) { names[count] = "Quit"; count += 1; }
+        if (self.undo) { names[count] = "Undo"; count += 1; }
+        if (self.redo) { names[count] = "Redo"; count += 1; }
+        if (self.save) { names[count] = "Save"; count += 1; }
+        if (self.open) { names[count] = "Open"; count += 1; }
+        return count;
+    }
 };
 // Step 3 — binary save file format
 pub const SaveFileMagic = [_]u8{ 'S', 'U', 'D', '0' };
