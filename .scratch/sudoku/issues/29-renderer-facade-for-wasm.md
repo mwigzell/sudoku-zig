@@ -108,9 +108,11 @@ The Facade struct, shared types and convenience dispatchers remain. Allocator pa
 - **Make(CT):** generates `showError_wrapper`.
 - **Breaking change:** `AsciiRenderer.init()` signature changed from `init(writer, styler)` to `init(io, writer, styler)`. Updated main.zig and all existing tests.
 
-**- [ ] Step 1e** — Add save dialog method.
+**- [x] Step 1e** — Add save dialog method.
 
 - **AsciiRenderer:** add `saveDialog(self, default_name: []const u8) Error!SaveFileResult` — prompts for filename via reader, returns owned string. Remembers last-used filename to skip repeated prompts (currently inline in promptForAndRunCommand).
+
+- **AsciiRenderer:** `saveDialog(self, default_name: []const u8) Error!SaveFileResult` prompts stdin for filename, returns allocator-owned string. Empty input → uses default.
 - **Facade:** uncomment saveDialog_fn, add dispatcher.
 - **Make(CT):** add wrapper.
 
@@ -168,6 +170,6 @@ All 182+ existing tests pass. zig build run produces visually identical output. 
 
 - [x] Facade struct exists in `src/renderer/facade.zig` with shared types (`NewGameChoice`, `SaveFileResult`, `CommandInput`, etc.) and `Make(CT)` generator.
 - [x] render() method wired: AsciiRenderer + Facade dispatcher + Make wrapper tested
-- [ ] remaining 6 methods added to AsciiRenderer, Facade dispatchers uncommented, Make wrappers generated
+- [ ] remaining 5 methods added to AsciiRenderer, Facade dispatchers uncommented, Make wrappers generated
 ## Blocked by
 (none)

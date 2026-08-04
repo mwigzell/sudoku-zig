@@ -51,8 +51,7 @@ pub const Facade = struct {
 
     showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
 
-    // TODO(issue 29 step 1e): add saveDialog_fn
-    //saveDialog_fn:      *const fn (*anyopaque, []const u8) Error!SaveFileResult,
+    saveDialog_fn:      *const fn (*anyopaque, []const u8) Error!SaveFileResult,
 
     // TODO(issue 29 step 1f): add openDialog_fn
     //openDialog_fn:      *const fn (*anyopaque) Error!OpenFileResult,
@@ -75,6 +74,10 @@ pub const Facade = struct {
     pub fn showError(self: *Facade, msg: []const u8) Error!void {
         return self.showError_fn(self.context, msg);
     }
+
+    pub fn saveDialog(self: *Facade, default_name: []const u8) Error!SaveFileResult {
+        return self.saveDialog_fn(self.context, default_name);
+    }
 };
 
 /// Auto-wraps any concrete renderer type into a Facade.
@@ -93,7 +96,10 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.showError(msg);
         }
-        // TODO(issue 29 step 1e): add saveDialog_wrapper
+        pub fn saveDialog_wrapper(ctx: *anyopaque, default_name: []const u8) Error!SaveFileResult {
+            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
+            return self.saveDialog(default_name);
+        }
         // TODO(issue 29 step 1f): add openDialog_wrapper
         // TODO(issue 29 step 1g): add newGameOptions_wrapper
         // TODO(issue 29 step 1h): add getCommandInput_wrapper
@@ -105,6 +111,7 @@ pub fn Make(comptime CT: type) type {
                 .render_fn = render_wrapper,
                 .showLegend_fn = showLegend_wrapper,
                 .showError_fn = showError_wrapper,
+                .saveDialog_fn = saveDialog_wrapper,
             };
         }
     };
