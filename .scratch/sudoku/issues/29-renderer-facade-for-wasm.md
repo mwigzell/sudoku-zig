@@ -36,71 +36,130 @@ The command loop no longer reads stdin. It calls structured facade methods and g
 - inline save filename prompt inside `promptForAndRunCommand`
 - `printLegend()` — writes directly to stdout writer
 
-### Design Decision: Option B (Vtable Facade with Auto-Wrapping Generator)
-The interface is a **vtable struct** with function pointers and `*anyopaque` context — not duck typing.
-
-| Reason | Detail |
-|---|---|
-| Concrete error set | Uses `Error` instead of `anyerror` (Zig 0.17 requires explicit error-set unions at every call site with anyerror) |
-| No call_stdcall | Default Zig calling convention throughout; call_stdcall is x86-specific and wrong for WASM target |
-| Auto-wrapping generator | `Make(comptime CT)` auto-generates a vtable from any concrete renderer type — no manual wiring per renderer |
 
 #### Risks (tracked)
 
-1. **Bare `fn` fields make struct comptime-only:** RESOLVED. The Facade struct fields used bare `fn` which made the entire struct comptime-only (bare `fn` is a first-class function type, not a pointer). Fix: all 7 fn pointer fields use `*const fn`. Also fixed missing comma after `context: *anyopaque`. No other workaround needed.
+1. **Bare `fn` fields make struct comptime-only:** RESOLVED. All facade fn pointer fields use `*const fn`.
 2. **~10 test sites in sudoku.zig** need facade creation before `init()` calls — compiler errors will be explicit on breakage.
-3. **AsciiRenderer currently only holds a writer** — the 6 new facet methods (saveDialog, showError, etc.) eventually need reader access too. Threading that through is deferred to Step 3 when sudoku.zig wires them up for real.
+3. **AsciiRenderer currently only holds a writer** — solved by passing reader/Io handle + Allocator in `init()`.
 
+#### Vtable lessons proven (commit c4e63f2)
 
-The proposed interface uses function pointers with a concrete error set and convenience dispatchers:
+1. **`.interface` vtable bridge loses bytes on sequential small writes** — AsciiRenderer calls `self.writer.writeAll()` directly on the raw writer stored from init, not through `.interface`.
+2. **`anytype` fields make structs non-@ptrCastable** — `Make(CT)` uses concrete `*CT`. AsciiRenderer holds `*Io.Writer` (concrete pointer) not `anytype`.
+3. **Make() calls instance methods not free functions** — wrapper does `self.render(view, status_msg)` matching the instance method shape exactly.
+4. **Bare `fn` vs `*const fn`** — all facade fields use `*const fn` pointers (runtime-assignable), proven working in Make generator.
+
+The proposed interface uses function pointers with a concrete error set and convenience dispatchers. Allocator, reader/writer handles are passed to the concrete renderer's `init()` once — never leak through facade method signatures.
+
 
 ```zig
 pub const Error = error{OutOfMemory, ReadEOF, UnexpectedEOF, WriteFault, FileNotFound, AccessDenied};
 
 pub const Facade = struct {
     context: *anyopaque,
-    render_fn:         *const fn (*anyopaque, BoardView, ?[]const u8) Error!void,
-    showLegend_fn:     *const fn (*anyopaque, AvailableCommands) Error!void,
-    showError_fn:      *const fn (*anyopaque, []const u8) Error!void,
-    saveDialog_fn:     *const fn (*anyopaque, []const u8, std.mem.Allocator) Error!SaveFileResult,
-    openDialog_fn:     *const fn (*anyopaque, std.mem.Allocator) Error!OpenFileResult,
-    newGameOptions_fn: *const fn (*anyopaque, std.mem.Allocator) Error!NewGameChoice,
-    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands, std.mem.Allocator) Error!CommandInput
+    render_fn:          *const fn (*anyopaque, BoardView, ?[]const u8) Error!void,
+    showLegend_fn:      *const fn (*anyopaque, AvailableCommands) Error!void,
+    showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
+    saveDialog_fn:      *const fn (*anyopaque, []const u8) Error!SaveFileResult,
+    openDialog_fn:      *const fn (*anyopaque) Error!OpenFileResult,
+    newGameOptions_fn:  *const fn (*anyopaque) Error!NewGameChoice,
+    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!CommandInput
 };
 ```
 
-
 ### Implementation Steps
 
-**- [x] Step 1** — Define `Facade` + `Make(comptime CT)` generator in `src/renderer/facade.zig`.
-Replace the `Renderer(comptime RT)` stub. The file contains: `Error`, the shared types, the `Facade` struct with 7 function-pointer fields plus convenience dispatchers, and `Make(comptime CT)` auto-wrapping generator. Compile check — no test implementations yet.
+**Per-step pattern:** For each method 1b–1h we do three things together — add the instance method to AsciiRenderer, uncomment the corresponding field + dispatcher in Facade, and add the wrapper in `Make(CT)`. No separate files. The methods grow on AsciiRenderer itself.
 
-**- [ ] Step 2** — Adapt AsciiRenderer to implement the facade.
 
-Add all 7 facade methods to `AsciiRenderer`. The `render()` method is updated to accept optional `status_msg`. The other 6 methods (showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput) are wired as stubs returning safe defaults so existing tests don't break. Use the `Make` generator. Update `main.zig` to create a facade from AsciiRenderer and pass it through.
+**- [x] Step 1a** — Rename `RenderError` to `Error` in facade.zig. DONE (commit c4e63f2).
 
-**- [ ] Step 3** — Adapt MockRenderer with canned response support.
+The Facade struct, shared types and convenience dispatchers remain. Allocator params removed from facade method signatures.
 
-Add canned response fields/indices for save, open, newGame, and command methods so tests can drive widget-based flows. All 7 facade methods implemented; use the `Make` generator. Update ~10 test sites in `sudoku.zig` to create facades before `init()` calls.
+**- [x] Step 1b** — Board render method + vtable wiring. DONE (commit c4e63f2).
 
-**- [ ] Step 4** — Rewrite `sudoku.zig` command loop through `Facade`.
-Remove `comptime R` parameter from `Sudoku()`. Change `renderer: *R` field to `*Facade`. Call sites stay visually the same (via convenience dispatchers). All I/O paths previously reading stdin directly now route through facade methods.
+- **AsciiRenderer:** `render(self, view: BoardView, status_msg: ?[]const u8) anyerror!void`. Writes column header, borders, styled rows via stored writer. No `.interface` — direct `self.writer.writeAll()` calls.
+- **Facade:** `render_fn` field active, `render()` dispatcher routes through it.
+- **Make(CT):** generates `render_wrapper` that does @ptrCast -> *CT -> self.render(). make() wires context + render_fn.
 
-**- [ ] Step 5** — Regression + coverage.
-All 179+ existing tests pass. `zig build run` produces visually identical output. `zig build cov` shows no regression.
+
+**- [ ] Step 1c** — Add legend display method.
+
+- **AsciiRenderer:** add `showLegend(self, commands: AvailableCommands) Error!void` — writes legend line to stored writer (currently `printLegend(out)` in sudoku.zig).
+- **Facade:** uncomment showLegend_fn, add dispatcher `showLegend(commands)`.
+- **Make(CT):** add showLegend_wrapper.
+
+
+**- [ ] Step 1d** — Add error modal method.
+
+- **AsciiRenderer:** add `showError(self, msg: []const u8) Error!void` — prints message + "Press Enter" and waits on stored reader (currently `waitAck()`).
+- **Facade:** uncomment showError_fn, add dispatcher.
+- **Make(CT):** add showError_wrapper.
+- **Facade:** uncomment showError_fn, add dispatcher.
+
+
+**- [ ] Step 1e** — Add save dialog method.
+
+- **AsciiRenderer:** add `saveDialog(self, default_name: []const u8) Error!SaveFileResult` — prompts for filename via reader, returns owned string. Remembers last-used filename to skip repeated prompts (currently inline in promptForAndRunCommand).
+- **Facade:** uncomment saveDialog_fn, add dispatcher.
+- **Make(CT):** add wrapper.
+
+
+**- [ ] Step 1f** — Add open dialog method.
+
+- **AsciiRenderer:** add `openDialog(self) Error!OpenFileResult`. Same prompt pattern as save. Returns owned path string.
+- **Facade:** uncomment openDialog_fn, add dispatcher.
+- **Make(CT):** add openDialog_wrapper.
+- **Facade:** uncomment openDialog_fn, add dispatcher.
+
+
+**- [ ] Step 1g** — Add new-game options method.
+
+- **AsciiRenderer:** add `newGameOptions(self) Error!NewGameChoice`. Menu keys 1-5, reads choice from stored reader, returns structured union.
+- **Facade:** uncomment newGameOptions_fn, add dispatcher.
+- **Make(CT):** add newGameOptions_wrapper.
+
+
+**- [ ] Step 1h** — Add command input method.
+- **AsciiRenderer:** add `getCommandInput(self, avail: AvailableCommands) Error!CommandInput`. Replaces current readLine + parsing. Reads text from stdin, parses against available commands, returns structured union (Fill/Clear/Quit/Undo/Redo/Save/Open/NewGame).
+- **Facade:** uncomment getCommandInput_fn, add dispatcher.
+- **Make(CT):** add getCommandInput_wrapper.
+
+
+**- [ ] Step 2** — Wire Facade into sudoku.zig.
+
+Once all 7 methods are on AsciiRenderer and wired through Make():
+1. In `main.zig`: create renderer, wrap through Make(AsciiRenderer).make(), pass Facade to Sudoku init instead of raw pointer.
+2. Remove `comptime R` parameter from `Sudoku(comptime R: type)`. Store *Facade not *R.
+3. Replace every use of out/in_ in sudoku.zig methods with Facade calls:
+   - `out.print("> ")` + `readLine(in_)` -> facade.getCommandInput(avail)
+   - `printLegend(out)` -> facade.showLegend(avail)
+   - `waitAck(out, in_, msg)` -> facade.showError(msg)
+
+4. run() no longer creates stdout_writer or stdin_reader — it just loops calling Facade methods.
+
+
+**- [ ] Step 3** — Adapt MockRenderer with canned responses.
+
+All 7 facade methods implemented on MockRenderer for testing widget-based flows. Wired through Make(MockRenderer). Update ~10 test sites in sudoku.zig to create facades before init.
+
+
+**- [x] Step 4** — Baseline regression + coverage (pre-step checkpoint).
+
+All 182+ existing tests pass. zig build run produces visually identical output. This checkpoint will be re-verified after Steps 1h–3 complete.
+
+
+
 ### What this does NOT cover
 
 - WASM browser renderer implementation (issue 03) — that consumes the facade later
 - TuiRenderer with ncurses cursor control (issue 10) — separate rendering concern
 - Polishing the UX per-palette (themes, icons) out of scope
-
 ## Acceptance criteria
 
-- [x] Facade interface exists in `src/renderer/facade.zig` defining all seven methods plus shared types (`NewGameChoice`, `SaveFileResult`, etc.)
-- [ ] AsciiRenderer implements the facade with identical terminal behaviour to today
-- [ ] `sudoku.zig` no longer reads stdin directly — all I/O flows through the facade
-- [ ] MockRenderer supports canned responses returning structured types for testing widget-based flows
-- [ ] All 179+ existing tests pass
-- [ ] `zig build run` output is visually identical to pre-refactor
+- [x] Facade struct exists in `src/renderer/facade.zig` with shared types (`NewGameChoice`, `SaveFileResult`, `CommandInput`, etc.) and `Make(CT)` generator.
+- [x] render() method wired: AsciiRenderer + Facade dispatcher + Make wrapper tested
+- [ ] remaining 6 methods added to AsciiRenderer, Facade dispatchers uncommented, Make wrappers generated
 ## Blocked by
 (none)
