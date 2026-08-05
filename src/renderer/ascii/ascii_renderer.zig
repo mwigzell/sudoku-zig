@@ -4,6 +4,7 @@ const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
 const facade = @import("../../renderer/facade.zig");
+const input_source = @import("../../input_source.zig");
 
 
 /// Terminal renderer for the 9x9 Sudoku board.
@@ -43,10 +44,11 @@ pub fn AsciiRenderer(StylerType: type) type {
         writer: *Io.Writer,
         styler: *StylerType,
         io: std.Io,
+        inputSource: input_source.ReaderSource,
 
-        /// Construct with Io handle (stdin), writer (all output), and styler pointer.
-        pub fn init(allocator: std.mem.Allocator, io: std.Io, writer: *Io.Writer, styler_ptr: *StylerType) @This() {
-            return .{ .allocator = allocator, .io = io, .writer = writer, .styler = styler_ptr };
+        /// Construct with Io handle (stdin), writer (all output), styler pointer, and input source.
+        pub fn init(allocator: std.mem.Allocator, io: std.Io, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
+            return .{ .allocator = allocator, .io = io, .writer = writer, .styler = styler_ptr, .inputSource = inputSource };
         }
 
         /// Draw the full board: column header, borders, styled rows via formatRow,
@@ -84,35 +86,39 @@ pub fn AsciiRenderer(StylerType: type) type {
             _ = try self.writer.print("  Command: {s}\n", .{str});
         }
 
-        /// Implement Facade showError_fn. Print the error message, then
-        /// "Press Enter to continue..." and wait on stdin. Replaces old waitAck().
-        pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-            try self.writer.print("{s}\n", .{msg});
-            try self.writer.print("Press Enter to continue... ", .{});
+        /// Read one line from the injected input source.
+        /// Caller owns returned string and must free it.
+        pub fn readLine(self: *@This()) facade.Error![]u8 {
+            const raw = self.inputSource.readline(self.io) catch return facade.Error.UnexpectedEOF;
+            // Caller needs an owned copy of the trimmed line
+            const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
+            defer self.allocator.free(raw);
+            return self.allocator.dupe(u8, trimmed) catch return facade.Error.OutOfMemory;
+        }
 
-            var buf: [512]u8 = undefined;
-            const in_ = Io.File.stdin().reader(self.io, &buf);
-            _ = try in_.takeDelimiter('\n') orelse return facade.Error.ReadEOF;
+        /// Implement Facade showError_fn. Print the error message, then
+        /// "Press Enter to continue..." and wait on stdin (via injected input source).
+        pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
+            self.writer.print("{s}\n", .{msg}) catch return facade.Error.WriteFault;
+            self.writer.print("Press Enter to continue... ", .{}) catch return facade.Error.WriteFault;
+
+            const line = try self.readLine();
+            defer self.allocator.free(line);
         }
 
         /// Implement Facade saveDialog_fn. Prompt for filename with default, return owned string.
         pub fn saveDialog(self: *@This(), default_name: []const u8) facade.Error!facade.SaveFileResult {
-            try self.writer.print("Save to [{s}]: ", .{default_name});
+            self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.WriteFault;
 
-            var buf: [512]u8 = undefined;
-            const in_ = Io.File.stdin().reader(self.io, &buf);
-            const input = try in_.takeDelimiter('\n') orelse return facade.Error.ReadEOF;
-
-            const trimmed = std.mem.trim(u8, input, &std.ascii.whitespace);
-            if (trimmed.len == 0) {
-                // User pressed Enter — use default filename
+            const line = self.readLine() catch return facade.Error.UnexpectedEOF;
+            if (line.len == 0) {
+                defer self.allocator.free(line);
                 const owned = self.allocator.dupe(u8, default_name) catch return facade.Error.OutOfMemory;
                 return .{ .FileName = owned };
             }
-
-            const owned = self.allocator.dupe(u8, trimmed) catch return facade.Error.OutOfMemory;
-            return .{ .FileName = owned };
-        }
+            // Caller owns `line` — no free needed when returned directly.
+            return .{ .FileName = line };
+            }
     };
 }
 
@@ -129,7 +135,7 @@ test "showLegend: writes Command: with Fill Clear Quit" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s);
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource{} });
 
     const cmds = game_engine.AvailableCommands{
         .fill = true,
@@ -155,7 +161,7 @@ test "render: renders empty board end-to-end" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s);
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource{} });
 
     const b = board.Board.init();
     try renderer.render(b.asView(), null);
@@ -188,7 +194,7 @@ test "render: renders with digits placed" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s);
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource{} });
 
     const givens_row = [_]u8{
         0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -209,3 +215,119 @@ test "render: renders with digits placed" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "3") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "9") != null);
 }
+
+
+
+test "showError: reads from MockSource and does not panic" {
+    const io = std.testing.io;
+
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    // MockSource provides a canned "Enter" press so showError doesn't hang.
+    const responses = [_][]const u8{ "\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    try renderer.showError("something went wrong");
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "something went wrong") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);
+}
+
+test "saveDialog: empty input returns default filename" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.saveDialog("test.sud");
+
+    switch (result) {
+        .FileName => |name| {
+            defer std.testing.allocator.free(name);
+            try std.testing.expectEqualStrings("test.sud", name);
+        },
+        .Cancelled => {
+            try std.testing.expect(false);
+        }
+    }
+
+    const contents = aw.writer.buffered();
+    try std.testing.expectEqualStrings("Save to [test.sud]: ", contents);
+}
+
+test "saveDialog: custom input returns user filename" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "my_puzzle.sud\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.saveDialog("default.sud");
+
+    switch (result) {
+        .FileName => |name| {
+            defer std.testing.allocator.free(name);
+            try std.testing.expectEqualStrings("my_puzzle.sud", name);
+        },
+        .Cancelled => {
+            try std.testing.expect(false);
+        }
+    }
+}
+
+test "saveDialog: ReadEOF returns UnexpectedEOF" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &[0][]const u8{}),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = renderer.saveDialog("test.sud");
+    try std.testing.expectError(facade.Error.UnexpectedEOF, result);
+}
+

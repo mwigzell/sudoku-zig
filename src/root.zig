@@ -23,6 +23,7 @@ const redo_command = @import("command/redo.zig");
 const quit_command = @import("command/quit.zig");
 const save_command = @import("command/save.zig");
 const open_command = @import("command/open.zig");
+const input_source = @import("input_source.zig");
 
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively

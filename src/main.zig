@@ -4,6 +4,7 @@ const config_module = @import("config.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 const logger = @import("logger.zig");
 const styler = @import("renderer/ascii/styler.zig");
+const input_source = @import("input_source.zig");
 
 pub fn main(init: std.process.Init) anyerror!void {
     const log = logger.Logger(.sudoku);
@@ -15,7 +16,7 @@ pub fn main(init: std.process.Init) anyerror!void {
 
     var s = styler.AnsiStyler{};
     const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
-    var renderer = R.init(std.heap.page_allocator, init.io, &stdout_writer.interface, &s);
+    var renderer = R.init(std.heap.page_allocator, init.io, &stdout_writer.interface, &s, .{ .stdin = input_source.StdinSource{} });
 
     var game = try sudoku.Sudoku(R).init(cfg, &renderer, init.io);
     game.run() catch |err| {
