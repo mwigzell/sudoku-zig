@@ -39,10 +39,18 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
 
+    // Optional -Dtest-filter to filter tests at compile time (avoids server-mode CLI issues)
+    const filter_opt = b.option([]const u8, "test-filter", "Filter tests by name");
+    const filters: []const []const u8 = if (filter_opt) |f|
+        b.dupeStrings(&[_][]const u8{ f })
+    else &[_][]const u8{};
+
+
     const check = b.addTest(.{
         .name = "test",
         .root_module = test_mod,
-        .use_llvm = true
+        .use_llvm = true,
+        .filters = filters,
     });
 
     // Run the compiled test binary via addRunArtifact (server-mode IPC).

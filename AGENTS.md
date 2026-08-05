@@ -79,7 +79,9 @@ zig build run
 ## run test
 zig build test
 or
-zig test src/root.zig
+zig test src/root.zig -lc
 - don't pass --summary it does nothing
+- for full console output (not server-mode) use the `zig test` form above
+- to filter a single test: `zig build test -Dtest-filter='exact test name'` (hyphen, not underscore)
 ## zig version
 zig -version
