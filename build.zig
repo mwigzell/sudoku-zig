@@ -59,6 +59,13 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
 
+	// IDE "Debug Test" (vscode-zig) → zig-out/bin/debug-unit-tests
+	const install_debug = b.addInstallArtifact(check, .{
+		.dest_sub_path = "debug-unit-tests",
+	});
+	const debug_test_step = b.step("debug-test", "Build test binary for IDE debugging");
+	debug_test_step.dependOn(&install_debug.step);
+
 	// code coverage
 	const cov_step = b.step("cov", "Run tests under kcov");
 	const kcov = b.addSystemCommand(&.{

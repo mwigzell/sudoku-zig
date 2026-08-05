@@ -5,5 +5,10 @@
     "build",
     "test",
     "-Dtest-filter=${filter}"
+  ],
+  "zig.debugTestArgs": [
+    "build",
+    "debug-test",
+    "-Dtest-filter=${filter}"
   ]
 }

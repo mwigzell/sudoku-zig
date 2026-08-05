@@ -110,18 +110,24 @@ The Facade struct, shared types and convenience dispatchers remain. Allocator pa
 
 **- [x] Step 1e** — Add save dialog method.
 
-- **AsciiRenderer:** add `saveDialog(self, default_name: []const u8) Error!SaveFileResult` — prompts for filename via reader, returns owned string. Remembers last-used filename to skip repeated prompts (currently inline in promptForAndRunCommand).
+- **Dialog contract:** must return exactly one of three outcomes: `FileName` (owned path string), `Cancelled`, or an `Error`. The terminal implementation maps GUI file-save dialog behaviour onto stdin handling.
+- **AsciiRenderer:** `saveDialog(self, default_name: []const u8) facade.Error!facade.SaveFileResult`. Mapping:
+  - user types a name + Enter → `.FileName` with that string
+  - empty input (just Enter) → `.FileName` with `default_name` (no cancel button; accepts prefilled default)
+  - EOF / read error → `.Cancelled`
+- **Facade:** saveDialog_fn field active, dispatcher routes through it.
+- **Make(CT):** generates saveDialog_wrapper.
 
-- **AsciiRenderer:** `saveDialog(self, default_name: []const u8) Error!SaveFileResult` prompts stdin for filename, returns allocator-owned string. Empty input → uses default.
-- **Facade:** uncomment saveDialog_fn, add dispatcher.
-- **Make(CT):** add wrapper.
 
+**- [x] Step 1f** — Add open dialog method.
 
-**- [ ] Step 1f** — Add open dialog method.
-
-- **AsciiRenderer:** add `openDialog(self) Error!OpenFileResult`. Same prompt pattern as save. Returns owned path string.
-- **Facade:** uncomment openDialog_fn, add dispatcher.
-- **Make(CT):** add openDialog_wrapper.
+- **Dialog contract:** must return exactly one of three outcomes: `FileName` (owned path string), `Cancelled`, or an `Error`. The terminal implementation maps GUI file-picker behaviour onto stdin handling.
+- **AsciiRenderer:** `openDialog(self) facade.Error!facade.OpenFileResult`. Mapping:
+  - user types a path + Enter → `.FileName` with that path
+  - empty input (just Enter) → `.Cancelled`
+  - EOF / read error → `.Cancelled`
+- **Facade:** openDialog_fn field active, dispatcher routes through it.
+- **Make(CT):** adds openDialog_wrapper.
 
 
 **- [ ] Step 1g** — Add new-game options method.

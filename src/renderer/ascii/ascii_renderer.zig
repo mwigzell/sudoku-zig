@@ -110,7 +110,8 @@ pub fn AsciiRenderer(StylerType: type) type {
         pub fn saveDialog(self: *@This(), default_name: []const u8) facade.Error!facade.SaveFileResult {
             self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.WriteFault;
 
-            const line = self.readLine() catch return facade.Error.UnexpectedEOF;
+            const line = self.readLine() catch return .Cancelled;
+
             if (line.len == 0) {
                 defer self.allocator.free(line);
                 const owned = self.allocator.dupe(u8, default_name) catch return facade.Error.OutOfMemory;
@@ -119,6 +120,21 @@ pub fn AsciiRenderer(StylerType: type) type {
             // Caller owns `line` — no free needed when returned directly.
             return .{ .FileName = line };
             }
+
+        /// Implement Facade openDialog_fn. Prompt for file path, return owned string.
+        pub fn openDialog(self: *@This()) facade.Error!facade.OpenFileResult {
+            self.writer.print("Open file: ", .{}) catch return facade.Error.WriteFault;
+
+            const line = self.readLine() catch return .Cancelled;
+
+            if (line.len == 0) {
+                defer self.allocator.free(line);
+                return .Cancelled;
+            }
+            // Caller owns `line` — no free needed when returned directly.
+            return .{ .FileName = line };
+        }
+
     };
 }
 
@@ -310,7 +326,7 @@ test "saveDialog: custom input returns user filename" {
     }
 }
 
-test "saveDialog: ReadEOF returns UnexpectedEOF" {
+test "saveDialog: EOF returns Cancelled" {
     const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
@@ -327,7 +343,103 @@ test "saveDialog: ReadEOF returns UnexpectedEOF" {
         source,
     );
 
-    const result = renderer.saveDialog("test.sud");
-    try std.testing.expectError(facade.Error.UnexpectedEOF, result);
+    const result = try renderer.saveDialog("test.sud");
+    switch (result) {
+        .Cancelled => try std.testing.expect(true),
+        .FileName => |name| {
+            defer std.testing.allocator.free(name);
+            try std.testing.expect(false);
+        }
+    }
 }
+
+test "openDialog: user enters a file path" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "my_save.sud\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.openDialog();
+
+    switch (result) {
+        .FileName => |path| {
+            defer std.testing.allocator.free(path);
+            try std.testing.expectEqualStrings("my_save.sud", path);
+        },
+        .Cancelled => {
+            try std.testing.expect(false);
+        }
+    }
+
+    const contents = aw.writer.buffered();
+    try std.testing.expectEqualStrings("Open file: ", contents);
+}
+
+test "openDialog: EOF returns Cancelled" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &[0][]const u8{}),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.openDialog();
+    switch (result) {
+        .Cancelled => try std.testing.expect(true),
+        .FileName => |path| {
+            defer std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        }
+    }
+}
+
+test "openDialog: empty input returns Cancelled" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.openDialog();
+    switch (result) {
+        .Cancelled => try std.testing.expect(true),
+        .FileName => |path| {
+            defer std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        }
+    }
+}
+
 
