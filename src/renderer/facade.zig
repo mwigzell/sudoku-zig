@@ -4,6 +4,7 @@ pub const NewGameChoice = command_parse.NewGameChoice;
 pub const NewGameChoiceResult = command_parse.NewGameChoiceResult;
 pub const SaveFileResult = command_parse.SaveFileResult;
 pub const OpenFileResult = command_parse.OpenFileResult;
+pub const ParseCommandResult = command_parse.ParseCommandResult;
 const board = @import("../board.zig");
 
 // Re-export for facade users; defined in game_engine.zig
@@ -28,8 +29,7 @@ pub const Facade = struct {
 
     newGameOptions_fn: *const fn (*anyopaque) Error!NewGameChoiceResult,
 
-    // TODO(issue 29 step 1h): add getCommandInput_fn
-    //getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!ParseCommandResult
+    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!ParseCommandResult,
 
     pub fn render(self: *Facade, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
         return self.render_fn(self.context, view, status_msg);
@@ -54,7 +54,12 @@ pub const Facade = struct {
     pub fn newGameOptions(self: *Facade) Error!NewGameChoiceResult {
         return self.newGameOptions_fn(self.context);
     }
+
+    pub fn getCommandInput(self: *Facade, commands: AvailableCommands) Error!ParseCommandResult {
+        return self.getCommandInput_fn(self.context, commands);
+    }
 };
+
 
 /// Auto-wraps any concrete renderer type into a Facade.
 pub fn Make(comptime CT: type) type {
@@ -84,6 +89,11 @@ pub fn Make(comptime CT: type) type {
             return self.newGameOptions();
         }
 
+        pub fn getCommandInput_wrapper(ctx: *anyopaque, cmds: AvailableCommands) Error!ParseCommandResult {
+            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
+            return self.getCommandInput(cmds);
+        }
+
         /// Build a Facade pointing to the concrete renderer instance.
         pub fn make(instance: *CT) Facade {
             return Facade{
@@ -94,7 +104,8 @@ pub fn Make(comptime CT: type) type {
                 .saveDialog_fn = saveDialog_wrapper,
                 .openDialog_fn = openDialog_wrapper,
                 .newGameOptions_fn = newGameOptions_wrapper,
-            };
+                .getCommandInput_fn = getCommandInput_wrapper,
+                };
         }
     };
 }

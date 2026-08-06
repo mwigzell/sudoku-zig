@@ -341,7 +341,7 @@ test "legend pipeline: fresh engine includes Save and Open in legend" {
     }
 
 
-    if (avail.new_game) {
+    if (avail.new) {
         names[count] = "New";
         count += 1;
     }

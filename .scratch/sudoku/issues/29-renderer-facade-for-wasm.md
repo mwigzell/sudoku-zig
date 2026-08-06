@@ -143,7 +143,7 @@ The Facade struct, shared types and convenience dispatchers remain. Allocator pa
 - **Make(CT):** add `newGameOptions_wrapper`, wire `newGameOptions_fn` into `make()`.
 
 
-**- [ ] Step 1h** — Add command input method.
+**- [x] Step 1h** — Add command input method.
 
 - **No CommandInput type.** Dropped. The facade methods return game domain types, not parse intermediaries.
 - **AsciiRenderer:** `getCommandInput(self, avail: AvailableCommands) facade.Error!facade.ParseCommandResult`. Reads line -> trim -> calls `command.parseWithCommands()` with available command names. Returns the `ParseCommandResult` directly (no wrapper type).
@@ -188,6 +188,6 @@ All 182+ existing tests pass. zig build run produces visually identical output. 
 
 - [x] Facade struct in `src/renderer/facade.zig` with shared types (`NewGameChoice`, `SaveFileResult`) and `Make(CT)` generator.
 - Design decision (2026-08-14): `CommandInput` dropped from facade.zig. `getCommandInput` returns `ParseCommandResult` directly, wiring through existing `command.parseWithCommands()`.
-- [x] Steps 1b-1g wired: AsciiRenderer + Facade dispatchers + Make wrappers tested
+- [x] Steps 1b-1h wired: AsciiRenderer + Facade dispatchers + Make wrappers tested
 ## Blocked by
 (none)

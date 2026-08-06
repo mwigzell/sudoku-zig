@@ -15,7 +15,7 @@ pub const AvailableCommands = struct {
     redo: bool,
     save: bool,
     open: bool,
-    new_game: bool,
+    new: bool,
 
     /// Fill `names` with the active command labels and return the count.
     /// Caller owns the buffer; the strings point at comptime literals.
@@ -28,7 +28,7 @@ pub const AvailableCommands = struct {
         if (self.redo) { names[count] = command.CommandNames.redo; count += 1; }
         if (self.save) { names[count] = command.CommandNames.save; count += 1; }
         if (self.open) { names[count] = command.CommandNames.open; count += 1; }
-        if (self.new_game) { names[count] = command.CommandNames.new; count += 1; }
+        if (self.new) { names[count] = command.CommandNames.new; count += 1; }
         return count;
     }
 };
@@ -159,7 +159,7 @@ pub const GameEngine = struct {
             .redo = self.history.pointer < self.history.entries.items.len,
             .save = true,
             .open = true,
-            .new_game = true,
+            .new = true,
         };
     }
 

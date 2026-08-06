@@ -1,5 +1,6 @@
 const board = @import("../../board.zig");
 const cell = @import("../../cell.zig");
+const command_parse = @import("../../command/parse.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
@@ -157,6 +158,23 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
         }
 
+        /// Implement Facade getCommandInput_fn. Reads a line, parses it.
+        pub fn getCommandInput(self: *@This(), avail: game_engine.AvailableCommands) facade.Error!facade.ParseCommandResult {
+            self.writer.writeAll("> ") catch return facade.Error.WriteFault;
+
+            const raw = self.inputSource.readline(self.io)
+                catch return .{ .valid = command_parse.Command.quit };
+            defer self.allocator.free(raw);
+
+            var names: [8][]const u8 = undefined;
+            const count = avail.getNames(&names);
+            if (count == 0) {
+                return .{ .error_msg = "no commands available" };
+            }
+
+            return command_parse.parseWithCommands(raw, names[0..count]);
+        }
+
     };
 }
 
@@ -183,7 +201,7 @@ test "showLegend: writes Command: with Fill Clear Quit" {
         .redo = false,
         .save = false,
         .open = false,
-        .new_game = true,
+        .new = true,
     };
     try renderer.showLegend(cmds);
 
@@ -496,3 +514,89 @@ test "newGameOptions: '1' returns Choice Generated" {
 }
 
 
+test "getCommandInput: fill A1 5 returns valid Fill" {
+    const io = std.testing.io;
+
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "fill A1 5\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const avail = game_engine.AvailableCommands{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .save = true,
+        .open = true,
+        .new = true,
+    };
+
+    const result = try renderer.getCommandInput(avail);
+
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "fill");
+            try std.testing.expectEqual(@as(u4, 0), cmd.fill.row);
+            try std.testing.expectEqual(@as(u4, 0), cmd.fill.col);
+            try std.testing.expectEqual(cell.CellValue.five, cmd.fill.digit);
+        },
+        .error_msg => |msg| {
+            try std.testing.expect(std.ascii.eqlIgnoreCase(msg, "")); // should not be an error
+        },
+    }
+}
+
+test "getCommandInput: EOF returns Quit" {
+    const io = std.testing.io;
+
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    // Empty mock responses list triggers ReadEOF
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &[0][]const u8{}),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const avail = game_engine.AvailableCommands{
+        .fill = true,
+        .clear = false,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .save = false,
+        .open = false,
+        .new = false,
+    };
+
+    const result = try renderer.getCommandInput(avail);
+
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "quit");
+        },
+        .error_msg => {
+            try std.testing.expect(false); // should map to quit, not an error
+        },
+    }
+}
