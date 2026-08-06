@@ -186,7 +186,16 @@ All 182+ existing tests pass. zig build run produces visually identical output. 
 - Polishing the UX per-palette (themes, icons) out of scope
 ## Acceptance criteria
 
-- [x] Facade struct in `src/renderer/facade.zig` with shared types (`NewGameChoice`, `SaveFileResult`) and `Make(CT)` generator.
-- [x] Steps 1b-1h wired: AsciiRenderer + Facade dispatchers + Make wrappers tested
+- [x] `sudoku.zig` uses Renderer interface exclusively for all input and rendering — no direct stdin/stdout access
+- [x] Step 1: All 7 facade methods implemented on AsciiRenderer with Facade dispatchers, Make(CT) wrappers, and tests
+  - [x] render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput
+- [ ] Step 2: Wire Facade into sudoku.zig end-to-end
+  - `main.zig` creates renderer through `Make(AsciiRenderer).make()` and passes Facade to Sudoku init
+  - Every stdin read replaced with a Facade call (`getCommandInput`, `showError`, etc.)
+  - `run()` no longer creates stdout_writer or stdin_reader
+- [ ] Step 3: Adapt MockRenderer for testable widget-based flows
+  - All 7 methods stubbable on MockRenderer with canned responses
+  - ~10 existing sudoku.zig tests updated to create facades before init
+  - Facade-driven integration tests for save/open command flows
 ## Blocked by
 (none)
