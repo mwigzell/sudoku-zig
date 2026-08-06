@@ -48,11 +48,11 @@ test "formatLegend: five non-colliding commands → each prefix is 1 char" {
     const allocator = std.testing.allocator;
 
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.CommandNames.fill, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.clear, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.undo, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.redo, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.quit, .prefix_len = 1 },
+        .{ .command = parse.getName(.fill), .prefix_len = 1 },
+        .{ .command = parse.getName(.clear), .prefix_len = 1 },
+        .{ .command = parse.getName(.undo), .prefix_len = 1 },
+        .{ .command = parse.getName(.redo), .prefix_len = 1 },
+        .{ .command = parse.getName(.quit), .prefix_len = 1 },
     };
 
     const result = try formatLegend(allocator, entries);
@@ -68,7 +68,7 @@ test "formatLegend: hump-seed collision Save vs SaveAs" {
     const allocator = std.testing.allocator;
 
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.CommandNames.save, .prefix_len = 1 },
+        .{ .command = parse.getName(.save), .prefix_len = 1 },
         .{ .command = "SaveAs", .prefix_len = 2 },
     };
 
@@ -93,7 +93,7 @@ test "formatLegend: single command returns parenthesized name" {
     const allocator = std.testing.allocator;
 
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.CommandNames.quit, .prefix_len = 1 },
+        .{ .command = parse.getName(.quit), .prefix_len = 1 },
     };
 
     const result = try formatLegend(allocator, entries);
@@ -107,7 +107,7 @@ test "formatLegend: prefix_len equals command length → whole word in parens" {
 
     // When a collision pushes prefix_len to the full command length
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.CommandNames.fill, .prefix_len = 4 },
+        .{ .command = parse.getName(.fill), .prefix_len = 4 },
     };
 
     const result = try formatLegend(allocator, entries);
@@ -121,11 +121,11 @@ test "formatLegend: redo alone on R vs competing → dynamic prefix shift" {
 
     // When Redo is alone on 'R': prefix_len=1 → (R)edo
     const solo_entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.CommandNames.fill, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.clear, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.undo, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.redo, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.quit, .prefix_len = 1 },
+        .{ .command = parse.getName(.fill), .prefix_len = 1 },
+        .{ .command = parse.getName(.clear), .prefix_len = 1 },
+        .{ .command = parse.getName(.undo), .prefix_len = 1 },
+        .{ .command = parse.getName(.redo), .prefix_len = 1 },
+        .{ .command = parse.getName(.quit), .prefix_len = 1 },
     };
 
     {
@@ -138,11 +138,11 @@ test "formatLegend: redo alone on R vs competing → dynamic prefix shift" {
 
     // When Recents joins: Redo needs prefix_len=2 → (RE)do
     const competing_entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.CommandNames.fill, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.clear, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.undo, .prefix_len = 1 },
-        .{ .command = parse.CommandNames.redo, .prefix_len = 2 }, // needs RE now
-        .{ .command = parse.CommandNames.quit, .prefix_len = 1 },
+        .{ .command = parse.getName(.fill), .prefix_len = 1 },
+        .{ .command = parse.getName(.clear), .prefix_len = 1 },
+        .{ .command = parse.getName(.undo), .prefix_len = 1 },
+        .{ .command = parse.getName(.redo), .prefix_len = 2 }, // needs RE now
+        .{ .command = parse.getName(.quit), .prefix_len = 1 },
     };
 
     {

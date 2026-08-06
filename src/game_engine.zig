@@ -21,14 +21,14 @@ pub const AvailableCommands = struct {
     /// Caller owns the buffer; the strings point at comptime literals.
     pub fn getNames(self: AvailableCommands, names: *[8][]const u8) usize {
         var count: usize = 0;
-        if (self.fill) { names[count] = command.CommandNames.fill; count += 1; }
-        if (self.clear) { names[count] = command.CommandNames.clear; count += 1; }
-        if (self.quit) { names[count] = command.CommandNames.quit; count += 1; }
-        if (self.undo) { names[count] = command.CommandNames.undo; count += 1; }
-        if (self.redo) { names[count] = command.CommandNames.redo; count += 1; }
-        if (self.save) { names[count] = command.CommandNames.save; count += 1; }
-        if (self.open) { names[count] = command.CommandNames.open; count += 1; }
-        if (self.new) { names[count] = command.CommandNames.new; count += 1; }
+        if (self.fill) { names[count] = command.getName(.fill); count += 1; }
+        if (self.clear) { names[count] = command.getName(.clear); count += 1; }
+        if (self.quit) { names[count] = command.getName(.quit); count += 1; }
+        if (self.undo) { names[count] = command.getName(.undo); count += 1; }
+        if (self.redo) { names[count] = command.getName(.redo); count += 1; }
+        if (self.save) { names[count] = command.getName(.save); count += 1; }
+        if (self.open) { names[count] = command.getName(.open); count += 1; }
+        if (self.new) { names[count] = command.getName(.new); count += 1; }
         return count;
     }
 };
