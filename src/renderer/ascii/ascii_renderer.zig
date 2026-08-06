@@ -75,7 +75,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Implement Facade showLegend_fn. Build command legend from AvailableCommands,
         /// disambiguate prefixes, print "Command: ...". Arena allocates temp strings.
         pub fn showLegend(self: *@This(), commands: game_engine.AvailableCommands) anyerror!void {
-            var names: [7][]const u8 = undefined;
+            var names: [8][]const u8 = undefined;
             const count = commands.getNames(&names);
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -135,6 +135,28 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
+        /// Implement Facade newGameOptions_fn. Returns NewGameChoiceResult.
+        pub fn newGameOptions(self: *@This()) facade.Error!facade.NewGameChoiceResult {
+            self.writer.print("New Game:\n", .{}) catch return facade.Error.WriteFault;
+            self.writer.print("1(Generate) 2(Open File) 3(URL) 4(Paste) 5(Cancel): ", .{}) catch return facade.Error.WriteFault;
+
+            const line = self.readLine() catch return .Cancelled;
+            defer self.allocator.free(line);
+
+            if (line.len == 0) {
+                return .Cancelled;
+            }
+
+            switch (line[0]) {
+                '1' => return .{ .Choice = .Generated },
+                '2' => return .{ .Choice = .FromFile },
+                '3' => return .{ .Choice = .FromUrl },
+                '4' => return .{ .Choice = .PasteString },
+                '5' => return .Cancelled,
+                else => return .Cancelled,
+            }
+        }
+
     };
 }
 
@@ -161,6 +183,7 @@ test "showLegend: writes Command: with Fill Clear Quit" {
         .redo = false,
         .save = false,
         .open = false,
+        .new_game = true,
     };
     try renderer.showLegend(cmds);
 
@@ -437,6 +460,36 @@ test "openDialog: empty input returns Cancelled" {
         .Cancelled => try std.testing.expect(true),
         .FileName => |path| {
             defer std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        }
+    }
+}
+
+test "newGameOptions: '1' returns Choice Generated" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "1\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.newGameOptions();
+
+    switch (result) {
+        .Choice => |choice| {
+            try std.testing.expectEqual(facade.NewGameChoice.Generated, choice);
+        },
+        .Cancelled => {
             try std.testing.expect(false);
         }
     }

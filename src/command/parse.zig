@@ -1,6 +1,7 @@
 
 const std = @import("std");
 const cell_module = @import("../cell.zig");
+const config_module = @import("../config.zig");
 const disambiguate = @import("disambiguate.zig");
 
 // ---------------------------------------------------------------------------
@@ -10,8 +11,9 @@ const disambiguate = @import("disambiguate.zig");
 pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
 pub const ClearData = struct { row: u4, col: u4 };
 pub const SaveData = void;
+
 pub const OpenData = struct { path: []const u8 };
-pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new };
 
 /// Canonical display names for every command tag.
 pub const CommandNames = struct {
@@ -22,6 +24,7 @@ pub const CommandNames = struct {
     pub const redo: []const u8 = "Redo";
     pub const save: []const u8 = "Save";
     pub const open: []const u8 = "Open";
+    pub const new: []const u8 = "New";
 };
 
 /// Command a player can issue to the game.
@@ -33,6 +36,7 @@ pub const Command = union(CommandTag) {
     redo: void,
     save: SaveData,
     open: OpenData,
+    new: void,
 };
 pub const ParseResultTag = enum { valid, error_msg };
 
@@ -42,8 +46,28 @@ pub const ParseCommandResult = union(ParseResultTag) {
     error_msg: []const u8,
 };
 
-// ---------------------------------------------------------------------------
-// Parser
+/// How to start a new game — dialog return value.
+pub const NewGameChoice = enum {
+    Generated,
+    FromFile,
+    FromUrl,
+    PasteString,
+};
+
+/// Result of a new-game choice dialog. Wraps the positive selection with cancellation.
+pub const NewGameChoiceResult = union(enum) {
+    Choice: NewGameChoice,
+    Cancelled,
+};
+
+/// Result of a save dialog interaction.
+pub const SaveFileResult = union(enum) {
+    FileName: []u8,  // Owned allocated filename to save to
+    Cancelled,
+};
+
+/// Result of an open dialog interaction.
+pub const OpenFileResult = SaveFileResult;
 // ---------------------------------------------------------------------------
 
 const coordError: ParseCommandResult = .{
@@ -52,7 +76,7 @@ const coordError: ParseCommandResult = .{
 
 /// Trim → tokenize → re-dispatch through prefix dispatch (backward compat).
 pub fn parse(input_line: []const u8) ParseCommandResult {
-    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit, CommandNames.undo, CommandNames.redo, CommandNames.save, CommandNames.open };
+    const cmds = [_][]const u8{ CommandNames.fill, CommandNames.clear, CommandNames.quit, CommandNames.undo, CommandNames.redo, CommandNames.save, CommandNames.open, CommandNames.new };
     return parseWithCommands(input_line, &cmds);
 }
 
@@ -90,6 +114,11 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
         const path = it.next() orelse return .{.error_msg = "open requires file name"};
         return .{.valid = Command{.open = OpenData{.path = path}}};
     }
+    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{.valid = Command.new};
+
+
+
+
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{cmd_name}) catch unreachable;
@@ -424,3 +453,4 @@ test "parseWithCommands: op resolves to Open with Open in commands" {
     try std.testing.expectEqualStrings(@tagName(res.valid), "open");
     try std.testing.expectEqualStrings(res.valid.open.path, "my_save");
 }
+

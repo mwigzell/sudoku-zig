@@ -6,6 +6,8 @@ ready-for-human
 - Depth: medium refactor — changes the Renderer contract from "draw-only" to "widget facade".
 - Impacts `renderer/facade.zig`, `sudoku.zig` (command loop), ascii & mock renderers, and any future WASM renderer.
 
+
+
 ## Parent
 `.scratch/sudoku/prd.md`
 
@@ -71,8 +73,8 @@ pub const Facade = struct {
     showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
     saveDialog_fn:      *const fn (*anyopaque, []const u8) Error!SaveFileResult,
     openDialog_fn:      *const fn (*anyopaque) Error!OpenFileResult,
-    newGameOptions_fn:  *const fn (*anyopaque) Error!NewGameChoice,
-    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!CommandInput
+    newGameChoice_fn:   *const fn (*anyopaque) Error!NewGameChoiceResult,
+    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!ParseCommandResult
 };
 ```
 
@@ -83,6 +85,7 @@ pub const Facade = struct {
 
 
 **- [x] Step 1a** — Rename `RenderError` to `Error` in facade.zig. DONE (commit c4e63f2).
+
 
 The Facade struct, shared types and convenience dispatchers remain. Allocator params removed from facade method signatures.
 
@@ -129,19 +132,28 @@ The Facade struct, shared types and convenience dispatchers remain. Allocator pa
 - **Facade:** openDialog_fn field active, dispatcher routes through it.
 - **Make(CT):** adds openDialog_wrapper.
 
+**- [x] Step 1g** — Add `new` command to parser + stub `exec()` case. DONE this session (2026-08-14).
 
-**- [ ] Step 1g** — Add new-game options method.
+- **NewGameChoiceResult:** `union(enum) { Choice: NewGameChoice, Cancelled }` — mirrors the pattern of `SaveFileResult` / `OpenFileResult`. Keeps cancellation out of the actual game-starting choices.
 
-- **AsciiRenderer:** add `newGameOptions(self) Error!NewGameChoice`. Menu keys 1-5, reads choice from stored reader, returns structured union.
-- **Facade:** uncomment newGameOptions_fn, add dispatcher.
-- **Make(CT):** add newGameOptions_wrapper.
+- **Facade:** change `newGameOptions_fn` to return `Error!NewGameChoiceResult`, add dispatcher `newGameOptions()`.
+- **AsciiRenderer:** implement `newGameOptions(self) facade.Error!facade.NewGameChoiceResult` — terminal renderer decides how to present choices.
+
+- Notes: `FromUrl` and `PasteString` are reserved for WASM renderer (issue 03). Terminal never returns them.
+- **Make(CT):** add `newGameOptions_wrapper`, wire `newGameOptions_fn` into `make()`.
 
 
 **- [ ] Step 1h** — Add command input method.
-- **AsciiRenderer:** add `getCommandInput(self, avail: AvailableCommands) Error!CommandInput`. Replaces current readLine + parsing. Reads text from stdin, parses against available commands, returns structured union (Fill/Clear/Quit/Undo/Redo/Save/Open/NewGame).
-- **Facade:** uncomment getCommandInput_fn, add dispatcher.
-- **Make(CT):** add getCommandInput_wrapper.
 
+- **No CommandInput type.** Dropped. The facade methods return game domain types, not parse intermediaries.
+- **AsciiRenderer:** `getCommandInput(self, avail: AvailableCommands) facade.Error!facade.ParseCommandResult`. Reads line -> trim -> calls `command.parseWithCommands()` with available command names. Returns the `ParseCommandResult` directly (no wrapper type).
+
+  - valid command/parsed result -> returned directly
+  - empty line       -> parse error ("empty input") — the loop shows it as an error and loops again
+  - read EOF/error   -> treated as "quit" command (maps to `.Quit`)
+- This moves prompt + parse logic into AsciiRenderer. Step 2 then replaces `out.print("> ") + readLine(in_)` with `facade.getCommandInput(avail)` in sudoku.zig.
+- **Facade:** uncomment `getCommandInput_fn`, add dispatcher.
+- **Make(CT):** add `getCommandInput_wrapper` + wire into `make()`.
 
 **- [ ] Step 2** — Wire Facade into sudoku.zig.
 
@@ -174,8 +186,8 @@ All 182+ existing tests pass. zig build run produces visually identical output. 
 - Polishing the UX per-palette (themes, icons) out of scope
 ## Acceptance criteria
 
-- [x] Facade struct exists in `src/renderer/facade.zig` with shared types (`NewGameChoice`, `SaveFileResult`, `CommandInput`, etc.) and `Make(CT)` generator.
-- [x] render() method wired: AsciiRenderer + Facade dispatcher + Make wrapper tested
-- [ ] remaining 5 methods added to AsciiRenderer, Facade dispatchers uncommented, Make wrappers generated
+- [x] Facade struct in `src/renderer/facade.zig` with shared types (`NewGameChoice`, `SaveFileResult`) and `Make(CT)` generator.
+- Design decision (2026-08-14): `CommandInput` dropped from facade.zig. `getCommandInput` returns `ParseCommandResult` directly, wiring through existing `command.parseWithCommands()`.
+- [x] Steps 1b-1g wired: AsciiRenderer + Facade dispatchers + Make wrappers tested
 ## Blocked by
 (none)

@@ -44,7 +44,7 @@ pub fn Sudoku(comptime R: type) type {
         fn printLegend(self: *@This(), writer: anytype) !void {
             const avail = self.engine.getAvailableCommands();
 
-            var names: [7][]const u8 = undefined;
+            var names: [8][]const u8 = undefined;
             const count = avail.getNames(&names);
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -110,7 +110,7 @@ pub fn Sudoku(comptime R: type) type {
             // Build available command names for context-aware prefix dispatch
             const avail = self.engine.getAvailableCommands();
 
-            var names: [7][]const u8 = undefined;
+            var names: [8][]const u8 = undefined;
             const count = avail.getNames(&names);
 
             const result = command.parseWithCommands(tokens, names[0..count]);
@@ -317,7 +317,7 @@ test "legend pipeline: fresh engine includes Save and Open in legend" {
     const avail = engine.getAvailableCommands();
 
     // Build command name list including save/open
-    var names: [7][]const u8 = undefined;
+    var names: [8][]const u8 = undefined;
     var count: usize = 0;
     if (avail.fill) {
         names[count] = "Fill";
@@ -339,6 +339,13 @@ test "legend pipeline: fresh engine includes Save and Open in legend" {
         names[count] = "Open";
         count += 1;
     }
+
+
+    if (avail.new_game) {
+        names[count] = "New";
+        count += 1;
+    }
+
 
     const entries = try disambiguate.getMinimumPrefixes(std.testing.allocator, names[0..count]);
     defer std.testing.allocator.free(entries);

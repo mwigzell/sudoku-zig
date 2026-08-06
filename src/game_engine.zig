@@ -15,11 +15,11 @@ pub const AvailableCommands = struct {
     redo: bool,
     save: bool,
     open: bool,
-
+    new_game: bool,
 
     /// Fill `names` with the active command labels and return the count.
     /// Caller owns the buffer; the strings point at comptime literals.
-    pub fn getNames(self: AvailableCommands, names: *[7][]const u8) usize {
+    pub fn getNames(self: AvailableCommands, names: *[8][]const u8) usize {
         var count: usize = 0;
         if (self.fill) { names[count] = command.CommandNames.fill; count += 1; }
         if (self.clear) { names[count] = command.CommandNames.clear; count += 1; }
@@ -28,6 +28,7 @@ pub const AvailableCommands = struct {
         if (self.redo) { names[count] = command.CommandNames.redo; count += 1; }
         if (self.save) { names[count] = command.CommandNames.save; count += 1; }
         if (self.open) { names[count] = command.CommandNames.open; count += 1; }
+        if (self.new_game) { names[count] = command.CommandNames.new; count += 1; }
         return count;
     }
 };
@@ -158,6 +159,7 @@ pub const GameEngine = struct {
             .redo = self.history.pointer < self.history.entries.items.len,
             .save = true,
             .open = true,
+            .new_game = true,
         };
     }
 
@@ -298,6 +300,15 @@ pub const GameEngine = struct {
             },
             .open => |data| {
                 return open_command.execute(self, data.path);
+            },
+            .new => {
+                return Event{
+                    .ok = .{
+                        .board_view = self.board.asView(),
+                        .msg = "New game not yet implemented",
+                        .is_quit = false,
+                    },
+                };
             }
         }
     }

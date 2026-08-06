@@ -1,5 +1,7 @@
 const puzzle_gen = @import("puzzle_gen.zig");
 
+pub const Difficulty = puzzle_gen.Difficulty;
+
 /// Renderer back-ends available to the bootstrap layer.
 pub const RendererKind = enum { ascii_ansi };
 
