@@ -187,7 +187,6 @@ All 182+ existing tests pass. zig build run produces visually identical output. 
 ## Acceptance criteria
 
 - [x] Facade struct in `src/renderer/facade.zig` with shared types (`NewGameChoice`, `SaveFileResult`) and `Make(CT)` generator.
-- Design decision (2026-08-14): `CommandInput` dropped from facade.zig. `getCommandInput` returns `ParseCommandResult` directly, wiring through existing `command.parseWithCommands()`.
 - [x] Steps 1b-1h wired: AsciiRenderer + Facade dispatchers + Make wrappers tested
 ## Blocked by
 (none)
