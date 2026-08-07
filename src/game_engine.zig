@@ -1276,7 +1276,7 @@ test "exec save: delegates to save handler via command/save.zig" {
     }));
 
     // exec() must NOT panic on .save — it should delegate to command handler
-    const result = engine.exec(command.Command{ .save = {} }) catch return error.SkipZigTest;
+    const result = engine.exec(command.Command{ .save = command.SaveData{ .path = engine.filename.? } }) catch return error.SkipZigTest;
 
     // Should return ok with message and is_quit = false
     switch (result) {

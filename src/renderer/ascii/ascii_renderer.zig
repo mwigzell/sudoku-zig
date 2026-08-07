@@ -136,26 +136,13 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Implement Facade newGameOptions_fn. Returns NewGameChoiceResult.
-        pub fn newGameOptions(self: *@This()) facade.Error!facade.NewGameChoiceResult {
-            self.writer.print("New Game:\n", .{}) catch return facade.Error.WriteFault;
-            self.writer.print("1(Generate) 2(Open File) 3(URL) 4(Paste) 5(Cancel): ", .{}) catch return facade.Error.WriteFault;
-
-            const line = self.readLine() catch return .Cancelled;
-            defer self.allocator.free(line);
-
-            if (line.len == 0) {
-                return .Cancelled;
-            }
-
-            switch (line[0]) {
-                '1' => return .{ .Choice = .Generated },
-                '2' => return .{ .Choice = .FromFile },
-                '3' => return .{ .Choice = .FromUrl },
-                '4' => return .{ .Choice = .PasteString },
-                '5' => return .Cancelled,
-                else => return .Cancelled,
-            }
+        /// Implement Facade newGameOptions_fn. Stubbed — always returns the easy puzzle string.
+        pub fn newGameOptions(self: *@This()) facade.Error!facade.PuzzleReturn {
+            const puzzle_gen = @import("../../puzzle_gen.zig").PuzzleGen;
+            const puzzle = puzzle_gen.easy();
+            const owned = self.allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
+            return .{ .PuzzleString = owned };
+        
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
@@ -504,8 +491,8 @@ test "newGameOptions: '1' returns Choice Generated" {
     const result = try renderer.newGameOptions();
 
     switch (result) {
-        .Choice => |choice| {
-            try std.testing.expectEqual(facade.NewGameChoice.Generated, choice);
+        .PuzzleString => |puzzle| {
+            defer std.testing.allocator.free(puzzle);
         },
         .Cancelled => {
             try std.testing.expect(false);

@@ -26,6 +26,7 @@ The **Renderer** should be a **widget facade** — rendering output and gatherin
 | save dialog | stdin prompt for filename | `<input type="file">` or text input |
 | open dialog | stdin path read | native file picker |
 | new-game choices | menu keys 1/2/3/4/5 | radio buttons + text area |
+| getCommandInput | readLine → parse → Command | structured input → parse → Command |
 
 The command loop no longer reads stdin. It calls structured facade methods and gets structured data back — never raw strings from a prompt.
 
@@ -35,167 +36,175 @@ The command loop no longer reads stdin. It calls structured facade methods and g
 
 - `readLine()` — raw stdin for commands
 - `waitAck()` — press Enter after errors
-- inline save filename prompt inside `promptForAndRunCommand`
+- inline save-as filename prompt inside `promptForAndRunCommand` (legacy conflation of save/save_as)
 - `printLegend()` — writes directly to stdout writer
 
-
-#### Risks (tracked)
-
 #### I/O Ownership Decisions (confirmed with user)
-
 - **AsciiRenderer stores:** `io: std.Io`, `writer: *Io.Writer`, `allocator: std.mem.Allocator`, `styler: *StylerType`.
-- **Reader NOT stored as pointer.** Zig readers wrap stack buffers (`reader(io, &buf)`). A stored reader pointer would point at a stale buffer after the call returns. Instead, each method that needs to read creates a local stack buffer + reader inline:
-  ```zig
-  var buf: [512]u8 = undefined;
-  var in_ = Io.File.stdin().reader(self.io, &buf);
-  const line = try in_.takeDelimiter('\n') orelse return error.ReadEOF;
-  ```
-- **readLine() helper on AsciiRenderer returns `Error!?[]u8`** — uses stored allocator to dupe the slice (Option A). Caller owns the string and must `defer self.allocator.free(line)`. No bare buffer param leaking through method signatures.
-- **Why not caller-provided buffer?** Every prompt in this app is infrequent — maybe twice per command cycle max. The alloc/free overhead is nothing. Returns clean `[]u8` (standard Zig owned string pattern) instead of passing a buffer parameter through the Facade interface.
-- **Facade methods don't leak allocator params.** Allocator belongs in init() once, not repeated on every facade call signature.
+- **Reader NOT stored as pointer.** Zig readers wrap stack buffers. Each read method creates a local stack buffer + reader inline.
+- **readLine() helper returns `Error!?[]u8`.** Uses allocator to dupe; caller owns the string via `defer allocator.free(line)`.
 
-#### Vtable lessons proven (commit c4e63f2)
+**Source of truth:** `src/renderer/facade.zig` (Facade struct, Make(CT), dispatchers) and `src/command/parse.zig` (Command, ParseCommandResult, SaveData, OpenData).
 
-1. **`.interface` vtable bridge loses bytes on sequential small writes** — AsciiRenderer calls `self.writer.writeAll()` directly on the raw writer stored from init, not through `.interface`.
-2. **`anytype` fields make structs non-@ptrCastable** — `Make(CT)` uses concrete `*CT`. AsciiRenderer holds `*Io.Writer` (concrete pointer) not `anytype`.
-4. **Bare `fn` vs `*const fn`** — all facade fields use `*const fn` pointers (runtime-assignable), proven working in Make generator.
+### The run() cycle
 
-The proposed interface uses function pointers with a concrete error set and convenience dispatchers. Allocator, reader/writer handles are passed to the concrete renderer's `init()` once — never leak through facade method signatures.
+The command loop lives in `sudoku.zig` `run()`. After this issue completes, it becomes a clean Facade-only loop:
 
-
-```zig
-pub const Error = error{OutOfMemory, ReadEOF, UnexpectedEOF, WriteFault, FileNotFound, AccessDenied};
-
-pub const Facade = struct {
-    context: *anyopaque,
-    render_fn:          *const fn (*anyopaque, BoardView, ?[]const u8) Error!void,
-    showLegend_fn:      *const fn (*anyopaque, AvailableCommands) Error!void,
-    showError_fn:       *const fn (*anyopaque, []const u8) Error!void,
-    saveDialog_fn:      *const fn (*anyopaque, []const u8) Error!SaveFileResult,
-    openDialog_fn:      *const fn (*anyopaque) Error!OpenFileResult,
-    newGameChoice_fn:   *const fn (*anyopaque) Error!NewGameChoiceResult,
-    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!ParseCommandResult
-};
 ```
+  facade.render(view, msg)
+       ↓
+  facade.getCommandInput(avail)        ← prompt → parse → Command (sub-dialogs handled internally)
+       ↓
+  engine.exec(cmd)                     ← mutates board, returns Event
+       ↓
+  check Event.is_quit → next iteration or exit
+```
+
+Old code: `render(out)` → `promptForAndRunCommand(in_, out)` [raw stdin] → `exec(cmd)` → event.
+New code: all UI flows through the Facade.
 
 
 ### Implementation Steps
 
-**Per-step pattern:** For each method 1b–1h we do three things together — add the instance method to AsciiRenderer, uncomment the corresponding field + dispatcher in Facade, and add the wrapper in `Make(CT)`. No separate files. The methods grow on AsciiRenderer itself.
+**Step 1** — `getCommandInput`: prompt → parse → exec command flow
+
+Each row maps to one TDD iteration. Rows 1–5 are passthrough (no change needed).
+Row 6 (save) is passthrough — uses current filename or default, no prompting.
+Rows 7–9 are the sub-dialog rows where getCommandInput intercepts and packages data into a Command.
+
+| Command | User input | `getCommandInput` action | Returns (`ParseCommandResult`) | `exec(Command)` data | Notes |
+|---------|-----------|------------------------|-------------------------------|---------------------|-------|
+| fill | `fill A1 7` | parse → dispatchToParser | `.valid{.fill: FillData}` | `fill_command.execute(self, data)` | Passthrough, no change |
+| clear | `clear B3` | parse → dispatchToParser | `.valid{.clear: ClearData}` | `clear_command.execute(self, data)` | Passthrough, no change |
+| undo | `u` / `undo` | parse → dispatchToParser | `.valid{.undo: void}` | `undo_command.execute(self)` | Passthrough, no change |
+| redo | `r` / `redo` | parse → dispatchToParser | `.valid{.redo: void}` | `redo_command.execute(self)` | Passthrough, no change |
+| quit | `q` / `quit` | parse → dispatchToParser | `.valid{.quit: void}` | `quit_command.execute(self)` | Passthrough, no change |
+| save | `save` | parse → dispatchToParser | `.valid{.save: SaveData}` | `save_command.execute(self, data)` | Passthrough — uses current filename or default |
+| save_as | `save-as` / `saves` | detect .save_as tag → call `self.saveDialog()`. On `.FileName` → return Command with path. On `.Cancelled` → `.error_msg` | `.valid{.save_as: SaveData{path}}` | `save_command.execute(self, data.path)` | **SaveAs — prompts for filename** |
+| open | `open` | detect .open tag → call `self.openDialog()`. Same pattern | `.valid{.open: OpenData{path}}` | `open_command.execute(self, data.path)` | Path from dialog, not tokenizer |
+| new | `new` | detect .new tag → call `self.newGameOptions()`. On `.PuzzleString` → return Command. On `.Cancelled` → `.error_msg` | `.valid{.new: NewData{puzzle}}` | `new_command.execute(self, data.puzzle)` | **NewData struct**, replaces bare `void` |
 
 
-**- [x] Step 1a** — Rename `RenderError` to `Error` in facade.zig. DONE (commit c4e63f2).
-
-
-The Facade struct, shared types and convenience dispatchers remain. Allocator params removed from facade method signatures.
-
-**- [x] Step 1b** — Board render method + vtable wiring. DONE (commit c4e63f2).
-
-- **AsciiRenderer:** `render(self, view: BoardView, status_msg: ?[]const u8) anyerror!void`. Writes column header, borders, styled rows via stored writer. No `.interface` — direct `self.writer.writeAll()` calls.
-- **Facade:** `render_fn` field active, `render()` dispatcher routes through it.
-- **Make(CT):** generates `render_wrapper` that does @ptrCast -> *CT -> self.render(). make() wires context + render_fn.
-
-
-**- [x] Step 1c** — Add legend display method. DONE (commit 320a048).
-
-- **AsciiRenderer:** add `showLegend(self, commands: AvailableCommands) Error!void` — writes legend line to stored writer (currently `printLegend(out)` in sudoku.zig).
-- **Facade:** uncomment showLegend_fn, add dispatcher `showLegend(commands)`.
-- **Make(CT):** add showLegend_wrapper.
-
-
-**- [x] Step 1d** — Add error modal method. DONE.
-
-
-- **AsciiRenderer:** `showError(self, msg: []const u8) Error!void` prints message + "Press Enter to continue..." and waits on stdin reader (replaces `waitAck()`). Required adding `io: std.Io` field to AsciiRenderer struct so it can open stdin.
-- **Facade:** `showError_fn` field active, `showError()` dispatcher routes through it.
-- **Make(CT):** generates `showError_wrapper`.
-- **Breaking change:** `AsciiRenderer.init()` signature changed from `init(writer, styler)` to `init(io, writer, styler)`. Updated main.zig and all existing tests.
-
-**- [x] Step 1e** — Add save dialog method.
-
-- **Dialog contract:** must return exactly one of three outcomes: `FileName` (owned path string), `Cancelled`, or an `Error`. The terminal implementation maps GUI file-save dialog behaviour onto stdin handling.
-- **AsciiRenderer:** `saveDialog(self, default_name: []const u8) facade.Error!facade.SaveFileResult`. Mapping:
-  - user types a name + Enter → `.FileName` with that string
-  - empty input (just Enter) → `.FileName` with `default_name` (no cancel button; accepts prefilled default)
-  - EOF / read error → `.Cancelled`
-- **Facade:** saveDialog_fn field active, dispatcher routes through it.
-- **Make(CT):** generates saveDialog_wrapper.
-
-
-**- [x] Step 1f** — Add open dialog method.
-
-- **Dialog contract:** must return exactly one of three outcomes: `FileName` (owned path string), `Cancelled`, or an `Error`. The terminal implementation maps GUI file-picker behaviour onto stdin handling.
-- **AsciiRenderer:** `openDialog(self) facade.Error!facade.OpenFileResult`. Mapping:
-  - user types a path + Enter → `.FileName` with that path
-  - empty input (just Enter) → `.Cancelled`
-  - EOF / read error → `.Cancelled`
-- **Facade:** openDialog_fn field active, dispatcher routes through it.
-- **Make(CT):** adds openDialog_wrapper.
-
-**- [x] Step 1g** — Add `new` command to parser + stub `exec()` case. DONE this session (2026-08-14).
-
-- **NewGameChoiceResult:** `union(enum) { Choice: NewGameChoice, Cancelled }` — mirrors the pattern of `SaveFileResult` / `OpenFileResult`. Keeps cancellation out of the actual game-starting choices.
-
-- **Facade:** change `newGameOptions_fn` to return `Error!NewGameChoiceResult`, add dispatcher `newGameOptions()`.
-- **AsciiRenderer:** implement `newGameOptions(self) facade.Error!facade.NewGameChoiceResult` — terminal renderer decides how to present choices.
-
-- Notes: `FromUrl` and `PasteString` are reserved for WASM renderer (issue 03). Terminal never returns them.
-- **Make(CT):** add `newGameOptions_wrapper`, wire `newGameOptions_fn` into `make()`.
-
-
-**- [x] Step 1h** — Add command input method.
-
-- **No CommandInput type.** Dropped. The facade methods return game domain types, not parse intermediaries.
-- **AsciiRenderer:** `getCommandInput(self, avail: AvailableCommands) facade.Error!facade.ParseCommandResult`. Reads line -> trim -> calls `command.parseWithCommands()` with available command names. Returns the `ParseCommandResult` directly (no wrapper type).
-
-  - valid command/parsed result -> returned directly
-  - empty line       -> parse error ("empty input") — the loop shows it as an error and loops again
-  - read EOF/error   -> treated as "quit" command (maps to `.Quit`)
-- This moves prompt + parse logic into AsciiRenderer. Step 2 then replaces `out.print("> ") + readLine(in_)` with `facade.getCommandInput(avail)` in sudoku.zig.
-- **Facade:** uncomment `getCommandInput_fn`, add dispatcher.
-- **Make(CT):** add `getCommandInput_wrapper` + wire into `make()`.
-
-**- [ ] Step 2** — Wire Facade into sudoku.zig.
-
-Once all 7 methods are on AsciiRenderer and wired through Make():
-1. In `main.zig`: create renderer, wrap through Make(AsciiRenderer).make(), pass Facade to Sudoku init instead of raw pointer.
-2. Remove `comptime R` parameter from `Sudoku(comptime R: type)`. Store *Facade not *R.
-3. Replace every use of out/in_ in sudoku.zig methods with Facade calls:
-   - `out.print("> ")` + `readLine(in_)` -> facade.getCommandInput(avail)
-   - `printLegend(out)` -> facade.showLegend(avail)
-   - `waitAck(out, in_, msg)` -> facade.showError(msg)
-
-4. run() no longer creates stdout_writer or stdin_reader — it just loops calling Facade methods.
-
-
-**- [ ] Step 3** — Adapt MockRenderer with canned responses.
-
-All 7 facade methods implemented on MockRenderer for testing widget-based flows. Wired through Make(MockRenderer). Update ~10 test sites in sudoku.zig to create facades before init.
-
-
-**- [ ] Step 4** — Baseline regression + coverage (post-step checkpoint).
-
-All 182+ existing tests pass. zig build run produces visually identical output. This checkpoint will be re-verified after Steps 1h–3 complete.
+**Edge cases:**
+- EOF / read error in getCommandInput → treated as quit (`.valid{.quit: void}`)
+- Empty line → `.error_msg("empty input")` → loop shows via showError and repeats
 
 
 
-### What this does NOT cover
+**Step 1a** — `.saveTag` interception in getCommandInput
+- When parsed tag is `.save_tag`, detect it, call `self.saveDialog()` to prompt for filename.
+- On `.FileName` — return valid save command with chosen path
+- On `.Cancelled` — return error_msg
 
-- WASM browser renderer implementation (issue 03) — that consumes the facade later
-- TuiRenderer with ncurses cursor control (issue 10) — separate rendering concern
-- Polishing the UX per-palette (themes, icons) out of scope
+**Step 1b** — `.openTag` interception in getCommandInput
+- When parsed tag is `.openTag`, detect it, call `self.openDialog()` to prompt for file path.
+- On `.FileName` — return valid open command with chosen path
+- On `.Cancelled` — return error_msg
+
+**Step 1c** — `.new` interception + un-stub newGameOptions menu in getCommandInput
+- When parsed tag is `.new`, detect it, call `self.newGameOptions()` to show menu.
+- Un-stub: present menu "Generated / Medium / Hard" so user's key choice determines puzzle.
+- On `.PuzzleString` — return valid new command with puzzle data
+- On `.Cancelled` — return error_msg
+**Step 2** — Wire Facade into `sudoku.zig` end-to-end
+
+Replace the raw renderer param with a Facade pointer so all I/O flows through the vtable. This is **a switch, not a rewrite**: the backbone loop (`handleResult` → `handleEvent` → `engine.exec`) stays identical; only the I/O calls change.
+
+**Step 2a** — `main.zig`: wrap AsciiRenderer through `Make(AsciiRenderer).make()`
+- Create renderer as now.
+- Add: `const F = facade.Make(ascii_renderer.AsciiRenderer(styler.AnsiStyler));`
+- Pass the returned `Facade` (or pointer) into Sudoku init instead of raw `*R` + comptime type param.
+- **Tests in place:** No existing test exercises `main.zig` directly. The init tests (#182, #197, #429) exercise `Sudoku(MockRenderer).init()` which will need updating once Step 2b changes the struct sig.
+
+**Step 2b** — Replace `comptime R: type` parameter with `facade: *Facade`
+- Change `pub fn Sudoku(comptime R: type)` to accept a `*Facade` field instead of `renderer: *R`. Store `facade: *Facade` on the struct.
+- Update `init(cfg, _r, io)` sig: last param becomes `facade: *Facade`, stored directly. No comptime type.
+- **Tests in place:** Tests #182, #197, #429 all construct via `Sudoku(mock_renderer.MockRenderer).init(cfg, &mock, std.testing.io)`. They'll break when this step applies and need updating to create a Facade from MockRenderer instead. (This is the same update as Step 2a but from the test side.)
+
+**Step 2c** — Replace `printLegend(out)` with `facade.showLegend(avail)` in `handleEvent`
+- **Current:** handleEvent line ~67 calls `self.printLegend(out)` passing a raw writer.
+- **Change:** Replace with `self.facade.showLegend(self.engine.getAvailableCommands())`.
+- The existing `printLegend()` method itself can be retired later (after 2d) once nothing else references it. For now just replace the call site.
+- **Tests in place:** Test #440 (`full seam: f A3 4`) asserts that `Command:` appears in mock writer output — this breaks because printLegend won't write to MockWriter anymore. Needs updating to check facade was called instead (e.g., via a call_count on the Facade's showLegend_fn, or removing the assertion since it's covered by handleEvent's own render test).
+
+**Step 2d** — Replace `waitAck(out, in_, msg)` with `facade.showError(msg)` in `handleEvent`, `handleResult`
+- **Current sites (4 total):**
+  - handleEvent line ~72: `.error_msg` branch → `self.waitAck(out, in_, msg)`
+  - handleResult line ~82: parse error_msg → `self.waitAck(out, in_, msg)`
+  - handleResult line ~89: exec failure bufPrint → `self.waitAck(out, in_, msg)`
+  - handleResult line ~95: handleEvent failure bufPrint → `self.waitAck(out, in_, msg)`
+- **Change:** All four become `try self.facade.showError(msg)`. The Facade's showError already handles writing the message + pressing Enter (proven in Step 1d).
+- After this step, `waitAck()` is unused and can be removed along with its `reader` arg from any signature that only existed to pass it through.
+- **Tests in place:** Tests #483 (`full seam: open loads saved game`), #536 (save success feedback), #576 (open success feedback), #621 (relative path no panic), #654 (save default filename), #685 (subsequent save reuse) all exercise `handleResult` with MockReader for waitAck. After this step, the `in_` param is no longer needed by handleResult so tests can drop MockReader entirely for error-msg scenarios.
+
+**Step 2e** — Replace raw prompt + parse in `promptForAndRunCommand` with `facade.getCommandInput(avail)`
+- **Current:** lines ~103-116: `out.print("> "` → `readLine(in_)` → trim → `command.parseWithCommands(tokens, names)` → result.
+- **Change:** Replace those ~12 lines with:
+  ```zig
+  const avail = self.engine.getAvailableCommands();
+  const result = try self.facade.getCommandInput(avail);
+  ```
+  The facade handles prompt display, stdin read, trimming, and parse internally. Returns the ParseCommandResult directly.
+- Also replace the save-specific prompt block (lines ~119-150) — that inline `out.print("Save to")` + `readLine(in_)` → dupe path is now handled by `getCommandInput` intercepting `.save_tag` and calling `saveDialog()` internally.
+- After this step, the legacy inline save prompt code (lines ~118-153) is removed. The function becomes much thinner: one facade call + switch on `.save` for first-save filename caching logic only.
+- **Tests in place:** Test #440 (`full seam: f A3 4`) calls `promptForAndRunCommand(&mw, &mr)` with canned MockReader input `"f A3 4"`. After this step, promptForAndRunCommand takes no args and reads through the facade instead. The test needs to set up a canned response on getCommandInput (either via MockRenderer overriding or by updating the test to exercise through a new integration path).
+
+**Step 2f** — `run()`: remove local stdout_writer / stdin_reader creation, use Facade methods
+- **Current:** lines ~159-174: creates `stdout_writer`, `stdin_reader`, passes `out`/`in_` through to promptForAndRunCommand.
+- **Change:** Remove the writer/reader setup. Loop becomes:
+  ```zig
+  pub fn run(self: *@This()) anyerror!void {
+      try self.facade.render(self.engine.eventBoard(), null);
+      try self.facade.showLegend(self.engine.getAvailableCommands());
+
+      var isDone: bool = false;
+      while (!isDone) {
+          isDone = try self.promptForAndRunCommand();
+      }
+  }
+  ```
+- All three method sigs that take `(out, in_)` are updated: `handleEvent(out, in_, event)` → `handleEvent(event)`, `handleResult(out, in_, result)` → `handleResult(result)`, `promptForAndRunCommand(out, in_)` → `promptForAndRunCommand()`.
+- **Tests in place:** None of the existing tests call `run()` directly — they all exercise inner methods via MockReader/MockWriter. No direct test impact because the existing integration tests call `promptForAndRunCommand`, `handleResult` with mock I/O. After this step those args are dropped so test callsites update accordingly.
+
+**Step 2g** — Remove `readLine()` helper (unused after Step 2e)
+- Lines ~30-31: bare `fn readLine(reader)` on the struct. Only called from promptForAndRunCommand (lines ~106, ~140). Both replaced by facade calls in Step 2e.
+- **Tests in place:** No test references readLine directly. Cleanup step — no test churn.
+
+**Step 2h** — Verify: `zig build run` full game loop + regression suite
+- Run the binary, verify visually identical output (board render, legend, prompt, error handling, quit).
+- All 204+ existing tests pass after their call sites are updated (comptime R → facade, MockReader/MockWriter removed from handleResult/promptForAndRunCommand invocations).
+- **Tests in place:** Full regression coverage exists — same assertions, just different plumbing. The backbone tests (#440, #483, #536, #576, #621, #654, #685) verify handleResult → event flow which is unchanged. Only the I/O call path differs, and those are verified by Facade's own unit tests from Steps 1a-1h.
+**Step 3** — Adapt MockRenderer for testable widget-based flows
+
+MockRenderer needs to work as a facade implementation so integration tests can drive command flow without real I/O.
+
+1. **Canned command input**: Add `next_command: ?ParseCommandResult` field and a flag. When set, `getCommandInput()` returns it instead of reading stdin.
+2. **Mock widget methods**: Ensure `saveDialog()`, `openDialog()`, `newGameOptions()` are overridable (return canned results).
+
+3. **Facade.Make(MockRenderer)**: Wire through Make() so tests construct a Facade from MockRenderer.
+4. **Regression test matrix**: For each command type (fill, clear, undo, redo, quit, save, open, new), verify the facade loop produces correct state changes — same assertions as existing `handleResult` tests but through Facade path.
+5. **Verify**: All 200+ existing tests still pass. New facade-path tests added.
+
+
+---
+
+
 ## Acceptance criteria
 
-- [x] `sudoku.zig` uses Renderer interface exclusively for all input and rendering — no direct stdin/stdout access
-- [x] Step 1: All 7 facade methods implemented on AsciiRenderer with Facade dispatchers, Make(CT) wrappers, and tests
-  - [x] render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput
-- [ ] Step 2: Wire Facade into sudoku.zig end-to-end
-  - `main.zig` creates renderer through `Make(AsciiRenderer).make()` and passes Facade to Sudoku init
-  - Every stdin read replaced with a Facade call (`getCommandInput`, `showError`, etc.)
-  - `run()` no longer creates stdout_writer or stdin_reader
+- [x] Steps 1b–1g: Facade foundation — all seven methods implemented on AsciiRenderer with dispatchers + Make(CT) wrappers (render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput)
+- [ ] **Step 1a**: `.saveTag` interception in getCommandInput
+- [ ] **Step 1b**: `.openTag` interception in getCommandInput
+- [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
+- [ ] **Step 2**: Wire Facade into sudoku.zig end-to-end (letter sub-steps 2a–2h)
+  - [ ] 2a: `main.zig` wrap through Make().make()
+  - [ ] 2b: Replace `comptime R` with `facade: *Facade`
+  - [ ] 2c: Replace printLegend → facade.showLegend
+  - [ ] 2d: Replace waitAck (4 sites) → facade.showError
+  - [ ] 2e: Replace raw prompt + parse in promptForAndRunCommand → facade.getCommandInput
+  - [ ] 2f: run() remove local I/O creation, use Facade methods
+  - [ ] 2g: Remove unused readLine helper
+  - [ ] 2h: Verify zig build run + regression suite
 - [ ] Step 3: Adapt MockRenderer for testable widget-based flows
-  - All 7 methods stubbable on MockRenderer with canned responses
-  - ~10 existing sudoku.zig tests updated to create facades before init
-  - Facade-driven integration tests for save/open command flows
+
 ## Blocked by
 (none)

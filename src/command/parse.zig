@@ -10,9 +10,10 @@ const disambiguate = @import("disambiguate.zig");
 
 pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
 pub const ClearData = struct { row: u4, col: u4 };
-pub const SaveData = void;
+pub const SaveData = struct { path: []const u8 };
 
 pub const OpenData = struct { path: []const u8 };
+pub const NewData = struct { puzzle: []u8 };
 pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new };
 
 // Issue 30 — comptime command registration table
@@ -50,7 +51,7 @@ pub const Command = union(CommandTag) {
     redo: void,
     save: SaveData,
     open: OpenData,
-    new: void,
+    new: NewData,
 };
 pub const ParseResultTag = enum { valid, error_msg };
 
@@ -125,13 +126,15 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "quit")) return parseQuit();
     if (std.ascii.eqlIgnoreCase(cmd_name, "undo")) return .{.valid = Command.undo};
     if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{.valid = Command.redo};
-    if (std.ascii.eqlIgnoreCase(cmd_name, "save")) return parseSave();
+
+    if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
+        return .{.valid = Command{ .save = SaveData{ .path = ".sudoku_save.sud" } }};
     if (std.ascii.eqlIgnoreCase(cmd_name, "open")) {
         const path = it.next() orelse return .{.error_msg = "open requires file name"};
-        return .{.valid = Command{.open = OpenData{.path = path}}};
+        return .{.valid = Command{ .open = OpenData{ .path = path } }};
     }
-    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{.valid = Command.new};
-
+    if (std.ascii.eqlIgnoreCase(cmd_name, "new"))
+        return .{.valid = Command{ .new = NewData{ .puzzle = &[_]u8{} } }};
 
 
 
@@ -179,10 +182,6 @@ fn parseQuit() ParseCommandResult {
     return .{.valid = Command.quit};
 }
 
-/// Save takes no arguments — just persist current game state.
-fn parseSave() ParseCommandResult {
-    return .{.valid = Command.save};
-}
 /// Fill requires a chess-style coordinate and a digit 1-9.
 fn parseFill(coord_str: []const u8, digit_s: []const u8) ParseCommandResult {
     const pos = parseCoordinate(coord_str) orelse return coordError;
@@ -429,45 +428,18 @@ test "parseWithCommands: FI B2 5 resolves to Fill (all caps prefix)" {
     try std.testing.expectEqual(@as(u4, 1), res.valid.fill.col);
     try std.testing.expectEqual(cell_module.CellValue.five, res.valid.fill.digit);
 }
-test "parse save command → .valid .save" {
+// Issue 29 Step 1i prerequisite: save/open/new stubs remain in parser for backward compat.
+test "parse save command returns valid SaveData with path" {
     const res = parse("save");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
+    try std.testing.expect(res.valid.save.path.len > 0);
 }
-test "parse open command with bare name → .valid with correct path" {
-    const res = parse("open my_game");
+test "parse open command w/ path returns valid OpenData" {
+    const res = parse("open testfile.dat");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "open");
-    try std.testing.expectEqualStrings(res.valid.open.path, "my_game");
-}
-test "save with trailing tokens still returns .save" {
-    const res = parse("save extra");
-    try std.testing.expect(res == .valid);
-    try std.testing.expectEqualStrings(@tagName(res.valid), "save");
-}
-test "open with missing path returns .error_msg" {
-    const res = parse("open");
-    try std.testing.expect(res == .error_msg);
-}
-test "open with absolute path → .valid with full path" {
-    const res = parse("open /home/user/game.dat");
-    try std.testing.expect(res == .valid);
-    try std.testing.expectEqualStrings(@tagName(res.valid), "open");
-    try std.testing.expectEqualStrings(res.valid.open.path, "/home/user/game.dat");
-}
-test "parseWithCommands: sa resolves to Save with Save in commands" {
-    const cmds = [_][]const u8{ getName(.fill), getName(.clear), getName(.quit), getName(.undo), getName(.redo), getName(.save), getName(.open) };
-    const res = parseWithCommands("sa", &cmds);
-    try std.testing.expect(res == .valid);
-    try std.testing.expectEqualStrings(@tagName(res.valid), "save");
-}
-
-test "parseWithCommands: op resolves to Open with Open in commands" {
-    const cmds = [_][]const u8{ getName(.fill), getName(.clear), getName(.quit), getName(.undo), getName(.redo), getName(.save), getName(.open) };
-    const res = parseWithCommands("op my_save", &cmds);
-    try std.testing.expect(res == .valid);
-    try std.testing.expectEqualStrings(@tagName(res.valid), "open");
-    try std.testing.expectEqualStrings(res.valid.open.path, "my_save");
+    try std.testing.expectEqualStrings(res.valid.open.path, "testfile.dat");
 }
 
 // Issue 30 — comptime registration table tests

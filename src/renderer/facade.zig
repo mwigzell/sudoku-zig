@@ -1,10 +1,12 @@
 // Re-export command parsing types (moved Issue 29)
 const command_parse = @import("../command/parse.zig");
-pub const NewGameChoice = command_parse.NewGameChoice;
-pub const NewGameChoiceResult = command_parse.NewGameChoiceResult;
 pub const SaveFileResult = command_parse.SaveFileResult;
 pub const OpenFileResult = command_parse.OpenFileResult;
 pub const ParseCommandResult = command_parse.ParseCommandResult;
+pub const PuzzleReturn = union(enum) {
+    PuzzleString: []u8,  // Owned puzzle string — renderer decides source
+    Cancelled,
+};
 const board = @import("../board.zig");
 
 // Re-export for facade users; defined in game_engine.zig
@@ -27,7 +29,7 @@ pub const Facade = struct {
 
     openDialog_fn: *const fn (*anyopaque) Error!OpenFileResult,
 
-    newGameOptions_fn: *const fn (*anyopaque) Error!NewGameChoiceResult,
+    newGameOptions_fn: *const fn (*anyopaque) Error!PuzzleReturn,
 
     getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) Error!ParseCommandResult,
 
@@ -51,7 +53,7 @@ pub const Facade = struct {
         return self.openDialog_fn(self.context);
     }
 
-    pub fn newGameOptions(self: *Facade) Error!NewGameChoiceResult {
+    pub fn newGameOptions(self: *Facade) Error!PuzzleReturn {
         return self.newGameOptions_fn(self.context);
     }
 
@@ -84,7 +86,7 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.openDialog();
         }
-        pub fn newGameOptions_wrapper(ctx: *anyopaque) Error!NewGameChoiceResult {
+        pub fn newGameOptions_wrapper(ctx: *anyopaque) Error!PuzzleReturn {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.newGameOptions();
         }
