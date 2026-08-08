@@ -191,8 +191,42 @@ MockRenderer needs to work as a renderer implementation so integration tests can
 
 ## Acceptance criteria
 
-- [x] Steps 1b–1g: renderer foundation — all seven methods implemented on AsciiRenderer with dispatchers & Make(CT) wrappers (render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput)
+- [x] **Step 1b-1g**: renderer foundation — all seven methods implemented on AsciiRenderer with dispatchers & Make(CT) wrappers (render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput)
 - [ ] **Step 1a**: `.saveTag` interception in getCommandInput
+- [ ] **Step 1b**: `.openTag` interception in getCommandInput
+- [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
+- [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end (letter sub-steps 2a–2h)
+  - [x] 2a: `main.zig` wrap through Make().make()
+  - [x] 2b: Replace `comptime R` with `renderer: *Facade`
+  - [x] 2c: Replace printLegend → renderer.showLegend
+  - [x] 2d: Replace waitAck (4 sites) → renderer.showError
+  - [ ] 2e: Replace raw prompt + parse in promptForAndRunCommand → renderer.getCommandInput
+  - [ ] 2f: run() remove local I/O creation, use renderer methods
+  - [ ] 2g: Remove unused readLine helper
+  - [ ] 2h: Verify zig build run + regression suite
+- [ ] **Step 1b**: `.openTag` interception in getCommandInput
+- [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
+- [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end (letter sub-steps 2a–2h)
+  - [x] 2a: `main.zig` wrap through Make().make()
+  - [x] 2b: Replace `comptime R` with `renderer: *Facade`
+  - [x] 2c: Replace printLegend → renderer.showLegend
+  - [x] 2d: Replace waitAck (4 sites) → renderer.showError
+  - [ ] 2e: Replace raw prompt + parse in promptForAndRunCommand → renderer.getCommandInput
+  - [ ] 2f: run() remove local I/O creation, use renderer methods
+  - [ ] 2g: Remove unused readLine helper
+  - [ ] 2h: Verify zig build run + regression suite
+- [ ] **Step 1b**: `.openTag` interception in getCommandInput
+- [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
+- [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end (letter sub-steps 2a–2h)
+  - [x] 2a: `main.zig` wrap through Make().make()
+  - [x] 2b: Replace `comptime R` with `renderer: *Facade`
+  - [x] 2c: Replace printLegend → renderer.showLegend
+  - [x] 2d: Replace waitAck (4 sites) → renderer.showError
+  - [ ] 2e: Replace raw prompt + parse in promptForAndRunCommand → renderer.getCommandInput
+  - [ ] 2f: run() remove local I/O creation, use renderer methods
+  - [ ] 2g: Remove unused readLine helper
+  - [ ] 2h: Verify zig build run + regression suite
+- [ ] Step 3: Adapt MockRenderer for testable widget-based flows
 - [ ] **Step 1b**: `.openTag` interception in getCommandInput
 - [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
 - [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end (letter sub-steps 2a–2h)
