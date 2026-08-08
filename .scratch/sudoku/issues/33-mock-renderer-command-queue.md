@@ -21,7 +21,7 @@ Add a command queue to `MockRenderer` so that `Sudoku.run()` executes end-to-end
 
 ### Acceptance criteria
 
-- [ ] 1. `MockRenderer.getCommandInput()` returns queued commands in order and `.quit` on exhaustion.
+- [x] 1. `MockRenderer.getCommandInput()` returns queued commands in order and `.quit` on exhaustion.
 - [ ] 2. `Sudoku.run()` completes without blocking using only MockRenderer input.
 - [ ] 3. Test `"run: fill → save → quit"` passes — calls the full while loop.
 - [ ] 4. Test `"run: new command resets board and history"` passes.
