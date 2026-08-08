@@ -3,6 +3,12 @@ ready-for-human
 
 ### Notes
 **Triage notes (2025-08-xx):**
+**Step 1d complete (2026-08-13):**
+
+- `.save_as` tag added to CommandTag enum, Commands table (name "SaveAs"), Command union, and AvailableCommands.
+- parse.zig buffers expanded `[8]` → `[9][]const u8` throughout.
+- **Added exact-match disambiguation**: `parseWithCommands` now does a second pass through prefix matches to find an exact case-insensitive match. This means "save" resolves to Save (exact) even though SaveAs also prefix-matches. Ambiguity still fires when no exact match exists.
+- All 206 tests pass; binary shows both Save and SaveAs in legend.
 
 Tests calling `handleResult` were broken by Steps 2b–2d signature changes:
 
@@ -241,7 +247,7 @@ MockRenderer needs to work as a renderer implementation so integration tests can
 - [ ] **Step 1a**: `.saveTag` interception in getCommandInput
 - [ ] **Step 1b**: `.openTag` interception in getCommandInput
 - [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
-- [ ] **Step 1d**: `SaveAs` command + interception in getCommandInput
+- [x] **Step 1d**: `SaveAs` command + interception in getCommandInput
 
 - [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end (letter sub-steps 2a–2h)
   - [x] 2a: `main.zig` wrap through Make().make()

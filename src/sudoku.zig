@@ -43,7 +43,7 @@ pub const Sudoku = struct {
     fn printLegend(self: *@This(), writer: anytype) !void {
         const avail = self.engine.getAvailableCommands();
 
-        var names: [8][]const u8 = undefined;
+        var names: [9][]const u8 = undefined;
         const count = avail.getNames(&names);
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -479,7 +479,9 @@ test "handleResult: save success produces status message, re-render, legend refr
 
     // No MockReader needed — save handler uses default filename (no prompt)
 
-    const parsed_save = command.parse("save");
+    // Use parseWithCommands directly with just Save to avoid SaveAs prefix collision
+    const save_cmds = [_][]const u8{ command.getName(.save) };
+    const parsed_save = command.parseWithCommands("save", &save_cmds);
     _ = sudoku.handleResult(parsed_save) catch |err| {
         // I/O failure (no $HOME, dir can't be created, etc.) is acceptable in test env
         try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
@@ -566,7 +568,8 @@ test "handleResult: save uses default filename and returns success" {
 
     const call_count_before: usize = mock.call_count;
 
-    const parsed_save = command.parse("save");
+    const save_cmds = [_][]const u8{ command.getName(.save) };
+    const parsed_save = command.parseWithCommands("save", &save_cmds);
     _ = sudoku.handleResult(parsed_save) catch |err| {
         // I/O failure in test env is acceptable
         try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
@@ -591,7 +594,8 @@ test "handleResult: subsequent save reuses previous filename with feedback" {
     defer sudoku.engine.deinit();
 
     // First save sets the default filename
-    const parsed_save_1 = command.parse("save");
+    const save_cmds = [_][]const u8{ command.getName(.save) };
+    const parsed_save_1 = command.parseWithCommands("save", &save_cmds);
     _ = sudoku.handleResult(parsed_save_1) catch |err| {
         try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
         return;
@@ -599,7 +603,7 @@ test "handleResult: subsequent save reuses previous filename with feedback" {
 
     // Second save reuses filename — no prompt, just confirmation
     const call_before_two = mock.call_count;
-    const parsed_save_2 = command.parse("save");
+    const parsed_save_2 = command.parseWithCommands("save", &save_cmds);
     _ = sudoku.handleResult(parsed_save_2) catch |err| {
         try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
         return;

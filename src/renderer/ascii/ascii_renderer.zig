@@ -76,7 +76,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Implement Facade showLegend_fn. Build command legend from AvailableCommands,
         /// disambiguate prefixes, print "Command: ...". Arena allocates temp strings.
         pub fn showLegend(self: *@This(), commands: game_engine.AvailableCommands) anyerror!void {
-            var names: [8][]const u8 = undefined;
+            var names: [9][]const u8 = undefined;
             const count = commands.getNames(&names);
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -153,7 +153,7 @@ pub fn AsciiRenderer(StylerType: type) type {
                 catch return .{ .valid = command_parse.Command.quit };
             defer self.allocator.free(raw);
 
-            var names: [8][]const u8 = undefined;
+            var names: [9][]const u8 = undefined;
             const count = avail.getNames(&names);
             if (count == 0) {
                 return .{ .error_msg = "no commands available" };
@@ -189,6 +189,7 @@ test "showLegend: writes Command: with Fill Clear Quit" {
         .save = false,
         .open = false,
         .new = true,
+        .save_as = true,
     };
     try renderer.showLegend(cmds);
 
@@ -529,6 +530,7 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
         .save = true,
         .open = true,
         .new = true,
+        .save_as = true,
     };
 
     const result = try renderer.getCommandInput(avail);
@@ -574,6 +576,7 @@ test "getCommandInput: EOF returns Quit" {
         .save = false,
         .open = false,
         .new = false,
+        .save_as = false,
     };
 
     const result = try renderer.getCommandInput(avail);

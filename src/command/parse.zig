@@ -14,7 +14,7 @@ pub const SaveData = struct { path: []const u8 };
 
 pub const OpenData = struct { path: []const u8 };
 pub const NewData = struct { puzzle: []u8 };
-pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new, save_as };
 
 // Issue 30 — comptime command registration table
 pub const CommandTableEntry = struct {
@@ -32,6 +32,7 @@ pub const Commands = &[_]CommandTableEntry{
     .{ .tag = .save, .name = "Save" },
     .{ .tag = .open, .name = "Open" },
     .{ .tag = .new, .name = "New" },
+    .{ .tag = .save_as, .name = "SaveAs" },
 };
 
 /// Look up the display name for a command tag from the comptime table.
@@ -52,6 +53,7 @@ pub const Command = union(CommandTag) {
     save: SaveData,
     open: OpenData,
     new: NewData,
+    save_as: void,
 };
 pub const ParseResultTag = enum { valid, error_msg };
 
@@ -91,7 +93,7 @@ const coordError: ParseCommandResult = .{
 
 /// Trim → tokenize → re-dispatch through prefix dispatch (backward compat).
 pub fn parse(input_line: []const u8) ParseCommandResult {
-    var cmds_buf: [8][]const u8 = undefined;
+    var cmds_buf: [9][]const u8 = undefined;
     for (Commands, 0..) |entry, i| {
         cmds_buf[i] = entry.name;
     }
@@ -133,6 +135,8 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
         const path = it.next() orelse return .{.error_msg = "open requires file name"};
         return .{.valid = Command{ .open = OpenData{ .path = path } }};
     }
+    if (std.ascii.eqlIgnoreCase(cmd_name, "save_as"))
+        return .{.valid = Command.save_as};
     if (std.ascii.eqlIgnoreCase(cmd_name, "new"))
         return .{.valid = Command{ .new = NewData{ .puzzle = &[_]u8{} } }};
 
@@ -163,6 +167,11 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
             matched_cmds[match_count] = name;
             match_count += 1;
         }
+    }
+    // Second pass: exact case-insensitive match wins over prefix-only matches
+    for (matched_cmds[0..match_count]) |exact| {
+        if (std.ascii.eqlIgnoreCase(verb, exact))
+            return dispatchToParser(exact, &it);
     }
     switch (match_count) {
         0 => {
@@ -441,6 +450,14 @@ test "parse open command w/ path returns valid OpenData" {
     try std.testing.expectEqualStrings(@tagName(res.valid), "open");
     try std.testing.expectEqualStrings(res.valid.open.path, "testfile.dat");
 }
+test "parse save resolves to Save, not ambiguous with SaveAs present" {
+    // Full command set includes both Save and SaveAs.
+    // &quot;save&quot; is an exact (case-insensitive) match for &quot;Save&quot;, so it wins.
+    const res = parse("save");
+    try std.testing.expect(res == .valid);
+    try std.testing.expectEqualStrings(@tagName(res.valid), "save");
+}
+
 
 // Issue 30 — comptime registration table tests
 
@@ -478,5 +495,6 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Open", getName(.open));
     try std.testing.expectEqualStrings("New", getName(.new));
 }
+
 
 

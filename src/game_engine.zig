@@ -16,10 +16,11 @@ pub const AvailableCommands = struct {
     save: bool,
     open: bool,
     new: bool,
+    save_as: bool,
 
     /// Fill `names` with the active command labels and return the count.
     /// Caller owns the buffer; the strings point at comptime literals.
-    pub fn getNames(self: AvailableCommands, names: *[8][]const u8) usize {
+    pub fn getNames(self: AvailableCommands, names: *[9][]const u8) usize {
         var count: usize = 0;
         if (self.fill) { names[count] = command.getName(.fill); count += 1; }
         if (self.clear) { names[count] = command.getName(.clear); count += 1; }
@@ -29,6 +30,7 @@ pub const AvailableCommands = struct {
         if (self.save) { names[count] = command.getName(.save); count += 1; }
         if (self.open) { names[count] = command.getName(.open); count += 1; }
         if (self.new) { names[count] = command.getName(.new); count += 1; }
+        if (self.save_as) { names[count] = command.getName(.save_as); count += 1; }
         return count;
     }
 };
@@ -160,6 +162,7 @@ pub const GameEngine = struct {
             .save = true,
             .open = true,
             .new = true,
+            .save_as = true,
         };
     }
 
@@ -309,9 +312,19 @@ pub const GameEngine = struct {
                         .is_quit = false,
                     },
                 };
+            },
+            else => {
+                return Event{
+                    .ok = .{
+                        .board_view = self.board.asView(),
+                        .msg = "SaveAs should be intercepted by getCommandInput",
+                        .is_quit = false,
+                    },
+                };
             }
         }
     }
+
     /// Attempt to fill a cell with a digit. Records mutation in history.
     pub fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) anyerror!Event {
         // Snapshot old value before mutation (only recorded on success)
