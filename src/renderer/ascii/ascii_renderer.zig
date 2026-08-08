@@ -1,12 +1,12 @@
 const board = @import("../../board.zig");
 const cell = @import("../../cell.zig");
 const command_parse = @import("../../command/parse.zig");
+const save = @import("../../command/save.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
 const facade = @import("../../renderer/facade.zig");
 const input_source = @import("../../input_source.zig");
-
 
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
@@ -108,7 +108,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Internal — prompt for filename with default, return owned string.
-        pub fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!facade.SaveFileResult {
+        fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!facade.SaveFileResult {
             self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.WriteFault;
 
             const line = self.readLine() catch return .Cancelled;
@@ -120,7 +120,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             // Caller owns `line` — no free needed when returned directly.
             return .{ .FileName = line };
-            }
+        }
 
         /// Internal — prompt for file path, return owned string.
         pub fn openDialog(self: *@This()) facade.Error!facade.OpenFileResult {
@@ -142,15 +142,13 @@ pub fn AsciiRenderer(StylerType: type) type {
             const puzzle = puzzle_gen.easy();
             const owned = self.allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
             return .{ .PuzzleString = owned };
-        
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
         pub fn getCommandInput(self: *@This(), avail: game_engine.AvailableCommands) facade.Error!facade.ParseCommandResult {
             self.writer.writeAll("> ") catch return facade.Error.WriteFault;
 
-            const raw = self.inputSource.readline(self.io)
-                catch return .{ .valid = command_parse.Command.quit };
+            const raw = self.inputSource.readline(self.io) catch return .{ .valid = command_parse.Command.quit };
             defer self.allocator.free(raw);
 
             var names: [9][]const u8 = undefined;
@@ -162,8 +160,9 @@ pub fn AsciiRenderer(StylerType: type) type {
             var rsl = command_parse.parseWithCommands(raw, names[0..count]);
             // Intercept save_as: get real filename from dialog
             if (std.meta.activeTag(rsl) == .valid and
-                    std.meta.activeTag(rsl.valid) == .save_as) {
-                    const file_result = self.saveAsDialog(".sudoku_save.sud") catch return .{.error_msg = "cancelled"};
+                std.meta.activeTag(rsl.valid) == .save_as)
+            {
+                const file_result = self.saveAsDialog(save.DEFAULT_SAVE_FILE) catch return .{ .error_msg = "cancelled" };
                 switch (file_result) {
                     .FileName => |path| rsl.valid.save_as.path = path,
                     .Cancelled => return .{ .error_msg = "cancelled" },
@@ -171,7 +170,6 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             return rsl;
         }
-
     };
 }
 
@@ -271,8 +269,6 @@ test "render: renders with digits placed" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "9") != null);
 }
 
-
-
 test "showError: reads from MockSource and does not panic" {
     const io = std.testing.io;
 
@@ -281,7 +277,7 @@ test "showError: reads from MockSource and does not panic" {
 
     var s = styler.PlainStyler{};
     // MockSource provides a canned "Enter" press so showError doesn't hang.
-    const responses = [_][]const u8{ "\n" };
+    const responses = [_][]const u8{"\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -306,7 +302,7 @@ test "saveAsDialog: empty input returns default filename" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "\n" };
+    const responses = [_][]const u8{"\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -327,7 +323,7 @@ test "saveAsDialog: empty input returns default filename" {
         },
         .Cancelled => {
             try std.testing.expect(false);
-        }
+        },
     }
 
     const contents = aw.writer.buffered();
@@ -340,7 +336,7 @@ test "saveAsDialog: custom input returns user filename" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "my_puzzle.sud\n" };
+    const responses = [_][]const u8{"my_puzzle.sud\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -361,7 +357,7 @@ test "saveAsDialog: custom input returns user filename" {
         },
         .Cancelled => {
             try std.testing.expect(false);
-        }
+        },
     }
 }
 
@@ -388,7 +384,7 @@ test "saveAsDialog: EOF returns Cancelled" {
         .FileName => |name| {
             defer std.testing.allocator.free(name);
             try std.testing.expect(false);
-        }
+        },
     }
 }
 
@@ -398,7 +394,7 @@ test "openDialog: user enters a file path" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "my_save.sud\n" };
+    const responses = [_][]const u8{"my_save.sud\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -419,7 +415,7 @@ test "openDialog: user enters a file path" {
         },
         .Cancelled => {
             try std.testing.expect(false);
-        }
+        },
     }
 
     const contents = aw.writer.buffered();
@@ -449,7 +445,7 @@ test "openDialog: EOF returns Cancelled" {
         .FileName => |path| {
             defer std.testing.allocator.free(path);
             try std.testing.expect(false);
-        }
+        },
     }
 }
 
@@ -459,7 +455,7 @@ test "openDialog: empty input returns Cancelled" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "\n" };
+    const responses = [_][]const u8{"\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -477,7 +473,7 @@ test "openDialog: empty input returns Cancelled" {
         .FileName => |path| {
             defer std.testing.allocator.free(path);
             try std.testing.expect(false);
-        }
+        },
     }
 }
 
@@ -487,7 +483,7 @@ test "newGameOptions: '1' returns Choice Generated" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "1\n" };
+    const responses = [_][]const u8{"1\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -507,10 +503,9 @@ test "newGameOptions: '1' returns Choice Generated" {
         },
         .Cancelled => {
             try std.testing.expect(false);
-        }
+        },
     }
 }
-
 
 test "getCommandInput: fill A1 5 returns valid Fill" {
     const io = std.testing.io;
@@ -519,7 +514,7 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "fill A1 5\n" };
+    const responses = [_][]const u8{"fill A1 5\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };

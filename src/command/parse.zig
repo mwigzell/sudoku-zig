@@ -3,6 +3,7 @@ const std = @import("std");
 const cell_module = @import("../cell.zig");
 const config_module = @import("../config.zig");
 const disambiguate = @import("disambiguate.zig");
+const save = @import("save.zig");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -130,14 +131,14 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{.valid = Command.redo};
 
     if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
-        return .{.valid = Command{ .save = SaveData{ .path = ".sudoku_save.sud" } }};
+        return .{.valid = Command{ .save = SaveData{ .path = save.DEFAULT_SAVE_FILE } }};
     if (std.ascii.eqlIgnoreCase(cmd_name, "open")) {
         const path = it.next() orelse return .{.error_msg = "open requires file name"};
         return .{.valid = Command{ .open = OpenData{ .path = path } }};
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) {
         // Dummy — getCommandInput replaces with real path from saveAsDialog
-        return .{.valid = Command{ .save_as = SaveData{ .path = ".sudoku_save.sud" } }};
+        return .{.valid = Command{ .save_as = SaveData{ .path = save.DEFAULT_SAVE_FILE } }};
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "new"))
         return .{.valid = Command{ .new = NewData{ .puzzle = &[_]u8{} } }};

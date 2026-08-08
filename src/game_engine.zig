@@ -111,6 +111,7 @@ const redo_command = @import("command/redo.zig");
 const quit_command = @import("command/quit.zig");
 const save_command = @import("command/save.zig");
 const open_command = @import("command/open.zig");
+const save_as_command = @import("command/save_as.zig");
 const mypath = @import("command/path.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
@@ -313,14 +314,8 @@ pub const GameEngine = struct {
                     },
                 };
             },
-            else => {
-                return Event{
-                    .ok = .{
-                        .board_view = self.board.asView(),
-                        .msg = "SaveAs should be intercepted by getCommandInput",
-                        .is_quit = false,
-                    },
-                };
+            .save_as => |data| {
+                return save_as_command.execute(self, data.path);
             }
         }
     }
