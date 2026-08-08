@@ -150,6 +150,22 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
 
 const MaxMatchedCommands = 32;
 
+/// Extract CamelCase acronym from a command name. "SaveAs" -> "SA".
+fn acronymOf(name: []const u8, buf: []u8) []u8 {
+    var idx: usize = 0;
+    const first = @as(u8, std.ascii.toUpper(name[0]));
+    if (idx < buf.len) buf[idx] = first else return buf[0..idx];
+    idx += 1;
+    for (name[1..]) |ch| {
+        if (std.ascii.isUpper(ch)) {
+            if (idx < buf.len) buf[idx] = ch else break;
+            idx += 1;
+        }
+    }
+    return buf[0..idx];
+}
+
+///
 /// Public entry point — accepts available command names for prefix dispatch.
 pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) ParseCommandResult {
     const trimmed = std.mem.trim(u8, input_line, &std.ascii.whitespace);
@@ -173,18 +189,16 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
         if (std.ascii.eqlIgnoreCase(verb, exact))
             return dispatchToParser(exact, &it);
     }
-    switch (match_count) {
-        0 => {
-            var buf: [32]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{verb}) catch unreachable;
-            return .{.error_msg = msg};
-        },
-        1 => return dispatchToParser(matched_cmds[0], &it),
-        else => {
-            // Ambiguous — list matched commands
-            return buildAmbiguityMessage(verb, matched_cmds[0..match_count]);
-        },
+    // Third pass: CamelCase acronym match. "sa" -> SaveAs because SA is its acronym.
+    for (matched_cmds[0..match_count]) |candidate| {
+        var ac_buf: [16]u8 = undefined;
+        const ac = acronymOf(candidate, &ac_buf);
+        if (ac.len == verb.len and std.ascii.eqlIgnoreCase(verb, ac))
+            return dispatchToParser(candidate, &it);
     }
+    // Ambiguous — list matched commands
+
+    return buildAmbiguityMessage(verb, matched_cmds[0..match_count]);
 }
 /// Quit takes no arguments.
 fn parseQuit() ParseCommandResult {
@@ -456,6 +470,17 @@ test "parse save resolves to Save, not ambiguous with SaveAs present" {
     const res = parse("save");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
+}
+test "disambiguates s -> Save, sa -> SaveAs" {
+    // Full command set has both Save and SaveAs.
+    const s = parse("s");
+    try std.testing.expect(s == .valid);
+    try std.testing.expectEqualStrings(@tagName(s.valid), "save");
+
+    const sa = parse("sa");
+    try std.testing.expect(sa == .valid);
+    // SA is the CamelCase acronym of SaveAs -> SaveAs wins.
+    try std.testing.expectEqualStrings(@tagName(sa.valid), "save_as");
 }
 
 
