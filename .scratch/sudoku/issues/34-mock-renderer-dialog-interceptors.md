@@ -1,4 +1,4 @@
-Triage: ready-for-human
+Triage: closed
 
 ### Depends on Issue 33 (MockRenderer command queue) — Steps 1-3 already done
 ### Must complete before Issue 33 Step 5 can be written
@@ -29,5 +29,5 @@ The Facade pattern is fine for runtime, but our e2e tests (`sudoku.zig` line 617
 ### Acceptance criteria
 
 - [x] 1. e2e `run: fill → save → quit` rewritten with AsciiRenderer + MockSource.
-- [ ] 2. Dialog responses are real input strings from MockSource, not pre-baked command data.
-- [ ] 3. All tests still pass (existing MockRenderer unit tests retained).
+- [x] 2. Dialog responses are real input strings from MockSource, not pre-baked command data.
+- [x] 3. All tests still pass (existing MockRenderer unit tests retained).
