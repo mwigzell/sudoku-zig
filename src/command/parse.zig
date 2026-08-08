@@ -53,7 +53,7 @@ pub const Command = union(CommandTag) {
     save: SaveData,
     open: OpenData,
     new: NewData,
-    save_as: void,
+    save_as: SaveData,
 };
 pub const ParseResultTag = enum { valid, error_msg };
 
@@ -135,8 +135,10 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
         const path = it.next() orelse return .{.error_msg = "open requires file name"};
         return .{.valid = Command{ .open = OpenData{ .path = path } }};
     }
-    if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs"))
-        return .{.valid = Command.save_as};
+    if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) {
+        // Dummy — getCommandInput replaces with real path from saveAsDialog
+        return .{.valid = Command{ .save_as = SaveData{ .path = ".sudoku_save.sud" } }};
+    }
     if (std.ascii.eqlIgnoreCase(cmd_name, "new"))
         return .{.valid = Command{ .new = NewData{ .puzzle = &[_]u8{} } }};
 

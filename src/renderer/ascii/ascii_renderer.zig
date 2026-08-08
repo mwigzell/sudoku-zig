@@ -107,8 +107,8 @@ pub fn AsciiRenderer(StylerType: type) type {
             defer self.allocator.free(line);
         }
 
-        /// Implement Facade saveDialog_fn. Prompt for filename with default, return owned string.
-        pub fn saveDialog(self: *@This(), default_name: []const u8) facade.Error!facade.SaveFileResult {
+        /// Internal — prompt for filename with default, return owned string.
+        pub fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!facade.SaveFileResult {
             self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.WriteFault;
 
             const line = self.readLine() catch return .Cancelled;
@@ -122,7 +122,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
             }
 
-        /// Implement Facade openDialog_fn. Prompt for file path, return owned string.
+        /// Internal — prompt for file path, return owned string.
         pub fn openDialog(self: *@This()) facade.Error!facade.OpenFileResult {
             self.writer.print("Open file: ", .{}) catch return facade.Error.WriteFault;
 
@@ -159,7 +159,17 @@ pub fn AsciiRenderer(StylerType: type) type {
                 return .{ .error_msg = "no commands available" };
             }
 
-            return command_parse.parseWithCommands(raw, names[0..count]);
+            var rsl = command_parse.parseWithCommands(raw, names[0..count]);
+            // Intercept save_as: get real filename from dialog
+            if (std.meta.activeTag(rsl) == .valid and
+                    std.meta.activeTag(rsl.valid) == .save_as) {
+                    const file_result = self.saveAsDialog(".sudoku_save.sud") catch return .{.error_msg = "cancelled"};
+                switch (file_result) {
+                    .FileName => |path| rsl.valid.save_as.path = path,
+                    .Cancelled => return .{ .error_msg = "cancelled" },
+                }
+            }
+            return rsl;
         }
 
     };
@@ -290,7 +300,7 @@ test "showError: reads from MockSource and does not panic" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);
 }
 
-test "saveDialog: empty input returns default filename" {
+test "saveAsDialog: empty input returns default filename" {
     const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
@@ -308,7 +318,7 @@ test "saveDialog: empty input returns default filename" {
         source,
     );
 
-    const result = try renderer.saveDialog("test.sud");
+    const result = try renderer.saveAsDialog("test.sud");
 
     switch (result) {
         .FileName => |name| {
@@ -324,7 +334,7 @@ test "saveDialog: empty input returns default filename" {
     try std.testing.expectEqualStrings("Save to [test.sud]: ", contents);
 }
 
-test "saveDialog: custom input returns user filename" {
+test "saveAsDialog: custom input returns user filename" {
     const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
@@ -342,7 +352,7 @@ test "saveDialog: custom input returns user filename" {
         source,
     );
 
-    const result = try renderer.saveDialog("default.sud");
+    const result = try renderer.saveAsDialog("default.sud");
 
     switch (result) {
         .FileName => |name| {
@@ -355,7 +365,7 @@ test "saveDialog: custom input returns user filename" {
     }
 }
 
-test "saveDialog: EOF returns Cancelled" {
+test "saveAsDialog: EOF returns Cancelled" {
     const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
@@ -372,7 +382,7 @@ test "saveDialog: EOF returns Cancelled" {
         source,
     );
 
-    const result = try renderer.saveDialog("test.sud");
+    const result = try renderer.saveAsDialog("test.sud");
     switch (result) {
         .Cancelled => try std.testing.expect(true),
         .FileName => |name| {

@@ -25,7 +25,6 @@ pub const Facade = struct {
 
     showError_fn: *const fn (*anyopaque, []const u8) anyerror!void,
 
-    saveDialog_fn: *const fn (*anyopaque, []const u8) anyerror!SaveFileResult,
 
     openDialog_fn: *const fn (*anyopaque) anyerror!OpenFileResult,
 
@@ -45,9 +44,6 @@ pub const Facade = struct {
         return self.showError_fn(self.context, msg);
     }
 
-    pub fn saveDialog(self: *const Facade, default_name: []const u8) anyerror!SaveFileResult {
-        return self.saveDialog_fn(self.context, default_name);
-    }
 
     pub fn openDialog(self: *const Facade) anyerror!OpenFileResult {
         return self.openDialog_fn(self.context);
@@ -78,10 +74,6 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.showError(msg);
         }
-        pub fn saveDialog_wrapper(ctx: *anyopaque, default_name: []const u8) anyerror!SaveFileResult {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.saveDialog(default_name);
-        }
         pub fn openDialog_wrapper(ctx: *anyopaque) anyerror!OpenFileResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.openDialog();
@@ -103,7 +95,6 @@ pub fn Make(comptime CT: type) type {
                 .render_fn = render_wrapper,
                 .showLegend_fn = showLegend_wrapper,
                 .showError_fn = showError_wrapper,
-                .saveDialog_fn = saveDialog_wrapper,
                 .openDialog_fn = openDialog_wrapper,
                 .newGameOptions_fn = newGameOptions_wrapper,
                 .getCommandInput_fn = getCommandInput_wrapper,

@@ -2,35 +2,26 @@
 ready-for-human
 
 ### Notes
-**Triage notes (2025-08-xx):**
-**Step 1d complete (2026-08-13):**
+**Triage (from handoff 2026-08-13):**
 
-- `.save_as` tag added to CommandTag enum, Commands table (name "SaveAs"), Command union, and AvailableCommands.
-- parse.zig buffers expanded `[8]` → `[9][]const u8` throughout.
-- **Added exact-match disambiguation**: `parseWithCommands` now does a second pass through prefix matches to find an exact case-insensitive match. This means "save" resolves to Save (exact) even though SaveAs also prefix-matches. Ambiguity still fires when no exact match exists.
-- All 206 tests pass; binary shows both Save and SaveAs in legend.
-- Disambiguation uses two-pass resolution: (1) exact case-insensitive match, (2) CamelCase acronym match. "sa" -> SaveAs (SA) because it matches the acronym of SaveAs.
+Step 1d parsing/disambiguation is DONE. Commit d62ff5a fixed `dispatchToParser()` comparing "save_as" vs "SaveAs" string mismatch.
+All 9 commands (including SaveAs) parse correctly with acronym tiebreaker disambiguation.
 
-Tests calling `handleResult` were broken by Steps 2b–2d signature changes:
+**Remaining — Steps 1a-1c NOT implemented in getCommandInput:**
+- Step 1a: `.save` passthrough returns `SaveData{.path = ".sudoku_save.sud"}` hardcoded string. Spec requires: if engine.filename set → pass through; else delegate to saveDialog() for first-save UX.
+- Step 1b: `.open` reads path token from raw stdin line. Spec requires: call `self.openDialog()` instead.
+- Step 1c: `.new` returns stub `NewData{.puzzle = &[_]u8{}}`. Spec requires: call `self.newGameOptions()` for menu (Generated/Medium/Hard/Open).
 
-- `handleResult(self, result)` lost the `(out, in_)` reader/writer params
-- Four tests still referenced `&mw, &mr` with undeclared MockWriter/MockReader
-- One test (`"f A3 4"`) called `promptForAndRunCommand()` which now routes through renderer (no canned input)
+**Remaining — SaveAs functionality:**
+- exec() else branch catches `.save_as`, returns placeholder "SaveAs should be intercepted by getCommandInput" message.
+- No src/command/save_as.zig handler exists; no real file writing on save_as.
+- Two architectural options: (A) Create save_as.zig + wire into exec(); (B) Intercept .save_as in getCommandInput(), call saveDialog(), cache filename, return .save command (simpler — reuses existing save flow). Option B avoids exec() churn and follows the same pattern as Steps 1a/1b.
 
-Fixes applied:
+**Remaining — Step 2:**
+- 2g (remove readLine): `readLine` helper in sudoku.zig may still be unreferenced after Step 2e wiring.
+- 2h: Needs full regression once all interception lands.
 
-1. Removed stale duplicate save block (lines 487=51 old code) checking via MockWriter — assertions now on `mock.call_count`
-2. Same for open feedback test (line 532)
-3. Saved default filename test: removed unused MockWriter/MockReader creation
-4. Subsequent save reuse test: same cleanup
-5. f A3 4 test: switched from `promptForAndRunCommand()` to direct `handleResult(parsed)` with pre-parsed command — same exec → render → legend seam
-
-All 205 tests pass, binary works.
-
-Steps 1a=1d (save/saveAs/open/new interception in getCommandInput) have no dedicated test failure yet because there are no tests exercising those interceptor paths.
-
-MockRenderer needs canned command input support before Step 3 integration tests can drive `promptForAndRunCommand` end-to-end.
-- Axis: WASM compatibility. Current stdin coupling blocks browser rendering entirely.
+All 207 tests pass as of last check. Binary `zig build run` works for passthrough commands.
 - Depth: medium refactor — changes the Renderer contract from "draw-only" to "widget facade".
 - Impacts `renderer/facade.zig`, `sudoku.zig` (command loop), ascii & mock renderers, and any future WASM renderer.
 
@@ -244,21 +235,23 @@ MockRenderer needs to work as a renderer implementation so integration tests can
 
 
 ## Acceptance criteria
-- [x] Step 1: renderer foundation — all methods implemented on AsciiRenderer with dispatchers & Make(CT) wrappers (render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput)
-- [ ] **Step 1a**: `.saveTag` interception in getCommandInput
-- [ ] **Step 1b**: `.openTag` interception in getCommandInput
-- [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
-- [x] **Step 1d**: `SaveAs` command + interception in getCommandInput
 
-- [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end (letter sub-steps 2a–2h)
+- [x] **Step 1** (renderer foundation): all methods implemented on AsciiRenderer with dispatchers \& Make(CT) wrappers
+- [-] **Step 1d partial**: SaveAs added to Commands table, CommandTag enum, parse dispatch, disambiguation. Interception in getCommandInput NOT done — `exec()` else branch returns placeholder message.
+- [ ] **Step 1a**: `.save` interception in getCommandInput (dialog + filename caching)
+- [ ] **Step 1b**: `.open` interception in getCommandInput (dialog)
+- [ ] **Step 1c**: `.new` interception + newGameOptions menu
+
+- [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end
   - [x] 2a: `main.zig` wrap through Make().make()
   - [x] 2b: Replace `comptime R` with `renderer: *Facade`
   - [x] 2c: Replace printLegend → renderer.showLegend
   - [x] 2d: Replace waitAck (4 sites) → renderer.showError
-  - [ ] 2e: Replace raw prompt + parse in promptForAndRunCommand → renderer.getCommandInput
-  - [ ] 2f: run() remove local I/O creation, use renderer methods
-  - [ ] 2g: Remove unused readLine helper
-  - [ ] 2h: Verify zig build run + regression suite
+  - [x] 2e: promptForAndRunCommand uses renderer.getCommandInput() (already done)
+  - [x] 2f: run() uses renderer methods, no local I/O creation (already done)
+  - [ ] 2g: Remove unused readLine helper & waitAck (dead code — called by nothing since 2d wiring)
+  - [ ] 2h: Verify zig build run + full regression suite
+
 - [ ] **Step 3**: Adapt MockRenderer for testable widget-based flows
 
 ## Blocked by

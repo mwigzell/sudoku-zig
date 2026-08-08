@@ -42,11 +42,6 @@ pub const MockRenderer = struct {
         _ = msg;
     }
 
-    pub fn saveDialog(self: *MockRenderer, default_name: []const u8) facade.Error!facade.SaveFileResult {
-        _ = self;
-        _ = default_name;
-        return .Cancelled;
-    }
 
     pub fn openDialog(self: *MockRenderer) facade.Error!facade.OpenFileResult {
         _ = self;
