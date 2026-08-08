@@ -1,4 +1,5 @@
 const std = @import("std");
+const facade = @import("renderer/facade.zig");
 const sudoku = @import("sudoku.zig");
 const config_module = @import("config.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
@@ -16,9 +17,11 @@ pub fn main(init: std.process.Init) anyerror!void {
 
     var s = styler.AnsiStyler{};
     const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
-    var renderer = R.init(std.heap.page_allocator, init.io, &stdout_writer.interface, &s, .{ .stdin = input_source.StdinSource{} });
 
-    var game = try sudoku.Sudoku(R).init(cfg, &renderer, init.io);
+    var renderer = R.init(std.heap.page_allocator, init.io, &stdout_writer.interface, &s, .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator) });
+
+    const f = facade.Make(R).make(&renderer);
+    var game = try sudoku.Sudoku.init(cfg, &f, init.io);
     game.run() catch |err| {
         if (err == error.ReadEOF) {
             log.debug("bye!", .{});

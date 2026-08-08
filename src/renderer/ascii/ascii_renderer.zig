@@ -178,7 +178,7 @@ test "showLegend: writes Command: with Fill Clear Quit" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource{} });
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) });
 
     const cmds = game_engine.AvailableCommands{
         .fill = true,
@@ -205,7 +205,7 @@ test "render: renders empty board end-to-end" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource{} });
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) });
 
     const b = board.Board.init();
     try renderer.render(b.asView(), null);
@@ -238,7 +238,7 @@ test "render: renders with digits placed" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource{} });
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) });
 
     const givens_row = [_]u8{
         0, 0, 0, 0, 0, 0, 0, 0, 0,
