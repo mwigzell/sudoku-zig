@@ -203,7 +203,7 @@ MockRenderer needs to work as a renderer implementation so integration tests can
   - [ ] 2f: run() remove local I/O creation, use renderer methods
   - [ ] 2g: Remove unused readLine helper
   - [ ] 2h: Verify zig build run + regression suite
-- [ ] Step 3: Adapt MockRenderer for testable widget-based flows
+- [ ] **Step 3**: Adapt MockRenderer for testable widget-based flows
 
 ## Blocked by
 (none)
