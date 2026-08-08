@@ -2,6 +2,27 @@
 ready-for-human
 
 ### Notes
+**Triage notes (2025-08-xx):**
+
+Tests calling `handleResult` were broken by Steps 2b–2d signature changes:
+
+- `handleResult(self, result)` lost the `(out, in_)` reader/writer params
+- Four tests still referenced `&mw, &mr` with undeclared MockWriter/MockReader
+- One test (`"f A3 4"`) called `promptForAndRunCommand()` which now routes through renderer (no canned input)
+
+Fixes applied:
+
+1. Removed stale duplicate save block (lines 487=51 old code) checking via MockWriter — assertions now on `mock.call_count`
+2. Same for open feedback test (line 532)
+3. Saved default filename test: removed unused MockWriter/MockReader creation
+4. Subsequent save reuse test: same cleanup
+5. f A3 4 test: switched from `promptForAndRunCommand()` to direct `handleResult(parsed)` with pre-parsed command — same exec → render → legend seam
+
+All 205 tests pass, binary works.
+
+Steps 1a=1d (save/saveAs/open/new interception in getCommandInput) have no dedicated test failure yet because there are no tests exercising those interceptor paths.
+
+MockRenderer needs canned command input support before Step 3 integration tests can drive `promptForAndRunCommand` end-to-end.
 - Axis: WASM compatibility. Current stdin coupling blocks browser rendering entirely.
 - Depth: medium refactor — changes the Renderer contract from "draw-only" to "widget facade".
 - Impacts `renderer/facade.zig`, `sudoku.zig` (command loop), ascii & mock renderers, and any future WASM renderer.
@@ -44,6 +65,16 @@ The command loop no longer reads stdin. It calls structured renderer methods and
 - **Reader NOT stored as pointer.** Zig readers wrap stack buffers. Each read method creates a local stack buffer + reader inline.
 - **readLine() helper returns `Error!?[]u8`.** Uses allocator to dupe; caller owns the string via `defer allocator.free(line)`.
 
+
+`saveDialog()` collects a **bare filename** from the user (e.g. `mygame.sud`). Absolute paths passed through verbatim.
+
+The actual disk path is resolved downstream by the command handlers:
+- `save.zig execute()`: checks `engine.data_dir`, lazily calls `path.getDataDir()` → `~/.local/share/sudoku/`. Then `path.resolveSavePath(data_dir, filename)` joins relative names, passes absolute through.
+- `open.zig execute(path)`: same lazy resolution. Resolves then reads the file at the resolved location.
+- Steps 1a/1d only need to return a filename string in SaveData/OpenData — path resolution is handled by existing code (Issue 27), no duplication.
+
+
+See `src/command/path.zig` for API: `getDataDir()`, `resolveSavePath()`.
 **Source of truth:** `src/renderer/facade.zig` (renderer vtable, Make(CT), dispatchers) and `src/command/parse.zig` (Command, ParseCommandResult, SaveData, OpenData).
 
 ### The run() cycle
@@ -68,9 +99,9 @@ New code: all UI flows through the renderer.
 
 **Step 1** — `getCommandInput`: prompt → parse → exec command flow
 
-Each row maps to one TDD iteration. Rows 1–5 are passthrough (no change needed).
-Row 6 (save) is passthrough — uses current filename or default, no prompting.
-Rows 7–9 are the sub-dialog rows where getCommandInput intercepts and packages data into a Command.
+Each row maps to one TDD iteration. Rows 1–6 are passthrough (no change needed).
+Row 7 (`SaveAs`) is a sub-dialog row.
+Rows 8–9 are sub-dialog rows where `getCommandInput` intercepts and packages data into a Command.
 
 | Command | User input | `getCommandInput` action | Returns (`ParseCommandResult`) | `exec(Command)` data | Notes |
 |---------|-----------|------------------------|-------------------------------|---------------------|-------|
@@ -79,10 +110,10 @@ Rows 7–9 are the sub-dialog rows where getCommandInput intercepts and packages
 | undo | `u` / `undo` | parse → dispatchToParser | `.valid{.undo: void}` | `undo_command.execute(self)` | Passthrough, no change |
 | redo | `r` / `redo` | parse → dispatchToParser | `.valid{.redo: void}` | `redo_command.execute(self)` | Passthrough, no change |
 | quit | `q` / `quit` | parse → dispatchToParser | `.valid{.quit: void}` | `quit_command.execute(self)` | Passthrough, no change |
-| save | `save` | parse → dispatchToParser | `.valid{.save: SaveData}` | `save_command.execute(self, data)` | Passthrough — uses current filename or default |
-| save_as | `save-as` / `saves` | detect .save_as tag → call `self.saveDialog()`. On `.FileName` → return Command with path. On `.Cancelled` → `.error_msg` | `.valid{.save_as: SaveData{path}}` | `save_command.execute(self, data.path)` | **SaveAs — prompts for filename** |
+| save | `save` | if `engine.filename` is set → parse returns SaveData with that path. If not set → detect tag, delegate to SaveAs flow | `.valid{.save: SaveData{path}}` | `save_command.execute(self, data.path)` | **Quick Save** — delegates to SaveAs on first use, reuses cached path after |
 | open | `open` | detect .open tag → call `self.openDialog()`. Same pattern | `.valid{.open: OpenData{path}}` | `open_command.execute(self, data.path)` | Path from dialog, not tokenizer |
 | new | `new` | detect .new tag → call `self.newGameOptions()`. On `.PuzzleString` → return Command. On `.Cancelled` → `.error_msg` | `.valid{.new: NewData{puzzle}}` | `new_command.execute(self, data.puzzle)` | **NewData struct**, replaces bare `void` |
+| save_as | `save-as` / `saves` | detect .save_as tag → call `self.saveDialog()`. On `.FileName` → cache it, return Command with path. On `.Cancelled` → `.error_msg` | `.valid{.save: SaveData{path}}` | `save_command.execute(self, data.path)` | **Always prompts** — does NOT reuse cached name; caller uses this to change file |
 
 
 **Edge cases:**
@@ -91,21 +122,37 @@ Rows 7–9 are the sub-dialog rows where getCommandInput intercepts and packages
 
 
 
-**Step 1a** — `.saveTag` interception in getCommandInput
-- When parsed tag is `.save_tag`, detect it, call `self.saveDialog()` to prompt for filename.
-- On `.FileName` — return valid save command with chosen path
-- On `.Cancelled` — return error_msg
+**Step 1a** — `.save` interception in getCommandInput
+
+- When parsed tag is `.save`, check `self.engine.filename`:
+  - **Set:** parse returns SaveData with cached path → passes straight through to exec.
+  - **Not set:** delegates to SaveAs flow — call `self.saveDialog()` with default filename suggestion (`.sudoku_save.sud`). On `.FileName` → cache it (`engine.filename`) and return valid save command with chosen path. On `.Cancelled` → return `.error_msg`.
+
+- `saveDialog()` presents the default filename pre-filled as a suggestion. User accepts by pressing Enter, edits to type a different name, or cancels.
 
 **Step 1b** — `.openTag` interception in getCommandInput
-- When parsed tag is `.openTag`, detect it, call `self.openDialog()` to prompt for file path.
-- On `.FileName` — return valid open command with chosen path
-- On `.Cancelled` — return error_msg
+
+- When parsed tag is `.open`, detect it, call `self.openDialog()` to prompt for file path.
+- On `.FileName` → return valid open command with chosen path
+- On `.Cancelled` → return error_msg
 
 **Step 1c** — `.new` interception + un-stub newGameOptions menu in getCommandInput
+
 - When parsed tag is `.new`, detect it, call `self.newGameOptions()` to show menu.
 - Un-stub: present menu "Generated / Medium / Hard" so user's key choice determines puzzle.
-- On `.PuzzleString` — return valid new command with puzzle data
-- On `.Cancelled` — return error_msg
+- On `.PuzzleString` → return valid new command with puzzle data
+- On `.Cancelled` → return error_msg
+
+**Step 1d** — `SaveAs` command + interception in getCommandInput
+
+- Add `save_as` to the Commands comptime table (tag `.save_as`, name "SaveAs").
+- When parsed tag is `.save_as`: always call `self.saveDialog()` with default filename suggestion (`.sudoku_save.sud`). On `.FileName` → cache it (`engine.filename`) and return valid command with chosen path. On `.Cancelled` → return `.error_msg`.
+
+- `saveDialog()` presents the default filename pre-filled as a suggestion. User accepts by pressing Enter, edits to type a different name, or cancels.
+
+- Relationship: `save` delegates to the SaveAs flow only when `engine.filename` is unset. After that, `save` is a fast path; user calls `save_as` if they want to pick a different file.
+
+
 **Step 2** — Wire renderer into `sudoku.zig` end-to-end
 
 Replace the raw renderer param with a renderer pointer so all I/O flows through the vtable. This is **a switch, not a rewrite**: the backbone loop (`handleResult` → `handleEvent` → `engine.exec`) stays identical; only the I/O calls change.
@@ -190,10 +237,12 @@ MockRenderer needs to work as a renderer implementation so integration tests can
 
 
 ## Acceptance criteria
-- [x] Steps 1a–1g: renderer foundation — all seven methods implemented on AsciiRenderer with dispatchers & Make(CT) wrappers (render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput)
+- [x] Step 1: renderer foundation — all methods implemented on AsciiRenderer with dispatchers & Make(CT) wrappers (render, showLegend, showError, saveDialog, openDialog, newGameOptions, getCommandInput)
 - [ ] **Step 1a**: `.saveTag` interception in getCommandInput
 - [ ] **Step 1b**: `.openTag` interception in getCommandInput
 - [ ] **Step 1c**: `.new` interception + un-stub newGameOptions menu
+- [ ] **Step 1d**: `SaveAs` command + interception in getCommandInput
+
 - [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end (letter sub-steps 2a–2h)
   - [x] 2a: `main.zig` wrap through Make().make()
   - [x] 2b: Replace `comptime R` with `renderer: *Facade`
