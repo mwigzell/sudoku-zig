@@ -1,4 +1,4 @@
-Triage: ready-for-agent
+Triage: closed
 
 ## What to build
 
