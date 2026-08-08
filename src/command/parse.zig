@@ -135,7 +135,7 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
         const path = it.next() orelse return .{.error_msg = "open requires file name"};
         return .{.valid = Command{ .open = OpenData{ .path = path } }};
     }
-    if (std.ascii.eqlIgnoreCase(cmd_name, "save_as"))
+    if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs"))
         return .{.valid = Command.save_as};
     if (std.ascii.eqlIgnoreCase(cmd_name, "new"))
         return .{.valid = Command{ .new = NewData{ .puzzle = &[_]u8{} } }};
@@ -189,16 +189,25 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
         if (std.ascii.eqlIgnoreCase(verb, exact))
             return dispatchToParser(exact, &it);
     }
-    // Third pass: CamelCase acronym match. "sa" -> SaveAs because SA is its acronym.
-    for (matched_cmds[0..match_count]) |candidate| {
-        var ac_buf: [16]u8 = undefined;
-        const ac = acronymOf(candidate, &ac_buf);
-        if (ac.len == verb.len and std.ascii.eqlIgnoreCase(verb, ac))
-            return dispatchToParser(candidate, &it);
+    switch (match_count) {
+        0 => {
+            var buf: [32]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "unknown command \"{s}\"", .{verb}) catch unreachable;
+            return .{.error_msg = msg};
+        },
+        1 => return dispatchToParser(matched_cmds[0], &it),
+        else => {
+            // Tiebreaker: CamelCase acronym match. "sa" -> SaveAs (SA).
+            for (matched_cmds[0..match_count]) |candidate| {
+                var ac_buf: [16]u8 = undefined;
+                const ac = acronymOf(candidate, &ac_buf);
+                if (ac.len == verb.len and std.ascii.eqlIgnoreCase(verb, ac))
+                    return dispatchToParser(candidate, &it);
+            }
+            // Ambiguous — list matched commands
+            return buildAmbiguityMessage(verb, matched_cmds[0..match_count]);
+        }
     }
-    // Ambiguous — list matched commands
-
-    return buildAmbiguityMessage(verb, matched_cmds[0..match_count]);
 }
 /// Quit takes no arguments.
 fn parseQuit() ParseCommandResult {

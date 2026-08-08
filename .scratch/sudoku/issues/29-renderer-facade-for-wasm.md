@@ -9,6 +9,7 @@ ready-for-human
 - parse.zig buffers expanded `[8]` → `[9][]const u8` throughout.
 - **Added exact-match disambiguation**: `parseWithCommands` now does a second pass through prefix matches to find an exact case-insensitive match. This means "save" resolves to Save (exact) even though SaveAs also prefix-matches. Ambiguity still fires when no exact match exists.
 - All 206 tests pass; binary shows both Save and SaveAs in legend.
+- Disambiguation uses two-pass resolution: (1) exact case-insensitive match, (2) CamelCase acronym match. "sa" -> SaveAs (SA) because it matches the acronym of SaveAs.
 
 Tests calling `handleResult` were broken by Steps 2b–2d signature changes:
 
