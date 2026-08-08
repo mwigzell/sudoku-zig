@@ -688,3 +688,40 @@ test "run: save_as writes file and re-renders" {
     // save_as triggers a re-render with confirmation message + legend refresh
     try std.testing.expect(contents.len > 0);
 }
+
+// Issue 34 Step 3 — e2e: new command resets board and history
+test "run: new command resets board and history" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ascii_ansi,
+        .fallback_renderer = .ascii_ansi,
+    };
+
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+
+    // feed fill (adds to history), then new (should clear it), then quit
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "new",
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
+    };
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+        alloc, io, &aw.writer, &s, source,
+    );
+
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku_instance = try Sudoku.init(cfg, &f, io);
+    defer sudoku_instance.engine.deinit();
+    sudoku_instance.run() catch {};
+
+    // history should be empty after new command clears it
+    try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.history.entries.items.len);
+}
