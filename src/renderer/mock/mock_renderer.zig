@@ -10,11 +10,15 @@ const AvailableCommands = @import("../../game_engine.zig").AvailableCommands;
 pub const MockRenderer = struct {
     call_count: usize,
     last_rendered_cells: ?[9][9]cell.CellValue,
+    command_queue: []const command.ParseCommandResult,
+    queue_index: usize,
 
-    pub fn init() MockRenderer {
+    pub fn init(commands: []const command.ParseCommandResult) MockRenderer {
         return .{
             .call_count = 0,
             .last_rendered_cells = null,
+            .command_queue = commands,
+            .queue_index = 0,
         };
     }
 

@@ -129,7 +129,7 @@ test "Sudoku.init uses config difficulty to build the board" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
 
@@ -145,7 +145,7 @@ test "Sudoku.init with .medium difficulty loads medium puzzle" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
 
@@ -375,7 +375,7 @@ test "Sudoku stores io field during init" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku_instance = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku_instance.engine.deinit();
@@ -388,7 +388,7 @@ test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku.engine.deinit();
@@ -440,7 +440,7 @@ test "full seam: open loads saved game" {
     try original.saveGame(std.testing.io, tmp_path);
 
     // Now open through handleResult to prove the handler is wired
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku.engine.deinit();
@@ -470,7 +470,7 @@ test "handleResult: save success produces status message, re-render, legend refr
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku.engine.deinit();
@@ -506,7 +506,7 @@ test "handleResult: open success produces status message, re-render, and legend 
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
     try original.saveGame(std.testing.io, tmp_path);
 
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku.engine.deinit();
@@ -537,7 +537,7 @@ test "handleResult: open with relative path resolves without panic" {
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, abs_path) catch {};
     try original.saveGame(std.testing.io, abs_path);
 
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku.engine.deinit();
@@ -561,7 +561,7 @@ test "handleResult: save uses default filename and returns success" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku.engine.deinit();
@@ -588,7 +588,7 @@ test "handleResult: subsequent save reuses previous filename with feedback" {
         .fallback_renderer = .ascii_ansi,
     };
 
-    var mock = mock_renderer.MockRenderer.init();
+    var mock = mock_renderer.MockRenderer.init(&.{});
     const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
     var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
     defer sudoku.engine.deinit();
