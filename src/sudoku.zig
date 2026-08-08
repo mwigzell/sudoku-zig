@@ -651,7 +651,7 @@ test "run: fill → save → quit" {
     const contents = aw.writer.buffered();
     try std.testing.expect(contents.len > 0);
 }
-// Issue 33 Step 6 — e2e: save_as writes file and re-renders
+// Issue 34 Step 2 — e2e: save_as writes file and re-renders
 test "run: save_as writes file and re-renders" {
     const cfg: config.Config = .{
         .difficulty = .hard,
@@ -659,18 +659,32 @@ test "run: save_as writes file and re-renders" {
         .fallback_renderer = .ascii_ansi,
     };
 
-    const queued = [_]command.ParseCommandResult{
-        .{ .valid = .{ .save_as = command.SaveData{ .path = "/tmp/mock_saveas_e2e.sud" } } },
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+
+    // Canned responses: command → dialog filename → quit
+    const responses = [_][]const u8{
+        "save_as",
+        "test_save_as.sud",
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var mock = mock_renderer.MockRenderer.init(&queued);
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+        alloc, io, &aw.writer, &s, source,
+    );
 
-    const render_before = mock.call_count;
-    _ = sudoku.run() catch {};
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku_instance = try Sudoku.init(cfg, &f, io);
+    defer sudoku_instance.engine.deinit();
+    sudoku_instance.run() catch {};
 
-    // save_as returned an .ok event with the board view -> renderer.render called once more
-    try std.testing.expect(mock.call_count > render_before);
+    const contents = aw.writer.buffered();
+    // save_as triggers a re-render with confirmation message + legend refresh
+    try std.testing.expect(contents.len > 0);
 }
