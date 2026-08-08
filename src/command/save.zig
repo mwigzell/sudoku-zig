@@ -5,7 +5,7 @@ const mypath = @import("path.zig");
 
 pub const DEFAULT_SAVE_FILE = "sudoku_save.sud";
 
-pub fn execute(engine: *game_engine.GameEngine) !game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.Event {
     const gpa = std.heap.page_allocator;
 
     // Ensure data dir is resolved
@@ -13,15 +13,10 @@ pub fn execute(engine: *game_engine.GameEngine) !game_engine.Event {
         engine.data_dir = try mypath.getDataDir(gpa, engine.io);
     }
 
-    // Use last filename or default (make it owned for deinit safety)
-    if (engine.filename == null) {
-        engine.filename = try gpa.dupe(u8, DEFAULT_SAVE_FILE);
-    }
-
     const resolved = try mypath.resolveSavePath(
         gpa,
         engine.data_dir.?,
-        engine.filename.?,
+        path,
     );
     defer gpa.free(resolved);
 
@@ -55,11 +50,10 @@ test "command.save.execute saves file and returns ok with message" {
     const tmp_path = "/tmp/sudoku_save_command_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
-    // Set up the filename to our temp path (owned slice for deinit safety)
-    engine.filename = try std.heap.page_allocator.dupe(u8, tmp_path);
+    // Give the engine a data dir
     engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
 
-    const event = execute(&engine) catch return error.SkipZigTest;
+    const event = execute(&engine, DEFAULT_SAVE_FILE) catch return error.SkipZigTest;
 
     switch (event) {
         .ok => |data| {

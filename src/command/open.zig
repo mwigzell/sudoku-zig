@@ -46,7 +46,6 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
 
     // Free old optional fields before overwriting self
     if (engine.data_dir) |old_dir| gpa.free(old_dir);
-    if (engine.filename) |old_name| gpa.free(old_name);
     if (engine.last_save_msg) |old_msg| gpa.free(old_msg);
 
     engine.* = loaded;
@@ -74,13 +73,11 @@ test "command.open.execute opens file and returns ok with message" {
 
     engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
     errdefer std.heap.page_allocator.free(engine.data_dir.?);
-    engine.filename = try std.heap.page_allocator.dupe(u8, tmp_path);
-    errdefer std.heap.page_allocator.free(engine.filename.?);
 
     const resolved = try mypath.resolveSavePath(
         std.heap.page_allocator,
         engine.data_dir.?,
-        engine.filename.?,
+        tmp_path,
     );
     defer std.heap.page_allocator.free(resolved);
 

@@ -122,7 +122,6 @@ pub const GameEngine = struct {
     history: MutationHistory,
     io: std.Io,
     data_dir: ?[]u8,
-    filename: ?[]u8,
     last_save_msg: ?[]u8,
     /// Construct from a one-line puzzle string.
     pub fn init(puzzle_str: []const u8, io: std.Io) board.BoardError!@This() {
@@ -131,7 +130,6 @@ pub const GameEngine = struct {
             .history = MutationHistory.init(std.heap.page_allocator),
             .io = io,
             .data_dir = null,
-            .filename = null,
             .last_save_msg = null,
         };
         self.board.validate();
@@ -143,7 +141,6 @@ pub const GameEngine = struct {
 
         // Free optional string fields
         if (self.data_dir) |dir| std.heap.page_allocator.free(dir);
-        if (self.filename) |name| std.heap.page_allocator.free(name);
         if (self.last_save_msg) |msg| std.heap.page_allocator.free(msg);
     }
 
@@ -252,7 +249,6 @@ pub const GameEngine = struct {
             .history = history,
             .io = io,
             .data_dir = null,
-            .filename = null,
             .last_save_msg = null,
         };
 
@@ -299,8 +295,8 @@ pub const GameEngine = struct {
             .redo => {
                 return redo_command.execute(self);
             },
-            .save => {
-                return save_command.execute(self);
+            .save => |data| {
+                return save_command.execute(self, data.path);
             },
             .open => |data| {
                 return open_command.execute(self, data.path);
@@ -1265,18 +1261,16 @@ test "Save fields moved to GameEngine struct" {
 
     // Fields exist on GameEngine (compile-time proof) and start null
     try std.testing.expectEqual(@as(?[]u8, null), engine.data_dir);
-    try std.testing.expectEqual(@as(?[]u8, null), engine.filename);
 }
 
 test "exec save: delegates to save handler via command/save.zig" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
-    // Give a known data dir and filename so save handler has path
+    // Give a known data dir so save handler has path
     const gpa = std.heap.page_allocator;
     engine.data_dir = try mypath.getDataDir(gpa, std.testing.io);
     errdefer gpa.free(engine.data_dir.?);
-    engine.filename = try gpa.dupe(u8, "issue28_step4_save.sud");
 
     // Make a mutation to save meaningful state
     _ = try expectOk(try engine.exec(command.Command{
@@ -1284,7 +1278,7 @@ test "exec save: delegates to save handler via command/save.zig" {
     }));
 
     // exec() must NOT panic on .save — it should delegate to command handler
-    const result = engine.exec(command.Command{ .save = command.SaveData{ .path = engine.filename.? } }) catch return error.SkipZigTest;
+    const result = engine.exec(command.Command{ .save = command.SaveData{ .path = "sudoku_save.sud" } }) catch return error.SkipZigTest;
 
     // Should return ok with message and is_quit = false
     switch (result) {

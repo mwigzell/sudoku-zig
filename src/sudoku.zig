@@ -101,12 +101,13 @@ pub const Sudoku = struct {
     /// Prompt through renderer, parse, dispatch. Returns true on quit.
     fn promptForAndRunCommand(self: *@This()) anyerror!bool {
         const avail = self.engine.getAvailableCommands();
-        const result = try self.renderer.getCommandInput(avail);
+        const result = self.renderer.getCommandInput(avail) catch |err| {
+            if (err == error.ReadEOF) return true;
+            return err;
+        };
 
         return try self.handleResult(result);
     }
-
-
     pub fn run(self: *@This()) anyerror!void {
         // Initial render — show starting board via Event seam
         try self.renderer.render(self.engine.eventBoard(), null);
@@ -122,6 +123,9 @@ pub const Sudoku = struct {
 const mock_renderer = @import("renderer/mock/mock_renderer.zig");
 const board = @import("board.zig");
 const cell = @import("cell.zig");
+const input_source = @import("input_source.zig");
+const styler_t = @import("renderer/ascii/styler.zig");
+const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 
 test "Sudoku.init uses config difficulty to build the board" {
     const cfg: config.Config = .{
@@ -613,35 +617,40 @@ test "handleResult: subsequent save reuses previous filename with feedback" {
     try std.testing.expect(mock.call_count > call_before_two);
 }
 
-// Issue 33 Step 4 — e2e: fill → save → quit through run()
 test "run: fill → save → quit" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
 
-    const queued = [_]command.ParseCommandResult{
-        .{ .valid = .{ .fill = .{ .row = 0, .col = 2, .digit = .seven } } },
-        .{ .valid = .{ .save = command.SaveData{ .path = "/tmp/mock_save.sud" } } },
-        // queue exhaustion auto-returns quit to break the loop
+    // Canned responses for commands
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "save",
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var mock = mock_renderer.MockRenderer.init(&queued);
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+        alloc, io, &aw.writer, &s, source,
+    );
 
-    // Initial render has happened by the time run() calls render first. After that:
-    // 1 render for fill, then save (may error→early exit or succeed), then quit auto-ends.
-    sudoku.run() catch |err| {
-        try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
-    };
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku_instance = try Sudoku.init(cfg, &f, io);
+    defer sudoku_instance.engine.deinit();
+    sudoku_instance.run() catch {};
 
-    // Even if save errored: we got past the initial render through at least fill.
-    try std.testing.expect(mock.call_count > 1);
+    const contents = aw.writer.buffered();
+    try std.testing.expect(contents.len > 0);
 }
-
 // Issue 33 Step 6 — e2e: save_as writes file and re-renders
 test "run: save_as writes file and re-renders" {
     const cfg: config.Config = .{

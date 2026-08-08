@@ -1,4 +1,4 @@
-/// SaveAs command handler — sets filename cache then saves via engine.saveGame().
+/// SaveAs command handler — saves via engine.saveGame() to given path.
 const std = @import("std");
 const game_engine = @import("../game_engine.zig");
 const mypath = @import("path.zig");
@@ -11,14 +11,10 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
         engine.data_dir = try mypath.getDataDir(gpa, engine.io);
     }
 
-    // Set filename cache for future "save" quick-save
-    if (engine.filename) |old_name| gpa.free(old_name);
-    engine.filename = try gpa.dupe(u8, path);
-
     const resolved = try mypath.resolveSavePath(
         gpa,
         engine.data_dir.?,
-        engine.filename.?,
+        path,
     );
     defer gpa.free(resolved);
 
@@ -42,7 +38,7 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
     } };
 }
 
-test "command.save_as.execute saves file and caches filename" {
+test "command.save_as.execute saves file at given path" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
         std.testing.io,
@@ -64,8 +60,6 @@ test "command.save_as.execute saves file and caches filename" {
             const m = data.msg.?;
             try std.testing.expect(std.mem.indexOf(u8, m, "saved") != null);
 
-            // Filename should now be cached on the engine
-            try std.testing.expect(engine.filename != null);
         },
         .error_msg => |msg| {
             // Accept I/O errors (depends on FS state)
