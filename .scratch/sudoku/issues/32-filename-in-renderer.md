@@ -34,17 +34,18 @@ When caching `last_filename`, the intercept uses shared ownership: dialog alloca
 | 4 ✅ | After `.save_as`: cache chosen name as `last_filename`, free old first. SaveData.path points at same allocation.
 | 5 | Modify `.open` intercept in `getCommandInput()`: call `openDialog()` and populate `OpenData.path`. Cancelled returns error_msg.
 | 6 ⛔ | Rejected with nullable types — paths are non-optional, no freeing needed in exec.
-| 7 | Simplify `save.execute()`: remove `engine.filename == null` fallback and engine-owned filename handling. Just use passed path directly from command data.
-| 8 | Simplify `save_as.execute()`: remove `engine.filename` caching. Still saves to disk.
-| 9 | Remove `engine.filename: ?[]u8`, `engine.last_save_msg: ?[]u8` from `GameEngine`. Clean up deinit, init. Update Open command handler to not touch engine-owned filename fields.
-| 10 | Update all tests that reference `engine.filename` or assume user-typed open paths.
+| 7 ✅ | `engine.filename` already removed (issue 25 cleanup) — save.execute() uses passed path directly.
+| 8 ✅ | `engine.filename` already removed — save_as.execute() uses passed path, no caching on engine.
+| 9 | Remove `engine.filename: ?[]u8`, `engine.last_save_msg: ?[]u8` from `GameEngine`. (Partial — filename gone, last_save_msg remains.)
+| 10 ✅ | All tests updated to not reference engine filename.
 
 ### Acceptance criteria
 
-- [ ] 1. `GameEngine` has no `filename` field.
+- [x] 1. `GameEngine` has no `filename` field. (Removed in earlier issue 25 cleanup.)
 - [x] 2. `AsciiRenderer` stores `last_filename`. After a successful save, subsequent `.save` does not prompt and writes to the same file.
 - [x] 3. `.save` with no prior filename calls `saveAsDialog()` and prompts user.
-- [ ] 4. `.open` does not require user-typed filename — uses `openDialog()`.
-- [ ] 5. `exec()` passes path data through unchanged — no defaulting logic in command handlers.
-- [ ] 6. `parse.zig` has no hardcoded save filenames.
-- [ ] 7. All existing tests pass (or are updated).
+- [x] 4. After `.save_as`, the chosen filename is cached; subsequent `.save` reuses it without prompting.
+- [ ] 5. `.open` does not require user-typed filename — uses `openDialog()`. (Step 5, not yet implemented.)
+- [x] 6. `exec()` passes path data through unchanged - `.save`, `.open`, `.save_as` all call their handler with `data.path` directly.
+- [x] 7. `parse.zig` has no hardcoded save filenames — paths are set by intercept.
+- [ ] 8. All existing tests pass (or are updated). No new failures introduced.
