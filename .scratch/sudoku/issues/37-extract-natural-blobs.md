@@ -139,7 +139,7 @@ Already partly covered by issue #36 (mutation_history moved to engine/). Their t
 
 ## The plan
 
-### Step 1 — `board/serial.zig` (after issue #36 is done, board still at top-level)
+### Step 1 — `board/serial.zig` ✅ DONE (b0d79be)
 
 Extract from `board.zig`:
 - Functions: `toFlat`, `equal`, `fromFlat`, `fromOneLineString`
@@ -167,11 +167,11 @@ Import by both game_engine.zig (re-export for now) and the new save handler file
 
 ## Acceptance criteria
 
-- [ ] `board/serial.zig` exists with 4 free fns + BoardError + FlatOpts + 10 tests
+- [x] `board/serial.zig` exists with 4 free fns + BoardError + FlatOpts + 10 tests ✅ b0d79be
 - [ ] `board/conflict.zig` exists with 4 free fns + 9 tests
 - [ ] board.zis reduced from ~1080 lines to ~600 (core: struct + views + cell mutation + digit bits)
 - [ ] After #36: `engine/save_format.zig` exists with wire types + IO functions + 17 tests
 - [ ] game_engine.zig reduced from ~400+ lines to ~250 (controller only)
 - [ ] Backward-compat re-exports in board.zig and game_engine.zig so external callers don't break
-- [ ] `zig build test` passes all 217+ tests with no missing coverage
-- [ ] `zig build run` works end-to-end
+- [x] `zig build test` passes all 217+ tests with no missing coverage ✅ 220/220
+- [x] `zig build run` works end-to-end ✅
