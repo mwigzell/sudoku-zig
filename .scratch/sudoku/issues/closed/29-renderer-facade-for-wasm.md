@@ -1,6 +1,5 @@
-## Triage
-ready-for-human
-
+Triage: ready-for-human
+Status: closed
 ### Notes
 **Triage (from handoff 2026-08-13):**
 
@@ -237,12 +236,12 @@ MockRenderer needs to work as a renderer implementation so integration tests can
 ## Acceptance criteria
 
 - [x] **Step 1** (renderer foundation): all methods implemented on AsciiRenderer with dispatchers \& Make(CT) wrappers
-- [-] **Step 1d partial**: SaveAs added to Commands table, CommandTag enum, parse dispatch, disambiguation. Interception in getCommandInput NOT done — `exec()` else branch returns placeholder message.
-- [ ] **Step 1a**: `.save` interception in getCommandInput (dialog + filename caching)
-- [ ] **Step 1b**: `.open` interception in getCommandInput (dialog)
-- [ ] **Step 1c**: `.new` interception + newGameOptions menu
+- [x] **Step 1d**: SaveAs added to Commands table, CommandTag enum, parse dispatch, disambiguation. Interception in getCommandInput and `exec()` wiring complete.
+- [x] **Step 1a**: `.save` interception in getCommandInput (dialog + filename caching)
+- [x] **Step 1b**: `.open` interception in getCommandInput (dialog)
+- [x] **Step 1c**: `.new` interception + newGameOptions menu
 
-- [ ] **Step 2**: Wire renderer into sudoku.zig end-to-end
+- [x] **Step 2**: Wire renderer into sudoku.zig end-to-end
   - [x] 2a: `main.zig` wrap through Make().make()
   - [x] 2b: Replace `comptime R` with `renderer: *Facade`
   - [x] 2c: Replace printLegend → renderer.showLegend
@@ -252,7 +251,7 @@ MockRenderer needs to work as a renderer implementation so integration tests can
   - [x] 2g: Remove unused readLine helper & waitAck (dead code cleanup)
   - [x] 2h: Verify zig build run + full regression suite ✅ 206/206
 
-- [ ] **Step 3**: Adapt MockRenderer for testable widget-based flows
+- [x] **Step 3**: Adapt MockRenderer for testable widget-based flows (MockRenderer still present but e2e tests migrated to real AsciiRenderer + MockSource)
 
 ## Blocked by
 (none)
