@@ -3,7 +3,21 @@ const std = @import("std");
 const game_engine = @import("../game_engine.zig");
 const mypath = @import("path.zig");
 
-pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) anyerror!game_engine.Event {
+    if (path) |file_path| {
+        return doOpen(engine, file_path);
+    } else {
+        return .{
+            .ok = .{
+                .board_view = engine.board.asView(),
+                .msg = "open: no file specified",
+                .is_quit = false,
+            },
+        };
+    }
+}
+
+fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) anyerror!game_engine.Event {
     const gpa = std.heap.page_allocator;
 
     // Resolve the path through the data dir
@@ -15,7 +29,7 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
     const resolved = try mypath.resolveSavePath(
         gpa,
         engine.data_dir.?,
-        path,
+        file_path,
     );
     defer gpa.free(resolved);
 
@@ -55,12 +69,19 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.E
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
-    return game_engine.Event{ .ok = .{
-        .board_view = engine.board.asView(),
-        .msg = msg,
-        .is_quit = false,
-    } };
+    return .{
+        .ok = .{
+            .board_view = engine.board.asView(),
+            .msg = msg,
+            .is_quit = false,
+        },
+    };
 }
+
+// ---------------------------------------------------------------------------
+// Tests — verify open command handler seam
+// ---------------------------------------------------------------------------
+
 test "command.open.execute opens file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
@@ -83,7 +104,7 @@ test "command.open.execute opens file and returns ok with message" {
 
     _ = engine.saveGame(engine.io, resolved) catch return error.SkipZigTest;
 
-    const event = execute(&engine, tmp_path) catch return error.SkipZigTest;
+    const event = try execute(&engine, tmp_path);
 
     switch (event) {
         .ok => |data| {
@@ -91,6 +112,24 @@ test "command.open.execute opens file and returns ok with message" {
             try std.testing.expect(data.msg != null);
             const m = data.msg.?;
             try std.testing.expect(std.mem.indexOf(u8, m, "opened") != null);
+        },
+        .error_msg => return error.TestFailed,
+    }
+}
+
+test "command.open.execute returns fallback message when path is null" {
+    var engine = try game_engine.GameEngine.init(
+        @import("../puzzle_gen.zig").PuzzleGen.default(),
+        std.testing.io,
+    );
+    defer engine.deinit();
+
+    const event = try execute(&engine, null);
+
+    switch (event) {
+        .ok => |data| {
+            try std.testing.expect(data.msg != null);
+            try std.testing.expect(std.mem.indexOf(u8, data.msg.?, "no file") != null);
         },
         .error_msg => return error.TestFailed,
     }

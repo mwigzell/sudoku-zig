@@ -138,6 +138,7 @@ const redo_command = @import("command/redo.zig");
 const quit_command = @import("command/quit.zig");
 const save_command = @import("command/save.zig");
 const open_command = @import("command/open.zig");
+const new_command = @import("command/new.zig");
 const save_as_command = @import("command/save_as.zig");
 const mypath = @import("command/path.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
@@ -320,32 +321,12 @@ pub const GameEngine = struct {
                 return save_command.execute(self, path);
             },
             .open => |data| {
-                if (data.path) |p| {
-                    return open_command.execute(self, p);
-                } else {
-                    return Event{
-                        .ok = .{
-                            .board_view = self.board.asView(),
-                            .msg = "open: no file specified",
-                            .is_quit = false,
-                        },
-                    };
-                }
-            },
-            .new => {
-                self.history.deinit();
-                self.history = MutationHistory.init(std.heap.page_allocator);
-                const puzzle_str = puzzle_gen.PuzzleGen.medium();
-                self.board = board.fromOneLineString(puzzle_str) catch return Event{ .error_msg = "could not create new game" };
-                return Event{
-                    .ok = .{
-                        .board_view = self.board.asView(),
-                        .msg = "new game started",
-                        .is_quit = false,
-                    },
-                };
-            },
+                return open_command.execute(self, data.path);
 
+            },
+            .new => |data| {
+                return new_command.execute(self, data);
+            },
             .save_as => |data| {
                 const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
                 return save_as_command.execute(self, path);

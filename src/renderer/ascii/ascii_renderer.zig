@@ -144,9 +144,9 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Implement new game options — returns difficulty puzzle string.
-        pub fn newGameOptions(self: *@This()) facade.Error!facade.PuzzleReturn {
+        pub fn newGameOptions(_ : *@This()) facade.Error!facade.PuzzleReturn {
             const puzzle = @import("../../puzzle_gen.zig").PuzzleGen.hard();
-            const owned = self.allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
+            const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
             return .{ .PuzzleString = owned };
         }
 
@@ -567,7 +567,7 @@ test "newGameOptions: '1' returns Choice Generated" {
 
     switch (result) {
         .PuzzleString => |puzzle| {
-            defer std.testing.allocator.free(puzzle);
+            defer std.heap.page_allocator.free(puzzle);
         },
         .Cancelled => {
             try std.testing.expect(false);

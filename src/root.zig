@@ -24,6 +24,7 @@ const quit_command = @import("command/quit.zig");
 const save_command = @import("command/save.zig");
 const save_as_command = @import("command/save_as.zig");
 const open_command = @import("command/open.zig");
+const new_command = @import("command/new.zig");
 const input_source = @import("input_source.zig");
 
 
@@ -34,6 +35,6 @@ test {
         mock_renderer, puzzle_gen,
         logger, ascii_renderer, styler,
         config, parse, validator,
-        sudoku, event, mutation_history, disambiguate, legend, path, fill, clear_command, undo_command, redo_command, quit_command, save_command, save_as_command, open_command,
+        sudoku, event, mutation_history, disambiguate, legend, path, fill, clear_command, undo_command, redo_command, quit_command, save_command, save_as_command, open_command, new_command,
     };
 }
