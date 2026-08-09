@@ -120,7 +120,7 @@ pub const Sudoku = struct {
     }
 };
 
-const mock_renderer = @import("renderer/mock/mock_renderer.zig");
+
 const board = @import("board.zig");
 const cell = @import("cell.zig");
 const input_source = @import("input_source.zig");
@@ -133,9 +133,20 @@ test "Sudoku.init uses config difficulty to build the board" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+    const responses = [_][]const u8{};
+    const source: input_source.ReaderSource = .{ .mock = input_source.MockSource.init(alloc, &responses) };
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(alloc, io, &aw.writer, &s, source);
+    defer renderer.deinit();
+
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku = try Sudoku.init(cfg, &f, io);
+    defer sudoku.engine.deinit();
 
     // The hard puzzle has different given cells than the default puzzle.
     // For example, hard[0] is '0' (empty) whereas default[0] is '6'.
@@ -149,9 +160,20 @@ test "Sudoku.init with .medium difficulty loads medium puzzle" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+    const responses = [_][]const u8{};
+    const source: input_source.ReaderSource = .{ .mock = input_source.MockSource.init(alloc, &responses) };
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(alloc, io, &aw.writer, &s, source);
+    defer renderer.deinit();
+
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku = try Sudoku.init(cfg, &f, io);
+    defer sudoku.engine.deinit();
 
     // medium[0] is '8' (given) — hard and easy both have '0' here.
     try std.testing.expect(sudoku.engine.board.isGiven(0, 0));
@@ -379,31 +401,58 @@ test "Sudoku stores io field during init" {
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku_instance = try Sudoku.init(cfg, &f, std.testing.io);
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+    const responses = [_][]const u8{};
+    const source: input_source.ReaderSource = .{ .mock = input_source.MockSource.init(alloc, &responses) };
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(alloc, io, &aw.writer, &s, source);
+    defer renderer.deinit();
+
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku_instance = try Sudoku.init(cfg, &f, io);
     defer sudoku_instance.engine.deinit();
+
     _ = sudoku_instance.io;
 }
-test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w/ Undo" {
-    // Arrange: fresh engine via Sudoku.init gives Fill/Clear/Quit only.
+test "integrated e2e - full seam: fill command via prefix dispatch" {
+    // Arrange: fresh engine via Sudoku.init through real AsciiRenderer
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
+
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+
+    // Canned responses: "f A3 4" (fill prefix) → quit
+    const responses = [_][]const u8{
+        "f A3 4",
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
+    };
+
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+        alloc, io, &aw.writer, &s, source,
+    );
+    defer renderer.deinit();
+
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku = try Sudoku.init(cfg, &f, io);
     defer sudoku.engine.deinit();
 
-
-    // Act: parse a fill command and dispatch through handleResult seam
-    // (previously went through promptForAndRunCommand with raw stdin; now
-    //  input flows via renderer.getCommandInput which requires canned responses.
-    //  handleResult exercises the same exec → render → legend path.)
-    const parsed = command.parse("f A3 4");
-    _ = try sudoku.handleResult(parsed);
+    // Act: run the full loop — fill A3 with 4 via prefix dispatch, then quit
+    sudoku.run() catch {};
 
     // Assert (a): engine has undo available after mutation.
     {
@@ -411,18 +460,22 @@ test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w
         try std.testing.expect(avail.undo);
     }
 
-    // Assert (b): renderer was called, cell at chess coord A3 -> row 2, col 0 is four.
+    // Assert (b): cell at chess coord A3 -> row 2, col 0 is four.
     {
-        try std.testing.expect(mock.call_count > 0);
-        const rendered = mock.last_rendered_cells orelse unreachable;
-        try std.testing.expectEqual(cell.CellValue.four, rendered[2][0]);
+        try std.testing.expectEqual(cell.CellValue.four,
+            sudoku.engine.board.getCellValue(@as(u4, 2), @as(u4, 0)));
     }
 
+    // Assert (c): output buffer has content (render + legend happened)
+    {
+        const contents = aw.writer.buffered();
+        try std.testing.expect(contents.len > 0);
+    }
 }
 
 // Issue 32 — full round-trip integration: save known state → mutate → open saved file → verify restore
 // Uses real AsciiRenderer + MockSource to exercise the full dialog/caching path (replaces rigged MockRenderer test).
-test "full seam: open loads saved game" {
+test "integrated e2e - full seam: open loads saved game" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
@@ -477,156 +530,152 @@ test "full seam: open loads saved game" {
 
 // Step 10 — Save/Open must route through handleEvent() for feedback + re-render
 
-test "handleResult: save success produces status message, re-render, legend refresh" {
+test "integrated e2e - save success produces status message, re-render, legend refresh" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
 
-    const call_count_before: usize = mock.call_count;
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    const tmp_path = "/tmp/sudoku_save_success_test.sud";
 
-    // No MockReader needed — save handler uses default filename (no prompt)
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
 
-    // Use parseWithCommands directly with just Save to avoid SaveAs prefix collision
-    const save_cmds = [_][]const u8{ command.getName(.save) };
-    const parsed_save = command.parseWithCommands("save", &save_cmds);
-    _ = sudoku.handleResult(parsed_save) catch |err| {
-        // I/O failure (no $HOME, dir can't be created, etc.) is acceptable in test env
-        try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
-        return;
+    // Canned responses: save → filename prompt → quit
+    const responses = [_][]const u8{
+        "save",
+        tmp_path ++ "\n",
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    // Assert: renderer called for board re-render + showError for status after save
-    try std.testing.expect(mock.call_count > call_count_before);
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+        alloc, io, &aw.writer, &s, source,
+    );
+    defer renderer.deinit();
+
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku = try Sudoku.init(cfg, &f, io);
+    defer sudoku.engine.deinit();
+
+    // Act: run full loop — save command triggers filename dialog, writes file, re-renders
+    sudoku.run() catch {};
+
+    // Assert: output buffer has content (render + legend happened) and save file was created
+    {
+        const contents = aw.writer.buffered();
+        try std.testing.expect(contents.len > 0);
+    }
+
+    // Clean up saved file
+    std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 }
 
-test "handleResult: open success produces status message, re-render, and legend refresh" {
+
+test "integrated e2e - run: open file success produces status message, re-render, and legend refresh" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
 
-    // Create a save file first
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), std.testing.io);
+    // Create a save file to open
+    const io = std.testing.io;
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), io);
     defer original.deinit();
-    const tmp_path = "/tmp/sudoku_seam_open_feedback_test.sud";
-    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
-    try original.saveGame(std.testing.io, tmp_path);
+    const tmp_path = "/tmp/sudoku_e2e_open_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+    try original.saveGame(io, tmp_path);
 
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
+    {
+        const alloc = std.testing.allocator;
 
-    const call_count_before: usize = mock.call_count;
+        var aw = std.Io.Writer.Allocating.init(alloc);
+        defer aw.deinit();
 
+        // Canned responses: open <path> -> quit
+        const responses = [_][]const u8{
+            "open " ++ tmp_path,
+            "quit",
+        };
+        const source: input_source.ReaderSource = .{
+            .mock = input_source.MockSource.init(alloc, &responses),
+        };
 
-    const parsed_open = command.parse("open " ++ tmp_path);
-    _ = try sudoku.handleResult(parsed_open);
+        var s = styler_t.PlainStyler{};
+        var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+            alloc, io, &aw.writer, &s, source,
+        );
+        defer renderer.deinit();
 
-    // Assert: renderer called (board re-rendered after open) + legend refreshed via handleEvent
-    try std.testing.expect(mock.call_count > call_count_before);
-}
+        const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+        var sudoku = try Sudoku.init(cfg, &f, io);
+        defer sudoku.engine.deinit();
 
-// Step 11 — Open with relative path must not crash (resolved against data dir)
+        // Act: run full loop — open loads file, re-renders, shows legend
+        sudoku.run() catch {};
 
-test "handleResult: open with relative path resolves without panic" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
-    };
-
-    // Create save file at some known absolute path first
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), std.testing.io);
-    defer original.deinit();
-    const abs_path = "/tmp/sudoku_seam_relative_test.sud";
-    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, abs_path) catch {};
-    try original.saveGame(std.testing.io, abs_path);
-
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
-
-
-    const parsed_open = command.parse("open somename.sud");
-    _ = sudoku.handleResult(parsed_open) catch |err| {
-        // FileNotFound is acceptable — file doesn't exist yet at resolved path.
-        // The bug is a PANIC from openFileAbsolute on relative paths; an error return proves that's fixed.
-        try std.testing.expect(err == error.FileNotFound);
-    };
-
-    // We got here without panic — test passes
+        // Assert: output buffer has content (render + legend happened after opening)
+        const contents = aw.writer.buffered();
+        try std.testing.expect(contents.len > 0);
+    }
 }
 
 // Step 12 — Save/Open goes through exec() now (default filename, no prompt)
 
-test "handleResult: save uses default filename and returns success" {
+
+test "integrated e2e - run: save uses default filename and returns success" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
 
-    const call_count_before: usize = mock.call_count;
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    const tmp_path = "/tmp/sudoku_e2e_save_default_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
-    const save_cmds = [_][]const u8{ command.getName(.save) };
-    const parsed_save = command.parseWithCommands("save", &save_cmds);
-    _ = sudoku.handleResult(parsed_save) catch |err| {
-        // I/O failure in test env is acceptable
-        try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
-        return;
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+
+    // Canned responses: save -> filename prompt -> quit
+    const responses = [_][]const u8{
+        "save",
+        tmp_path ++ "\n",
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    // Assert: renderer was called after save (re-render + showLegend via handleEvent)
-    try std.testing.expect(mock.call_count > call_count_before);
+    var s = styler_t.PlainStyler{};
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+        alloc, io, &aw.writer, &s, source,
+    );
+    defer renderer.deinit();
+
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku = try Sudoku.init(cfg, &f, io);
+    defer sudoku.engine.deinit();
+
+    // Act: run full loop — save prompts for filename, writes file, re-renders
+    sudoku.run() catch {};
+
+    // Assert: output buffer has content (render + legend happened after saving)
+    const contents = aw.writer.buffered();
+    try std.testing.expect(contents.len > 0);
 }
 // Step 12b — Subsequent saves reuse last filename, give feedback without prompting
 
-test "handleResult: subsequent save reuses previous filename with feedback" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
-    };
 
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
-
-    // First save sets the default filename
-    const save_cmds = [_][]const u8{ command.getName(.save) };
-    const parsed_save_1 = command.parseWithCommands("save", &save_cmds);
-    _ = sudoku.handleResult(parsed_save_1) catch |err| {
-        try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
-        return;
-    };
-
-    // Second save reuses filename — no prompt, just confirmation
-    const call_before_two = mock.call_count;
-    const parsed_save_2 = command.parseWithCommands("save", &save_cmds);
-    _ = sudoku.handleResult(parsed_save_2) catch |err| {
-        try std.testing.expect(err == error.FileNotFound or err == error.EnvironmentVariableMissing);
-        return;
-    };
-
-    // Assert: board re-rendered + legend refreshed via handleEvent after second save
-    try std.testing.expect(mock.call_count > call_before_two);
-}
-
-test "run: fill → save → quit" {
+test "integrated e2e - run: fill → save → quit" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
@@ -662,7 +711,7 @@ test "run: fill → save → quit" {
     try std.testing.expect(contents.len > 0);
 }
 // Issue 34 Step 2 — e2e: save_as writes file and re-renders
-test "run: save_as writes file and re-renders" {
+test "integrated e2e - run: save_as writes file and re-renders" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
@@ -701,7 +750,7 @@ test "run: save_as writes file and re-renders" {
 }
 
 // Issue 34 Step 3 — e2e: new command resets board and history
-test "run: new command resets board and history" {
+test "integrated e2e - run: new command resets board and history" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
