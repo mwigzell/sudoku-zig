@@ -26,10 +26,6 @@ pub const Facade = struct {
     showError_fn: *const fn (*anyopaque, []const u8) anyerror!void,
 
 
-    openDialog_fn: *const fn (*anyopaque) anyerror!OpenFileResult,
-
-    newGameOptions_fn: *const fn (*anyopaque) anyerror!PuzzleReturn,
-
     getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) anyerror!ParseCommandResult,
 
     pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
@@ -44,14 +40,6 @@ pub const Facade = struct {
         return self.showError_fn(self.context, msg);
     }
 
-
-    pub fn openDialog(self: *const Facade) anyerror!OpenFileResult {
-        return self.openDialog_fn(self.context);
-    }
-
-    pub fn newGameOptions(self: *const Facade) anyerror!PuzzleReturn {
-        return self.newGameOptions_fn(self.context);
-    }
 
     pub fn getCommandInput(self: *const Facade, commands: AvailableCommands) anyerror!ParseCommandResult {
         return self.getCommandInput_fn(self.context, commands);
@@ -74,14 +62,6 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.showError(msg);
         }
-        pub fn openDialog_wrapper(ctx: *anyopaque) anyerror!OpenFileResult {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.openDialog();
-        }
-        pub fn newGameOptions_wrapper(ctx: *anyopaque) anyerror!PuzzleReturn {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.newGameOptions();
-        }
 
         pub fn getCommandInput_wrapper(ctx: *anyopaque, cmds: AvailableCommands) anyerror!ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
@@ -95,8 +75,6 @@ pub fn Make(comptime CT: type) type {
                 .render_fn = render_wrapper,
                 .showLegend_fn = showLegend_wrapper,
                 .showError_fn = showError_wrapper,
-                .openDialog_fn = openDialog_wrapper,
-                .newGameOptions_fn = newGameOptions_wrapper,
                 .getCommandInput_fn = getCommandInput_wrapper,
                 };
         }

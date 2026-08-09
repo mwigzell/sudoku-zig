@@ -59,7 +59,6 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
         }
 
-
         /// Draw the full board: column header, borders, styled rows via formatRow,
         /// with box-drawing borders between 3x3 boxes. status_msg is reserved.
         pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
@@ -131,7 +130,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Internal — prompt for file path, return owned string.
-        pub fn openDialog(self: *@This()) facade.Error!facade.OpenFileResult {
+        fn openDialog(self: *@This()) facade.Error!facade.OpenFileResult {
             self.writer.print("Open file: ", .{}) catch return facade.Error.WriteFault;
 
             const line = self.readLine() catch return .Cancelled;
@@ -202,55 +201,36 @@ pub fn AsciiRenderer(StylerType: type) type {
                 }
             }
 
- // Intercept open: use cached filename or prompt via dialog
-
+            // Intercept open: use cached filename or prompt via dialog
             if (std.meta.activeTag(rsl) == .valid and
-
                 std.meta.activeTag(rsl.valid) == .open)
-
             {
-
                 if (self.last_filename) |cached| {
-
                     rsl.valid.open.path = cached;
-
                 } else {
-
                     const file_result = self.openDialog() catch return .{ .error_msg = "cancelled" };
 
                     switch (file_result) {
-
                         .FileName => |new_path| {
-
                             if (self.last_filename) |old| self.allocator.free(old);
 
                             self.last_filename = new_path;
 
                             rsl.valid.open.path = new_path;
-
                         },
 
                         .Cancelled => return .{ .error_msg = "cancelled" },
-
                     }
-
                 }
-
             }
 
- // Intercept new: clear puzzle data, game engine handles it
-
+            // Intercept new: clear puzzle data, game engine handles it
             if (std.meta.activeTag(rsl) == .valid and
-
                 std.meta.activeTag(rsl.valid) == .new)
-
             {
-
-                rsl.valid.new.puzzle = null; // renderer will handle via dialog in future
-
+                rsl.valid.new.puzzle = "easy";
             }
- return rsl;
-
+            return rsl;
         }
     };
 }
@@ -694,7 +674,6 @@ test "AsciiRenderer init last_filename is null" {
     try std.testing.expect(renderer.last_filename == null);
 }
 
-
 // Test 1: save with last_filename set dupe's the cached path, no dialog prompt.
 test "getCommandInput: save with last_filename set uses cached path" {
     const io = std.testing.io;
@@ -703,7 +682,7 @@ test "getCommandInput: save with last_filename set uses cached path" {
 
     var s = styler.PlainStyler{};
     // Only one mock response: the command itself. Save intercept uses cached filename, no dialog.
-    const responses = [_][]const u8{ "s\n" };
+    const responses = [_][]const u8{"s\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -833,7 +812,9 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
             try std.testing.expectEqualStrings("first.sud", cmd.save.path.?);
         },
-        .error_msg => { try std.testing.expect(false); },
+        .error_msg => {
+            try std.testing.expect(false);
+        },
     }
 
     // Second save — should use cached, no prompt
@@ -843,6 +824,8 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
             try std.testing.expectEqualStrings("first.sud", cmd.save.path.?);
         },
-        .error_msg => { try std.testing.expect(false); },
+        .error_msg => {
+            try std.testing.expect(false);
+        },
     }
 }
