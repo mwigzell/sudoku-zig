@@ -317,19 +317,16 @@ pub const GameEngine = struct {
                 return redo_command.execute(self);
             },
             .save => |data| {
-                const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                return save_command.execute(self, path);
+                return save_command.execute(self, data.path orelse unreachable);
             },
             .open => |data| {
                 return open_command.execute(self, data.path);
-
             },
             .new => |data| {
                 return new_command.execute(self, data);
             },
             .save_as => |data| {
-                const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                return save_as_command.execute(self, path);
+                return save_as_command.execute(self, data.path orelse unreachable);
             },
         }
     }

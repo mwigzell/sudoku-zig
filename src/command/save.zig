@@ -1,44 +1,16 @@
-/// Save command handler — serializes game state to file via exec() dispatch.
+/// Save command handler — delegates to save_as after ensuring a filename is known.
+
 const std = @import("std");
 const game_engine = @import("../game_engine.zig");
+const save_as_command = @import("save_as.zig");
 const mypath = @import("path.zig");
 
 pub const DEFAULT_SAVE_FILE = "sudoku_save.sud";
 
 pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.Event {
-    const gpa = std.heap.page_allocator;
-
-    // Ensure data dir is resolved
-    if (engine.data_dir == null) {
-        engine.data_dir = try mypath.getDataDir(gpa, engine.io);
-    }
-
-    const resolved = try mypath.resolveSavePath(
-        gpa,
-        engine.data_dir.?,
-        path,
-    );
-    defer gpa.free(resolved);
-
-    // Save to disk
-    engine.saveGame(engine.io, resolved) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
-
-    // Free old save message if present
-    if (engine.last_save_msg) |old_m| gpa.free(old_m);
-
-    const msg = std.fmt.allocPrint(gpa, "saved to: {s}", .{resolved}) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
-    engine.last_save_msg = msg;
-
-    return game_engine.Event{ .ok = .{
-        .board_view = engine.board.asView(),
-        .msg = msg,
-        .is_quit = false,
-    } };
+    return save_as_command.execute(engine, path);
 }
+
 
 test "command.save.execute saves file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
