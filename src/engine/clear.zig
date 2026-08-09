@@ -1,5 +1,5 @@
-const game_engine = @import("../game_engine.zig");
-const parse = @import("parse.zig");
+const game_engine = @import("game_engine.zig");
+const parse = @import("../command/parse.zig");
 const fill_command = @import("fill.zig");
 
 /// Execute a clear command on the game engine.

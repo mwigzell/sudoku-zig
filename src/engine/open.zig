@@ -1,6 +1,6 @@
 /// Open command handler — deserializes game state from file via exec() dispatch.
 const std = @import("std");
-const game_engine = @import("../game_engine.zig");
+const game_engine = @import("game_engine.zig");
 const mypath = @import("path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) anyerror!game_engine.Event {

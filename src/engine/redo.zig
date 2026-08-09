@@ -1,5 +1,5 @@
 const std = @import("std");
-const game_engine = @import("../game_engine.zig");
+const game_engine = @import("game_engine.zig");
 const cell = @import("../cell.zig");
 
 /// Execute a redo command on the game engine.
@@ -23,7 +23,7 @@ pub fn execute(engine: *game_engine.GameEngine) anyerror!game_engine.Event {
 
 test "command.redo.execute fails when nothing to redo" {
     const puzzle_gen = @import("../puzzle_gen.zig");
-    const command = @import("parse.zig");
+    const command = @import("../command/parse.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
@@ -42,7 +42,7 @@ test "command.redo.execute fails when nothing to redo" {
 
 test "command.redo.execute re-applies an undone fill" {
     const puzzle_gen = @import("../puzzle_gen.zig");
-    const command = @import("parse.zig");
+    const command = @import("../command/parse.zig");
     const undo_command = @import("undo.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);

@@ -1,7 +1,7 @@
 const board = @import("../../board.zig");
 const cell = @import("../../cell.zig");
 const command_parse = @import("../../command/parse.zig");
-const save = @import("../../command/save.zig");
+const save = @import("../../engine/save.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
@@ -244,7 +244,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 // Tests - real renderer path, no mocks. Use Io.Writer.Allocating to
 // capture output for assertions instead of hitting stdout.
 
-const game_engine = @import("../../game_engine.zig");
+const game_engine = @import("../../engine/game_engine.zig");
 const disambiguate = @import("../../command/disambiguate.zig");
 const legend = @import("../../command/legend.zig");
 

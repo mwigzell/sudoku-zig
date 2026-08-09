@@ -1,10 +1,10 @@
 const std = @import("std");
-const board = @import("board.zig");
-const cell = @import("cell.zig");
-const command = @import("command/parse.zig");
+const board = @import("../board.zig");
+const cell = @import("../cell.zig");
+const command = @import("../command/parse.zig");
 
 // Moved to src/event.zig, re-exported for backward compat
-const event = @import("event.zig");
+const event = @import("../event.zig");
 pub const Event = event.Event;
 // Step 3 — context-aware command availability
 pub const AvailableCommands = struct {
@@ -130,17 +130,17 @@ pub const SaveEntry = struct {
 pub const TestStruct = struct {};
 
 // Moved to src/command/mutation_history.zig, re-exported for backward compat
-const mutation_history = @import("command/mutation_history.zig");
-const fill_command = @import("command/fill.zig");
-const clear_command = @import("command/clear.zig");
-const undo_command = @import("command/undo.zig");
-const redo_command = @import("command/redo.zig");
-const quit_command = @import("command/quit.zig");
-const save_command = @import("command/save.zig");
-const open_command = @import("command/open.zig");
-const new_command = @import("command/new.zig");
-const save_as_command = @import("command/save_as.zig");
-const mypath = @import("command/path.zig");
+const mutation_history = @import("mutation_history.zig");
+const fill_command = @import("fill.zig");
+const clear_command = @import("clear.zig");
+const undo_command = @import("undo.zig");
+const redo_command = @import("redo.zig");
+const quit_command = @import("quit.zig");
+const save_command = @import("save.zig");
+const open_command = @import("open.zig");
+const new_command = @import("new.zig");
+const save_as_command = @import("save_as.zig");
+const mypath = @import("path.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 
@@ -352,7 +352,7 @@ pub const GameEngine = struct {
     }
 };
 
-const puzzle_gen = @import("puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen.zig");
 
 fn expectOk(e: Event) !board.Board.BoardView {
     return switch (e) {

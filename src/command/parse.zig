@@ -3,7 +3,7 @@ const std = @import("std");
 const cell_module = @import("../cell.zig");
 const config_module = @import("../config.zig");
 const disambiguate = @import("disambiguate.zig");
-const save = @import("save.zig");
+const save = @import("../engine/save.zig");
 
 // ---------------------------------------------------------------------------
 // Types

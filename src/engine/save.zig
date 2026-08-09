@@ -1,7 +1,7 @@
 /// Save command handler — delegates to save_as after ensuring a filename is known.
 
 const std = @import("std");
-const game_engine = @import("../game_engine.zig");
+const game_engine = @import("game_engine.zig");
 const save_as_command = @import("save_as.zig");
 const mypath = @import("path.zig");
 

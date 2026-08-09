@@ -1,5 +1,5 @@
 const std = @import("std");
-const game_engine = @import("../game_engine.zig");
+const game_engine = @import("game_engine.zig");
 const cell = @import("../cell.zig");
 
 /// Execute an undo command on the game engine.
@@ -36,7 +36,7 @@ test "command.undo.execute fails when no history" {
 
 test "command.undo.execute reverses a fill" {
     const puzzle_gen = @import("../puzzle_gen.zig");
-    const command = @import("parse.zig");
+    const command = @import("../command/parse.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();

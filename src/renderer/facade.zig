@@ -10,7 +10,7 @@ pub const PuzzleReturn = union(enum) {
 const board = @import("../board.zig");
 
 // Re-export for facade users; defined in game_engine.zig
-const AvailableCommands = @import("../game_engine.zig").AvailableCommands;
+const AvailableCommands = @import("../engine/game_engine.zig").AvailableCommands;
 
 /// Concrete error set for all Facade method signatures.
 pub const Error = error{ OutOfMemory, ReadEOF, UnexpectedEOF, WriteFault, FileNotFound, AccessDenied };

@@ -4,7 +4,7 @@ const cell = @import("../../cell.zig");
 const facade = @import("../facade.zig");
 const command = @import("../../command/parse.zig");
 
-const AvailableCommands = @import("../../game_engine.zig").AvailableCommands;
+const AvailableCommands = @import("../../engine/game_engine.zig").AvailableCommands;
 
 /// Test helper: accepts BoardView and copies the 9×9 grid of CellValue for inspection.
 pub const MockRenderer = struct {

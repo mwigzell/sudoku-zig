@@ -1,6 +1,6 @@
 /// SaveAs command handler — saves via engine.saveGame() to given path.
 const std = @import("std");
-const game_engine = @import("../game_engine.zig");
+const game_engine = @import("game_engine.zig");
 const mypath = @import("path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.Event {

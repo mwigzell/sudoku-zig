@@ -1,6 +1,6 @@
 const std = @import("std");
 const facade = @import("renderer/facade.zig");
-const game_engine = @import("game_engine.zig");
+const game_engine = @import("engine/game_engine.zig");
 const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const command = @import("command/parse.zig");
@@ -8,7 +8,7 @@ const command = @import("command/parse.zig");
 const disambiguate = @import("command/disambiguate.zig");
 const legend = @import("command/legend.zig");
 
-const mypath = @import("command/path.zig");
+const mypath = @import("engine/path.zig");
 
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,

@@ -1,7 +1,7 @@
 //! Test root — imports all sub-modules so `addTest` discovers every co-located test block.
 const cell = @import("cell.zig");
 const board = @import("board.zig");
-const game_engine = @import("game_engine.zig");
+const game_engine = @import("engine/game_engine.zig");
 const mock_renderer = @import("renderer/mock/mock_renderer.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
@@ -12,19 +12,19 @@ const parse = @import("command/parse.zig");
 const sudoku = @import("sudoku.zig");
 const validator = @import("validator.zig");
 const event = @import("event.zig");
-const mutation_history = @import("command/mutation_history.zig");
+const mutation_history = @import("engine/mutation_history.zig");
 const disambiguate = @import("command/disambiguate.zig");
 const legend = @import("command/legend.zig");
-const path = @import("command/path.zig");
-const fill = @import("command/fill.zig");
-const clear_command = @import("command/clear.zig");
-const undo_command = @import("command/undo.zig");
-const redo_command = @import("command/redo.zig");
-const quit_command = @import("command/quit.zig");
-const save_command = @import("command/save.zig");
-const save_as_command = @import("command/save_as.zig");
-const open_command = @import("command/open.zig");
-const new_command = @import("command/new.zig");
+const path = @import("engine/path.zig");
+const fill = @import("engine/fill.zig");
+const clear_command = @import("engine/clear.zig");
+const undo_command = @import("engine/undo.zig");
+const redo_command = @import("engine/redo.zig");
+const quit_command = @import("engine/quit.zig");
+const save_command = @import("engine/save.zig");
+const save_as_command = @import("engine/save_as.zig");
+const open_command = @import("engine/open.zig");
+const new_command = @import("engine/new.zig");
 const input_source = @import("input_source.zig");
 
 

@@ -1,5 +1,5 @@
 const std = @import("std");
-const game_engine = @import("../game_engine.zig");
+const game_engine = @import("game_engine.zig");
 
 /// Execute quit — returns ok with is_quit = true.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {

@@ -1,6 +1,6 @@
 const std = @import("std");
-const game_engine = @import("../game_engine.zig");
-const parse = @import("parse.zig");
+const game_engine = @import("game_engine.zig");
+const parse = @import("../command/parse.zig");
 const cell = @import("../cell.zig");
 
 /// Execute a fill command on the game engine.
