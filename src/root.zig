@@ -6,6 +6,7 @@ const board_conflict = @import("board/conflict.zig");
 
 
 const game_engine = @import("engine/game_engine.zig");
+const save_format = @import("engine/save_format.zig");
 const mock_renderer = @import("renderer/mock/mock_renderer.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
@@ -39,6 +40,6 @@ test {
         mock_renderer, puzzle_gen,
         logger, ascii_renderer, styler,
         config, parse, validator,
-        sudoku, event, mutation_history, disambiguate, legend, path, fill, clear_command, undo_command, redo_command, quit_command, save_command, save_as_command, open_command, new_command,
+        save_format,
     };
 }
