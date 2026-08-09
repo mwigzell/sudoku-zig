@@ -22,15 +22,42 @@ pub const AvailableCommands = struct {
     /// Caller owns the buffer; the strings point at comptime literals.
     pub fn getNames(self: AvailableCommands, names: *[9][]const u8) usize {
         var count: usize = 0;
-        if (self.fill) { names[count] = command.getName(.fill); count += 1; }
-        if (self.clear) { names[count] = command.getName(.clear); count += 1; }
-        if (self.quit) { names[count] = command.getName(.quit); count += 1; }
-        if (self.undo) { names[count] = command.getName(.undo); count += 1; }
-        if (self.redo) { names[count] = command.getName(.redo); count += 1; }
-        if (self.save) { names[count] = command.getName(.save); count += 1; }
-        if (self.open) { names[count] = command.getName(.open); count += 1; }
-        if (self.new) { names[count] = command.getName(.new); count += 1; }
-        if (self.save_as) { names[count] = command.getName(.save_as); count += 1; }
+        if (self.fill) {
+            names[count] = command.getName(.fill);
+            count += 1;
+        }
+        if (self.clear) {
+            names[count] = command.getName(.clear);
+            count += 1;
+        }
+        if (self.quit) {
+            names[count] = command.getName(.quit);
+            count += 1;
+        }
+        if (self.undo) {
+            names[count] = command.getName(.undo);
+            count += 1;
+        }
+        if (self.redo) {
+            names[count] = command.getName(.redo);
+            count += 1;
+        }
+        if (self.save) {
+            names[count] = command.getName(.save);
+            count += 1;
+        }
+        if (self.open) {
+            names[count] = command.getName(.open);
+            count += 1;
+        }
+        if (self.new) {
+            names[count] = command.getName(.new);
+            count += 1;
+        }
+        if (self.save_as) {
+            names[count] = command.getName(.save_as);
+            count += 1;
+        }
         return count;
     }
 };
@@ -39,17 +66,17 @@ pub const SaveFileMagic = [_]u8{ 'S', 'U', 'D', '0' };
 pub const SaveFileVersion: u8 = 1;
 
 pub const SaveFileHeader = struct {
-    magic:         [4]u8,   // "SUD0"
+    magic: [4]u8, // "SUD0"
     version_major: u8,
     version_minor: u8,
     version_patch: u8,
-    pointer:       u16,
-    entry_count:   u16,
+    pointer: u16,
+    entry_count: u16,
 };
 
 pub const SaveFileTrailer = struct {
-    given_bits:  u128,
-    flat_board:  [81]u8,
+    given_bits: u128,
+    flat_board: [81]u8,
 };
 
 const SAVE_HEADER_SIZE: usize = 11; // magic(4) + ver_major(1) + ver_minor(1) + ver_patch(1) + pointer(2) + entry_count(2)
@@ -116,7 +143,6 @@ const mypath = @import("command/path.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 
-
 pub const GameEngine = struct {
     board: board.Board,
     history: MutationHistory,
@@ -165,7 +191,6 @@ pub const GameEngine = struct {
     }
 
     /// Serialize game state to a binary save file via an Io handle.
-
     pub fn saveGame(self: *const @This(), io: std.Io, path: []const u8) anyerror!void {
         const buf = try self.toSaveFormat(std.heap.page_allocator);
         defer std.heap.page_allocator.free(buf);
@@ -174,9 +199,6 @@ pub const GameEngine = struct {
         defer file.close(io);
         try std.Io.File.writeStreamingAll(file, io, buf);
     }
-
-
-
 
     /// Serialize full game state to a heap-allocated byte buffer.
     /// Returns allocated []u8 — caller owns and must free with the same allocator.
@@ -275,8 +297,6 @@ pub const GameEngine = struct {
         _ = old_board;
     }
 
-
-
     /// Route a parsed command through Board mutation + render update.
     pub fn exec(self: *@This(), cmd: command.Command) anyerror!Event {
         switch (cmd) {
@@ -295,39 +315,24 @@ pub const GameEngine = struct {
             .redo => {
                 return redo_command.execute(self);
             },
- .save => |data| {
-
+            .save => |data| {
                 const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-
                 return save_command.execute(self, path);
-
             },
- .open => |data| {
-
+            .open => |data| {
                 if (data.path) |p| {
-
                     return open_command.execute(self, p);
-
                 } else {
-
                     return Event{
-
                         .ok = .{
-
                             .board_view = self.board.asView(),
-
                             .msg = "open: no file specified",
-
                             .is_quit = false,
-
                         },
-
                     };
-
                 }
-
             },
- .new => {
+            .new => {
                 self.history.deinit();
                 self.history = MutationHistory.init(std.heap.page_allocator);
                 const puzzle_str = puzzle_gen.PuzzleGen.medium();
@@ -335,19 +340,16 @@ pub const GameEngine = struct {
                 return Event{
                     .ok = .{
                         .board_view = self.board.asView(),
- .msg = "new game started",
+                        .msg = "new game started",
                         .is_quit = false,
                     },
                 };
             },
 
             .save_as => |data| {
-
                 const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-
                 return save_as_command.execute(self, path);
-
-            }
+            },
         }
     }
 
@@ -387,7 +389,6 @@ fn expectErrorResult(e: Event) !void {
         .ok => return error.TestFailed,
     }
 }
-
 
 test "GameEngine fill updates cell value" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
@@ -976,7 +977,6 @@ test "getAvailableCommands: Save and Open always available" {
     try std.testing.expect(cmds.open);
 }
 
-
 // Step 3 — Save file format tests
 test "SaveEntry: total size is 2 bytes" {
     try std.testing.expectEqual(@as(usize, 2), @sizeOf(SaveEntry));
@@ -1022,7 +1022,7 @@ test "saveGame returns error on bad path" {
 
 // Step 6 — save → open round-trip (full saved state equality)
 
- test "saveGame then openGame: full state round-trip equals original" {
+test "saveGame then openGame: full state round-trip equals original" {
     var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer original.deinit();
 
@@ -1139,7 +1139,6 @@ test "SaveFileTrailer: fields can be set and read back" {
 }
 
 test "SaveFileTrailer: round-trip write/read" {
-
     var board_vals: [81]u8 = undefined;
     for (0..81) |i| {
         board_vals[i] = @as(u8, @intCast(i % 10));
@@ -1171,7 +1170,6 @@ test "toSaveFormat empty history produces buffer of correct size" {
     try std.testing.expectEqual(@as(usize, SAVE_HEADER_SIZE + SAVE_TRAILER_SIZE), buf.len);
 }
 
-
 test "toSaveFormat header has correct magic and version" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
@@ -1188,7 +1186,6 @@ test "toSaveFormat header has correct magic and version" {
     try std.testing.expectEqual(@as(u16, 0), header.entry_count);
 }
 
-
 test "toSaveFormat includes history entries and correct trailer" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
@@ -1204,8 +1201,6 @@ test "toSaveFormat includes history entries and correct trailer" {
     _ = try expectOk(try engine.exec(command.Command{
         .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
     }));
-
-
 
     const buf = try engine.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
@@ -1237,10 +1232,7 @@ test "toSaveFormat includes history entries and correct trailer" {
     try std.testing.expectEqual(@as(u8, 3), trailer.flat_board[@as(usize, 1) * board.DIMENSION_SIZE + @as(usize, 1)]);
     // Cell (4,4) should be one
     try std.testing.expectEqual(@as(u8, 1), trailer.flat_board[@as(usize, 4) * board.DIMENSION_SIZE + @as(usize, 4)]);
-
 }
-
-
 
 test "fromSaveFormat round-trip: board state given_bits history" {
     var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
@@ -1277,8 +1269,6 @@ test "fromSaveFormat round-trip: board state given_bits history" {
         try std.testing.expectEqual(o.new_value, l.new_value);
     }
 }
-
-
 
 // Issue 28 Step 4 — Cycle 3: save/open command handlers via exec()
 // Issue 28 Step 1 — io threaded through GameEngine constructor
