@@ -11,10 +11,10 @@ const save = @import("save.zig");
 
 pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
 pub const ClearData = struct { row: u4, col: u4 };
-pub const SaveData = struct { path: []const u8 };
+pub const SaveData = struct { path: ?[]const u8 };
 
-pub const OpenData = struct { path: []const u8 };
-pub const NewData = struct { puzzle: []u8 };
+pub const OpenData = struct { path: ?[]const u8 };
+pub const NewData = struct { puzzle: ?[]const u8 };
 pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new, save_as };
 
 // Issue 30 — comptime command registration table
@@ -130,19 +130,11 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "undo")) return .{.valid = Command.undo};
     if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{.valid = Command.redo};
     if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
-        return .{.valid = Command{ .save = SaveData{ .path = save.DEFAULT_SAVE_FILE } }};
+        return .{.valid = Command{ .save = SaveData{ .path = null } }};
+    if (std.ascii.eqlIgnoreCase(cmd_name, "open")) return .{.valid = Command{ .open = OpenData{ .path = null } }};
 
-    if (std.ascii.eqlIgnoreCase(cmd_name, "open")) {
-        const path = it.next() orelse return .{.error_msg = "open requires file name"};
-        return .{.valid = Command{ .open = OpenData{ .path = path } }};
-    }
-
-    if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) {
-        return .{.valid = Command{ .save_as = SaveData{ .path = save.DEFAULT_SAVE_FILE } }};
-    }
-    if (std.ascii.eqlIgnoreCase(cmd_name, "new"))
-        return .{.valid = Command{ .new = NewData{ .puzzle = &[_]u8{} } }};
-
+    if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) return .{.valid = Command{ .save_as = SaveData{ .path = null } }};
+    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{.valid = Command{ .new = NewData{ .puzzle = null } }};
 
 
 
@@ -468,14 +460,19 @@ test "parse save command returns valid SaveData with default path" {
     const res = parse("save");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
-    // Parser sets DEFAULT_SAVE_FILE; getCommandInput intercept replaces it with real path from user/cache.
-    try std.testing.expectEqualStrings(save.DEFAULT_SAVE_FILE, res.valid.save.path);
+ // Path is now null; getCommandInput intercept resolves it
+
+    try std.testing.expectEqual(@as(?[]const u8, null), res.valid.save.path);
+
 }
+
 test "parse open command w/ path returns valid OpenData" {
     const res = parse("open testfile.dat");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "open");
-    try std.testing.expectEqualStrings(res.valid.open.path, "testfile.dat");
+ // Path is now null; getCommandInput intercept prompts for it
+
+    try std.testing.expect(res.valid.open.path == null);
 }
 test "parse save resolves to Save, not ambiguous with SaveAs present" {
     // Full command set includes both Save and SaveAs.

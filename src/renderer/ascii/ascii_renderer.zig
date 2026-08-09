@@ -201,7 +201,56 @@ pub fn AsciiRenderer(StylerType: type) type {
                     }
                 }
             }
-            return rsl;
+
+ // Intercept open: use cached filename or prompt via dialog
+
+            if (std.meta.activeTag(rsl) == .valid and
+
+                std.meta.activeTag(rsl.valid) == .open)
+
+            {
+
+                if (self.last_filename) |cached| {
+
+                    rsl.valid.open.path = cached;
+
+                } else {
+
+                    const file_result = self.openDialog() catch return .{ .error_msg = "cancelled" };
+
+                    switch (file_result) {
+
+                        .FileName => |new_path| {
+
+                            if (self.last_filename) |old| self.allocator.free(old);
+
+                            self.last_filename = new_path;
+
+                            rsl.valid.open.path = new_path;
+
+                        },
+
+                        .Cancelled => return .{ .error_msg = "cancelled" },
+
+                    }
+
+                }
+
+            }
+
+ // Intercept new: clear puzzle data, game engine handles it
+
+            if (std.meta.activeTag(rsl) == .valid and
+
+                std.meta.activeTag(rsl.valid) == .new)
+
+            {
+
+                rsl.valid.new.puzzle = null; // renderer will handle via dialog in future
+
+            }
+ return rsl;
+
         }
     };
 }
@@ -687,7 +736,7 @@ test "getCommandInput: save with last_filename set uses cached path" {
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("cached.sud", cmd.save.path);
+            try std.testing.expectEqualStrings("cached.sud", cmd.save.path.?);
         },
         .error_msg => |msg| {
             _ = msg;
@@ -733,7 +782,7 @@ test "getCommandInput: save with last_filename null prompts and caches" {
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("my_save.sud", cmd.save.path);
+            try std.testing.expectEqualStrings("my_save.sud", cmd.save.path.?);
         },
         .error_msg => |msg| {
             try std.testing.expect(std.ascii.eqlIgnoreCase(msg, ""));
@@ -782,7 +831,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     switch (result1) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("first.sud", cmd.save.path);
+            try std.testing.expectEqualStrings("first.sud", cmd.save.path.?);
         },
         .error_msg => { try std.testing.expect(false); },
     }
@@ -792,7 +841,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     switch (result2) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("first.sud", cmd.save.path);
+            try std.testing.expectEqualStrings("first.sud", cmd.save.path.?);
         },
         .error_msg => { try std.testing.expect(false); },
     }

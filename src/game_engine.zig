@@ -295,23 +295,58 @@ pub const GameEngine = struct {
             .redo => {
                 return redo_command.execute(self);
             },
-            .save => |data| {
-                return save_command.execute(self, data.path);
+ .save => |data| {
+
+                const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+
+                return save_command.execute(self, path);
+
             },
-            .open => |data| {
-                return open_command.execute(self, data.path);
+ .open => |data| {
+
+                if (data.path) |p| {
+
+                    return open_command.execute(self, p);
+
+                } else {
+
+                    return Event{
+
+                        .ok = .{
+
+                            .board_view = self.board.asView(),
+
+                            .msg = "open: no file specified",
+
+                            .is_quit = false,
+
+                        },
+
+                    };
+
+                }
+
             },
-            .new => {
+ .new => {
+                self.history.deinit();
+                self.history = MutationHistory.init(std.heap.page_allocator);
+                const puzzle_str = puzzle_gen.PuzzleGen.medium();
+                self.board = board.fromOneLineString(puzzle_str) catch return Event{ .error_msg = "could not create new game" };
                 return Event{
                     .ok = .{
                         .board_view = self.board.asView(),
-                        .msg = "New game not yet implemented",
+ .msg = "new game started",
                         .is_quit = false,
                     },
                 };
             },
+
             .save_as => |data| {
-                return save_as_command.execute(self, data.path);
+
+                const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+
+                return save_as_command.execute(self, path);
+
             }
         }
     }
