@@ -1,3 +1,4 @@
+Triage: closed
 ## What to build
 
 Move filename state out of `GameEngine` and into the Renderer. Make `.save`, `.save_as`, and `.open` all flow through their parsed command data — `exec()` just uses what it gets, no defaulting or substitution.
@@ -45,7 +46,7 @@ When caching `last_filename`, the intercept uses shared ownership: dialog alloca
 - [x] 2. `AsciiRenderer` stores `last_filename`. After a successful save, subsequent `.save` does not prompt and writes to the same file.
 - [x] 3. `.save` with no prior filename calls `saveAsDialog()` and prompts user.
 - [x] 4. After `.save_as`, the chosen filename is cached; subsequent `.save` reuses it without prompting.
-- [ ] 5. `.open` does not require user-typed filename — uses `openDialog()`. (Step 5, not yet implemented.)
+- [x] 5. `.open` does not require user-typed filename — uses `openDialog()`. 
 - [x] 6. `exec()` passes path data through unchanged - `.save`, `.open`, `.save_as` all call their handler with `data.path` directly.
 - [x] 7. `parse.zig` has no hardcoded save filenames — paths are set by intercept.
-- [ ] 8. All existing tests pass (or are updated). No new failures introduced.
+- [x] 8. All existing tests pass (or are updated). No new failures introduced.
