@@ -143,10 +143,9 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Implement Facade newGameOptions_fn. Stubbed — always returns the easy puzzle string.
+        /// Implement new game options — returns difficulty puzzle string.
         pub fn newGameOptions(self: *@This()) facade.Error!facade.PuzzleReturn {
-            const puzzle_gen = @import("../../puzzle_gen.zig").PuzzleGen;
-            const puzzle = puzzle_gen.easy();
+            const puzzle = @import("../../puzzle_gen.zig").PuzzleGen.hard();
             const owned = self.allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
             return .{ .PuzzleString = owned };
         }
@@ -228,8 +227,15 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .new)
             {
-                rsl.valid.new.puzzle = "easy";
+                const choice_result = self.newGameOptions() catch return .{ .error_msg = "cancelled" };
+                switch (choice_result) {
+                    .PuzzleString => |puzzle_str| {
+                        rsl.valid.new.puzzle = puzzle_str;
+                    },
+                    .Cancelled => return .{ .error_msg = "cancelled" },
+                }
             }
+
             return rsl;
         }
     };
