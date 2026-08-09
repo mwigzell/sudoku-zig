@@ -11,9 +11,10 @@ Move filename state out of `GameEngine` and into the Renderer. Make `.save`, `.s
 
 ### Memory ownership
 
-`SaveData.path` and `OpenData.path` are `?[]const u8`. The renderer (intercept in `getCommandInput`) allocates or dupes the string before returning. GameEngine `exec()` consumes the Command and frees `data.path.?` via page_allocator after use.
+`SaveData.path` and `OpenData.path` are non-optional `[]const u8`. The renderer populates them with owned strings. GameEngine passes them through unchanged.
 
-When caching `last_filename` on the renderer, the intercept dupes rather than transferring ownership — so exec's free doesn't touch the cache copy.
+When caching `last_filename`, the intercept uses shared ownership: dialog allocates ONE string, both SaveData.path and self.last_filename point to it. No duping — renderer deinit frees.
+
 
 ### Current wiring vs target
 
@@ -27,12 +28,12 @@ When caching `last_filename` on the renderer, the intercept dupes rather than tr
 
 | # | Description |
 |---|-------------|
-| 1 ✅ | Make `SaveData.path` and `OpenData.path` nullable (`?[]const u8`). Remove comptime default from parser — leave null, populated by intercept instead (parser just sets other fields like row/col/digit).
+| 1 ⛔ | Make types nullable → REJECTED after panics. Types remain non-optional `[]const u8` with path always set by intercept.
 | 2 ✅ | Add `last_filename: ?[]u8` (owned) to `AsciiRenderer`. Update init/deinit. No need for MockRenderer — it doesn't use file dialog.
-| 3 ✅ | Modify `.save` intercept in `getCommandInput()`: check `self.last_filename`. If present, dupe into `SaveData.path` (exec will free). If null, call `saveAsDialog(save.DEFAULT_SAVE_FILE)` to prompt, assign owned result directly. (DONE — but uses shared ownership instead of duping for memory safety.)
-| 4 ✅ | After successful `.save_as` intercept: cache chosen name as `last_filename` (free old first) via dupe. Original assigned to command for exec. (DONE alongside Step 3.)
+| 3 ✅ | Modify `.save` intercept: check `self.last_filename`. If present, point SaveData.path at cache directly. If null, call `saveAsDialog(DEFAULT_SAVE_FILE)`, cache result. Shared ownership (no dupe).
+| 4 ✅ | After `.save_as`: cache chosen name as `last_filename`, free old first. SaveData.path points at same allocation.
 | 5 | Modify `.open` intercept in `getCommandInput()`: call `openDialog()` and populate `OpenData.path`. Cancelled returns error_msg.
-| 6 | Add `defer std.heap.page_allocator.free(data.path.?);` in each exec switch case (.save, .open, .save_as) so the consumed command's path is freed after use.
+| 6 ⛔ | Rejected with nullable types — paths are non-optional, no freeing needed in exec.
 | 7 | Simplify `save.execute()`: remove `engine.filename == null` fallback and engine-owned filename handling. Just use passed path directly from command data.
 | 8 | Simplify `save_as.execute()`: remove `engine.filename` caching. Still saves to disk.
 | 9 | Remove `engine.filename: ?[]u8`, `engine.last_save_msg: ?[]u8` from `GameEngine`. Clean up deinit, init. Update Open command handler to not touch engine-owned filename fields.
@@ -41,8 +42,8 @@ When caching `last_filename` on the renderer, the intercept dupes rather than tr
 ### Acceptance criteria
 
 - [ ] 1. `GameEngine` has no `filename` field.
-- [ ] 2. `AsciiRenderer` stores `last_filename`. After a successful save, subsequent `.save` does not prompt and writes to the same file.
-- [ ] 3. `.save` with no prior filename calls `saveAsDialog()` and prompts user.
+- [x] 2. `AsciiRenderer` stores `last_filename`. After a successful save, subsequent `.save` does not prompt and writes to the same file.
+- [x] 3. `.save` with no prior filename calls `saveAsDialog()` and prompts user.
 - [ ] 4. `.open` does not require user-typed filename — uses `openDialog()`.
 - [ ] 5. `exec()` passes path data through unchanged — no defaulting logic in command handlers.
 - [ ] 6. `parse.zig` has no hardcoded save filenames.
