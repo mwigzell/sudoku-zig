@@ -9,7 +9,9 @@ Issues and PRDs for this repo live as markdown files in `.scratch/`.
 - Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
-- When closing an issue, acceptance criteria will have already been verified and checked off during triage (see `/triage` skill, step 3). Set `Status: closed`, then scan all other open issues for blocking references to it, removing them from those lists.
+- When closing an issue, acceptance criteria will have already been verified and checked off during triage (see `/triage` skill, step 3). 
+	- Set `Status: closed`, then scan all other open issues for blocking references to it, removing them from those lists.
+	- move closed issue to the issues/closed folder
 ## sub issues
 - issues/NN-slug/ = nested steps for parent NN-slug.md
 - Parent Status: never ready-for-agent if it has a subfolder
