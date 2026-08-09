@@ -249,8 +249,8 @@ MockRenderer needs to work as a renderer implementation so integration tests can
   - [x] 2d: Replace waitAck (4 sites) → renderer.showError
   - [x] 2e: promptForAndRunCommand uses renderer.getCommandInput() (already done)
   - [x] 2f: run() uses renderer methods, no local I/O creation (already done)
-  - [ ] 2g: Remove unused readLine helper & waitAck (dead code — called by nothing since 2d wiring)
-  - [ ] 2h: Verify zig build run + full regression suite
+  - [x] 2g: Remove unused readLine helper & waitAck (dead code cleanup)
+  - [x] 2h: Verify zig build run + full regression suite ✅ 206/206
 
 - [ ] **Step 3**: Adapt MockRenderer for testable widget-based flows
 
