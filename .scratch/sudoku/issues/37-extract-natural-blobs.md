@@ -148,7 +148,7 @@ Extract from `board.zig`:
 
 Add re-export aliases in board.zig for backward compat so callers that do `board.fromFlat()` or `board.fromOneLineString()` still compile.
 
-### Step 2 — `board/conflict.zig` (after serial extracted)
+### Step 2 — `board/conflict.zig` ✅ DONE
 
 Extract from `board.zig`:
 - Functions: `scopeToBoardMask`, `unitsMask`, `validate`, `refreshConflictsForCell`
@@ -168,8 +168,8 @@ Import by both game_engine.zig (re-export for now) and the new save handler file
 ## Acceptance criteria
 
 - [x] `board/serial.zig` exists with 4 free fns + BoardError + FlatOpts + 10 tests ✅ b0d79be
-- [ ] `board/conflict.zig` exists with 4 free fns + 9 tests
-- [ ] board.zis reduced from ~1080 lines to ~600 (core: struct + views + cell mutation + digit bits)
+- [x] `board/conflict.zig` exists with 4 free fns + 9 tests ✅
+- [x] board.zig reduced from ~1080 lines to ~600 (core: struct + views + cell mutation + digit bits) ✅ 560 lines
 - [ ] After #36: `engine/save_format.zig` exists with wire types + IO functions + 17 tests
 - [ ] game_engine.zig reduced from ~400+ lines to ~250 (controller only)
 - [ ] Backward-compat re-exports in board.zig and game_engine.zig so external callers don't break

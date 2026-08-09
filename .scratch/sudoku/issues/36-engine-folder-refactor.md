@@ -1,4 +1,6 @@
 
+Status: closed
+
 ## Parent
 Issue 29 (renderer-facade) — consolidation of command layer before final wiring.
 
@@ -150,8 +152,8 @@ Delete the old `src/command/` files only after confirming green (git mv is safes
 
 ## Acceptance criteria
 
-- [ ] `src/engine/` contains `game_engine.zig` + 11 handler/utility files
-- [ ] `src/command/` retains only: `parse.zig`, `disambiguate.zig`, `legend.zig`
-- [ ] All imports updated in: `root.zig`, `sudoku.zig`, `ascii_renderer.zig`, `facade.zig`, `mock_renderer.zig`
-- [ ] Full test suite passes (217+ tests)
-- [ ] `zig build run` works (CLI output + grid render)
+- [x] `src/engine/` contains `game_engine.zig` + 11 handler/utility files
+- [x] `src/command/` retains only: `parse.zig`, `disambiguate.zig`, `legend.zig`
+- [x] All imports updated in: `root.zig`, `sudoku.zig`, `ascii_renderer.zig`, `facade.zig`, `mock_renderer.zig`
+- [x] Full test suite passes (217+ tests)
+- [x] `zig build run` works (CLI output + grid render)
