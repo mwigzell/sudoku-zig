@@ -1,5 +1,11 @@
 # Agent Configuration
 
+## Key project locations
+
+- Issues: `.scratch/sudoku/issues/` — one markdown file per ticket, `triage:` + optional `status:` in header
+- Source modules: `src/{board,engine,command,renderer}/` — domain packages with co-located tests
+- Docs: `docs/adr/` (architectural decisions), other reference docs live under `docs/`
+
 ## Development Approach — Vertical Slicing First
 
 When proposing work or building features, prioritise end-to-end completeness over depth:
@@ -12,7 +18,7 @@ When proposing work or building features, prioritise end-to-end completeness ove
 
 ## Zig version & stdlib notes
 
-We are on **Zig 0.17** (dev snapshot). Consult `.zig-testing.md` for the stdlib API surface
+We are on **Zig 0.17** (dev snapshot). Consult `docs/zig-testing.md` for the stdlib API surface
 (Io, testing, build system changes) **before** searching stdlib source files with grep.
 The zig stdlib source hierarchy is at /home/mark/.local/tools/zig-latest/lib/std/
 ### Zig 0.17 changed interfaces from older Zig versions
