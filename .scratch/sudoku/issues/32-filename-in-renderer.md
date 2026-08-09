@@ -27,10 +27,10 @@ When caching `last_filename` on the renderer, the intercept dupes rather than tr
 
 | # | Description |
 |---|-------------|
-| 1 | Make `SaveData.path` and `OpenData.path` nullable (`?[]const u8`). Remove comptime default from parser — leave null, populated by intercept instead (parser just sets other fields like row/col/digit).
-| 2 | Add `last_filename: ?[]u8` (owned) to `AsciiRenderer`. Update init/deinit. No need for MockRenderer — it doesn't use file dialog.
-| 3 | Modify `.save` intercept in `getCommandInput()`: check `self.last_filename`. If present, dupe into `SaveData.path` (exec will free). If null, call `saveAsDialog(save.DEFAULT_SAVE_FILE)` to prompt, assign owned result directly.
-| 4 | After successful `.save_as` intercept: cache chosen name as `last_filename` (free old first) via dupe. Original assigned to command for exec.
+| 1 ✅ | Make `SaveData.path` and `OpenData.path` nullable (`?[]const u8`). Remove comptime default from parser — leave null, populated by intercept instead (parser just sets other fields like row/col/digit).
+| 2 ✅ | Add `last_filename: ?[]u8` (owned) to `AsciiRenderer`. Update init/deinit. No need for MockRenderer — it doesn't use file dialog.
+| 3 ✅ | Modify `.save` intercept in `getCommandInput()`: check `self.last_filename`. If present, dupe into `SaveData.path` (exec will free). If null, call `saveAsDialog(save.DEFAULT_SAVE_FILE)` to prompt, assign owned result directly. (DONE — but uses shared ownership instead of duping for memory safety.)
+| 4 ✅ | After successful `.save_as` intercept: cache chosen name as `last_filename` (free old first) via dupe. Original assigned to command for exec. (DONE alongside Step 3.)
 | 5 | Modify `.open` intercept in `getCommandInput()`: call `openDialog()` and populate `OpenData.path`. Cancelled returns error_msg.
 | 6 | Add `defer std.heap.page_allocator.free(data.path.?);` in each exec switch case (.save, .open, .save_as) so the consumed command's path is freed after use.
 | 7 | Simplify `save.execute()`: remove `engine.filename == null` fallback and engine-owned filename handling. Just use passed path directly from command data.

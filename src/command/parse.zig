@@ -129,15 +129,15 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "quit")) return parseQuit();
     if (std.ascii.eqlIgnoreCase(cmd_name, "undo")) return .{.valid = Command.undo};
     if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{.valid = Command.redo};
-
     if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
         return .{.valid = Command{ .save = SaveData{ .path = save.DEFAULT_SAVE_FILE } }};
+
     if (std.ascii.eqlIgnoreCase(cmd_name, "open")) {
         const path = it.next() orelse return .{.error_msg = "open requires file name"};
         return .{.valid = Command{ .open = OpenData{ .path = path } }};
     }
+
     if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) {
-        // Dummy — getCommandInput replaces with real path from saveAsDialog
         return .{.valid = Command{ .save_as = SaveData{ .path = save.DEFAULT_SAVE_FILE } }};
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "new"))
@@ -464,11 +464,12 @@ test "parseWithCommands: FI B2 5 resolves to Fill (all caps prefix)" {
     try std.testing.expectEqual(cell_module.CellValue.five, res.valid.fill.digit);
 }
 // Issue 29 Step 1i prerequisite: save/open/new stubs remain in parser for backward compat.
-test "parse save command returns valid SaveData with path" {
+test "parse save command returns valid SaveData with default path" {
     const res = parse("save");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
-    try std.testing.expect(res.valid.save.path.len > 0);
+    // Parser sets DEFAULT_SAVE_FILE; getCommandInput intercept replaces it with real path from user/cache.
+    try std.testing.expectEqualStrings(save.DEFAULT_SAVE_FILE, res.valid.save.path);
 }
 test "parse open command w/ path returns valid OpenData" {
     const res = parse("open testfile.dat");

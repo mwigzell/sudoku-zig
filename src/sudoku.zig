@@ -626,10 +626,10 @@ test "run: fill → save → quit" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
 
-    // Canned responses for commands
     const responses = [_][]const u8{
         "fill A3 7",
-        "save",
+        "save",              // save command (triggers dialog for first use)
+        "sudoku_save.sud\n", // answer to save As dialog prompt
         "quit",
     };
     const source: input_source.ReaderSource = .{
@@ -642,6 +642,7 @@ test "run: fill → save → quit" {
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
         alloc, io, &aw.writer, &s, source,
     );
+    defer renderer.deinit();
 
     const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
     var sudoku_instance = try Sudoku.init(cfg, &f, io);
@@ -678,6 +679,7 @@ test "run: save_as writes file and re-renders" {
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
         alloc, io, &aw.writer, &s, source,
     );
+    defer renderer.deinit();
 
     const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
     var sudoku_instance = try Sudoku.init(cfg, &f, io);

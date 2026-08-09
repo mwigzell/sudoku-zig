@@ -46,11 +46,19 @@ pub fn AsciiRenderer(StylerType: type) type {
         styler: *StylerType,
         io: std.Io,
         inputSource: input_source.ReaderSource,
+        last_filename: ?[]u8,
 
         /// Construct with Io handle (stdin), writer (all output), styler pointer, and input source.
         pub fn init(allocator: std.mem.Allocator, io: std.Io, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
-            return .{ .allocator = allocator, .io = io, .writer = writer, .styler = styler_ptr, .inputSource = inputSource };
+            return .{ .allocator = allocator, .io = io, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
         }
+
+        pub fn deinit(self: *@This()) void {
+            if (self.last_filename) |name| {
+                self.allocator.free(name);
+            }
+        }
+
 
         /// Draw the full board: column header, borders, styled rows via formatRow,
         /// with box-drawing borders between 3x3 boxes. status_msg is reserved.
@@ -158,14 +166,39 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
 
             var rsl = command_parse.parseWithCommands(raw, names[0..count]);
-            // Intercept save_as: get real filename from dialog
+            // Intercept save_as: get real filename from dialog, cache for future .save
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .save_as)
             {
                 const file_result = self.saveAsDialog(save.DEFAULT_SAVE_FILE) catch return .{ .error_msg = "cancelled" };
                 switch (file_result) {
-                    .FileName => |path| rsl.valid.save_as.path = path,
+                    .FileName => |path| {
+                        // Cache owns the path string; SaveData.path points to it as const (no extra dupe)
+                        if (self.last_filename) |old| self.allocator.free(old);
+                        self.last_filename = path;
+                        rsl.valid.save_as.path = self.last_filename.?;
+                    },
                     .Cancelled => return .{ .error_msg = "cancelled" },
+                }
+            }
+
+            // Intercept save: use cached filename or prompt via dialog
+            if (std.meta.activeTag(rsl) == .valid and
+                std.meta.activeTag(rsl.valid) == .save)
+            {
+                if (self.last_filename) |cached| {
+                    rsl.valid.save.path = cached;
+                } else {
+                    const file_result = self.saveAsDialog(save.DEFAULT_SAVE_FILE) catch return .{ .error_msg = "cancelled" };
+                    switch (file_result) {
+                        .FileName => |new_path| {
+                            // Cache owns the path string; SaveData.path points to it as const
+                            if (self.last_filename) |old| self.allocator.free(old);
+                            self.last_filename = new_path;
+                            rsl.valid.save.path = new_path;
+                        },
+                        .Cancelled => return .{ .error_msg = "cancelled" },
+                    }
                 }
             }
             return rsl;
@@ -593,5 +626,174 @@ test "getCommandInput: EOF returns Quit" {
         .error_msg => {
             try std.testing.expect(false); // should map to quit, not an error
         },
+    }
+}
+test "AsciiRenderer init last_filename is null" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) },
+    );
+    defer renderer.deinit();
+
+    try std.testing.expect(renderer.last_filename == null);
+}
+
+
+// Test 1: save with last_filename set dupe's the cached path, no dialog prompt.
+test "getCommandInput: save with last_filename set uses cached path" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    // Only one mock response: the command itself. Save intercept uses cached filename, no dialog.
+    const responses = [_][]const u8{ "s\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+    defer renderer.deinit();
+
+    // Pre-set last_filename (simulating a previous save/save_as)
+    renderer.last_filename = std.testing.allocator.dupe(u8, "cached.sud") catch unreachable;
+
+    const avail = game_engine.AvailableCommands{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .save = true,
+        .open = true,
+        .new = true,
+        .save_as = true,
+    };
+
+    const result = try renderer.getCommandInput(avail);
+
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "save");
+            try std.testing.expectEqualStrings("cached.sud", cmd.save.path);
+        },
+        .error_msg => |msg| {
+            _ = msg;
+            try std.testing.expect(false);
+        },
+    }
+}
+
+test "getCommandInput: save with last_filename null prompts and caches" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    // First response: command "s", second response: filename from save dialog
+    const responses = [_][]const u8{ "s\n", "my_save.sud\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+    defer renderer.deinit();
+
+    const avail = game_engine.AvailableCommands{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .save = true,
+        .open = true,
+        .new = true,
+        .save_as = true,
+    };
+
+    const result = try renderer.getCommandInput(avail);
+
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "save");
+            try std.testing.expectEqualStrings("my_save.sud", cmd.save.path);
+        },
+        .error_msg => |msg| {
+            try std.testing.expect(std.ascii.eqlIgnoreCase(msg, ""));
+        },
+    }
+
+    // last_filename should now be cached
+    try std.testing.expect(renderer.last_filename != null);
+    try std.testing.expectEqualStrings("my_save.sud", renderer.last_filename.?);
+}
+
+test "getCommandInput: save then save reuses cached filename without prompting" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    // First save: command + dialog response; second save: only command (no dialog)
+    const responses = [_][]const u8{ "s\n", "first.sud\n", "s\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        io,
+        &aw.writer,
+        &s,
+        source,
+    );
+    defer renderer.deinit();
+
+    const avail = game_engine.AvailableCommands{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .save = true,
+        .open = true,
+        .new = true,
+        .save_as = true,
+    };
+
+    // First save — should prompt and cache
+    const result1 = try renderer.getCommandInput(avail);
+    switch (result1) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "save");
+            try std.testing.expectEqualStrings("first.sud", cmd.save.path);
+        },
+        .error_msg => { try std.testing.expect(false); },
+    }
+
+    // Second save — should use cached, no prompt
+    const result2 = try renderer.getCommandInput(avail);
+    switch (result2) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "save");
+            try std.testing.expectEqualStrings("first.sud", cmd.save.path);
+        },
+        .error_msg => { try std.testing.expect(false); },
     }
 }
