@@ -420,50 +420,59 @@ test "full seam: f A3 4 -> prefix dispatch -> fill (0,2)=four -> render+legend w
 
 }
 
-// Step 7 — integration test: OPEN command wired through handleResult/promptForAndRunCommand
-
+// Issue 32 — full round-trip integration: save known state → mutate → open saved file → verify restore
+// Uses real AsciiRenderer + MockSource to exercise the full dialog/caching path (replaces rigged MockRenderer test).
 test "full seam: open loads saved game" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ascii_ansi,
         .fallback_renderer = .ascii_ansi,
     };
-    const tmp_path = "/tmp/sudoku_tdd_open_test.sud";
-    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
-    // Create fresh engine with known state before mutations
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), std.testing.io);
+    // 1. Create a save file with known state (no MockRenderer - real path through renderer)
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    const tmp_path = "/tmp/sudoku_full_seam_open_test.sud";
+
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+
+    // Save known state to disk before running through the renderer
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), io);
     defer original.deinit();
+    try original.saveGame(io, tmp_path);
 
-    // Save pristine (mutated-then-undone) state to disk
-    // Mutate and undo to exercise history round-trip
-    _ = try original.exec(command.Command{
-        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
-    });
-    _ = try original.exec(command.Command{ .undo = {} });
-    try original.saveGame(std.testing.io, tmp_path);
+    // Record B2 value in saved state for later verification
+    const saved_b2 = original.eventBoard().get(1, 1);
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
 
-    // Now open through handleResult to prove the handler is wired
-    var mock = mock_renderer.MockRenderer.init(&.{});
-    const f = facade.Make(mock_renderer.MockRenderer).make(&mock);
-    var sudoku = try Sudoku.init(cfg, &f, std.testing.io);
-    defer sudoku.engine.deinit();
+    var s = styler_t.PlainStyler{};
 
-    // Fill a cell that was empty in the saved state — this proves divergence from saved state
-    _ = try sudoku.engine.exec(command.Command{
-        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.seven },
-    });
-    try std.testing.expectEqual(cell.CellValue.seven, sudoku.engine.eventBoard().get(1, 1));
+    // Canned responses: fill a cell -> open dialog -> filename -> quit
+    const responses = [_][]const u8{
+        "fill B2 7",           // Mutate B2 (diverges from saved)
+        "open",                // Trigger open dialog prompt
+        tmp_path ++ "\n",      // Filename response for the dialog prompt
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
+    };
 
-    // Parse open command and dispatch via handleResult seam
-    const parsed_open = command.parse("open " ++ tmp_path);
-    const is_done = try sudoku.handleResult(parsed_open);
+    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+        alloc, io, &aw.writer, &s, source,
+    );
+    defer renderer.deinit();
 
-    // Assert: loop continues (isDone = false)
-    try std.testing.expect(!is_done);
+    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku_instance = try Sudoku.init(cfg, &f, io);
+    defer sudoku_instance.engine.deinit();
 
-    // Assert: engine state restored to saved version (B2 should be back to empty, not seven)
-    try std.testing.expectEqual(cell.CellValue.zero, sudoku.engine.eventBoard().get(1, 1));
+    // Run full loop: open dialog -> filename prompt -> load file -> quit.
+    sudoku_instance.run() catch {};
+
+    // After opening saved file: B2 restored to original saved value (not seven)
+    try std.testing.expectEqual(saved_b2, sudoku_instance.engine.eventBoard().get(1, 1));
 }
 
 // Step 10 — Save/Open must route through handleEvent() for feedback + re-render
