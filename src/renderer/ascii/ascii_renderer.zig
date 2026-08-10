@@ -1,5 +1,5 @@
 const board = @import("../../board.zig");
-const cell = @import("../../cell.zig");
+const cell = @import("../../board/cell.zig");
 const parser = @import("parser.zig");
 const _command = @import("../../command.zig");
 const save = @import("../../engine/save.zig");

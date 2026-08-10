@@ -1,5 +1,5 @@
 const std = @import("std");
-const cell = @import("../cell.zig");
+const cell = @import("../board/cell.zig");
 
 /// Records one player mutation (fill or clear) so it can be undone/redone.
 pub const MutationEntry = struct {

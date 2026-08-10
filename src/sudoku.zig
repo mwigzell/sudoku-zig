@@ -88,7 +88,7 @@ pub const Sudoku = struct {
 };
 
 const board = @import("board.zig");
-const cell = @import("cell.zig");
+const cell = @import("board/cell.zig");
 const input_source = @import("input_source.zig");
 const styler_t = @import("renderer/ascii/styler.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");

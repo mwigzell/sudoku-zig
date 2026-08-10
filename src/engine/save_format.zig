@@ -1,7 +1,7 @@
 const std = @import("std");
 const ge = @import("game_engine.zig");
 const board = @import("../board.zig");
-const cell = @import("../cell.zig");
+const cell = @import("../board/cell.zig");
 const _puzzle_gen = @import("../puzzle_gen.zig");
 const command = @import("../command.zig");
 

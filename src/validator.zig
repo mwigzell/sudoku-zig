@@ -1,5 +1,5 @@
 const std = @import("std");
-const Cell = @import("cell.zig").Cell;
+const Cell = @import("board/cell.zig").Cell;
 
 pub const Validator = struct {
     /// Scan a scope (row/column/box) of 9 cells and return a bitmask where bit `i`

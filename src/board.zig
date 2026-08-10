@@ -1,7 +1,7 @@
 const std = @import("std");
-const CellValue = @import("cell.zig").CellValue;
-const Cell = @import("cell.zig").Cell;
-const rawToCellValue = @import("cell.zig").rawToCellValue;
+const CellValue = @import("board/cell.zig").CellValue;
+const Cell = @import("board/cell.zig").Cell;
+const rawToCellValue = @import("board/cell.zig").rawToCellValue;
 const puzzle_gen = @import("puzzle_gen.zig");
 const validator = @import("validator.zig");
 

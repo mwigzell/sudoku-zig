@@ -14,7 +14,7 @@ pub fn execute(engine: *game_engine.GameEngine, clear_data: command.ClearData) a
 test "command.clear.execute clears a non-given cell" {
     const std = @import("std");
     const puzzle_gen = @import("../puzzle_gen.zig");
-    const cell = @import("../cell.zig");
+    const cell = @import("../board/cell.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();

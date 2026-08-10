@@ -1,5 +1,5 @@
 //! Test root — imports all sub-modules so `addTest` discovers every co-located test block.
-const cell = @import("cell.zig");
+const cell = @import("board/cell.zig");
 const board = @import("board.zig");
 const board_serial = @import("board/serial.zig");
 const board_conflict = @import("board/conflict.zig");

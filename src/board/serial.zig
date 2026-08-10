@@ -1,6 +1,6 @@
 const std = @import("std");
 const board = @import("../board.zig");
-const cell = @import("../cell.zig");
+const cell = @import("cell.zig");
 
 /// Errors returned when parsing puzzle data into a Board.
 pub const BoardError = error{

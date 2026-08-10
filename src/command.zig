@@ -1,4 +1,4 @@
-const cell_module = @import("cell.zig");
+const cell_module = @import("board/cell.zig");
 
 // ---------------------------------------------------------------------------
 // Command Data Types — domain-neutral, consumed by GameEngine.exec()

@@ -1,4 +1,4 @@
-const cell = @import("../../cell.zig");
+const cell = @import("../../board/cell.zig");
 const board = @import("../../board.zig");
 const std = @import("std");
 

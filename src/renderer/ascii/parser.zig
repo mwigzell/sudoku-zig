@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const cm = @import("../../command.zig");
-const cell_module = @import("../../cell.zig");
+const cell_module = @import("../../board/cell.zig");
 
 // Re-export domain types so callers need only this import (until Step 3 switches imports)
 pub const FillData = cm.FillData;

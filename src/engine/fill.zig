@@ -1,7 +1,7 @@
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const command = @import("../command.zig");
-const cell = @import("../cell.zig");
+const cell = @import("../board/cell.zig");
 
 /// Execute a fill command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine, fill_data: command.FillData) anyerror!game_engine.Event {
