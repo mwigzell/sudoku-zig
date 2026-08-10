@@ -1,4 +1,5 @@
 triage: ready-for-human
+Status: closed
 
 ## Working mode
 
