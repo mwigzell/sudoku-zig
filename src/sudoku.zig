@@ -6,7 +6,7 @@ const puzzle_gen = @import("puzzle_gen.zig");
 const command = @import("command.zig");
 
 const disambiguate = @import("renderer/ascii/disambiguate.zig");
-const legend = @import("command/legend.zig");
+const legend = @import("renderer/legend.zig");
 
 
 pub const Sudoku = struct {

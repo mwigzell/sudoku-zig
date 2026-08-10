@@ -247,7 +247,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 
 const game_engine = @import("../../engine/game_engine.zig");
 const disambiguate = @import("disambiguate.zig");
-const legend = @import("../../command/legend.zig");
+const legend = @import("../legend.zig");
 
 test "showLegend: writes Command: with Fill Clear Quit" {
     const io = std.testing.io;

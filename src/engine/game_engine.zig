@@ -1,7 +1,7 @@
 const std = @import("std");
 const board = @import("../board.zig");
 const cell = @import("../cell.zig");
-const _legend = @import("../command/legend.zig");
+const _legend = @import("../renderer/legend.zig");
 const Legend = _legend.Legend;
 const command = @import("../command.zig");
 
