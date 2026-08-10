@@ -1,6 +1,7 @@
 const board = @import("../../board.zig");
 const cell = @import("../../cell.zig");
-const command_parse = @import("../../command/parse.zig");
+const parser = @import("parser.zig");
+const _command = @import("../../command.zig");
 const save = @import("../../engine/save.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
@@ -115,7 +116,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Internal — prompt for filename with default, return owned string.
-        fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!command_parse.SaveFileResult {
+        fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!_command.SaveFileResult {
             self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.WriteFault;
 
             const line = self.readLine() catch return .Cancelled;
@@ -130,7 +131,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Internal — prompt for file path, return owned string.
-        fn openDialog(self: *@This()) facade.Error!command_parse.OpenFileResult {
+        fn openDialog(self: *@This()) facade.Error!_command.OpenFileResult {
             self.writer.print("Open file: ", .{}) catch return facade.Error.WriteFault;
 
             const line = self.readLine() catch return .Cancelled;
@@ -144,25 +145,26 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Implement new game options — returns difficulty puzzle string.
-        pub fn newGameOptions(_ : *@This()) facade.Error!command_parse.PuzzleResult {
+        pub fn newGameOptions(_ : *@This()) facade.Error!_command.PuzzleResult {
             const puzzle = @import("../../puzzle_gen.zig").PuzzleGen.hard();
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
             return .{ .PuzzleString = owned };
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
-        pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command_parse.ParseCommandResult {
+        pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!_command.ParseCommandResult {
             self.writer.writeAll(">") catch return facade.Error.WriteFault;
             self.writer.writeAll(" ") catch return facade.Error.WriteFault;
 
-            const raw = self.inputSource.readline(self.io) catch return .{ .valid = command_parse.Command.quit };
+            const raw = self.inputSource.readline(self.io) catch return .{ .valid = _command.Command.quit };
+
             defer self.allocator.free(raw);
 
             if (names.len == 0) {
                 return .{ .error_msg = "no commands available" };
             }
 
-            var rsl = command_parse.parseWithCommands(raw, names);
+            var rsl = parser.parseWithCommands(raw, names);
             // Intercept save_as: get real filename from dialog, cache for future .save
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .save_as)
@@ -244,7 +246,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 // capture output for assertions instead of hitting stdout.
 
 const game_engine = @import("../../engine/game_engine.zig");
-const disambiguate = @import("../../command/disambiguate.zig");
+const disambiguate = @import("disambiguate.zig");
 const legend = @import("../../command/legend.zig");
 
 test "showLegend: writes Command: with Fill Clear Quit" {

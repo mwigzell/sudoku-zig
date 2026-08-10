@@ -36,7 +36,7 @@ test "command.undo.execute fails when no history" {
 
 test "command.undo.execute reverses a fill" {
     const puzzle_gen = @import("../puzzle_gen.zig");
-    const command = @import("../command/parse.zig");
+    const command = @import("../command.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();

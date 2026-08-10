@@ -3,9 +3,9 @@ const facade = @import("renderer/facade.zig");
 const game_engine = @import("engine/game_engine.zig");
 const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
-const command = @import("command/parse.zig");
+const command = @import("command.zig");
 
-const disambiguate = @import("command/disambiguate.zig");
+const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("command/legend.zig");
 
 

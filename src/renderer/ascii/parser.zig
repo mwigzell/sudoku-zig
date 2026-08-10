@@ -1,14 +1,11 @@
+//! ASCII command parser — turns raw terminal text into `command.Command` values.
+//! Renderer-specific: prefix matching, case-insensitive disambiguation, coordinate parsing.
 
 const std = @import("std");
-const disambiguate = @import("disambiguate.zig");
+const cm = @import("../../command.zig");
+const cell_module = @import("../../cell.zig");
 
-// Re-export domain types from command (Issue 39 Step 1)
-const cell_module = @import("../cell.zig");
-const config_module = @import("../config.zig");
-const save = @import("../engine/save.zig");
-const cm = @import("../command.zig");
-
-// Re-export types from command (Issue 39 Step 1)
+// Re-export domain types so callers need only this import (until Step 3 switches imports)
 pub const FillData = cm.FillData;
 pub const ClearData = cm.ClearData;
 pub const SaveData = cm.SaveData;
@@ -41,7 +38,7 @@ pub fn parse(input_line: []const u8) ParseCommandResult {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 - Prefix dispatch
+// Prefix dispatch
 // ---------------------------------------------------------------------------
 
 /// Case-insensitive prefix match up to `len` characters.
@@ -52,7 +49,6 @@ fn prefixMatch(a: []const u8, b: []const u8, len: usize) bool {
     }
     return true;
 }
-
 
 /// Dispatch resolved command name to its argument parser.
 fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
@@ -74,8 +70,6 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
 
     if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) return .{.valid = Command{ .save_as = SaveData{ .path = null } }};
     if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{.valid = Command{ .new = NewData{ .puzzle = null } }};
-
-
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{cmd_name}) catch unreachable;
@@ -99,7 +93,6 @@ fn acronymOf(name: []const u8, buf: []u8) []u8 {
     return buf[0..idx];
 }
 
-///
 /// Public entry point — accepts available command names for prefix dispatch.
 pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) ParseCommandResult {
     const trimmed = std.mem.trim(u8, input_line, &std.ascii.whitespace);
@@ -143,6 +136,7 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
         }
     }
 }
+
 /// Quit takes no arguments.
 fn parseQuit() ParseCommandResult {
     return .{.valid = Command.quit};
@@ -187,6 +181,7 @@ fn errorBadDigit(val: []const u8) ParseCommandResult {
     const msg = std.fmt.bufPrint(&buf, "invalid digit: '{s}'", .{val}) catch unreachable;
     return .{.error_msg = msg};
 }
+
 /// Build an ambiguity message listing which commands matched the typed prefix.
 fn buildAmbiguityMessage(verb: []const u8, matched: []const []const u8) ParseCommandResult {
     var buf: [256]u8 = undefined;
@@ -208,7 +203,7 @@ fn buildAmbiguityMessage(verb: []const u8, matched: []const []const u8) ParseCom
 }
 
 // ---------------------------------------------------------------------------
-// Tests — T1: parser returns correct tagged unions
+// Tests — parser returns correct tagged unions
 // ---------------------------------------------------------------------------
 
 test "parse fill command A1 7 → .valid with row 0, col 0, digit seven" {
@@ -281,9 +276,8 @@ test "parse clear with single-char coordinate → .error_msg" {
 }
 
 test "parse error cases return .error_msg tag (not .invalid_message)" {
-    // This test proves the rename: all error paths use .error_msg.
     const empty = parse("");
-    if (empty != .error_msg) return error.TestFailed;  // was .invalid_message
+    if (empty != .error_msg) return error.TestFailed;
 
     const unknown = parse("foobar");
     if (unknown != .error_msg) return error.TestFailed;
@@ -318,10 +312,6 @@ test "parse redo command (lower r) → .valid .redo" {
     if (res != .valid) return error.TestFailed;
     try std.testing.expectEqualStrings(@tagName(res.valid), "redo");
 }
-
-// ---------------------------------------------------------------------------
-
-
 
 test "parseWithCommands: partial prefix resolves to Fill" {
     const cmds = [_][]const u8{ getName(.fill), getName(.clear), getName(.quit) };
@@ -364,16 +354,13 @@ test "parseWithCommands: fill missing arguments still errors" {
     if (res != .error_msg) return error.TestFailed;
 }
 
-
 test "parseWithCommands: ambiguous prefix returns error_msg listing matched commands" {
     const cmds = [_][]const u8{ getName(.redo), "Repeat", getName(.fill), getName(.quit) };
     const res = parseWithCommands("Re", &cmds);
     try std.testing.expect(res == .error_msg);
-    // Error message should mention which commands matched (Redo and Repeat)
     try std.testing.expect(std.mem.indexOf(u8, res.error_msg, getName(.redo)) != null);
     try std.testing.expect(std.mem.indexOf(u8, res.error_msg, "Repeat") != null);
 }
-
 
 test "parseWithCommands: Fi A1 3 resolves to Fill (mixed case prefix)" {
     const cmds = [_][]const u8{ getName(.fill), getName(.clear), getName(.quit) };
@@ -394,51 +381,43 @@ test "parseWithCommands: FI B2 5 resolves to Fill (all caps prefix)" {
     try std.testing.expectEqual(@as(u4, 1), res.valid.fill.col);
     try std.testing.expectEqual(cell_module.CellValue.five, res.valid.fill.digit);
 }
-// Issue 29 Step 1i prerequisite: save/open/new stubs remain in parser for backward compat.
+
 test "parse save command returns valid SaveData with default path" {
     const res = parse("save");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
- // Path is now null; getCommandInput intercept resolves it
-
     try std.testing.expectEqual(@as(?[]const u8, null), res.valid.save.path);
-
 }
 
 test "parse open command w/ path returns valid OpenData" {
     const res = parse("open testfile.dat");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "open");
- // Path is now null; getCommandInput intercept prompts for it
-
     try std.testing.expect(res.valid.open.path == null);
 }
+
 test "parse save resolves to Save, not ambiguous with SaveAs present" {
-    // Full command set includes both Save and SaveAs.
-    // &quot;save&quot; is an exact (case-insensitive) match for &quot;Save&quot;, so it wins.
     const res = parse("save");
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
 }
+
 test "disambiguates s -> Save, sa -> SaveAs" {
-    // Full command set has both Save and SaveAs.
     const s = parse("s");
     try std.testing.expect(s == .valid);
     try std.testing.expectEqualStrings(@tagName(s.valid), "save");
 
     const sa = parse("sa");
     try std.testing.expect(sa == .valid);
-    // SA is the CamelCase acronym of SaveAs -> SaveAs wins.
     try std.testing.expectEqualStrings(@tagName(sa.valid), "save_as");
 }
 
-
-// Issue 30 — comptime registration table tests
-
+// comptime registration table tests (moved alongside parser)
 test "comptime invariant: CommandTag enum fields == Commands table length" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
     try std.testing.expectEqual(enum_field_count, Commands.len);
 }
+
 test "Commands table: tag-name mapping" {
     const entries = Commands;
     try std.testing.expectEqualStrings("Fill", entries[0].name);
@@ -469,6 +448,3 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Open", getName(.open));
     try std.testing.expectEqualStrings("New", getName(.new));
 }
-
-
-

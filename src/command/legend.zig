@@ -4,9 +4,9 @@
 
 const std = @import("std");
 const mem = std.mem;
-const disambiguate = @import("disambiguate.zig");
+const disambiguate = @import("../renderer/ascii/disambiguate.zig");
 
-const parse = @import("parse.zig");
+const command = @import("../command.zig");
 
 
 /// Legend entity — which commands are displayable in the current game state.
@@ -26,42 +26,43 @@ pub const Legend = struct {
     pub fn getNames(self: Legend, names: *[9][]const u8) usize {
         var count: usize = 0;
         if (self.fill) {
-            names[count] = parse.getName(.fill);
+            names[count] = command.getName(.fill);
             count += 1;
         }
         if (self.clear) {
-            names[count] = parse.getName(.clear);
+            names[count] = command.getName(.clear);
             count += 1;
         }
         if (self.quit) {
-            names[count] = parse.getName(.quit);
+            names[count] = command.getName(.quit);
             count += 1;
         }
         if (self.undo) {
-            names[count] = parse.getName(.undo);
+            names[count] = command.getName(.undo);
             count += 1;
         }
         if (self.redo) {
-            names[count] = parse.getName(.redo);
+            names[count] = command.getName(.redo);
             count += 1;
         }
         if (self.save) {
-            names[count] = parse.getName(.save);
+            names[count] = command.getName(.save);
             count += 1;
         }
         if (self.open) {
-            names[count] = parse.getName(.open);
+            names[count] = command.getName(.open);
             count += 1;
         }
         if (self.new) {
-            names[count] = parse.getName(.new);
+            names[count] = command.getName(.new);
             count += 1;
         }
         if (self.save_as) {
-            names[count] = parse.getName(.save_as);
+            names[count] = command.getName(.save_as);
             count += 1;
         }
         return count;
+
     }
 };
 
@@ -106,11 +107,11 @@ test "formatLegend: five non-colliding commands → each prefix is 1 char" {
     const allocator = std.testing.allocator;
 
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.getName(.fill), .prefix_len = 1 },
-        .{ .command = parse.getName(.clear), .prefix_len = 1 },
-        .{ .command = parse.getName(.undo), .prefix_len = 1 },
-        .{ .command = parse.getName(.redo), .prefix_len = 1 },
-        .{ .command = parse.getName(.quit), .prefix_len = 1 },
+        .{ .command = command.getName(.fill), .prefix_len = 1 },
+        .{ .command = command.getName(.clear), .prefix_len = 1 },
+        .{ .command = command.getName(.undo), .prefix_len = 1 },
+        .{ .command = command.getName(.redo), .prefix_len = 1 },
+        .{ .command = command.getName(.quit), .prefix_len = 1 },
     };
 
     const result = try formatLegend(allocator, entries);
@@ -126,7 +127,7 @@ test "formatLegend: hump-seed collision Save vs SaveAs" {
     const allocator = std.testing.allocator;
 
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.getName(.save), .prefix_len = 1 },
+        .{ .command = command.getName(.save), .prefix_len = 1 },
         .{ .command = "SaveAs", .prefix_len = 2 },
     };
 
@@ -151,7 +152,7 @@ test "formatLegend: single command returns parenthesized name" {
     const allocator = std.testing.allocator;
 
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.getName(.quit), .prefix_len = 1 },
+        .{ .command = command.getName(.quit), .prefix_len = 1 },
     };
 
     const result = try formatLegend(allocator, entries);
@@ -165,7 +166,7 @@ test "formatLegend: prefix_len equals command length → whole word in parens" {
 
     // When a collision pushes prefix_len to the full command length
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.getName(.fill), .prefix_len = 4 },
+        .{ .command = command.getName(.fill), .prefix_len = 4 },
     };
 
     const result = try formatLegend(allocator, entries);
@@ -179,11 +180,11 @@ test "formatLegend: redo alone on R vs competing → dynamic prefix shift" {
 
     // When Redo is alone on 'R': prefix_len=1 → (R)edo
     const solo_entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.getName(.fill), .prefix_len = 1 },
-        .{ .command = parse.getName(.clear), .prefix_len = 1 },
-        .{ .command = parse.getName(.undo), .prefix_len = 1 },
-        .{ .command = parse.getName(.redo), .prefix_len = 1 },
-        .{ .command = parse.getName(.quit), .prefix_len = 1 },
+        .{ .command = command.getName(.fill), .prefix_len = 1 },
+        .{ .command = command.getName(.clear), .prefix_len = 1 },
+        .{ .command = command.getName(.undo), .prefix_len = 1 },
+        .{ .command = command.getName(.redo), .prefix_len = 1 },
+        .{ .command = command.getName(.quit), .prefix_len = 1 },
     };
 
     {
@@ -196,11 +197,11 @@ test "formatLegend: redo alone on R vs competing → dynamic prefix shift" {
 
     // When Recents joins: Redo needs prefix_len=2 → (RE)do
     const competing_entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
-        .{ .command = parse.getName(.fill), .prefix_len = 1 },
-        .{ .command = parse.getName(.clear), .prefix_len = 1 },
-        .{ .command = parse.getName(.undo), .prefix_len = 1 },
-        .{ .command = parse.getName(.redo), .prefix_len = 2 }, // needs RE now
-        .{ .command = parse.getName(.quit), .prefix_len = 1 },
+        .{ .command = command.getName(.fill), .prefix_len = 1 },
+        .{ .command = command.getName(.clear), .prefix_len = 1 },
+        .{ .command = command.getName(.undo), .prefix_len = 1 },
+        .{ .command = command.getName(.redo), .prefix_len = 2 }, // needs RE now
+        .{ .command = command.getName(.quit), .prefix_len = 1 },
     };
 
     {

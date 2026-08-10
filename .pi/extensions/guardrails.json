@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/@aliou/pi-guardrails@0.16.0/schema.json",
+  "$schema": "https://unpkg.com/@aliou/pi-guardrails@0.16.2/schema.json",
   "pathAccess": {
     "allowedPaths": [
       {
@@ -49,6 +49,10 @@
       {
         "kind": "directory",
         "path": "/home.mark/Dev/src/sudoku/.scratch/sudoku/handoffs"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.pi/agent"
       }
     ]
   },

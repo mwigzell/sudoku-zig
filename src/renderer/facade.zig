@@ -1,4 +1,4 @@
-const command_parse = @import("../command/parse.zig");
+const command = @import("../command.zig");
 const board = @import("../board.zig");
 const _legend = @import("../command/legend.zig");
 const Legend = _legend.Legend;
@@ -27,7 +27,7 @@ pub const Facade = struct {
     showError_fn: *const fn (*anyopaque, []const u8) anyerror!void,
 
 
-    getCommandInput_fn: *const fn (*anyopaque, []const []const u8) anyerror!command_parse.ParseCommandResult,
+    getCommandInput_fn: *const fn (*anyopaque, []const []const u8) anyerror!command.ParseCommandResult,
 
     pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
         return self.render_fn(self.context, view, status_msg);
@@ -42,7 +42,7 @@ pub const Facade = struct {
     }
 
 
-    pub fn getCommandInput(self: *const Facade, names: []const []const u8) anyerror!command_parse.ParseCommandResult {
+    pub fn getCommandInput(self: *const Facade, names: []const []const u8) anyerror!command.ParseCommandResult {
         return self.getCommandInput_fn(self.context, names);
     }
 };
@@ -64,7 +64,7 @@ pub fn Make(comptime CT: type) type {
             return self.showError(msg);
         }
 
-        pub fn getCommandInput_wrapper(ctx: *anyopaque, names: []const []const u8) anyerror!command_parse.ParseCommandResult {
+        pub fn getCommandInput_wrapper(ctx: *anyopaque, names: []const []const u8) anyerror!command.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.getCommandInput(names);
         }

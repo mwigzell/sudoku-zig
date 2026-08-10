@@ -5,8 +5,7 @@
 const std = @import("std");
 const mem = std.mem;
 const ascii = std.ascii;
-const parse = @import("parse.zig");
-
+const cm = @import("../../command.zig");
 
 /// Maximum number of capital letters in any command string.
 const MAX_HUMPS: usize = 32;
@@ -125,13 +124,13 @@ fn lowerCaseFirstDiffer(a: []const u8, b: []const u8) usize {
 pub const AllocatorError = mem.Allocator.Error;
 
 // ---------------------------------------------------------------------------
-// Tests (co-located, Ziglings 105 style)
+// Tests
 // ---------------------------------------------------------------------------
 
 test "getMinimumPrefixes: five non-colliding commands each get length 1" {
     const allocator = std.testing.allocator;
 
-    const cmds = &[_][]const u8{ parse.getName(.fill), parse.getName(.clear), parse.getName(.undo), parse.getName(.redo), parse.getName(.quit) };
+    const cmds = &[_][]const u8{ cm.getName(.fill), cm.getName(.clear), cm.getName(.undo), cm.getName(.redo), cm.getName(.quit) };
     const result = try getMinimumPrefixes(allocator, cmds);
     defer allocator.free(result);
 
@@ -144,13 +143,12 @@ test "getMinimumPrefixes: five non-colliding commands each get length 1" {
 test "getMinimumPrefixes: hump-seed collision Save vs SaveAs" {
     const allocator = std.testing.allocator;
 
-    const cmds = &[_][]const u8{ parse.getName(.save), "SaveAs" };
+    const cmds = &[_][]const u8{ cm.getName(.save), "SaveAs" };
     const result = try getMinimumPrefixes(allocator, cmds);
     defer allocator.free(result);
 
     try std.testing.expectEqual(@as(usize, 2), result.len);
-    // Save → (S)ave  → prefix_len 1 (one capital 'S')
-    try std.testing.expectEqualStrings(parse.getName(.save), result[0].command);
+    try std.testing.expectEqualStrings(cm.getName(.save), result[0].command);
     // SaveAs → (SA)veAs  → prefix_len 2 (two capitals 'SA')
     try std.testing.expectEqualStrings("SaveAs", result[1].command);
     try std.testing.expectEqual(@as(usize, 2), result[1].prefix_len);
@@ -159,12 +157,12 @@ test "getMinimumPrefixes: hump-seed collision Save vs SaveAs" {
 test "getMinimumPrefixes: single-command list returns length-1 prefix" {
     const allocator = std.testing.allocator;
 
-    const cmds = &[_][]const u8{ parse.getName(.quit) };
+    const cmds = &[_][]const u8{ cm.getName(.quit) };
     const result = try getMinimumPrefixes(allocator, cmds);
     defer allocator.free(result);
 
     try std.testing.expectEqual(@as(usize, 1), result.len);
-    try std.testing.expectEqualStrings(parse.getName(.quit), result[0].command);
+    try std.testing.expectEqualStrings(cm.getName(.quit), result[0].command);
 }
 
 test "getMinimumPrefixes: case-insensitive inputs" {

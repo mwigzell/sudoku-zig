@@ -3,7 +3,7 @@ const ge = @import("game_engine.zig");
 const board = @import("../board.zig");
 const cell = @import("../cell.zig");
 const _puzzle_gen = @import("../puzzle_gen.zig");
-const _parse = @import("../command/parse.zig");
+const command = @import("../command.zig");
 
 // ---------------------------------------------------------------------------
 // Save file wire format types
@@ -242,18 +242,18 @@ test "saveGame then openGame: full state round-trip equals original" {
     defer original.deinit();
 
     // Make mutations to populate history and alter board
-    _ = original.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    _ = original.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }) catch unreachable;
-    _ = original.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
+    _ = original.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
     }) catch unreachable;
-    _ = original.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
+    _ = original.exec(command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
     }) catch unreachable;
 
     // Undo one mutation — tests that pointer position is preserved
-    _ = original.exec(_parse.Command{ .undo = {} }) catch unreachable;
+    _ = original.exec(command.Command{ .undo = {} }) catch unreachable;
 
     // Save to temp file using test I/O
     const tmp_path = "/tmp/sudoku_roundtrip_test.sud";
@@ -406,14 +406,14 @@ test "toSaveFormat includes history entries and correct trailer" {
     defer engine.deinit();
 
     // Make 3 mutations (same as existing round-trip test)
-    _ = engine.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    _ = engine.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }) catch unreachable;
-    _ = engine.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
+    _ = engine.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
     }) catch unreachable;
-    _ = engine.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
+    _ = engine.exec(command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
     }) catch unreachable;
 
     const buf = try toSaveFormat(&engine, std.testing.allocator);
@@ -452,16 +452,16 @@ test "fromSaveFormat round-trip: board state given_bits history" {
     var original = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer original.deinit();
 
-    _ = original.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
+    _ = original.exec(command.Command{
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }) catch unreachable;
-    _ = original.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
+    _ = original.exec(command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
     }) catch unreachable;
-    _ = original.exec(_parse.Command{
-        .fill = _parse.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
+    _ = original.exec(command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
     }) catch unreachable;
-    _ = original.exec(_parse.Command{ .undo = {} }) catch unreachable;
+    _ = original.exec(command.Command{ .undo = {} }) catch unreachable;
 
     const buf = try toSaveFormat(&original, std.testing.allocator);
     defer std.testing.allocator.free(buf);

@@ -3,7 +3,7 @@ const board = @import("../board.zig");
 const cell = @import("../cell.zig");
 const _legend = @import("../command/legend.zig");
 const Legend = _legend.Legend;
-const command = @import("../command/parse.zig");
+const command = @import("../command.zig");
 
 // Moved to src/event.zig, re-exported for backward compat
 const event = @import("../event.zig");

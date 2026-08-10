@@ -1,9 +1,9 @@
 const game_engine = @import("game_engine.zig");
-const parse = @import("../command/parse.zig");
+const command = @import("../command.zig");
 const fill_command = @import("fill.zig");
 
 /// Execute a clear command on the game engine.
-pub fn execute(engine: *game_engine.GameEngine, clear_data: parse.ClearData) anyerror!game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, clear_data: command.ClearData) anyerror!game_engine.Event {
     return engine.tryFill(clear_data.row, clear_data.col, .zero);
 }
 
@@ -20,7 +20,7 @@ test "command.clear.execute clears a non-given cell" {
     defer engine.deinit();
 
     // Fill it first
-    _ = try fill_command.execute(&engine, parse.FillData{
+    _ = try fill_command.execute(&engine, command.FillData{
         .row = 0,
         .col = 2,
         .digit = cell.CellValue.five,
@@ -31,7 +31,7 @@ test "command.clear.execute clears a non-given cell" {
     }
 
     // Now clear it
-    const event = try execute(&engine, parse.ClearData{ .row = 0, .col = 2 });
+    const event = try execute(&engine, command.ClearData{ .row = 0, .col = 2 });
     if (event != .ok) return error.TestFailed;
     try std.testing.expectEqual(cell.CellValue.zero, event.ok.board_view.get(0, 2));
 }
@@ -43,7 +43,7 @@ test "command.clear.execute fails on a given cell" {
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
-    const event = try execute(&engine, parse.ClearData{ .row = 0, .col = 0 });
+    const event = try execute(&engine, command.ClearData{ .row = 0, .col = 0 });
     switch (event) {
         .error_msg => {}, // expected
         .ok => return error.TestFailed,

@@ -12,12 +12,12 @@ const logger = @import("logger.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const config = @import("config.zig");
-const parse = @import("command/parse.zig");
+
 const sudoku = @import("sudoku.zig");
 const validator = @import("validator.zig");
 const event = @import("event.zig");
 const mutation_history = @import("engine/mutation_history.zig");
-const disambiguate = @import("command/disambiguate.zig");
+const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("command/legend.zig");
 const path = @import("engine/path.zig");
 const fill = @import("engine/fill.zig");
@@ -32,13 +32,14 @@ const new_command = @import("engine/new.zig");
 const input_source = @import("input_source.zig");
 const command = @import("command.zig");
 
+const command_parser = @import("renderer/ascii/parser.zig");
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
 test {
     _ = .{
         cell, board, board_serial, board_conflict, game_engine, puzzle_gen,
         logger, ascii_renderer, styler,
-        config, parse, validator, command,
+        config, validator, command, command_parser,
         save_format,
     };
 }

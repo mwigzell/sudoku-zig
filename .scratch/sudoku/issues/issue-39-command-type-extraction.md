@@ -38,9 +38,10 @@ All existing parse tests follow their code into `parser.zig`. No behavioural cha
 
 ## Acceptance criteria
 
-- [ ] `src/command.zig` contains only data types (structs, enums, unions) and trivial helpers that use them (like `getName`)
-- [ ] `src/command/parse.zig` no longer exists — its contents are split between `src/command.zig` (types) and `src/renderer/ascii/parser.zig` (behaviour)
-- [ ] No module in the project imports ASCII parsing logic as a side effect of needing command types
-- [ ] AsciiRenderer's `getCommandInput` sources its parser from its own package (`./parser.zig`)
-- [ ] All 202+ tests compile and pass — zero behavioural change
-- [ ] WASM renderer can import command types without pulling in any ASCII or text-parsing code
+- [x] `src/command.zig` contains only data types (structs, enums, unions) and trivial helpers that use them (like `getName`)
+- [x] `src/command/parse.zig` no longer exists — its contents are split between `src/command.zig` (types) and `src/renderer/ascii/parser.zig` (behaviour)
+- [x] No module in the project imports ASCII parsing logic as a side effect of needing command types
+- [x] AsciiRenderer's `getCommandInput` sources its parser from its own package (`./parser.zig`)
+- [x] All 205 tests compile and pass — zero behavioural change
+- [x] WASM renderer can import command types without pulling in any ASCII or text-parsing code
+

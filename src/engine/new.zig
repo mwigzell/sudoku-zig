@@ -2,10 +2,10 @@
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const board = @import("../board.zig");
-const command_parse = @import("../command/parse.zig");
+const command = @import("../command.zig");
 const PuzzleGen = @import("../puzzle_gen.zig").PuzzleGen;
 
-pub fn execute(engine: *game_engine.GameEngine, data: command_parse.NewData) anyerror!game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) anyerror!game_engine.Event {
     engine.history.deinit();
     engine.history = game_engine.MutationHistory.init(std.heap.page_allocator);
 
@@ -47,7 +47,7 @@ test "command.new.execute clears history and loads a puzzle string" {
     );
     defer engine.deinit();
 
-    _ = try execute(&engine, command_parse.NewData{ .puzzle = null });
+    _ = try execute(&engine, command.NewData{ .puzzle = null });
 
     try std.testing.expectEqual(@as(usize, 0), engine.history.count());
 }
@@ -59,7 +59,7 @@ test "command.new.execute falls back to medium when puzzle is null" {
     );
     defer engine.deinit();
 
-    _ = try execute(&engine, command_parse.NewData{ .puzzle = null });
+    _ = try execute(&engine, command.NewData{ .puzzle = null });
 
     // Just makes sure it doesnt panic or leak (the default puzzle has "6" at index 0)
     _ = engine.board.isGiven(0, 0);
