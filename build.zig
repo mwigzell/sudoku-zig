@@ -19,10 +19,10 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    // clean step — remove local cache so subsequent builds are fresh
-    const rm_cache = b.addSystemCommand(&.{ "rm", "-rf", "./.zig-cache" });
-    const clean_step = b.step("clean", "Remove the local .zig-cache");
-    clean_step.dependOn(&rm_cache.step);
+    // clean step — remove cache, build, and coverage dirs for a truly fresh start
+    const rm_all = b.addSystemCommand(&.{ "rm", "-rf", "./.zig-cache", "./zig-out", "./kcov-out" });
+    const clean_step = b.step("clean", "Remove .zig-cache, zig-out, kcov-out");
+    clean_step.dependOn(&rm_all.step);
 
     // run step
     const run_cmd = b.addRunArtifact(exe);
