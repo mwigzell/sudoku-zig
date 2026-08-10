@@ -1,85 +1,30 @@
 
 const std = @import("std");
+const disambiguate = @import("disambiguate.zig");
+
+// Re-export domain types from command (Issue 39 Step 1)
 const cell_module = @import("../cell.zig");
 const config_module = @import("../config.zig");
-const disambiguate = @import("disambiguate.zig");
 const save = @import("../engine/save.zig");
+const cm = @import("../command.zig");
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// Re-export types from command (Issue 39 Step 1)
+pub const FillData = cm.FillData;
+pub const ClearData = cm.ClearData;
+pub const SaveData = cm.SaveData;
+pub const OpenData = cm.OpenData;
+pub const NewData = cm.NewData;
+pub const CommandTag = cm.CommandTag;
+pub const Command = cm.Command;
+pub const ParseResultTag = cm.ParseResultTag;
+pub const ParseCommandResult = cm.ParseCommandResult;
+pub const SaveFileResult = cm.SaveFileResult;
+pub const OpenFileResult = cm.OpenFileResult;
+pub const PuzzleResult = cm.PuzzleResult;
+pub const CommandTableEntry = cm.CommandTableEntry;
+pub const Commands = cm.Commands;
+pub const getName = cm.getName;
 
-pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
-pub const ClearData = struct { row: u4, col: u4 };
-pub const SaveData = struct { path: ?[]const u8 };
-
-pub const OpenData = struct { path: ?[]const u8 };
-pub const NewData = struct { puzzle: ?[]const u8 };
-pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new, save_as };
-
-// Issue 30 — comptime command registration table
-pub const CommandTableEntry = struct {
-    tag: CommandTag,
-    name: []const u8,
-};
-
-/// Ordered comptime list of all supported commands.
-pub const Commands = &[_]CommandTableEntry{
-    .{ .tag = .fill, .name = "Fill" },
-    .{ .tag = .clear, .name = "Clear" },
-    .{ .tag = .quit, .name = "Quit" },
-    .{ .tag = .undo, .name = "Undo" },
-    .{ .tag = .redo, .name = "Redo" },
-    .{ .tag = .save, .name = "Save" },
-    .{ .tag = .open, .name = "Open" },
-    .{ .tag = .new, .name = "New" },
-    .{ .tag = .save_as, .name = "SaveAs" },
-};
-
-/// Look up the display name for a command tag from the comptime table.
-pub fn getName(tag: CommandTag) []const u8 {
-    for (Commands) |entry| 
-        if (entry.tag == tag) return entry.name;
-    @panic("unreachable: unknown command tag");
-}
-
-
-/// Command a player can issue to the game.
-pub const Command = union(CommandTag) {
-    fill: FillData,
-    clear: ClearData,
-    quit: void,
-    undo: void,
-    redo: void,
-    save: SaveData,
-    open: OpenData,
-    new: NewData,
-    save_as: SaveData,
-};
-pub const ParseResultTag = enum { valid, error_msg };
-
-/// Result of parsing one line.
-pub const ParseCommandResult = union(ParseResultTag) {
-    valid: Command,
-    error_msg: []const u8,
-};
-
-/// How to start a new game — dialog return value.
-
-/// Result of a save dialog interaction.
-pub const SaveFileResult = union(enum) {
-    FileName: []u8,  // Owned allocated filename to save to
-    Cancelled,
-};
-
-/// Result of an open dialog interaction.
-pub const OpenFileResult = SaveFileResult;
-
-/// Result of a new-game puzzle dialog interaction.
-pub const PuzzleResult = union(enum) {
-    PuzzleString: []u8,  // Owned puzzle string — renderer decides source
-    Cancelled,
-};
 // ---------------------------------------------------------------------------
 
 const coordError: ParseCommandResult = .{

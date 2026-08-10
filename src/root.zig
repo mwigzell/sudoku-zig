@@ -30,6 +30,7 @@ const save_as_command = @import("engine/save_as.zig");
 const open_command = @import("engine/open.zig");
 const new_command = @import("engine/new.zig");
 const input_source = @import("input_source.zig");
+const command = @import("command.zig");
 
 
 // You MUST enter module name in this test struct so that the reference pulls in the tests transitively
@@ -37,7 +38,7 @@ test {
     _ = .{
         cell, board, board_serial, board_conflict, game_engine, puzzle_gen,
         logger, ascii_renderer, styler,
-        config, parse, validator,
+        config, parse, validator, command,
         save_format,
     };
 }
