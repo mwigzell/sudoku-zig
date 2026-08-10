@@ -14,7 +14,7 @@ const styler = @import("renderer/ascii/styler.zig");
 const config = @import("config.zig");
 
 const sudoku = @import("sudoku.zig");
-const validator = @import("validator.zig");
+const validator = @import("board/validator.zig");
 const event = @import("event.zig");
 const mutation_history = @import("engine/mutation_history.zig");
 const disambiguate = @import("renderer/ascii/disambiguate.zig");

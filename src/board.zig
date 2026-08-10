@@ -3,7 +3,7 @@ const CellValue = @import("board/cell.zig").CellValue;
 const Cell = @import("board/cell.zig").Cell;
 const rawToCellValue = @import("board/cell.zig").rawToCellValue;
 const puzzle_gen = @import("puzzle_gen.zig");
-const validator = @import("validator.zig");
+const validator = @import("board/validator.zig");
 
 pub const conflict = @import("board/conflict.zig");
 

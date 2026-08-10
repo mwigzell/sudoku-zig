@@ -1,6 +1,6 @@
 const std = @import("std");
 const board = @import("../board.zig");
-const validator = @import("../validator.zig");
+const validator = @import("validator.zig");
 
 /// Translate scope-relative conflict bits (0..8) to full board flat-storage positions
 /// using the View's index array.
