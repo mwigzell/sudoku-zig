@@ -1,38 +1,39 @@
-// Re-export command parsing types (moved Issue 29)
 const command_parse = @import("../command/parse.zig");
-pub const SaveFileResult = command_parse.SaveFileResult;
-pub const OpenFileResult = command_parse.OpenFileResult;
-pub const ParseCommandResult = command_parse.ParseCommandResult;
-pub const PuzzleReturn = union(enum) {
-    PuzzleString: []u8,  // Owned puzzle string — renderer decides source
-    Cancelled,
-};
 const board = @import("../board.zig");
+const _legend = @import("../command/legend.zig");
+const Legend = _legend.Legend;
 
-// Re-export for facade users; defined in game_engine.zig
-const AvailableCommands = @import("../engine/game_engine.zig").AvailableCommands;
+
 
 /// Concrete error set for all Facade method signatures.
 pub const Error = error{ OutOfMemory, ReadEOF, UnexpectedEOF, WriteFault, FileNotFound, AccessDenied };
 
+/// Choice returned by new-game dialog options.
+pub const NewGameChoice = enum { Generated, FromFile, FromUrl, PasteString };
+
+/// Result of a new-game choice dialog. Wraps the positive selection with cancellation.
+pub const NewGameChoiceResult = union(enum) {
+    Choice: NewGameChoice,
+    Cancelled,
+};
 /// Vtable struct — dispatches through *anyopaque context to the concrete renderer.
 pub const Facade = struct {
     context: *anyopaque,
 
     render_fn: *const fn (*anyopaque, board.Board.BoardView, ?[]const u8) anyerror!void,
 
-    showLegend_fn: *const fn (*anyopaque, AvailableCommands) anyerror!void,
+    showLegend_fn: *const fn (*anyopaque, Legend) anyerror!void,
 
     showError_fn: *const fn (*anyopaque, []const u8) anyerror!void,
 
 
-    getCommandInput_fn: *const fn (*anyopaque, AvailableCommands) anyerror!ParseCommandResult,
+    getCommandInput_fn: *const fn (*anyopaque, []const []const u8) anyerror!command_parse.ParseCommandResult,
 
     pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
         return self.render_fn(self.context, view, status_msg);
     }
 
-    pub fn showLegend(self: *const Facade, commands: AvailableCommands) anyerror!void {
+    pub fn showLegend(self: *const Facade, commands: Legend) anyerror!void {
         return self.showLegend_fn(self.context, commands);
     }
 
@@ -41,8 +42,8 @@ pub const Facade = struct {
     }
 
 
-    pub fn getCommandInput(self: *const Facade, commands: AvailableCommands) anyerror!ParseCommandResult {
-        return self.getCommandInput_fn(self.context, commands);
+    pub fn getCommandInput(self: *const Facade, names: []const []const u8) anyerror!command_parse.ParseCommandResult {
+        return self.getCommandInput_fn(self.context, names);
     }
 };
 
@@ -54,7 +55,7 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.render(view, status_msg);
         }
-        pub fn showLegend_wrapper(ctx: *anyopaque, commands: AvailableCommands) anyerror!void {
+        pub fn showLegend_wrapper(ctx: *anyopaque, commands: Legend) anyerror!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.showLegend(commands);
         }
@@ -63,9 +64,9 @@ pub fn Make(comptime CT: type) type {
             return self.showError(msg);
         }
 
-        pub fn getCommandInput_wrapper(ctx: *anyopaque, cmds: AvailableCommands) anyerror!ParseCommandResult {
+        pub fn getCommandInput_wrapper(ctx: *anyopaque, names: []const []const u8) anyerror!command_parse.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(cmds);
+            return self.getCommandInput(names);
         }
 
         /// Build a Facade pointing to the concrete renderer instance.

@@ -65,18 +65,6 @@ pub const ParseCommandResult = union(ParseResultTag) {
 };
 
 /// How to start a new game — dialog return value.
-pub const NewGameChoice = enum {
-    Generated,
-    FromFile,
-    FromUrl,
-    PasteString,
-};
-
-/// Result of a new-game choice dialog. Wraps the positive selection with cancellation.
-pub const NewGameChoiceResult = union(enum) {
-    Choice: NewGameChoice,
-    Cancelled,
-};
 
 /// Result of a save dialog interaction.
 pub const SaveFileResult = union(enum) {
@@ -86,6 +74,12 @@ pub const SaveFileResult = union(enum) {
 
 /// Result of an open dialog interaction.
 pub const OpenFileResult = SaveFileResult;
+
+/// Result of a new-game puzzle dialog interaction.
+pub const PuzzleResult = union(enum) {
+    PuzzleString: []u8,  // Owned puzzle string — renderer decides source
+    Cancelled,
+};
 // ---------------------------------------------------------------------------
 
 const coordError: ParseCommandResult = .{

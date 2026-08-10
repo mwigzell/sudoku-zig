@@ -31,7 +31,7 @@ pub const Sudoku = struct {
                 if (ev.is_quit) return true;
                 if (ev.msg) |m| try self.renderer.showError(m);
                 try self.renderer.render(ev.board_view, null);
-                try self.renderer.showLegend(self.engine.getAvailableCommands());
+                try self.renderer.showLegend(self.engine.getLegend());
                 return false;
             },
             .error_msg => |msg| {
@@ -67,8 +67,10 @@ pub const Sudoku = struct {
 
     /// Prompt through renderer, parse, dispatch. Returns true on quit.
     fn promptForAndRunCommand(self: *@This()) anyerror!bool {
-        const avail = self.engine.getAvailableCommands();
-        const result = self.renderer.getCommandInput(avail) catch |err| {
+        const avail = self.engine.getLegend();
+        var names: [9][]const u8 = undefined;
+        const count = avail.getNames(&names);
+        const result = self.renderer.getCommandInput(names[0..count]) catch |err| {
             if (err == error.ReadEOF) return true;
             return err;
         };
@@ -77,7 +79,7 @@ pub const Sudoku = struct {
 
     pub fn run(self: *@This()) anyerror!void {
         try self.renderer.render(self.engine.eventBoard(), null);
-        try self.renderer.showLegend(self.engine.getAvailableCommands());
+        try self.renderer.showLegend(self.engine.getLegend());
         while (true) {
             const isDone = try self.promptForAndRunCommand();
             if (isDone) break;
@@ -153,7 +155,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
 
     // Assert (a): engine has undo available after mutation.
     {
-        const avail = sudoku.engine.getAvailableCommands();
+        const avail = sudoku.engine.getLegend();
         try std.testing.expect(avail.undo);
     }
 

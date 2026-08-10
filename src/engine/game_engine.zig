@@ -1,66 +1,14 @@
 const std = @import("std");
 const board = @import("../board.zig");
 const cell = @import("../cell.zig");
+const _legend = @import("../command/legend.zig");
+const Legend = _legend.Legend;
 const command = @import("../command/parse.zig");
 
 // Moved to src/event.zig, re-exported for backward compat
 const event = @import("../event.zig");
 pub const Event = event.Event;
-// Step 3 — context-aware command availability
-pub const AvailableCommands = struct {
-    fill: bool,
-    clear: bool,
-    quit: bool,
-    undo: bool,
-    redo: bool,
-    save: bool,
-    open: bool,
-    new: bool,
-    save_as: bool,
 
-    /// Fill `names` with the active command labels and return the count.
-    /// Caller owns the buffer; the strings point at comptime literals.
-    pub fn getNames(self: AvailableCommands, names: *[9][]const u8) usize {
-        var count: usize = 0;
-        if (self.fill) {
-            names[count] = command.getName(.fill);
-            count += 1;
-        }
-        if (self.clear) {
-            names[count] = command.getName(.clear);
-            count += 1;
-        }
-        if (self.quit) {
-            names[count] = command.getName(.quit);
-            count += 1;
-        }
-        if (self.undo) {
-            names[count] = command.getName(.undo);
-            count += 1;
-        }
-        if (self.redo) {
-            names[count] = command.getName(.redo);
-            count += 1;
-        }
-        if (self.save) {
-            names[count] = command.getName(.save);
-            count += 1;
-        }
-        if (self.open) {
-            names[count] = command.getName(.open);
-            count += 1;
-        }
-        if (self.new) {
-            names[count] = command.getName(.new);
-            count += 1;
-        }
-        if (self.save_as) {
-            names[count] = command.getName(.save_as);
-            count += 1;
-        }
-        return count;
-    }
-};
 // Backward-compat re-exports (moved to engine/save_format.zig)
 const _sf = @import("save_format.zig");
 pub const SaveFileMagic = _sf.SaveFileMagic;
@@ -119,8 +67,8 @@ pub const GameEngine = struct {
     }
 
     /// Which commands are available in the current game state.
-    pub fn getAvailableCommands(self: *const @This()) AvailableCommands {
-        return AvailableCommands{
+    pub fn getLegend(self: *const @This()) Legend {
+        return Legend{
             .fill = true,
             .clear = true,
             .quit = true,
@@ -713,11 +661,11 @@ test "redo on empty future returns .error_msg" {
     try expectErrorResult(result);
 }
 
-test "getAvailableCommands: fresh engine has Fill/Clear/Quit only" {
+test "getLegend: fresh engine has Fill/Clear/Quit only" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
-    const cmds = engine.getAvailableCommands();
+    const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -725,7 +673,7 @@ test "getAvailableCommands: fresh engine has Fill/Clear/Quit only" {
     try std.testing.expect(!cmds.redo);
 }
 
-test "getAvailableCommands: after fill Undo appears" {
+test "getLegend: after fill Undo appears" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
@@ -733,7 +681,7 @@ test "getAvailableCommands: after fill Undo appears" {
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
-    const cmds = engine.getAvailableCommands();
+    const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -741,7 +689,7 @@ test "getAvailableCommands: after fill Undo appears" {
     try std.testing.expect(!cmds.redo);
 }
 
-test "getAvailableCommands: after undo-one-of-one Redo appears Undo disappears" {
+test "getLegend: after undo-one-of-one Redo appears Undo disappears" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
@@ -751,7 +699,7 @@ test "getAvailableCommands: after undo-one-of-one Redo appears Undo disappears" 
 
     _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
 
-    const cmds = engine.getAvailableCommands();
+    const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -759,7 +707,7 @@ test "getAvailableCommands: after undo-one-of-one Redo appears Undo disappears" 
     try std.testing.expect(cmds.redo);
 }
 
-test "getAvailableCommands: after partial undo both Undo and Redo available" {
+test "getLegend: after partial undo both Undo and Redo available" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
@@ -772,7 +720,7 @@ test "getAvailableCommands: after partial undo both Undo and Redo available" {
 
     _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
 
-    const cmds = engine.getAvailableCommands();
+    const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -780,7 +728,7 @@ test "getAvailableCommands: after partial undo both Undo and Redo available" {
     try std.testing.expect(cmds.redo);
 }
 
-test "getAvailableCommands: after full undo Undo hidden Redo replays" {
+test "getLegend: after full undo Undo hidden Redo replays" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
@@ -794,18 +742,18 @@ test "getAvailableCommands: after full undo Undo hidden Redo replays" {
     _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
     _ = try expectOk(try engine.exec(command.Command{ .undo = {} }));
 
-    const cmds = engine.getAvailableCommands();
+    const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
     try std.testing.expect(!cmds.undo);
     try std.testing.expect(cmds.redo);
 }
-test "getAvailableCommands: Save and Open always available" {
+test "getLegend: Save and Open always available" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
-    const cmds = engine.getAvailableCommands();
+    const cmds = engine.getLegend();
     // Save and Open are always available like Fill/Clear/Quit (not state-contingent)
     try std.testing.expect(cmds.save);
     try std.testing.expect(cmds.open);

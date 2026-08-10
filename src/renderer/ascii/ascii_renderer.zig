@@ -80,9 +80,9 @@ pub fn AsciiRenderer(StylerType: type) type {
             try self.writer.writeAll(bottomBorder());
         }
 
-        /// Implement Facade showLegend_fn. Build command legend from AvailableCommands,
+        /// Implement Facade showLegend_fn. Build command legend from Legend,
         /// disambiguate prefixes, print "Command: ...". Arena allocates temp strings.
-        pub fn showLegend(self: *@This(), commands: game_engine.AvailableCommands) anyerror!void {
+        pub fn showLegend(self: *@This(), commands: legend.Legend) anyerror!void {
             var names: [9][]const u8 = undefined;
             const count = commands.getNames(&names);
 
@@ -115,7 +115,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Internal — prompt for filename with default, return owned string.
-        fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!facade.SaveFileResult {
+        fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!command_parse.SaveFileResult {
             self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.WriteFault;
 
             const line = self.readLine() catch return .Cancelled;
@@ -130,7 +130,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Internal — prompt for file path, return owned string.
-        fn openDialog(self: *@This()) facade.Error!facade.OpenFileResult {
+        fn openDialog(self: *@This()) facade.Error!command_parse.OpenFileResult {
             self.writer.print("Open file: ", .{}) catch return facade.Error.WriteFault;
 
             const line = self.readLine() catch return .Cancelled;
@@ -144,26 +144,25 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Implement new game options — returns difficulty puzzle string.
-        pub fn newGameOptions(_ : *@This()) facade.Error!facade.PuzzleReturn {
+        pub fn newGameOptions(_ : *@This()) facade.Error!command_parse.PuzzleResult {
             const puzzle = @import("../../puzzle_gen.zig").PuzzleGen.hard();
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
             return .{ .PuzzleString = owned };
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
-        pub fn getCommandInput(self: *@This(), avail: game_engine.AvailableCommands) facade.Error!facade.ParseCommandResult {
-            self.writer.writeAll("> ") catch return facade.Error.WriteFault;
+        pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command_parse.ParseCommandResult {
+            self.writer.writeAll(">") catch return facade.Error.WriteFault;
+            self.writer.writeAll(" ") catch return facade.Error.WriteFault;
 
             const raw = self.inputSource.readline(self.io) catch return .{ .valid = command_parse.Command.quit };
             defer self.allocator.free(raw);
 
-            var names: [9][]const u8 = undefined;
-            const count = avail.getNames(&names);
-            if (count == 0) {
+            if (names.len == 0) {
                 return .{ .error_msg = "no commands available" };
             }
 
-            var rsl = command_parse.parseWithCommands(raw, names[0..count]);
+            var rsl = command_parse.parseWithCommands(raw, names);
             // Intercept save_as: get real filename from dialog, cache for future .save
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .save_as)
@@ -256,7 +255,7 @@ test "showLegend: writes Command: with Fill Clear Quit" {
     var s = styler.PlainStyler{};
     var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) });
 
-    const cmds = game_engine.AvailableCommands{
+    const cmds = legend.Legend{
         .fill = true,
         .clear = true,
         .quit = true,
@@ -594,7 +593,7 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
         source,
     );
 
-    const avail = game_engine.AvailableCommands{
+    const avail = legend.Legend{
         .fill = true,
         .clear = true,
         .quit = true,
@@ -606,7 +605,9 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
         .save_as = true,
     };
 
-    const result = try renderer.getCommandInput(avail);
+    var names: [9][]const u8 = undefined;
+    const count = avail.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count]);
 
     switch (result) {
         .valid => |cmd| {
@@ -640,7 +641,7 @@ test "getCommandInput: EOF returns Quit" {
         source,
     );
 
-    const avail = game_engine.AvailableCommands{
+    const avail = legend.Legend{
         .fill = true,
         .clear = false,
         .quit = true,
@@ -652,7 +653,9 @@ test "getCommandInput: EOF returns Quit" {
         .save_as = false,
     };
 
-    const result = try renderer.getCommandInput(avail);
+    var names: [9][]const u8 = undefined;
+    const count = avail.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count]);
 
     switch (result) {
         .valid => |cmd| {
@@ -704,7 +707,7 @@ test "getCommandInput: save with last_filename set uses cached path" {
     // Pre-set last_filename (simulating a previous save/save_as)
     renderer.last_filename = std.testing.allocator.dupe(u8, "cached.sud") catch unreachable;
 
-    const avail = game_engine.AvailableCommands{
+    const avail = legend.Legend{
         .fill = true,
         .clear = true,
         .quit = true,
@@ -716,7 +719,9 @@ test "getCommandInput: save with last_filename set uses cached path" {
         .save_as = true,
     };
 
-    const result = try renderer.getCommandInput(avail);
+    var names: [9][]const u8 = undefined;
+    const count = avail.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count]);
 
     switch (result) {
         .valid => |cmd| {
@@ -750,7 +755,7 @@ test "getCommandInput: save with last_filename null prompts and caches" {
     );
     defer renderer.deinit();
 
-    const avail = game_engine.AvailableCommands{
+    const avail = legend.Legend{
         .fill = true,
         .clear = true,
         .quit = true,
@@ -762,7 +767,9 @@ test "getCommandInput: save with last_filename null prompts and caches" {
         .save_as = true,
     };
 
-    const result = try renderer.getCommandInput(avail);
+    var names: [9][]const u8 = undefined;
+    const count = avail.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count]);
 
     switch (result) {
         .valid => |cmd| {
@@ -799,7 +806,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     );
     defer renderer.deinit();
 
-    const avail = game_engine.AvailableCommands{
+    const avail = legend.Legend{
         .fill = true,
         .clear = true,
         .quit = true,
@@ -811,8 +818,11 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
         .save_as = true,
     };
 
+    var names: [9][]const u8 = undefined;
+    const count = avail.getNames(&names);
+
     // First save — should prompt and cache
-    const result1 = try renderer.getCommandInput(avail);
+    const result1 = try renderer.getCommandInput(names[0..count]);
     switch (result1) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
@@ -824,7 +834,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     }
 
     // Second save — should use cached, no prompt
-    const result2 = try renderer.getCommandInput(avail);
+    const result2 = try renderer.getCommandInput(names[0..count]);
     switch (result2) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");

@@ -8,6 +8,64 @@ const disambiguate = @import("disambiguate.zig");
 
 const parse = @import("parse.zig");
 
+
+/// Legend entity — which commands are displayable in the current game state.
+pub const Legend = struct {
+    fill: bool,
+    clear: bool,
+    quit: bool,
+    undo: bool,
+    redo: bool,
+    save: bool,
+    open: bool,
+    new: bool,
+    save_as: bool,
+
+    /// Fill `names` with the active command labels and return the count.
+    /// Caller owns the buffer; the strings point at comptime literals.
+    pub fn getNames(self: Legend, names: *[9][]const u8) usize {
+        var count: usize = 0;
+        if (self.fill) {
+            names[count] = parse.getName(.fill);
+            count += 1;
+        }
+        if (self.clear) {
+            names[count] = parse.getName(.clear);
+            count += 1;
+        }
+        if (self.quit) {
+            names[count] = parse.getName(.quit);
+            count += 1;
+        }
+        if (self.undo) {
+            names[count] = parse.getName(.undo);
+            count += 1;
+        }
+        if (self.redo) {
+            names[count] = parse.getName(.redo);
+            count += 1;
+        }
+        if (self.save) {
+            names[count] = parse.getName(.save);
+            count += 1;
+        }
+        if (self.open) {
+            names[count] = parse.getName(.open);
+            count += 1;
+        }
+        if (self.new) {
+            names[count] = parse.getName(.new);
+            count += 1;
+        }
+        if (self.save_as) {
+            names[count] = parse.getName(.save_as);
+            count += 1;
+        }
+        return count;
+    }
+};
+
+
 // ---------------------------------------------------------------------------
 // Public API
 
