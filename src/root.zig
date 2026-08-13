@@ -41,6 +41,8 @@ test {
         cell, board, board_serial, board_conflict, game_engine, puzzle_gen,
         logger, ascii_renderer, styler,
         config, cli, validator, command, command_parser,
-        save_format,
+        save_format, event, sudoku, mutation_history, disambiguate, legend,
+        path, fill, clear_command, undo_command, redo_command, quit_command,
+        save_command, save_as_command, open_command, new_command, input_source
     };
 }
