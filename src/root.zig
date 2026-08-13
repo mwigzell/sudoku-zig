@@ -12,6 +12,7 @@ const logger = @import("logger.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const config = @import("config.zig");
+const cli = @import("cli.zig");
 
 const sudoku = @import("sudoku.zig");
 const validator = @import("board/validator.zig");
@@ -39,7 +40,7 @@ test {
     _ = .{
         cell, board, board_serial, board_conflict, game_engine, puzzle_gen,
         logger, ascii_renderer, styler,
-        config, validator, command, command_parser,
+        config, cli, validator, command, command_parser,
         save_format,
     };
 }

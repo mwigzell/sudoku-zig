@@ -1,5 +1,6 @@
 const std = @import("std");
 const facade = @import("renderer/facade.zig");
+const styler = @import("renderer/ascii/styler.zig");
 const game_engine = @import("engine/game_engine.zig");
 const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
@@ -8,24 +9,50 @@ const command = @import("command.zig");
 const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("renderer/legend.zig");
 
-
 pub const Error = error{System};
 
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
     io: std.Io,
-    renderer: *const facade.Facade,
-    pub fn init(cfg: config.Config, renderer: *const facade.Facade, io: std.Io) Error!@This() {
+    renderer: facade.Facade,
+    arena: std.heap.ArenaAllocator,
+
+    fn buildFacade(arena: *std.heap.ArenaAllocator, cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
+        switch (cfg.preferred_renderer) {
+            .ansi => {
+                const file_writer_ptr = arena.allocator().create(std.Io.File.Writer) catch return error.System;
+
+                const strategy_buf = arena.allocator().alloc(u8, 64) catch return error.System;
+                file_writer_ptr.* = std.Io.File.stdout().writer(io, strategy_buf);
+                file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
+
+                var styler_instance = styler.AnsiStyler{};
+
+                const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
+
+                const renderer_ptr = arena.allocator().create(R) catch return error.System;
+                renderer_ptr.* = R.init(arena.allocator(), io, &file_writer_ptr.interface, &styler_instance, is);
+
+                return facade.Make(R).make(renderer_ptr);
+            },
+            else => {
+                return error.System;
+            },
+        }
+    }
+
+    pub fn init(cfg: config.Config, is: input_source.ReaderSource, pi: std.process.Init) Error!@This() {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
             .cfg = cfg,
-            .renderer = renderer,
-            .io = io,
-            .engine = try game_engine.GameEngine.init(puzzle_str, io),
+            .renderer = try buildFacade(&arena, cfg, is, pi.io),
+            .io = pi.io,
+            .engine = try game_engine.GameEngine.init(puzzle_str, pi.io),
+            .arena = arena,
         };
     }
-
 
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
@@ -134,7 +161,11 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
 
     var s = styler_t.PlainStyler{};
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc, io, &aw.writer, &s, source,
+        alloc,
+        io,
+        &aw.writer,
+        &s,
+        source,
     );
     defer renderer.deinit();
 
@@ -153,8 +184,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
 
     // Assert (b): cell at chess coord A3 -> row 2, col 0 is four.
     {
-        try std.testing.expectEqual(cell.CellValue.four,
-            sudoku.engine.board.getCellValue(@as(u4, 2), @as(u4, 0)));
+        try std.testing.expectEqual(cell.CellValue.four, sudoku.engine.board.getCellValue(@as(u4, 2), @as(u4, 0)));
     }
 
     // Assert (c): output buffer has content (render + legend happened)
@@ -194,9 +224,9 @@ test "integrated e2e - full seam: open loads saved game" {
 
     // Canned responses: fill a cell -> open dialog -> filename -> quit
     const responses = [_][]const u8{
-        "fill B2 7",           // Mutate B2 (diverges from saved)
-        "open",                // Trigger open dialog prompt
-        tmp_path ++ "\n",      // Filename response for the dialog prompt
+        "fill B2 7", // Mutate B2 (diverges from saved)
+        "open", // Trigger open dialog prompt
+        tmp_path ++ "\n", // Filename response for the dialog prompt
         "quit",
     };
     const source: input_source.ReaderSource = .{
@@ -204,7 +234,11 @@ test "integrated e2e - full seam: open loads saved game" {
     };
 
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc, io, &aw.writer, &s, source,
+        alloc,
+        io,
+        &aw.writer,
+        &s,
+        source,
     );
     defer renderer.deinit();
 
@@ -247,7 +281,11 @@ test "integrated e2e - save success produces status message, re-render, legend r
 
     var s = styler_t.PlainStyler{};
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc, io, &aw.writer, &s, source,
+        alloc,
+        io,
+        &aw.writer,
+        &s,
+        source,
     );
     defer renderer.deinit();
 
@@ -267,7 +305,6 @@ test "integrated e2e - save success produces status message, re-render, legend r
     // Clean up saved file
     std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 }
-
 
 test "integrated e2e - run: open file success produces status message, re-render, and legend refresh" {
     const cfg: config.Config = .{
@@ -301,7 +338,11 @@ test "integrated e2e - run: open file success produces status message, re-render
 
         var s = styler_t.PlainStyler{};
         var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-            alloc, io, &aw.writer, &s, source,
+            alloc,
+            io,
+            &aw.writer,
+            &s,
+            source,
         );
         defer renderer.deinit();
 
@@ -319,7 +360,6 @@ test "integrated e2e - run: open file success produces status message, re-render
 }
 
 // Step 12 — Save/Open goes through exec() now (default filename, no prompt)
-
 
 test "integrated e2e - run: save uses default filename and returns success" {
     const cfg: config.Config = .{
@@ -348,7 +388,11 @@ test "integrated e2e - run: save uses default filename and returns success" {
 
     var s = styler_t.PlainStyler{};
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc, io, &aw.writer, &s, source,
+        alloc,
+        io,
+        &aw.writer,
+        &s,
+        source,
     );
     defer renderer.deinit();
 
@@ -365,7 +409,6 @@ test "integrated e2e - run: save uses default filename and returns success" {
 }
 // Step 12b — Subsequent saves reuse last filename, give feedback without prompting
 
-
 test "integrated e2e - run: fill → save → quit" {
     const cfg: config.Config = .{
         .difficulty = .hard,
@@ -377,7 +420,7 @@ test "integrated e2e - run: fill → save → quit" {
 
     const responses = [_][]const u8{
         "fill A3 7",
-        "save",              // save command (triggers dialog for first use)
+        "save", // save command (triggers dialog for first use)
         "sudoku_save.sud\n", // answer to save As dialog prompt
         "quit",
     };
@@ -389,7 +432,11 @@ test "integrated e2e - run: fill → save → quit" {
     defer aw.deinit();
     var s = styler_t.PlainStyler{};
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc, io, &aw.writer, &s, source,
+        alloc,
+        io,
+        &aw.writer,
+        &s,
+        source,
     );
     defer renderer.deinit();
 
@@ -426,7 +473,11 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     defer aw.deinit();
     var s = styler_t.PlainStyler{};
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc, io, &aw.writer, &s, source,
+        alloc,
+        io,
+        &aw.writer,
+        &s,
+        source,
     );
     defer renderer.deinit();
 
@@ -465,7 +516,11 @@ test "integrated e2e - run: new command resets board and history" {
     defer aw.deinit();
     var s = styler_t.PlainStyler{};
     var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc, io, &aw.writer, &s, source,
+        alloc,
+        io,
+        &aw.writer,
+        &s,
+        source,
     );
 
     const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
