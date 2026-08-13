@@ -1,3 +1,6 @@
+triage: ready-for-human
+
+## Parent
 ## Parent
 
 `.scratch/sudoku/prd.md`
@@ -32,4 +35,4 @@ Tests: same integration tests from issue #2 still pass — they exercise GameEng
 
 ## Blocked by
 
-none
+Issue 40 (wasm-renderer-stub) — toolchain, Facade dual-renderer proof, build plumbing

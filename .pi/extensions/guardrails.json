@@ -53,6 +53,14 @@
       {
         "kind": "directory",
         "path": "~/.pi/agent"
+      },
+      {
+        "kind": "directory",
+        "path": ""
+      },
+      {
+        "kind": "directory",
+        "path": "/usr/share/figlet/fonts"
       }
     ]
   },
