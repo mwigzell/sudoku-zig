@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Zig WASM Hello</title></head>
+<body>
+<h1>WASM Smoke Test</h1>
+<pre id="out">loading...</pre>
+<script type="module">
+
+// extern fn print(i32) callback that Zig calls from inside WASM
+const env = {
+  env: {
+    print: (n) => {
+      document.getElementById('out').textContent += '\ngot back: ' + n;
+    }
+  }
+};
+
+try {
+  const result = await WebAssembly.instantiateStreaming(
+    fetch('hello.wasm'),
+    env
+  );
+
+  const exports = result.instance.exports;
+  document.getElementById('out').textContent =
+    'loaded OK\nexports: ' + Object.keys(exports).join(', ');
+
+  // Call greet(10, 32) → should print 42 via our extern callback
+  exports.greet(10, 32);
+
+} catch (e) {
+  document.getElementById('out').textContent = 'error: ' + e.message;
+}
+
+</script>
+</body>
+</html>
