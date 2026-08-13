@@ -21,19 +21,20 @@ pub const Sudoku = struct {
     fn buildFacade(arena: *std.heap.ArenaAllocator, cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
         switch (cfg.preferred_renderer) {
             .ansi => {
-                const file_writer_ptr = arena.allocator().create(std.Io.File.Writer) catch return error.System;
+                const alloc = is.allocatorForTest();
 
-                const strategy_buf = arena.allocator().alloc(u8, 64) catch return error.System;
+                const strategy_buf = alloc.alloc(u8, 64) catch return error.System;
+                const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return error.System;
                 file_writer_ptr.* = std.Io.File.stdout().writer(io, strategy_buf);
                 file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
 
-                var styler_instance = styler.AnsiStyler{};
+                const styler_ptr = alloc.create(styler.AnsiStyler) catch return error.System;
+                styler_ptr.* = styler.AnsiStyler{};
 
                 const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
 
-                const renderer_ptr = arena.allocator().create(R) catch return error.System;
-                renderer_ptr.* = R.init(arena.allocator(), io, &file_writer_ptr.interface, &styler_instance, is);
-
+                const renderer_ptr = alloc.create(R) catch return error.System;
+                renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
                 return facade.Make(R).make(renderer_ptr);
             },
             else => {
@@ -42,14 +43,14 @@ pub const Sudoku = struct {
         }
     }
 
-    pub fn init(cfg: config.Config, is: input_source.ReaderSource, pi: std.process.Init) Error!@This() {
+    pub fn init(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!@This() {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
             .cfg = cfg,
-            .renderer = try buildFacade(&arena, cfg, is, pi.io),
-            .io = pi.io,
-            .engine = try game_engine.GameEngine.init(puzzle_str, pi.io),
+            .renderer = try buildFacade(&arena, cfg, is, io),
+            .io = io,
+            .engine = try game_engine.GameEngine.init(puzzle_str, io),
             .arena = arena,
         };
     }
@@ -495,8 +496,8 @@ test "integrated e2e - run: save_as writes file and re-renders" {
 test "integrated e2e - run: new command resets board and history" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
 
     const io = std.testing.io;
@@ -512,19 +513,19 @@ test "integrated e2e - run: new command resets board and history" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var s = styler_t.PlainStyler{};
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc,
-        io,
-        &aw.writer,
-        &s,
-        source,
-    );
+    // var aw = std.Io.Writer.Allocating.init(alloc);
+    // defer aw.deinit();
+    // var s = styler_t.PlainStyler{};
+    // var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
+    //     alloc,
+    //     io,
+    //     &aw.writer,
+    //     &s,
+    //     source,
+    // );
 
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku_instance = try Sudoku.init(cfg, &f, io);
+    //const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
+    var sudoku_instance = try Sudoku.init(cfg, source, io);
     defer sudoku_instance.engine.deinit();
     sudoku_instance.run() catch {};
 

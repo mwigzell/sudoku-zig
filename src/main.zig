@@ -25,7 +25,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
 
     // const f = facade.Make(R).make(&renderer);
     const is: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator) };
-    var game = try sudoku.Sudoku.init(cfg, is, init);
+    var game = try sudoku.Sudoku.init(cfg, is, init.io);
     try game.run();
 
     log.debug("Ending sudoku game.", .{});

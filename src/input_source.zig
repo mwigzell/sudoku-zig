@@ -67,6 +67,22 @@ pub const ReaderSource = union(enum) {
             .mock => |*m| m.readLine(io),
         };
     }
+    /// Returns true when the active variant is .mock.
+    /// Returns true when the active variant is .mock.
+    pub fn isMock(self: *const @This()) bool {
+        return switch (self.*) {
+            .stdin => false,
+            .mock => true,
+        };
+    }
+
+    /// Allocater used for this source (for AsciiRenderer internal allocs).
+    pub fn allocatorForTest(self: *const @This()) std.mem.Allocator {
+        return switch (self.*) {
+            .stdin => |s| s.allocator,
+            .mock => |m| m.allocator,
+        };
+    }
 };
 
 // --- Tests ---
