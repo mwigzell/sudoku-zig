@@ -16,26 +16,43 @@ pub const Sudoku = struct {
     cfg: config.Config,
     io: std.Io,
     renderer: facade.Facade,
-    arena: std.heap.ArenaAllocator,
 
-    fn buildFacade(arena: *std.heap.ArenaAllocator, cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
+
+    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
         switch (cfg.preferred_renderer) {
             .ansi => {
                 const alloc = is.allocatorForTest();
 
-                const strategy_buf = alloc.alloc(u8, 64) catch return error.System;
-                const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return error.System;
-                file_writer_ptr.* = std.Io.File.stdout().writer(io, strategy_buf);
-                file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
+                switch (is) {
+                    .stdin => {
+                        // Production path: real stdout + ANSI output
+                        const strategy_buf = alloc.alloc(u8, 64) catch return error.System;
+                        const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return error.System;
+                        file_writer_ptr.* = std.Io.File.stdout().writer(io, strategy_buf);
+                        file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
 
-                const styler_ptr = alloc.create(styler.AnsiStyler) catch return error.System;
-                styler_ptr.* = styler.AnsiStyler{};
+                        const styler_ptr = alloc.create(styler.AnsiStyler) catch return error.System;
+                        styler_ptr.* = styler.AnsiStyler{};
 
-                const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
+                        const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
+                        const renderer_ptr = alloc.create(R) catch return error.System;
+                        renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
+                        return facade.Make(R).make(renderer_ptr);
+                    },
+                    .mock => {
+                        // Test path: in-memory output + plain styling
+                        const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch return error.System;
+                        aw_ptr.* = std.Io.Writer.Allocating.init(alloc);
 
-                const renderer_ptr = alloc.create(R) catch return error.System;
-                renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
-                return facade.Make(R).make(renderer_ptr);
+                        const styler_ptr = alloc.create(styler.PlainStyler) catch return error.System;
+                        styler_ptr.* = styler.PlainStyler{};
+
+                        const R = ascii_renderer.AsciiRenderer(styler.PlainStyler);
+                        const renderer_ptr = alloc.create(R) catch return error.System;
+                        renderer_ptr.* = R.init(alloc, io, &aw_ptr.writer, styler_ptr, is);
+                        return facade.Make(R).make(renderer_ptr);
+                    },
+                }
             },
             else => {
                 return error.System;
@@ -44,14 +61,12 @@ pub const Sudoku = struct {
     }
 
     pub fn init(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!@This() {
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
             .cfg = cfg,
-            .renderer = try buildFacade(&arena, cfg, is, io),
+            .renderer = try buildFacade(cfg, is, io),
             .io = io,
             .engine = try game_engine.GameEngine.init(puzzle_str, io),
-            .arena = arena,
         };
     }
 
@@ -200,8 +215,8 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
 test "integrated e2e - full seam: open loads saved game" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
 
     // 1. Create a save file with known state (no MockRenderer - real path through renderer)
@@ -259,8 +274,8 @@ test "integrated e2e - full seam: open loads saved game" {
 test "integrated e2e - save success produces status message, re-render, legend refresh" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
 
     const io = std.testing.io;
@@ -310,8 +325,8 @@ test "integrated e2e - save success produces status message, re-render, legend r
 test "integrated e2e - run: open file success produces status message, re-render, and legend refresh" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
 
     // Create a save file to open
@@ -365,8 +380,8 @@ test "integrated e2e - run: open file success produces status message, re-render
 test "integrated e2e - run: save uses default filename and returns success" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
 
     const io = std.testing.io;
@@ -413,8 +428,8 @@ test "integrated e2e - run: save uses default filename and returns success" {
 test "integrated e2e - run: fill → save → quit" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
     const io = std.testing.io;
     const alloc = std.testing.allocator;
@@ -453,8 +468,8 @@ test "integrated e2e - run: fill → save → quit" {
 test "integrated e2e - run: save_as writes file and re-renders" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
 
     const io = std.testing.io;
