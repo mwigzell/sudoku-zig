@@ -9,23 +9,25 @@ const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("renderer/legend.zig");
 
 
+pub const Error = error{System};
+
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
     io: std.Io,
     renderer: *const facade.Facade,
-    pub fn init(cfg: config.Config, renderer: *const facade.Facade, io: std.Io) anyerror!@This() {
+    pub fn init(cfg: config.Config, renderer: *const facade.Facade, io: std.Io) Error!@This() {
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
+            .cfg = cfg,
             .renderer = renderer,
             .io = io,
-            .cfg = cfg,
             .engine = try game_engine.GameEngine.init(puzzle_str, io),
         };
     }
 
-    /// Handle a dispatched Event. Returns true when is_quit flag is set.
-    fn handleEvent(self: *@This(), event: game_engine.Event) anyerror!bool {
+
+    fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {
                 if (ev.is_quit) return true;
@@ -42,42 +44,32 @@ pub const Sudoku = struct {
     }
 
     /// Handle one parsed result. Returns true when the command loop should end.
-    fn handleResult(self: *@This(), result: command.ParseCommandResult) anyerror!bool {
+    fn handleResult(self: *@This(), result: command.ParseCommandResult) Error!bool {
         switch (result) {
             .error_msg => |msg| {
-                try self.renderer.showError(msg);
+                _ = try self.handleEvent(game_engine.Event{ .error_msg = msg });
                 return false;
             },
             .valid => |cmd| {
-                const event = self.engine.exec(cmd) catch |err| {
-                    var buf: [80]u8 = undefined;
-                    const msg = std.fmt.bufPrint(&buf, "exec failed: {s}", .{@errorName(err)}) catch unreachable;
-                    try self.renderer.showError(msg);
-                    return false;
-                };
-                return self.handleEvent(event) catch |err| {
-                    var buf: [80]u8 = undefined;
-                    const msg = std.fmt.bufPrint(&buf, "handleEvent failed: {s}", .{@errorName(err)}) catch unreachable;
-                    try self.renderer.showError(msg);
-                    return false;
-                };
+                const event = self.engine.exec(cmd);
+                return try self.handleEvent(event);
             },
         }
     }
 
     /// Prompt through renderer, parse, dispatch. Returns true on quit.
-    fn promptForAndRunCommand(self: *@This()) anyerror!bool {
+    fn promptForAndRunCommand(self: *@This()) Error!bool {
         const avail = self.engine.getLegend();
         var names: [9][]const u8 = undefined;
         const count = avail.getNames(&names);
         const result = self.renderer.getCommandInput(names[0..count]) catch |err| {
             if (err == error.ReadEOF) return true;
-            return err;
+            return error.System; // I/O read failure treated as system
         };
         return try self.handleResult(result);
     }
 
-    pub fn run(self: *@This()) anyerror!void {
+    pub fn run(self: *@This()) Error!void {
         try self.renderer.render(self.engine.eventBoard(), null);
         try self.renderer.showLegend(self.engine.getLegend());
         while (true) {
@@ -97,8 +89,8 @@ const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 test "Sudoku stores io field during init" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
     const io = std.testing.io;
     const alloc = std.testing.allocator;
@@ -121,8 +113,8 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ascii_ansi,
-        .fallback_renderer = .ascii_ansi,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
     };
 
     const io = std.testing.io;

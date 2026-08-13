@@ -98,18 +98,18 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Read one line from the injected input source.
         /// Caller owns returned string and must free it.
         pub fn readLine(self: *@This()) facade.Error![]u8 {
-            const raw = self.inputSource.readline(self.io) catch return facade.Error.UnexpectedEOF;
+            const raw = self.inputSource.readline(self.io) catch return facade.Error.System;
             // Caller needs an owned copy of the trimmed line
             const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
             defer self.allocator.free(raw);
-            return self.allocator.dupe(u8, trimmed) catch return facade.Error.OutOfMemory;
+            return self.allocator.dupe(u8, trimmed) catch return facade.Error.System;
         }
 
         /// Implement Facade showError_fn. Print the error message, then
         /// "Press Enter to continue..." and wait on stdin (via injected input source).
         pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-            self.writer.print("{s}\n", .{msg}) catch return facade.Error.WriteFault;
-            self.writer.print("Press Enter to continue... ", .{}) catch return facade.Error.WriteFault;
+            self.writer.print("{s}\n", .{msg}) catch return facade.Error.System;
+            self.writer.print("Press Enter to continue... ", .{}) catch return facade.Error.System;
 
             const line = try self.readLine();
             defer self.allocator.free(line);
@@ -117,13 +117,13 @@ pub fn AsciiRenderer(StylerType: type) type {
 
         /// Internal — prompt for filename with default, return owned string.
         fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!_command.SaveFileResult {
-            self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.WriteFault;
+            self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.System;
 
             const line = self.readLine() catch return .Cancelled;
 
             if (line.len == 0) {
                 defer self.allocator.free(line);
-                const owned = self.allocator.dupe(u8, default_name) catch return facade.Error.OutOfMemory;
+                const owned = self.allocator.dupe(u8, default_name) catch return facade.Error.System;
                 return .{ .FileName = owned };
             }
             // Caller owns `line` — no free needed when returned directly.
@@ -132,7 +132,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 
         /// Internal — prompt for file path, return owned string.
         fn openDialog(self: *@This()) facade.Error!_command.OpenFileResult {
-            self.writer.print("Open file: ", .{}) catch return facade.Error.WriteFault;
+            self.writer.print("Open file: ", .{}) catch return facade.Error.System;
 
             const line = self.readLine() catch return .Cancelled;
 
@@ -144,17 +144,27 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Implement new game options — returns difficulty puzzle string.
-        pub fn newGameOptions(_ : *@This()) facade.Error!_command.PuzzleResult {
+        /// Show numbered menu 1-4, read selection, always return PuzzleGen.hard().
+        pub fn newGameOptions(self: *@This()) facade.Error!_command.PuzzleResult {
+            const options = [_][]const u8{ "Generate New Puzzle", "Open From File", "Load From URL", "Paste Puzzle String" };
+            self.writer.writeAll("\nNew game:\n") catch return facade.Error.System;
+            for (options, 0..) |opt, i| {
+                self.writer.print("{d}) {s}\n", .{ i + 1, opt }) catch return facade.Error.System;
+            }
+            self.writer.writeAll("> ") catch return facade.Error.System;
+
+            const selection = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(selection);
+
             const puzzle = @import("../../puzzle_gen.zig").PuzzleGen.hard();
-            const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.OutOfMemory;
+            const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
             return .{ .PuzzleString = owned };
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
         pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!_command.ParseCommandResult {
-            self.writer.writeAll(">") catch return facade.Error.WriteFault;
-            self.writer.writeAll(" ") catch return facade.Error.WriteFault;
+            self.writer.writeAll(">") catch return facade.Error.System;
+            self.writer.writeAll(" ") catch return facade.Error.System;
 
             const raw = self.inputSource.readline(self.io) catch return .{ .valid = _command.Command.quit };
 
@@ -546,13 +556,13 @@ test "openDialog: empty input returns Cancelled" {
     }
 }
 
-test "newGameOptions: '1' returns Choice Generated" {
+test "newGameOptions: any option returns PuzzleGen hard puzzle" {
     const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"1\n"};
+    const responses = [_][]const u8{"3\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -569,11 +579,20 @@ test "newGameOptions: '1' returns Choice Generated" {
     switch (result) {
         .PuzzleString => |puzzle| {
             defer std.heap.page_allocator.free(puzzle);
+            // Verify it's a real puzzle string (81 chars)
+            try std.testing.expectEqual(@as(usize, 81), puzzle.len);
         },
         .Cancelled => {
             try std.testing.expect(false);
         },
     }
+
+    // Verify menu was printed with all 4 options
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "1) Generate New Puzzle") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "2) Open From File") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "3) Load From URL") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "4) Paste Puzzle String") != null);
 }
 
 test "getCommandInput: fill A1 5 returns valid Fill" {

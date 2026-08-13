@@ -5,8 +5,20 @@ const rawToCellValue = @import("board/cell.zig").rawToCellValue;
 const puzzle_gen = @import("puzzle_gen.zig");
 const validator = @import("board/validator.zig");
 
-pub const conflict = @import("board/conflict.zig");
+const conflict = @import("board/conflict.zig");
 
+pub const Error = error{
+    /// A cell value outside the 0–9 range.
+    BadCellValue,
+    /// The one-line string is not exactly 81 characters.
+    WrongLength,
+    /// An unrecognised character appeared in the one-line string.
+    InvalidCharacter,
+    /// Attempted to modify a puzzle clue cell.
+    IsGiven,
+    /// Upward coercion catch-all for any future fallible ops (I/O, alloc).
+    System,
+};
 pub const DIMENSION_SIZE: u8 = 9;
 pub const CELL_COUNT = DIMENSION_SIZE * DIMENSION_SIZE;
 // Box dimension: a standard Sudoku box is 3x3.
@@ -224,7 +236,7 @@ pub const Board = struct {
     }
 
     /// Set the value at (row, col). Returns error.IsGiven if the cell is a puzzle clue.
-    pub fn setCell(self: *Board, row: u4, col: u4, val: CellValue) !void {
+    pub fn setCell(self: *Board, row: u4, col: u4, val: CellValue) Error!void {
         if (self.isGiven(row, col)) return error.IsGiven;
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
         const old_val = self.cells[idx].value;
@@ -249,13 +261,13 @@ pub const Board = struct {
 
 };
 
-const _serial = @import("board/serial.zig");
+const serial = @import("board/serial.zig");
 
 // Backward-compat re-exports (moved to board/serial.zig)
-pub const BoardError = _serial.BoardError;
-pub const FlatOpts = _serial.FlatOpts;
-pub const fromFlat = _serial.fromFlat;
-pub const fromOneLineString = _serial.fromOneLineString;
+pub const FlatOpts = serial.FlatOpts;
+pub const fromFlat = serial.fromFlat;
+pub const fromOneLineString = serial.fromOneLineString;
+
 
 // ---------------------------------------------------------------------------
 

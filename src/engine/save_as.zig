@@ -3,20 +3,25 @@ const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const mypath = @import("path.zig");
 
-pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Event {
     const gpa = std.heap.page_allocator;
 
     // Ensure data dir is resolved
     if (engine.data_dir == null) {
-        engine.data_dir = try mypath.getDataDir(gpa, engine.io);
+        engine.data_dir = mypath.getDataDir(gpa, engine.io) catch |err| {
+            var buf: [80]u8 = undefined;
+            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "getDataDir: {s}", .{@errorName(err)}) catch "system error" };
+        };
     }
 
-    const resolved = try mypath.resolveSavePath(
+    const resolved = mypath.resolveSavePath(
         gpa,
         engine.data_dir.?,
         path,
-    );
-    defer gpa.free(resolved);
+    ) catch |err| {
+        var buf: [80]u8 = undefined;
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolveSavePath: {s}", .{@errorName(err)}) catch "system error" };
+    };
 
     // Save to disk
     engine.saveGame(engine.io, resolved) catch |err| {
@@ -51,7 +56,7 @@ test "command.save_as.execute saves file at given path" {
     // Give the engine a data dir
     engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
 
-    const event = execute(&engine, tmp_path) catch return error.SkipZigTest;
+    const event = execute(&engine, tmp_path);
 
     switch (event) {
         .ok => |data| {

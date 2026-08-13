@@ -3,7 +3,7 @@ const game_engine = @import("game_engine.zig");
 const cell = @import("../board/cell.zig");
 
 /// Execute a redo command on the game engine.
-pub fn execute(engine: *game_engine.GameEngine) anyerror!game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     if (engine.history.pointer >= engine.history.entries.items.len) {
         return game_engine.Event{ .error_msg = "nothing to redo" };
     }
@@ -29,11 +29,11 @@ test "command.redo.execute fails when nothing to redo" {
     defer engine.deinit();
 
     // Fill some cells but never undo — no future to redo
-    _ = try engine.exec(command.Command{
+    _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     });
 
-    const event = try execute(&engine);
+    const event = execute(&engine);
     switch (event) {
         .error_msg => |msg| try std.testing.expectEqualStrings(msg, "nothing to redo"),
         .ok => return error.TestFailed,
@@ -49,15 +49,15 @@ test "command.redo.execute re-applies an undone fill" {
     defer engine.deinit();
 
     // Fill A3 with seven, then undo
-    _ = try engine.exec(command.Command{
+    _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     });
-    var event = try undo_command.execute(&engine);
+    var event = undo_command.execute(&engine);
     if (event != .ok) return error.TestFailed;
     try std.testing.expectEqual(cell.CellValue.zero, event.ok.board_view.get(0, 2));
 
     // Redo — should re-apply seven
-    event = try execute(&engine);
+    event = execute(&engine);
     if (event != .ok) return error.TestFailed;
     try std.testing.expectEqual(cell.CellValue.seven, event.ok.board_view.get(0, 2));
 }

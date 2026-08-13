@@ -7,12 +7,12 @@ const logger = @import("logger.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const input_source = @import("input_source.zig");
 
-pub fn main(init: std.process.Init) anyerror!void {
+pub fn main(init: std.process.Init) sudoku.Error!void {
     const log = logger.Logger(.sudoku);
     log.debug("Starting sudoku game.", .{});
 
     var stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
-    try stdout_writer.interface.print("\x1b[2J\x1b[H", .{});
+    stdout_writer.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
     const cfg = config_module.Config.default();
 
     var s = styler.AnsiStyler{};
@@ -22,13 +22,7 @@ pub fn main(init: std.process.Init) anyerror!void {
 
     const f = facade.Make(R).make(&renderer);
     var game = try sudoku.Sudoku.init(cfg, &f, init.io);
-    game.run() catch |err| {
-        if (err == error.ReadEOF) {
-            log.debug("bye!", .{});
-            return; // EOF — user pressed Ctrl-D, normal exit.
-        }
+    try game.run();
 
-        log.err("run: {s}", .{@errorName(err)});
-    };
     log.debug("Ending sudoku game.", .{});
 }

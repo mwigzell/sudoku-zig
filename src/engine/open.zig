@@ -3,7 +3,7 @@ const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const mypath = @import("path.zig");
 
-pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) anyerror!game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) game_engine.Event {
     if (path) |file_path| {
         return doOpen(engine, file_path);
     } else {
@@ -17,20 +17,26 @@ pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) anyerror!game
     }
 }
 
-fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) anyerror!game_engine.Event {
+fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Event {
     const gpa = std.heap.page_allocator;
 
     // Resolve the path through the data dir
     if (engine.data_dir == null) {
-        engine.data_dir = try mypath.getDataDir(gpa, engine.io);
-        errdefer gpa.free(engine.data_dir.?);
+        engine.data_dir = mypath.getDataDir(gpa, engine.io) catch |err| {
+            var buf: [80]u8 = undefined;
+            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "getDataDir: {s}", .{@errorName(err)}) catch "system error" };
+        };
     }
 
-    const resolved = try mypath.resolveSavePath(
+
+    const resolved = mypath.resolveSavePath(
         gpa,
         engine.data_dir.?,
         file_path,
-    );
+    ) catch |err| {
+        var buf: [80]u8 = undefined;
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolveSavePath: {s}", .{@errorName(err)}) catch "system error" };
+    };
     defer gpa.free(resolved);
 
     // Read file bytes
@@ -42,7 +48,10 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) anyerror!game_
     const stat = std.Io.Dir.cwd().statFile(engine.io, resolved, .{}) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
-    const buf = try gpa.alloc(u8, stat.size);
+    const buf = gpa.alloc(u8, stat.size) catch |err| {
+        var errbuf: [80]u8 = undefined;
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&errbuf, "alloc: {s}", .{@errorName(err)}) catch "system error" };
+    };
     defer gpa.free(buf);
 
     _ = std.Io.File.readPositionalAll(file, engine.io, buf, 0) catch |err| {
@@ -104,7 +113,7 @@ test "command.open.execute opens file and returns ok with message" {
 
     _ = engine.saveGame(engine.io, resolved) catch return error.SkipZigTest;
 
-    const event = try execute(&engine, tmp_path);
+    const event = execute(&engine, tmp_path);
 
     switch (event) {
         .ok => |data| {
@@ -124,7 +133,7 @@ test "command.open.execute returns fallback message when path is null" {
     );
     defer engine.deinit();
 
-    const event = try execute(&engine, null);
+    const event = execute(&engine, null);
 
     switch (event) {
         .ok => |data| {

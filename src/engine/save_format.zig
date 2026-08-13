@@ -5,6 +5,8 @@ const cell = @import("../board/cell.zig");
 const _puzzle_gen = @import("../puzzle_gen.zig");
 const command = @import("../command.zig");
 
+pub const IoError = error{ OutOfMemory, FileNotFound, AccessDenied, System };
+
 // ---------------------------------------------------------------------------
 // Save file wire format types
 // ---------------------------------------------------------------------------
@@ -162,32 +164,34 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, io: std.Io, buf: []const u8) !ge.G
 }
 
 /// Serialize game state to a binary save file via an Io handle.
-pub fn saveGame(self: *const ge.GameEngine, io: std.Io, path: []const u8) anyerror!void {
-    const buf = try toSaveFormat(self, std.heap.page_allocator);
+pub fn saveGame(self: *const ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
+    const buf = toSaveFormat(self, std.heap.page_allocator) catch { return IoError.System; };
     defer std.heap.page_allocator.free(buf);
 
-    var file = try std.Io.Dir.createFileAbsolute(io, path, .{});
+    var file = std.Io.Dir.createFileAbsolute(io, path, .{}) catch { return IoError.System; };
     defer file.close(io);
-    try std.Io.File.writeStreamingAll(file, io, buf);
+
+    std.Io.File.writeStreamingAll(file, io, buf) catch { return IoError.System; };
 }
 
-/// Deserialize game state from a binary save file via an Io handle.
-pub fn openGame(self: *ge.GameEngine, io: std.Io, path: []const u8) anyerror!void {
-    var file = try std.Io.Dir.openFileAbsolute(io, path, .{});
+pub fn openGame(self: *ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
+
+    var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch { return IoError.System; };
     defer file.close(io);
 
-    const stat = try std.Io.Dir.cwd().statFile(io, path, .{});
-    const buf = try std.heap.page_allocator.alloc(u8, stat.size);
+    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch { return IoError.System; };
+    const buf = std.heap.page_allocator.alloc(u8, stat.size) catch { return IoError.OutOfMemory; };
     defer std.heap.page_allocator.free(buf);
 
-    _ = try std.Io.File.readPositionalAll(file, io, buf, 0);
+    _ = std.Io.File.readPositionalAll(file, io, buf, 0) catch { return IoError.System; };
 
-    const loaded = try fromSaveFormat(std.heap.page_allocator, io, buf);
+    const loaded = fromSaveFormat(std.heap.page_allocator, io, buf) catch { return IoError.System; };
     self.history.deinit();
     const old_board = self.board;
     self.* = loaded;
     _ = old_board;
 }
+
 
 // ---------------------------------------------------------------------------
 // Tests (co-located, Ziglings 105 style)
@@ -232,7 +236,7 @@ test "saveGame returns error on bad path" {
     defer engine.deinit();
 
     const result = engine.saveGame(std.testing.io, "/nonexistent/dir/save.sud");
-    try std.testing.expectError(error.FileNotFound, result);
+    try std.testing.expectError(IoError.System, result);
 }
 
 // Step 6 — save → open round-trip (full saved state equality)
@@ -244,16 +248,16 @@ test "saveGame then openGame: full state round-trip equals original" {
     // Make mutations to populate history and alter board
     _ = original.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }) catch unreachable;
+    });
     _ = original.exec(command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
-    }) catch unreachable;
+    });
     _ = original.exec(command.Command{
         .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
-    }) catch unreachable;
+    });
 
     // Undo one mutation — tests that pointer position is preserved
-    _ = original.exec(command.Command{ .undo = {} }) catch unreachable;
+    _ = original.exec(command.Command{ .undo = {} });
 
     // Save to temp file using test I/O
     const tmp_path = "/tmp/sudoku_roundtrip_test.sud";
@@ -408,13 +412,13 @@ test "toSaveFormat includes history entries and correct trailer" {
     // Make 3 mutations (same as existing round-trip test)
     _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }) catch unreachable;
+    });
     _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
-    }) catch unreachable;
+    });
     _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
-    }) catch unreachable;
+    });
 
     const buf = try toSaveFormat(&engine, std.testing.allocator);
     defer std.testing.allocator.free(buf);
@@ -454,14 +458,14 @@ test "fromSaveFormat round-trip: board state given_bits history" {
 
     _ = original.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }) catch unreachable;
+    });
     _ = original.exec(command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
-    }) catch unreachable;
+    });
     _ = original.exec(command.Command{
         .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
-    }) catch unreachable;
-    _ = original.exec(command.Command{ .undo = {} }) catch unreachable;
+    });
+    _ = original.exec(command.Command{ .undo = {} });
 
     const buf = try toSaveFormat(&original, std.testing.allocator);
     defer std.testing.allocator.free(buf);

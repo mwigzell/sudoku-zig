@@ -7,7 +7,7 @@ const mypath = @import("path.zig");
 
 pub const DEFAULT_SAVE_FILE = "sudoku_save.sud";
 
-pub fn execute(engine: *game_engine.GameEngine, path: []const u8) !game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Event {
     return save_as_command.execute(engine, path);
 }
 
@@ -25,7 +25,7 @@ test "command.save.execute saves file and returns ok with message" {
     // Give the engine a data dir
     engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
 
-    const event = execute(&engine, DEFAULT_SAVE_FILE) catch return error.SkipZigTest;
+    const event = execute(&engine, DEFAULT_SAVE_FILE);
 
     switch (event) {
         .ok => |data| {

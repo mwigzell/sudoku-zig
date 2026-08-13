@@ -4,7 +4,7 @@ const command = @import("../command.zig");
 const cell = @import("../board/cell.zig");
 
 /// Execute a fill command on the game engine.
-pub fn execute(engine: *game_engine.GameEngine, fill_data: command.FillData) anyerror!game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, fill_data: command.FillData) game_engine.Event {
     return engine.tryFill(fill_data.row, fill_data.col, fill_data.digit);
 }
 
@@ -19,7 +19,7 @@ test "command.fill.execute fills a non-given cell" {
     );
     defer engine.deinit();
 
-    const event = try execute(&engine, command.FillData{
+    const event = execute(&engine, command.FillData{
         .row = 0,
         .col = 2,
         .digit = cell.CellValue.seven,
@@ -35,7 +35,7 @@ test "command.fill.execute fails on a given cell" {
     );
     defer engine.deinit();
 
-    const event = try execute(&engine, command.FillData{
+    const event = execute(&engine, command.FillData{
 
         .row = 0,
         .col = 0,
@@ -54,7 +54,7 @@ test "command.fill.execute records mutation in history" {
     );
     defer engine.deinit();
 
-    _ = try execute(&engine, command.FillData{
+    _ = execute(&engine, command.FillData{
 
         .row = 0,
         .col = 2,

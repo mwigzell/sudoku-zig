@@ -6,6 +6,8 @@
 /// is responsible for freeing via `gpa.free()`.
 
 const std = @import("std");
+const logger = @import("../logger.zig");
+
 
 // Linux-only: walks the C environ array to find $HOME.
 fn getHomeDir(gpa: std.mem.Allocator) ![]u8 {
@@ -34,9 +36,11 @@ pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) ![]u8 {
     const data_dir = try std.fmt.allocPrint(gpa, "{s}/.local/share/sudoku", .{home});
     gpa.free(home);
 
-    // mkdir -p equivalent — absolute path ignores the dir argument
+    const log = logger.Logger(.path);
     const cwd = std.Io.Dir.cwd();
-    _ = cwd.createDirPath(io, data_dir) catch {};
+    _ = cwd.createDirPath(io, data_dir) catch |err| {
+        log.err("could not create data dir: {s}", .{@errorName(err)});
+    };
 
     return data_dir;
 }

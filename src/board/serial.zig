@@ -2,15 +2,7 @@ const std = @import("std");
 const board = @import("../board.zig");
 const cell = @import("cell.zig");
 
-/// Errors returned when parsing puzzle data into a Board.
-pub const BoardError = error{
-    /// A cell value outside the 0–9 range was found.
-    BadCellValue,
-    /// The one-line string is not exactly 81 characters.
-    WrongLength,
-    /// An unrecognised character appeared in the one-line string.
-    InvalidCharacter,
-};
+pub const Error = board.Error;
 
 pub const FlatOpts = struct {
     // When provided, use explicit given_bits mask; otherwise derive from nonzero cells.
@@ -37,9 +29,9 @@ pub fn equal(a: board.Board, b: board.Board) bool {
 }
 
 /// Construct a Board from a flat 81-element u8 array.
-pub fn fromFlat(flat: [81]u8, opts: FlatOpts) BoardError!board.Board {
+pub fn fromFlat(flat: [81]u8, opts: FlatOpts) Error!board.Board {
     for (flat) |v| {
-        if (v > 9) return BoardError.BadCellValue;
+        if (v > 9) return Error.BadCellValue;
     }
 
     var b = board.Board.init();
@@ -58,8 +50,8 @@ pub fn fromFlat(flat: [81]u8, opts: FlatOpts) BoardError!board.Board {
 }
 
 /// Construct a Board from a one-line Sudoku string like "53..7........6.....98..".
-pub fn fromOneLineString(oneLine: []const u8) BoardError!board.Board {
-    if (oneLine.len != 81) return BoardError.WrongLength;
+pub fn fromOneLineString(oneLine: []const u8) Error!board.Board {
+    if (oneLine.len != 81) return Error.WrongLength;
 
     var flat: [81]u8 = undefined;
     for (oneLine, 0..) |ch, i| {
@@ -67,7 +59,7 @@ pub fn fromOneLineString(oneLine: []const u8) BoardError!board.Board {
             '.' => 0,
             '0' => 0,
             '1'...'9' => ch - '0',
-            else => return BoardError.InvalidCharacter,
+        else => return Error.InvalidCharacter,
         };
     }
     return fromFlat(flat, .{});
@@ -188,16 +180,16 @@ test "Board: fromFlat rejects out-of-range cell values" {
     @memset(&bad, 0);
     bad[5] = 42; // out of range
 
-    try std.testing.expectError(BoardError.BadCellValue, fromFlat(bad, .{}));
+    try std.testing.expectError(Error.BadCellValue, fromFlat(bad, .{}));
 }
 
 test "Board: fromOneLineString rejects wrong length" {
     const tooShort: []const u8 = "67..4";
-    try std.testing.expectError(BoardError.WrongLength, fromOneLineString(tooShort));
+    try std.testing.expectError(Error.WrongLength, fromOneLineString(tooShort));
 
     var tooLong: [82]u8 = undefined;
     @memset(&tooLong, '.');
-    try std.testing.expectError(BoardError.WrongLength, fromOneLineString(tooLong[0..]));
+    try std.testing.expectError(Error.WrongLength, fromOneLineString(tooLong[0..]));
 }
 
 test "Board: fromOneLineString rejects invalid characters" {
@@ -205,7 +197,7 @@ test "Board: fromOneLineString rejects invalid characters" {
     @memset(&bad, '.');
     bad[10] = 'X'; // letter in puzzle string
 
-    try std.testing.expectError(BoardError.InvalidCharacter, fromOneLineString(bad[0..]));
+    try std.testing.expectError(Error.InvalidCharacter, fromOneLineString(bad[0..]));
 }
 
 test "Board: toFlat produces [81]u8 matching current cell values" {
