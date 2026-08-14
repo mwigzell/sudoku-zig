@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
     // root.zig imports all sub-modules; addTest discovers every co-located `test {}`
     // block via Zig's import-graph discovery (Ziglings 105 style).
     const test_mod = b.addModule("sudoku_test", .{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,

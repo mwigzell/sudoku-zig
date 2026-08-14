@@ -30,3 +30,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
 
     log.debug("Ending sudoku game.", .{});
 }
+
+test {
+    _ = .{sudoku};
+}
