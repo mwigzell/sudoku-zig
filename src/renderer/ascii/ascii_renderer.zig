@@ -54,6 +54,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .allocator = allocator, .io = io, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
         }
 
+        /// Destroy writer + styler heap pointers; keep last_filename free.
         pub fn deinit(self: *@This()) void {
             if (self.last_filename) |name| {
                 self.allocator.free(name);

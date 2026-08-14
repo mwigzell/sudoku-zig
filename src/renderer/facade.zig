@@ -25,6 +25,7 @@ pub const Facade = struct {
     showError_fn: *const fn (*anyopaque, []const u8) Error!void,
 
     getCommandInput_fn: *const fn (*anyopaque, []const []const u8) Error!command.ParseCommandResult,
+    deinit_fn: *const fn (*anyopaque) void,
 
     pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
         return self.render_fn(self.context, view, status_msg);
@@ -41,11 +42,14 @@ pub const Facade = struct {
     pub fn getCommandInput(self: *const Facade, names: []const []const u8) Error!command.ParseCommandResult {
         return self.getCommandInput_fn(self.context, names);
     }
+
+    pub fn deinit(self: *Facade) void {
+        self.deinit_fn(self.context);
+    }
 };
 
 /// Auto-wraps any concrete renderer type into a Facade.
 pub fn Make(comptime CT: type) type {
-
     return struct {
         pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
@@ -65,6 +69,11 @@ pub fn Make(comptime CT: type) type {
             return self.getCommandInput(names) catch error.System;
         }
 
+        pub fn deinit_wrapper(ctx: *anyopaque) void {
+            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
+            self.deinit();
+        }
+
         /// Build a Facade pointing to the concrete renderer instance.
         pub fn make(instance: *CT) Facade {
             return Facade{
@@ -73,6 +82,7 @@ pub fn Make(comptime CT: type) type {
                 .showLegend_fn = showLegend_wrapper,
                 .showError_fn = showError_wrapper,
                 .getCommandInput_fn = getCommandInput_wrapper,
+                .deinit_fn = deinit_wrapper,
             };
         }
     };

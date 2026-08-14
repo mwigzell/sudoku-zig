@@ -122,6 +122,7 @@ pub const Sudoku = struct {
 
 
     pub fn deinit(self: *@This()) void {
+        self.renderer.deinit();
         self.engine.deinit();
     }
 
