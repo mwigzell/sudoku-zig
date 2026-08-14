@@ -15,22 +15,19 @@ pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
 
-    arena: std.heap.ArenaAllocator,
     io: std.Io,
     renderer: facade.Facade,
 
 
-    fn buildFacade(arena: *std.heap.ArenaAllocator, cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
+    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
         switch (cfg.preferred_renderer) {
             .ansi => {
-            const alloc = arena.allocator();
-
+                const alloc = is.allocatorForTest();
                 switch (is) {
                     .stdin => {
                         // Production path: real stdout + ANSI output
-                        const strategy_buf = alloc.alloc(u8, 64) catch return error.System;
                         const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return error.System;
-                        file_writer_ptr.* = std.Io.File.stdout().writer(io, strategy_buf);
+                        file_writer_ptr.* = std.Io.File.stdout().writer(io, &.{});
                         file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
 
                         const styler_ptr = alloc.create(styler.AnsiStyler) catch return error.System;
@@ -63,12 +60,10 @@ pub const Sudoku = struct {
     }
 
     pub fn init(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!@This() {
-        var arena = std.heap.ArenaAllocator.init(is.allocatorForTest());
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
-            .arena = arena,
             .cfg = cfg,
-            .renderer = try buildFacade(&arena, cfg, is, io),
+            .renderer = try buildFacade(cfg, is, io),
             .io = io,
             .engine = try game_engine.GameEngine.init(puzzle_str, io),
         };
@@ -127,11 +122,9 @@ pub const Sudoku = struct {
 
 
     pub fn deinit(self: *@This()) void {
-
-        self.arena.deinit();
         self.engine.deinit();
-
     }
+
 
 };
 
