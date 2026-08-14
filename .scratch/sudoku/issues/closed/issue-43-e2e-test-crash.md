@@ -1,4 +1,5 @@
 triage: ready-for-agent
+status: closed
 
 ## buildFacade allocator mismatch — GPF on e2e tests
 
@@ -22,9 +23,9 @@ Effect: tests use `std.testing.allocator`, production uses `page_allocator`. No 
 
 ### Acceptance Criteria
 
-- [ ] Step 1: root.zig test tuple includes all missing modules
-- [ ] Step 2: buildFacade switches on ReaderSource, uses correct allocator everywhere
-- [ ] Step 3: All e2e tests pass without GPF
-- [ ] Step 4: Production path unchanged (AnsiStyler, real stdout)
-- [ ] Step 5: `allocatorForTest()` field name fixed in input_source.zig
-- [ ] Step 6: Full suite passes via `zig build test`
+x Step 1: root.zig test tuple includes all missing modules
+x Step 2: buildFacade switches on ReaderSource, uses correct allocator everywhere
+x Step 3: All e2e tests pass without GPF
+x Step 4: Production path unchanged (AnsiStyler, real stdout)
+x Step 5: allocatorForTest() field name fixed in input_source.zig
+x Step 6: Full suite passes via zig build test — 214/214 pass, no GPF
