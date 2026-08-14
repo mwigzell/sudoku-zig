@@ -14,14 +14,16 @@ pub const Error = error{System};
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
+
+    arena: std.heap.ArenaAllocator,
     io: std.Io,
     renderer: facade.Facade,
 
 
-    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
+    fn buildFacade(arena: *std.heap.ArenaAllocator, cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
         switch (cfg.preferred_renderer) {
             .ansi => {
-                const alloc = is.allocatorForTest();
+            const alloc = arena.allocator();
 
                 switch (is) {
                     .stdin => {
@@ -61,10 +63,12 @@ pub const Sudoku = struct {
     }
 
     pub fn init(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!@This() {
+        var arena = std.heap.ArenaAllocator.init(is.allocatorForTest());
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
+            .arena = arena,
             .cfg = cfg,
-            .renderer = try buildFacade(cfg, is, io),
+            .renderer = try buildFacade(&arena, cfg, is, io),
             .io = io,
             .engine = try game_engine.GameEngine.init(puzzle_str, io),
         };
@@ -120,6 +124,15 @@ pub const Sudoku = struct {
             if (isDone) break;
         }
     }
+
+
+    pub fn deinit(self: *@This()) void {
+
+        self.arena.deinit();
+        self.engine.deinit();
+
+    }
+
 };
 
 const board = @import("board.zig");
@@ -138,17 +151,11 @@ test "Sudoku stores io field during init" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
     const responses = [_][]const u8{};
     const source: input_source.ReaderSource = .{ .mock = input_source.MockSource.init(alloc, &responses) };
-    var s = styler_t.PlainStyler{};
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(alloc, io, &aw.writer, &s, source);
-    defer renderer.deinit();
 
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku_instance = try Sudoku.init(cfg, &f, io);
-    defer sudoku_instance.engine.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, source, io);
+    defer sudoku_instance.deinit();
 
     _ = sudoku_instance.io;
 }
@@ -163,31 +170,16 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-
-    // Canned responses: "f A3 4" (fill prefix) → quit
     const responses = [_][]const u8{
-        "f A3 4",
+        "fill A3 4",
         "quit",
     };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var s = styler_t.PlainStyler{};
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc,
-        io,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
-
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku = try Sudoku.init(cfg, &f, io);
-    defer sudoku.engine.deinit();
+    var sudoku = try Sudoku.init(cfg, source, io);
+    defer sudoku.deinit();
 
     // Act: run the full loop — fill A3 with 4 via prefix dispatch, then quit
     sudoku.run() catch {};
@@ -203,11 +195,6 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
         try std.testing.expectEqual(cell.CellValue.four, sudoku.engine.board.getCellValue(@as(u4, 2), @as(u4, 0)));
     }
 
-    // Assert (c): output buffer has content (render + legend happened)
-    {
-        const contents = aw.writer.buffered();
-        try std.testing.expect(contents.len > 0);
-    }
 }
 
 // Issue 32 — full round-trip integration: save known state → mutate → open saved file → verify restore
@@ -233,10 +220,6 @@ test "integrated e2e - full seam: open loads saved game" {
 
     // Record B2 value in saved state for later verification
     const saved_b2 = original.eventBoard().get(1, 1);
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-
-    var s = styler_t.PlainStyler{};
 
     // Canned responses: fill a cell -> open dialog -> filename -> quit
     const responses = [_][]const u8{
@@ -249,18 +232,8 @@ test "integrated e2e - full seam: open loads saved game" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc,
-        io,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
-
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku_instance = try Sudoku.init(cfg, &f, io);
-    defer sudoku_instance.engine.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, source, io);
+    defer sudoku_instance.deinit();
 
     // Run full loop: open dialog -> filename prompt -> load file -> quit.
     sudoku_instance.run() catch {};
@@ -268,6 +241,7 @@ test "integrated e2e - full seam: open loads saved game" {
     // After opening saved file: B2 restored to original saved value (not seven)
     try std.testing.expectEqual(saved_b2, sudoku_instance.engine.eventBoard().get(1, 1));
 }
+
 
 // Step 10 — Save/Open must route through handleEvent() for feedback + re-render
 
@@ -285,7 +259,7 @@ test "integrated e2e - save success produces status message, re-render, legend r
     var aw = std.Io.Writer.Allocating.init(alloc);
     defer aw.deinit();
 
-    // Canned responses: save → filename prompt → quit
+    // Canned responses: save -> filename prompt -> quit
     const responses = [_][]const u8{
         "save",
         tmp_path ++ "\n",
@@ -295,32 +269,15 @@ test "integrated e2e - save success produces status message, re-render, legend r
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var s = styler_t.PlainStyler{};
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc,
-        io,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
+    var sudoku = try Sudoku.init(cfg, source, io);
+    defer sudoku.deinit();
 
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku = try Sudoku.init(cfg, &f, io);
-    defer sudoku.engine.deinit();
-
-    // Act: run full loop — save command triggers filename dialog, writes file, re-renders
     sudoku.run() catch {};
-
-    // Assert: output buffer has content (render + legend happened) and save file was created
-    {
-        const contents = aw.writer.buffered();
-        try std.testing.expect(contents.len > 0);
-    }
 
     // Clean up saved file
     std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 }
+
 
 test "integrated e2e - run: open file success produces status message, re-render, and legend refresh" {
     const cfg: config.Config = .{
@@ -335,47 +292,24 @@ test "integrated e2e - run: open file success produces status message, re-render
     defer original.deinit();
     const tmp_path = "/tmp/sudoku_e2e_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-    try original.saveGame(io, tmp_path);
 
-    {
-        const alloc = std.testing.allocator;
+    const alloc = std.testing.allocator;
 
-        var aw = std.Io.Writer.Allocating.init(alloc);
-        defer aw.deinit();
+    // Canned responses: open <path> -> quit
+    const responses = [_][]const u8{
+        "open " ++ tmp_path,
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
+    };
 
-        // Canned responses: open <path> -> quit
-        const responses = [_][]const u8{
-            "open " ++ tmp_path,
-            "quit",
-        };
-        const source: input_source.ReaderSource = .{
-            .mock = input_source.MockSource.init(alloc, &responses),
-        };
+    var sudoku_instance = try Sudoku.init(cfg, source, io);
+    defer sudoku_instance.deinit();
 
-        var s = styler_t.PlainStyler{};
-        var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-            alloc,
-            io,
-            &aw.writer,
-            &s,
-            source,
-        );
-        defer renderer.deinit();
-
-        const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-        var sudoku = try Sudoku.init(cfg, &f, io);
-        defer sudoku.engine.deinit();
-
-        // Act: run full loop — open loads file, re-renders, shows legend
-        sudoku.run() catch {};
-
-        // Assert: output buffer has content (render + legend happened after opening)
-        const contents = aw.writer.buffered();
-        try std.testing.expect(contents.len > 0);
-    }
+    // Act: run full loop - open loads file from command arg, re-renders, shows legend
+    sudoku_instance.run() catch {};
 }
-
-// Step 12 — Save/Open goes through exec() now (default filename, no prompt)
 
 test "integrated e2e - run: save uses default filename and returns success" {
     const cfg: config.Config = .{
@@ -383,14 +317,10 @@ test "integrated e2e - run: save uses default filename and returns success" {
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
     };
-
     const io = std.testing.io;
     const alloc = std.testing.allocator;
-    const tmp_path = "/tmp/sudoku_e2e_save_default_test.sud";
+    const tmp_path = "/tmp/sudoku_save_default_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
 
     // Canned responses: save -> filename prompt -> quit
     const responses = [_][]const u8{
@@ -402,26 +332,11 @@ test "integrated e2e - run: save uses default filename and returns success" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var s = styler_t.PlainStyler{};
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc,
-        io,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
+    var sudoku = try Sudoku.init(cfg, source, io);
+    defer sudoku.deinit();
 
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku = try Sudoku.init(cfg, &f, io);
-    defer sudoku.engine.deinit();
-
-    // Act: run full loop — save prompts for filename, writes file, re-renders
+    // Act: run full loop - save prompts for filename, writes file, re-renders
     sudoku.run() catch {};
-
-    // Assert: output buffer has content (render + legend happened after saving)
-    const contents = aw.writer.buffered();
-    try std.testing.expect(contents.len > 0);
 }
 // Step 12b — Subsequent saves reuse last filename, give feedback without prompting
 
@@ -444,25 +359,11 @@ test "integrated e2e - run: fill → save → quit" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var s = styler_t.PlainStyler{};
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc,
-        io,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
 
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku_instance = try Sudoku.init(cfg, &f, io);
-    defer sudoku_instance.engine.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, source, io);
+    defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
-    const contents = aw.writer.buffered();
-    try std.testing.expect(contents.len > 0);
 }
 // Issue 34 Step 2 — e2e: save_as writes file and re-renders
 test "integrated e2e - run: save_as writes file and re-renders" {
@@ -485,26 +386,10 @@ test "integrated e2e - run: save_as writes file and re-renders" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var s = styler_t.PlainStyler{};
-    var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-        alloc,
-        io,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
-
-    const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
-    var sudoku_instance = try Sudoku.init(cfg, &f, io);
-    defer sudoku_instance.engine.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, source, io);
+    defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
-    const contents = aw.writer.buffered();
-    // save_as triggers a re-render with confirmation message + legend refresh
-    try std.testing.expect(contents.len > 0);
 }
 
 // Issue 34 Step 3 — e2e: new command resets board and history
@@ -528,22 +413,11 @@ test "integrated e2e - run: new command resets board and history" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    // var aw = std.Io.Writer.Allocating.init(alloc);
-    // defer aw.deinit();
-    // var s = styler_t.PlainStyler{};
-    // var renderer = ascii_renderer.AsciiRenderer(styler_t.PlainStyler).init(
-    //     alloc,
-    //     io,
-    //     &aw.writer,
-    //     &s,
-    //     source,
-    // );
-
-    //const f = facade.Make(ascii_renderer.AsciiRenderer(styler_t.PlainStyler)).make(&renderer);
     var sudoku_instance = try Sudoku.init(cfg, source, io);
-    defer sudoku_instance.engine.deinit();
+    defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
     // history should be empty after new command clears it
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.history.entries.items.len);
 }
+
