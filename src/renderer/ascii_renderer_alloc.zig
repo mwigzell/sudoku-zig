@@ -18,7 +18,6 @@ pub const AsciiRendererAlloc = struct {
     fn prodBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
         const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return facade.Error.System;
         file_writer_ptr.* = std.Io.File.stdout().writer(io, &.{});
-        file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return facade.Error.System;
 
         const styler_ptr = alloc.create(styler.AnsiStyler) catch return facade.Error.System;
         styler_ptr.* = styler.AnsiStyler{};
@@ -26,6 +25,7 @@ pub const AsciiRendererAlloc = struct {
         const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
         renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
+        renderer_ptr.clearScreen() catch return facade.Error.System;
 
         const ctx = ProdFacadeContext{
             .allocator = alloc,
