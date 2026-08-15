@@ -1,4 +1,5 @@
 triage: ready-for-human
+Status: closed
 
 Eliminate the 10 hand-written prod/mock vtable wrappers — they duplicate `facade.Make(CT)` which already generically produces these exact 5 wrappers for any context type.
 
