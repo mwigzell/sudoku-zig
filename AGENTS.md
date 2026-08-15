@@ -56,15 +56,11 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
-## Test-suite discipline (root.zig)
+## Test-suite discipline
 
-`src/root.zig` is the test discovery entry point — it imports every sub-module with co-located tests and references them in the root `test {}` block so Zig's test runner discovers all blocks.
+Test discovery uses **`src/main.zig`** as the entry point (there is no `src/root.zig` — it was removed in commit 02f55d8). Zig's test runner follows the **transitive import graph**: every `test {}` block in any module reachable from `main.zig`'s imports is discovered and linked — no manual tuple or central registration file is needed.
 
-Whenever you create a new source file or rewrite an existing one that contains inline `test { ... }` blocks, **you must also update `src/root.zig`**:
-1. Add `const <module> = @import("<module>.zig");`
-2. Reference the imported object inside the root `test` block tuple (e.g. `_ = .{ ..., <module>, ... };`) so it is linked and not stripped.
-
-Failure to do this means your tests are invisible to the test runner. Always verify after changes by running `zig test src/grid.zig` (or the relevant file) and confirming all expected tests appear.
+Caveat: a new source file with tests is only visible if it is **imported by something in main.zig's graph**. If you add `src/foo.zig` with tests and it isn't imported by an existing module, its tests are silently skipped. Make sure it is reachable from the domain (e.g. imported by `sudoku.zig` or another module), and verify with `zig build test` that the new tests actually run.
 
 ## clean "nuke" build cache 
 zig build clean
@@ -82,7 +78,7 @@ zig build run
 ## run test
 zig build test
 or
-zig test src/root.zig -lc
+zig test src/main.zig -lc
 - don't pass --summary it does nothing
 - for full console output (not server-mode) use the `zig test` form above
 - to filter a single test: `zig build test -Dtest-filter='exact test name'` (hyphen, not underscore)
