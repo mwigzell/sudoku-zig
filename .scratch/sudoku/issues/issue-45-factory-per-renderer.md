@@ -81,7 +81,7 @@ TuiRenderer defines `TuiFacadeContext` + its own alloc module with `makeFacade()
 | 3 | Wire `freeAll()` as the vtable's deinit callback (replaces current deinit that only frees the renderer) | COMPLETED 2026-08-13 |
 | 4 | Replace `buildFacade` body in `src/sudoku.zig` with delegate to `AsciiRendererAlloc.makeFacade(...)` | DONE 2026-08-13 — return type changed to `facade.Facade`, delegates via switch on `cfg.preferred_renderer` (Step 5 completed alongside as compile-required) |
 | 5 | Remove `renderer_alloc` sidecar field from `Sudoku`; tighten deinit to two calls. Remove `FacadeResult` struct | DONE 2026-08-13 — completed alongside Step 4 as compile-required: FacadeResult removed, renderer_alloc field removed, deinit is `renderer.deinit()` + `engine.deinit()` only |
-| 6 | Full test suite under SafeAllocator — zero leaks, all tests pass | Pending |
+| 6 | Full test suite under SafeAllocator — zero leaks, all tests pass | DONE 2026-08-13 — `renderer.deinit()` was dropped during refactor; restored in both Prod and Mock context freeAll. Test updated to init renderer pointers properly.
 
 ## Acceptance Criteria
 
@@ -89,6 +89,6 @@ TuiRenderer defines `TuiFacadeContext` + its own alloc module with `makeFacade()
 - [x] `buildFacade` returns only `facade.Facade` (one return value) — no tuples, no opaque sidecars
 - [x] AsciiRendererAlloc factory creates all allocations and wires the vtable deinit to free them
 - [x] Adding TuiRenderer/WasmRenderer would only require: (a) new alloc module, (b) one line in buildFacade switch — zero changes to Sudoku struct or deinit
-- [ ] Full suite under SafeAllocator — zero leaks
+- [x] Full suite under SafeAllocator — zero leaks
 
 

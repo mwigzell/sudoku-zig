@@ -190,6 +190,7 @@ pub const ProdFacadeContext = struct {
     renderer: *ascii_renderer.AsciiRenderer(styler.AnsiStyler),
 
     pub fn freeAll(self: *@This()) void {
+        self.renderer.deinit();
         const alloc = self.allocator;
         alloc.destroy(self.writer);
         alloc.destroy(self.styler);
@@ -224,8 +225,9 @@ pub const MockFacadeContext = struct {
     renderer: *ascii_renderer.AsciiRenderer(styler.PlainStyler),
 
     pub fn freeAll(self: *@This()) void {
-        const alloc = self.allocator;
         self.writer.deinit();
+        self.renderer.deinit();
+        const alloc = self.allocator;
         alloc.destroy(self.writer);
         alloc.destroy(self.styler);
         alloc.destroy(self.renderer);
@@ -262,6 +264,13 @@ test "Prod/MockFacadeContext freeAll releases child pointers without leak" {
 
     const AnsiR = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
     const renderer_ptr = alloc.create(AnsiR) catch unreachable;
+    renderer_ptr.* = AnsiR.init(
+        alloc,
+        std.testing.io,
+        &file_writer_ptr.interface,
+        styler_ptr,
+        .{ .stdin = input_source.StdinSource.initStdin(alloc) },
+    );
 
     const prod_ctx = alloc.create(ProdFacadeContext) catch unreachable;
     prod_ctx.* = ProdFacadeContext{
@@ -281,7 +290,13 @@ test "Prod/MockFacadeContext freeAll releases child pointers without leak" {
 
     const PlainR = ascii_renderer.AsciiRenderer(styler.PlainStyler);
     const plain_renderer_ptr = alloc.create(PlainR) catch unreachable;
-
+    plain_renderer_ptr.* = PlainR.init(
+        alloc,
+        std.testing.io,
+        &aw_ptr.writer,
+        plain_styler_ptr,
+        .{ .stdin = input_source.StdinSource.initStdin(alloc) },
+    );
     const mock_ctx = alloc.create(MockFacadeContext) catch unreachable;
     mock_ctx.* = MockFacadeContext{
         .allocator = alloc,
