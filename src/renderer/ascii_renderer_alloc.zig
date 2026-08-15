@@ -8,28 +8,25 @@ const legend = @import("legend.zig");
 const command = @import("../command.zig");
 
 pub const AsciiRendererAlloc = struct {
-    /// Static factory — allocates writer, styler, renderer, creates context
-    /// struct, wires vtable pointers, returns Facade.
-    pub fn makeFacade(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
-        return if (is.isMock()) mockBranch(is, alloc, io) else prodBranch(is, alloc, io);
+    /// Static factory — allocates styler + renderer, creates context struct,
+    /// wires vtable pointers, returns Facade. The prod path borrows the
+    /// caller-owned writer; the mock path ignores it.
+    pub fn makeFacade(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io, writer: *std.Io.Writer) facade.Error!facade.Facade {
+        return if (is.isMock()) mockBranch(is, alloc, io) else prodBranch(is, alloc, io, writer);
     }
-
-    /// Production branch: File.Writer + AnsiStyler + Ansi renderer
-    fn prodBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
-        const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return facade.Error.System;
-        file_writer_ptr.* = std.Io.File.stdout().writer(io, &.{});
-
+    /// Production branch: caller-owned writer + AnsiStyler + Ansi renderer
+    fn prodBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io, writer: *std.Io.Writer) facade.Error!facade.Facade {
         const styler_ptr = alloc.create(styler.AnsiStyler) catch return facade.Error.System;
         styler_ptr.* = styler.AnsiStyler{};
 
         const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
-        renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
+        renderer_ptr.* = R.init(alloc, io, writer, styler_ptr, is);
         renderer_ptr.clearScreen() catch return facade.Error.System;
 
         const ctx = ProdFacadeContext{
             .allocator = alloc,
-            .writer = file_writer_ptr,
+            .writer = writer,
             .styler = styler_ptr,
             .renderer = renderer_ptr,
         };
@@ -70,14 +67,13 @@ pub const AsciiRendererAlloc = struct {
 /// Holds allocator, writer, styler and renderer pointers for production mode.
 pub const ProdFacadeContext = struct {
     allocator: std.mem.Allocator,
-    writer: *std.Io.File.Writer,
+    writer: *std.Io.Writer, // caller-owned; not destroyed here
     styler: *styler.AnsiStyler,
     renderer: *ascii_renderer.AsciiRenderer(styler.AnsiStyler),
 
     pub fn deinit(self: *@This()) void {
         self.renderer.deinit();
         const alloc = self.allocator;
-        alloc.destroy(self.writer);
         alloc.destroy(self.styler);
         alloc.destroy(self.renderer);
         alloc.destroy(self);
@@ -160,11 +156,12 @@ test "Prod/MockFacadeContext deinit releases child pointers without leak" {
     const prod_ctx = alloc.create(ProdFacadeContext) catch unreachable;
     prod_ctx.* = ProdFacadeContext{
         .allocator = alloc,
-        .writer = file_writer_ptr,
+        .writer = &file_writer_ptr.interface,
         .styler = styler_ptr,
         .renderer = renderer_ptr,
     };
     prod_ctx.deinit();
+    alloc.destroy(file_writer_ptr); // caller-owned now, not deinit's job
 
     // --- Mock context ---
     const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch unreachable;
@@ -201,6 +198,29 @@ test "AsciiRendererAlloc.makeFacade returns Facade" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var facade_result = AsciiRendererAlloc.makeFacade(source, alloc, io) catch return error.Test;
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+
+    var facade_result = AsciiRendererAlloc.makeFacade(source, alloc, io, &aw.writer) catch return error.Test;
     facade_result.deinit();
+}
+test "integrated e2e - prodBranch renders real grid into in-memory writer" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+
+    var aw = std.Io.Writer.Allocating.init(alloc);
+    defer aw.deinit();
+
+    // A non-mock source routes to prodBranch
+    const source: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(alloc) };
+
+    var fac = try AsciiRendererAlloc.makeFacade(source, alloc, io, &aw.writer);
+    defer fac.deinit();
+
+    const b = board.Board.init();
+    try fac.render(b.asView(), null);
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "╰───────┴───────┴───────╯") != null);
 }
