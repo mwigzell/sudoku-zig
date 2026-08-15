@@ -16,7 +16,7 @@ The AsciiRenderer works. A stub WasmRenderer (hardcoded responses) will:
 
 ### Step 1: Add command-line flag for renderer selection
 
-`main.zig` reads a CLI arg to choose between ASCII/ANSI and WASM modes. Default: `--ascii` preserving current behaviour. The flag only affects what happens, not how the binary compiles — same executable runs both paths when compiled natively.
+`main.zig` reads a CLI arg to choose between ASCII/ANSI and WASM modes. Default: `--ansii` preserving current behaviour. The flag only affects what happens, not how the binary compiles — same executable runs both paths when compiled natively.
 
 ### Step 2: Add WASM compilation target to build.zig
 
