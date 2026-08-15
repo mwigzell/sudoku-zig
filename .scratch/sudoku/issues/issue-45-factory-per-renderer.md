@@ -76,7 +76,7 @@ TuiRenderer defines `TuiFacadeContext` + its own alloc module with `makeFacade()
 
 | Step | Description | Status |
 |------|-------------|--------|
-| 1 | Define `ProdFacadeContext` / `MockFacadeContext` structs with `freeAll()` in `ascii_renderer_alloc.zig`; remove old `ProdHandles`/`MockHandles` union + tag enum | Pending |
+| 1 | Define `ProdFacadeContext` / `MockFacadeContext` structs with `freeAll()` in `ascii_renderer_alloc.zig`; remove old `ProdHandles`/`MockHandles` union + tag enum | DONE — structs written, test passes (SafeAllocator check). Old types retained until Steps 2-5 replace allocation path so sudoku.zig stops importing them |
 | 2 | Write `makeFacade(is, alloc, io)` static factory in `ascii_renderer_alloc.zig` — allocates all three, wires into Make with context pointer as opaque handle | Pending |
 | 3 | Wire `freeAll()` as the vtable's deinit callback (replaces current deinit that only frees the renderer) | Pending |
 | 4 | Replace `buildFacade` body in `src/sudoku.zig` with delegate to `AsciiRendererAlloc.makeFacade(...)` | Pending |
@@ -91,9 +91,4 @@ TuiRenderer defines `TuiFacadeContext` + its own alloc module with `makeFacade()
 - [ ] Adding TuiRenderer/WasmRenderer would only require: (a) new alloc module, (b) one line in buildFacade switch — zero changes to Sudoku struct or deinit
 - [ ] Full suite under SafeAllocator — zero leaks
 
-## Risks / Notes
 
-- Today `Make(CT)` casts context back to the *renderer* type for method calls, and also uses it for its own deinit wrapper. We still need the renderer accessible inside the Context. Two options:
-  - **Option A:** vtable methods cast opaque → Context → extract `.renderer` pointer; deinit casts opaque → Context → `freeAll()`. All wrappers dereference through context once. Adds one level of indirection per method call but keeps everything consistent.
-  - **Option B:** keep renderer-level Make as-is for method dispatch, but provide a second wrapper for just deinit that knows about the wider context. Two contexts though — messy.
-- Decide Option A vs B during Step 2 / initial TDD cycle.
