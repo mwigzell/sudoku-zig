@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     // var renderer = R.init(std.heap.page_allocator, init.io, &stdout_writer.interface, &s, .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator) });
 
     // const f = facade.Make(R).make(&renderer);
-    const is: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator) };
+    const is: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator, init.io) };
     var stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
     var game = try sudoku.Sudoku.init(cfg, is, init.io, &stdout_writer.interface);
     try game.run();

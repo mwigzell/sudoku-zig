@@ -37,7 +37,7 @@ pub fn bottomBorder() []const u8 {
 
 /// Terminal implementation of the Renderer Facade.
 ///
-/// Stores an Io handle (stdin reads), a writer pointer, and a styler
+/// Stores a writer pointer, a styler
 /// reference. Instance methods are routed through the Facade vtable via Make()
 /// wrapper functions that coerce fn values to fn pointers.
 pub fn AsciiRenderer(StylerType: type) type {
@@ -45,13 +45,12 @@ pub fn AsciiRenderer(StylerType: type) type {
         allocator: std.mem.Allocator,
         writer: *Io.Writer,
         styler: *StylerType,
-        io: std.Io,
         inputSource: input_source.ReaderSource,
         last_filename: ?[]u8,
 
-        /// Construct with Io handle (stdin), writer (all output), styler pointer, and input source.
-        pub fn init(allocator: std.mem.Allocator, io: std.Io, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
-            return .{ .allocator = allocator, .io = io, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
+        /// Construct with writer (all output), styler pointer, and input source.
+        pub fn init(allocator: std.mem.Allocator, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
+            return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
         }
 
         /// Emit the ANSI clear-screen / home-cursor sequence on the output stream.
@@ -104,7 +103,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Read one line from the injected input source.
         /// Caller owns returned string and must free it.
         pub fn readLine(self: *@This()) facade.Error![]u8 {
-            const raw = self.inputSource.readline(self.io) catch return facade.Error.System;
+            const raw = self.inputSource.readline() catch return facade.Error.System;
             // Caller needs an owned copy of the trimmed line
             const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
             defer self.allocator.free(raw);
@@ -172,7 +171,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.writeAll(">") catch return facade.Error.System;
             self.writer.writeAll(" ") catch return facade.Error.System;
 
-            const raw = self.inputSource.readline(self.io) catch return .{ .valid = _command.Command.quit };
+            const raw = self.inputSource.readline() catch return .{ .valid = _command.Command.quit };
 
             defer self.allocator.free(raw);
 
@@ -271,7 +270,7 @@ test "showLegend: writes Command: with Fill Clear Quit" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) });
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
 
     const cmds = legend.Legend{
         .fill = true,
@@ -299,7 +298,7 @@ test "render: renders empty board end-to-end" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) });
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
 
     const b = board.Board.init();
     try renderer.render(b.asView(), null);
@@ -332,7 +331,7 @@ test "render: renders with digits placed" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, io, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) });
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
 
     const givens_row = [_]u8{
         0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -355,7 +354,6 @@ test "render: renders with digits placed" {
 }
 
 test "showError: reads from MockSource and does not panic" {
-    const io = std.testing.io;
 
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
@@ -368,7 +366,6 @@ test "showError: reads from MockSource and does not panic" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -382,7 +379,6 @@ test "showError: reads from MockSource and does not panic" {
 }
 
 test "saveAsDialog: empty input returns default filename" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -393,7 +389,6 @@ test "saveAsDialog: empty input returns default filename" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -416,7 +411,6 @@ test "saveAsDialog: empty input returns default filename" {
 }
 
 test "saveAsDialog: custom input returns user filename" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -427,7 +421,6 @@ test "saveAsDialog: custom input returns user filename" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -447,7 +440,6 @@ test "saveAsDialog: custom input returns user filename" {
 }
 
 test "saveAsDialog: EOF returns Cancelled" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -457,7 +449,6 @@ test "saveAsDialog: EOF returns Cancelled" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -474,7 +465,6 @@ test "saveAsDialog: EOF returns Cancelled" {
 }
 
 test "openDialog: user enters a file path" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -485,7 +475,6 @@ test "openDialog: user enters a file path" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -508,7 +497,6 @@ test "openDialog: user enters a file path" {
 }
 
 test "openDialog: EOF returns Cancelled" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -518,7 +506,6 @@ test "openDialog: EOF returns Cancelled" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -535,7 +522,6 @@ test "openDialog: EOF returns Cancelled" {
 }
 
 test "openDialog: empty input returns Cancelled" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -546,7 +532,6 @@ test "openDialog: empty input returns Cancelled" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -563,7 +548,6 @@ test "openDialog: empty input returns Cancelled" {
 }
 
 test "newGameOptions: any option returns PuzzleGen hard puzzle" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -574,7 +558,6 @@ test "newGameOptions: any option returns PuzzleGen hard puzzle" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -602,7 +585,6 @@ test "newGameOptions: any option returns PuzzleGen hard puzzle" {
 }
 
 test "getCommandInput: fill A1 5 returns valid Fill" {
-    const io = std.testing.io;
 
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
@@ -614,7 +596,6 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -650,7 +631,6 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
 }
 
 test "getCommandInput: EOF returns Quit" {
-    const io = std.testing.io;
 
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
@@ -662,7 +642,6 @@ test "getCommandInput: EOF returns Quit" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -700,10 +679,9 @@ test "AsciiRenderer init last_filename is null" {
     var s = styler.PlainStyler{};
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
-        .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator) },
+        .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) },
     );
     defer renderer.deinit();
 
@@ -712,7 +690,6 @@ test "AsciiRenderer init last_filename is null" {
 
 // Test 1: save with last_filename set dupe's the cached path, no dialog prompt.
 test "getCommandInput: save with last_filename set uses cached path" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -724,7 +701,6 @@ test "getCommandInput: save with last_filename set uses cached path" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -763,7 +739,6 @@ test "getCommandInput: save with last_filename set uses cached path" {
 }
 
 test "getCommandInput: save with last_filename null prompts and caches" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -775,7 +750,6 @@ test "getCommandInput: save with last_filename null prompts and caches" {
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,
@@ -814,7 +788,6 @@ test "getCommandInput: save with last_filename null prompts and caches" {
 }
 
 test "getCommandInput: save then save reuses cached filename without prompting" {
-    const io = std.testing.io;
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -826,7 +799,6 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     };
     var renderer = AsciiRenderer(styler.PlainStyler).init(
         std.testing.allocator,
-        io,
         &aw.writer,
         &s,
         source,

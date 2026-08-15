@@ -16,12 +16,13 @@ pub const AsciiRendererAlloc = struct {
     }
     /// Production branch: caller-owned writer + AnsiStyler + Ansi renderer
     fn prodBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io, writer: *std.Io.Writer) facade.Error!facade.Facade {
+        _ = io; // io is now captured inside StdinSource; signature kept until chunk 3 (IoSession)
         const styler_ptr = alloc.create(styler.AnsiStyler) catch return facade.Error.System;
         styler_ptr.* = styler.AnsiStyler{};
 
         const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
-        renderer_ptr.* = R.init(alloc, io, writer, styler_ptr, is);
+        renderer_ptr.* = R.init(alloc, writer, styler_ptr, is);
         renderer_ptr.clearScreen() catch return facade.Error.System;
 
         const ctx = ProdFacadeContext{
@@ -39,6 +40,7 @@ pub const AsciiRendererAlloc = struct {
     // --- Mock branch ---
 
     fn mockBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
+        _ = io; // io is now captured inside StdinSource; signature kept until chunk 3 (IoSession)
         const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch return facade.Error.System;
         aw_ptr.* = std.Io.Writer.Allocating.init(alloc);
 
@@ -47,7 +49,7 @@ pub const AsciiRendererAlloc = struct {
 
         const R = ascii_renderer.AsciiRenderer(styler.PlainStyler);
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
-        renderer_ptr.* = R.init(alloc, io, &aw_ptr.writer, styler_ptr, is);
+        renderer_ptr.* = R.init(alloc, &aw_ptr.writer, styler_ptr, is);
 
         const ctx = MockFacadeContext{
             .allocator = alloc,
@@ -147,10 +149,9 @@ test "Prod/MockFacadeContext deinit releases child pointers without leak" {
     const renderer_ptr = alloc.create(AnsiR) catch unreachable;
     renderer_ptr.* = AnsiR.init(
         alloc,
-        std.testing.io,
         &file_writer_ptr.interface,
         styler_ptr,
-        .{ .stdin = input_source.StdinSource.initStdin(alloc) },
+        .{ .stdin = input_source.StdinSource.initStdin(alloc, std.testing.io) },
     );
 
     const prod_ctx = alloc.create(ProdFacadeContext) catch unreachable;
@@ -174,10 +175,9 @@ test "Prod/MockFacadeContext deinit releases child pointers without leak" {
     const plain_renderer_ptr = alloc.create(PlainR) catch unreachable;
     plain_renderer_ptr.* = PlainR.init(
         alloc,
-        std.testing.io,
         &aw_ptr.writer,
         plain_styler_ptr,
-        .{ .stdin = input_source.StdinSource.initStdin(alloc) },
+        .{ .stdin = input_source.StdinSource.initStdin(alloc, std.testing.io) },
     );
     const mock_ctx = alloc.create(MockFacadeContext) catch unreachable;
     mock_ctx.* = MockFacadeContext{
@@ -212,7 +212,7 @@ test "integrated e2e - prodBranch renders real grid into in-memory writer" {
     defer aw.deinit();
 
     // A non-mock source routes to prodBranch
-    const source: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(alloc) };
+    const source: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) };
 
     var fac = try AsciiRendererAlloc.makeFacade(source, alloc, io, &aw.writer);
     defer fac.deinit();
