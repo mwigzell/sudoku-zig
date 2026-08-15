@@ -406,7 +406,7 @@ test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
 
     var sudoku = try Sudoku.init(cfg, source, io);
 
-    // Facade deinit routes through vtable to freeAll() — no renderer_alloc sidecar needed.
+    // Facade deinit routes through vtable to deinit() — no renderer_alloc sidecar needed.
     // If buildFacade still returned FacadeResult this would compile-break.
     defer sudoku.deinit();
 
