@@ -15,78 +15,14 @@ pub const Error = error{System};
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
-    renderer_alloc: *AsciiRendererAlloc,
 
     io: std.Io,
     renderer: facade.Facade,
-
-
-    const FacadeResult = struct {
-        facade: facade.Facade,
-        renderer_alloc: *AsciiRendererAlloc,
-    };
-
-    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!FacadeResult {
+    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
         switch (cfg.preferred_renderer) {
             .ansi => {
                 const alloc = is.allocatorForTest();
-                switch (is) {
-                    .stdin => {
-                        // Production path: real stdout + ANSI output
-                        const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return error.System;
-                        file_writer_ptr.* = std.Io.File.stdout().writer(io, &.{});
-                        file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
-
-                        const styler_ptr = alloc.create(styler.AnsiStyler) catch return error.System;
-                        styler_ptr.* = styler.AnsiStyler{};
-
-                        const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
-                        const renderer_ptr = alloc.create(R) catch return error.System;
-                        renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
-
-                        const facade_alloc = alloc.create(AsciiRendererAlloc) catch return error.System;
-                        facade_alloc.* = AsciiRendererAlloc{
-                            .allocator = alloc,
-                            .handles = .{ .prod = .{
-                                .writer = file_writer_ptr,
-                                .styler = styler_ptr,
-                                .renderer = renderer_ptr,
-                            } },
-                        };
-
-                        return FacadeResult{
-                            .facade = facade.Make(R).make(renderer_ptr),
-                            .renderer_alloc = facade_alloc,
-                        };
-                    },
-                    .mock => {
-                        // Test path: in-memory output + plain styling
-                        const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch return error.System;
-                        aw_ptr.* = std.Io.Writer.Allocating.init(alloc);
-
-                        const styler_ptr = alloc.create(styler.PlainStyler) catch return error.System;
-                        styler_ptr.* = styler.PlainStyler{};
-
-                        const R = ascii_renderer.AsciiRenderer(styler.PlainStyler);
-                        const renderer_ptr = alloc.create(R) catch return error.System;
-                        renderer_ptr.* = R.init(alloc, io, &aw_ptr.writer, styler_ptr, is);
-
-                        const facade_alloc = alloc.create(AsciiRendererAlloc) catch return error.System;
-                        facade_alloc.* = AsciiRendererAlloc{
-                            .allocator = alloc,
-                            .handles = .{ .mock = .{
-                                .writer = aw_ptr,
-                                .styler = styler_ptr,
-                                .renderer = renderer_ptr,
-                            } },
-                        };
-
-                        return FacadeResult{
-                            .facade = facade.Make(R).make(renderer_ptr),
-                            .renderer_alloc = facade_alloc,
-                        };
-                    },
-                }
+                return AsciiRendererAlloc.makeFacade(is, alloc, io);
             },
             else => {
                 return error.System;
@@ -99,8 +35,7 @@ pub const Sudoku = struct {
         const facade_result = try buildFacade(cfg, is, io);
         return @This(){
             .cfg = cfg,
-            .renderer = facade_result.facade,
-            .renderer_alloc = facade_result.renderer_alloc,
+            .renderer = facade_result,
             .io = io,
             .engine = try game_engine.GameEngine.init(puzzle_str, io),
         };
@@ -160,9 +95,6 @@ pub const Sudoku = struct {
 
     pub fn deinit(self: *@This()) void {
         self.renderer.deinit();
-        self.renderer_alloc.deinit();
-        // Free the AsciiRendererAlloc struct itself after its internals are released
-        self.renderer_alloc.allocator.destroy(self.renderer_alloc);
         self.engine.deinit();
     }
 
@@ -453,5 +385,32 @@ test "integrated e2e - run: new command resets board and history" {
 
     // history should be empty after new command clears it
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.history.entries.items.len);
+}
+// Issue 45 Step 4 — verify factory delegation (buildFacade uses AsciiRendererAlloc.makeFacade)
+test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+    };
+
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+
+    const responses = [_][]const u8{
+        "quit",
+    };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
+    };
+
+    var sudoku = try Sudoku.init(cfg, source, io);
+
+    // Facade deinit routes through vtable to freeAll() — no renderer_alloc sidecar needed.
+    // If buildFacade still returned FacadeResult this would compile-break.
+    defer sudoku.deinit();
+
+    // Act: run through the factory-built facade end-to-end
+    sudoku.run() catch {};
 }
 

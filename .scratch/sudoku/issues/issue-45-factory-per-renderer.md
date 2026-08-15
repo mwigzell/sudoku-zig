@@ -79,16 +79,16 @@ TuiRenderer defines `TuiFacadeContext` + its own alloc module with `makeFacade()
 | 1 | Define `ProdFacadeContext` / `MockFacadeContext` structs with `freeAll()` in `ascii_renderer_alloc.zig`; remove old `ProdHandles`/`MockHandles` union + tag enum | DONE — structs written, test passes (SafeAllocator check). Old types retained until Steps 2-5 replace allocation path so sudoku.zig stops importing them |
 | 2 | Write `makeFacade(is, alloc, io)` static factory in `ascii_renderer_alloc.zig` — allocates all three, wires into Make with context pointer as opaque handle | COMPLETED 2026-08-13 |
 | 3 | Wire `freeAll()` as the vtable's deinit callback (replaces current deinit that only frees the renderer) | COMPLETED 2026-08-13 |
-| 4 | Replace `buildFacade` body in `src/sudoku.zig` with delegate to `AsciiRendererAlloc.makeFacade(...)` | Pending |
-| 5 | Remove `renderer_alloc` sidecar field from `Sudoku`; tighten deinit to two calls. Remove `FacadeResult` struct | Pending |
+| 4 | Replace `buildFacade` body in `src/sudoku.zig` with delegate to `AsciiRendererAlloc.makeFacade(...)` | DONE 2026-08-13 — return type changed to `facade.Facade`, delegates via switch on `cfg.preferred_renderer` (Step 5 completed alongside as compile-required) |
+| 5 | Remove `renderer_alloc` sidecar field from `Sudoku`; tighten deinit to two calls. Remove `FacadeResult` struct | DONE 2026-08-13 — completed alongside Step 4 as compile-required: FacadeResult removed, renderer_alloc field removed, deinit is `renderer.deinit()` + `engine.deinit()` only |
 | 6 | Full test suite under SafeAllocator — zero leaks, all tests pass | Pending |
 
 ## Acceptance Criteria
 
-- [ ] `Sudoku` struct has no renderer-typed fields beyond `renderer: facade.Facade`
-- [ ] `buildFacade` returns only `facade.Facade` (one return value) — no tuples, no opaque sidecars
-- [ ] AsciiRendererAlloc factory creates all allocations and wires the vtable deinit to free them
-- [ ] Adding TuiRenderer/WasmRenderer would only require: (a) new alloc module, (b) one line in buildFacade switch — zero changes to Sudoku struct or deinit
+- [x] `Sudoku` struct has no renderer-typed fields beyond `renderer: facade.Facade`
+- [x] `buildFacade` returns only `facade.Facade` (one return value) — no tuples, no opaque sidecars
+- [x] AsciiRendererAlloc factory creates all allocations and wires the vtable deinit to free them
+- [x] Adding TuiRenderer/WasmRenderer would only require: (a) new alloc module, (b) one line in buildFacade switch — zero changes to Sudoku struct or deinit
 - [ ] Full suite under SafeAllocator — zero leaks
 
 
