@@ -64,12 +64,15 @@ Single union, two leaf structs. The tag disambiguates which set of concrete type
 | Step | Description | Status |
 |------|-------------|--------|
 | 1 | Define `AsciiRendererAlloc` struct — union of `ProdHandles` / `MockHandles` with concrete pointers + `deinit()` | Done |
-| 2 | Wire it in: `buildFacade` returns `(facade.Facade, *AsciiRendererAlloc)`, `Sudoku.init()` assigns both, `deinit()` wired in | Pending |
-| 3 | Full suite passes under SafeAllocator — zero leaks | Pending |
+| 2 | Wire it in: `buildFacade` returns `(facade.Facade, *AsciiRendererAlloc)`, `Sudoku.init()` assigns both, `deinit()` wired in | Done |
+| 3 | Full suite passes under SafeAllocator — zero leaks | Done |
 
 ### Acceptance Criteria
 
-- [ ] All e2e tests pass under SafeAllocator with zero leak warnings
+- [x] All e2e tests pass under SafeAllocator with zero leak warnings
+- [x] Production path (AnsiStyler + File.Writer) freed correctly
+- [x] One call from Sudoku.deinit() cascades everything down cleanly
+- [x] No `*anyopaque` remaining in AsciiRendererAlloc
 - [ ] Production path (AnsiStyler + File.Writer) freed correctly
 - [ ] One call from Sudoku.deinit() cascades everything down cleanly
 - [ ] No `*anyopaque` remaining in AsciiRendererAlloc

@@ -9,17 +9,24 @@ const command = @import("command.zig");
 const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("renderer/legend.zig");
 
+const AsciiRendererAlloc = @import("renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
 pub const Error = error{System};
 
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
+    renderer_alloc: *AsciiRendererAlloc,
 
     io: std.Io,
     renderer: facade.Facade,
 
 
-    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!facade.Facade {
+    const FacadeResult = struct {
+        facade: facade.Facade,
+        renderer_alloc: *AsciiRendererAlloc,
+    };
+
+    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!FacadeResult {
         switch (cfg.preferred_renderer) {
             .ansi => {
                 const alloc = is.allocatorForTest();
@@ -36,7 +43,21 @@ pub const Sudoku = struct {
                         const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
                         const renderer_ptr = alloc.create(R) catch return error.System;
                         renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
-                        return facade.Make(R).make(renderer_ptr);
+
+                        const facade_alloc = alloc.create(AsciiRendererAlloc) catch return error.System;
+                        facade_alloc.* = AsciiRendererAlloc{
+                            .allocator = alloc,
+                            .handles = .{ .prod = .{
+                                .writer = file_writer_ptr,
+                                .styler = styler_ptr,
+                                .renderer = renderer_ptr,
+                            } },
+                        };
+
+                        return FacadeResult{
+                            .facade = facade.Make(R).make(renderer_ptr),
+                            .renderer_alloc = facade_alloc,
+                        };
                     },
                     .mock => {
                         // Test path: in-memory output + plain styling
@@ -49,7 +70,21 @@ pub const Sudoku = struct {
                         const R = ascii_renderer.AsciiRenderer(styler.PlainStyler);
                         const renderer_ptr = alloc.create(R) catch return error.System;
                         renderer_ptr.* = R.init(alloc, io, &aw_ptr.writer, styler_ptr, is);
-                        return facade.Make(R).make(renderer_ptr);
+
+                        const facade_alloc = alloc.create(AsciiRendererAlloc) catch return error.System;
+                        facade_alloc.* = AsciiRendererAlloc{
+                            .allocator = alloc,
+                            .handles = .{ .mock = .{
+                                .writer = aw_ptr,
+                                .styler = styler_ptr,
+                                .renderer = renderer_ptr,
+                            } },
+                        };
+
+                        return FacadeResult{
+                            .facade = facade.Make(R).make(renderer_ptr),
+                            .renderer_alloc = facade_alloc,
+                        };
                     },
                 }
             },
@@ -61,9 +96,11 @@ pub const Sudoku = struct {
 
     pub fn init(cfg: config.Config, is: input_source.ReaderSource, io: std.Io) Error!@This() {
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
+        const facade_result = try buildFacade(cfg, is, io);
         return @This(){
             .cfg = cfg,
-            .renderer = try buildFacade(cfg, is, io),
+            .renderer = facade_result.facade,
+            .renderer_alloc = facade_result.renderer_alloc,
             .io = io,
             .engine = try game_engine.GameEngine.init(puzzle_str, io),
         };
@@ -123,6 +160,9 @@ pub const Sudoku = struct {
 
     pub fn deinit(self: *@This()) void {
         self.renderer.deinit();
+        self.renderer_alloc.deinit();
+        // Free the AsciiRendererAlloc struct itself after its internals are released
+        self.renderer_alloc.allocator.destroy(self.renderer_alloc);
         self.engine.deinit();
     }
 

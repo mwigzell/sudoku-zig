@@ -12,6 +12,9 @@ pub const AsciiRendererAlloc = struct {
     allocator: std.mem.Allocator,
     handles: Handles,
 
+    const AnsiRenderer = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
+    const PlainRenderer = ascii_renderer.AsciiRenderer(styler.PlainStyler);
+
     /// Concrete pointer sets for each renderer mode.
     const Handles = union(RenderMode) {
         prod: ProdHandles,
@@ -21,13 +24,13 @@ pub const AsciiRendererAlloc = struct {
     pub const ProdHandles = struct {
         writer: *std.Io.File.Writer,
         styler: *styler.AnsiStyler,
-        renderer: *ascii_renderer.AsciiRenderer(styler.AnsiStyler),
+        renderer: *AnsiRenderer,
     };
 
     pub const MockHandles = struct {
         writer: *std.Io.Writer.Allocating,
         styler: *styler.PlainStyler,
-        renderer: *ascii_renderer.AsciiRenderer(styler.PlainStyler),
+        renderer: *PlainRenderer,
     };
 
     /// Free all heap allocations. Io.Writer.Allocating needs .deinit() before
@@ -46,5 +49,5 @@ pub const AsciiRendererAlloc = struct {
                 self.allocator.destroy(h.renderer);
             },
         }
-    };
+    }
 };
