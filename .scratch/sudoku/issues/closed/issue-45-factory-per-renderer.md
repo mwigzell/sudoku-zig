@@ -1,4 +1,5 @@
 triage: ready-for-human
+Status: closed
 
 Facade factory per renderer — move allocation into AsciiRendererAlloc, return only Facade from buildFacade
 
