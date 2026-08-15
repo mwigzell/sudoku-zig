@@ -54,7 +54,7 @@ pub fn build(b: *std.Build) void {
     });
 
     // Run the compiled test binary via addRunArtifact (server-mode IPC).
-    // Works because no tests touch std.testing.io — InMemoryOutput is used for I/O tests.
+    // Tests needing fake I/O use std.testing.io (in-process fake); server-mode IPC accommodates that.
     const run_tests = b.addRunArtifact(check);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
