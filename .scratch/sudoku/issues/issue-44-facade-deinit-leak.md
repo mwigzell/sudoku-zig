@@ -1,52 +1,75 @@
 triage: ready-for-human
 
+Facade deinit — AsciiRendererAlloc as a tagged union of two structs
 
-## Facade deinit — free leaked writer, styler, renderer pointers
+## Problem
 
 `buildFacade` allocates three heap pointers that are never freed on `Sudoku.deinit()`:
 1. Writer container (`*Io.File.Writer` or `*Io.Writer.Allocating`)
-2. Styler (`*StylerType`)
-3. Renderer instance itself (`*AsciiRenderer(T)`)
+2. Styler (`AnsiStyler` | `PlainStyler`)
+3. Renderer instance itself (`*AsciiRenderer(StylerType)`)
 
-### Design: AsciiRendererAlloc container with opaque pointers
+The original design used `*anyopaque` pointers for writer/styler but Zig's `allocator.destroy()` can't work on opaque — it needs compile-time type info via `@sizeOf()`.
 
-The three allocations are owned by `buildFacade` / `Sudoku`, not the renderer. The renderer's `deinit()` should only clean up its own internals (e.g. `last_filename`). A **holder struct** at Sudoku level owns and frees the heap allocations.
+## Design: Single Tagged Union of Two Structs
+
+One union, two variants — each variant is a struct carrying all the pointers for that mode. A single `deinit()` switches on the tag and frees everything.
 
 ```zig
-/// Holds the three heap allocations from buildFacade as opaque pointers.
-/// Named AsciiRendererAlloc because this pattern is specific to how AsciiRenderer
-/// constructs its internals — other renderer backends must not inherit this shape.
-/// Stored on Sudoku as `?*AsciiRendererAlloc` (nullable pointer) so future renderers opt in, not out.
+const RenderMode = enum { prod, mock };
+
 pub const AsciiRendererAlloc = struct {
-    allocator: std.mem.Allocator,  // stored inside; used by deinit()
-    writer: *anyopaque,   // Io.File.Writer | Io.Writer.Allocating
-    styler: *anyopaque,  // AnsiStyler | PlainStyler
-    renderer: *anyopaque, // AsciiRenderer(StylerType)
+    allocator: std.mem.Allocator,
+    handles: Handles,
+
+    const Handles = union(RenderMode) {
+        prod: ProdHandles,
+        mock: MockHandles,
+    };
+
+    const ProdHandles = struct {
+        writer: *std.Io.File.Writer,
+        styler: *styler.AnsiStyler,
+        renderer: *ascii_renderer.AsciiRenderer(styler.AnsiStyler),
+    };
+
+    const MockHandles = struct {
+        writer: *std.Io.Writer.Allocating,
+        styler: *styler.PlainStyler,
+        renderer: *ascii_renderer.AsciiRenderer(styler.PlainStyler),
+    };
 
     pub fn deinit(self: *@This()) void {
-        self.allocator.destroy(self.writer);
-        self.allocator.destroy(self.renderer);
-        self.allocator.destroy(self.styler);
-    }
+        switch (self.handles) {
+            .prod => |*h| {
+                self.allocator.destroy(h.writer);
+                self.allocator.destroy(h.styler);
+                self.allocator.destroy(h.renderer);
+            },
+            .mock => |*h| {
+                h.writer.deinit(); // free internal buffer before destroy
+                self.allocator.destroy(h.writer);
+                self.allocator.destroy(h.styler);
+                self.allocator.destroy(h.renderer);
+            },
+        }
+    };
 };
 ```
 
-Sudoku stores `rendererAlloc: ?*AsciiRendererAlloc` — no underscore prefix, nullable pointer because this ownership pattern is specific to AsciiRenderer.
+Single union, two leaf structs. The tag disambiguates which set of concrete types to destroy. `Io.Writer.Allocating` needs `.deinit()` before `destroy()` to release its internal buffer.
 
-### Facade deinit still cascades to renderer internals
+### Steps
 
-The Facade `deinit_fn` vtable + `deinit_wrapper` are done and correct — both the ASCII and WASM renderer need that path for their own internal cleanup (e.g. `last_filename`). The wrapper calls `AsciiRenderer.deinit()` which only frees its internals. It does **not** destroy `self` — that's handled by `AsciiRendererAlloc.deinit()`
+| Step | Description | Status |
+|------|-------------|--------|
+| 1 | Define `AsciiRendererAlloc` struct — union of `ProdHandles` / `MockHandles` with concrete pointers + `deinit()` | Pending |
+| 2 | Wire it in: `buildFacade` returns `(facade.Facade, *AsciiRendererAlloc)`, `Sudoku.init()` assigns both, `deinit()` wired in | Pending |
+| 3 | Full suite passes under SafeAllocator — zero leaks | Pending |
 
-### Steps:
+### Acceptance Criteria
 
-| Step | Status |
-|------|--------|
-| 1: `buildFacade` returns tuple `(facade.Facade, *AsciiRendererAlloc)` → `Sudoku.init()` assigns both | Pending |
-| 2: Wire `Sudoku.deinit()` to call `rendererAlloc.?.deinit()` before `engine.deinit()` | Pending |
-| 3: Full suite passes under SafeAllocator — zero leaks | Pending |
-
-### Remaining Acceptance Criteria
 - [ ] All e2e tests pass under SafeAllocator with zero leak warnings
-- [ ] Production path (AnsiStyler + File.Writer) also freed correctly
-- [ ] One call from Sudoku.deinit() cascades everything down via AsciiRendererAlloc
-
+- [ ] Production path (AnsiStyler + File.Writer) freed correctly
+- [ ] One call from Sudoku.deinit() cascades everything down cleanly
+- [ ] No `*anyopaque` remaining in AsciiRendererAlloc
