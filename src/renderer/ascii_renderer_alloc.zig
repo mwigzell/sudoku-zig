@@ -1,6 +1,11 @@
 const std = @import("std");
 const ascii_renderer = @import("ascii/ascii_renderer.zig");
 const styler = @import("ascii/styler.zig");
+const input_source = @import("../input_source.zig");
+const facade = @import("facade.zig");
+const board = @import("../board.zig");
+const legend = @import("legend.zig");
+const command = @import("../command.zig");
 
 /// Tag to distinguish the two renderer allocation modes.
 const RenderMode = enum { prod, mock };
@@ -50,6 +55,131 @@ pub const AsciiRendererAlloc = struct {
             },
         }
     }
+
+
+    /// Static factory — allocates writer, styler, renderer, creates context
+    /// struct, wires vtable pointers, returns Facade.
+    pub fn makeFacade(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
+        return if (is.isMock()) mockBranch(is, alloc, io) else prodBranch(is, alloc, io);
+    }
+
+    /// Production branch: File.Writer + AnsiStyler + Ansi renderer
+    fn prodBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
+        const file_writer_ptr = alloc.create(std.Io.File.Writer) catch return facade.Error.System;
+        file_writer_ptr.* = std.Io.File.stdout().writer(io, &.{});
+        file_writer_ptr.interface.print("\x1b[2J\x1b[H", .{}) catch return facade.Error.System;
+
+        const styler_ptr = alloc.create(styler.AnsiStyler) catch return facade.Error.System;
+        styler_ptr.* = styler.AnsiStyler{};
+
+        const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
+        const renderer_ptr = alloc.create(R) catch return facade.Error.System;
+        renderer_ptr.* = R.init(alloc, io, &file_writer_ptr.interface, styler_ptr, is);
+
+        const ctx = ProdFacadeContext{
+            .allocator = alloc,
+            .writer = file_writer_ptr,
+            .styler = styler_ptr,
+            .renderer = renderer_ptr,
+        };
+
+        const ctx_ptr = alloc.create(ProdFacadeContext) catch return facade.Error.System;
+        ctx_ptr.* = ctx;
+
+        return facade.Facade{
+            .context = @ptrCast(ctx_ptr),
+            .render_fn = prodRenderWrapped,
+            .showLegend_fn = prodShowLegendWrapped,
+            .showError_fn = prodShowErrorWrapped,
+            .getCommandInput_fn = prodGetCommandInputWrapped,
+            .deinit_fn = prodDeinitWrapped,
+        };
+    }
+
+    // --- Production vtable wrapping the context struct directly ---
+
+    fn prodRenderWrapped(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
+        const self: *ProdFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        self.renderer.render(view, status_msg) catch return facade.Error.System;
+    }
+
+    fn prodShowLegendWrapped(ctx: *anyopaque, commands: legend.Legend) facade.Error!void {
+        const self: *ProdFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        self.renderer.showLegend(commands) catch return facade.Error.System;
+    }
+
+    fn prodShowErrorWrapped(ctx: *anyopaque, msg: []const u8) facade.Error!void {
+        const self: *ProdFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        return self.renderer.showError(msg);
+    }
+
+    fn prodGetCommandInputWrapped(ctx: *anyopaque, names: []const []const u8) facade.Error!command.ParseCommandResult {
+        const self: *ProdFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        return self.renderer.getCommandInput(names);
+    }
+
+    fn prodDeinitWrapped(ctx: *anyopaque) void {
+        const self: *ProdFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        self.freeAll();
+    }
+
+    // --- Mock branch ---
+
+    fn mockBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
+        const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch return facade.Error.System;
+        aw_ptr.* = std.Io.Writer.Allocating.init(alloc);
+
+        const styler_ptr = alloc.create(styler.PlainStyler) catch return facade.Error.System;
+        styler_ptr.* = styler.PlainStyler{};
+
+        const R = ascii_renderer.AsciiRenderer(styler.PlainStyler);
+        const renderer_ptr = alloc.create(R) catch return facade.Error.System;
+        renderer_ptr.* = R.init(alloc, io, &aw_ptr.writer, styler_ptr, is);
+
+        const ctx = MockFacadeContext{
+            .allocator = alloc,
+            .writer = aw_ptr,
+            .styler = styler_ptr,
+            .renderer = renderer_ptr,
+        };
+
+        const ctx_ptr = alloc.create(MockFacadeContext) catch return facade.Error.System;
+        ctx_ptr.* = ctx;
+
+        return facade.Facade{
+            .context = @ptrCast(ctx_ptr),
+            .render_fn = mockRenderWrapped,
+            .showLegend_fn = mockShowLegendWrapped,
+            .showError_fn = mockShowErrorWrapped,
+            .getCommandInput_fn = mockGetCommandInputWrapped,
+            .deinit_fn = mockDeinitWrapped,
+        };
+    }
+
+    fn mockRenderWrapped(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
+        const self: *MockFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        self.renderer.render(view, status_msg) catch return facade.Error.System;
+    }
+
+    fn mockShowLegendWrapped(ctx: *anyopaque, commands: legend.Legend) facade.Error!void {
+        const self: *MockFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        self.renderer.showLegend(commands) catch return facade.Error.System;
+    }
+
+    fn mockShowErrorWrapped(ctx: *anyopaque, msg: []const u8) facade.Error!void {
+        const self: *MockFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        return self.renderer.showError(msg);
+    }
+
+    fn mockGetCommandInputWrapped(ctx: *anyopaque, names: []const []const u8) facade.Error!command.ParseCommandResult {
+        const self: *MockFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        return self.renderer.getCommandInput(names);
+    }
+    fn mockDeinitWrapped(ctx: *anyopaque) void {
+        const self: *MockFacadeContext = @ptrCast(@alignCast(@constCast(ctx)));
+        self.freeAll();
+    }
+
 };
 
 /// Holds allocator, writer, styler and renderer pointers for production mode.
@@ -65,6 +195,24 @@ pub const ProdFacadeContext = struct {
         alloc.destroy(self.styler);
         alloc.destroy(self.renderer);
         alloc.destroy(self);
+    }
+
+    /// Pass-through methods for Facade vtable wrappers.
+
+    pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
+        return self.renderer.render(view, status_msg);
+    }
+
+    pub fn showLegend(self: *@This(), commands: legend.Legend) facade.Error!void {
+        return self.renderer.showLegend(commands);
+    }
+
+    pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
+        return self.renderer.showError(msg);
+    }
+
+    pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command.ParseCommandResult {
+        return self.renderer.getCommandInput(names);
     }
 };
 
@@ -82,6 +230,24 @@ pub const MockFacadeContext = struct {
         alloc.destroy(self.styler);
         alloc.destroy(self.renderer);
         alloc.destroy(self);
+    }
+
+    /// Pass-through methods for Facade vtable wrappers.
+
+    pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
+        return self.renderer.render(view, status_msg);
+    }
+
+    pub fn showLegend(self: *@This(), commands: legend.Legend) facade.Error!void {
+        return self.renderer.showLegend(commands);
+    }
+
+    pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
+        return self.renderer.showError(msg);
+    }
+
+    pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command.ParseCommandResult {
+        return self.renderer.getCommandInput(names);
     }
 };
 test "Prod/MockFacadeContext freeAll releases child pointers without leak" {
@@ -124,4 +290,17 @@ test "Prod/MockFacadeContext freeAll releases child pointers without leak" {
         .renderer = plain_renderer_ptr,
     };
     mock_ctx.freeAll();
+}
+
+test "AsciiRendererAlloc.makeFacade returns Facade" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+
+    const responses = [_][]const u8{};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(alloc, &responses),
+    };
+
+    var facade_result = AsciiRendererAlloc.makeFacade(source, alloc, io) catch return error.Test;
+    facade_result.deinit();
 }

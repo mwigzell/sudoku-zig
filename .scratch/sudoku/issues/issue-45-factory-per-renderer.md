@@ -77,8 +77,8 @@ TuiRenderer defines `TuiFacadeContext` + its own alloc module with `makeFacade()
 | Step | Description | Status |
 |------|-------------|--------|
 | 1 | Define `ProdFacadeContext` / `MockFacadeContext` structs with `freeAll()` in `ascii_renderer_alloc.zig`; remove old `ProdHandles`/`MockHandles` union + tag enum | DONE — structs written, test passes (SafeAllocator check). Old types retained until Steps 2-5 replace allocation path so sudoku.zig stops importing them |
-| 2 | Write `makeFacade(is, alloc, io)` static factory in `ascii_renderer_alloc.zig` — allocates all three, wires into Make with context pointer as opaque handle | Pending |
-| 3 | Wire `freeAll()` as the vtable's deinit callback (replaces current deinit that only frees the renderer) | Pending |
+| 2 | Write `makeFacade(is, alloc, io)` static factory in `ascii_renderer_alloc.zig` — allocates all three, wires into Make with context pointer as opaque handle | COMPLETED 2026-08-13 |
+| 3 | Wire `freeAll()` as the vtable's deinit callback (replaces current deinit that only frees the renderer) | COMPLETED 2026-08-13 |
 | 4 | Replace `buildFacade` body in `src/sudoku.zig` with delegate to `AsciiRendererAlloc.makeFacade(...)` | Pending |
 | 5 | Remove `renderer_alloc` sidecar field from `Sudoku`; tighten deinit to two calls. Remove `FacadeResult` struct | Pending |
 | 6 | Full test suite under SafeAllocator — zero leaks, all tests pass | Pending |
