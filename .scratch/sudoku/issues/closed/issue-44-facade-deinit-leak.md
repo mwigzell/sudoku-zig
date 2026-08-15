@@ -1,4 +1,5 @@
 triage: ready-for-human
+Status: closed
 
 Facade deinit — AsciiRendererAlloc as a tagged union of two structs
 
@@ -73,6 +74,6 @@ Single union, two leaf structs. The tag disambiguates which set of concrete type
 - [x] Production path (AnsiStyler + File.Writer) freed correctly
 - [x] One call from Sudoku.deinit() cascades everything down cleanly
 - [x] No `*anyopaque` remaining in AsciiRendererAlloc
-- [ ] Production path (AnsiStyler + File.Writer) freed correctly
-- [ ] One call from Sudoku.deinit() cascades everything down cleanly
-- [ ] No `*anyopaque` remaining in AsciiRendererAlloc
+- [x] Production path (AnsiStyler + File.Writer) freed correctly
+- [x] One call from Sudoku.deinit() cascades everything down cleanly
+- [x] No `*anyopaque` remaining in AsciiRendererAlloc
