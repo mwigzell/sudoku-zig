@@ -3,7 +3,7 @@ const puzzle_gen = @import("puzzle_gen.zig");
 pub const Difficulty = puzzle_gen.Difficulty;
 
 /// Renderer back-ends available to the bootstrap layer.
-pub const RendererKind = enum { ansi, tui, wasm };
+pub const RendererKind = enum { ansi, ascii, tui, wasm };
 
 /// Nominal game configuration — preference + escape hatch.
 pub const Config = struct {

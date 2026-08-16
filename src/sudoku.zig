@@ -24,6 +24,9 @@ pub const Sudoku = struct {
             .ansi => {
                 return AsciiRendererAlloc.makeFacade(session);
             },
+            .ascii => {
+                return AsciiRendererAlloc.makePlainFacade(session);
+            },
             else => {
                 return error.System;
             },
@@ -460,4 +463,29 @@ test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
 
     // Act: run through the factory-built facade end-to-end
     sudoku.run() catch {};
+}
+
+test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
+    const cfg: config.Config = .{
+        .difficulty = .easy,
+        .preferred_renderer = .ascii,
+        .fallback_renderer = .ascii,
+    };
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    // Non-mock reader picks the prod branch; .mock writer keeps output observable.
+    var session = io_session.IoSession{
+        .reader = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) },
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku = try Sudoku.init(cfg, &session, io);
+    defer sudoku.deinit();
+    try sudoku.renderer.render(sudoku.engine.board.asView(), null);
+
+    const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);
+    // PlainStyler: no CSI escapes anywhere in the rendered output.
+    try std.testing.expect(std.mem.indexOf(u8, contents, "\x1b[") == null);
 }

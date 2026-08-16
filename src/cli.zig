@@ -13,7 +13,7 @@ fn usage(exit_code: u8) noreturn {
         \\
         \\  -h, --help              Show this help message
         \\  -V, --version           Show version and exit
-        \\  -r, --renderer <kind>   Choose renderer (ansi, tui, wasm)
+        \\  -r, --renderer <kind>   Choose renderer (ansi, ascii, tui, wasm)
         \\
     , .{});
 
@@ -52,6 +52,7 @@ pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
 
 fn parseRenderer(kind: []const u8) ?config.RendererKind {
     if (std.mem.eql(u8, kind, "ansi")) return .ansi;
+    if (std.mem.eql(u8, kind, "ascii")) return .ascii;
     if (std.mem.eql(u8, kind, "tui")) return .tui;
     if (std.mem.eql(u8, kind, "wasm")) return .wasm;
     return null;

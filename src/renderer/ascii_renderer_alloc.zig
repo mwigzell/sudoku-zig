@@ -51,6 +51,15 @@ pub const AsciiRendererAlloc = struct {
     fn mockBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
         return buildContext(styler.PlainStyler, MockFacadeContext, session);
     }
+    /// Plain-styled variant: PlainStyler on the production branch.
+    pub fn makePlainFacade(session: *io_session.IoSession) facade.Error!facade.Facade {
+        return if (session.reader.isMock()) mockBranch(session) else plainBranch(session);
+    }
+
+    /// Plain-style context — structurally the same one the mock branch uses.
+    fn plainBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
+        return buildContext(styler.PlainStyler, MockFacadeContext, session);
+    }
 };
 
 /// Holds allocator, writer, styler and renderer pointers for production mode.
