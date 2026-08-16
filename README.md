@@ -2,8 +2,10 @@
 
 A classic 9×9 Sudoku game for the terminal, written in **Zig** (0.17).
 
+© 2026 Mark Wigzell — [MIT licensed](LICENSE)
+
 ```
- A B C │ D E F │ G H I
+   A B C │ D E F │ G H I
  ╭───────┼───────┼───────╮
 1│     3 │   2   │ 6     │
 2│ 9     │ 3   5 │     1 │
