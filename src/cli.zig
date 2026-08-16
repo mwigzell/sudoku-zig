@@ -1,5 +1,6 @@
 const std = @import("std");
 const config = @import("config.zig");
+const version = @import("version.zig");
 
 pub const ParseError = error{
     HelpRequested,
@@ -11,6 +12,7 @@ fn usage(exit_code: u8) noreturn {
         \\Usage: sudoku [OPTIONS]
         \\
         \\  -h, --help              Show this help message
+        \\  -V, --version           Show version and exit
         \\  -r, --renderer <kind>   Choose renderer (ansi, tui, wasm)
         \\
     , .{});
@@ -27,6 +29,9 @@ pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
     while (iterator.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             usage(0);
+        } else if (std.mem.eql(u8, arg, "-V") or std.mem.eql(u8, arg, "--version")) {
+            std.debug.print("sudoku {s}\n", .{version.string});
+            std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--renderer")) {
             const kind = iterator.next() orelse {
                 std.debug.print("Error: --renderer requires a value\n", .{});
