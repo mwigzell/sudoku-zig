@@ -8,7 +8,7 @@ triage: ready-for-human
 ### Step 0: WASM toolchain prototype (spike)
 - Create `examples/wasm-hello/` with a minimal Zig module compiled to `wasm32-freestanding`
 - Export a simple function (e.g. `add(a, b)`) and call it from a JS shell in an HTML page
-- Prove the build path works on confucius: `zig build-lib --target wasm32-freestanding` → `.wasm` → browser loads it via `WebAssembly.instantiate`
+- Prove the build path works on the dev machine: `zig build-lib --target wasm32-freestanding` → `.wasm` → browser loads it via `WebAssembly.instantiate`
 - Document any gotchas (memory sharing, string boundary crossing) for later steps
 
 ## Steps
