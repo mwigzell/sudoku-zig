@@ -45,19 +45,18 @@ pub const AsciiRendererAlloc = struct {
     fn mockBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
         const alloc = session.alloc;
         const is = session.reader;
-        const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch return facade.Error.System;
-        aw_ptr.* = std.Io.Writer.Allocating.init(alloc);
+        const writer = session.writer.writer(); // borrowed from the session; session.deinit() owns the buffer
 
         const styler_ptr = alloc.create(styler.PlainStyler) catch return facade.Error.System;
         styler_ptr.* = styler.PlainStyler{};
 
         const R = ascii_renderer.AsciiRenderer(styler.PlainStyler);
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
-        renderer_ptr.* = R.init(alloc, &aw_ptr.writer, styler_ptr, is);
+        renderer_ptr.* = R.init(alloc, writer, styler_ptr, is);
 
         const ctx = MockFacadeContext{
             .allocator = alloc,
-            .writer = aw_ptr,
+            .writer = writer,
             .styler = styler_ptr,
             .renderer = renderer_ptr,
         };
@@ -107,15 +106,13 @@ pub const ProdFacadeContext = struct {
 /// Holds allocator, writer, styler and renderer pointers for mock/test mode.
 pub const MockFacadeContext = struct {
     allocator: std.mem.Allocator,
-    writer: *std.Io.Writer.Allocating,
+    writer: *std.Io.Writer, // session-borrowed; session.deinit() owns the buffer
     styler: *styler.PlainStyler,
     renderer: *ascii_renderer.AsciiRenderer(styler.PlainStyler),
 
     pub fn deinit(self: *@This()) void {
-        self.writer.deinit();
         self.renderer.deinit();
         const alloc = self.allocator;
-        alloc.destroy(self.writer);
         alloc.destroy(self.styler);
         alloc.destroy(self.renderer);
         alloc.destroy(self);
@@ -169,8 +166,8 @@ test "Prod/MockFacadeContext deinit releases child pointers without leak" {
     alloc.destroy(file_writer_ptr); // caller-owned now, not deinit's job
 
     // --- Mock context ---
-    const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch unreachable;
-    aw_ptr.* = std.Io.Writer.Allocating.init(alloc);
+    var aw = std.Io.Writer.Allocating.init(alloc); // test-owned now; context only borrows
+    defer aw.deinit();
 
     const plain_styler_ptr = alloc.create(styler.PlainStyler) catch unreachable;
     plain_styler_ptr.* = styler.PlainStyler{};
@@ -179,14 +176,14 @@ test "Prod/MockFacadeContext deinit releases child pointers without leak" {
     const plain_renderer_ptr = alloc.create(PlainR) catch unreachable;
     plain_renderer_ptr.* = PlainR.init(
         alloc,
-        &aw_ptr.writer,
+        &aw.writer,
         plain_styler_ptr,
         .{ .stdin = input_source.StdinSource.initStdin(alloc, std.testing.io) },
     );
     const mock_ctx = alloc.create(MockFacadeContext) catch unreachable;
     mock_ctx.* = MockFacadeContext{
         .allocator = alloc,
-        .writer = aw_ptr,
+        .writer = &aw.writer,
         .styler = plain_styler_ptr,
         .renderer = plain_renderer_ptr,
     };
@@ -217,6 +214,28 @@ test "integrated e2e - prodBranch renders real grid into in-memory writer" {
     // content observable without touching real stdout.
     var session = io_session.IoSession{
         .reader = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) },
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var fac = try AsciiRendererAlloc.makeFacade(&session);
+    defer fac.deinit();
+
+    const b = board.Board.init();
+    try fac.render(b.asView(), null);
+
+    const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "╰───────┴───────┴───────╯") != null);
+}
+test "integrated e2e - mockBranch renders grid into session writer buffer" {
+    const alloc = std.testing.allocator;
+    const responses = [_][]const u8{};
+
+    // A mock source routes to mockBranch; the session's .mock writer must
+    // be where the rendered grid lands (shared ownership, chunk 4).
+    var session = io_session.IoSession{
+        .reader = .{ .mock = input_source.MockSource.init(alloc, &responses) },
         .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
         .alloc = alloc,
     };
