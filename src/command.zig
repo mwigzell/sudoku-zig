@@ -9,7 +9,7 @@ pub const ClearData = struct { row: u4, col: u4 };
 pub const SaveData = struct { path: ?[]const u8 };
 
 pub const OpenData = struct { path: ?[]const u8 };
-pub const NewData = struct { puzzle: ?[]const u8 };
+pub const NewData = struct { puzzle: ?[]const u8, file: ?[]const u8 };
 
 pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new, save_as };
 
@@ -79,6 +79,7 @@ pub const OpenFileResult = SaveFileResult;
 /// Result of a new-game puzzle dialog interaction.
 pub const PuzzleResult = union(enum) {
     PuzzleString: []u8, // Owned puzzle string — renderer decides source
+    PuzzleFile: []u8, // Owned filename — engine reads + validates
     Cancelled,
 };
 

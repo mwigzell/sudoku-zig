@@ -180,6 +180,13 @@ pub fn AsciiRenderer(StylerType: type) type {
             defer self.allocator.free(selection);
 
             if (std.mem.eql(u8, selection, "1")) return self.generatePuzzle();
+            if (std.mem.eql(u8, selection, "2")) {
+                const file_result = self.openDialog() catch return .Cancelled;
+                return switch (file_result) {
+                    .FileName => |path| .{ .PuzzleFile = path },
+                    .Cancelled => .Cancelled,
+                };
+            }
             // Remaining options land in later slices; pinned to hard for now.
             const puzzle = PuzzleGen.hard();
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
@@ -267,6 +274,9 @@ pub fn AsciiRenderer(StylerType: type) type {
                 switch (choice_result) {
                     .PuzzleString => |puzzle_str| {
                         rsl.valid.new.puzzle = puzzle_str;
+                    },
+                    .PuzzleFile => |path| {
+                        rsl.valid.new.file = path;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },
                 }
@@ -589,6 +599,10 @@ test "newGameOptions: option 1 shows difficulty sub-menu and returns easy puzzle
             const easy = PuzzleGen.easy();
             try std.testing.expectEqualStrings(easy, puzzle);
         },
+        .PuzzleFile => |path| {
+            std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        },
         .Cancelled => try std.testing.expect(false),
     }
 
@@ -620,6 +634,10 @@ test "newGameOptions: option 1 sub-selection 2 returns medium puzzle" {
             defer std.heap.page_allocator.free(puzzle);
             try std.testing.expectEqualStrings(PuzzleGen.medium(), puzzle);
         },
+        .PuzzleFile => |path| {
+            std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        },
         .Cancelled => try std.testing.expect(false),
     }
 }
@@ -646,6 +664,10 @@ test "newGameOptions: option 1 sub-selection 3 returns hard puzzle" {
             defer std.heap.page_allocator.free(puzzle);
             try std.testing.expectEqualStrings(PuzzleGen.hard(), puzzle);
         },
+        .PuzzleFile => |path| {
+            std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        },
         .Cancelled => try std.testing.expect(false),
     }
 }
@@ -669,6 +691,73 @@ test "newGameOptions: out-of-range sub-selection returns Cancelled" {
     const result = try renderer.newGameOptions();
     switch (result) {
         .Cancelled => try std.testing.expect(true),
+        .PuzzleString => |puzzle| {
+            std.heap.page_allocator.free(puzzle);
+            try std.testing.expect(false);
+        },
+        .PuzzleFile => |path| {
+            std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        },
+    }
+}
+
+test "newGameOptions: option 2 returns the entered filename as PuzzleFile" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "2\n", "mypuzzle.sud\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.newGameOptions();
+    switch (result) {
+        .PuzzleFile => |path| {
+            defer std.testing.allocator.free(path);
+            try std.testing.expectEqualStrings("mypuzzle.sud", path);
+        },
+        .PuzzleString => |puzzle| {
+            std.heap.page_allocator.free(puzzle);
+            try std.testing.expect(false);
+        },
+        .Cancelled => try std.testing.expect(false),
+    }
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Open file:") != null);
+}
+
+test "newGameOptions: option 2 empty filename returns Cancelled" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "2\n", "\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.newGameOptions();
+    switch (result) {
+        .Cancelled => try std.testing.expect(true),
+        .PuzzleFile => |path| {
+            std.testing.allocator.free(path);
+            try std.testing.expect(false);
+        },
         .PuzzleString => |puzzle| {
             std.heap.page_allocator.free(puzzle);
             try std.testing.expect(false);

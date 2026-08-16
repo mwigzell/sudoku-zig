@@ -69,7 +69,7 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "open")) return .{ .valid = Command{ .open = OpenData{ .path = null } } };
 
     if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) return .{ .valid = Command{ .save_as = SaveData{ .path = null } } };
-    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{ .valid = Command{ .new = NewData{ .puzzle = null } } };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{ .valid = Command{ .new = NewData{ .puzzle = null, .file = null } } };
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{cmd_name}) catch unreachable;
