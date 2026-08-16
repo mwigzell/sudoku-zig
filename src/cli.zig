@@ -41,6 +41,15 @@ pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
                 std.debug.print("Error: invalid renderer kind '{s}'\n", .{kind});
                 usage(1);
             };
+        } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--difficulty")) {
+            const diff = iterator.next() orelse {
+                std.debug.print("Error: --difficulty requires a value\n", .{});
+                usage(1);
+            };
+            cfg.difficulty = parseDifficulty(diff) orelse {
+                std.debug.print("Error: invalid difficulty '{s}'\n", .{diff});
+                usage(1);
+            };
         } else if (std.mem.startsWith(u8, arg, "-")) {
             std.debug.print("Unknown flag: '{s}'\n", .{arg});
             usage(1);
@@ -56,4 +65,54 @@ fn parseRenderer(kind: []const u8) ?config.RendererKind {
     if (std.mem.eql(u8, kind, "tui")) return .tui;
     if (std.mem.eql(u8, kind, "wasm")) return .wasm;
     return null;
+}
+
+fn parseDifficulty(diff: []const u8) ?config.Difficulty {
+    if (std.mem.eql(u8, diff, "easy")) return .easy;
+    if (std.mem.eql(u8, diff, "medium")) return .medium;
+    if (std.mem.eql(u8, diff, "hard")) return .hard;
+    return null;
+}
+
+
+
+fn initIt(comptime argv: anytype) std.process.Args.Iterator {
+    return std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
+}
+
+test "-d medium sets medium difficulty and preserves default renderer" {
+    const argv: [3][*:0]const u8 = .{ "sudoku", "-d", "medium" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
+    try std.testing.expectEqual(config.RendererKind.ansi, cfg.preferred_renderer);
+}
+
+test "-d hard sets hard difficulty" {
+    const argv: [3][*:0]const u8 = .{ "sudoku", "-d", "hard" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+}
+
+test "no -d leaves difficulty at default easy" {
+    const argv: [1][*:0]const u8 = .{ "sudoku" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
+}
+
+test "-d medium and -r ascii both overlay defaults" {
+    const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "medium", "-r", "ascii" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
+    try std.testing.expectEqual(config.RendererKind.ascii, cfg.preferred_renderer);
+}
+
+test "--difficulty long form sets easy" {
+    const argv: [3][*:0]const u8 = .{ "sudoku", "--difficulty", "easy" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
 }
