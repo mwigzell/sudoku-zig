@@ -4,10 +4,8 @@
 /// `sudoku.zig` don't need to know about `$HOME`, directory creation, or
 /// absolute-path detection. All functions return **owned** strings — caller
 /// is responsible for freeing via `gpa.free()`.
-
 const std = @import("std");
 const logger = @import("../logger.zig");
-
 
 // Linux-only: walks the C environ array to find $HOME.
 fn getHomeDir(gpa: std.mem.Allocator) ![]u8 {
@@ -22,10 +20,7 @@ fn getHomeDir(gpa: std.mem.Allocator) ![]u8 {
         }
     }
     return error.EnvironmentVariableMissing;
-
-
 }
-
 
 /// Resolves the XDG data directory for Sudoku (~/.local/share/sudoku/) and
 /// ensures it exists on disk. Returns an owned string — caller frees.

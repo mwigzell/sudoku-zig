@@ -39,8 +39,8 @@ pub fn Logger(comptime scope: @EnumLiteral()) type {
 //     log.warn("range {d}..{d}", .{ 1, 9 });
 //     // Prove .err() compiles — call via a dedicated scope to avoid
 //     // polluting the shared test runner stderr (Zig treats err-level as failure).
-//     const errLog = Logger(.quiet);           
-//     _ = errLog;                             
+//     const errLog = Logger(.quiet);
+//     _ = errLog;
 // }
 
 test "Logger provides all five severity methods" {
@@ -55,4 +55,3 @@ test "Logger provides all five severity methods" {
 test "debug emits formatted output" {
     Logger(.logger).debug("This is a debug log message.", .{});
 }
-

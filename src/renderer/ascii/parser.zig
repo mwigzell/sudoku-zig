@@ -53,27 +53,27 @@ fn prefixMatch(a: []const u8, b: []const u8, len: usize) bool {
 /// Dispatch resolved command name to its argument parser.
 fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "fill")) {
-        const coord_str = it.next() orelse return .{.error_msg = "fill requires coordinate"};
-        const digit_s = it.next() orelse return .{.error_msg = "fill requires digit"};
+        const coord_str = it.next() orelse return .{ .error_msg = "fill requires coordinate" };
+        const digit_s = it.next() orelse return .{ .error_msg = "fill requires digit" };
         return parseFill(coord_str, digit_s);
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "clear")) {
-        const coord_s = it.next() orelse return .{.error_msg = "clear requires coordinate"};
+        const coord_s = it.next() orelse return .{ .error_msg = "clear requires coordinate" };
         return parseClear(coord_s);
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "quit")) return parseQuit();
-    if (std.ascii.eqlIgnoreCase(cmd_name, "undo")) return .{.valid = Command.undo};
-    if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{.valid = Command.redo};
+    if (std.ascii.eqlIgnoreCase(cmd_name, "undo")) return .{ .valid = Command.undo };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{ .valid = Command.redo };
     if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
-        return .{.valid = Command{ .save = SaveData{ .path = null } }};
-    if (std.ascii.eqlIgnoreCase(cmd_name, "open")) return .{.valid = Command{ .open = OpenData{ .path = null } }};
+        return .{ .valid = Command{ .save = SaveData{ .path = null } } };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "open")) return .{ .valid = Command{ .open = OpenData{ .path = null } } };
 
-    if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) return .{.valid = Command{ .save_as = SaveData{ .path = null } }};
-    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{.valid = Command{ .new = NewData{ .puzzle = null } }};
+    if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) return .{ .valid = Command{ .save_as = SaveData{ .path = null } } };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{ .valid = Command{ .new = NewData{ .puzzle = null } } };
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{cmd_name}) catch unreachable;
-    return .{.error_msg = msg};
+    return .{ .error_msg = msg };
 }
 
 const MaxMatchedCommands = 32;
@@ -96,10 +96,10 @@ fn acronymOf(name: []const u8, buf: []u8) []u8 {
 /// Public entry point — accepts available command names for prefix dispatch.
 pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) ParseCommandResult {
     const trimmed = std.mem.trim(u8, input_line, &std.ascii.whitespace);
-    if (trimmed.len == 0) return .{.error_msg = "empty input"};
+    if (trimmed.len == 0) return .{ .error_msg = "empty input" };
 
     var it = std.mem.tokenizeAny(u8, trimmed, &std.ascii.whitespace);
-    const verb = it.next() orelse return .{.error_msg = "missing verb"};
+    const verb = it.next() orelse return .{ .error_msg = "missing verb" };
 
     // Check each command for prefix match — collect matches to report ambiguity
     var matched_cmds: [MaxMatchedCommands][]const u8 = undefined;
@@ -120,7 +120,7 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
         0 => {
             var buf: [32]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, "unknown command \"{s}\"", .{verb}) catch unreachable;
-            return .{.error_msg = msg};
+            return .{ .error_msg = msg };
         },
         1 => return dispatchToParser(matched_cmds[0], &it),
         else => {
@@ -133,13 +133,13 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
             }
             // Ambiguous — list matched commands
             return buildAmbiguityMessage(verb, matched_cmds[0..match_count]);
-        }
+        },
     }
 }
 
 /// Quit takes no arguments.
 fn parseQuit() ParseCommandResult {
-    return .{.valid = Command.quit};
+    return .{ .valid = Command.quit };
 }
 
 /// Fill requires a chess-style coordinate and a digit 1-9.
@@ -148,21 +148,21 @@ fn parseFill(coord_str: []const u8, digit_s: []const u8) ParseCommandResult {
     const dch = digit_s[0];
     if (dch < '1' or dch > '9') return errorBadDigit(digit_s);
 
-    return .{.valid = Command{
+    return .{ .valid = Command{
         .fill = FillData{
             .row = pos.row,
             .col = pos.col,
             .digit = cell_module.rawToCellValue(dch - '0'),
         },
-    }};
+    } };
 }
 
 /// Clear requires a chess-style coordinate.
 fn parseClear(cmd_coord_s: []const u8) ParseCommandResult {
     const pos = parseCoordinate(cmd_coord_s) orelse return coordError;
-    return .{.valid = Command{
-        .clear = ClearData{.row = pos.row, .col = pos.col},
-    }};
+    return .{ .valid = Command{
+        .clear = ClearData{ .row = pos.row, .col = pos.col },
+    } };
 }
 
 /// Parse a chess-style coordinate (e.g. "A1") into row/col indices 0-8.
@@ -172,14 +172,14 @@ fn parseCoordinate(s: []const u8) ?ClearData {
     const row_d = s[1];
     if (col_l < 'a' or col_l > 'i') return null;
     if (row_d < '1' or row_d > '9') return null;
-    return .{.row = @intCast(row_d - '1'), .col = @intCast(col_l - 'a')};
+    return .{ .row = @intCast(row_d - '1'), .col = @intCast(col_l - 'a') };
 }
 
 /// Build an error result for a bad digit token.
 fn errorBadDigit(val: []const u8) ParseCommandResult {
     var buf: [40]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "invalid digit: '{s}'", .{val}) catch unreachable;
-    return .{.error_msg = msg};
+    return .{ .error_msg = msg };
 }
 
 /// Build an ambiguity message listing which commands matched the typed prefix.
@@ -199,7 +199,7 @@ fn buildAmbiguityMessage(verb: []const u8, matched: []const []const u8) ParseCom
         offset += name_msg.len;
     }
 
-    return .{.error_msg = buf[0..offset]};
+    return .{ .error_msg = buf[0..offset] };
 }
 
 // ---------------------------------------------------------------------------

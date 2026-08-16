@@ -40,13 +40,11 @@ pub const Board = struct {
         /// Return the value at (row, col).
         pub fn get(self: BoardView, row: u4, col: u4) CellValue {
             return self._board.getCellValue(row, col);
-
         }
 
         /// Is this cell a puzzle clue (immutable)?
         pub fn isGiven(self: BoardView, row: u4, col: u4) bool {
             return self._board.isGiven(row, col);
-
         }
 
         /// Is this cell flagged in conflict?
@@ -163,7 +161,6 @@ pub const Board = struct {
     }
 
     /// Return a RowView for row n (0..8).
-
     /// Create a borrowed read-only view of this board's cells.
     pub fn asRow(n: u4) RowView {
         var rv = RowView{
@@ -212,7 +209,6 @@ pub const Board = struct {
     /// Return a borrowed read-only view of this board's cells.
     pub fn asView(self: *const Board) BoardView {
         return BoardView{ ._board = self };
-
     }
 
     /// Serialize current cell values to a flat [81]u8 array for saving.
@@ -252,13 +248,14 @@ pub const Board = struct {
         self.updateDigitBits(row, col, old_val, .zero);
     }
 
-    pub fn validate(self: *Board) void { conflict.validate(self); }
+    pub fn validate(self: *Board) void {
+        conflict.validate(self);
+    }
 
     /// Incremental conflict refresh after mutating cell at (row, col).
     pub fn refreshConflictsForCell(self: *Board, row: u4, col: u4) void {
         conflict.refreshConflictsForCell(self, row, col);
     }
-
 };
 
 const serial = @import("board/serial.zig");
@@ -267,7 +264,6 @@ const serial = @import("board/serial.zig");
 pub const FlatOpts = serial.FlatOpts;
 pub const fromFlat = serial.fromFlat;
 pub const fromOneLineString = serial.fromOneLineString;
-
 
 // ---------------------------------------------------------------------------
 
@@ -282,8 +278,6 @@ test "Board: init produces 81 empty cells and no givens" {
         try std.testing.expectEqual(CellValue.zero, b.cells[i].value);
     }
 }
-
-
 
 test "Board: setCell places a digit on an empty cell" {
     var b = Board.init();
@@ -411,8 +405,8 @@ test "Board: clearCell clears the digit bit from the owning box" {
 test "Board.BoardView.resolve() resolves same values as getCellValue" {
     var flat: [CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
-    flat[0] = 5;  // A1 (row 0, col 0) = 5
-    flat[1] = 6;  // A2 (row 0, col 1) = 6
+    flat[0] = 5; // A1 (row 0, col 0) = 5
+    flat[1] = 6; // A2 (row 0, col 1) = 6
     flat[9 + 4] = 3; // J5 (row 1, col 4) = 3
 
     var b = try fromFlat(flat, .{});
@@ -430,9 +424,9 @@ test "Board.BoardView.resolve() resolves same values as getCellValue" {
     // Bulk resolve row 0 indices against flat storage -> matches individual gets
     const row_0_indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
     const vals = view.resolve(&row_0_indices);
-    try std.testing.expectEqual(CellValue.five, vals[0]);   // flat[0] has value 5
-    try std.testing.expectEqual(CellValue.six, vals[1]);    // flat[1] has value 6
-    try std.testing.expectEqual(CellValue.zero, vals[2]);   // empty cell in row 0
+    try std.testing.expectEqual(CellValue.five, vals[0]); // flat[0] has value 5
+    try std.testing.expectEqual(CellValue.six, vals[1]); // flat[1] has value 6
+    try std.testing.expectEqual(CellValue.zero, vals[2]); // empty cell in row 0
 
     // Bulk resolve matches individual get() calls for every position in the range
     for (vals, 0..) |val, i| {
@@ -532,15 +526,15 @@ test "Board: asBox(0, 1) produces correct scattered indices for top-middle box" 
 
     // Resolution through BoardView: [0,6,0, 2,0,8, 4,0,0]
     const vals = box.getValues(view);
-    try std.testing.expectEqual(CellValue.zero, vals[0]);   // (0,3)
-    try std.testing.expectEqual(CellValue.six, vals[1]);     // (0,4)
-    try std.testing.expectEqual(CellValue.zero, vals[2]);   // (0,5)
-    try std.testing.expectEqual(CellValue.two, vals[3]);     // (1,3)
-    try std.testing.expectEqual(CellValue.zero, vals[4]);   // (1,4)
-    try std.testing.expectEqual(CellValue.eight, vals[5]);  // (1,5)
-    try std.testing.expectEqual(CellValue.four, vals[6]);   // (2,3)
-    try std.testing.expectEqual(CellValue.zero, vals[7]);   // (2,4)
-    try std.testing.expectEqual(CellValue.zero, vals[8]);   // (2,5)
+    try std.testing.expectEqual(CellValue.zero, vals[0]); // (0,3)
+    try std.testing.expectEqual(CellValue.six, vals[1]); // (0,4)
+    try std.testing.expectEqual(CellValue.zero, vals[2]); // (0,5)
+    try std.testing.expectEqual(CellValue.two, vals[3]); // (1,3)
+    try std.testing.expectEqual(CellValue.zero, vals[4]); // (1,4)
+    try std.testing.expectEqual(CellValue.eight, vals[5]); // (1,5)
+    try std.testing.expectEqual(CellValue.four, vals[6]); // (2,3)
+    try std.testing.expectEqual(CellValue.zero, vals[7]); // (2,4)
+    try std.testing.expectEqual(CellValue.zero, vals[8]); // (2,5)
 }
 
 test "Board: BoardView reflects mutation on reborrow" {
@@ -569,4 +563,3 @@ test "Board: BoardView reflects mutation on reborrow" {
     try std.testing.expectEqual(CellValue.zero, v2.get(7, 0));
     try std.testing.expect(!v2.isGiven(7, 0));
 }
-

@@ -13,7 +13,8 @@ pub const PlainStyler = struct {
 
         return std.fmt.bufPrint(
             buf,
-            "{d}│ {c} {c} {c} │ {c} {c} {c} │ {c} {c} {c} │\n", .{
+            "{d}│ {c} {c} {c} │ {c} {c} {c} │ {c} {c} {c} │\n",
+            .{
                 row_idx + 1,
                 cell.displayChar(vals[0]),
                 cell.displayChar(vals[1]),
@@ -138,15 +139,14 @@ test "AnsiStyler wraps given digits in dim CSI codes" {
     try std.testing.expectEqual(@as(usize, 3), reset_count);
 }
 
-
 // Conflicts live in board.conflict_bits which is accessible via Board.isConflicting(idx).
 // BoardView will need isConflictingRowCol(row, col) to expose that through the read-only seam.
 
 test "AnsiStyler: conflicting non-given cell gets distinct ANSI wrapping" {
     var b = board.Board.init();
     // Put same digit in two non-given cells on row 0 -> conflict
-    try b.setCell(0, 1, .five);   // index 1
-    try b.setCell(0, 5, .five);   // index 5 — duplicates with index 1
+    try b.setCell(0, 1, .five); // index 1
+    try b.setCell(0, 5, .five); // index 5 — duplicates with index 1
     b.validate();
     const view = b.asView();
 
@@ -163,8 +163,8 @@ test "AnsiStyler: given cell takes precedence over conflict styling" {
     var flat: [81]u8 = undefined;
     @memset(&flat, 0);
     // Row 0: givens at col 0 and col 5 both with value 5 — they conflict but are givens.
-    flat[0] = 5;   // row 0, col 0 — given
-    flat[5] = 5;   // row 0, col 5 — given (conflicts with col 0)
+    flat[0] = 5; // row 0, col 0 — given
+    flat[5] = 5; // row 0, col 5 — given (conflicts with col 0)
 
     var b = try board.fromFlat(flat, .{});
     b.validate();

@@ -36,7 +36,6 @@ test "command.fill.execute fails on a given cell" {
     defer engine.deinit();
 
     const event = execute(&engine, command.FillData{
-
         .row = 0,
         .col = 0,
         .digit = cell.CellValue.nine,
@@ -55,7 +54,6 @@ test "command.fill.execute records mutation in history" {
     defer engine.deinit();
 
     _ = execute(&engine, command.FillData{
-
         .row = 0,
         .col = 2,
         .digit = cell.CellValue.five,

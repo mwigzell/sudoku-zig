@@ -55,7 +55,6 @@ pub const GameEngine = struct {
     }
 
     pub fn deinit(self: *@This()) void {
-
         self.history.deinit();
 
         // Free optional string fields
@@ -85,7 +84,6 @@ pub const GameEngine = struct {
 
     /// Serialize game state to a binary save file via an Io handle.
     pub fn saveGame(self: *const @This(), io: std.Io, path: []const u8) save_format.IoError!void {
-
         return save_format.saveGame(self, io, path);
     }
 
@@ -102,7 +100,6 @@ pub const GameEngine = struct {
 
     /// Deserialize game state from a binary save file via an Io handle.
     pub fn openGame(self: *@This(), io: std.Io, path: []const u8) save_format.IoError!void {
-
         return save_format.openGame(self, io, path);
     }
 

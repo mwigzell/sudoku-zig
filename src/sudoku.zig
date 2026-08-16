@@ -92,13 +92,10 @@ pub const Sudoku = struct {
         }
     }
 
-
     pub fn deinit(self: *@This()) void {
         self.renderer.deinit();
         self.engine.deinit();
     }
-
-
 };
 
 const board = @import("board.zig");
@@ -172,7 +169,6 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     {
         try std.testing.expectEqual(cell.CellValue.four, sudoku.engine.board.getCellValue(@as(u4, 2), @as(u4, 0)));
     }
-
 }
 
 // Issue 32 — full round-trip integration: save known state → mutate → open saved file → verify restore
@@ -226,7 +222,6 @@ test "integrated e2e - full seam: open loads saved game" {
     try std.testing.expectEqual(saved_b2, sudoku_instance.engine.eventBoard().get(1, 1));
 }
 
-
 // Step 10 — Save/Open must route through handleEvent() for feedback + re-render
 
 test "integrated e2e - save success produces status message, re-render, legend refresh" {
@@ -264,7 +259,6 @@ test "integrated e2e - save success produces status message, re-render, legend r
     // Clean up saved file
     std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 }
-
 
 test "integrated e2e - run: open file success produces status message, re-render, and legend refresh" {
     const cfg: config.Config = .{
@@ -358,7 +352,6 @@ test "integrated e2e - run: fill → save → quit" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-
     var session = io_session.IoSession{
         .reader = source,
         .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
@@ -368,7 +361,6 @@ test "integrated e2e - run: fill → save → quit" {
     var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
-
 }
 // Issue 34 Step 2 — e2e: save_as writes file and re-renders
 test "integrated e2e - run: save_as writes file and re-renders" {
@@ -400,7 +392,6 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
-
 }
 
 // Issue 34 Step 3 — e2e: new command resets board and history
@@ -470,4 +461,3 @@ test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
     // Act: run through the factory-built facade end-to-end
     sudoku.run() catch {};
 }
-

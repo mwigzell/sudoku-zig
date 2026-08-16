@@ -111,12 +111,12 @@ test "Board: conflict bits start clear and can be set/cleared individually" {
     }
 
     // Mark two arbitrary cells as conflicting
-    b.setConflictBit(10);  // row 1, col 1
-    b.setConflictBit(50);  // row 5, col 5
+    b.setConflictBit(10); // row 1, col 1
+    b.setConflictBit(50); // row 5, col 5
 
     try std.testing.expect(b.isConflicting(10));
     try std.testing.expect(b.isConflicting(50));
-    try std.testing.expect(!b.isConflicting(0));   // untouched
+    try std.testing.expect(!b.isConflicting(0)); // untouched
 
     // Clear all conflicts
     b.clearConflicts();
@@ -202,10 +202,10 @@ test "Board: refreshConflictsForCell updates only affected scopes" {
     validate(&b);
 
     // Both conflict pairs flagged
-    try std.testing.expect(b.isConflicting(0));   // (0,0)
-    try std.testing.expect(b.isConflicting(5));   // (0,5)
-    try std.testing.expect(b.isConflicting(37));  // (4,1)
-    try std.testing.expect(b.isConflicting(43));  // (4,7)
+    try std.testing.expect(b.isConflicting(0)); // (0,0)
+    try std.testing.expect(b.isConflicting(5)); // (0,5)
+    try std.testing.expect(b.isConflicting(37)); // (4,1)
+    try std.testing.expect(b.isConflicting(43)); // (4,7)
 
     // Now change cell (0,0) from five to one — removes its row conflict with (0,5)
     b.cells[0].value = .one;
@@ -230,17 +230,17 @@ test "Board: refreshConflictsForCell creates new conflict" {
     validate(&b);
 
     // Only the row-4 pair is conflicting
-    try std.testing.expect(!b.isConflicting(3));  // (0,3) — five, unique in row 0
-    try std.testing.expect(b.isConflicting(37));  // (4,1)
-    try std.testing.expect(b.isConflicting(43));  // (4,7)
+    try std.testing.expect(!b.isConflicting(3)); // (0,3) — five, unique in row 0
+    try std.testing.expect(b.isConflicting(37)); // (4,1)
+    try std.testing.expect(b.isConflicting(43)); // (4,7)
 
     // Now make (0,5) also five → creates row-0 conflict for both (0,3) and (0,5)
     b.cells[5].value = .five;
     refreshConflictsForCell(&b, 0, 5);
 
     // New conflict pair flagged in row 0
-    try std.testing.expect(b.isConflicting(3));   // (0,3) now conflicts with (0,5)
-    try std.testing.expect(b.isConflicting(5));   // (0,5) conflicts with (0,3)
+    try std.testing.expect(b.isConflicting(3)); // (0,3) now conflicts with (0,5)
+    try std.testing.expect(b.isConflicting(5)); // (0,5) conflicts with (0,3)
 
     // Unrelated row-4 conflict still intact
     try std.testing.expect(b.isConflicting(37));
@@ -258,12 +258,12 @@ test "Board: refreshConflictsForCell does not touch unrelated cells" {
     validate(&b);
 
     // Row-2 pair flagged; row-6 cell is clear
-    try std.testing.expect(b.isConflicting(18));   // (2,0)
-    try std.testing.expect(b.isConflicting(23));   // (2,5)
-    try std.testing.expect(!b.isConflicting(59));  // (6,3) — unique
+    try std.testing.expect(b.isConflicting(18)); // (2,0)
+    try std.testing.expect(b.isConflicting(23)); // (2,5)
+    try std.testing.expect(!b.isConflicting(59)); // (6,3) — unique
 
     // Change an unrelated cell in col 7: set (1,7) to nine
-    b.cells[16].value = .nine;  // flat index 1*9+7 = 16
+    b.cells[16].value = .nine; // flat index 1*9+7 = 16
     refreshConflictsForCell(&b, 1, 7);
 
     // Row-2 conflicts untouched

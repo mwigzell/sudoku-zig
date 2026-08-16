@@ -8,7 +8,6 @@ const disambiguate = @import("ascii/disambiguate.zig");
 
 const command = @import("../command.zig");
 
-
 /// Legend entity — which commands are displayable in the current game state.
 pub const Legend = struct {
     fill: bool,
@@ -62,10 +61,8 @@ pub const Legend = struct {
             count += 1;
         }
         return count;
-
     }
 };
-
 
 // ---------------------------------------------------------------------------
 // Public API

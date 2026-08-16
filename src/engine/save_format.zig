@@ -165,33 +165,47 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, io: std.Io, buf: []const u8) !ge.G
 
 /// Serialize game state to a binary save file via an Io handle.
 pub fn saveGame(self: *const ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
-    const buf = toSaveFormat(self, std.heap.page_allocator) catch { return IoError.System; };
+    const buf = toSaveFormat(self, std.heap.page_allocator) catch {
+        return IoError.System;
+    };
     defer std.heap.page_allocator.free(buf);
 
-    var file = std.Io.Dir.createFileAbsolute(io, path, .{}) catch { return IoError.System; };
+    var file = std.Io.Dir.createFileAbsolute(io, path, .{}) catch {
+        return IoError.System;
+    };
     defer file.close(io);
 
-    std.Io.File.writeStreamingAll(file, io, buf) catch { return IoError.System; };
+    std.Io.File.writeStreamingAll(file, io, buf) catch {
+        return IoError.System;
+    };
 }
 
 pub fn openGame(self: *ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
-
-    var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch { return IoError.System; };
+    var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch {
+        return IoError.System;
+    };
     defer file.close(io);
 
-    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch { return IoError.System; };
-    const buf = std.heap.page_allocator.alloc(u8, stat.size) catch { return IoError.OutOfMemory; };
+    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch {
+        return IoError.System;
+    };
+    const buf = std.heap.page_allocator.alloc(u8, stat.size) catch {
+        return IoError.OutOfMemory;
+    };
     defer std.heap.page_allocator.free(buf);
 
-    _ = std.Io.File.readPositionalAll(file, io, buf, 0) catch { return IoError.System; };
+    _ = std.Io.File.readPositionalAll(file, io, buf, 0) catch {
+        return IoError.System;
+    };
 
-    const loaded = fromSaveFormat(std.heap.page_allocator, io, buf) catch { return IoError.System; };
+    const loaded = fromSaveFormat(std.heap.page_allocator, io, buf) catch {
+        return IoError.System;
+    };
     self.history.deinit();
     const old_board = self.board;
     self.* = loaded;
     _ = old_board;
 }
-
 
 // ---------------------------------------------------------------------------
 // Tests (co-located, Ziglings 105 style)

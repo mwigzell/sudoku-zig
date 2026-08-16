@@ -64,7 +64,6 @@ test "command.save_as.execute saves file at given path" {
             try std.testing.expect(data.msg != null);
             const m = data.msg.?;
             try std.testing.expect(std.mem.indexOf(u8, m, "saved") != null);
-
         },
         .error_msg => |msg| {
             // Accept I/O errors (depends on FS state)

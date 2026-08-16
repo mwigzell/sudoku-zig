@@ -30,5 +30,5 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
 }
 
 test {
-    _ = .{sudoku, io_session};
+    _ = .{ sudoku, io_session };
 }

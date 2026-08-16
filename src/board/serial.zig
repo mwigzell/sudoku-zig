@@ -59,7 +59,7 @@ pub fn fromOneLineString(oneLine: []const u8) Error!board.Board {
             '.' => 0,
             '0' => 0,
             '1'...'9' => ch - '0',
-        else => return Error.InvalidCharacter,
+            else => return Error.InvalidCharacter,
         };
     }
     return fromFlat(flat, .{});

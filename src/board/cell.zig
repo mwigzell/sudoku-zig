@@ -2,16 +2,16 @@ const std = @import("std");
 
 /// Possible values for a single Sudoku cell. 0 means empty; 1–9 is the digit placed.
 pub const CellValue = enum(u4) {
-    zero,   // empty
-    one,    // digit 1
-    two,    // digit 2
-    three,  // digit 3
-    four,   // digit 4
-    five,   // digit 5
-    six,    // digit 6
-    seven,  // digit 7
-    eight,  // digit 8
-    nine,   // digit 9
+    zero, // empty
+    one, // digit 1
+    two, // digit 2
+    three, // digit 3
+    four, // digit 4
+    five, // digit 5
+    six, // digit 6
+    seven, // digit 7
+    eight, // digit 8
+    nine, // digit 9
 };
 
 /// Map a raw u8 (0–9) to the corresponding CellValue.

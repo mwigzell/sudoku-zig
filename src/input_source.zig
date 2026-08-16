@@ -75,7 +75,6 @@ pub const ReaderSource = union(enum) {
             .mock => true,
         };
     }
-
 };
 
 // --- Tests ---
@@ -96,7 +95,6 @@ test "MockSource.readLine returns canned strings in order" {
 }
 
 test "MockSource.readLine returns ReadEOF after responses exhausted" {
-
     var src = MockSource.init(std.testing.allocator, &[0][]const u8{});
     errdefer {} // no alloc needed for empty list
 
@@ -105,8 +103,7 @@ test "MockSource.readLine returns ReadEOF after responses exhausted" {
 }
 
 test "ReaderSource tag dispatch works for mock variant" {
-
-    const responses = [_][]const u8{ "from_mock" };
+    const responses = [_][]const u8{"from_mock"};
     var source: ReaderSource = .{ .mock = MockSource.init(std.testing.allocator, &responses) };
 
     const line = try source.readline();

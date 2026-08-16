@@ -53,7 +53,6 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
         }
 
-
         /// Destroy writer + styler heap pointers; keep last_filename free.
         pub fn deinit(self: *@This()) void {
             if (self.last_filename) |name| {
@@ -350,7 +349,6 @@ test "render: renders with digits placed" {
 }
 
 test "showError: reads from MockSource and does not panic" {
-
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -581,7 +579,6 @@ test "newGameOptions: any option returns PuzzleGen hard puzzle" {
 }
 
 test "getCommandInput: fill A1 5 returns valid Fill" {
-
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -627,7 +624,6 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
 }
 
 test "getCommandInput: EOF returns Quit" {
-
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 

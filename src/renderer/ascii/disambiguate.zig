@@ -157,7 +157,7 @@ test "getMinimumPrefixes: hump-seed collision Save vs SaveAs" {
 test "getMinimumPrefixes: single-command list returns length-1 prefix" {
     const allocator = std.testing.allocator;
 
-    const cmds = &[_][]const u8{ cm.getName(.quit) };
+    const cmds = &[_][]const u8{cm.getName(.quit)};
     const result = try getMinimumPrefixes(allocator, cmds);
     defer allocator.free(result);
 

@@ -29,7 +29,7 @@ pub const AsciiRendererAlloc = struct {
         const R = ascii_renderer.AsciiRenderer(S);
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
         renderer_ptr.* = R.init(alloc, writer, styler_ptr, session.reader);
- 
+
         const ctx = Ctx{
             .allocator = alloc,
             .writer = writer,
@@ -38,20 +38,19 @@ pub const AsciiRendererAlloc = struct {
         };
         const ctx_ptr = alloc.create(Ctx) catch return facade.Error.System;
         ctx_ptr.* = ctx;
- 
+
         return facade.Make(Ctx).make(ctx_ptr);
     }
- 
+
     /// Production branch: AnsiStyler.
     fn prodBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
         return buildContext(styler.AnsiStyler, ProdFacadeContext, session);
     }
- 
+
     /// Mock branch: PlainStyler.
     fn mockBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
         return buildContext(styler.PlainStyler, MockFacadeContext, session);
     }
-
 };
 
 /// Holds allocator, writer, styler and renderer pointers for production mode.
@@ -70,7 +69,6 @@ pub const ProdFacadeContext = struct {
     }
 
     /// Pass-through methods for Facade vtable wrappers.
-
     pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
         self.renderer.render(view, status_msg) catch return facade.Error.System;
     }
@@ -104,7 +102,6 @@ pub const MockFacadeContext = struct {
     }
 
     /// Pass-through methods for Facade vtable wrappers.
-
     pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
         self.renderer.render(view, status_msg) catch return facade.Error.System;
     }
@@ -232,9 +229,15 @@ test "integrated e2e - prodBranch showLegend writes into session writer buffer" 
     defer fac.deinit();
 
     const commands = legend.Legend{
-        .fill = true, .clear = true, .quit = true,
-        .undo = false, .redo = false, .save = false,
-        .open = false, .new = false, .save_as = false,
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .save = false,
+        .open = false,
+        .new = false,
+        .save_as = false,
     };
     try fac.showLegend(commands);
 

@@ -28,7 +28,6 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
         };
     }
 
-
     const resolved = mypath.resolveSavePath(
         gpa,
         engine.data_dir.?,
