@@ -22,7 +22,16 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
         .writer = .{ .stdout = stdout_writer },
         .alloc = std.heap.page_allocator,
     };
-    var game = try sudoku.Sudoku.init(cfg, &session, init.io);
+    var game = sudoku.Sudoku.init(cfg, &session, init.io) catch |err| {
+        if (err == error.UnsupportedRenderer) {
+            std.debug.print(
+                "Error: renderer '{s}' is not available in this build.\nAvailable renderers: ansi, ascii.\n",
+                .{@tagName(cfg.preferred_renderer)},
+            );
+            std.process.exit(1);
+        }
+        return err;
+    };
     try game.run();
     session.deinit();
 
