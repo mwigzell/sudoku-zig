@@ -14,6 +14,7 @@ fn usage(exit_code: u8) noreturn {
         \\  -h, --help              Show this help message
         \\  -V, --version           Show version and exit
         \\  -r, --renderer <kind>   Choose renderer (ansi, ascii, tui, wasm)
+        \\  -d, --difficulty <level> Puzzle difficulty (easy, medium, hard)
         \\
     , .{});
 
