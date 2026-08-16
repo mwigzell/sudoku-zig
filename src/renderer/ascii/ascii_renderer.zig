@@ -8,6 +8,8 @@ const std = @import("std");
 const Io = std.Io;
 const facade = @import("../../renderer/facade.zig");
 const input_source = @import("../../input_source.zig");
+const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
+const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
@@ -144,7 +146,28 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Show numbered menu 1-4, read selection, always return PuzzleGen.hard().
+        /// Internal — difficulty sub-menu; returns an owned puzzle string.
+        fn generatePuzzle(self: *@This()) facade.Error!_command.PuzzleResult {
+            self.writer.writeAll("Difficulty:\n") catch return facade.Error.System;
+            const levels = [_][]const u8{ "Easy", "Medium", "Hard" };
+            for (levels, 0..) |name, i| {
+                self.writer.print("  {d}) {s}\n", .{ i + 1, name }) catch return facade.Error.System;
+            }
+            self.writer.writeAll("> ") catch return facade.Error.System;
+
+            const pick = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(pick);
+
+            const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else
+                if (std.mem.eql(u8, pick, "2")) Difficulty.medium else
+                    if (std.mem.eql(u8, pick, "3")) Difficulty.hard else
+                        return .Cancelled;
+
+            const puzzle = PuzzleGen.generate(diff);
+            const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
+            return .{ .PuzzleString = owned };
+        }
+
         pub fn newGameOptions(self: *@This()) facade.Error!_command.PuzzleResult {
             const options = [_][]const u8{ "Generate New Puzzle", "Open From File", "Load From URL", "Paste Puzzle String" };
             self.writer.writeAll("\nNew game:\n") catch return facade.Error.System;
@@ -156,7 +179,9 @@ pub fn AsciiRenderer(StylerType: type) type {
             const selection = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(selection);
 
-            const puzzle = @import("../../puzzle_gen.zig").PuzzleGen.hard();
+            if (std.mem.eql(u8, selection, "1")) return self.generatePuzzle();
+            // Remaining options land in later slices; pinned to hard for now.
+            const puzzle = PuzzleGen.hard();
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
             return .{ .PuzzleString = owned };
         }
@@ -541,12 +566,12 @@ test "openDialog: empty input returns Cancelled" {
     }
 }
 
-test "newGameOptions: any option returns PuzzleGen hard puzzle" {
+test "newGameOptions: option 1 shows difficulty sub-menu and returns easy puzzle" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"3\n"};
+    const responses = [_][]const u8{ "1\n", "1\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -558,24 +583,97 @@ test "newGameOptions: any option returns PuzzleGen hard puzzle" {
     );
 
     const result = try renderer.newGameOptions();
-
     switch (result) {
         .PuzzleString => |puzzle| {
             defer std.heap.page_allocator.free(puzzle);
-            // Verify it's a real puzzle string (81 chars)
-            try std.testing.expectEqual(@as(usize, 81), puzzle.len);
+            const easy = PuzzleGen.easy();
+            try std.testing.expectEqualStrings(easy, puzzle);
         },
-        .Cancelled => {
+        .Cancelled => try std.testing.expect(false),
+    }
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "1) Easy") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "2) Medium") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "3) Hard") != null);
+}
+
+test "newGameOptions: option 1 sub-selection 2 returns medium puzzle" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "1\n", "2\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.newGameOptions();
+    switch (result) {
+        .PuzzleString => |puzzle| {
+            defer std.heap.page_allocator.free(puzzle);
+            try std.testing.expectEqualStrings(PuzzleGen.medium(), puzzle);
+        },
+        .Cancelled => try std.testing.expect(false),
+    }
+}
+
+test "newGameOptions: option 1 sub-selection 3 returns hard puzzle" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "1\n", "3\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.newGameOptions();
+    switch (result) {
+        .PuzzleString => |puzzle| {
+            defer std.heap.page_allocator.free(puzzle);
+            try std.testing.expectEqualStrings(PuzzleGen.hard(), puzzle);
+        },
+        .Cancelled => try std.testing.expect(false),
+    }
+}
+
+test "newGameOptions: out-of-range sub-selection returns Cancelled" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "1\n", "9\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.newGameOptions();
+    switch (result) {
+        .Cancelled => try std.testing.expect(true),
+        .PuzzleString => |puzzle| {
+            std.heap.page_allocator.free(puzzle);
             try std.testing.expect(false);
         },
     }
-
-    // Verify menu was printed with all 4 options
-    const contents = aw.writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, contents, "1) Generate New Puzzle") != null);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "2) Open From File") != null);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "3) Load From URL") != null);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "4) Paste Puzzle String") != null);
 }
 
 test "getCommandInput: fill A1 5 returns valid Fill" {
