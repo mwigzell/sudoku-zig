@@ -7,6 +7,7 @@ const logger = @import("logger.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const cli = @import("cli.zig");
 const input_source = @import("input_source.zig");
+const io_session = @import("io_session.zig");
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
     const log = logger.Logger(.sudoku);
@@ -33,5 +34,5 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
 }
 
 test {
-    _ = .{sudoku};
+    _ = .{sudoku, io_session};
 }

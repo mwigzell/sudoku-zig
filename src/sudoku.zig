@@ -10,6 +10,7 @@ const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("renderer/legend.zig");
 
 const AsciiRendererAlloc = @import("renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
+const io_session = @import("io_session.zig");
 pub const Error = error{System};
 
 pub const Sudoku = struct {
