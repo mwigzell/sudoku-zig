@@ -1,5 +1,6 @@
 const std = @import("std");
 const config = @import("config.zig");
+const logger = @import("logger.zig");
 const version = @import("version.zig");
 
 pub const ParseError = error{
@@ -15,6 +16,7 @@ fn usage(exit_code: u8) noreturn {
         \\  -V, --version           Show version and exit
         \\  -r, --renderer <kind>   Choose renderer (ansi, ascii, tui, wasm)
         \\  -d, --difficulty <level> Puzzle difficulty (easy, medium, hard)
+        \\  -v, --log-level <level>  Minimum log severity (debug, info, warn, err, fatal)
         \\
     , .{});
 
@@ -51,6 +53,15 @@ pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
                 std.debug.print("Error: invalid difficulty '{s}'\n", .{diff});
                 usage(1);
             };
+        } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--log-level")) {
+            const lvl = iterator.next() orelse {
+                std.debug.print("Error: --log-level requires a value\n", .{});
+                usage(1);
+            };
+            cfg.log_level = parseLogLevel(lvl) orelse {
+                std.debug.print("Error: invalid log level '{s}'\n", .{lvl});
+                usage(1);
+            };
         } else if (std.mem.startsWith(u8, arg, "-")) {
             std.debug.print("Unknown flag: '{s}'\n", .{arg});
             usage(1);
@@ -72,6 +83,15 @@ fn parseDifficulty(diff: []const u8) ?config.Difficulty {
     if (std.mem.eql(u8, diff, "easy")) return .easy;
     if (std.mem.eql(u8, diff, "medium")) return .medium;
     if (std.mem.eql(u8, diff, "hard")) return .hard;
+    return null;
+}
+
+fn parseLogLevel(lvl: []const u8) ?logger.Severity {
+    if (std.mem.eql(u8, lvl, "debug")) return .debug;
+    if (std.mem.eql(u8, lvl, "info")) return .info;
+    if (std.mem.eql(u8, lvl, "warn")) return .warn;
+    if (std.mem.eql(u8, lvl, "err")) return .err;
+    if (std.mem.eql(u8, lvl, "fatal")) return .fatal;
     return null;
 }
 
@@ -116,4 +136,43 @@ test "--difficulty long form sets easy" {
     var it = initIt(argv);
     const cfg = parseCLI(&it) catch unreachable;
     try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
+}
+
+test "-v debug sets debug log level" {
+    const argv: [3][*:0]const u8 = .{ "sudoku", "-v", "debug" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
+}
+
+test "-v warn preserves difficulty and renderer defaults" {
+    const argv: [3][*:0]const u8 = .{ "sudoku", "-v", "warn" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
+    try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
+    try std.testing.expectEqual(config.RendererKind.ansi, cfg.preferred_renderer);
+}
+
+test "no -v leaves log level at default info" {
+    const argv: [1][*:0]const u8 = .{ "sudoku" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(logger.Severity.info, cfg.log_level);
+}
+
+test "--log-level long form sets err" {
+    const argv: [3][*:0]const u8 = .{ "sudoku", "--log-level", "err" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(logger.Severity.err, cfg.log_level);
+}
+
+test "-d medium and -v debug both overlay defaults" {
+    const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "medium", "-v", "debug" };
+    var it = initIt(argv);
+    const cfg = parseCLI(&it) catch unreachable;
+    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
+    try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
+    try std.testing.expectEqual(config.RendererKind.ansi, cfg.preferred_renderer);
 }

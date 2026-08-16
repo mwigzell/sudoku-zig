@@ -1,4 +1,5 @@
 const puzzle_gen = @import("puzzle_gen.zig");
+const logger = @import("logger.zig");
 
 pub const Difficulty = puzzle_gen.Difficulty;
 
@@ -12,6 +13,8 @@ pub const Config = struct {
     preferred_renderer: RendererKind,
     /// Always-available fallback when preferred renderer is missing or platform-incompatible.
     fallback_renderer: RendererKind,
+    /// Runtime minimum log severity emitted by the Logger; defaults to .info.
+    log_level: logger.Severity,
 
     /// Hard-coded defaults — main.zig supplies this to the Sudoku layer at init time.
     pub fn default() Config {
@@ -19,6 +22,7 @@ pub const Config = struct {
             .difficulty = .easy,
             .preferred_renderer = .ansi,
             .fallback_renderer = .ansi,
+            .log_level = .info,
         };
     }
 };

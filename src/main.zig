@@ -10,11 +10,14 @@ const input_source = @import("input_source.zig");
 const io_session = @import("io_session.zig");
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
-    const log = logger.Logger(.sudoku);
-    log.debug("Starting sudoku game.", .{});
-
     var arg_it = std.process.Args.iterate(init.minimal.args);
     const cfg = cli.parseCLI(&arg_it) catch unreachable;
+
+    // Apply the requested log severity once, before any further output.
+    logger.min_level = cfg.log_level;
+
+    const log = logger.Logger(.sudoku);
+    log.debug("Starting sudoku game.", .{});
 
     const stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
     var session = io_session.IoSession{

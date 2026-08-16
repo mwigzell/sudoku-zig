@@ -113,6 +113,7 @@ test "Sudoku stores io field during init" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
     const io = std.testing.io;
     const alloc = std.testing.allocator;
@@ -137,6 +138,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
 
     const io = std.testing.io;
@@ -181,6 +183,7 @@ test "integrated e2e - full seam: open loads saved game" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
 
     // 1. Create a save file with known state (no MockRenderer - real path through renderer)
@@ -232,6 +235,7 @@ test "integrated e2e - save success produces status message, re-render, legend r
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
 
     const io = std.testing.io;
@@ -268,6 +272,7 @@ test "integrated e2e - run: open file success produces status message, re-render
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
 
     // Create a save file to open
@@ -306,6 +311,7 @@ test "integrated e2e - run: save uses default filename and returns success" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
     const io = std.testing.io;
     const alloc = std.testing.allocator;
@@ -341,6 +347,7 @@ test "integrated e2e - run: fill → save → quit" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
     const io = std.testing.io;
     const alloc = std.testing.allocator;
@@ -371,6 +378,7 @@ test "integrated e2e - run: save_as writes file and re-renders" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
 
     const io = std.testing.io;
@@ -403,6 +411,7 @@ test "integrated e2e - run: new command resets board and history" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
 
     const io = std.testing.io;
@@ -437,6 +446,7 @@ test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
         .difficulty = .hard,
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
+        .log_level = .info,
     };
 
     const io = std.testing.io;
@@ -470,6 +480,7 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
         .difficulty = .easy,
         .preferred_renderer = .ascii,
         .fallback_renderer = .ascii,
+        .log_level = .info,
     };
     const io = std.testing.io;
     const alloc = std.testing.allocator;
