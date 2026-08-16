@@ -250,3 +250,34 @@ test "integrated e2e - mockBranch renders grid into session writer buffer" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "╰───────┴───────┴───────╯") != null);
 }
+test "integrated e2e - prodBranch showLegend writes into session writer buffer" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+
+    // Non-mock reader routes to prodBranch; showLegend is the one prod
+    // method with no input side, so the .mock writer tag makes its output
+    // observable without touching real stdout. (showError/getCommandInput
+    // read via StdinSource — untestable on the prod context by design.)
+    var session = io_session.IoSession{
+        .reader = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) },
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var fac = try AsciiRendererAlloc.makeFacade(&session);
+    defer fac.deinit();
+
+    const commands = legend.Legend{
+        .fill = true, .clear = true, .quit = true,
+        .undo = false, .redo = false, .save = false,
+        .open = false, .new = false, .save_as = false,
+    };
+    try fac.showLegend(commands);
+
+    const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Command: (F)ill") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(C)lear") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(Q)uit") != null);
+    // Disabled flags must not surface — Legend drives the seam, not the renderer.
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(U)ndo") == null);
+}
