@@ -1,4 +1,5 @@
 triage: needs-triage
+Status: closed
 
 ## Inject the prod-branch output writer instead of fabricating stdout inside the factory
 
@@ -80,6 +81,8 @@ session.deinit();
 
 
 **After all chunks:** `zig build clean`, full `zig build test` + `zig build cov`, record final percentages.
+
+**Close-out (2026-08-16):** `zig build clean` → full suite green; `echo quit | zig build run` → exit 0. Final coverage: `ascii_renderer_alloc.zig` 95.88%, `io_session.zig` 100.00%, `ascii_renderer.zig` 92.58% (issue baseline >76.25% cleared with margin). Post-close review followups in the same session: dead main.zig comment removed, `.stdout` accessor test added, branches consolidated on generic `buildContext`, duplicate branch test removed, `clearScreen` removed entirely (user decision).
 
 ### References
 
