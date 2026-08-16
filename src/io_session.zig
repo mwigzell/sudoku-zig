@@ -58,3 +58,10 @@ test "WriterSource.writer returns a handle that writes into the mock buffer" {
     try std.testing.expectEqualStrings("via session", std.Io.Writer.buffered(&ws.mock.writer));
     ws.mock.deinit();
 }
+
+test "WriterSource.writer resolves the .stdout tag to the inner file interface" {
+    // Construction only — never write through this handle: a real stdout
+    // write grabs the terminal fd and hangs the suite.
+    var ws = WriterSource{ .stdout = std.Io.File.stdout().writer(std.testing.io, &.{}) };
+    try std.testing.expectEqual(@intFromPtr(&ws.stdout.interface), @intFromPtr(ws.writer()));
+}

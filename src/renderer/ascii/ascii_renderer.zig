@@ -53,10 +53,6 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
         }
 
-        /// Emit the ANSI clear-screen / home-cursor sequence on the output stream.
-        pub fn clearScreen(self: *@This()) anyerror!void {
-            try self.writer.writeAll("\x1b[2J\x1b[H");
-        }
 
         /// Destroy writer + styler heap pointers; keep last_filename free.
         pub fn deinit(self: *@This()) void {

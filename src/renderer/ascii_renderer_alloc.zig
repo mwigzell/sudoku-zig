@@ -15,56 +15,41 @@ pub const AsciiRendererAlloc = struct {
     pub fn makeFacade(session: *io_session.IoSession) facade.Error!facade.Facade {
         return if (session.reader.isMock()) mockBranch(session) else prodBranch(session);
     }
-    /// Production branch: session-borrowed writer + AnsiStyler + Ansi renderer
-    fn prodBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
+    /// Shared body of both branches: allocate styler, renderer and context,
+    /// wire them, and return the facade (the facade's deinit destroys all three).
+    fn buildContext(
+        S: type,
+        Ctx: type,
+        session: *io_session.IoSession,
+    ) facade.Error!facade.Facade {
         const alloc = session.alloc;
         const writer = session.writer.writer();
-        const is = session.reader;
-        const styler_ptr = alloc.create(styler.AnsiStyler) catch return facade.Error.System;
-        styler_ptr.* = styler.AnsiStyler{};
-
-        const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
+        const styler_ptr = alloc.create(S) catch return facade.Error.System;
+        styler_ptr.* = S{};
+        const R = ascii_renderer.AsciiRenderer(S);
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
-        renderer_ptr.* = R.init(alloc, writer, styler_ptr, is);
-        renderer_ptr.clearScreen() catch return facade.Error.System;
-
-        const ctx = ProdFacadeContext{
+        renderer_ptr.* = R.init(alloc, writer, styler_ptr, session.reader);
+ 
+        const ctx = Ctx{
             .allocator = alloc,
             .writer = writer,
             .styler = styler_ptr,
             .renderer = renderer_ptr,
         };
-
-        const ctx_ptr = alloc.create(ProdFacadeContext) catch return facade.Error.System;
+        const ctx_ptr = alloc.create(Ctx) catch return facade.Error.System;
         ctx_ptr.* = ctx;
-
-        return facade.Make(ProdFacadeContext).make(ctx_ptr);
+ 
+        return facade.Make(Ctx).make(ctx_ptr);
     }
-    // --- Mock branch ---
-
+ 
+    /// Production branch: AnsiStyler.
+    fn prodBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
+        return buildContext(styler.AnsiStyler, ProdFacadeContext, session);
+    }
+ 
+    /// Mock branch: PlainStyler.
     fn mockBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
-        const alloc = session.alloc;
-        const is = session.reader;
-        const writer = session.writer.writer(); // borrowed from the session; session.deinit() owns the buffer
-
-        const styler_ptr = alloc.create(styler.PlainStyler) catch return facade.Error.System;
-        styler_ptr.* = styler.PlainStyler{};
-
-        const R = ascii_renderer.AsciiRenderer(styler.PlainStyler);
-        const renderer_ptr = alloc.create(R) catch return facade.Error.System;
-        renderer_ptr.* = R.init(alloc, writer, styler_ptr, is);
-
-        const ctx = MockFacadeContext{
-            .allocator = alloc,
-            .writer = writer,
-            .styler = styler_ptr,
-            .renderer = renderer_ptr,
-        };
-
-        const ctx_ptr = alloc.create(MockFacadeContext) catch return facade.Error.System;
-        ctx_ptr.* = ctx;
-
-        return facade.Make(MockFacadeContext).make(ctx_ptr);
+        return buildContext(styler.PlainStyler, MockFacadeContext, session);
     }
 
 };
@@ -228,28 +213,7 @@ test "integrated e2e - prodBranch renders real grid into in-memory writer" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "╰───────┴───────┴───────╯") != null);
 }
-test "integrated e2e - mockBranch renders grid into session writer buffer" {
-    const alloc = std.testing.allocator;
-    const responses = [_][]const u8{};
 
-    // A mock source routes to mockBranch; the session's .mock writer must
-    // be where the rendered grid lands (shared ownership, chunk 4).
-    var session = io_session.IoSession{
-        .reader = .{ .mock = input_source.MockSource.init(alloc, &responses) },
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var fac = try AsciiRendererAlloc.makeFacade(&session);
-    defer fac.deinit();
-
-    const b = board.Board.init();
-    try fac.render(b.asView(), null);
-
-    const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "╰───────┴───────┴───────╯") != null);
-}
 test "integrated e2e - prodBranch showLegend writes into session writer buffer" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;

@@ -16,15 +16,6 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     var arg_it = std.process.Args.iterate(init.minimal.args);
     const cfg = cli.parseCLI(&arg_it) catch unreachable;
 
-    // var stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
-    // stdout_writer.interface.print("\x1b[2J\x1b[H", .{}) catch return error.System;
-
-    // var s = styler.AnsiStyler{};
-    // const R = ascii_renderer.AsciiRenderer(styler.AnsiStyler);
-
-    // var renderer = R.init(std.heap.page_allocator, init.io, &stdout_writer.interface, &s, .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator) });
-
-    // const f = facade.Make(R).make(&renderer);
     const stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
     var session = io_session.IoSession{
         .reader = .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator, init.io) },
