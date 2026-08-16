@@ -61,6 +61,14 @@
       {
         "kind": "directory",
         "path": "/usr/share/figlet/fonts"
+      },
+      {
+        "kind": "file",
+        "path": "~/pat"
+      },
+      {
+        "kind": "file",
+        "path": "/rate_limit"
       }
     ]
   },

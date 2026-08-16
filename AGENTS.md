@@ -55,6 +55,14 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+## Code comments
+
+Comments are **signposts, not citations**.
+- File, struct, and method comments orient the reader: what seam is this, why does it exist. Short — 1–3 lines.
+- Import blocks should carry a one-line note of the module's role.
+- **Never** reference issues, handoffs, sessions, or dates from code: no `Issue N`, `Step N`, `chunk N`, no `spec: issue-XX`, **including test headers**.
+- If a comment describes *intended* behaviour ("will move to…", "chunk 4 adds…") it is stale the moment it is written — describe what the code *is*, not what once changed it.
+- Code is the source of truth; issues are historical and must not need maintaining.
 
 ## Test-suite discipline
 
