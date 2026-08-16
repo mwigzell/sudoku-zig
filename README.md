@@ -3,6 +3,11 @@
 A classic 9×9 Sudoku game for the terminal, written in **Zig** (0.17).
 
 © 2026 Mark Wigzell — [MIT licensed](LICENSE)
+## Purpose
+
+`sudoku-zig` exists first and foremost as a way to learn **Zig 0.17** through real work — the Sudoku is the excuse, the discipline (test-first iteration, deep modules, honest I/O seams) is the point. It is also intended to be a genuinely playable game, not a tutorial artifact.
+
+The codebase was produced with a local AI agent in a tight loop: Pi (terminal agent harness), Qwen 27b (local LLM, single RTX 3090), Matt Pocock's workflow skills (grill-me, TDD, two-axis code review), with a human gate at every boundary. This is a deliberate experiment, not a claim: the open question is whether serious, sustainable code can be produced at this local level at all. The tickets in `.scratch/sudoku/issues/` and the test suite are the data — you are invited to check, not to be sold.
 
 ```
    A B C │ D E F │ G H I
