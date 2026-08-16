@@ -76,13 +76,6 @@ pub const ReaderSource = union(enum) {
         };
     }
 
-    /// Allocater used for this source (for AsciiRenderer internal allocs).
-    pub fn allocatorForTest(self: *const @This()) std.mem.Allocator {
-        return switch (self.*) {
-            .stdin => |s| s.allocator,
-            .mock => |m| m.allocator,
-        };
-    }
 };
 
 // --- Tests ---

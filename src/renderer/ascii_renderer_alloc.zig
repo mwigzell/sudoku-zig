@@ -6,17 +6,20 @@ const facade = @import("facade.zig");
 const board = @import("../board.zig");
 const legend = @import("legend.zig");
 const command = @import("../command.zig");
+const io_session = @import("../io_session.zig");
 
 pub const AsciiRendererAlloc = struct {
     /// Static factory — allocates styler + renderer, creates context struct,
     /// wires vtable pointers, returns Facade. The prod path borrows the
-    /// caller-owned writer; the mock path ignores it.
-    pub fn makeFacade(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io, writer: *std.Io.Writer) facade.Error!facade.Facade {
-        return if (is.isMock()) mockBranch(is, alloc, io) else prodBranch(is, alloc, io, writer);
+    /// session's writer; the mock path owns its own (chunk 4 moves it into the session).
+    pub fn makeFacade(session: *io_session.IoSession) facade.Error!facade.Facade {
+        return if (session.reader.isMock()) mockBranch(session) else prodBranch(session);
     }
-    /// Production branch: caller-owned writer + AnsiStyler + Ansi renderer
-    fn prodBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io, writer: *std.Io.Writer) facade.Error!facade.Facade {
-        _ = io; // io is now captured inside StdinSource; signature kept until chunk 3 (IoSession)
+    /// Production branch: session-borrowed writer + AnsiStyler + Ansi renderer
+    fn prodBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
+        const alloc = session.alloc;
+        const writer = session.writer.writer();
+        const is = session.reader;
         const styler_ptr = alloc.create(styler.AnsiStyler) catch return facade.Error.System;
         styler_ptr.* = styler.AnsiStyler{};
 
@@ -39,8 +42,9 @@ pub const AsciiRendererAlloc = struct {
     }
     // --- Mock branch ---
 
-    fn mockBranch(is: input_source.ReaderSource, alloc: std.mem.Allocator, io: std.Io) facade.Error!facade.Facade {
-        _ = io; // io is now captured inside StdinSource; signature kept until chunk 3 (IoSession)
+    fn mockBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
+        const alloc = session.alloc;
+        const is = session.reader;
         const aw_ptr = alloc.create(std.Io.Writer.Allocating) catch return facade.Error.System;
         aw_ptr.* = std.Io.Writer.Allocating.init(alloc);
 
@@ -191,36 +195,39 @@ test "Prod/MockFacadeContext deinit releases child pointers without leak" {
 
 test "AsciiRendererAlloc.makeFacade returns Facade" {
     const alloc = std.testing.allocator;
-    const io = std.testing.io;
-
     const responses = [_][]const u8{};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-
-    var facade_result = AsciiRendererAlloc.makeFacade(source, alloc, io, &aw.writer) catch return error.Test;
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var facade_result = AsciiRendererAlloc.makeFacade(&session) catch return error.Test;
     facade_result.deinit();
 }
 test "integrated e2e - prodBranch renders real grid into in-memory writer" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-
-    // A non-mock source routes to prodBranch
-    const source: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) };
-
-    var fac = try AsciiRendererAlloc.makeFacade(source, alloc, io, &aw.writer);
+    // A non-mock source routes to prodBranch; .mock writer tag keeps
+    // content observable without touching real stdout.
+    var session = io_session.IoSession{
+        .reader = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) },
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var fac = try AsciiRendererAlloc.makeFacade(&session);
     defer fac.deinit();
 
     const b = board.Board.init();
     try fac.render(b.asView(), null);
 
-    const contents = aw.writer.buffered();
+    const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "╰───────┴───────┴───────╯") != null);
 }

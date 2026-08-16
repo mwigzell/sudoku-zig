@@ -25,10 +25,15 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     // var renderer = R.init(std.heap.page_allocator, init.io, &stdout_writer.interface, &s, .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator) });
 
     // const f = facade.Make(R).make(&renderer);
-    const is: input_source.ReaderSource = .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator, init.io) };
-    var stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
-    var game = try sudoku.Sudoku.init(cfg, is, init.io, &stdout_writer.interface);
+    const stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
+    var session = io_session.IoSession{
+        .reader = .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator, init.io) },
+        .writer = .{ .stdout = stdout_writer },
+        .alloc = std.heap.page_allocator,
+    };
+    var game = try sudoku.Sudoku.init(cfg, &session, init.io);
     try game.run();
+    session.deinit();
 
     log.debug("Ending sudoku game.", .{});
 }

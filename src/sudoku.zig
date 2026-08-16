@@ -19,11 +19,10 @@ pub const Sudoku = struct {
 
     io: std.Io,
     renderer: facade.Facade,
-    fn buildFacade(cfg: config.Config, is: input_source.ReaderSource, io: std.Io, writer: *std.Io.Writer) Error!facade.Facade {
+    fn buildFacade(cfg: config.Config, session: *io_session.IoSession) Error!facade.Facade {
         switch (cfg.preferred_renderer) {
             .ansi => {
-                const alloc = is.allocatorForTest();
-                return AsciiRendererAlloc.makeFacade(is, alloc, io, writer);
+                return AsciiRendererAlloc.makeFacade(session);
             },
             else => {
                 return error.System;
@@ -31,9 +30,9 @@ pub const Sudoku = struct {
         }
     }
 
-    pub fn init(cfg: config.Config, is: input_source.ReaderSource, io: std.Io, writer: *std.Io.Writer) Error!@This() {
+    pub fn init(cfg: config.Config, session: *io_session.IoSession, io: std.Io) Error!@This() {
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
-        const facade_result = try buildFacade(cfg, is, io, writer);
+        const facade_result = try buildFacade(cfg, session);
         return @This(){
             .cfg = cfg,
             .renderer = facade_result,
@@ -121,9 +120,13 @@ test "Sudoku stores io field during init" {
     const responses = [_][]const u8{};
     const source: input_source.ReaderSource = .{ .mock = input_source.MockSource.init(alloc, &responses) };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
 
     _ = sudoku_instance.io;
@@ -147,9 +150,13 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku = try Sudoku.init(cfg, &session, io);
     defer sudoku.deinit();
 
     // Act: run the full loop — fill A3 with 4 via prefix dispatch, then quit
@@ -203,9 +210,13 @@ test "integrated e2e - full seam: open loads saved game" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
 
     // Run full loop: open dialog -> filename prompt -> load file -> quit.
@@ -229,9 +240,6 @@ test "integrated e2e - save success produces status message, re-render, legend r
     const alloc = std.testing.allocator;
     const tmp_path = "/tmp/sudoku_save_success_test.sud";
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-
     // Canned responses: save -> filename prompt -> quit
     const responses = [_][]const u8{
         "save",
@@ -242,7 +250,13 @@ test "integrated e2e - save success produces status message, re-render, legend r
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var sudoku = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku = try Sudoku.init(cfg, &session, io);
     defer sudoku.deinit();
 
     sudoku.run() catch {};
@@ -277,9 +291,13 @@ test "integrated e2e - run: open file success produces status message, re-render
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
 
     // Act: run full loop - open loads file from command arg, re-renders, shows legend
@@ -307,9 +325,13 @@ test "integrated e2e - run: save uses default filename and returns success" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku = try Sudoku.init(cfg, &session, io);
     defer sudoku.deinit();
 
     // Act: run full loop - save prompts for filename, writes file, re-renders
@@ -337,9 +359,13 @@ test "integrated e2e - run: fill → save → quit" {
     };
 
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
@@ -365,9 +391,13 @@ test "integrated e2e - run: save_as writes file and re-renders" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
@@ -394,9 +424,13 @@ test "integrated e2e - run: new command resets board and history" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku_instance = try Sudoku.init(cfg, &session, io);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
@@ -421,9 +455,13 @@ test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
         .mock = input_source.MockSource.init(alloc, &responses),
     };
 
-    var aw = std.Io.Writer.Allocating.init(alloc);
-    defer aw.deinit();
-    var sudoku = try Sudoku.init(cfg, source, io, &aw.writer);
+    var session = io_session.IoSession{
+        .reader = source,
+        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
+        .alloc = alloc,
+    };
+    defer session.deinit();
+    var sudoku = try Sudoku.init(cfg, &session, io);
 
     // Facade deinit routes through vtable to deinit() — no renderer_alloc sidecar needed.
     // If buildFacade still returned FacadeResult this would compile-break.
