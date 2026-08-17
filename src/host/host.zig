@@ -6,13 +6,15 @@ const config = @import("../config.zig");
 const facade_mod = @import("../renderer/facade.zig");
 const io_session = @import("../io_session.zig");
 const input_source = @import("../input_source.zig");
+const command = @import("../command.zig");
+const cell = @import("../board/cell.zig");
 const AsciiRendererAlloc = @import("../renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
 const game_engine = @import("../engine/game_engine.zig");
 const puzzle_gen = @import("../puzzle_gen.zig");
 
 // ────────────────────── co-located tests ──────────────────────
 pub const Host = struct {
-    pub const Error = error{ System, UnsupportedRenderer };
+    pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
     cfg: config.Config,
     io: std.Io,
@@ -42,9 +44,13 @@ pub const Host = struct {
         };
     }
 
-    /// Materialize the facade for the configured preference.
+    /// Materialize the facade for the configured preference: the preferred arm
+    /// first, then the configured fallback; an unconfigured fallback is an error.
     pub fn facade(self: *Host) Error!facade_mod.Facade {
-        return self.facadeFor(self.cfg.preferred_renderer);
+        return self.facadeFor(self.cfg.preferred_renderer) catch {
+            const fallback = self.cfg.fallback_renderer orelse return error.NoFallbackConfigured;
+            return self.facadeFor(fallback) catch return error.UnsupportedRenderer;
+        };
     }
 
     /// Per-renderer substrate: build the terminal session or refuse the renderer.
@@ -87,32 +93,38 @@ pub const Host = struct {
     }
 };
 
-test "host: .tui preference refuses facade without building a terminal session" {
+test "host: .tui preference, no fallback configured refuses facade without a session" {
     const cfg = config.Config{
         .difficulty = .easy,
         .preferred_renderer = .tui,
-        .fallback_renderer = .ansi,
+        .fallback_renderer = null,
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
     defer host.deinit();
 
-    try std.testing.expectError(Host.Error.UnsupportedRenderer, host.facade());
+    try std.testing.expectError(Host.Error.NoFallbackConfigured, host.facade());
     try std.testing.expect(!host.have_session);
 }
 
-test "host: .wasm preference refuses facade without building a terminal session" {
+test "host: .wasm preference falls back to .ascii and yields a working facade" {
     const cfg = config.Config{
         .difficulty = .easy,
         .preferred_renderer = .wasm,
-        .fallback_renderer = .ansi,
+        .fallback_renderer = .ascii,
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
     defer host.deinit();
 
-    try std.testing.expectError(Host.Error.UnsupportedRenderer, host.facade());
-    try std.testing.expect(!host.have_session);
+    var f = try host.facade();
+    defer f.deinit();
+
+    try std.testing.expect(host.have_session);
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), std.testing.io);
+    defer engine.deinit();
+    try f.render(engine.eventBoard(), null);
 }
 
 test "host: createForTest .ascii preference yields a working facade" {
@@ -136,11 +148,66 @@ test "host: createForTest .ascii preference yields a working facade" {
     defer engine.deinit();
     try f.render(engine.eventBoard(), null);
 
-    // And the injected mock reader drives the command parse path
-    // (names = the set of commands the parser is offered).
+    // And the injected mock reader drives the command parse path:
+    // "fill A3 4" must round-trip into the very fill command it denotes
+    // (names = the set of commands offered to the parser; a lone "Fill" is unambiguous).
     const parsed = try f.getCommandInput(&.{"Fill"});
     switch (parsed) {
-        .valid => {},
         .error_msg => return error.ExpectedValidParse,
+        .valid => |c| {
+            try std.testing.expectEqual(
+                command.Command{ .fill = command.FillData{ .row = 2, .col = 0, .digit = cell.CellValue.four } },
+                c,
+            );
+        },
     }
+}
+
+test "host: .tui preference falls back to .ascii and yields a working facade" {
+    const cfg = config.Config{
+        .difficulty = .easy,
+        .preferred_renderer = .tui,
+        .fallback_renderer = .ascii,
+        .log_level = .info,
+    };
+    var host = Host.createForTest(cfg, &[0][]const u8{});
+    defer host.deinit();
+
+    var f = try host.facade();
+    defer f.deinit();
+
+    try std.testing.expect(host.have_session);
+
+    // Working fallback facade renders a real board view through its session.
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), std.testing.io);
+    defer engine.deinit();
+    try f.render(engine.eventBoard(), null);
+}
+
+test "host: both arms unsupported errors without building a terminal session" {
+    const cfg = config.Config{
+        .difficulty = .easy,
+        .preferred_renderer = .wasm,
+        .fallback_renderer = .tui,
+        .log_level = .info,
+    };
+    var host = Host.createForTest(cfg, &[0][]const u8{});
+    defer host.deinit();
+
+    try std.testing.expectError(Host.Error.UnsupportedRenderer, host.facade());
+    try std.testing.expect(!host.have_session);
+}
+
+test "host: no fallback configured yields NoFallbackConfigured" {
+    const cfg = config.Config{
+        .difficulty = .easy,
+        .preferred_renderer = .wasm,
+        .fallback_renderer = null,
+        .log_level = .info,
+    };
+    var host = Host.createForTest(cfg, &[0][]const u8{});
+    defer host.deinit();
+
+    try std.testing.expectError(Host.Error.NoFallbackConfigured, host.facade());
+    try std.testing.expect(!host.have_session);
 }
