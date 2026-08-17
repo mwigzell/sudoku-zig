@@ -149,7 +149,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
 }
 
 // Full round-trip: save known state → mutate → open the saved file → verify restore
-// Uses real AsciiRenderer + MockSource to exercise the full dialog/caching path.
+// Uses the host-built facade to exercise the full dialog/caching path.
 test "integrated e2e - full seam: open loads saved game" {
     const cfg: config.Config = .{
         .difficulty = .hard,
