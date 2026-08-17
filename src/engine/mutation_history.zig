@@ -45,7 +45,7 @@ pub const MutationHistory = struct {
     }
 
     /// Return the entry just before pointer (last committed mutation). Returns null if none.
-    pub fn peakPast(self: *const @This()) ?MutationEntry {
+    pub fn peekPast(self: *const @This()) ?MutationEntry {
         if (self.pointer == 0) return null;
         return self.entries.items[self.pointer - 1];
     }
@@ -77,23 +77,23 @@ test "MutationHistory: push and count" {
     try std.testing.expectEqual(@as(usize, 2), h.count());
 }
 
-test "MutationHistory: peakPast returns last committed" {
+test "MutationHistory: peekPast returns last committed" {
     var h = MutationHistory.init(std.testing.allocator);
     defer h.deinit();
 
     _ = h.push(0, 3, .zero, .eight) catch unreachable;
     _ = h.push(1, 2, .five, .nine) catch unreachable;
 
-    const item = h.peakPast() orelse return error.TestFailed;
+    const item = h.peekPast() orelse return error.TestFailed;
     try std.testing.expectEqual(@as(u4, 1), item.row);
     try std.testing.expectEqual(@as(u4, 2), item.col);
     try std.testing.expectEqual(cell.CellValue.five, item.old_value);
     try std.testing.expectEqual(cell.CellValue.nine, item.new_value);
 }
 
-test "MutationHistory: peakPast returns null when empty" {
+test "MutationHistory: peekPast returns null when empty" {
     var h = MutationHistory.init(std.testing.allocator);
     defer h.deinit();
 
-    try std.testing.expect(h.peakPast() == null);
+    try std.testing.expect(h.peekPast() == null);
 }
