@@ -268,7 +268,7 @@ pub const fromOneLineString = serial.fromOneLineString;
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Tests (co-located, Ziglings 105 style)
+// Tests (co-located)
 // ---------------------------------------------------------------------------
 
 test "Board: init produces 81 empty cells and no givens" {

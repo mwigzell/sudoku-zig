@@ -2,7 +2,7 @@ const std = @import("std");
 
 /// Severity ranks for runtime filtering; enum order IS the rank, so with the
 /// .info default, debug is suppressed and info..fatal are emitted.
-pub const Severity = enum{ debug, info, warn, err, fatal };
+pub const Severity = enum { debug, info, warn, err, fatal };
 
 /// Minimum severity emitted at runtime; set from parsed CLI flags before the game starts.
 pub var min_level: Severity = .info;

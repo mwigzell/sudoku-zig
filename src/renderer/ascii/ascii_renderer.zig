@@ -158,10 +158,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
 
-            const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else
-                if (std.mem.eql(u8, pick, "2")) Difficulty.medium else
-                    if (std.mem.eql(u8, pick, "3")) Difficulty.hard else
-                        return .Cancelled;
+            const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else if (std.mem.eql(u8, pick, "2")) Difficulty.medium else if (std.mem.eql(u8, pick, "3")) Difficulty.hard else return .Cancelled;
 
             const puzzle = PuzzleGen.generate(diff);
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;

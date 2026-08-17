@@ -66,7 +66,7 @@ pub fn fromOneLineString(oneLine: []const u8) Error!board.Board {
 }
 
 // ---------------------------------------------------------------------------
-// Tests (co-located, Ziglings 105 style)
+// Tests (co-located)
 // ---------------------------------------------------------------------------
 
 test "Board: constructs from flat puzzle array with correct values" {

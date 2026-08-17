@@ -56,7 +56,7 @@ pub const Cell = struct {
 };
 
 // ---------------------------------------------------------------------------
-// Tests (co-located, Ziglings 105 style)
+// Tests (co-located)
 // ---------------------------------------------------------------------------
 
 test "Cell: init produces empty cell" {

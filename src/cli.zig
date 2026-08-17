@@ -95,8 +95,6 @@ fn parseLogLevel(lvl: []const u8) ?logger.Severity {
     return null;
 }
 
-
-
 fn initIt(comptime argv: anytype) std.process.Args.Iterator {
     return std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
 }
@@ -117,7 +115,7 @@ test "-d hard sets hard difficulty" {
 }
 
 test "no -d leaves difficulty at default easy" {
-    const argv: [1][*:0]const u8 = .{ "sudoku" };
+    const argv: [1][*:0]const u8 = .{"sudoku"};
     var it = initIt(argv);
     const cfg = parseCLI(&it) catch unreachable;
     try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
@@ -155,7 +153,7 @@ test "-v warn preserves difficulty and renderer defaults" {
 }
 
 test "no -v leaves log level at default info" {
-    const argv: [1][*:0]const u8 = .{ "sudoku" };
+    const argv: [1][*:0]const u8 = .{"sudoku"};
     var it = initIt(argv);
     const cfg = parseCLI(&it) catch unreachable;
     try std.testing.expectEqual(logger.Severity.info, cfg.log_level);

@@ -34,7 +34,6 @@ pub const IoSession = struct {
     }
 };
 
-
 // ────────────────────── co-located tests ──────────────────────
 test "IoSession.deinit releases the mock writer buffer" {
     const alloc = std.testing.allocator;

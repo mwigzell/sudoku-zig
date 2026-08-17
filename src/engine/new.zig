@@ -48,7 +48,6 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engi
         };
     }
 
-
     if (data.puzzle) |puzzle_str| {
         defer std.heap.page_allocator.free(puzzle_str);
 

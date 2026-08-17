@@ -99,7 +99,7 @@ pub fn refreshConflictsForCell(b: *board.Board, row: u4, col: u4) void {
 }
 
 // ---------------------------------------------------------------------------
-// Tests (co-located, Ziglings 105 style)
+// Tests (co-located)
 // ---------------------------------------------------------------------------
 
 test "Board: conflict bits start clear and can be set/cleared individually" {
