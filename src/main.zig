@@ -25,6 +25,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     log.debug("Starting sudoku game.", .{});
 
     var host = host_mod.Host.create(cfg, init.io, std.heap.page_allocator);
+    defer host.deinit();
     var game = sudoku.Sudoku.init(&host) catch |err| {
         if (err == error.UnsupportedRenderer) {
             std.debug.print(
@@ -33,10 +34,17 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
             );
             std.process.exit(1);
         }
+        if (err == error.NoFallbackConfigured) {
+            std.debug.print(
+                "Error: renderer '{s}' is unavailable and no fallback renderer is configured.\n",
+                .{@tagName(cfg.preferred_renderer)},
+            );
+            std.process.exit(1);
+        }
         return err;
     };
+    defer game.deinit();
     try game.run();
-    host.deinit();
 
     log.debug("Ending sudoku game.", .{});
 }
