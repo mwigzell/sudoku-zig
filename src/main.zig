@@ -1,4 +1,4 @@
-// Entry point — parses CLI args, builds the I/O session, starts the game loop.
+// Entry point — parses CLI args, builds the Host (renderer substrate), starts the game loop.
 const std = @import("std");
 const facade = @import("renderer/facade.zig");
 const sudoku = @import("sudoku.zig");
@@ -7,9 +7,7 @@ const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 const logger = @import("logger.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const cli = @import("cli.zig");
-const input_source = @import("input_source.zig");
-const io_session = @import("io_session.zig");
-// Reachability: keeps host.zig tests inside the suite closure until main constructs the Host.
+// main constructs the Host at startup — host.zig stays in the suite closure.
 const host_mod = @import("host/host.zig");
 
 test "host module is part of the test closure" {
@@ -26,13 +24,8 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     const log = logger.Logger(.sudoku);
     log.debug("Starting sudoku game.", .{});
 
-    const stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
-    var session = io_session.IoSession{
-        .reader = .{ .stdin = input_source.StdinSource.initStdin(std.heap.page_allocator, init.io) },
-        .writer = .{ .stdout = stdout_writer },
-        .alloc = std.heap.page_allocator,
-    };
-    var game = sudoku.Sudoku.init(cfg, &session, init.io) catch |err| {
+    var host = host_mod.Host.create(cfg, init.io, std.heap.page_allocator);
+    var game = sudoku.Sudoku.init(&host) catch |err| {
         if (err == error.UnsupportedRenderer) {
             std.debug.print(
                 "Error: renderer '{s}' is not available in this build.\nAvailable renderers: ansi, ascii.\n",
@@ -43,7 +36,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
         return err;
     };
     try game.run();
-    session.deinit();
+    host.deinit();
 
     log.debug("Ending sudoku game.", .{});
 }

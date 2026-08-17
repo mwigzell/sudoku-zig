@@ -11,9 +11,8 @@ const command = @import("command.zig");
 const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("renderer/legend.zig");
 
-const AsciiRendererAlloc = @import("renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
-const io_session = @import("io_session.zig");
-pub const Error = error{ System, UnsupportedRenderer };
+const host_mod = @import("host/host.zig");
+pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 /// One running game: engine + renderer + shared io handle, driven by the loop in run().
 pub const Sudoku = struct {
@@ -22,30 +21,16 @@ pub const Sudoku = struct {
 
     io: std.Io,
     renderer: facade.Facade,
-    /// Materialize the renderer facade for the configured preference; both branches borrow the session.
-    fn buildFacade(cfg: config.Config, session: *io_session.IoSession) Error!facade.Facade {
-        switch (cfg.preferred_renderer) {
-            .ansi => {
-                return AsciiRendererAlloc.makeFacade(session);
-            },
-            .ascii => {
-                return AsciiRendererAlloc.makePlainFacade(session);
-            },
-            else => {
-                return error.UnsupportedRenderer;
-            },
-        }
-    }
 
-    /// Assemble a fresh game: generated puzzle, facade over the session, engine sharing the io handle.
-    pub fn init(cfg: config.Config, session: *io_session.IoSession, io: std.Io) Error!@This() {
-        const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
-        const facade_result = try buildFacade(cfg, session);
+    /// Assemble a fresh game: facade from the host, engine sharing the host's io handle.
+    pub fn init(host: *host_mod.Host) Error!@This() {
+        const puzzle_str = puzzle_gen.PuzzleGen.generate(host.cfg.difficulty);
+        const facade_result = try host.facade();
         return @This(){
-            .cfg = cfg,
+            .cfg = host.cfg,
             .renderer = facade_result,
-            .io = io,
-            .engine = try game_engine.GameEngine.init(puzzle_str, io),
+            .io = host.io,
+            .engine = try game_engine.GameEngine.init(puzzle_str, host.io),
         };
     }
 
@@ -112,7 +97,6 @@ pub const Sudoku = struct {
 
 const board = @import("board.zig");
 const cell = @import("board/cell.zig");
-const input_source = @import("input_source.zig");
 const styler_t = @import("renderer/ascii/styler.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 
@@ -124,19 +108,10 @@ test "Sudoku stores io field during init" {
         .fallback_renderer = .ansi,
         .log_level = .info,
     };
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
+    var host = host_mod.Host.createForTest(cfg, &[_][]const u8{});
+    defer host.deinit();
 
-    const responses = [_][]const u8{};
-    const source: input_source.ReaderSource = .{ .mock = input_source.MockSource.init(alloc, &responses) };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, &session, io);
+    var sudoku_instance = try Sudoku.init(&host);
     defer sudoku_instance.deinit();
 
     _ = sudoku_instance.io;
@@ -150,24 +125,13 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
         .log_level = .info,
     };
 
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
-
     const responses = [_][]const u8{
         "fill A3 4",
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku = try Sudoku.init(&host);
     defer sudoku.deinit();
 
     // Act: run the full loop — fill A3 with 4 via prefix dispatch, then quit
@@ -197,7 +161,6 @@ test "integrated e2e - full seam: open loads saved game" {
 
     // 1. Create a save file with known state (no MockRenderer - real path through renderer)
     const io = std.testing.io;
-    const alloc = std.testing.allocator;
     const tmp_path = "/tmp/sudoku_full_seam_open_test.sud";
 
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
@@ -217,17 +180,9 @@ test "integrated e2e - full seam: open loads saved game" {
         tmp_path ++ "\n", // Filename response for the dialog prompt
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku_instance = try Sudoku.init(&host);
     defer sudoku_instance.deinit();
 
     // Run full loop: open dialog -> filename prompt -> load file -> quit.
@@ -248,7 +203,6 @@ test "integrated e2e - save success produces status message, re-render, legend r
     };
 
     const io = std.testing.io;
-    const alloc = std.testing.allocator;
     const tmp_path = "/tmp/sudoku_save_success_test.sud";
 
     // Canned responses: save -> filename prompt -> quit
@@ -257,17 +211,9 @@ test "integrated e2e - save success produces status message, re-render, legend r
         tmp_path ++ "\n",
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku = try Sudoku.init(&host);
     defer sudoku.deinit();
 
     sudoku.run() catch {};
@@ -291,24 +237,14 @@ test "integrated e2e - run: open file success produces status message, re-render
     const tmp_path = "/tmp/sudoku_e2e_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
-    const alloc = std.testing.allocator;
-
     // Canned responses: open <path> -> quit
     const responses = [_][]const u8{
         "open " ++ tmp_path,
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku_instance = try Sudoku.init(&host);
     defer sudoku_instance.deinit();
 
     // Act: run full loop - open loads file from command arg, re-renders, shows legend
@@ -323,7 +259,6 @@ test "integrated e2e - run: save uses default filename and returns success" {
         .log_level = .info,
     };
     const io = std.testing.io;
-    const alloc = std.testing.allocator;
     const tmp_path = "/tmp/sudoku_save_default_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
@@ -333,17 +268,9 @@ test "integrated e2e - run: save uses default filename and returns success" {
         tmp_path ++ "\n",
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku = try Sudoku.init(&host);
     defer sudoku.deinit();
 
     // Act: run full loop - save prompts for filename, writes file, re-renders
@@ -358,8 +285,6 @@ test "integrated e2e - run: fill → save → quit" {
         .fallback_renderer = .ansi,
         .log_level = .info,
     };
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
 
     const responses = [_][]const u8{
         "fill A3 7",
@@ -367,17 +292,9 @@ test "integrated e2e - run: fill → save → quit" {
         "sudoku_save.sud\n", // answer to save As dialog prompt
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku_instance = try Sudoku.init(&host);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 }
@@ -390,26 +307,15 @@ test "integrated e2e - run: save_as writes file and re-renders" {
         .log_level = .info,
     };
 
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
-
     // Canned responses: command → dialog filename → quit
     const responses = [_][]const u8{
         "save_as",
         "test_save_as.sud",
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku_instance = try Sudoku.init(&host);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 }
@@ -423,34 +329,23 @@ test "integrated e2e - run: new command resets board and history" {
         .log_level = .info,
     };
 
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
-
     // feed fill (adds to history), then new (should clear it), then quit
     const responses = [_][]const u8{
         "fill A3 7",
         "new",
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
-
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku_instance = try Sudoku.init(cfg, &session, io);
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku_instance = try Sudoku.init(&host);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
     // history should be empty after new command clears it
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.history.entries.items.len);
 }
-// Verify factory delegation (buildFacade uses AsciiRendererAlloc.makeFacade)
-test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
+// Full end-to-end run through the host-built ansi facade
+test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ansi,
@@ -458,29 +353,16 @@ test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
         .log_level = .info,
     };
 
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
-
     const responses = [_][]const u8{
         "quit",
     };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(alloc, &responses),
-    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var sudoku = try Sudoku.init(&host);
 
-    var session = io_session.IoSession{
-        .reader = source,
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku = try Sudoku.init(cfg, &session, io);
-
-    // Facade deinit routes through vtable to deinit() — no renderer_alloc sidecar needed.
-    // If buildFacade still returned FacadeResult this would compile-break.
     defer sudoku.deinit();
 
-    // Act: run through the factory-built facade end-to-end
+    // Act: run through the host-built facade end-to-end
     sudoku.run() catch {};
 }
 
@@ -491,20 +373,14 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
         .fallback_renderer = .ascii,
         .log_level = .info,
     };
-    const io = std.testing.io;
-    const alloc = std.testing.allocator;
-    // Non-mock reader picks the prod branch; .mock writer keeps output observable.
-    var session = io_session.IoSession{
-        .reader = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) },
-        .writer = .{ .mock = std.Io.Writer.Allocating.init(alloc) },
-        .alloc = alloc,
-    };
-    defer session.deinit();
-    var sudoku = try Sudoku.init(cfg, &session, io);
+    // The host's mock output buffer keeps the rendered grid observable.
+    var host = host_mod.Host.createForTest(cfg, &[0][]const u8{});
+    defer host.deinit();
+    var sudoku = try Sudoku.init(&host);
     defer sudoku.deinit();
     try sudoku.renderer.render(sudoku.engine.board.asView(), null);
 
-    const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
+    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);
     // PlainStyler: no CSI escapes anywhere in the rendered output.
     try std.testing.expect(std.mem.indexOf(u8, contents, "\x1b[") == null);
