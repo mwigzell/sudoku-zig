@@ -1,7 +1,8 @@
 const std = @import("std");
 const input_source = @import("input_source.zig");
 
-// Issue 47 chunk 3 — WriterSource + IoSession (spec: issue-47 sketch).
+// I/O session per terminal run: output destination (process stdout or an
+// owned mock buffer) + the shared per-branch allocator.
 
 /// Where rendered output goes. ".stdout" is process-owned (no deinit);
 /// ".mock" owns a heap buffer only its own deinit() releases.
@@ -33,6 +34,8 @@ pub const IoSession = struct {
     }
 };
 
+
+// ────────────────────── co-located tests ──────────────────────
 test "IoSession.deinit releases the mock writer buffer" {
     const alloc = std.testing.allocator;
     const responses = [_][]const u8{};

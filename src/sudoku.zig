@@ -1,3 +1,5 @@
+// Sudoku facade: owns the command loop — prompt, parse, dispatch to the
+// game engine, and render each resulting event back through the renderer.
 const std = @import("std");
 const facade = @import("renderer/facade.zig");
 const styler = @import("renderer/ascii/styler.zig");
@@ -11,14 +13,16 @@ const legend = @import("renderer/legend.zig");
 
 const AsciiRendererAlloc = @import("renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
 const io_session = @import("io_session.zig");
-pub const Error = error{System, UnsupportedRenderer};
+pub const Error = error{ System, UnsupportedRenderer };
 
+/// One running game: engine + renderer + shared io handle, driven by the loop in run().
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
 
     io: std.Io,
     renderer: facade.Facade,
+    /// Materialize the renderer facade for the configured preference; both branches borrow the session.
     fn buildFacade(cfg: config.Config, session: *io_session.IoSession) Error!facade.Facade {
         switch (cfg.preferred_renderer) {
             .ansi => {
@@ -33,6 +37,7 @@ pub const Sudoku = struct {
         }
     }
 
+    /// Assemble a fresh game: generated puzzle, facade over the session, engine sharing the io handle.
     pub fn init(cfg: config.Config, session: *io_session.IoSession, io: std.Io) Error!@This() {
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         const facade_result = try buildFacade(cfg, session);
@@ -44,6 +49,7 @@ pub const Sudoku = struct {
         };
     }
 
+    /// Dispatch one engine event to the renderer; returns true when the loop should end.
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {
@@ -86,6 +92,8 @@ pub const Sudoku = struct {
         return try self.handleResult(result);
     }
 
+    /// Drive the interactive session: draw the initial board + legend once, then prompt/
+    /// run commands until quit or EOF. Does not deinit — the caller owns teardown.
     pub fn run(self: *@This()) Error!void {
         try self.renderer.render(self.engine.eventBoard(), null);
         try self.renderer.showLegend(self.engine.getLegend());
@@ -95,6 +103,7 @@ pub const Sudoku = struct {
         }
     }
 
+    /// Release engine and renderer; the caller owns the io session.
     pub fn deinit(self: *@This()) void {
         self.renderer.deinit();
         self.engine.deinit();
@@ -107,7 +116,7 @@ const input_source = @import("input_source.zig");
 const styler_t = @import("renderer/ascii/styler.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 
-// Step 7 test placeholder
+// Verify the io handle survives init alongside the other fields
 test "Sudoku stores io field during init" {
     const cfg: config.Config = .{
         .difficulty = .hard,
@@ -176,8 +185,8 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     }
 }
 
-// Issue 32 — full round-trip integration: save known state → mutate → open saved file → verify restore
-// Uses real AsciiRenderer + MockSource to exercise the full dialog/caching path (replaces rigged MockRenderer test).
+// Full round-trip: save known state → mutate → open the saved file → verify restore
+// Uses real AsciiRenderer + MockSource to exercise the full dialog/caching path.
 test "integrated e2e - full seam: open loads saved game" {
     const cfg: config.Config = .{
         .difficulty = .hard,
@@ -228,7 +237,7 @@ test "integrated e2e - full seam: open loads saved game" {
     try std.testing.expectEqual(saved_b2, sudoku_instance.engine.eventBoard().get(1, 1));
 }
 
-// Step 10 — Save/Open must route through handleEvent() for feedback + re-render
+// Save/Open route through handleEvent() so the user gets feedback + a re-render
 
 test "integrated e2e - save success produces status message, re-render, legend refresh" {
     const cfg: config.Config = .{
@@ -340,7 +349,7 @@ test "integrated e2e - run: save uses default filename and returns success" {
     // Act: run full loop - save prompts for filename, writes file, re-renders
     sudoku.run() catch {};
 }
-// Step 12b — Subsequent saves reuse last filename, give feedback without prompting
+// First save prompts for a filename; a follow-up save reuses it without prompting
 
 test "integrated e2e - run: fill → save → quit" {
     const cfg: config.Config = .{
@@ -372,7 +381,7 @@ test "integrated e2e - run: fill → save → quit" {
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 }
-// Issue 34 Step 2 — e2e: save_as writes file and re-renders
+// save_as writes the file through the dialog and re-renders
 test "integrated e2e - run: save_as writes file and re-renders" {
     const cfg: config.Config = .{
         .difficulty = .hard,
@@ -405,7 +414,7 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     sudoku_instance.run() catch {};
 }
 
-// Issue 34 Step 3 — e2e: new command resets board and history
+// new starts a fresh board and clears the mutation history
 test "integrated e2e - run: new command resets board and history" {
     const cfg: config.Config = .{
         .difficulty = .hard,
@@ -440,7 +449,7 @@ test "integrated e2e - run: new command resets board and history" {
     // history should be empty after new command clears it
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.history.entries.items.len);
 }
-// Issue 45 Step 4 — verify factory delegation (buildFacade uses AsciiRendererAlloc.makeFacade)
+// Verify factory delegation (buildFacade uses AsciiRendererAlloc.makeFacade)
 test "integrated e2e - buildFacade delegates to AsciiRendererAlloc.makeFacade" {
     const cfg: config.Config = .{
         .difficulty = .hard,

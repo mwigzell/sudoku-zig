@@ -1,3 +1,5 @@
+// GameEngine: authoritative game state — board, mutation history, and the exec()
+// command dispatcher; save/restore delegates to save_format.
 const std = @import("std");
 const board = @import("../board.zig");
 const cell = @import("../board/cell.zig");
@@ -35,12 +37,14 @@ pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
 
+/// Owns the board, undo/redo history, the io handle, and save-dialog state (data dir, feedback text).
 pub const GameEngine = struct {
     board: board.Board,
     history: MutationHistory,
     io: std.Io,
     data_dir: ?[]u8,
     last_save_msg: ?[]u8,
+    /// Build an engine from a one-line puzzle string; the io handle is retained for save/open.
     pub fn init(puzzle_str: []const u8, io: std.Io) Error!@This() {
         const brd = board.fromOneLineString(puzzle_str) catch return Error.System;
         var self = @This(){
@@ -54,6 +58,7 @@ pub const GameEngine = struct {
         return self;
     }
 
+    /// Free the history and any owned string fields.
     pub fn deinit(self: *@This()) void {
         self.history.deinit();
 
@@ -147,7 +152,7 @@ pub const GameEngine = struct {
             const msg = std.fmt.bufPrint(&buf, "set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) }) catch "cell set error";
             return Event{ .error_msg = msg };
         };
-        // Record successful mutation into history (Step 5)
+        // Persist the successful mutation in history
         // First discard stale future entries from any earlier undo branch
         self.history.truncateFuture();
         self.history.push(row, col, old_value, digit) catch |err| {
@@ -159,6 +164,7 @@ pub const GameEngine = struct {
     }
 };
 
+// ────────────────────── co-located tests ──────────────────────
 const puzzle_gen = @import("../puzzle_gen.zig");
 
 fn expectOk(e: Event) !board.Board.BoardView {
@@ -199,7 +205,7 @@ test "GameEngine init builds board from puzzle string" {
     try std.testing.expectEqual(cell.CellValue.zero, view.get(0, 2));
 }
 
-// T2: exec(Command) returns structured results with given-cell feedback
+// exec(Command) returns structured results with given-cell feedback
 
 test "exec fill non-given cell → .ok" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
@@ -239,7 +245,7 @@ test "exec quit → .ok" {
     _ = view;
 }
 
-// T3 — exec wires validator into mutation path
+// exec wires validator into mutation path
 // Integration chain: exec → board mutation → conflict refresh → event emission
 // Check conflict bits through the returned Event board_view
 
@@ -410,7 +416,7 @@ test "eventBoard returns current board view" {
     try std.testing.expectEqual(cell.CellValue.seven, view2.get(0, 2));
 }
 
-// Step 2 — MutationHistory struct tests
+// MutationHistory struct tests
 
 test "MutationHistory: initially empty" {
     var h = MutationHistory.init(std.testing.allocator);
@@ -549,7 +555,7 @@ test "undo clear restores previous value" {
     try std.testing.expectEqual(cell.CellValue.three, undo_view.get(1, 1));
 }
 
-// Step 6 — remaining integration tests
+// Multi-step undo/redo integration
 
 test "multiple undo walks history backwards" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
@@ -762,8 +768,7 @@ test "getLegend: Save and Open always available" {
     try std.testing.expect(cmds.open);
 }
 
-// Issue 28 Step 4 — Cycle 3: save/open command handlers via exec()
-// Issue 28 Step 1 — io threaded through GameEngine constructor
+// Save/open handlers route through exec(); the io handle threads through the constructor
 test "GameEngine.init accepts io handle" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
@@ -771,7 +776,7 @@ test "GameEngine.init accepts io handle" {
     // io field stored on struct (compile-time proof if the field exists)
     _ = engine.io;
 }
-// Issue 28 Step 4 — Cycle 3: save/open command handlers via exec()
+
 test "Save fields moved to GameEngine struct" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
@@ -808,7 +813,7 @@ test "exec save: delegates to save handler via command/save.zig" {
 }
 
 test "exec open: delegates to open handler via command/open.zig" {
-    const tmp_path = "/tmp/sudoku_step4_open_test.sud";
+    const tmp_path = "/tmp/sudoku_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
     // Create a known save file

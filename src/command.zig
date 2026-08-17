@@ -1,3 +1,4 @@
+// Command vocabulary of the game — data tags + parse entry point.
 const cell_module = @import("board/cell.zig");
 
 // ---------------------------------------------------------------------------
@@ -35,7 +36,7 @@ pub const ParseCommandResult = union(ParseResultTag) {
 };
 
 // ---------------------------------------------------------------------------
-// Comptime command registration table (Issue 30)
+// Comptime command registration table
 // ---------------------------------------------------------------------------
 
 pub const CommandTableEntry = struct {

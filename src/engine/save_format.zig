@@ -1,3 +1,5 @@
+// Save-file wire format: header/entries/trailer types, blob (de)serialization,
+// and file-backed save/open over an Io handle.
 const std = @import("std");
 const ge = @import("game_engine.zig");
 const board = @import("../board.zig");
@@ -77,7 +79,6 @@ pub const SaveEntry = struct {
     coords: u8,
     values: u8,
 };
-pub const TestStruct = struct {};
 
 // ---------------------------------------------------------------------------
 // GameEngine serialization / deserialization
@@ -180,6 +181,7 @@ pub fn saveGame(self: *const ge.GameEngine, io: std.Io, path: []const u8) IoErro
     };
 }
 
+/// Load a save file over an Io handle; replaces this engine's board, history, and pointer.
 pub fn openGame(self: *ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
     var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch {
         return IoError.System;
@@ -208,7 +210,7 @@ pub fn openGame(self: *ge.GameEngine, io: std.Io, path: []const u8) IoError!void
 }
 
 // ---------------------------------------------------------------------------
-// Tests (co-located, Ziglings 105 style)
+// Tests (co-located)
 // ---------------------------------------------------------------------------
 
 test "SaveEntry: total size is 2 bytes" {
@@ -253,7 +255,7 @@ test "saveGame returns error on bad path" {
     try std.testing.expectError(IoError.System, result);
 }
 
-// Step 6 — save → open round-trip (full saved state equality)
+// save → open round-trip (full saved state equality)
 
 test "saveGame then openGame: full state round-trip equals original" {
     var original = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
@@ -285,13 +287,13 @@ test "saveGame then openGame: full state round-trip equals original" {
     // --- Assert board state (cells + given_bits) via Board.equal() ---
     try std.testing.expect(original.board.equal(loaded.board));
 
-    // --- Assert DIMENSION 3: history pointer position ---
+    // --- Assert history pointer position ---
     try std.testing.expectEqual(
         original.history.pointer,
         loaded.history.pointer,
     );
 
-    // --- Assert DIMENSION 4: history entries count + contents ---
+    // --- Assert history entries count + contents ---
     const orig_count = original.history.entries.items.len;
     const load_count = loaded.history.entries.items.len;
     try std.testing.expectEqual(orig_count, load_count);
@@ -307,7 +309,7 @@ test "saveGame then openGame: full state round-trip equals original" {
     _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 }
 
-// Step 3 — SaveFileHeader & SaveFileTrailer struct tests
+// SaveFileHeader & SaveFileTrailer struct tests
 
 test "SaveFileHeader: wire format is 11 bytes" {
     try std.testing.expectEqual(@as(usize, 11), SAVE_HEADER_SIZE);
@@ -390,7 +392,7 @@ test "SaveFileTrailer: round-trip write/read" {
     try std.testing.expectEqual(original.flat_board, loaded.flat_board);
 }
 
-// Step 4 — toSaveFormat / fromSaveFormat (in-memory blob serialization)
+// toSaveFormat / fromSaveFormat (in-memory blob serialization)
 
 test "toSaveFormat empty history produces buffer of correct size" {
     var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);

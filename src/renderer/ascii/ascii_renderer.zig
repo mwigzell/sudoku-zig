@@ -13,9 +13,9 @@ const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
-/// Implements the Renderer Facade vtable (Issue 29) so the same game
-/// engine loop works unmodified when wasm-targeted: a WASM renderer will
-/// fill the same vtable shape pointing to Canvas/JS interop instead.
+/// Implements the Facade vtable so the same game engine loop works over ASCII and
+/// other renderers (a wasm renderer would fill this same shape with Canvas/JS
+/// interop).
 ///
 /// Parameterised over StylerType so tests can use PlainStyler and
 /// production code swaps in ANSI-capable styler at runtime.
@@ -187,7 +187,7 @@ pub fn AsciiRenderer(StylerType: type) type {
                     .Cancelled => .Cancelled,
                 };
             }
-            // Remaining options land in later slices; pinned to hard for now.
+            // No other menu choice is defined yet — a hard puzzle is generated and handed back.
             const puzzle = PuzzleGen.hard();
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
             return .{ .PuzzleString = owned };

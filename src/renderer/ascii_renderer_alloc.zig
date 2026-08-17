@@ -1,3 +1,5 @@
+// Renderer allocation seam: picks the prod/mock branch by reader kind and
+// owns the context structs that hold the heap handles behind the Facade vtable.
 const std = @import("std");
 const ascii_renderer = @import("ascii/ascii_renderer.zig");
 const styler = @import("ascii/styler.zig");
@@ -9,9 +11,9 @@ const command = @import("../command.zig");
 const io_session = @import("../io_session.zig");
 
 pub const AsciiRendererAlloc = struct {
-    /// Static factory — allocates styler + renderer, creates context struct,
-    /// wires vtable pointers, returns Facade. The prod path borrows the
-    /// session's writer; the mock path owns its own (chunk 4 moves it into the session).
+    /// Static factory — resolve the reader branch, allocate styler/renderer/context,
+    /// wire the vtable, and return the Facade. Both branches borrow the session's
+    /// writer; the session owns and frees its buffer.
     pub fn makeFacade(session: *io_session.IoSession) facade.Error!facade.Facade {
         return if (session.reader.isMock()) mockBranch(session) else prodBranch(session);
     }
@@ -53,7 +55,7 @@ pub const AsciiRendererAlloc = struct {
     }
     /// Plain-styled variant: PlainStyler on the production branch.
     pub fn makePlainFacade(session: *io_session.IoSession) facade.Error!facade.Facade {
-        return if (session.reader.isMock()) mockBranch(session) else plainBranch(session);
+        return plainBranch(session);
     }
 
     /// Plain-style context — structurally the same one the mock branch uses.
@@ -127,6 +129,8 @@ pub const MockFacadeContext = struct {
         return self.renderer.getCommandInput(names);
     }
 };
+
+// ────────────────────── co-located tests ──────────────────────
 test "Prod/MockFacadeContext deinit releases child pointers without leak" {
     const alloc = std.testing.allocator;
 

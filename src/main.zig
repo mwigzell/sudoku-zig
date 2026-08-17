@@ -1,3 +1,4 @@
+// Entry point — parses CLI args, builds the I/O session, starts the game loop.
 const std = @import("std");
 const facade = @import("renderer/facade.zig");
 const sudoku = @import("sudoku.zig");

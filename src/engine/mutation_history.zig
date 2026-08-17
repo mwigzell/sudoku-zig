@@ -1,3 +1,4 @@
+// Undo/redo history: mutation entries with a forward pointer over them.
 const std = @import("std");
 const cell = @import("../board/cell.zig");
 
@@ -57,7 +58,7 @@ pub const MutationHistory = struct {
     }
 };
 
-// ── MutationHistory unit tests (co-located, Step 2) ──────────────
+// ────────────────────── co-located tests ──────────────────────
 
 test "MutationHistory: initially empty" {
     var h = MutationHistory.init(std.testing.allocator);
