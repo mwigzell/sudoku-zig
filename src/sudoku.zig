@@ -18,7 +18,6 @@ pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
-
     io: std.Io,
     renderer: facade.Facade,
 
