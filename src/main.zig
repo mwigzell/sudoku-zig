@@ -9,6 +9,12 @@ const styler = @import("renderer/ascii/styler.zig");
 const cli = @import("cli.zig");
 const input_source = @import("input_source.zig");
 const io_session = @import("io_session.zig");
+// Reachability: keeps host.zig tests inside the suite closure until main constructs the Host.
+const host_mod = @import("host/host.zig");
+
+test "host module is part of the test closure" {
+    _ = host_mod;
+}
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
     var arg_it = std.process.Args.iterate(init.minimal.args);
