@@ -32,14 +32,14 @@ pub const AsciiRendererAlloc = struct {
         const renderer_ptr = alloc.create(R) catch return facade.Error.System;
         renderer_ptr.* = R.init(alloc, writer, styler_ptr, session.reader);
 
-        const ctx = Ctx{
+        const ctx_value = Ctx{
             .allocator = alloc,
             .writer = writer,
             .styler = styler_ptr,
             .renderer = renderer_ptr,
         };
         const ctx_ptr = alloc.create(Ctx) catch return facade.Error.System;
-        ctx_ptr.* = ctx;
+        ctx_ptr.* = ctx_value;
 
         return facade.Make(Ctx).make(ctx_ptr);
     }
@@ -64,71 +64,45 @@ pub const AsciiRendererAlloc = struct {
     }
 };
 
+fn ctx(S: type) type {
+    return struct {
+        allocator: std.mem.Allocator,
+        writer: *std.Io.Writer, // owned elsewhere (caller/session); not destroyed here
+        styler: *S,
+        renderer: *ascii_renderer.AsciiRenderer(S),
+
+        pub fn deinit(self: *@This()) void {
+            self.renderer.deinit();
+            const alloc = self.allocator;
+            alloc.destroy(self.styler);
+            alloc.destroy(self.renderer);
+            alloc.destroy(self);
+        }
+
+        /// Pass-through methods for Facade vtable wrappers.
+        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
+            self.renderer.render(view, status_msg) catch return facade.Error.System;
+        }
+
+        pub fn showLegend(self: *@This(), commands: legend.Legend) facade.Error!void {
+            self.renderer.showLegend(commands) catch return facade.Error.System;
+        }
+
+        pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
+            return self.renderer.showError(msg);
+        }
+
+        pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command.ParseCommandResult {
+            return self.renderer.getCommandInput(names);
+        }
+    };
+}
+
 /// Holds allocator, writer, styler and renderer pointers for production mode.
-pub const ProdFacadeContext = struct {
-    allocator: std.mem.Allocator,
-    writer: *std.Io.Writer, // caller-owned; not destroyed here
-    styler: *styler.AnsiStyler,
-    renderer: *ascii_renderer.AsciiRenderer(styler.AnsiStyler),
-
-    pub fn deinit(self: *@This()) void {
-        self.renderer.deinit();
-        const alloc = self.allocator;
-        alloc.destroy(self.styler);
-        alloc.destroy(self.renderer);
-        alloc.destroy(self);
-    }
-
-    /// Pass-through methods for Facade vtable wrappers.
-    pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
-        self.renderer.render(view, status_msg) catch return facade.Error.System;
-    }
-
-    pub fn showLegend(self: *@This(), commands: legend.Legend) facade.Error!void {
-        self.renderer.showLegend(commands) catch return facade.Error.System;
-    }
-
-    pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-        return self.renderer.showError(msg);
-    }
-
-    pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command.ParseCommandResult {
-        return self.renderer.getCommandInput(names);
-    }
-};
+pub const ProdFacadeContext = ctx(styler.AnsiStyler);
 
 /// Holds allocator, writer, styler and renderer pointers for mock/test mode.
-pub const MockFacadeContext = struct {
-    allocator: std.mem.Allocator,
-    writer: *std.Io.Writer, // session-borrowed; session.deinit() owns the buffer
-    styler: *styler.PlainStyler,
-    renderer: *ascii_renderer.AsciiRenderer(styler.PlainStyler),
-
-    pub fn deinit(self: *@This()) void {
-        self.renderer.deinit();
-        const alloc = self.allocator;
-        alloc.destroy(self.styler);
-        alloc.destroy(self.renderer);
-        alloc.destroy(self);
-    }
-
-    /// Pass-through methods for Facade vtable wrappers.
-    pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
-        self.renderer.render(view, status_msg) catch return facade.Error.System;
-    }
-
-    pub fn showLegend(self: *@This(), commands: legend.Legend) facade.Error!void {
-        self.renderer.showLegend(commands) catch return facade.Error.System;
-    }
-
-    pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-        return self.renderer.showError(msg);
-    }
-
-    pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command.ParseCommandResult {
-        return self.renderer.getCommandInput(names);
-    }
-};
+pub const MockFacadeContext = ctx(styler.PlainStyler);
 
 // ────────────────────── co-located tests ──────────────────────
 test "Prod/MockFacadeContext deinit releases child pointers without leak" {
