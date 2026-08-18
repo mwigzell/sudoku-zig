@@ -9,6 +9,7 @@ const input_source = @import("input_source.zig");
 const command = @import("../command.zig");
 const cell = @import("../board/cell.zig");
 const AsciiRendererAlloc = @import("../renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
+const wasm_renderer = @import("../renderer/wasm/wasm_renderer.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const puzzle_gen = @import("../puzzle_gen.zig");
 
@@ -58,7 +59,7 @@ pub const Host = struct {
         return switch (choice) {
             .ansi, .ascii => self.terminalFacade(choice),
             .tui => error.UnsupportedRenderer, // ncurses substrate not yet wired
-            .web => error.UnsupportedRenderer, // JS-side substrate not yet wired
+            .web => self.webFacade(),
         };
     }
 
@@ -86,6 +87,13 @@ pub const Host = struct {
         };
         self.have_session = true;
     }
+    /// Web substrate: owned renderer with no host session; the facade deinit
+    /// is the renderer's destruction path.
+    fn webFacade(self: *Host) Error!facade_mod.Facade {
+        const r = self.alloc.create(wasm_renderer.WasmRenderer) catch return error.System;
+        r.* = wasm_renderer.WasmRenderer.init(self.alloc);
+        return facade_mod.Make(wasm_renderer.WasmRenderer).make(r);
+    }
 
     /// Release the session if one was built; facades own their own contexts.
     pub fn deinit(self: *Host) void {
@@ -107,11 +115,11 @@ test "host: .tui preference, no fallback configured refuses facade without a ses
     try std.testing.expect(!host.have_session);
 }
 
-test "host: .web preference falls back to .ascii and yields a working facade" {
+test "host: .web preference yields a WasmRenderer facade" {
     const cfg = config.Config{
         .difficulty = .easy,
         .preferred_renderer = .web,
-        .fallback_renderer = .ascii,
+        .fallback_renderer = null, // no fallback: only the .web arm can succeed
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
@@ -120,11 +128,22 @@ test "host: .web preference falls back to .ascii and yields a working facade" {
     var f = try host.facade();
     defer f.deinit();
 
-    try std.testing.expect(host.have_session);
-
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), std.testing.io);
     defer engine.deinit();
     try f.render(engine.eventBoard(), null);
+
+    // Hardcoded fill pins WasmRenderer identity: the ascii mock branch with
+    // exhausted canned input returns .quit instead.
+    const parsed = try f.getCommandInput(&.{"Fill"});
+    switch (parsed) {
+        .error_msg => return error.ExpectedValidParse,
+        .valid => |cmd| {
+            try std.testing.expectEqual(
+                command.Command{ .fill = command.FillData{ .row = 0, .col = 0, .digit = cell.CellValue.one } },
+                cmd,
+            );
+        },
+    }
 }
 
 test "host: createForTest .ascii preference yields a working facade" {
@@ -187,7 +206,7 @@ test "host: .tui preference falls back to .ascii and yields a working facade" {
 test "host: both arms unsupported errors without building a terminal session" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .web,
+        .preferred_renderer = .tui,
         .fallback_renderer = .tui,
         .log_level = .info,
     };
@@ -201,7 +220,7 @@ test "host: both arms unsupported errors without building a terminal session" {
 test "host: no fallback configured yields NoFallbackConfigured" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .web,
+        .preferred_renderer = .tui,
         .fallback_renderer = null,
         .log_level = .info,
     };

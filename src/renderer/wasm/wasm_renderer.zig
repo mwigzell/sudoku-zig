@@ -12,51 +12,54 @@ const facade_mod = @import("../facade.zig");
 /// Canned-response renderer for the web slot. Every method exists so the
 /// Facade vtable flows through a second concrete type; responses are stubs.
 pub const WasmRenderer = struct {
-    writer: *std.Io.Writer,
+    alloc: std.mem.Allocator,
 
-    pub fn init(writer: *std.Io.Writer) WasmRenderer {
-        return .{ .writer = writer };
+    pub fn init(alloc: std.mem.Allocator) WasmRenderer {
+        return .{ .alloc = alloc };
     }
 
     pub fn render(self: *WasmRenderer, view: board.Board.BoardView, status_msg: ?[]const u8) facade_mod.Error!void {
-        _ = self.writer.writeAll("render\n") catch {};
+        _ = self;
         _ = view;
         _ = status_msg;
     }
 
     pub fn showLegend(self: *WasmRenderer, commands: legend.Legend) facade_mod.Error!void {
-        _ = self.writer.writeAll("legend\n") catch {};
+        _ = self;
         _ = commands;
     }
 
     pub fn showError(self: *WasmRenderer, msg: []const u8) facade_mod.Error!void {
-        _ = self.writer.writeAll(msg) catch {};
-        _ = self.writer.writeAll("\n") catch {};
+        _ = self;
+        _ = msg;
     }
 
     /// Stub input: one fixed fill command, always valid.
     pub fn getCommandInput(self: *const WasmRenderer, _names: []const []const u8) facade_mod.Error!command.ParseCommandResult {
-        _ = self.writer;
+        _ = self;
         _ = _names;
         return .{ .valid = .{
             .fill = .{ .row = 0, .col = 0, .digit = cell.CellValue.one },
         } };
     }
 
+    /// Self-destroy contract: the facade deinit chains to this and is
+    /// the renderer's only destruction path.
     pub fn deinit(self: *WasmRenderer) void {
-        _ = self;
+        self.alloc.destroy(self);
     }
 };
 
 test "WasmRenderer facade: getCommandInput always returns the hardcoded fill" {
     const alloc = testing.allocator;
-    var w = std.Io.Writer.Allocating.init(alloc);
-    defer w.deinit();
-
-    var r = WasmRenderer.init(&w.writer);
+    // No writer: the web slot outputs through the browser bridge, not the
+    // host I/O session. init takes the allocator only (destroys itself).
+    const r_ptr = try alloc.create(WasmRenderer);
+    defer alloc.destroy(r_ptr);
+    r_ptr.* = WasmRenderer.init(alloc);
+    const r = r_ptr;
     const F = facade_mod.Make(WasmRenderer);
-    var f = F.make(&r);
-    defer f.deinit();
+    var f = F.make(r);
 
     const names = [_][]const u8{ "Fill", "Clear", "Quit" };
     const result = try f.getCommandInput(&names);
