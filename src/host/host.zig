@@ -58,7 +58,7 @@ pub const Host = struct {
         return switch (choice) {
             .ansi, .ascii => self.terminalFacade(choice),
             .tui => error.UnsupportedRenderer, // ncurses substrate not yet wired
-            .wasm => error.UnsupportedRenderer, // JS-side substrate not yet wired
+            .web => error.UnsupportedRenderer, // JS-side substrate not yet wired
         };
     }
 
@@ -107,10 +107,10 @@ test "host: .tui preference, no fallback configured refuses facade without a ses
     try std.testing.expect(!host.have_session);
 }
 
-test "host: .wasm preference falls back to .ascii and yields a working facade" {
+test "host: .web preference falls back to .ascii and yields a working facade" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .wasm,
+        .preferred_renderer = .web,
         .fallback_renderer = .ascii,
         .log_level = .info,
     };
@@ -187,7 +187,7 @@ test "host: .tui preference falls back to .ascii and yields a working facade" {
 test "host: both arms unsupported errors without building a terminal session" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .wasm,
+        .preferred_renderer = .web,
         .fallback_renderer = .tui,
         .log_level = .info,
     };
@@ -201,7 +201,7 @@ test "host: both arms unsupported errors without building a terminal session" {
 test "host: no fallback configured yields NoFallbackConfigured" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .wasm,
+        .preferred_renderer = .web,
         .fallback_renderer = null,
         .log_level = .info,
     };

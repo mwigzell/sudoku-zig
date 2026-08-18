@@ -36,7 +36,7 @@ Usage: sudoku [OPTIONS]
 
   -h, --help              Show this help message
   -V, --version           Show version and exit
-  -r, --renderer <kind>   Choose renderer (ansi, tui, wasm)
+  -r, --renderer <kind>   Choose renderer (ansi, ascii, tui, web)
 ```
 
 ## Building & running

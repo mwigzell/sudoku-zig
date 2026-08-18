@@ -14,7 +14,7 @@ const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
 /// Implements the Facade vtable so the same game engine loop works over ASCII and
-/// other renderers (a wasm renderer would fill this same shape with Canvas/JS
+/// other renderers (a web renderer would fill this same shape with Canvas/JS
 /// interop).
 ///
 /// Parameterised over StylerType so tests can use PlainStyler and
