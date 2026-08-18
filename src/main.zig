@@ -11,11 +11,14 @@ const cli = @import("cli.zig");
 const host_mod = @import("host/host.zig");
 // Load-bearing: wasm_bytes.zig must stay reachable from this closure for its tests.
 const wasm_bytes = @import("renderer/wasm/wasm_bytes.zig");
+// Load-bearing: wasm_renderer.zig must stay reachable from this closure for its tests.
+const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
 
 test {
     // Reachability pin: keeps sudoku.zig (and its sub-modules) inside the test closure of this root file.
     _ = .{sudoku};
     _ = wasm_bytes;
+    _ = wasm_renderer;
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
