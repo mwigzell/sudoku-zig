@@ -7,7 +7,7 @@ const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
 const facade = @import("../../renderer/facade.zig");
-const input_source = @import("../../input_source.zig");
+const input_source = @import("../../host/input_source.zig");
 const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
 const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 

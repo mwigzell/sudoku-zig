@@ -3,12 +3,12 @@
 const std = @import("std");
 const ascii_renderer = @import("ascii/ascii_renderer.zig");
 const styler = @import("ascii/styler.zig");
-const input_source = @import("../input_source.zig");
+const input_source = @import("../host/input_source.zig");
 const facade = @import("facade.zig");
 const board = @import("../board.zig");
 const legend = @import("legend.zig");
 const command = @import("../command.zig");
-const io_session = @import("../io_session.zig");
+const io_session = @import("../host/io_session.zig");
 
 pub const AsciiRendererAlloc = struct {
     /// Static factory — resolve the reader branch, allocate styler/renderer/context,
