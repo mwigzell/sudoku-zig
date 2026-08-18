@@ -18,6 +18,16 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(exe);
+    // WASM: emit before native compile (@embedFile is parse-time).
+    const WASM_OUT = "src/renderer/wasm/hello.wasm";
+
+    const wasm_emit = b.addSystemCommand(&.{
+        "zig", "build-exe", "wasm/hello.zig",
+        "-target", "wasm32-freestanding",
+        "-fno-entry", "--export=greet",
+        "-femit-bin=" ++ WASM_OUT,
+    });
+    exe.step.dependOn(&wasm_emit.step);
 
     // clean step — remove cache, build, and coverage dirs for a truly fresh start
     const rm_all = b.addSystemCommand(&.{ "rm", "-rf", "./.zig-cache", "./zig-out", "./kcov-out" });
@@ -52,6 +62,7 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
         .filters = filters,
     });
+    check.step.dependOn(&wasm_emit.step);
 
     // Run the compiled test binary via addRunArtifact (server-mode IPC).
     // Tests needing fake I/O use std.testing.io (in-process fake); server-mode IPC accommodates that.

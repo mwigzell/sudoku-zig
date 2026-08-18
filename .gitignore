@@ -2,3 +2,4 @@
 zig-out/
 build.log
 kcov-out/
+src/renderer/wasm/hello.wasm

@@ -9,10 +9,13 @@ const styler = @import("renderer/ascii/styler.zig");
 const cli = @import("cli.zig");
 // main constructs the Host at startup — the import is load-bearing: without it host.zig would not enter this file's test closure.
 const host_mod = @import("host/host.zig");
+// Load-bearing: wasm_bytes.zig must stay reachable from this closure for its tests.
+const wasm_bytes = @import("renderer/wasm/wasm_bytes.zig");
 
 test {
     // Reachability pin: keeps sudoku.zig (and its sub-modules) inside the test closure of this root file.
     _ = .{sudoku};
+    _ = wasm_bytes;
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
