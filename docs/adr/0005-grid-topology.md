@@ -11,7 +11,7 @@ Superseded by ADR-0006 — during Issue 15 we moved from Box-owned topology to f
 - Constraint checking iterates a Box's owned `Cell[3][3]` directly
 - RowView/ColView are lenses assembled from three Boxes, no duplication of 81 cells
 - The Solver/Generator can naturally union row ∪ col ∪ box candidates via identical `.cells()` surfaces
-- Both TuiRenderer (draw dividers at Box boundaries) and WasmRenderer (iterate all cells with coordinates) share the same topology without the Renderer needing to know about constraint logic
+- Both AsciiRenderer (draw dividers at Box boundaries) and WasmRenderer (iterate all cells with coordinates) share the same topology without the Renderer needing to know about constraint logic
 
 ## Considered Options
 - **Flat `[81]Cell`**: Simplest allocation; requires `row * 9 + col` everywhere; box iteration is ugly modulo math. Cheap to start, expensive to reason about for constraint axes other than rows.

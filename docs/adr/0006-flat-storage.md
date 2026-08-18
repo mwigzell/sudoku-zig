@@ -8,7 +8,7 @@ Supersedes: ADR-0005 (Grid topology, Box ownership)
 
 Under ADR-0005, Box is the canonical owner of `Cell[3][3]` and Grid holds the authoritative `boxes[3][3]`. Rows and columns are lenses assembled across three Boxes each. This matched how we built things initially — constraint checking iterates naturally over a Box's owned cells.
 
-But the project has evolved past the initial TUI phase:
+But the project has evolved past the initial terminal (ASCII) phase:
 - The renderer already flattens to row-major order via `RenderSnapshot` (a copy of 81 cells) just to draw ASCII lines
 - Constraint checks for rows and columns require jumping across 3 Boxes, pulling 3 pointers each — poor cache locality
 - Adding O(1) box-membership tests (bitmasks for candidate generation / solving) is awkward when Box owns individual cells scattered in separate memory regions

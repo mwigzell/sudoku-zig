@@ -1,4 +1,4 @@
-# ADR-0001 — TUI-first proves architecture before WASM browser
+# ADR-0001 — terminal-first proves architecture before WASM browser
 
 Status: accepted
 Date: 2026-07-10
@@ -9,7 +9,7 @@ The target is a WASM Sudoku game running in the browser. However, cross-language
 
 ## Decision
 
-Implement the first two vertical slices (static grid render, interactive play with validation) entirely in a **terminal UI** compiled natively. No WASM exports, no JS shell — just `main.zig` printing to stdout/stderr using standard terminal I/O. Once interactive play works end-to-end in TUI, the browser renderer is introduced and forces extraction of the Renderer interface.
+Implement the first two vertical slices (static grid render, interactive play with validation) entirely in **terminal output (ASCII)** compiled natively. No WASM exports, no JS shell — just `main.zig` printing to stdout/stderr using standard terminal I/O. Once interactive play works end-to-end in the terminal, the browser renderer is introduced and forces extraction of the Renderer interface.
 
 Rationale:
 - Terminal output requires zero boilerplate beyond what's already in Zig stdlib
@@ -19,6 +19,6 @@ Rationale:
 
 ## Consequences
 
-- Two slices are TUI-only; once browser joins (slice 3), the Renderer interface exists with two consumers and DRY principle kicks in properly
-- Nothing built in TUI is wasted — it becomes the first concrete implementation of the Renderer interface, tested against both terminal and DOM
+- Two slices are terminal-only; once browser joins (slice 3), the Renderer interface exists with two consumers and DRY principle kicks in properly
+- Nothing built for the terminal is wasted — it becomes the first concrete implementation of the Renderer interface, tested against both terminal and DOM
 - Adds ~1–2 vertical slices that would be "extra" if we went browser-first directly, but saves weeks of debugging cross-language state sync issues up front

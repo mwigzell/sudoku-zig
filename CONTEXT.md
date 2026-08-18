@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-A playable Sudoku game as a WASM module compiled from Zig, running in the browser with a thin vanilla JS renderer. A TUI front-end proves the architecture first; both renderers share the same GameEngine domain layer behind an interface.
+A playable Sudoku game as a WASM module compiled from Zig, running in the browser with a thin vanilla JS renderer. A terminal front-end (AsciiRenderer) proves the architecture first; both renderers share the same GameEngine domain layer behind an interface. (Note: a true TUI is an ncurses front-end — not implemented yet.)
 
 See `.scratch/sudoku/prd.md` for full PRD and user stories.
 
@@ -42,8 +42,8 @@ _Avoid_: Column slice (implies copying)
 ### Rendering & Interaction
 
 **Renderer**:
-Interface for presenting Board state. Concrete implementations: TuiRenderer prints ASCII to terminal, WasmRenderer renders DOM or JSON events in the browser. The Renderer receives Event snapshots from GameEngine — it does not directly access internal Grid structures.
-_Avoid_: View (conflicts with RowView/ColView), UI
+Interface for presenting Board state. Concrete implementations: AsciiRenderer prints (ANSI) text to the terminal, WasmRenderer renders DOM or JSON events in the browser. The Renderer receives Event snapshots from GameEngine — it does not directly access internal Grid structures.
+_Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer)
 
 **Event**:
 Full-state snapshot of a Board emitted by the GameEngine after each command. Contains only presentation-relevant data; the Renderer consumes this, not the Board or Grid themselves.
