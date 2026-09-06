@@ -9,9 +9,9 @@ Parent shape (verbatim from issue #4):
 - Migrate `GameEngine.init(puzzle, std.testing.io)` call sites (the bulk) — behaviour identical.
 - Close: full native suite green + `./zig-out/bin/sudoku` save/open smokes green.
 
-## Blocked by
+## Dependencies (landed)
+Issue #4 Step 5 Slice 1 + Slice 2 — committed: `6badf01` (State codec), `b441255` (FileTransport + native arm). `src/engine/state.zig` and `file_transport.zig` are tracked.
 
-- Issue #4 Step 5 Slice 1 + Slice 2 — implemented GREEN (242/242) but **UNCOMMITTED** (owner commit gate). Slice 3 builds on `src/engine/state.zig` + `src/engine/file_transport.zig` (both currently untracked).
 
 ## Open design questions (resolve before step 2 RED — owner gate)
 
@@ -26,6 +26,8 @@ Owner answers the three open design questions above; record answers in this issu
 
 ### Step 2 — RED: reshape GameEngine
 `GameEngine` drops the `io: std.Io` field; gains `state: State` + `transport: FileTransport`. `saveGame(path)` / `openGame(path)` kept, delegate to `self.transport`. Write tests first against a test transport: bytes pass through unchanged, `data_dir` / `last_save_msg` behaviour preserved, codec round-trip still via `State`. Expect the migration failures (call sites still pass `std.testing.io`) to be the red signal.
+
+**Note (2026-09-06):** the RED test is already in the tree (uncommitted, `src/engine/game_engine.zig` — "slice 3: GameEngine holds State + FileTransport; save/open io-free"). Step 2 is done; GREEN follows the Step 1 shape ruling.
 
 ### Step 3 — GREEN: delegation + migration (the bulk)
 Implement delegation in `game_engine.zig`. Migrate every `GameEngine.init(puzzle, io)` call site (main.zig + tests) to the confirmed Step-1 shape. Native `main` supplies `NativeTransport.make(init.io)`. Behaviour byte-identical.
