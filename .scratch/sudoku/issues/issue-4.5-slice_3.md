@@ -2,9 +2,9 @@
 
 Triage: ready-for-human
 Status: open
-Carved out of `mwigzell/sudoku-zig` issue #4 (Web renderer), Step 5 Slice 3. GitHub mirror: mwigzell/sudoku-zig#16.
+Standalone ticket (web renderer roadmap, Step 5 Slice 3). Self-contained — do not need issue #4 to work it. GitHub: mwigzell/sudoku-zig#16.
 
-## Parent shape (issue #4 Step 5 Slice 3)
+## Target shape
 
 - `GameEngine = { state: State, transport: FileTransport, data_dir: ?[]const u8, last_save_msg: ?[]const u8 }` — the `io: std.Io` field is **gone**; keeps `saveGame(path)` / `openGame(path)`; every byte goes through `FileTransport`.
 - Migrate `GameEngine.init(puzzle, std.testing.io)` call sites (the bulk) — behaviour identical.
@@ -14,11 +14,11 @@ Carved out of `mwigzell/sudoku-zig` issue #4 (Web renderer), Step 5 Slice 3. Git
 
 1. **State is nested (Option B)** — `engine.board` → `engine.state.board`, `engine.history` → `engine.state.history` across all files. No flat-state escape hatch.
 2. **`getDataDir` split** — io-free path computation stays in `path.zig` (`computeDataDir`) for engine/handlers; the best-effort `createDirPath` moves to native startup (`Sudoku.init`, which holds io). Create is log-and-continue today, so behaviour is preserved.
-3. **From #4 text (already agreed)** — `init(puzzle, transport: FileTransport)`; `saveGame(path)` / `openGame(path)` delegate to `self.transport`; `save_format`'s two io file fns deleted (AC: save_format is a pure State codec).
+3. **Delegation + codec** — `init(puzzle, transport: FileTransport)`; `saveGame(path)` / `openGame(path)` delegate to `self.transport`; `save_format`'s two io file fns deleted (AC: save_format is a pure State codec).
 
 ## Steps
 
-### Step 1 — RED (in tree, uncommitted)
+### Step 1 — RED — **DONE** (in tree, uncommitted)
 Test in `src/engine/game_engine.zig` (~line 207): `"slice 3: GameEngine holds State + FileTransport; save/open io-free"` — drives the target shape (`init(puzzle, NativeTransport.make(io))`, `engine.state` round-trip). Red signal: `error: expected type 'Io', found 'FileTransport'`. Baseline before RED: 242/242 green at `b441255`.
 
 ### Step 2 — GREEN: reshape GameEngine
