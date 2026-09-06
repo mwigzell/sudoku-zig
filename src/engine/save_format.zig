@@ -2,6 +2,7 @@
 // and file-backed save/open over an Io handle.
 const std = @import("std");
 const ge = @import("game_engine.zig");
+const state_mod = @import("state.zig");
 const board = @import("../board.zig");
 const cell = @import("../board/cell.zig");
 const _puzzle_gen = @import("../puzzle_gen.zig");
@@ -86,7 +87,7 @@ pub const SaveEntry = struct {
 
 /// Serialize full game state to a heap-allocated byte buffer.
 /// Returns allocated []u8 — caller owns and must free with the same allocator.
-pub fn toSaveFormat(self: *const ge.GameEngine, gpa: std.mem.Allocator) ![]u8 {
+pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 {
     const entry_count = self.history.entries.items.len;
     const total_size = SAVE_HEADER_SIZE + (entry_count * @sizeOf(SaveEntry)) + SAVE_TRAILER_SIZE;
 
@@ -124,8 +125,8 @@ pub fn toSaveFormat(self: *const ge.GameEngine, gpa: std.mem.Allocator) ![]u8 {
     return buf;
 }
 
-/// Deserialize from a toSaveFormat blob into a fresh GameEngine.
-pub fn fromSaveFormat(gpa: std.mem.Allocator, io: std.Io, buf: []const u8) !ge.GameEngine {
+/// Deserialize from a toSaveFormat blob into a fresh State.
+pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !state_mod.State {
     const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
     if (!std.mem.eql(u8, &header.magic, "SUD0")) {
         return error.InvalidSaveFile;
@@ -151,22 +152,20 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, io: std.Io, buf: []const u8) !ge.G
     }
     const entries_end = offset + (header.entry_count * @sizeOf(SaveEntry));
     const trailer = readSaveTrailer(buf[entries_end..]);
-    var engine = ge.GameEngine{
+    var state = state_mod.State{
         .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
         .history = history,
-        .io = io,
-        .data_dir = null,
-        .last_save_msg = null,
     };
 
-    engine.history.pointer = header.pointer;
+    state.history.pointer = header.pointer;
 
-    return engine;
+    return state;
 }
 
 /// Serialize game state to a binary save file via an Io handle.
 pub fn saveGame(self: *const ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
-    const buf = toSaveFormat(self, std.heap.page_allocator) catch {
+    const st = state_mod.State{ .board = self.board, .history = self.history };
+    const buf = toSaveFormat(&st, std.heap.page_allocator) catch {
         return IoError.System;
     };
     defer std.heap.page_allocator.free(buf);
@@ -200,13 +199,14 @@ pub fn openGame(self: *ge.GameEngine, io: std.Io, path: []const u8) IoError!void
         return IoError.System;
     };
 
-    const loaded = fromSaveFormat(std.heap.page_allocator, io, buf) catch {
+    const loaded = fromSaveFormat(std.heap.page_allocator, buf) catch {
         return IoError.System;
     };
     self.history.deinit();
-    const old_board = self.board;
-    self.* = loaded;
-    _ = old_board;
+    self.board = loaded.board;
+    self.history = loaded.history;
+    self.data_dir = null;
+    self.last_save_msg = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,7 +398,8 @@ test "toSaveFormat empty history produces buffer of correct size" {
     var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
-    const buf = try toSaveFormat(&engine, std.testing.allocator);
+    const st = state_mod.State{ .board = engine.board, .history = engine.history };
+    const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
     // header(11) + 0 entries + trailer(97) = 108
@@ -409,7 +410,8 @@ test "toSaveFormat header has correct magic and version" {
     var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
     defer engine.deinit();
 
-    const buf = try toSaveFormat(&engine, std.testing.allocator);
+    const st = state_mod.State{ .board = engine.board, .history = engine.history };
+    const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
     const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
@@ -436,7 +438,8 @@ test "toSaveFormat includes history entries and correct trailer" {
         .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
     });
 
-    const buf = try toSaveFormat(&engine, std.testing.allocator);
+    const st = state_mod.State{ .board = engine.board, .history = engine.history };
+    const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
     // Size check: header(11) + 3 entries(6) + trailer(97) = 114
@@ -483,11 +486,12 @@ test "fromSaveFormat round-trip: board state given_bits history" {
     });
     _ = original.exec(command.Command{ .undo = {} });
 
-    const buf = try toSaveFormat(&original, std.testing.allocator);
+    const st = state_mod.State{ .board = original.board, .history = original.history };
+    const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    var loaded = try fromSaveFormat(std.testing.allocator, std.testing.io, buf);
-    defer loaded.deinit();
+    var loaded = try fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.history.deinit();
     // --- Assert board state (cells + given_bits) via Board.equal() ---
     try std.testing.expect(original.board.equal(loaded.board));
     try std.testing.expectEqual(original.history.pointer, loaded.history.pointer);

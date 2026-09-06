@@ -13,6 +13,7 @@ pub const Event = event.Event;
 
 // Backward-compat re-exports (moved to engine/save_format.zig)
 const save_format = @import("save_format.zig");
+const state_mod = @import("state.zig");
 pub const SaveFileMagic = save_format.SaveFileMagic;
 pub const SaveFileVersion = save_format.SaveFileVersion;
 pub const SaveFileHeader = save_format.SaveFileHeader;
@@ -95,12 +96,8 @@ pub const GameEngine = struct {
     /// Serialize full game state to a heap-allocated byte buffer.
     /// Returns allocated []u8 — caller owns and must free with the same allocator.
     pub fn toSaveFormat(self: *const @This(), gpa: std.mem.Allocator) []u8 {
-        return save_format.toSaveFormat(self, gpa);
-    }
-
-    /// Deserialize from a toSaveFormat blob into a fresh GameEngine.
-    pub fn fromSaveFormat(gpa: std.mem.Allocator, io: std.Io, buf: []const u8) !GameEngine {
-        return save_format.fromSaveFormat(gpa, io, buf);
+        const st = state_mod.State{ .board = self.board, .history = self.history };
+        return save_format.toSaveFormat(&st, gpa);
     }
 
     /// Deserialize game state from a binary save file via an Io handle.

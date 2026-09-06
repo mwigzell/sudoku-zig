@@ -1,6 +1,7 @@
 /// Open command handler — deserializes game state from file via exec() dispatch.
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
+const save_format = @import("save_format.zig");
 const mypath = @import("path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) game_engine.Event {
@@ -57,21 +58,21 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
-    // Deserialize into a new engine
-    const loaded = game_engine.GameEngine.fromSaveFormat(gpa, engine.io, buf) catch |err| {
+    // Deserialize into a loaded State (pure codec, no Io)
+    const loaded = save_format.fromSaveFormat(gpa, buf) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
-    // Replace self's state with loaded state
+    // Replace the engine's board/history with the loaded state
     engine.history.deinit();
-    const old_board = engine.board;
+    engine.board = loaded.board;
+    engine.history = loaded.history;
 
-    // Free old optional fields before overwriting self
+    // Free old optional fields (the loaded State does not own them)
     if (engine.data_dir) |old_dir| gpa.free(old_dir);
     if (engine.last_save_msg) |old_msg| gpa.free(old_msg);
-
-    engine.* = loaded;
-    _ = old_board;
+    engine.data_dir = null;
+    engine.last_save_msg = null;
 
     const msg = std.fmt.allocPrint(gpa, "opened: {s}", .{resolved}) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
