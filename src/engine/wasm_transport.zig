@@ -2,14 +2,14 @@
 // boundary. The page supplies file_write / file_read JS imports; this arm
 // holds them as fn pointers and speaks only the vtable, so it compiles in
 // both deployments (never touches std.Io) and is drivable from the native
-// suite with plain mock fns. WasmHost binds the real imports (later step).
+// suite with plain mock fns. WasmHost binds the real page imports for the wasm build.
 
 const std = @import("std");
 const file_transport = @import("file_transport.zig");
 const TransportError = file_transport.TransportError;
 
-// Import surface the page supplies (issue #4 names them file_write / file_read,
-// supplied by WasmHost when it lands). Names and byte slices cross the
+// Import surface the page supplies; WasmHost binds it for the wasm build.
+// Names and byte slices cross the
 // boundary as pointers into wasm memory; the page owns the actual file store.
 pub const FileWrite = *const fn (name: [*]const u8, name_len: u32, bytes: [*]const u8, bytes_len: u32) callconv(.c) void;
 pub const FileRead = *const fn (name: [*]const u8, name_len: u32, buf: [*]u8, cap: u32) callconv(.c) u32; // bytes placed, 0 = missing
