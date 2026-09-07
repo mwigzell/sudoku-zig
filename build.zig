@@ -22,10 +22,9 @@ pub fn build(b: *std.Build) void {
     const WASM_OUT = "src/renderer/wasm/hello.wasm";
 
     const wasm_emit = b.addSystemCommand(&.{
-        "zig", "build-exe", "wasm/hello.zig",
-        "-target", "wasm32-freestanding",
-        "-fno-entry", "--export=greet",
-        "-femit-bin=" ++ WASM_OUT,
+        "zig",            "build-exe",               "wasm/hello.zig",
+        "-target",        "wasm32-freestanding",     "-fno-entry",
+        "--export=greet", "-femit-bin=" ++ WASM_OUT,
     });
     exe.step.dependOn(&wasm_emit.step);
 
@@ -99,10 +98,19 @@ pub fn build(b: *std.Build) void {
     kcov_sum.addArtifactArg(check);
     cov_step.dependOn(&kcov_sum.step);
 
-    // Auto-open coverage HTML in browser
-    const open_cov = b.addSystemCommand(&.{
-        "vivaldi",
-        "kcov-out/test/index.html",
-    });
-    cov_step.dependOn(&open_cov.step);
+    // Open the coverage HTML on demand, not on every verify.
+    const open_cov = b.addSystemCommand(&.{ "vivaldi", "kcov-out/test/index.html" });
+    open_cov.step.dependOn(&kcov.step);
+    const cov_open_step = b.step("cov-open", "Open the coverage HTML report");
+    cov_open_step.dependOn(&open_cov.step);
+
+    // --- Verify: the single command that gates a cycle ---
+    // Tests + format check + coverage run together so the gate can't be
+    // shadowed by task-local checklists (handoffs, TDD skill gates).
+    const fmt_check = b.addSystemCommand(&.{ "zig", "fmt", "--check", "src", "build.zig" });
+    const verify_step = b.step("verify", "Gate: test + fmt + coverage");
+    verify_step.dependOn(&run_tests.step);
+    verify_step.dependOn(&fmt_check.step);
+    verify_step.dependOn(&kcov.step);
+    verify_step.dependOn(&kcov_sum.step);
 }

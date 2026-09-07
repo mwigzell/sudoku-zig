@@ -74,12 +74,12 @@ Caveat: a new source file with tests is only visible if it is **imported by some
 zig build clean
 -- **DO NOT** run "rm -rf .zig-cache kcov-out"
 
-### Coverage discipline (`zig build cov`)
-Coverage report lives in this project's build system. After every cycle, run:
+### Verify gate (`zig build verify`)
+Every cycle gate lives in the build as a single command so task-local checklists can't shadow it. After every cycle, run:
 ```bash
-zig build cov
+zig build verify
 ```
-at `/home/mark/Dev/src/sudoku/`. This runs all 16+ tests and produces JSON showing per-file `percent_covered`. Use it to spot untested code after each change.
+at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. `zig build cov` is the legacy cov-only form; `zig build cov-open` opens the HTML report.
 ## run build
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.

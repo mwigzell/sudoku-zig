@@ -1,7 +1,7 @@
 // Sudoku facade: owns the command loop — prompt, parse, dispatch to the
 // game engine, and render each resulting event back through the renderer.
 const std = @import("std");
-const facade = @import("renderer/facade.zig");
+const facade_mod = @import("renderer/facade.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const game_engine = @import("engine/game_engine.zig");
 const file_transport = @import("engine/file_transport.zig");
@@ -13,23 +13,25 @@ const disambiguate = @import("renderer/ascii/disambiguate.zig");
 const legend = @import("renderer/legend.zig");
 
 const host_mod = @import("host/host.zig");
+const wasm_host = @import("host/wasm_host.zig");
+const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
+const wasm_transport = @import("engine/wasm_transport.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 /// One running game: engine + renderer, driven by the loop in run().
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
-    renderer: facade.Facade,
+    renderer: facade_mod.Facade,
 
-    /// Assemble a fresh game: facade from the host, engine sharing the host's io handle.
-    pub fn init(host: *host_mod.Host) Error!@This() {
-        const puzzle_str = puzzle_gen.PuzzleGen.generate(host.cfg.difficulty);
-        const facade_result = try host.facade();
-
+    /// Assemble a fresh game from the shared user-choices, a renderer facade,
+    /// and the file transport arm the deployment selected.
+    pub fn init(cfg: config.Config, facade: facade_mod.Facade, transport: file_transport.FileTransport) Error!@This() {
+        const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
-            .cfg = host.cfg,
-            .renderer = facade_result,
-            .engine = try game_engine.GameEngine.init(puzzle_str, file_transport.NativeTransport.make(host.io)),
+            .cfg = cfg,
+            .renderer = facade,
+            .engine = try game_engine.GameEngine.init(puzzle_str, transport),
         };
     }
 
@@ -87,9 +89,8 @@ pub const Sudoku = struct {
         }
     }
 
-    /// Release engine and renderer; the caller owns the io session.
+    /// Release the engine; the passed-in facade is owned by the caller.
     pub fn deinit(self: *@This()) void {
-        self.renderer.deinit();
         self.engine.deinit();
     }
 };
@@ -114,7 +115,10 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
     defer sudoku.deinit();
 
     // Act: run the full loop — fill A3 with 4 via prefix dispatch, then quit
@@ -165,7 +169,10 @@ test "integrated e2e - full seam: open loads saved game" {
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku_instance = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
 
     // Run full loop: open dialog -> filename prompt -> load file -> quit.
@@ -196,7 +203,10 @@ test "integrated e2e - save success produces status message, re-render, legend r
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
     defer sudoku.deinit();
 
     sudoku.run() catch {};
@@ -227,7 +237,10 @@ test "integrated e2e - run: open file success produces status message, re-render
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku_instance = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
 
     // Act: run full loop - open loads file from command arg, re-renders, shows legend
@@ -253,7 +266,10 @@ test "integrated e2e - run: save uses default filename and returns success" {
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
     defer sudoku.deinit();
 
     // Act: run full loop - save prompts for filename, writes file, re-renders
@@ -277,7 +293,10 @@ test "integrated e2e - run: fill → save → quit" {
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku_instance = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 }
@@ -298,7 +317,10 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku_instance = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 }
@@ -320,7 +342,10 @@ test "integrated e2e - run: new command resets board and history" {
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku_instance = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
     sudoku_instance.run() catch {};
 
@@ -341,7 +366,10 @@ test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
-    var sudoku = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
 
     defer sudoku.deinit();
 
@@ -359,7 +387,10 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     // The host's mock output buffer keeps the rendered grid observable.
     var host = host_mod.Host.createForTest(cfg, &[0][]const u8{});
     defer host.deinit();
-    var sudoku = try Sudoku.init(&host);
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
     defer sudoku.deinit();
     try sudoku.renderer.render(sudoku.engine.state.board.asView(), null);
 
@@ -367,4 +398,112 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);
     // PlainStyler: no CSI escapes anywhere in the rendered output.
     try std.testing.expect(std.mem.indexOf(u8, contents, "\x1b[") == null);
+}
+
+// Hostless assembly: a wasm facade + wasm transport stood in by static page
+// mocks prove a game assembles without the native Host substrate.
+var page_line_buf: [64]u8 = pad64("fill A3 4");
+fn pad64(s: []const u8) [64]u8 {
+    var out: [64]u8 = undefined;
+    @memset(&out, 0);
+    std.mem.copyForwards(u8, &out, s);
+    return out;
+}
+var page_line_len: u32 = 9;
+
+fn page_line_in(buf: [*]u8, cap: u32) callconv(.c) u32 {
+    const n = @min(page_line_len, cap);
+    @memcpy(buf[0..n], page_line_buf[0..n]);
+    page_line_len = 0; // one line served — the next read is EOF
+    return n;
+}
+fn page_bytes_out(bytes: [*]const u8, len: u32) callconv(.c) void {
+    _ = bytes;
+    _ = len;
+}
+fn page_picker(buf: [*]u8, cap: u32) callconv(.c) u32 {
+    _ = buf;
+    _ = cap;
+    return 0; // cancelled
+}
+
+const Hostless = struct {
+    host: *wasm_host.WasmHost,
+    renderer: *wasm_renderer.WasmRenderer,
+    facade: facade_mod.Facade,
+    transport: file_transport.FileTransport,
+};
+
+fn hostless() Hostless {
+    const A = std.testing.allocator;
+    const transport = wasm_transport.WasmTransport.make(wasm_transport.test_file_write, wasm_transport.test_file_read);
+    const host = A.create(wasm_host.WasmHost) catch unreachable;
+    host.* = wasm_host.WasmHost.make(page_line_in, page_bytes_out, page_picker, wasm_transport.test_file_write, wasm_transport.test_file_read);
+    const renderer = A.create(wasm_renderer.WasmRenderer) catch unreachable;
+    renderer.* = wasm_renderer.WasmRenderer.init(A, host);
+    return Hostless{
+        .host = host,
+        .renderer = renderer,
+        .facade = facade_mod.Make(wasm_renderer.WasmRenderer).make(renderer),
+        .transport = transport,
+    };
+}
+
+test "hostless: wasm facade + transport assemble a working game" {
+    var h = hostless();
+    defer {
+        std.testing.allocator.destroy(h.host);
+        h.facade.deinit();
+    }
+    const cfg = config.Config{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+    var game = try Sudoku.init(cfg, h.facade, h.transport);
+    defer game.deinit();
+
+    game.run() catch {};
+
+    try std.testing.expectEqual(cell.CellValue.four, game.engine.state.board.getCellValue(@as(u4, 2), @as(u4, 0)));
+    try std.testing.expect(game.engine.getLegend().undo);
+}
+
+test "hostless: hard cfg starts with the hard puzzle clues" {
+    var h = hostless();
+    defer {
+        std.testing.allocator.destroy(h.host);
+        h.facade.deinit();
+    }
+    const cfg = config.Config{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+    var game = try Sudoku.init(cfg, h.facade, h.transport);
+    defer game.deinit();
+
+    // (1,7) is an eight clue in the hard puzzle string, blank in the easy one.
+    try std.testing.expect(game.engine.state.board.isGiven(@as(u4, 1), @as(u4, 7)));
+    try std.testing.expectEqual(cell.CellValue.eight, game.engine.state.board.getCellValue(@as(u4, 1), @as(u4, 7)));
+}
+
+test "hostless: easy cfg leaves (1,7) blank where hard has a clue" {
+    var h = hostless();
+    defer {
+        std.testing.allocator.destroy(h.host);
+        h.facade.deinit();
+    }
+    const cfg = config.Config{
+        .difficulty = .easy,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+    var game = try Sudoku.init(cfg, h.facade, h.transport);
+    defer game.deinit();
+
+    try std.testing.expect(!game.engine.state.board.isGiven(@as(u4, 1), @as(u4, 7)));
 }

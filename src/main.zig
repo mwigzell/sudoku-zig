@@ -43,7 +43,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     // Host owns the renderer substrate and I/O session for this process (see host/host.zig).
     var host = host_mod.Host.create(cfg, init.io, std.heap.page_allocator);
     defer host.deinit();
-    var game = sudoku.Sudoku.init(&host) catch |err| {
+    const facade_f = host.facade() catch |err| {
         // Renderer requested but not available in this build — tell the player which one, separately for "unimplemented" and "no fallback".
         if (err == error.UnsupportedRenderer) {
             std.debug.print(
@@ -61,6 +61,8 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
         }
         return err;
     };
+    defer facade_f.deinit();
+    var game = sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io));
     defer game.deinit();
 
     // Command loop: menu → play → save/open, until the player quits or the game exits.
