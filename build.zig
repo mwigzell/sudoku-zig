@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
     const WASM_OUT = "src/renderer/wasm/hello.wasm";
 
     const wasm_emit = b.addSystemCommand(&.{
-        "zig",     "build-exe",           "wasm_entry.zig",
+        "zig",     "build-exe",           "src/wasm_entry.zig",
         "-target", "wasm32-freestanding", "-femit-bin=" ++ WASM_OUT,
     });
     exe.step.dependOn(&wasm_emit.step);

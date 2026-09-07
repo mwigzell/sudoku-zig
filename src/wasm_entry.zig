@@ -2,12 +2,12 @@
 // the native binary: bootstrap Config in, the page's capability imports bound
 // into WasmHost/WasmTransport, the shared Sudoku loop driven between them.
 const std = @import("std");
-const config = @import("src/config.zig");
-const sudoku_mod = @import("src/sudoku.zig");
-const wasm_host = @import("src/host/wasm_host.zig");
-const wasm_renderer = @import("src/renderer/wasm/wasm_renderer.zig");
-const wasm_transport = @import("src/engine/wasm_transport.zig");
-const facade_mod = @import("src/renderer/facade.zig");
+const config = @import("config.zig");
+const sudoku_mod = @import("sudoku.zig");
+const wasm_host = @import("host/wasm_host.zig");
+const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
+const wasm_transport = @import("engine/wasm_transport.zig");
+const facade_mod = @import("renderer/facade.zig");
 
 // The boundary: each supplied value is its own import. A new Config value the
 // page supplies = one import + one override line below; renderer choices never
