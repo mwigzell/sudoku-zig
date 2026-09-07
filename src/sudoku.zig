@@ -15,11 +15,10 @@ const legend = @import("renderer/legend.zig");
 const host_mod = @import("host/host.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
-/// One running game: engine + renderer + shared io handle, driven by the loop in run().
+/// One running game: engine + renderer, driven by the loop in run().
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
-    io: std.Io,
     renderer: facade.Facade,
 
     /// Assemble a fresh game: facade from the host, engine sharing the host's io handle.
@@ -30,7 +29,6 @@ pub const Sudoku = struct {
         return @This(){
             .cfg = host.cfg,
             .renderer = facade_result,
-            .io = host.io,
             .engine = try game_engine.GameEngine.init(puzzle_str, file_transport.NativeTransport.make(host.io)),
         };
     }
@@ -101,22 +99,6 @@ const cell = @import("board/cell.zig");
 const styler_t = @import("renderer/ascii/styler.zig");
 const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
 
-// Verify the io handle survives init alongside the other fields
-test "Sudoku stores io field during init" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-    var host = host_mod.Host.createForTest(cfg, &[_][]const u8{});
-    defer host.deinit();
-
-    var sudoku_instance = try Sudoku.init(&host);
-    defer sudoku_instance.deinit();
-
-    _ = sudoku_instance.io;
-}
 test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer
     const cfg: config.Config = .{
