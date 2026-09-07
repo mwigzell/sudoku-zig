@@ -13,6 +13,8 @@ const wasm_renderer = @import("../renderer/wasm/wasm_renderer.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const file_transport = @import("../engine/file_transport.zig");
 const puzzle_gen = @import("../puzzle_gen.zig");
+const mypath = @import("../engine/path.zig");
+const logger = @import("../logger.zig");
 
 // ────────────────────── co-located tests ──────────────────────
 pub const Host = struct {
@@ -32,7 +34,9 @@ pub const Host = struct {
 
     /// Prod entry: the terminal arm builds real stdin from io + a real stdout writer.
     pub fn create(cfg: config.Config, io: std.Io, alloc: std.mem.Allocator) @This() {
-        return .{ .cfg = cfg, .io = io, .alloc = alloc };
+        var host = @This(){ .cfg = cfg, .io = io, .alloc = alloc };
+        host.ensureDataDir();
+        return host;
     }
 
     /// Test entry: canned responses in, owned mock buffer out. Tests never see
@@ -99,6 +103,19 @@ pub const Host = struct {
     /// Release the session if one was built; facades own their own contexts.
     pub fn deinit(self: *Host) void {
         if (self.have_session) self.session.deinit();
+    }
+    /// Best-effort data dir: compute the platform path and create it once at
+    /// startup (prod entry); a failure logs and continues.
+    pub fn ensureDataDir(self: *Host) void {
+        const log = logger.Logger(.sudoku);
+        if (mypath.computeDataDir(self.alloc)) |dir| {
+            defer self.alloc.free(dir);
+            _ = std.Io.Dir.cwd().createDirPath(self.io, dir) catch |err| {
+                log.err("could not create data dir: {s}", .{@errorName(err)});
+            };
+        } else |err| {
+            log.err("could not compute data dir: {s}", .{@errorName(err)});
+        }
     }
 };
 
@@ -230,4 +247,22 @@ test "host: no fallback configured yields NoFallbackConfigured" {
 
     try std.testing.expectError(Host.Error.NoFallbackConfigured, host.facade());
     try std.testing.expect(!host.have_session);
+}
+
+test "host: data dir is created once at startup and exists on disk" {
+    const cfg = config.Config{
+        .difficulty = .easy,
+        .preferred_renderer = .ascii,
+        .fallback_renderer = .ascii,
+        .log_level = .info,
+    };
+    var host = Host.createForTest(cfg, &[0][]const u8{});
+    defer host.deinit();
+
+    host.ensureDataDir();
+
+    const data_dir = try mypath.computeDataDir(std.testing.allocator);
+    defer std.testing.allocator.free(data_dir);
+    const stat = try std.Io.Dir.cwd().statFile(std.testing.io, data_dir, .{});
+    try std.testing.expect(stat.kind == .directory);
 }

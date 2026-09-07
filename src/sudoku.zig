@@ -5,8 +5,6 @@ const facade = @import("renderer/facade.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const game_engine = @import("engine/game_engine.zig");
 const file_transport = @import("engine/file_transport.zig");
-const mypath = @import("engine/path.zig");
-const logger = @import("logger.zig");
 const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const command = @import("command.zig");
@@ -28,19 +26,6 @@ pub const Sudoku = struct {
     pub fn init(host: *host_mod.Host) Error!@This() {
         const puzzle_str = puzzle_gen.PuzzleGen.generate(host.cfg.difficulty);
         const facade_result = try host.facade();
-
-        // Best-effort data dir: path math is io-free; creation logs and continues.
-        {
-            const log = logger.Logger(.sudoku);
-            if (mypath.computeDataDir(std.heap.page_allocator)) |data_dir| {
-                defer std.heap.page_allocator.free(data_dir);
-                _ = std.Io.Dir.cwd().createDirPath(host.io, data_dir) catch |err| {
-                    log.err("could not create data dir: {s}", .{@errorName(err)});
-                };
-            } else |err| {
-                log.err("could not compute data dir: {s}", .{@errorName(err)});
-            }
-        }
 
         return @This(){
             .cfg = host.cfg,
