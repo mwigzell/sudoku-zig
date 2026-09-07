@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
     // WASM: emit before native compile (@embedFile is parse-time).
-    const WASM_OUT = "src/renderer/wasm/artifact.wasm";
+    const WASM_OUT = "src/wasm/artifact.wasm";
 
     const wasm_emit = b.addSystemCommand(&.{
         "zig",     "build-exe",           "src/wasm_entry.zig",
