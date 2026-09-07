@@ -17,7 +17,7 @@ const env = {
 
 try {
   const result = await WebAssembly.instantiateStreaming(
-    fetch('hello.wasm'),
+    fetch('artifact.wasm'),
     env
   );
 
