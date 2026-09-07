@@ -15,6 +15,8 @@ const wasm_bytes = @import("renderer/wasm/wasm_bytes.zig");
 const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
 const state_mod = @import("engine/state.zig");
 const file_transport = @import("engine/file_transport.zig");
+// wasm arm of the transport — io-free, pinned so its tests join the native suite.
+const wasm_transport = @import("engine/wasm_transport.zig");
 
 test {
     // Reachability pin: keeps sudoku.zig (and its sub-modules) inside the test closure of this root file.
@@ -23,6 +25,7 @@ test {
     _ = wasm_renderer;
     _ = state_mod;
     _ = file_transport;
+    _ = wasm_transport;
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
