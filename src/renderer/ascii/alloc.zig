@@ -1,16 +1,16 @@
 // Renderer allocation seam: picks the prod/mock branch by reader kind and
 // owns the context structs that hold the heap handles behind the Facade vtable.
 const std = @import("std");
-const ascii_renderer = @import("ascii/ascii_renderer.zig");
-const styler = @import("ascii/styler.zig");
-const input_source = @import("../host/input_source.zig");
-const facade = @import("facade.zig");
-const board = @import("../board.zig");
-const legend = @import("legend.zig");
-const command = @import("../command.zig");
-const io_session = @import("../host/io_session.zig");
+const ascii_renderer = @import("ascii_renderer.zig");
+const styler = @import("styler.zig");
+const input_source = @import("../../host/input_source.zig");
+const facade = @import("../facade.zig");
+const board = @import("../../board.zig");
+const legend = @import("../legend.zig");
+const command = @import("../../command.zig");
+const io_session = @import("../../host/io_session.zig");
 
-pub const AsciiRendererAlloc = struct {
+pub const Alloc = struct {
     /// Static factory — resolve the reader branch, allocate styler/renderer/context,
     /// wire the vtable, and return the Facade. Both branches borrow the session's
     /// writer; the session owns and frees its buffer.
@@ -159,7 +159,7 @@ test "Prod/MockFacadeContext deinit releases child pointers without leak" {
     mock_ctx.deinit();
 }
 
-test "AsciiRendererAlloc.makeFacade returns Facade" {
+test "Alloc.makeFacade returns Facade" {
     const alloc = std.testing.allocator;
     const responses = [_][]const u8{};
     const source: input_source.ReaderSource = .{
@@ -172,7 +172,7 @@ test "AsciiRendererAlloc.makeFacade returns Facade" {
         .alloc = alloc,
     };
     defer session.deinit();
-    var facade_result = AsciiRendererAlloc.makeFacade(&session) catch return error.Test;
+    var facade_result = Alloc.makeFacade(&session) catch return error.Test;
     facade_result.deinit();
 }
 test "integrated e2e - prodBranch renders real grid into in-memory writer" {
@@ -187,7 +187,7 @@ test "integrated e2e - prodBranch renders real grid into in-memory writer" {
         .alloc = alloc,
     };
     defer session.deinit();
-    var fac = try AsciiRendererAlloc.makeFacade(&session);
+    var fac = try Alloc.makeFacade(&session);
     defer fac.deinit();
 
     const b = board.Board.init();
@@ -212,7 +212,7 @@ test "integrated e2e - prodBranch showLegend writes into session writer buffer" 
         .alloc = alloc,
     };
     defer session.deinit();
-    var fac = try AsciiRendererAlloc.makeFacade(&session);
+    var fac = try Alloc.makeFacade(&session);
     defer fac.deinit();
 
     const commands = legend.Legend{

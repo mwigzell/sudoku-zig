@@ -8,7 +8,7 @@ const io_session = @import("io_session.zig");
 const input_source = @import("input_source.zig");
 const command = @import("../command.zig");
 const cell = @import("../board/cell.zig");
-const AsciiRendererAlloc = @import("../renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
+const Alloc = @import("../renderer/ascii/alloc.zig").Alloc;
 const wasm_renderer = @import("../renderer/wasm/wasm_renderer.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const file_transport = @import("../engine/file_transport.zig");
@@ -68,8 +68,8 @@ pub const Host = struct {
     fn terminalFacade(self: *Host, choice: config.RendererKind) Error!facade_mod.Facade {
         if (!self.have_session) self.openSession();
         return switch (choice) {
-            .ansi => AsciiRendererAlloc.makeFacade(&self.session),
-            .ascii => AsciiRendererAlloc.makePlainFacade(&self.session),
+            .ansi => Alloc.makeFacade(&self.session),
+            .ascii => Alloc.makePlainFacade(&self.session),
             else => unreachable,
         };
     }
