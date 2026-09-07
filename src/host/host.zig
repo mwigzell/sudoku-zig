@@ -11,6 +11,7 @@ const cell = @import("../board/cell.zig");
 const AsciiRendererAlloc = @import("../renderer/ascii_renderer_alloc.zig").AsciiRendererAlloc;
 const wasm_renderer = @import("../renderer/wasm/wasm_renderer.zig");
 const game_engine = @import("../engine/game_engine.zig");
+const file_transport = @import("../engine/file_transport.zig");
 const puzzle_gen = @import("../puzzle_gen.zig");
 
 // ────────────────────── co-located tests ──────────────────────
@@ -128,7 +129,7 @@ test "host: .web preference yields a WasmRenderer facade" {
     var f = try host.facade();
     defer f.deinit();
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), std.testing.io);
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
     try f.render(engine.eventBoard(), null);
 
@@ -163,7 +164,7 @@ test "host: createForTest .ascii preference yields a working facade" {
     defer f.deinit();
 
     // Working facade: renders a real board view without error
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), std.testing.io);
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
     try f.render(engine.eventBoard(), null);
 
@@ -198,7 +199,7 @@ test "host: .tui preference falls back to .ascii and yields a working facade" {
     try std.testing.expect(host.have_session);
 
     // Working fallback facade renders a real board view through its session.
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), std.testing.io);
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
     try f.render(engine.eventBoard(), null);
 }

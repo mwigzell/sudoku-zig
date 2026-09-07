@@ -6,12 +6,10 @@
 /// — caller is responsible for freeing via `gpa.free()`.
 const std = @import("std");
 const builtin = @import("builtin");
-const logger = @import("../logger.zig");
-
 const data_dir_suffix = switch (builtin.os.tag) {
     .linux => "/.local/share/sudoku",
     .macos => "/Library/Application Support/sudoku",
-    else => @compileError("getDataDir: unsupported OS — add platform convention"),
+    else => @compileError("computeDataDir: unsupported OS — add platform convention"),
 };
 
 // POSIX: walks the C environ array to find $HOME.
@@ -29,21 +27,16 @@ fn getHomeDir(gpa: std.mem.Allocator) ![]u8 {
     return error.EnvironmentVariableMissing;
 }
 
-/// Resolves the platform data directory for Sudoku and ensures it exists on
-/// disk. Linux: `~/.local/share/sudoku/`. macOS: `~/Library/Application
-/// Support/sudoku/`. Returns an owned string — caller frees.
-pub fn getDataDir(gpa: std.mem.Allocator, io: std.Io) ![]u8 {
+/// Resolves the platform data directory for Sudoku (path math only — no
+/// directory creation, so it stays io-free). Linux: `~/.local/share/sudoku/`.
+/// macOS: `~/Library/Application Support/sudoku/`. Returns an owned string —
+/// caller frees.
+pub fn computeDataDir(gpa: std.mem.Allocator) ![]u8 {
     const home = try getHomeDir(gpa);
     errdefer gpa.free(home);
 
     const data_dir = try std.fmt.allocPrint(gpa, "{s}{s}", .{ home, data_dir_suffix });
     gpa.free(home);
-
-    const log = logger.Logger(.path);
-    const cwd = std.Io.Dir.cwd();
-    _ = cwd.createDirPath(io, data_dir) catch |err| {
-        log.err("could not create data dir: {s}", .{@errorName(err)});
-    };
 
     return data_dir;
 }
@@ -66,11 +59,10 @@ test "getHomeDir returns HOME" {
     std.debug.assert(home[0] == '/');
 }
 
-test "getDataDir returns platform data dir and creates it" {
+test "computeDataDir returns platform data dir" {
     const gpa = std.testing.allocator;
-    const io = std.testing.io;
 
-    const data_dir = try getDataDir(gpa, io);
+    const data_dir = try computeDataDir(gpa);
     defer gpa.free(data_dir);
 
     const expected_suffix = switch (builtin.os.tag) {
@@ -80,8 +72,17 @@ test "getDataDir returns platform data dir and creates it" {
     };
     try std.testing.expect(std.mem.endsWith(u8, data_dir, expected_suffix));
     try std.testing.expect(data_dir[0] == '/');
+}
+
+test "best-effort createDirPath leaves the data dir on disk" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const data_dir = try computeDataDir(gpa);
+    defer gpa.free(data_dir);
 
     const dir = std.Io.Dir.cwd();
+    _ = dir.createDirPath(io, data_dir) catch {};
     const stat = try dir.statFile(io, data_dir, .{});
     try std.testing.expect(stat.kind == .directory);
 }

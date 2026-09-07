@@ -1,20 +1,21 @@
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
+const file_transport = @import("file_transport.zig");
 const cell = @import("../board/cell.zig");
 
 /// Execute a redo command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
-    if (engine.history.pointer >= engine.history.entries.items.len) {
+    if (engine.state.history.pointer >= engine.state.history.entries.items.len) {
         return game_engine.Event{ .error_msg = "nothing to redo" };
     }
-    const entry = engine.history.entries.items[engine.history.pointer];
-    engine.board.setCell(entry.row, entry.col, entry.new_value) catch |err| {
+    const entry = engine.state.history.entries.items[engine.state.history.pointer];
+    engine.state.board.setCell(entry.row, entry.col, entry.new_value) catch |err| {
         var buf: [80]u8 = undefined;
         return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "redo fail: {s}", .{@errorName(err)}) catch "redo failed" };
     };
-    engine.board.refreshConflictsForCell(entry.row, entry.col);
-    engine.history.pointer += 1;
-    return game_engine.Event{ .ok = .{ .board_view = engine.board.asView(), .msg = null, .is_quit = false } };
+    engine.state.board.refreshConflictsForCell(entry.row, entry.col);
+    engine.state.history.pointer += 1;
+    return game_engine.Event{ .ok = .{ .board_view = engine.state.board.asView(), .msg = null, .is_quit = false } };
 }
 
 // ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ test "command.redo.execute fails when nothing to redo" {
     const puzzle_gen = @import("../puzzle_gen.zig");
     const command = @import("../command.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
 
     // Fill some cells but never undo — no future to redo
@@ -45,7 +46,7 @@ test "command.redo.execute re-applies an undone fill" {
     const command = @import("../command.zig");
     const undo_command = @import("undo.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), std.testing.io);
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
 
     // Fill A3 with seven, then undo

@@ -2,6 +2,7 @@
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const save_format = @import("save_format.zig");
+const file_transport = @import("file_transport.zig");
 const mypath = @import("path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) game_engine.Event {
@@ -10,7 +11,7 @@ pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) game_engine.E
     } else {
         return .{
             .ok = .{
-                .board_view = engine.board.asView(),
+                .board_view = engine.state.board.asView(),
                 .msg = "open: no file specified",
                 .is_quit = false,
             },
@@ -23,9 +24,9 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
 
     // Resolve the path through the data dir
     if (engine.data_dir == null) {
-        engine.data_dir = mypath.getDataDir(gpa, engine.io) catch |err| {
+        engine.data_dir = mypath.computeDataDir(gpa) catch |err| {
             var buf: [80]u8 = undefined;
-            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "getDataDir: {s}", .{@errorName(err)}) catch "system error" };
+            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "computeDataDir: {s}", .{@errorName(err)}) catch "system error" };
         };
     }
 
@@ -40,23 +41,11 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
     defer gpa.free(resolved);
 
     // Read file bytes
-    var file = std.Io.Dir.openFileAbsolute(engine.io, resolved, .{}) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
-    defer file.close(engine.io);
-
-    const stat = std.Io.Dir.cwd().statFile(engine.io, resolved, .{}) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
-    const buf = gpa.alloc(u8, stat.size) catch |err| {
+    const buf = engine.transport.readAll(engine.transport.context, resolved) catch |err| {
         var errbuf: [80]u8 = undefined;
-        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&errbuf, "alloc: {s}", .{@errorName(err)}) catch "system error" };
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&errbuf, "readAll: {s}", .{@errorName(err)}) catch "system error" };
     };
     defer gpa.free(buf);
-
-    _ = std.Io.File.readPositionalAll(file, engine.io, buf, 0) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
 
     // Deserialize into a loaded State (pure codec, no Io)
     const loaded = save_format.fromSaveFormat(gpa, buf) catch |err| {
@@ -64,9 +53,9 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
     };
 
     // Replace the engine's board/history with the loaded state
-    engine.history.deinit();
-    engine.board = loaded.board;
-    engine.history = loaded.history;
+    engine.state.history.deinit();
+    engine.state.board = loaded.board;
+    engine.state.history = loaded.history;
 
     // Free old optional fields (the loaded State does not own them)
     if (engine.data_dir) |old_dir| gpa.free(old_dir);
@@ -80,7 +69,7 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
 
     return .{
         .ok = .{
-            .board_view = engine.board.asView(),
+            .board_view = engine.state.board.asView(),
             .msg = msg,
             .is_quit = false,
         },
@@ -94,14 +83,14 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
 test "command.open.execute opens file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        std.testing.io,
+        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 
     const tmp_path = "/tmp/sudoku_open_command_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
-    engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
+    engine.data_dir = try mypath.computeDataDir(std.heap.page_allocator);
     errdefer std.heap.page_allocator.free(engine.data_dir.?);
 
     const resolved = try mypath.resolveSavePath(
@@ -111,7 +100,7 @@ test "command.open.execute opens file and returns ok with message" {
     );
     defer std.heap.page_allocator.free(resolved);
 
-    _ = engine.saveGame(engine.io, resolved) catch return error.SkipZigTest;
+    _ = engine.saveGame(resolved) catch return error.SkipZigTest;
 
     const event = execute(&engine, tmp_path);
 
@@ -129,7 +118,7 @@ test "command.open.execute opens file and returns ok with message" {
 test "command.open.execute returns fallback message when path is null" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        std.testing.io,
+        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 

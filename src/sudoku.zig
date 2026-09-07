@@ -4,6 +4,9 @@ const std = @import("std");
 const facade = @import("renderer/facade.zig");
 const styler = @import("renderer/ascii/styler.zig");
 const game_engine = @import("engine/game_engine.zig");
+const file_transport = @import("engine/file_transport.zig");
+const mypath = @import("engine/path.zig");
+const logger = @import("logger.zig");
 const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const command = @import("command.zig");
@@ -25,11 +28,25 @@ pub const Sudoku = struct {
     pub fn init(host: *host_mod.Host) Error!@This() {
         const puzzle_str = puzzle_gen.PuzzleGen.generate(host.cfg.difficulty);
         const facade_result = try host.facade();
+
+        // Best-effort data dir: path math is io-free; creation logs and continues.
+        {
+            const log = logger.Logger(.sudoku);
+            if (mypath.computeDataDir(std.heap.page_allocator)) |data_dir| {
+                defer std.heap.page_allocator.free(data_dir);
+                _ = std.Io.Dir.cwd().createDirPath(host.io, data_dir) catch |err| {
+                    log.err("could not create data dir: {s}", .{@errorName(err)});
+                };
+            } else |err| {
+                log.err("could not compute data dir: {s}", .{@errorName(err)});
+            }
+        }
+
         return @This(){
             .cfg = host.cfg,
             .renderer = facade_result,
             .io = host.io,
-            .engine = try game_engine.GameEngine.init(puzzle_str, host.io),
+            .engine = try game_engine.GameEngine.init(puzzle_str, file_transport.NativeTransport.make(host.io)),
         };
     }
 
@@ -144,7 +161,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
 
     // Assert (b): cell at chess coord A3 -> row 2, col 0 is four.
     {
-        try std.testing.expectEqual(cell.CellValue.four, sudoku.engine.board.getCellValue(@as(u4, 2), @as(u4, 0)));
+        try std.testing.expectEqual(cell.CellValue.four, sudoku.engine.state.board.getCellValue(@as(u4, 2), @as(u4, 0)));
     }
 }
 
@@ -165,9 +182,9 @@ test "integrated e2e - full seam: open loads saved game" {
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
     // Save known state to disk before running through the renderer
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), io);
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), file_transport.NativeTransport.make(std.testing.io));
     defer original.deinit();
-    try original.saveGame(io, tmp_path);
+    try original.saveGame(tmp_path);
 
     // Record B2 value in saved state for later verification
     const saved_b2 = original.eventBoard().get(1, 1);
@@ -231,7 +248,7 @@ test "integrated e2e - run: open file success produces status message, re-render
 
     // Create a save file to open
     const io = std.testing.io;
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), io);
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), file_transport.NativeTransport.make(io));
     defer original.deinit();
     const tmp_path = "/tmp/sudoku_e2e_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
@@ -341,7 +358,7 @@ test "integrated e2e - run: new command resets board and history" {
     sudoku_instance.run() catch {};
 
     // history should be empty after new command clears it
-    try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.history.entries.items.len);
+    try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
 }
 // Full end-to-end run through the host-built ansi facade
 test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
@@ -377,7 +394,7 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     defer host.deinit();
     var sudoku = try Sudoku.init(&host);
     defer sudoku.deinit();
-    try sudoku.renderer.render(sudoku.engine.board.asView(), null);
+    try sudoku.renderer.render(sudoku.engine.state.board.asView(), null);
 
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);

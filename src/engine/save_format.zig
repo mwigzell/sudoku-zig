@@ -1,5 +1,5 @@
-// Save-file wire format: header/entries/trailer types, blob (de)serialization,
-// and file-backed save/open over an Io handle.
+// Save-file wire format: header/entry/trailer types + pure State blob (de)serialization.
+// File I/O lives in game_engine.zig and file_transport.zig.
 const std = @import("std");
 const ge = @import("game_engine.zig");
 const state_mod = @import("state.zig");
@@ -7,8 +7,7 @@ const board = @import("../board.zig");
 const cell = @import("../board/cell.zig");
 const _puzzle_gen = @import("../puzzle_gen.zig");
 const command = @import("../command.zig");
-
-pub const IoError = error{ OutOfMemory, FileNotFound, AccessDenied, System };
+const file_transport = @import("file_transport.zig");
 
 // ---------------------------------------------------------------------------
 // Save file wire format types
@@ -162,53 +161,6 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !state_mod.State 
     return state;
 }
 
-/// Serialize game state to a binary save file via an Io handle.
-pub fn saveGame(self: *const ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
-    const st = state_mod.State{ .board = self.board, .history = self.history };
-    const buf = toSaveFormat(&st, std.heap.page_allocator) catch {
-        return IoError.System;
-    };
-    defer std.heap.page_allocator.free(buf);
-
-    var file = std.Io.Dir.createFileAbsolute(io, path, .{}) catch {
-        return IoError.System;
-    };
-    defer file.close(io);
-
-    std.Io.File.writeStreamingAll(file, io, buf) catch {
-        return IoError.System;
-    };
-}
-
-/// Load a save file over an Io handle; replaces this engine's board, history, and pointer.
-pub fn openGame(self: *ge.GameEngine, io: std.Io, path: []const u8) IoError!void {
-    var file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch {
-        return IoError.System;
-    };
-    defer file.close(io);
-
-    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch {
-        return IoError.System;
-    };
-    const buf = std.heap.page_allocator.alloc(u8, stat.size) catch {
-        return IoError.OutOfMemory;
-    };
-    defer std.heap.page_allocator.free(buf);
-
-    _ = std.Io.File.readPositionalAll(file, io, buf, 0) catch {
-        return IoError.System;
-    };
-
-    const loaded = fromSaveFormat(std.heap.page_allocator, buf) catch {
-        return IoError.System;
-    };
-    self.history.deinit();
-    self.board = loaded.board;
-    self.history = loaded.history;
-    self.data_dir = null;
-    self.last_save_msg = null;
-}
-
 // ---------------------------------------------------------------------------
 // Tests (co-located)
 // ---------------------------------------------------------------------------
@@ -245,68 +197,6 @@ test "Save file size: header + history_count(2) + N*entry_size + given_bits(16)"
     // Game with 3 mutations: header(5) + count(2) + 3*2 entries + given_bits(16) = 29
     const three_mutations_size = HeaderBytes + HistoryCountBytes + (3 * @sizeOf(SaveEntry)) + GivenBitsBytes;
     try std.testing.expectEqual(@as(usize, 29), three_mutations_size);
-}
-
-test "saveGame returns error on bad path" {
-    var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
-    defer engine.deinit();
-
-    const result = engine.saveGame(std.testing.io, "/nonexistent/dir/save.sud");
-    try std.testing.expectError(IoError.System, result);
-}
-
-// save → open round-trip (full saved state equality)
-
-test "saveGame then openGame: full state round-trip equals original" {
-    var original = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
-    defer original.deinit();
-
-    // Make mutations to populate history and alter board
-    _ = original.exec(command.Command{
-        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    });
-    _ = original.exec(command.Command{
-        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
-    });
-    _ = original.exec(command.Command{
-        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
-    });
-
-    // Undo one mutation — tests that pointer position is preserved
-    _ = original.exec(command.Command{ .undo = {} });
-
-    // Save to temp file using test I/O
-    const tmp_path = "/tmp/sudoku_roundtrip_test.sud";
-    _ = original.saveGame(std.testing.io, tmp_path) catch |err| return err;
-
-    // Open into a new engine
-    var loaded = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
-    try loaded.openGame(std.testing.io, tmp_path);
-    defer loaded.deinit();
-
-    // --- Assert board state (cells + given_bits) via Board.equal() ---
-    try std.testing.expect(original.board.equal(loaded.board));
-
-    // --- Assert history pointer position ---
-    try std.testing.expectEqual(
-        original.history.pointer,
-        loaded.history.pointer,
-    );
-
-    // --- Assert history entries count + contents ---
-    const orig_count = original.history.entries.items.len;
-    const load_count = loaded.history.entries.items.len;
-    try std.testing.expectEqual(orig_count, load_count);
-
-    for (original.history.entries.items, loaded.history.entries.items, 0..) |orig_e, load_e, idx| {
-        _ = idx;
-        try std.testing.expectEqual(orig_e.row, load_e.row);
-        try std.testing.expectEqual(orig_e.col, load_e.col);
-        try std.testing.expectEqual(orig_e.old_value, load_e.old_value);
-        try std.testing.expectEqual(orig_e.new_value, load_e.new_value);
-    }
-
-    _ = std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 }
 
 // SaveFileHeader & SaveFileTrailer struct tests
@@ -395,10 +285,10 @@ test "SaveFileTrailer: round-trip write/read" {
 // toSaveFormat / fromSaveFormat (in-memory blob serialization)
 
 test "toSaveFormat empty history produces buffer of correct size" {
-    var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
+    var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
 
-    const st = state_mod.State{ .board = engine.board, .history = engine.history };
+    const st = state_mod.State{ .board = engine.state.board, .history = engine.state.history };
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
@@ -407,10 +297,10 @@ test "toSaveFormat empty history produces buffer of correct size" {
 }
 
 test "toSaveFormat header has correct magic and version" {
-    var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
+    var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
 
-    const st = state_mod.State{ .board = engine.board, .history = engine.history };
+    const st = state_mod.State{ .board = engine.state.board, .history = engine.state.history };
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
@@ -424,7 +314,7 @@ test "toSaveFormat header has correct magic and version" {
 }
 
 test "toSaveFormat includes history entries and correct trailer" {
-    var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
+    var engine = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
     defer engine.deinit();
 
     // Make 3 mutations (same as existing round-trip test)
@@ -438,7 +328,7 @@ test "toSaveFormat includes history entries and correct trailer" {
         .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.one },
     });
 
-    const st = state_mod.State{ .board = engine.board, .history = engine.history };
+    const st = state_mod.State{ .board = engine.state.board, .history = engine.state.history };
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
@@ -462,7 +352,7 @@ test "toSaveFormat includes history entries and correct trailer" {
     // Verify trailer flat_board has the mutations at correct cells
     const off: usize = SAVE_HEADER_SIZE + (3 * @sizeOf(SaveEntry));
     const trailer = readSaveTrailer(buf[off..]);
-    try std.testing.expectEqual(trailer.given_bits, engine.board.given_bits);
+    try std.testing.expectEqual(trailer.given_bits, engine.state.board.given_bits);
     // Cell (0,2) should be seven in trailer
     try std.testing.expectEqual(@as(u8, 7), trailer.flat_board[@as(usize, 0) * board.DIMENSION_SIZE + @as(usize, 2)]);
     // Cell (1,1) should be three
@@ -472,7 +362,7 @@ test "toSaveFormat includes history entries and correct trailer" {
 }
 
 test "fromSaveFormat round-trip: board state given_bits history" {
-    var original = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), std.testing.io);
+    var original = try ge.GameEngine.init(_puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
     defer original.deinit();
 
     _ = original.exec(command.Command{
@@ -486,20 +376,20 @@ test "fromSaveFormat round-trip: board state given_bits history" {
     });
     _ = original.exec(command.Command{ .undo = {} });
 
-    const st = state_mod.State{ .board = original.board, .history = original.history };
+    const st = state_mod.State{ .board = original.state.board, .history = original.state.history };
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
     var loaded = try fromSaveFormat(std.testing.allocator, buf);
     defer loaded.history.deinit();
     // --- Assert board state (cells + given_bits) via Board.equal() ---
-    try std.testing.expect(original.board.equal(loaded.board));
-    try std.testing.expectEqual(original.history.pointer, loaded.history.pointer);
+    try std.testing.expect(original.state.board.equal(loaded.board));
+    try std.testing.expectEqual(original.state.history.pointer, loaded.history.pointer);
     try std.testing.expectEqual(
-        original.history.entries.items.len,
+        original.state.history.entries.items.len,
         loaded.history.entries.items.len,
     );
-    for (original.history.entries.items, loaded.history.entries.items, 0..) |o, l, idx| {
+    for (original.state.history.entries.items, loaded.history.entries.items, 0..) |o, l, idx| {
         _ = idx;
         try std.testing.expectEqual(o.row, l.row);
         try std.testing.expectEqual(o.col, l.col);

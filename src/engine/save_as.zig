@@ -1,6 +1,7 @@
 /// SaveAs command handler — saves via engine.saveGame() to given path.
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
+const file_transport = @import("file_transport.zig");
 const mypath = @import("path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Event {
@@ -8,9 +9,9 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Ev
 
     // Ensure data dir is resolved
     if (engine.data_dir == null) {
-        engine.data_dir = mypath.getDataDir(gpa, engine.io) catch |err| {
+        engine.data_dir = mypath.computeDataDir(gpa) catch |err| {
             var buf: [80]u8 = undefined;
-            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "getDataDir: {s}", .{@errorName(err)}) catch "system error" };
+            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "computeDataDir: {s}", .{@errorName(err)}) catch "system error" };
         };
     }
 
@@ -24,7 +25,7 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Ev
     };
 
     // Save to disk
-    engine.saveGame(engine.io, resolved) catch |err| {
+    engine.saveGame(resolved) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
@@ -37,7 +38,7 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Ev
     engine.last_save_msg = msg;
 
     return game_engine.Event{ .ok = .{
-        .board_view = engine.board.asView(),
+        .board_view = engine.state.board.asView(),
         .msg = msg,
         .is_quit = false,
     } };
@@ -46,7 +47,7 @@ pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Ev
 test "command.save_as.execute saves file at given path" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        std.testing.io,
+        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 
@@ -54,7 +55,7 @@ test "command.save_as.execute saves file at given path" {
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
     // Give the engine a data dir
-    engine.data_dir = try mypath.getDataDir(std.heap.page_allocator, std.testing.io);
+    engine.data_dir = try mypath.computeDataDir(std.heap.page_allocator);
 
     const event = execute(&engine, tmp_path);
 
