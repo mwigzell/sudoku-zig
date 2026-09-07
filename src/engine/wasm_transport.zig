@@ -76,13 +76,13 @@ var store = Store{
     .byte_len = 0,
 };
 
-fn test_file_write(name: [*]const u8, name_len: u32, bytes: [*]const u8, bytes_len: u32) callconv(.c) void {
+pub fn test_file_write(name: [*]const u8, name_len: u32, bytes: [*]const u8, bytes_len: u32) callconv(.c) void {
     @memcpy(store.name[0..name_len], name[0..name_len]);
     store.name_len = name_len;
     @memcpy(store.bytes[0..bytes_len], bytes[0..bytes_len]);
     store.byte_len = bytes_len;
 }
-fn test_file_read(name: [*]const u8, name_len: u32, buf: [*]u8, cap: u32) callconv(.c) u32 {
+pub fn test_file_read(name: [*]const u8, name_len: u32, buf: [*]u8, cap: u32) callconv(.c) u32 {
     if (name_len != store.name_len or !std.mem.eql(u8, name[0..name_len], store.name[0..store.name_len])) return 0;
     const n = @min(store.byte_len, cap);
     @memcpy(buf[0..n], store.bytes[0..n]);
