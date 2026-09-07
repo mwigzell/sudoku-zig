@@ -7,22 +7,11 @@ const mypath = @import("path.zig");
 pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Event {
     const gpa = std.heap.page_allocator;
 
-    // Ensure data dir is resolved
-    if (engine.data_dir == null) {
-        engine.data_dir = mypath.computeDataDir(gpa) catch |err| {
-            var buf: [80]u8 = undefined;
-            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "computeDataDir: {s}", .{@errorName(err)}) catch "system error" };
-        };
-    }
-
-    const resolved = mypath.resolveSavePath(
-        gpa,
-        engine.data_dir.?,
-        path,
-    ) catch |err| {
+    const resolved = engine.transport.resolve(engine.transport.context, path) catch |err| {
         var buf: [80]u8 = undefined;
-        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolveSavePath: {s}", .{@errorName(err)}) catch "system error" };
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
     };
+    defer engine.transport.free(engine.transport.context, resolved);
 
     // Save to disk
     engine.saveGame(resolved) catch |err| {

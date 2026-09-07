@@ -33,6 +33,7 @@ pub const WasmTransport = struct {
             .context = &context,
             .write = write,
             .readAll = readAll,
+            .resolve = resolve,
             .free = free,
         };
     }
@@ -50,6 +51,12 @@ pub const WasmTransport = struct {
     fn write(c: *anyopaque, path: []const u8, bytes: []const u8) TransportError!void {
         const ctx = asContext(c);
         ctx.file_write(path.ptr, @intCast(path.len), bytes.ptr, @intCast(bytes.len));
+    }
+
+    // A name goes straight to the page verbatim — never resolved, never owned by the arm (free is a no-op).
+    fn resolve(c: *anyopaque, name: []const u8) TransportError![]u8 {
+        _ = asContext(c);
+        return @constCast(name);
     }
     // 0 bytes placed means the page could not serve the name (missing/unreadable).
     fn readAll(c: *anyopaque, path: []const u8) TransportError![]u8 {
@@ -107,4 +114,13 @@ test "FileTransport wasm arm: readAll of a missing name yields FileNotFound" {
 
     const result = transport.readAll(transport.context, "missing.sud");
     try std.testing.expectError(TransportError.FileNotFound, result);
+}
+
+test "FileTransport wasm arm: resolve returns the bare name straight to the page" {
+    const transport = WasmTransport.make(test_file_write, test_file_read);
+
+    const resolved = transport.resolve(transport.context, "game.sud") catch |err| return err;
+    defer transport.free(transport.context, resolved);
+
+    try std.testing.expectEqualStrings("game.sud", resolved);
 }

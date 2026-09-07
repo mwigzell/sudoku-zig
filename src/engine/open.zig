@@ -22,23 +22,11 @@ pub fn execute(engine: *game_engine.GameEngine, path: ?[]const u8) game_engine.E
 fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Event {
     const gpa = std.heap.page_allocator;
 
-    // Resolve the path through the data dir
-    if (engine.data_dir == null) {
-        engine.data_dir = mypath.computeDataDir(gpa) catch |err| {
-            var buf: [80]u8 = undefined;
-            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "computeDataDir: {s}", .{@errorName(err)}) catch "system error" };
-        };
-    }
-
-    const resolved = mypath.resolveSavePath(
-        gpa,
-        engine.data_dir.?,
-        file_path,
-    ) catch |err| {
+    const resolved = engine.transport.resolve(engine.transport.context, file_path) catch |err| {
         var buf: [80]u8 = undefined;
-        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolveSavePath: {s}", .{@errorName(err)}) catch "system error" };
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
     };
-    defer gpa.free(resolved);
+    defer engine.transport.free(engine.transport.context, resolved);
 
     // Read file bytes
     const buf = engine.transport.readAll(engine.transport.context, resolved) catch |err| {

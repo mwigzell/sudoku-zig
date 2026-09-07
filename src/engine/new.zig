@@ -4,25 +4,17 @@ const game_engine = @import("game_engine.zig");
 const board = @import("../board.zig");
 const command = @import("../command.zig");
 const PuzzleGen = @import("../puzzle_gen.zig").PuzzleGen;
-const mypath = @import("path.zig");
 const file_transport = @import("file_transport.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engine.Event {
     engine.state.history.deinit();
     engine.state.history = game_engine.MutationHistory.init(std.heap.page_allocator);
     if (data.file) |path| {
-        const gpa = std.heap.page_allocator;
-        if (engine.data_dir == null) {
-            engine.data_dir = mypath.computeDataDir(gpa) catch |err| {
-                var buf: [80]u8 = undefined;
-                return .{ .error_msg = std.fmt.bufPrint(&buf, "computeDataDir: {s}", .{@errorName(err)}) catch "system error" };
-            };
-        }
-        const resolved = mypath.resolveSavePath(gpa, engine.data_dir.?, path) catch |err| {
+        const resolved = engine.transport.resolve(engine.transport.context, path) catch |err| {
             var buf: [80]u8 = undefined;
-            return .{ .error_msg = std.fmt.bufPrint(&buf, "resolveSavePath: {s}", .{@errorName(err)}) catch "system error" };
+            return .{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
         };
-        defer gpa.free(resolved);
+        defer engine.transport.free(engine.transport.context, resolved);
         const buf = engine.transport.readAll(engine.transport.context, resolved) catch |err| {
             var errbuf: [80]u8 = undefined;
             return .{ .error_msg = std.fmt.bufPrint(&errbuf, "readAll: {s}", .{@errorName(err)}) catch "system error" };
