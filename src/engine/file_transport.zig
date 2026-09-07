@@ -8,7 +8,9 @@ pub const TransportError = error{ OutOfMemory, FileNotFound, AccessDenied, Syste
 pub const FileTransport = struct {
     context: *anyopaque,
     write: *const fn (ctx: *anyopaque, path: []const u8, bytes: []const u8) TransportError!void,
-    readAll: *const fn (ctx: *anyopaque, path: []const u8) TransportError![]u8, // caller frees
+    readAll: *const fn (ctx: *anyopaque, path: []const u8) TransportError![]u8,
+    // Free a buffer returned by this arm's readAll; each arm allocates and frees with its own allocator.
+    free: *const fn (ctx: *anyopaque, buf: []u8) void,
 };
 
 test "FileTransport native: write then readAll round-trips bytes" {
@@ -21,7 +23,7 @@ test "FileTransport native: write then readAll round-trips bytes" {
     transport.write(transport.context, path, payload) catch |err| return err;
 
     const bytes = transport.readAll(transport.context, path) catch |err| return err;
-    defer std.heap.page_allocator.free(bytes);
+    defer transport.free(transport.context, bytes);
     try std.testing.expectEqualSlices(u8, payload, bytes);
 }
 
@@ -52,9 +54,14 @@ pub const NativeTransport = struct {
             .context = &context,
             .write = write,
             .readAll = readAll,
+            .free = free,
         };
     }
 
+    fn free(c: *anyopaque, buf: []u8) void {
+        _ = c;
+        gpa.free(buf);
+    }
     fn write(c: *anyopaque, path: []const u8, bytes: []const u8) TransportError!void {
         const ctx = asContext(c);
         var file = std.Io.Dir.createFileAbsolute(ctx.io, path, .{}) catch return TransportError.System;

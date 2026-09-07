@@ -109,7 +109,7 @@ pub const GameEngine = struct {
     pub fn openGame(self: *@This(), path: []const u8) file_transport.TransportError!void {
         const gpa = std.heap.page_allocator;
         const buf = self.transport.readAll(self.transport.context, path) catch return file_transport.TransportError.System;
-        defer gpa.free(buf);
+        defer self.transport.free(self.transport.context, buf);
         const loaded = save_format.fromSaveFormat(gpa, buf) catch return file_transport.TransportError.System;
         self.state.history.deinit();
         self.state.board = loaded.board;

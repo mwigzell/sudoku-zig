@@ -45,7 +45,7 @@ fn doOpen(engine: *game_engine.GameEngine, file_path: []const u8) game_engine.Ev
         var errbuf: [80]u8 = undefined;
         return game_engine.Event{ .error_msg = std.fmt.bufPrint(&errbuf, "readAll: {s}", .{@errorName(err)}) catch "system error" };
     };
-    defer gpa.free(buf);
+    defer engine.transport.free(engine.transport.context, buf);
 
     // Deserialize into a loaded State (pure codec, no Io)
     const loaded = save_format.fromSaveFormat(gpa, buf) catch |err| {

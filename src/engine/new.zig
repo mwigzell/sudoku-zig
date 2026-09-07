@@ -27,7 +27,7 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engi
             var errbuf: [80]u8 = undefined;
             return .{ .error_msg = std.fmt.bufPrint(&errbuf, "readAll: {s}", .{@errorName(err)}) catch "system error" };
         };
-        defer gpa.free(buf);
+        defer engine.transport.free(engine.transport.context, buf);
         const trimmed = std.mem.trim(u8, buf, &std.ascii.whitespace);
         engine.state.board = board.fromOneLineString(trimmed) catch return .{ .error_msg = "could not load puzzle from file" };
         return .{
