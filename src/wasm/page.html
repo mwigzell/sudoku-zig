@@ -1,0 +1,130 @@
+<!doctype html>
+<!-- page.html — the web host page (issue #4 Step 8, slice 8b).
+     Owns everything browser-only: fetching ./artifact.wasm, DOM, the
+     turn feed, and the input line. Turns and the wasm boundary stay in
+     ./glue.js. Served from the same directory as glue.js and
+     artifact.wasm (Step 9 serves all three from one binary). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sudoku</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 1rem;
+      background: #16181d;
+      color: #e6e6e6;
+    }
+    #feed {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.45;
+      margin: 0;
+      padding: 0.75rem;
+      border: 1px solid #333844;
+      border-radius: 6px;
+      min-height: 12rem;
+      max-height: 65vh;
+      overflow-y: auto;
+      background: #0e1013;
+    }
+    #line {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      max-width: 34rem;
+    }
+    #cmd {
+      flex: 1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 14px;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid #333844;
+      border-radius: 6px;
+      background: #0e1013;
+      color: #e6e6e6;
+    }
+    #submit {
+      padding: 0.45rem 1rem;
+      border: 1px solid #333844;
+      border-radius: 6px;
+      background: #262b36;
+      color: #e6e6e6;
+      cursor: pointer;
+    }
+    #submit:disabled { opacity: 0.45; cursor: default; }
+    .error { color: #ff9b9b; }
+  </style>
+</head>
+<body>
+  <main>
+    <pre id="feed">loading…</pre>
+    <div id="line">
+      <input id="cmd" type="text" placeholder="command (e.g. Fill A1 3)"
+             autocomplete="off" spellcheck="false" disabled>
+      <button id="submit" type="submit" disabled>Send</button>
+    </div>
+  </main>
+
+  <script type="module">
+    import { loadArtifact } from "./glue.js";
+
+    const feed = document.getElementById("feed");
+    const input = document.getElementById("cmd");
+    const form = document.getElementById("line");
+    const submit = document.getElementById("submit");
+
+    let game = null;
+    let rendered = 0; // how many turns are already in the feed
+
+    // Append any glue turns that have arrived since the last render.
+    function renderNewTurns() {
+      if (!game) return;
+      const fresh = game.turns.slice(rendered);
+      if (fresh.length === 0) return;
+      const isFirst = rendered === 0;
+      rendered = game.turns.length;
+      const text = fresh.join("\n");
+      if (isFirst) {
+        feed.textContent = text + "\n";
+      } else {
+        feed.textContent += "\n" + text + "\n";
+      }
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    function showFatal(msg) {
+      feed.textContent = msg;
+      feed.classList.add("error");
+    }
+
+    form.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      if (!game) return;
+      const value = input.value;
+      input.value = "";
+      game.pushLine(value);
+      renderNewTurns();
+    });
+
+    try {
+      const res = await fetch("./artifact.wasm");
+      if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+
+      game = await loadArtifact(bytes);
+      game.start();
+      renderNewTurns();
+
+      input.disabled = false;
+      submit.disabled = false;
+      input.focus();
+    } catch (err) {
+      showFatal(`failed to load the wasm game: ${err && err.message ? err.message : err}`);
+    }
+  </script>
+</body>
+</html>
