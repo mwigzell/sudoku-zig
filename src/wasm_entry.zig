@@ -37,26 +37,35 @@ pub fn main() void {
 
     // The module's own linear memory heap; nothing is passed from the page.
     const A = std.heap.page_allocator;
-    const renderer = A.create(wasm_renderer.WasmRenderer) catch unreachable;
+    const renderer = A.create(wasm_renderer.WasmRenderer) catch {
+        // No renderer exists yet — report straight through the host sink.
+        host.writeScreen("Sudoku: boot failed: out of memory");
+        unreachable;
+    };
     renderer.* = wasm_renderer.WasmRenderer.init(A, &host);
     facade = facade_mod.Make(wasm_renderer.WasmRenderer).make(renderer);
 
-    game = sudoku_mod.Sudoku.init(cfg, facade, transport) catch {
-        facade.deinit();
-        return;
-    };
+    game = sudoku_mod.Sudoku.init(cfg, facade, transport) catch |err| reportAndTrap(err);
 
-    // The first screen (board + legend) is handed to the page; each command turn after that
-    // is supplied by step().
-    _ = game.renderer.render(game.engine.eventBoard(), null) catch {};
-    _ = game.renderer.showLegend(game.engine.getLegend()) catch {};
+    // The first screen (board + legend) is handed to the page; every command turn after it is
+    // one step() call. A boot/render failure is shown, then traps the instance —
+    // an error never masquerades as a working game.
+    game.showGame() catch |err| reportAndTrap(err);
 }
 
-/// One command turn: the page's line in, the resulting screen byte sequence out
-/// to the sink. 1 if the session is finished (quit — or the turn errored, and since
-/// the page only branches on this flag, an error collapses to finished), 0 to continue.
+/// One command turn: the page's line in, the resulting screen bytes out
+/// to the sink. 1 if the session is finished (quit), 0 to continue; a failed
+/// turn traps the instance — an error never masquerades as done.
 export fn step(line_ptr: [*]u8, line_len: u32) u32 {
     wasm_host.WasmHost.queueLine(line_ptr[0..line_len]);
-    const done = game.wasm_run() catch true;
+    const done = game.turn() catch |err| reportAndTrap(err);
     return @intFromBool(done);
+}
+/// A failure at or after boot is unrecoverable in the wasm instance: render the
+/// error to the page, then trap — the instance dies with a reason, not silently.
+fn reportAndTrap(err: anytype) noreturn {
+    var buf: [128]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, "Sudoku: {}", .{err}) catch unreachable;
+    facade.showError(msg) catch unreachable;
+    unreachable;
 }
