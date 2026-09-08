@@ -67,15 +67,14 @@ pub const Sudoku = struct {
     }
 
     /// One command, end to end: getCommandInput → parse/dispatch → render.
-    /// Returns true when the session is over (quit, or an I/O read failure).
+    /// Return: true when the command signals session over (quit);
+    /// error: input failed at the facade (renderer-level errors are already
+    /// folded to error.System one level down) or dispatch/render failed.
     pub fn turn(self: *@This()) Error!bool {
         const avail = self.engine.getLegend();
         var names: [9][]const u8 = undefined;
         const count = avail.getNames(&names);
-        const result = self.renderer.getCommandInput(names[0..count]) catch |err| {
-            if (err == error.ReadEOF) return true;
-            return error.System; // I/O read failure treated as system
-        };
+        const result = self.renderer.getCommandInput(names[0..count]) catch return error.System; // I/O read failure treated as system
         return try self.handleResult(result);
     }
 
