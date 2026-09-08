@@ -79,7 +79,7 @@ Every cycle gate lives in the build as a single command so task-local checklists
 ```bash
 zig build verify
 ```
-at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. `zig build cov` is the legacy cov-only form; `zig build cov-open` opens the HTML report.
+at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. Verify stays report-only; `zig build cov` regenerates the report and opens it in the browser; `zig build cov-report` is the report-only target (no browser).
 ## run build
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.

@@ -100,11 +100,14 @@ pub fn build(b: *std.Build) void {
     kcov_sum.addArtifactArg(check);
     cov_step.dependOn(&kcov_sum.step);
 
-    // Open the coverage HTML on demand, not on every verify.
+    // verify stays report-only; plain cov also opens the browser on demand.
     const open_cov = b.addSystemCommand(&.{ "vivaldi", "kcov-out/test/index.html" });
     open_cov.step.dependOn(&kcov.step);
-    const cov_open_step = b.step("cov-open", "Open the coverage HTML report");
-    cov_open_step.dependOn(&open_cov.step);
+    // Report-only form: coverage collection + JSON, no browser.
+    const cov_report_step = b.step("cov-report", "Run coverage and dump the JSON report");
+    cov_report_step.dependOn(&kcov.step);
+    cov_report_step.dependOn(&kcov_sum.step);
+    cov_step.dependOn(&open_cov.step);
 
     // --- Verify: the single command that gates a cycle ---
     // Tests + format check + coverage run together so the gate can't be
