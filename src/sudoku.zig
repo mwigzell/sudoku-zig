@@ -18,7 +18,7 @@ const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
 const wasm_transport = @import("engine/wasm_transport.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
-/// One running game: engine + renderer, driven by the loop in run().
+/// One running game: engine + renderer; native loops via native_run, wasm turns via wasm_run.
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
@@ -66,8 +66,9 @@ pub const Sudoku = struct {
         }
     }
 
-    /// Prompt through renderer, parse, dispatch. Returns true on quit.
-    fn promptForAndRunCommand(self: *@This()) Error!bool {
+    /// One command, end to end: getCommandInput → parse/dispatch → render.
+    /// Returns true when the session is over (quit, or an I/O read failure).
+    fn turn(self: *@This()) Error!bool {
         const avail = self.engine.getLegend();
         var names: [9][]const u8 = undefined;
         const count = avail.getNames(&names);
@@ -78,15 +79,18 @@ pub const Sudoku = struct {
         return try self.handleResult(result);
     }
 
-    /// Drive the interactive session: draw the initial board + legend once, then prompt/
-    /// run commands until quit or EOF. Does not deinit — the caller owns teardown.
-    pub fn run(self: *@This()) Error!void {
+    /// Native loop: draw the initial board + legend once, then run command turns
+    /// until quit or EOF. Does not deinit — the caller owns teardown.
+    pub fn native_run(self: *@This()) Error!void {
         try self.renderer.render(self.engine.eventBoard(), null);
         try self.renderer.showLegend(self.engine.getLegend());
-        while (true) {
-            const isDone = try self.promptForAndRunCommand();
-            if (isDone) break;
-        }
+        while (true) if (try self.turn()) break;
+    }
+
+    /// Wasm loop: exactly one command turn end to end per call.
+    /// Returns true when the session is over.
+    pub fn wasm_run(self: *@This()) Error!bool {
+        return try self.turn();
     }
 
     /// Release the engine; the passed-in facade is owned by the caller.
@@ -122,7 +126,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     defer sudoku.deinit();
 
     // Act: run the full loop — fill A3 with 4 via prefix dispatch, then quit
-    sudoku.run() catch {};
+    sudoku.native_run() catch {};
 
     // Assert (a): engine has undo available after mutation.
     {
@@ -176,7 +180,7 @@ test "integrated e2e - full seam: open loads saved game" {
     defer sudoku_instance.deinit();
 
     // Run full loop: open dialog -> filename prompt -> load file -> quit.
-    sudoku_instance.run() catch {};
+    sudoku_instance.native_run() catch {};
 
     // After opening saved file: B2 restored to original saved value (not seven)
     try std.testing.expectEqual(saved_b2, sudoku_instance.engine.eventBoard().get(1, 1));
@@ -209,7 +213,7 @@ test "integrated e2e - save success produces status message, re-render, legend r
     var sudoku = try Sudoku.init(cfg, facade, transport);
     defer sudoku.deinit();
 
-    sudoku.run() catch {};
+    sudoku.native_run() catch {};
 
     // Clean up saved file
     std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
@@ -244,7 +248,7 @@ test "integrated e2e - run: open file success produces status message, re-render
     defer sudoku_instance.deinit();
 
     // Act: run full loop - open loads file from command arg, re-renders, shows legend
-    sudoku_instance.run() catch {};
+    sudoku_instance.native_run() catch {};
 }
 
 test "integrated e2e - run: save uses default filename and returns success" {
@@ -273,7 +277,7 @@ test "integrated e2e - run: save uses default filename and returns success" {
     defer sudoku.deinit();
 
     // Act: run full loop - save prompts for filename, writes file, re-renders
-    sudoku.run() catch {};
+    sudoku.native_run() catch {};
 }
 // First save prompts for a filename; a follow-up save reuses it without prompting
 
@@ -298,7 +302,7 @@ test "integrated e2e - run: fill → save → quit" {
     const transport = file_transport.NativeTransport.make(std.testing.io);
     var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
-    sudoku_instance.run() catch {};
+    sudoku_instance.native_run() catch {};
 }
 // save_as writes the file through the dialog and re-renders
 test "integrated e2e - run: save_as writes file and re-renders" {
@@ -322,7 +326,7 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     const transport = file_transport.NativeTransport.make(std.testing.io);
     var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
-    sudoku_instance.run() catch {};
+    sudoku_instance.native_run() catch {};
 }
 
 // new starts a fresh board and clears the mutation history
@@ -347,7 +351,7 @@ test "integrated e2e - run: new command resets board and history" {
     const transport = file_transport.NativeTransport.make(std.testing.io);
     var sudoku_instance = try Sudoku.init(cfg, facade, transport);
     defer sudoku_instance.deinit();
-    sudoku_instance.run() catch {};
+    sudoku_instance.native_run() catch {};
 
     // history should be empty after new command clears it
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
@@ -374,7 +378,7 @@ test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
     defer sudoku.deinit();
 
     // Act: run through the host-built facade end-to-end
-    sudoku.run() catch {};
+    sudoku.native_run() catch {};
 }
 
 test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
@@ -464,7 +468,7 @@ test "hostless: wasm facade + transport assemble a working game" {
     var game = try Sudoku.init(cfg, h.facade, h.transport);
     defer game.deinit();
 
-    game.run() catch {};
+    game.native_run() catch {};
 
     try std.testing.expectEqual(cell.CellValue.four, game.engine.state.board.getCellValue(@as(u4, 2), @as(u4, 0)));
     try std.testing.expect(game.engine.getLegend().undo);

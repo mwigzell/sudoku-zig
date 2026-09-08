@@ -39,12 +39,36 @@ pub const WasmHost = struct {
     };
     var results = Results{ .line = undefined, .name = undefined };
 
+    // One-shot inbound queue: the wasm entry's step export stores the page's
+    // command line here and the next readLine serves it before asking the
+    // page. Static like `results` — same single-host-per-process idiom.
+    var queued: [256]u8 = undefined;
+    var queued_len: u32 = 0;
+    var queued_set = false;
+
     /// Pull one command line from the page; null on EOF.
     pub fn readLine(self: *const WasmHost) ?[]u8 {
+        if (queued_set) {
+            queued_set = false; // one-shot — the page serves what comes next
+            return queued[0..queued_len];
+        }
         const n = self.line_in(&results.line, results.line.len);
         if (n == 0) return null;
         if (n == results.line.len) return null; // page clipped the line
         return results.line[0..n];
+    }
+
+    /// Store a page event line for the next readLine; an empty or over-long
+    /// line clears the queue so readLine falls through to the page import.
+    pub fn queueLine(line: []const u8) void {
+        if (line.len == 0 or line.len >= queued.len) {
+            queued_len = 0;
+            queued_set = false;
+            return;
+        }
+        @memcpy(queued[0..line.len], line);
+        queued_len = @intCast(line.len);
+        queued_set = true;
     }
 
     /// Ask the page to pick a file name; null on cancel.
@@ -134,4 +158,25 @@ test "WasmHost: bytes-out reaches the page's sink" {
     );
     host.writeScreen("screen text across the boundary");
     try std.testing.expectEqualSlices(u8, "screen text across the boundary", out_mock.buf[0..out_mock.len]);
+}
+test "WasmHost: a queued line is served by the next readLine, exactly once" {
+    const host = WasmHost.make(
+        mock_line_in,
+        mock_bytes_out,
+        mock_picker,
+        wasm_transport.test_file_write,
+        wasm_transport.test_file_read,
+    );
+    line_mock.len = 0; // page serves EOF — only the queue can answer
+
+    WasmHost.queueLine("quit");
+    const first = host.readLine() orelse return error.ReadEOF;
+    try std.testing.expectEqualSlices(u8, "quit", first);
+
+    // One-shot: the second read falls through to the page (EOF here).
+    try std.testing.expect(host.readLine() == null);
+
+    // An empty or clipped queue clears — readLine still reports the page (EOF).
+    WasmHost.queueLine("");
+    try std.testing.expect(host.readLine() == null);
 }

@@ -66,7 +66,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     defer game.deinit();
 
     // Command loop: menu → play → save/open, until the player quits or the game exits.
-    try game.run();
+    try game.native_run();
 
     log.debug("Ending sudoku game.", .{});
 }

@@ -101,14 +101,30 @@
       feed.classList.add("error");
     }
 
-    form.addEventListener("submit", (ev) => {
+
+    // Append one command turn's text to the feed.
+    function appendTurn(text) {
+      if (!text) return;
+      feed.textContent += "\n" + text;
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    function onCommand(ev) {
       ev.preventDefault();
       if (!game) return;
       const value = input.value;
       input.value = "";
-      game.pushLine(value);
-      renderNewTurns();
-    });
+      const turn = game.step(value);
+      appendTurn(turn.text);
+      if (turn.done) {
+        input.disabled = true;
+        submit.disabled = true;
+        appendTurn("(session over)");
+      } else {
+        input.focus();
+      }
+    }
+    form.addEventListener("submit", onCommand);
 
     try {
       const res = await fetch("./artifact.wasm");

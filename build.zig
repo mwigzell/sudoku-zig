@@ -21,9 +21,12 @@ pub fn build(b: *std.Build) void {
     // WASM: emit before native compile (@embedFile is parse-time).
     const WASM_OUT = "src/wasm/artifact.wasm";
 
+    // --export forces the step symbol into the wasm export table (wasm-ld);
+    // `export fn` alone is a no-op on this toolchain snapshot.
     const wasm_emit = b.addSystemCommand(&.{
-        "zig",     "build-exe",           "src/wasm_entry.zig",
-        "-target", "wasm32-freestanding", "-femit-bin=" ++ WASM_OUT,
+        "zig",           "build-exe",           "src/wasm_entry.zig",
+        "-target",       "wasm32-freestanding", "-femit-bin=" ++ WASM_OUT,
+        "--export=step",
     });
     exe.step.dependOn(&wasm_emit.step);
 
