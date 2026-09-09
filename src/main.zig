@@ -43,6 +43,20 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     const log = logger.Logger(.sudoku);
     log.debug("Starting sudoku game.", .{});
 
+    // web deployment: the binary serves the embedded page and exits when every
+    // asset has been delivered — no game loop, no Host.
+    if (cfg.preferred_renderer == .web) {
+        serve.serve(init.io) catch |err| {
+            if (err == serve.ServeError.AddressInUse) {
+                std.debug.print("Error: web server failed to start — port {d} is already in use.\n", .{serve.Port});
+            } else {
+                std.debug.print("Error: web server failed to start: {s}\n", .{@errorName(err)});
+            }
+            std.process.exit(1);
+        };
+        return;
+    }
+
     // Host owns the renderer substrate and I/O session for this process (see host/host.zig).
     var host = host_mod.Host.create(cfg, init.io, std.heap.page_allocator);
     defer host.deinit();
