@@ -40,6 +40,11 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the Sudoku game");
     run_step.dependOn(&run_cmd.step);
 
+    // JS glue contract test for the served web page (command-in → full-text-out over the wasm import table).
+    const glue = b.addSystemCommand(&.{ "node", "src/wasm/glue.test.mjs" });
+    const glue_step = b.step("glue", "Run the JS glue contract test (node)");
+    glue_step.dependOn(&glue.step);
+
     // --- Tests ---
     // main.zig transitively imports the domain modules; addTest discovers every co-located `test {}`
     // block via Zig's import-graph discovery.
@@ -117,6 +122,7 @@ pub fn build(b: *std.Build) void {
     verify_step.dependOn(&exe.step); // entry point must compile — test mode never analyzes main()
     verify_step.dependOn(&run_tests.step);
     verify_step.dependOn(&fmt_check.step);
+    verify_step.dependOn(&glue.step);
     verify_step.dependOn(&kcov.step);
     verify_step.dependOn(&kcov_sum.step);
 }
