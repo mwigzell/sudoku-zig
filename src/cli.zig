@@ -8,21 +8,18 @@ pub const ParseError = error{
     UnknownFlag,
 };
 
-fn usage(exit_code: u8) noreturn {
-    std.debug.print(
-        \\Usage: sudoku [OPTIONS]
-        \\
-        \\  -h, --help              Show this help message
-        \\  -V, --version           Show version and exit
-        \\  -r, --renderer <kind>   Choose renderer (ansi, ascii, tui, web)
-        \\  -d, --difficulty <level> Puzzle difficulty (easy, medium, hard)
-        \\  -v, --log-level <level>  Minimum log severity (debug, info, warn, err, fatal)
-        \\
-    , .{});
+const log = logger.Logger(.cli);
 
-    std.process.exit(exit_code);
-}
-
+/// Help text; printed to stdout for -h/--version and embedded in fatal error messages.
+const usage_fmt =
+    \\Usage: sudoku [OPTIONS]
+    \\
+    \\  -h, --help              Show this help message
+    \\  -V, --version           Show version and exit
+    \\  -r, --renderer <kind>   Choose renderer (ansi, ascii, tui, web)
+    \\  -d, --difficulty <level> Puzzle difficulty (easy, medium, hard)
+    \\  -v, --log-level <level>  Minimum log severity (debug, info, warn, err, fatal)
+;
 /// Iterate argv and return a Config with defaults overridden by flags.
 pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
     _ = iterator.next(); // skip process name
@@ -31,40 +28,34 @@ pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
 
     while (iterator.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            usage(0);
+            std.debug.print(usage_fmt, .{});
+            std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-V") or std.mem.eql(u8, arg, "--version")) {
             std.debug.print("sudoku {s}\n", .{version.string});
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--renderer")) {
             const kind = iterator.next() orelse {
-                std.debug.print("Error: --renderer requires a value\n", .{});
-                usage(1);
+                log.fatal("--renderer requires a value.\n\n{s}", .{usage_fmt});
             };
             cfg.preferred_renderer = parseRenderer(kind) orelse {
-                std.debug.print("Error: invalid renderer kind '{s}'\n", .{kind});
-                usage(1);
+                log.fatal("invalid renderer kind '{s}'.\n\n{s}", .{ kind, usage_fmt });
             };
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--difficulty")) {
             const diff = iterator.next() orelse {
-                std.debug.print("Error: --difficulty requires a value\n", .{});
-                usage(1);
+                log.fatal("--difficulty requires a value.\n\n{s}", .{usage_fmt});
             };
             cfg.difficulty = parseDifficulty(diff) orelse {
-                std.debug.print("Error: invalid difficulty '{s}'\n", .{diff});
-                usage(1);
+                log.fatal("invalid difficulty '{s}'.\n\n{s}", .{ diff, usage_fmt });
             };
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--log-level")) {
             const lvl = iterator.next() orelse {
-                std.debug.print("Error: --log-level requires a value\n", .{});
-                usage(1);
+                log.fatal("--log-level requires a value.\n\n{s}", .{usage_fmt});
             };
             cfg.log_level = parseLogLevel(lvl) orelse {
-                std.debug.print("Error: invalid log level '{s}'\n", .{lvl});
-                usage(1);
+                log.fatal("invalid log level '{s}'.\n\n{s}", .{ lvl, usage_fmt });
             };
         } else if (std.mem.startsWith(u8, arg, "-")) {
-            std.debug.print("Unknown flag: '{s}'\n", .{arg});
-            usage(1);
+            log.fatal("Unknown flag: '{s}'.\n\n{s}", .{ arg, usage_fmt });
         }
     }
 

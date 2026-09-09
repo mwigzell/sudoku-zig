@@ -2,6 +2,8 @@
 /// the socket layer lives elsewhere and drives this through Router.route().
 const std = @import("std");
 const net = std.Io.net;
+const logger = @import("logger.zig");
+const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm/wasm_bytes.zig");
 
 pub const RouteResult = enum { page, glue, artifact };
@@ -81,7 +83,7 @@ fn serveWith(io: std.Io, bind: BindFn) ServeError!void {
     }
     var server: net.Server = srv orelse return ServeError.AddressInUse;
     defer server.deinit(io);
-    std.debug.print("Serving sudoku web on http://127.0.0.1:{d}/\n", .{bound_port.?});
+    log.info("serving sudoku web on http://127.0.0.1:{d}/", .{bound_port.?});
     var router = Router.init();
     while (!router.allDelivered()) {
         const client = server.accept(io) catch return ServeError.System;

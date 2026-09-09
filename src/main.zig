@@ -48,11 +48,10 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     if (cfg.preferred_renderer == .web) {
         serve.serve(init.io) catch |err| {
             if (err == serve.ServeError.AddressInUse) {
-                std.debug.print("Error: web server failed to start — port {d} is already in use.\n", .{serve.Port});
+                log.fatal("web server failed to start — port {d} is already in use.", .{serve.Port});
             } else {
-                std.debug.print("Error: web server failed to start: {s}\n", .{@errorName(err)});
+                log.fatal("web server failed to start: {s}.", .{@errorName(err)});
             }
-            std.process.exit(1);
         };
         return;
     }
@@ -63,18 +62,16 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     var facade_f = host.facade() catch |err| {
         // Renderer requested but not available in this build — tell the player which one, separately for "unimplemented" and "no fallback".
         if (err == error.UnsupportedRenderer) {
-            std.debug.print(
-                "Error: renderer '{s}' is not available in this build.\nAvailable renderers: ansi, ascii.\n",
+            log.fatal(
+                "renderer '{s}' is not available in this build.\nAvailable renderers: ansi, ascii.",
                 .{@tagName(cfg.preferred_renderer)},
             );
-            std.process.exit(1);
         }
         if (err == error.NoFallbackConfigured) {
-            std.debug.print(
-                "Error: renderer '{s}' is unavailable and no fallback renderer is configured.\n",
+            log.fatal(
+                "renderer '{s}' is unavailable and no fallback renderer is configured.",
                 .{@tagName(cfg.preferred_renderer)},
             );
-            std.process.exit(1);
         }
         return err;
     };
