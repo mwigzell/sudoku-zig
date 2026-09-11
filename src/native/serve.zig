@@ -64,11 +64,45 @@ pub fn bindLoopback(io: std.Io, port: u16) BindError!net.Server {
 }
 /// Serves the embedded web assets to loopback clients and returns once every
 /// known route has been served at least once — no lingering server process.
-pub fn serve(io: std.Io) ServeError!void {
-    return serveWith(io, bindLoopback);
+pub fn serve(io: std.Io, open: OpenFn) ServeError!void {
+    return serveWith(io, bindLoopback, open);
+}
+/// Errors from opening a browser for the served URL: no opener available.
+pub const OpenError = error{Unavailable};
+/// Browser-open seam: prod wires `openBrowser`; tests wire a fake.
+pub const OpenFn = *const fn (io: std.Io, url: []const u8) OpenError!void;
+pub fn openBrowser(io: std.Io, url: []const u8) OpenError!void {
+    var candidates: [3][]const u8 = .{ undefined, undefined, undefined };
+    var count: usize = 0;
+    if (std.c.getenv("BROWSER")) |b| {
+        const s = std.mem.span(b);
+        if (s.len > 0) {
+            candidates[count] = s;
+            count += 1;
+        }
+    }
+    candidates[count] = "xdg-open";
+    count += 1;
+    candidates[count] = "vivaldi";
+    count += 1;
+    for (candidates[0..count]) |cand| {
+        // Fire-and-forget: the browser outlives this call; wait() would
+        // block serving until it exits, so the child is deliberately
+        // not waited on.
+        _ = std.process.spawn(io, .{ .argv = &.{ cand, url } }) catch continue;
+        return;
+    }
+    return OpenError.Unavailable;
+}
+/// Opens the served URL; an Unavailable opener is reported and serving
+/// continues regardless — opening the browser never aborts serving.
+fn openOrReport(io: std.Io, open: OpenFn, url: []const u8) void {
+    open(io, url) catch |err| switch (err) {
+        OpenError.Unavailable => log.info("no browser available — open {s} yourself", .{url}),
+    };
 }
 /// Core probe loop: try each port in order until one binds.
-fn serveWith(io: std.Io, bind: BindFn) ServeError!void {
+fn serveWith(io: std.Io, bind: BindFn, open: OpenFn) ServeError!void {
     // The preferred port may be owned by another service; probe the fallback
     // range so serving never fails just because the preferred one is taken.
     var srv: ?net.Server = null;
@@ -84,6 +118,9 @@ fn serveWith(io: std.Io, bind: BindFn) ServeError!void {
     var server: net.Server = srv orelse return ServeError.AddressInUse;
     defer server.deinit(io);
     log.info("serving sudoku web on http://127.0.0.1:{d}/", .{bound_port.?});
+    var url_buf: [64]u8 = undefined;
+    const url = std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/", .{bound_port.?}) catch return ServeError.System;
+    openOrReport(io, open, url);
     var router = Router.init();
     while (!router.allDelivered()) {
         const client = server.accept(io) catch return ServeError.System;
@@ -154,6 +191,21 @@ fn bindFault(io: std.Io, port: u16) BindError!net.Server {
     _ = port;
     return BindError.System;
 }
+// Test doubles for the open seam — no real browser, capture only.
+var open_count: usize = 0;
+var open_last_url: [64]u8 = undefined;
+
+fn recordOpen(io: std.Io, url: []const u8) OpenError!void {
+    _ = io;
+    open_count += 1;
+    @memcpy(open_last_url[0..url.len], url);
+}
+
+fn failingOpen(io: std.Io, url: []const u8) OpenError!void {
+    _ = io;
+    _ = url;
+    return OpenError.Unavailable;
+}
 // Stream-like drain double: bytes reach the sink only when the writer
 // drains them, exactly like the real socket writer.
 var capture_len: usize = 0;
@@ -218,16 +270,20 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
 }
 
 test "serve: reports AddressInUse when every probed port is in use" {
+    open_count = 0;
     try std.testing.expectError(
         ServeError.AddressInUse,
-        serveWith(std.testing.io, bindInUse),
+        serveWith(std.testing.io, bindInUse, recordOpen),
     );
+    try std.testing.expectEqual(0, open_count);
 }
 test "serve: a socket fault while probing is System, not AddressInUse" {
+    open_count = 0;
     try std.testing.expectError(
         ServeError.System,
-        serveWith(std.testing.io, bindFault),
+        serveWith(std.testing.io, bindFault, recordOpen),
     );
+    try std.testing.expectEqual(0, open_count);
 }
 test "serve: writeFull flushes what the buffer still holds (short response must not sit undelivered)" {
     capture_len = 0;
@@ -241,4 +297,14 @@ test "serve: writeFull flushes what the buffer still holds (short response must 
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\nConnection: close\r\n\r\nhello world",
         capture_sink[0..capture_len],
     );
+}
+test "serve: openOrReport calls the opener once with the bound url" {
+    open_count = 0;
+    openOrReport(std.testing.io, recordOpen, "http://127.0.0.1:8137/");
+    try std.testing.expectEqual(1, open_count);
+    try std.testing.expectEqualStrings("http://127.0.0.1:8137/", open_last_url[0..22]);
+}
+test "serve: openOrReport swallows an Unavailable opener and returns" {
+    open_count = 0;
+    openOrReport(std.testing.io, failingOpen, "http://127.0.0.1:8080/");
 }

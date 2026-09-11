@@ -46,7 +46,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     // web deployment: the binary serves the embedded page and exits when every
     // asset has been delivered — no game loop, no Host.
     if (cfg.preferred_renderer == .web) {
-        serve.serve(init.io) catch |err| {
+        serve.serve(init.io, serve.openBrowser) catch |err| {
             if (err == serve.ServeError.AddressInUse) {
                 log.fatal("web server failed to start — port {d} is already in use.", .{serve.Port});
             } else {
