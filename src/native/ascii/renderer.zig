@@ -1,4 +1,4 @@
-const board = @import("../../board.zig");
+const board = @import("../../board/board.zig");
 const cell = @import("../../board/cell.zig");
 const parser = @import("parser.zig");
 const _command = @import("../../command.zig");
@@ -7,7 +7,7 @@ const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
 const facade = @import("../../renderer/facade.zig");
-const input_source = @import("../../host/input_source.zig");
+const input_source = @import("../../native/input_source.zig");
 const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
 const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 
@@ -289,7 +289,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 
 const game_engine = @import("../../engine/game_engine.zig");
 const disambiguate = @import("disambiguate.zig");
-const legend = @import("../legend.zig");
+const legend = @import("../../renderer/legend.zig");
 
 test "showLegend: writes Command: with Fill Clear Quit" {
     const io = std.testing.io;

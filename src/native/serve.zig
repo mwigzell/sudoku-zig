@@ -2,9 +2,9 @@
 /// the socket layer lives elsewhere and drives this through Router.route().
 const std = @import("std");
 const net = std.Io.net;
-const logger = @import("logger.zig");
+const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
-const wasm_bytes = @import("wasm/wasm_bytes.zig");
+const wasm_bytes = @import("wasm_bytes.zig");
 
 pub const RouteResult = enum { page, glue, artifact };
 
@@ -53,7 +53,7 @@ pub const FallbackCount: u16 = 8;
 pub const BindError = error{ InUse, System };
 /// Port-binding seam: attempt to bind one loopback port; report why not.
 /// Prod wires in `bindLoopback`; tests wire in a fake (same pattern as the
-/// MockSource seam in host/input_source.zig).
+/// MockSource seam in native/input_source.zig).
 pub const BindFn = *const fn (io: std.Io, port: u16) BindError!net.Server;
 pub fn bindLoopback(io: std.Io, port: u16) BindError!net.Server {
     const addr = net.IpAddress{ .ip4 = net.Ip4Address.loopback(port) };

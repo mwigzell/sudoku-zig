@@ -7,9 +7,9 @@
 const std = @import("std");
 const config = @import("config.zig");
 const sudoku_mod = @import("sudoku.zig");
-const wasm_host = @import("host/wasm_host.zig");
-const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
-const wasm_transport = @import("engine/wasm_transport.zig");
+const wasm_host = @import("wasm/host.zig");
+const wasm_renderer = @import("wasm/renderer.zig");
+const wasm_transport = @import("wasm/transport.zig");
 const facade_mod = @import("renderer/facade.zig");
 
 // The boundary: each supplied value is its own import. A new Config value the

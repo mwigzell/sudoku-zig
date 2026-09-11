@@ -1,11 +1,11 @@
 const std = @import("std");
-const CellValue = @import("board/cell.zig").CellValue;
-const Cell = @import("board/cell.zig").Cell;
-const rawToCellValue = @import("board/cell.zig").rawToCellValue;
-const puzzle_gen = @import("puzzle_gen.zig");
-const validator = @import("board/validator.zig");
+const CellValue = @import("cell.zig").CellValue;
+const Cell = @import("cell.zig").Cell;
+const rawToCellValue = @import("cell.zig").rawToCellValue;
+const puzzle_gen = @import("../puzzle_gen.zig");
+const validator = @import("validator.zig");
 
-const conflict = @import("board/conflict.zig");
+const conflict = @import("conflict.zig");
 
 pub const Error = error{
     /// A cell value outside the 0–9 range.
@@ -258,7 +258,7 @@ pub const Board = struct {
     }
 };
 
-const serial = @import("board/serial.zig");
+const serial = @import("serial.zig");
 
 // Backward-compat re-exports (moved to board/serial.zig)
 pub const FlatOpts = serial.FlatOpts;

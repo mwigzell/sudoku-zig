@@ -1,7 +1,7 @@
 // GameEngine: authoritative game state — board, mutation history, and the exec()
 // command dispatcher; save/restore delegates to save_format.
 const std = @import("std");
-const board = @import("../board.zig");
+const board = @import("../board/board.zig");
 const cell = @import("../board/cell.zig");
 const _legend = @import("../renderer/legend.zig");
 const Legend = _legend.Legend;

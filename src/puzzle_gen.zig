@@ -1,4 +1,4 @@
-const board = @import("board.zig");
+const board = @import("board/board.zig");
 const std = @import("std");
 
 /// Canonical puzzle difficulty levels. .default is the legacy dot-blanked fixture.

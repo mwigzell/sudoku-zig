@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const mem = std.mem;
-const disambiguate = @import("ascii/disambiguate.zig");
+const disambiguate = @import("../native/ascii/disambiguate.zig");
 
 const command = @import("../command.zig");
 

@@ -1,5 +1,5 @@
 // Portable game state: the board plus mutation history — no deployments, no I/O.
-const board_mod = @import("../board.zig");
+const board_mod = @import("../board/board.zig");
 const mutation_history = @import("mutation_history.zig");
 
 pub const State = struct {

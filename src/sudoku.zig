@@ -2,20 +2,20 @@
 // game engine, and render each resulting event back through the renderer.
 const std = @import("std");
 const facade_mod = @import("renderer/facade.zig");
-const styler = @import("renderer/ascii/styler.zig");
+const styler = @import("native/ascii/styler.zig");
 const game_engine = @import("engine/game_engine.zig");
 const file_transport = @import("engine/file_transport.zig");
 const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const command = @import("command.zig");
 
-const disambiguate = @import("renderer/ascii/disambiguate.zig");
+const disambiguate = @import("native/ascii/disambiguate.zig");
 const legend = @import("renderer/legend.zig");
 
-const host_mod = @import("host/host.zig");
-const wasm_host = @import("host/wasm_host.zig");
-const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
-const wasm_transport = @import("engine/wasm_transport.zig");
+const host_mod = @import("native/host.zig");
+const wasm_host = @import("wasm/host.zig");
+const wasm_renderer = @import("wasm/renderer.zig");
+const wasm_transport = @import("wasm/transport.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 /// One running game: engine + renderer; both deployments show the game, then turn it.
@@ -90,10 +90,10 @@ pub const Sudoku = struct {
     }
 };
 
-const board = @import("board.zig");
+const board = @import("board/board.zig");
 const cell = @import("board/cell.zig");
-const styler_t = @import("renderer/ascii/styler.zig");
-const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
+const styler_t = @import("native/ascii/styler.zig");
+const ascii_renderer = @import("native/ascii/renderer.zig");
 
 test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer

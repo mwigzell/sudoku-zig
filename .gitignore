@@ -2,4 +2,4 @@
 zig-out/
 build.log
 kcov-out/
-src/wasm/artifact.wasm
+src/wasm/artifacts/artifact.wasm

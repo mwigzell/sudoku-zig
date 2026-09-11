@@ -1,5 +1,5 @@
 const command = @import("../command.zig");
-const board = @import("../board.zig");
+const board = @import("../board/board.zig");
 const legend = @import("legend.zig");
 const Legend = legend.Legend;
 

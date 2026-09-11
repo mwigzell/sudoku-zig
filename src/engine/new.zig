@@ -1,7 +1,7 @@
 /// New-game command handler — clears undo history, loads a puzzle string (falling back to medium), returns a fresh board view.
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
-const board = @import("../board.zig");
+const board = @import("../board/board.zig");
 const command = @import("../command.zig");
 const PuzzleGen = @import("../puzzle_gen.zig").PuzzleGen;
 const file_transport = @import("file_transport.zig");

@@ -1,5 +1,5 @@
 const std = @import("std");
-const board = @import("../board.zig");
+const board = @import("../board/board.zig");
 const validator = @import("validator.zig");
 
 /// Translate scope-relative conflict bits (0..8) to full board flat-storage positions

@@ -1,14 +1,14 @@
 // Renderer allocation seam: picks the prod/mock branch by reader kind and
 // owns the context structs that hold the heap handles behind the Facade vtable.
 const std = @import("std");
-const ascii_renderer = @import("ascii_renderer.zig");
+const ascii_renderer = @import("renderer.zig");
 const styler = @import("styler.zig");
-const input_source = @import("../../host/input_source.zig");
-const facade = @import("../facade.zig");
-const board = @import("../../board.zig");
-const legend = @import("../legend.zig");
+const input_source = @import("../../native/input_source.zig");
+const facade = @import("../../renderer/facade.zig");
+const board = @import("../../board/board.zig");
+const legend = @import("../../renderer/legend.zig");
 const command = @import("../../command.zig");
-const io_session = @import("../../host/io_session.zig");
+const io_session = @import("../../native/io_session.zig");
 
 pub const Alloc = struct {
     /// Static factory — resolve the reader branch, allocate styler/renderer/context,

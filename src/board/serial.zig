@@ -1,5 +1,5 @@
 const std = @import("std");
-const board = @import("../board.zig");
+const board = @import("../board/board.zig");
 const cell = @import("cell.zig");
 
 pub const Error = board.Error;

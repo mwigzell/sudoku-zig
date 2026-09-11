@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
     // WASM: emit before native compile (@embedFile is parse-time).
-    const WASM_OUT = "src/wasm/artifact.wasm";
+    const WASM_OUT = "src/wasm/artifacts/artifact.wasm";
 
     // --export forces the step symbol into the wasm export table (wasm-ld);
     // `export fn` alone is a no-op on this toolchain snapshot.
@@ -28,6 +28,8 @@ pub fn build(b: *std.Build) void {
         "-target",       "wasm32-freestanding", "-femit-bin=" ++ WASM_OUT,
         "--export=step",
     });
+    const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });
+    wasm_emit.step.dependOn(&mkdir_artifacts.step);
     exe.step.dependOn(&wasm_emit.step);
 
     // clean step — remove cache, build, and coverage dirs for a truly fresh start
@@ -41,9 +43,10 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // JS glue contract test for the served web page (command-in → full-text-out over the wasm import table).
-    const glue = b.addSystemCommand(&.{ "node", "src/wasm/glue.test.mjs" });
+    const glue = b.addSystemCommand(&.{ "node", "src/wasm/artifacts/glue.test.mjs" });
     const glue_step = b.step("glue", "Run the JS glue contract test (node)");
     glue_step.dependOn(&glue.step);
+    glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit
 
     // --- Tests ---
     // main.zig transitively imports the domain modules; addTest discovers every co-located `test {}`

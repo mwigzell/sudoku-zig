@@ -1,17 +1,17 @@
 //! Web renderer — the facade surface for the browser deployment. Methods exist
 //! with the vtable signatures; the page (WasmHost) is the I/O substrate.
 const std = @import("std");
-const command = @import("../../command.zig");
-const cell = @import("../../board/cell.zig");
-const board = @import("../../board.zig");
-const legend = @import("../legend.zig");
-const facade_mod = @import("../facade.zig");
-const wasm_host = @import("../../host/wasm_host.zig");
-const wasm_transport = @import("../../engine/wasm_transport.zig");
-const ascii_mod = @import("../ascii/ascii_renderer.zig");
-const styler_mod = @import("../ascii/styler.zig");
-const parser_mod = @import("../ascii/parser.zig");
-const disambiguate_mod = @import("../ascii/disambiguate.zig");
+const command = @import("../command.zig");
+const cell = @import("../board/cell.zig");
+const board = @import("../board/board.zig");
+const legend = @import("../renderer/legend.zig");
+const facade_mod = @import("../renderer/facade.zig");
+const wasm_host = @import("host.zig");
+const wasm_transport = @import("transport.zig");
+const ascii_mod = @import("../native/ascii/renderer.zig");
+const styler_mod = @import("../native/ascii/styler.zig");
+const parser_mod = @import("../native/ascii/parser.zig");
+const disambiguate_mod = @import("../native/ascii/disambiguate.zig");
 
 const testing = std.testing;
 const A = testing.allocator;

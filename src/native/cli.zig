@@ -1,7 +1,7 @@
 const std = @import("std");
-const config = @import("config.zig");
-const logger = @import("logger.zig");
-const version = @import("version.zig");
+const config = @import("../config.zig");
+const logger = @import("../logger.zig");
+const version = @import("../version.zig");
 
 pub const ParseError = error{
     HelpRequested,

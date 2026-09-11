@@ -1,5 +1,5 @@
 const std = @import("std");
-const board = @import("board.zig");
+const board = @import("board/board.zig");
 
 /// Event union type — public output contract of GameEngine.exec().
 pub const Event = union(enum) {

@@ -5,7 +5,7 @@
 // WasmRenderer and WasmTransport lean on. Compiles in both deployments
 // (never touches std.Io) and is mock-drivable from the native suite.
 const std = @import("std");
-const wasm_transport = @import("../engine/wasm_transport.zig");
+const wasm_transport = @import("transport.zig");
 
 // Import surface the page supplies; the wasm entry binds the real page imports.
 pub const LineIn = *const fn (buf: [*]u8, cap: u32) callconv(.c) u32; // bytes served, 0 = EOF

@@ -3,24 +3,24 @@ const std = @import("std");
 const facade = @import("renderer/facade.zig");
 const sudoku = @import("sudoku.zig");
 const config_module = @import("config.zig");
-const ascii_renderer = @import("renderer/ascii/ascii_renderer.zig");
+const ascii_renderer = @import("native/ascii/renderer.zig");
 const logger = @import("logger.zig");
-const styler = @import("renderer/ascii/styler.zig");
-const cli = @import("cli.zig");
+const styler = @import("native/ascii/styler.zig");
+const cli = @import("native/cli.zig");
 // main constructs the Host at startup — the import is load-bearing: without it host.zig would not enter this file's test closure.
-const host_mod = @import("host/host.zig");
+const host_mod = @import("native/host.zig");
 // Load-bearing: wasm_bytes.zig must stay reachable from this closure for its tests.
-const wasm_bytes = @import("wasm/wasm_bytes.zig");
-// Load-bearing: wasm_renderer.zig must stay reachable from this closure for its tests.
-const wasm_renderer = @import("renderer/wasm/wasm_renderer.zig");
+const wasm_bytes = @import("native/wasm_bytes.zig");
+// Load-bearing: wasm/renderer.zig must stay reachable from this closure for its tests.
+const wasm_renderer = @import("wasm/renderer.zig");
 const state_mod = @import("engine/state.zig");
 const file_transport = @import("engine/file_transport.zig");
 // wasm arm of the transport — io-free, pinned so its tests join the native suite.
-const wasm_transport = @import("engine/wasm_transport.zig");
+const wasm_transport = @import("wasm/transport.zig");
 // Load-bearing: serve.zig is pure and pinned so its tests join the native suite.
-const serve = @import("serve.zig");
-// Load-bearing: wasm_host.zig is io-free and pinned so its tests join the native suite.
-const wasm_host = @import("host/wasm_host.zig");
+const serve = @import("native/serve.zig");
+// Load-bearing: wasm/host.zig is io-free and pinned so its tests join the native suite.
+const wasm_host = @import("wasm/host.zig");
 
 test {
     // Reachability pin: keeps sudoku.zig (and its sub-modules) inside the test closure of this root file.
@@ -56,7 +56,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
         return;
     }
 
-    // Host owns the renderer substrate and I/O session for this process (see host/host.zig).
+    // Host owns the renderer substrate and I/O session for this process (see native/host.zig).
     var host = host_mod.Host.create(cfg, init.io, std.heap.page_allocator);
     defer host.deinit();
     var facade_f = host.facade() catch |err| {

@@ -5,7 +5,7 @@
 // suite with plain mock fns. WasmHost binds the real page imports for the wasm build.
 
 const std = @import("std");
-const file_transport = @import("file_transport.zig");
+const file_transport = @import("../engine/file_transport.zig");
 const TransportError = file_transport.TransportError;
 
 // Import surface the page supplies; WasmHost binds it for the wasm build.
