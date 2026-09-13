@@ -39,22 +39,20 @@ pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
 
-/// Owns the portable game state, a byte-transport seam for save/open, and
-/// save-dialog state (data dir, feedback text). No I/O handle lives here.
+/// Owns portable game state and save-dialog metadata. No file transport or I/O here.
 pub const GameEngine = struct {
     state: state_mod.State,
-    transport: file_transport.FileTransport,
     data_dir: ?[]u8,
     last_save_msg: ?[]u8,
-    /// Build an engine from a one-line puzzle string; the transport is retained for save/open.
-    pub fn init(puzzle_str: []const u8, transport: file_transport.FileTransport) Error!@This() {
+
+    /// Build an engine from a one-line puzzle string.
+    pub fn init(puzzle_str: []const u8) Error!@This() {
         const brd = board.fromOneLineString(puzzle_str) catch return Error.System;
         var self = @This(){
             .state = .{
                 .board = brd,
                 .history = MutationHistory.init(std.heap.page_allocator),
             },
-            .transport = transport,
             .data_dir = null,
             .last_save_msg = null,
         };
@@ -91,35 +89,27 @@ pub const GameEngine = struct {
         };
     }
 
-    /// Serialize the game state to a save file; bytes move through the transport.
-    pub fn saveGame(self: *const @This(), path: []const u8) file_transport.TransportError!void {
-        const gpa = std.heap.page_allocator;
-        const buf = save_format.toSaveFormat(&self.state, gpa) catch return file_transport.TransportError.OutOfMemory;
-        defer gpa.free(buf);
-        return self.transport.write(self.transport.context, path, buf);
-    }
-
     /// Serialize full game state to a heap-allocated byte buffer.
-    /// Returns allocated []u8 — caller owns and must free with the same allocator.
-    pub fn toSaveFormat(self: *const @This(), gpa: std.mem.Allocator) []u8 {
+    pub fn toSaveFormat(self: *const @This(), gpa: std.mem.Allocator) ![]u8 {
         return save_format.toSaveFormat(&self.state, gpa);
     }
 
-    /// Load a save file through the transport; replaces this engine's state.
-    pub fn openGame(self: *@This(), path: []const u8) file_transport.TransportError!void {
+    /// Replace board and history from a SUD0 blob produced by `toSaveFormat`.
+    pub fn loadSaveFormat(self: *@This(), buf: []const u8) !void {
         const gpa = std.heap.page_allocator;
-        const buf = self.transport.readAll(self.transport.context, path) catch return file_transport.TransportError.System;
-        defer self.transport.free(self.transport.context, buf);
-        const loaded = save_format.fromSaveFormat(gpa, buf) catch return file_transport.TransportError.System;
+        const loaded = try save_format.fromSaveFormat(gpa, buf);
         self.state.history.deinit();
         self.state.board = loaded.board;
         self.state.history = loaded.history;
+        if (self.data_dir) |dir| gpa.free(dir);
+        if (self.last_save_msg) |msg| gpa.free(msg);
         self.data_dir = null;
         self.last_save_msg = null;
     }
 
     /// Route a parsed command through Board mutation + render update.
-    pub fn exec(self: *@This(), cmd: command.Command) Event {
+    /// Session commands still take a transport until Sudoku owns routing (#30).
+    pub fn exec(self: *@This(), cmd: command.Command, transport: file_transport.FileTransport) Event {
         switch (cmd) {
             .fill => |f| {
                 return fill_command.execute(self, f);
@@ -138,17 +128,17 @@ pub const GameEngine = struct {
             },
             .save => |data| {
                 const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                return save_command.execute(self, path);
+                return save_command.execute(self, transport, path);
             },
             .open => |data| {
-                return open_command.execute(self, data.path);
+                return open_command.execute(self, transport, data.path);
             },
             .new => |data| {
-                return new_command.execute(self, data);
+                return new_command.execute(self, transport, data);
             },
             .save_as => |data| {
                 const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                return save_as_command.execute(self, path);
+                return save_as_command.execute(self, transport, path);
             },
         }
     }
@@ -191,18 +181,64 @@ fn expectErrorResult(e: Event) !void {
     }
 }
 
+fn testTransport() file_transport.FileTransport {
+    return file_transport.NativeTransport.make(std.testing.io);
+}
+
+fn execTest(engine: *GameEngine, cmd: command.Command) Event {
+    return engine.exec(cmd, testTransport());
+}
+
+test "GameEngine init takes puzzle string only — no FileTransport" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+    try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
+}
+
+test "loadSaveFormat replaces board and history from SUD0 bytes" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+    try engine.state.board.setCell(0, 2, .seven);
+    try engine.state.history.push(0, 2, .zero, .seven);
+
+    const buf = try save_format.toSaveFormat(&engine.state, std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    var fresh = try GameEngine.init(puzzle_gen.PuzzleGen.easy());
+    defer fresh.deinit();
+    try fresh.loadSaveFormat(buf);
+
+    try std.testing.expect(engine.state.board.equal(fresh.state.board));
+    try std.testing.expectEqual(@as(usize, 1), fresh.state.history.pointer);
+}
+
+test "toSaveFormat serializes state without engine file methods" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+    try engine.state.board.setCell(0, 2, .seven);
+    try engine.state.history.push(0, 2, .zero, .seven);
+
+    const buf = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy());
+    defer loaded.deinit();
+    try loaded.loadSaveFormat(buf);
+    try std.testing.expectEqual(cell.CellValue.seven, loaded.state.board.getCellValue(0, 2));
+}
+
 test "GameEngine fill updates cell value" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    const view = try expectOk(engine.exec(command.Command{
+    const view = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.seven },
     }));
     try std.testing.expectEqual(cell.CellValue.seven, view.get(0, 3));
 }
 
 test "GameEngine init builds board from puzzle string" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
     const view = engine.eventBoard();
 
@@ -215,32 +251,20 @@ test "GameEngine init builds board from puzzle string" {
     try std.testing.expectEqual(cell.CellValue.zero, view.get(0, 2));
 }
 
-// Slice 3 shape: nested State on the engine; bytes move through FileTransport; no io field.
-test "slice 3: GameEngine holds State + FileTransport; save/open io-free" {
-    var engine = try GameEngine.init(
-        puzzle_gen.PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
-    );
+test "codec round-trip via loadSaveFormat and toSaveFormat — no engine file methods" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    // Shape assertion: the engine carries a nested State (compile-time).
-    const st: *state_mod.State = &engine.state;
-    _ = st;
-
-    // Make a mutation so the saved state differs from the default puzzle.
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
-    const tmp_path = "/tmp/sudoku_slice3_transport_roundtrip.sud";
-    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+    const buf = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
 
-    // save/open take no io — every byte goes through the transport.
-    try engine.saveGame(tmp_path);
-
-    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy());
     defer loaded.deinit();
-    try loaded.openGame(tmp_path);
+    try loaded.loadSaveFormat(buf);
 
     try std.testing.expect(engine.state.board.equal(loaded.state.board));
     try std.testing.expectEqual(engine.state.history.count(), loaded.state.history.count());
@@ -250,39 +274,39 @@ test "slice 3: GameEngine holds State + FileTransport; save/open io-free" {
 // exec(Command) returns structured results with given-cell feedback
 
 test "exec fill non-given cell → .ok" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 }
 
 test "exec fill given cell → .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    const result = engine.exec(command.Command{
+    const result = execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 0, .digit = cell.CellValue.nine },
     });
     try expectErrorResult(result);
 }
 
 test "exec clear given cell → .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    const result = engine.exec(command.Command{
+    const result = execTest(&engine, command.Command{
         .clear = command.ClearData{ .row = 0, .col = 0 },
     });
     try expectErrorResult(result);
 }
 
 test "exec quit → .ok" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    const view = try expectOk(engine.exec(command.Command{ .quit = {} }));
+    const view = try expectOk(execTest(&engine, command.Command{ .quit = {} }));
     // quit returns board_view with no message
     _ = view;
 }
@@ -292,7 +316,7 @@ test "exec quit → .ok" {
 // Check conflict bits through the returned Event board_view
 
 test "exec fill creates conflict → cell marked" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Row 0: cells (0,2) and (0,3) are both empty — fill both with eight
@@ -300,9 +324,9 @@ test "exec fill creates conflict → cell marked" {
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
     };
 
-    _ = try expectOk(engine.exec(fill1));
+    _ = try expectOk(execTest(&engine, fill1));
 
-    const view = try expectOk(engine.exec(command.Command{
+    const view = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
     }));
 
@@ -315,16 +339,16 @@ test "exec fill creates conflict → cell marked" {
 }
 
 test "exec clear resolves conflict → previously-conflicting peer now clean" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Create a row-0 conflict pair: (0,2) and (0,3) both eight
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
     }));
 
     {
-        const view = try expectOk(engine.exec(command.Command{
+        const view = try expectOk(execTest(&engine, command.Command{
             .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
         }));
         try std.testing.expect(view.isConflictingRowCol(0, 2));
@@ -333,7 +357,7 @@ test "exec clear resolves conflict → previously-conflicting peer now clean" {
 
     // Clear (0,3) → its peer (0,2) should no longer be flagged either
     {
-        const view = try expectOk(engine.exec(command.Command{
+        const view = try expectOk(execTest(&engine, command.Command{
             .clear = command.ClearData{ .row = 0, .col = 3 },
         }));
         try std.testing.expect(!view.isConflictingRowCol(0, 2));
@@ -342,12 +366,12 @@ test "exec clear resolves conflict → previously-conflicting peer now clean" {
 }
 
 test "exec fill no conflict → no bits set" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Row 0 already has six at (0,0) and seven at (0,1).
     // Fill (0,2) with one — unique across its row, col, and box → clean.
-    const view = try expectOk(engine.exec(command.Command{
+    const view = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
     }));
 
@@ -367,7 +391,7 @@ test "exec fill no conflict → no bits set" {
 }
 
 test "init calls validate so initial conflicts are detected" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // A well-formed puzzle confirms at least that validate runs without crashing.
@@ -414,12 +438,12 @@ test "Event.error_msg carries an error string" {
 test "GameEngine.init propagates invalid puzzle error" {
     try std.testing.expectError(
         Error.System, // board errors are caught and converted to System
-        GameEngine.init("too-short", file_transport.NativeTransport.make(std.testing.io)),
+        GameEngine.init("too-short"),
     );
 }
 
 test "GameEngine is non-generic, init takes only puzzle string" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
     const view = engine.eventBoard();
 
@@ -430,9 +454,9 @@ test "GameEngine is non-generic, init takes only puzzle string" {
 }
 
 test "exec fill returns Event.ok with board_view" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
-    const view = try expectOk(engine.exec(command.Command{
+    const view = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
@@ -441,7 +465,7 @@ test "exec fill returns Event.ok with board_view" {
 }
 
 test "eventBoard returns current board view" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     const view1 = engine.eventBoard();
@@ -449,7 +473,7 @@ test "eventBoard returns current board view" {
     try std.testing.expectEqual(cell.CellValue.six, view1.get(0, 0));
 
     // Mutate the board
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
@@ -478,10 +502,10 @@ test "MutationHistory: push and count" {
 }
 
 test "exec undo on empty history returns .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    const result = switch (engine.exec(command.Command{ .undo = {} })) {
+    const result = switch (execTest(&engine, command.Command{ .undo = {} })) {
         .ok => return error.TestFailed,
         .error_msg => |msg| msg,
     };
@@ -489,57 +513,57 @@ test "exec undo on empty history returns .error_msg" {
 }
 
 test "exec then undo reverses a fill back to zero" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill A3 (row 0, col 2) with seven
-    const fill_view = try expectOk(engine.exec(command.Command{
+    const fill_view = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
     try std.testing.expectEqual(cell.CellValue.seven, fill_view.get(0, 2));
 
     // Undo — should revert to zero
-    const undo_view = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    const undo_view = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
     try std.testing.expectEqual(cell.CellValue.zero, undo_view.get(0, 2));
 }
 
 test "exec then undo then redo re-applies the fill" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill A3 with seven
-    const fill_view = try expectOk(engine.exec(command.Command{
+    const fill_view = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
     try std.testing.expectEqual(cell.CellValue.seven, fill_view.get(0, 2));
 
     // Undo — should revert to zero
-    const undo_view = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    const undo_view = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
     try std.testing.expectEqual(cell.CellValue.zero, undo_view.get(0, 2));
 
     // Redo — should re-apply seven
-    const redo_view = try expectOk(engine.exec(command.Command{ .redo = {} }));
+    const redo_view = try expectOk(execTest(&engine, command.Command{ .redo = {} }));
     try std.testing.expectEqual(cell.CellValue.seven, redo_view.get(0, 2));
 }
 
 test "new mutation after undo truncates future redo path" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill 3 cells A, B, C all on different empty cells
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 3, .digit = cell.CellValue.three },
     }));
 
     // Undo twice — back to after A only (pointer=1)
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
 
     // Now B and C cells should be empty again
     const view_after_undo = engine.eventBoard();
@@ -547,49 +571,49 @@ test "new mutation after undo truncates future redo path" {
     try std.testing.expectEqual(cell.CellValue.zero, view_after_undo.get(1, 3));
 
     // Make new fill D on B's cell — should truncate [B,C] from future
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.four },
     }));
 
     // Redo should fail (no future to redo — path was truncated)
-    const redo_result = engine.exec(command.Command{ .redo = {} });
+    const redo_result = execTest(&engine, command.Command{ .redo = {} });
     try expectErrorResult(redo_result);
 }
 
 test "undo clear restores previous value" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill B1 (row 1, col 1) with three
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.three },
     }));
 
     // Clear B1
-    const clear_view = try expectOk(engine.exec(command.Command{
+    const clear_view = try expectOk(execTest(&engine, command.Command{
         .clear = command.ClearData{ .row = 1, .col = 1 },
     }));
     try std.testing.expectEqual(cell.CellValue.zero, clear_view.get(1, 1));
 
     // Undo the clear — should restore three
-    const undo_view = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    const undo_view = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
     try std.testing.expectEqual(cell.CellValue.three, undo_view.get(1, 1));
 }
 
 // Multi-step undo/redo integration
 
 test "multiple undo walks history backwards" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill three cells: A=one at (1,1), B=two at (1,2), C=three at (1,3)
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 3, .digit = cell.CellValue.three },
     }));
 
@@ -602,7 +626,7 @@ test "multiple undo walks history backwards" {
     }
 
     // Undo #1 reverts C → (1,3) empty again
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.one, v.get(1, 1));
@@ -611,7 +635,7 @@ test "multiple undo walks history backwards" {
     }
 
     // Undo #2 reverts B → (1,2) empty again
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.one, v.get(1, 1));
@@ -621,24 +645,24 @@ test "multiple undo walks history backwards" {
 }
 
 test "multiple redo walks forwards correctly" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill three cells: A=one at (1,1), B=two at (1,2), C=three at (1,3)
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 3, .digit = cell.CellValue.three },
     }));
 
     // Undo all three
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.zero, v.get(1, 1));
@@ -647,7 +671,7 @@ test "multiple redo walks forwards correctly" {
     }
 
     // Redo #1 re-applies A → (1,1) = one
-    _ = try expectOk(engine.exec(command.Command{ .redo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .redo = {} }));
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.one, v.get(1, 1));
@@ -656,7 +680,7 @@ test "multiple redo walks forwards correctly" {
     }
 
     // Redo #2 re-applies B → (1,2) = two
-    _ = try expectOk(engine.exec(command.Command{ .redo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .redo = {} }));
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.one, v.get(1, 1));
@@ -665,7 +689,7 @@ test "multiple redo walks forwards correctly" {
     }
 
     // Redo #3 re-applies C → (1,3) = three
-    _ = try expectOk(engine.exec(command.Command{ .redo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .redo = {} }));
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.one, v.get(1, 1));
@@ -675,24 +699,24 @@ test "multiple redo walks forwards correctly" {
 }
 
 test "redo on empty future returns .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill some cells — no undo yet, so nothing to redo
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
     }));
 
     // Redo with nothing undone should fail
-    const result = engine.exec(command.Command{ .redo = {} });
+    const result = execTest(&engine, command.Command{ .redo = {} });
     try expectErrorResult(result);
 }
 
 test "getLegend: fresh engine has Fill/Clear/Quit only" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     const cmds = engine.getLegend();
@@ -704,10 +728,10 @@ test "getLegend: fresh engine has Fill/Clear/Quit only" {
 }
 
 test "getLegend: after fill Undo appears" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
@@ -720,14 +744,14 @@ test "getLegend: after fill Undo appears" {
 }
 
 test "getLegend: after undo-one-of-one Redo appears Undo disappears" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
 
     const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
@@ -738,17 +762,17 @@ test "getLegend: after undo-one-of-one Redo appears Undo disappears" {
 }
 
 test "getLegend: after partial undo both Undo and Redo available" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
     }));
 
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
 
     const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
@@ -759,18 +783,18 @@ test "getLegend: after partial undo both Undo and Redo available" {
 }
 
 test "getLegend: after full undo Undo hidden Redo replays" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.one },
     }));
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 2, .digit = cell.CellValue.two },
     }));
 
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
-    _ = try expectOk(engine.exec(command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
 
     const cmds = engine.getLegend();
     try std.testing.expect(cmds.fill);
@@ -780,7 +804,7 @@ test "getLegend: after full undo Undo hidden Redo replays" {
     try std.testing.expect(cmds.redo);
 }
 test "getLegend: Save and Open always available" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     const cmds = engine.getLegend();
@@ -790,7 +814,7 @@ test "getLegend: Save and Open always available" {
 }
 
 test "Save fields moved to GameEngine struct" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fields exist on GameEngine (compile-time proof) and start null
@@ -798,7 +822,7 @@ test "Save fields moved to GameEngine struct" {
 }
 
 test "exec save: delegates to save handler via command/save.zig" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Give a known data dir so save handler has path
@@ -807,12 +831,12 @@ test "exec save: delegates to save handler via command/save.zig" {
     errdefer gpa.free(engine.data_dir.?);
 
     // Make a mutation to save meaningful state
-    _ = try expectOk(engine.exec(command.Command{
+    _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
     // exec() must NOT panic on .save — it should delegate to command handler
-    const result = engine.exec(command.Command{ .save = command.SaveData{ .path = "sudoku_save.sud" } });
+    const result = execTest(&engine, command.Command{ .save = command.SaveData{ .path = "sudoku_save.sud" } });
 
     // Should return ok with message and is_quit = false
     switch (result) {
@@ -825,31 +849,31 @@ test "exec save: delegates to save handler via command/save.zig" {
 }
 
 test "exec open: delegates to open handler via command/open.zig" {
+    const transport = testTransport();
     const tmp_path = "/tmp/sudoku_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
-    // Create a known save file
-    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer original.deinit();
-    _ = try expectOk(original.exec(command.Command{
+    _ = try expectOk(execTest(&original, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
-    try original.saveGame(tmp_path);
 
-    // Now create a second engine and open through exec()
-    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    const save_buf = try original.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(save_buf);
+    try transport.write(transport.context, tmp_path, save_buf);
+
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer loaded.deinit();
-    _ = try expectOk(loaded.exec(command.Command{
+    _ = try expectOk(execTest(&loaded, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
     }));
 
-    // exec open through .open command — must delegate to handler, not panic
-    const result = loaded.exec(command.Command{ .open = command.OpenData{ .path = tmp_path } });
+    const result = loaded.exec(command.Command{ .open = command.OpenData{ .path = tmp_path } }, transport);
 
     switch (result) {
         .ok => |data| {
             try std.testing.expect(!data.is_quit);
-            // Board cell (0,2) should be seven from saved state, not one (overwritten by open)
             try std.testing.expectEqual(cell.CellValue.seven, data.board_view.get(0, 2));
         },
         .error_msg => return error.TestFailed,

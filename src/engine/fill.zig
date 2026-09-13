@@ -2,7 +2,6 @@ const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const command = @import("../command.zig");
 const cell = @import("../board/cell.zig");
-const file_transport = @import("file_transport.zig");
 
 /// Execute a fill command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine, fill_data: command.FillData) game_engine.Event {
@@ -16,7 +15,6 @@ pub fn execute(engine: *game_engine.GameEngine, fill_data: command.FillData) gam
 test "command.fill.execute fills a non-given cell" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 
@@ -32,7 +30,6 @@ test "command.fill.execute fills a non-given cell" {
 test "command.fill.execute fails on a given cell" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 
@@ -50,7 +47,6 @@ test "command.fill.execute fails on a given cell" {
 test "command.fill.execute records mutation in history" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 

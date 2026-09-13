@@ -7,24 +7,24 @@ const mypath = @import("path.zig");
 
 pub const DEFAULT_SAVE_FILE = "sudoku_save.sud";
 
-pub fn execute(engine: *game_engine.GameEngine, path: []const u8) game_engine.Event {
-    return save_as_command.execute(engine, path);
+pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: []const u8) game_engine.Event {
+    return save_as_command.execute(engine, transport, path);
 }
 
 test "command.save.execute saves file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 
+    const transport = file_transport.NativeTransport.make(std.testing.io);
     const tmp_path = "/tmp/sudoku_save_command_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
     // Give the engine a data dir
     engine.data_dir = try mypath.computeDataDir(std.heap.page_allocator);
 
-    const event = execute(&engine, DEFAULT_SAVE_FILE);
+    const event = execute(&engine, transport, DEFAULT_SAVE_FILE);
 
     switch (event) {
         .ok => |data| {

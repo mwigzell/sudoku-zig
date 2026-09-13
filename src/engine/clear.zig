@@ -1,7 +1,6 @@
 const game_engine = @import("game_engine.zig");
 const command = @import("../command.zig");
 const fill_command = @import("fill.zig");
-const file_transport = @import("file_transport.zig");
 
 /// Execute a clear command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine, clear_data: command.ClearData) game_engine.Event {
@@ -17,7 +16,7 @@ test "command.clear.execute clears a non-given cell" {
     const puzzle_gen = @import("../puzzle_gen.zig");
     const cell = @import("../board/cell.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill it first
@@ -38,10 +37,9 @@ test "command.clear.execute clears a non-given cell" {
 }
 
 test "command.clear.execute fails on a given cell" {
-    const std = @import("std");
     const puzzle_gen = @import("../puzzle_gen.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     const event = execute(&engine, command.ClearData{ .row = 0, .col = 0 });

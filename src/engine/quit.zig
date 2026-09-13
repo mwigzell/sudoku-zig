@@ -1,6 +1,5 @@
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
-const file_transport = @import("file_transport.zig");
 
 /// Execute quit — returns ok with is_quit = true.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
@@ -14,7 +13,6 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 test "command.quit.execute returns ok with is_quit true" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 

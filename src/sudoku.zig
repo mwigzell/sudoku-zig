@@ -23,6 +23,7 @@ pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
     renderer: facade_mod.Facade,
+    transport: file_transport.FileTransport,
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
@@ -31,7 +32,8 @@ pub const Sudoku = struct {
         return @This(){
             .cfg = cfg,
             .renderer = facade,
-            .engine = try game_engine.GameEngine.init(puzzle_str, transport),
+            .transport = transport,
+            .engine = try game_engine.GameEngine.init(puzzle_str),
         };
     }
 
@@ -60,7 +62,7 @@ pub const Sudoku = struct {
                 return false;
             },
             .valid => |cmd| {
-                const event = self.engine.exec(cmd);
+                const event = self.engine.exec(cmd, self.transport);
                 return try self.handleEvent(event);
             },
         }
@@ -149,9 +151,12 @@ test "integrated e2e - full seam: open loads saved game" {
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
     // Save known state to disk before running through the renderer
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), file_transport.NativeTransport.make(std.testing.io));
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
     defer original.deinit();
-    try original.saveGame(tmp_path);
+    const setup_transport = file_transport.NativeTransport.make(io);
+    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
+    defer std.heap.page_allocator.free(save_buf);
+    try setup_transport.write(setup_transport.context, tmp_path, save_buf);
 
     // Record B2 value in saved state for later verification
     const saved_b2 = original.eventBoard().get(1, 1);
@@ -223,10 +228,14 @@ test "integrated e2e - run: open file success produces status message, re-render
 
     // Create a save file to open
     const io = std.testing.io;
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), file_transport.NativeTransport.make(io));
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
     defer original.deinit();
     const tmp_path = "/tmp/sudoku_e2e_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+    const setup_transport = file_transport.NativeTransport.make(io);
+    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
+    defer std.heap.page_allocator.free(save_buf);
+    try setup_transport.write(setup_transport.context, tmp_path, save_buf);
 
     // Canned responses: open <path> -> quit
     const responses = [_][]const u8{

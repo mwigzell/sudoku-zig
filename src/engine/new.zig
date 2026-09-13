@@ -6,20 +6,20 @@ const command = @import("../command.zig");
 const PuzzleGen = @import("../puzzle_gen.zig").PuzzleGen;
 const file_transport = @import("file_transport.zig");
 
-pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, data: command.NewData) game_engine.Event {
     engine.state.history.deinit();
     engine.state.history = game_engine.MutationHistory.init(std.heap.page_allocator);
     if (data.file) |path| {
-        const resolved = engine.transport.resolve(engine.transport.context, path) catch |err| {
+        const resolved = transport.resolve(transport.context, path) catch |err| {
             var buf: [80]u8 = undefined;
             return .{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
         };
-        defer engine.transport.free(engine.transport.context, resolved);
-        const buf = engine.transport.readAll(engine.transport.context, resolved) catch |err| {
+        defer transport.free(transport.context, resolved);
+        const buf = transport.readAll(transport.context, resolved) catch |err| {
             var errbuf: [80]u8 = undefined;
             return .{ .error_msg = std.fmt.bufPrint(&errbuf, "readAll: {s}", .{@errorName(err)}) catch "system error" };
         };
-        defer engine.transport.free(engine.transport.context, buf);
+        defer transport.free(transport.context, buf);
         const trimmed = std.mem.trim(u8, buf, &std.ascii.whitespace);
         engine.state.board = board.fromOneLineString(trimmed) catch return .{ .error_msg = "could not load puzzle from file" };
         return .{
@@ -65,11 +65,11 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engi
 test "command.new.execute clears history and loads a puzzle string" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 
-    _ = execute(&engine, command.NewData{ .puzzle = null, .file = null });
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    _ = execute(&engine, transport, command.NewData{ .puzzle = null, .file = null });
 
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
 }
@@ -77,11 +77,11 @@ test "command.new.execute clears history and loads a puzzle string" {
 test "command.new.execute falls back to medium when puzzle is null" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
-        file_transport.NativeTransport.make(std.testing.io),
     );
     defer engine.deinit();
 
-    _ = execute(&engine, command.NewData{ .puzzle = null, .file = null });
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    _ = execute(&engine, transport, command.NewData{ .puzzle = null, .file = null });
 
     // Just makes sure it doesnt panic or leak (the default puzzle has "6" at index 0)
     _ = engine.state.board.isGiven(0, 0);
@@ -96,10 +96,11 @@ test "command.new.execute loads puzzle from a file" {
     std.Io.File.writeStreamingAll(file, io, contents) catch return error.TestSkipped;
     file.close(io);
 
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), file_transport.NativeTransport.make(io));
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default());
     defer engine.deinit();
 
-    const event = execute(&engine, command.NewData{ .puzzle = null, .file = tmp_path });
+    const transport = file_transport.NativeTransport.make(io);
+    const event = execute(&engine, transport, command.NewData{ .puzzle = null, .file = tmp_path });
     switch (event) {
         .ok => try std.testing.expect(true),
         .error_msg => return error.TestFailed,
@@ -111,10 +112,11 @@ test "command.new.execute loads puzzle from a file" {
 }
 
 test "command.new.execute returns error when puzzle file is missing" {
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default());
     defer engine.deinit();
 
-    const event = execute(&engine, command.NewData{ .puzzle = null, .file = "/tmp/sudoku_new_cmd_missing.sud" });
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    const event = execute(&engine, transport, command.NewData{ .puzzle = null, .file = "/tmp/sudoku_new_cmd_missing.sud" });
     switch (event) {
         .error_msg => try std.testing.expect(true),
         .ok => return error.TestFailed,

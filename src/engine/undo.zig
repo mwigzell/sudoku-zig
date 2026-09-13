@@ -25,7 +25,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 test "command.undo.execute fails when no history" {
     const puzzle_gen = @import("../puzzle_gen.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     const event = execute(&engine);
@@ -39,13 +39,13 @@ test "command.undo.execute reverses a fill" {
     const puzzle_gen = @import("../puzzle_gen.zig");
     const command = @import("../command.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), file_transport.NativeTransport.make(std.testing.io));
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
     // Fill A3 with seven
     _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    });
+    }, file_transport.NativeTransport.make(std.testing.io));
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.seven, v.get(0, 2));
