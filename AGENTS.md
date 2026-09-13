@@ -2,7 +2,7 @@
 
 ## Key project locations
 
-- Issues: `.scratch/sudoku/issues/` — one markdown file per ticket, `triage:` + optional `status:` in header
+- Issues: GitHub (`mwigzell/sudoku-zig`) — open work, triage labels, acceptance criteria
 - Source modules: `src/{board,engine,command,renderer}/` — domain packages with co-located tests
 - Docs: `docs/adr/` (architectural decisions), other reference docs live under `docs/`
 
@@ -44,13 +44,13 @@ Use as reference before guessing at syntax — especially `std.Io.Writer`, file 
 
 ### Issue tracker
 
-Local markdown issues live under `.scratch/sudoku/issues/`. No external remote or PR triage surface. See `docs/agents/issue-tracker.md`.
+Open issues and triage live on **GitHub** (`gh issue list`, `gh issue view N`). See `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md`.
 
 ### Triage labels
 
 Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
-- **Issue Status lifecycle**: triage labels above are pre-work roles only. After an issue is complete and acceptance criteria verified, set `Status: closed` — "closed" is a life-cycle state, not a triage role.
+- **Issue lifecycle**: triage labels above are pre-work roles only. When acceptance criteria are verified, close the GitHub issue.
 
 ### Domain docs
 
@@ -92,3 +92,5 @@ zig test src/main.zig -lc
 - to filter a single test: `zig build test -Dtest-filter='exact test name'` (hyphen, not underscore)
 ## zig version
 zig -version
+# ANSWERING
+When reporting information to me be extremely concise and sacrifice grammar for the sake of concision.

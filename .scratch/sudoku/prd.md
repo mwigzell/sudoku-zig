@@ -8,7 +8,7 @@ I want a web-based Sudoku game to exercise my programming skills in Zig (a new l
 
 ## Solution
 
-A playable Sudoku game delivered as a Zig WASM module running in the browser, with a thin vanilla JS shell handling DOM rendering. Zig owns all domain state and **pushes** JSON event snapshots after each command. The first vertical slice proves the architecture by rendering a **TUI** (not a browser); once interfaces are validated, a second slice swaps in the WASM bridge + browser renderer through the same slots.
+A playable Sudoku game with two deployments sharing one portable core: **native terminal** (blocking AsciiRenderer loop today) and **browser** (vanilla JS DOM shell + Zig WASM). Zig owns domain state and the SUD0 save codec. The browser shell sends structured actions and receives JSON (`Event`, board state, legend, config) — not a terminal screen feed. Terminal-first proved the engine; slice B replaces the failed wasm REPL with structured exports (see ADR-0010).
 
 ## User Stories
 
@@ -34,16 +34,19 @@ The Zig code is organized into modular layers that emerge iteratively. We do **n
 
 1. **Domain Core** — `Board`, `Cell`, `Grid` struct models. Encapsulates a 9×9 puzzle state. Pure structs, no I/O.
 2. **Validator** — conflict detection logic. Given a Board state, reports which cells are in error (duplicate digits in shared row/column/box).
-3. **GameEngine** — orchestrates player turns. Receives commands (`fill_cell`, `clear_cell`, `toggle_note`, `save`, `load`), mutates Board state, runs Validation, and emits an event describing the new state.
-4. **Renderer** — starts as a direct call to print-to-terminal from `main.zig`. When WASM browser renderer is needed, the rendering logic is factored behind an interface so TUI and DOM are interchangeable. Interface extracted only when duplication exists (TUI + browser), not stubbed upfront.
-5. **Puzzle Repository** — starts as inline static puzzle data in `main.zig` or a simple array file. Extracted to a swappable repository slot only when auto-generation arrives. No empty interface stubs — the seam appears when a second source is needed.
-6. **Solver Service** — not needed until user stories 10 (solve-for-me) and 8 (auto generation, which depends on a solver for verification). Built then, not stubbed earlier.
-7. **Save/Restore** — explicit file-based persistence via Command→Event seam. Board exposes a serialisation seam (`toFlat()`) for dumping cell values and given-mask to disk; GameEngine handles file I/O through `exec()` and returns Event.ok/error_msg. Uses std.fs on native, separate path later for WASM if needed.
+3. **GameEngine** — portable orchestrator. Gameplay commands (`fill`, `clear`, `undo`, `redo`, `quit`) mutate Board state, run validation, and emit `Event`. Holds `State` and the SUD0 codec (`toSaveFormat` / `loadSaveFormat`). **No file I/O, no paths, no transport.**
+4. **App shell** — native: `Sudoku` owns the command loop, `FileTransport`, session commands (save/open/new-from-file), and the blocking terminal facade. Web: JS owns DOM, file UX, and acknowledgement; wasm exports structured API only.
+5. **Renderer** — native terminal facade (AsciiRenderer today). Web: JS renders from state JSON wasm returns — not an ASCII projector. Future TUI / Linux GUI are separate native shells (revisit blocking facade then).
+6. **Puzzle Repository** — `PuzzleGen` fixtures in Zig today (by `Difficulty`); real generator later, same module. JS knows difficulty via `BootstrapConfig`; not puzzle strings.
+7. **Solver Service** — not needed until user stories 10 (solve-for-me) and 8 (auto generation, which depends on a solver for verification). Built then, not stubbed earlier.
+8. **Save/Restore** — SUD0 codec in Zig only. Native: `Sudoku` + `FileTransport` read/write bytes, then `loadSaveFormat` / `toSaveFormat` on engine. Web: JS reads/writes opaque files; wasm `serialize`/`deserialize` — no SaveFormat logic in JS.
 
-### WASM Boundary (slice 2 onward)
+### WASM Boundary (slice B onward — ADR-0010)
 
-- Command/event style: JS sends command strings (`"fill_cell row col digit"`), Zig processes and pushes one or more JSON events describing state changes back through WASM exports.
-- Zig owns the single source of truth for game state. The JS shell is a passive renderer — it receives events and re-renders DOM.
+- **Not** command-line REPL (`step(line)` + ASCII screen). Retired.
+- Exports: `init(BootstrapConfig)`, `exec(action_json)` → `Event` JSON, `getLegend()` → JSON, state for DOM, `serialize`/`deserialize` for files.
+- JS is an active front-end (board, buttons, modals, file pickers); wasm never blocks for UI acknowledgement.
+- Wire format slice B: JSON strings in linear memory; optimise later if needed.
 
 ### First Slice: TUI
 
@@ -57,8 +60,10 @@ Zig (stable/0.13 or latest stable). Zig build system (`build.zig`) manages compi
 
 - Tests exercise **external behavior only**, not internal implementation details
 - Domain Core: unit tests on `Board` mutations, `Validator` correctness against known conflict states
-- GameEngine: integration tests through the command/event seam — send a command, assert emitted event matches expected state snapshot
-- The single cross-cutting test seam is the **command → event** boundary. Tests feed commands into GameEngine and assert the pushed events are correct. No DOM/TUI assertions needed in tests — the renderer is behind an interface.
+- GameEngine: integration tests through the command/event seam — send a gameplay command, assert emitted event matches expected state snapshot
+- Native: integrated e2e through `Sudoku` + MockSource (full terminal loop)
+- Wasm: node contract test on real `artifact.wasm` + JSON exports (`glue.test.mjs`); browser DOM e2e optional
+- The cross-cutting engine seam remains **command → event**; deployment shells are optional e2e layers (ADR-0002)
 
 ## Out of Scope
 

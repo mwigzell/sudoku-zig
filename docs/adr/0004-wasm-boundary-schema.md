@@ -1,4 +1,8 @@
+Status: superseded (see ADR-0010)
+
 # ADR-0004 — WASM ABI uses JSON snapshot events + command strings
+
+Superseded by ADR-0010 — command-string REPL over ASCII screen feed cannot honour browser acknowledgement or file UX; replaced by structured exports + JSON wire.
 
 Status: accepted
 Date: 2026-07-10
