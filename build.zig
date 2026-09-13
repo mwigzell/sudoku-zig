@@ -109,7 +109,10 @@ pub fn build(b: *std.Build) void {
     cov_step.dependOn(&kcov_sum.step);
 
     // verify stays report-only; plain cov also opens the browser on demand.
-    const open_cov = b.addSystemCommand(&.{ "vivaldi", "kcov-out/test/index.html" });
+    const open_cov: *std.Build.Step.Run = switch (@import("builtin").os.tag) {
+        .macos => b.addSystemCommand(&.{ "open", "-a", "Vivaldi", "kcov-out/test/index.html" }),
+        else => b.addSystemCommand(&.{ "vivaldi", "kcov-out/test/index.html" }),
+    };
     open_cov.step.dependOn(&kcov.step);
     // Report-only form: coverage collection + JSON, no browser.
     const cov_report_step = b.step("cov-report", "Run coverage and dump the JSON report");
