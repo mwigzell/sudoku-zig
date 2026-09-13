@@ -24,8 +24,11 @@ pub fn build(b: *std.Build) void {
     // --export forces the step symbol into the wasm export table (wasm-ld);
     // `export fn` alone is a no-op on this toolchain snapshot.
     const wasm_emit = b.addSystemCommand(&.{
-        "zig",     "build-exe",           "src/wasm_entry.zig",
-        "-target", "wasm32-freestanding", "-femit-bin=" ++ WASM_OUT,
+        "zig",               "build-exe",           "src/wasm_entry.zig",
+        "-target",           "wasm32-freestanding", "-femit-bin=" ++ WASM_OUT,
+        "--export=init",     "--export=exec",       "--export=getLegend",
+        "--export=getState", "--export=serialize",  "--export=deserialize",
+        "--export=outPtr",
     });
     const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });
     wasm_emit.step.dependOn(&mkdir_artifacts.step);

@@ -99,6 +99,7 @@ pub const GameEngine = struct {
         if (self.last_save_msg) |msg| gpa.free(msg);
         self.data_dir = null;
         self.last_save_msg = null;
+        self.state.board.validate();
     }
 
     /// Route a gameplay command through Board mutation + render update.

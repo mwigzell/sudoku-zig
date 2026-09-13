@@ -1,6 +1,5 @@
 <!doctype html>
-<!-- page.html — web host stub after REPL retirement (#34).
-     Structured DOM shell lands with #31; serve still delivers page + glue + wasm. -->
+<!-- page.html — web host stub using structured wasm JSON exports (#31). -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -21,6 +20,7 @@
       border: 1px solid #333844;
       border-radius: 6px;
       background: #0e1013;
+      white-space: pre-wrap;
     }
     .error { color: #ff9b9b; }
   </style>
@@ -41,8 +41,16 @@
       const bytes = new Uint8Array(await res.arrayBuffer());
 
       const game = await loadArtifact(bytes);
-      game.start();
-      status.textContent = "Sudoku wasm loaded (structured API pending).";
+      const init = game.init({ difficulty: 1 });
+      if (!init.ok) throw new Error(init.error ?? "init failed");
+
+      const legend = game.getLegend();
+      const state = game.getState();
+      const filled = state.cells.filter((c) => c.value !== 0).length;
+      status.textContent =
+        `Sudoku wasm ready.\n` +
+        `Legend: fill=${legend.fill} undo=${legend.undo} quit=${legend.quit}\n` +
+        `Cells filled: ${filled}/81`;
     } catch (err) {
       status.textContent = `failed to load wasm: ${err && err.message ? err.message : err}`;
       status.classList.add("error");
