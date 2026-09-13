@@ -14,7 +14,7 @@ pub const FlatOpts = struct {
 pub fn toFlat(b: board.Board) [board.CELL_COUNT]u8 {
     var flat: [board.CELL_COUNT]u8 = undefined;
     for (b.cells, 0..) |c, i| {
-        flat[i] = @as(u8, @intFromEnum(c.value));
+        flat[i] = @as(u8, @backingInt(c.value));
     }
     return flat;
 }

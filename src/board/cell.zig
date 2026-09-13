@@ -35,7 +35,7 @@ pub fn rawToCellValue(raw: u8) CellValue {
 pub fn displayChar(cv: CellValue) u8 {
     return switch (cv) {
         .zero => 0x20,
-        else => @as(u8, @intFromEnum(cv)) + '0',
+        else => @as(u8, @backingInt(cv)) + '0',
     };
 }
 

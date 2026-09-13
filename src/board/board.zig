@@ -114,7 +114,7 @@ pub const Board = struct {
 
     /// Returns bit mask (1 << (digit - 1)) for a CellValue (skip .zero).
     fn digitToBit(val: CellValue) u32 {
-        return if (val == .zero) 0 else @as(u32, 1) << @intCast(@intFromEnum(val) - 1);
+        return if (val == .zero) 0 else @as(u32, 1) << @intCast(@backingInt(val) - 1);
     }
 
     /// Return the box index (0..8) for a cell at (row, col).
@@ -216,7 +216,7 @@ pub const Board = struct {
     pub fn toFlat(self: Board) [CELL_COUNT]u8 {
         var flat: [CELL_COUNT]u8 = undefined;
         for (self.cells, 0..) |cell, i| {
-            flat[i] = @as(u8, @intFromEnum(cell.value));
+            flat[i] = @as(u8, @backingInt(cell.value));
         }
         return flat;
     }
@@ -359,11 +359,11 @@ test "Board: fromFlat initializes digit_bits for given cells" {
 
     // Box 0 should have bits for digits 3 and 7 set
     const box0_bits = b.getBoxDigitBits(0, 0);
-    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.three) - 1))) != 0);
-    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.seven) - 1))) != 0);
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@backingInt(CellValue.three) - 1))) != 0);
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@backingInt(CellValue.seven) - 1))) != 0);
     // No other bits set in box 0
-    try std.testing.expectEqual(@as(u32, (1 << (@intFromEnum(CellValue.three) - 1)) |
-        (1 << (@intFromEnum(CellValue.seven) - 1))), box0_bits);
+    try std.testing.expectEqual(@as(u32, (1 << (@backingInt(CellValue.three) - 1)) |
+        (1 << (@backingInt(CellValue.seven) - 1))), box0_bits);
 
     // All other boxes should be zero
     for (0..BoxCellCount) |box_idx| {
@@ -380,13 +380,13 @@ test "Board: setCell updates box digit bitmask when changing a value" {
 
     // Place digit 3 in a cell inside box 0
     try b.setCell(0, 1, .three);
-    try std.testing.expect((b.getBoxDigitBits(0, 0) & (@as(u32, 1) << (@intFromEnum(CellValue.three) - 1))) != 0);
+    try std.testing.expect((b.getBoxDigitBits(0, 0) & (@as(u32, 1) << (@backingInt(CellValue.three) - 1))) != 0);
 
     // Change the same cell to digit 7 — bit 3 should disappear, bit 7 appear
     try b.setCell(0, 1, .seven);
     const box0_bits = b.getBoxDigitBits(0, 0);
-    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.three) - 1))) == 0); // three gone
-    try std.testing.expect((box0_bits & (@as(u32, 1) << (@intFromEnum(CellValue.seven) - 1))) != 0); // seven present
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@backingInt(CellValue.three) - 1))) == 0); // three gone
+    try std.testing.expect((box0_bits & (@as(u32, 1) << (@backingInt(CellValue.seven) - 1))) != 0); // seven present
 }
 
 test "Board: clearCell clears the digit bit from the owning box" {
@@ -395,7 +395,7 @@ test "Board: clearCell clears the digit bit from the owning box" {
     flat[3] = 5; // row 0, col 3 -> inside box 1
 
     var b = try fromFlat(flat, .{});
-    try std.testing.expect((b.getBoxDigitBits(0, 1) & (@as(u32, 1) << (@intFromEnum(CellValue.five) - 1))) != 0);
+    try std.testing.expect((b.getBoxDigitBits(0, 1) & (@as(u32, 1) << (@backingInt(CellValue.five) - 1))) != 0);
 
     // Clear it — clearCell resets value AND clears the given bit; must also strip digit bit
     b.clearCell(0, 3);

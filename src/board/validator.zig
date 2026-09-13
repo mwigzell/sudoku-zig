@@ -9,12 +9,12 @@ pub const Validator = struct {
         @memset(&counts, 0);
         for (indices) |idx| {
             const digit = cells[idx].value;
-            if (digit != .zero) counts[@intFromEnum(digit)] += 1;
+            if (digit != .zero) counts[@backingInt(digit)] += 1;
         }
         var result: u128 = 0;
         for (indices, 0..) |idx, i| {
             const digit = cells[idx].value;
-            if (digit != .zero and counts[@intFromEnum(digit)] > 1) {
+            if (digit != .zero and counts[@backingInt(digit)] > 1) {
                 result |= @as(u128, 1) << @intCast(i);
             }
         }

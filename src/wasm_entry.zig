@@ -29,7 +29,7 @@ var game: sudoku_mod.Sudoku = undefined;
 
 pub fn main() void {
     var cfg = config.Config.default();
-    cfg.difficulty = @enumFromInt(bootstrap_difficulty());
+    cfg.difficulty = @fromBackingInt(@intCast(bootstrap_difficulty()));
 
     // Bind the page's capabilities into the shared substrate + the wasm transport arm.
     host = wasm_host.WasmHost.make(page_line_in, page_bytes_out, page_picker, page_file_write, page_file_read);

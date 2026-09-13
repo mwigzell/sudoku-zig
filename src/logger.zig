@@ -10,7 +10,7 @@ pub var min_level: Severity = .info;
 /// .fatal always emits; everything else is gated against min_level.
 pub fn shouldEmit(sev: Severity) bool {
     if (sev == .fatal) return true;
-    return @intFromEnum(sev) >= @intFromEnum(min_level);
+    return @backingInt(sev) >= @backingInt(min_level);
 }
 
 /// Scoped logger generator.

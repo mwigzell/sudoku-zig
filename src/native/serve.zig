@@ -29,7 +29,7 @@ pub const Router = struct {
 
     /// Records that an asset has been served at least once.
     pub fn markDelivered(self: *Router, result: RouteResult) void {
-        self.delivered[@intFromEnum(result)] = true;
+        self.delivered[@backingInt(result)] = true;
     }
 
     /// The exit condition: every known route has been served at least once.
