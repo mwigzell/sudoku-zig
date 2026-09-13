@@ -14,7 +14,6 @@ pub const Event = event.Event;
 // Backward-compat re-exports (moved to engine/save_format.zig)
 const save_format = @import("save_format.zig");
 const state_mod = @import("state.zig");
-const file_transport = @import("file_transport.zig");
 pub const SaveFileMagic = save_format.SaveFileMagic;
 pub const SaveFileVersion = save_format.SaveFileVersion;
 pub const SaveFileHeader = save_format.SaveFileHeader;
@@ -30,11 +29,6 @@ const clear_command = @import("clear.zig");
 const undo_command = @import("undo.zig");
 const redo_command = @import("redo.zig");
 const quit_command = @import("quit.zig");
-const save_command = @import("save.zig");
-const open_command = @import("open.zig");
-const new_command = @import("new.zig");
-const save_as_command = @import("save_as.zig");
-const mypath = @import("path.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
@@ -107,9 +101,9 @@ pub const GameEngine = struct {
         self.last_save_msg = null;
     }
 
-    /// Route a parsed command through Board mutation + render update.
-    /// Session commands still take a transport until Sudoku owns routing (#30).
-    pub fn exec(self: *@This(), cmd: command.Command, transport: file_transport.FileTransport) Event {
+    /// Route a gameplay command through Board mutation + render update.
+    /// Session commands (save/open/new/save_as) are handled in Sudoku.handleResult.
+    pub fn exec(self: *@This(), cmd: command.Command) Event {
         switch (cmd) {
             .fill => |f| {
                 return fill_command.execute(self, f);
@@ -126,20 +120,7 @@ pub const GameEngine = struct {
             .redo => {
                 return redo_command.execute(self);
             },
-            .save => |data| {
-                const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                return save_command.execute(self, transport, path);
-            },
-            .open => |data| {
-                return open_command.execute(self, transport, data.path);
-            },
-            .new => |data| {
-                return new_command.execute(self, transport, data);
-            },
-            .save_as => |data| {
-                const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                return save_as_command.execute(self, transport, path);
-            },
+            .save, .open, .new, .save_as => @panic("session command routed in Sudoku"),
         }
     }
 
@@ -166,6 +147,8 @@ pub const GameEngine = struct {
 
 // ────────────────────── co-located tests ──────────────────────
 const puzzle_gen = @import("../puzzle_gen.zig");
+const file_transport = @import("file_transport.zig");
+const open_command = @import("open.zig");
 
 fn expectOk(e: Event) !board.Board.BoardView {
     return switch (e) {
@@ -181,12 +164,8 @@ fn expectErrorResult(e: Event) !void {
     }
 }
 
-fn testTransport() file_transport.FileTransport {
-    return file_transport.NativeTransport.make(std.testing.io);
-}
-
 fn execTest(engine: *GameEngine, cmd: command.Command) Event {
-    return engine.exec(cmd, testTransport());
+    return engine.exec(cmd);
 }
 
 test "GameEngine init takes puzzle string only — no FileTransport" {
@@ -821,35 +800,8 @@ test "Save fields moved to GameEngine struct" {
     try std.testing.expectEqual(@as(?[]u8, null), engine.data_dir);
 }
 
-test "exec save: delegates to save handler via command/save.zig" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
-    defer engine.deinit();
-
-    // Give a known data dir so save handler has path
-    const gpa = std.heap.page_allocator;
-    engine.data_dir = try mypath.computeDataDir(gpa);
-    errdefer gpa.free(engine.data_dir.?);
-
-    // Make a mutation to save meaningful state
-    _ = try expectOk(execTest(&engine, command.Command{
-        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }));
-
-    // exec() must NOT panic on .save — it should delegate to command handler
-    const result = execTest(&engine, command.Command{ .save = command.SaveData{ .path = "sudoku_save.sud" } });
-
-    // Should return ok with message and is_quit = false
-    switch (result) {
-        .ok => |data| {
-            try std.testing.expect(!data.is_quit);
-            try std.testing.expect(data.msg != null);
-        },
-        .error_msg => return error.TestFailed,
-    }
-}
-
-test "exec open: delegates to open handler via command/open.zig" {
-    const transport = testTransport();
+test "open handler loads save file via transport" {
+    const transport = file_transport.NativeTransport.make(std.testing.io);
     const tmp_path = "/tmp/sudoku_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
@@ -865,15 +817,10 @@ test "exec open: delegates to open handler via command/open.zig" {
 
     var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer loaded.deinit();
-    _ = try expectOk(execTest(&loaded, command.Command{
-        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
-    }));
 
-    const result = loaded.exec(command.Command{ .open = command.OpenData{ .path = tmp_path } }, transport);
-
+    const result = open_command.execute(&loaded, transport, tmp_path);
     switch (result) {
         .ok => |data| {
-            try std.testing.expect(!data.is_quit);
             try std.testing.expectEqual(cell.CellValue.seven, data.board_view.get(0, 2));
         },
         .error_msg => return error.TestFailed,

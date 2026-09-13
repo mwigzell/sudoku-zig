@@ -16,6 +16,10 @@ const host_mod = @import("native/host.zig");
 const wasm_host = @import("wasm/host.zig");
 const wasm_renderer = @import("wasm/renderer.zig");
 const wasm_transport = @import("wasm/transport.zig");
+const save_command = @import("engine/save.zig");
+const open_command = @import("engine/open.zig");
+const new_command = @import("engine/new.zig");
+const save_as_command = @import("engine/save_as.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 /// One running game: engine + renderer; both deployments show the game, then turn it.
@@ -62,7 +66,19 @@ pub const Sudoku = struct {
                 return false;
             },
             .valid => |cmd| {
-                const event = self.engine.exec(cmd, self.transport);
+                const event = switch (cmd) {
+                    .save => |data| blk: {
+                        const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+                        break :blk save_command.execute(&self.engine, self.transport, path);
+                    },
+                    .open => |data| open_command.execute(&self.engine, self.transport, data.path),
+                    .new => |data| new_command.execute(&self.engine, self.transport, data),
+                    .save_as => |data| blk: {
+                        const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+                        break :blk save_as_command.execute(&self.engine, self.transport, path);
+                    },
+                    else => self.engine.exec(cmd),
+                };
                 return try self.handleEvent(event);
             },
         }

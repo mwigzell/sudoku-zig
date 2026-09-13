@@ -32,7 +32,7 @@ test "command.redo.execute fails when nothing to redo" {
     // Fill some cells but never undo — no future to redo
     _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }, file_transport.NativeTransport.make(std.testing.io));
+    });
 
     const event = execute(&engine);
     switch (event) {
@@ -52,7 +52,7 @@ test "command.redo.execute re-applies an undone fill" {
     // Fill A3 with seven, then undo
     _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }, file_transport.NativeTransport.make(std.testing.io));
+    });
     var event = undo_command.execute(&engine);
     if (event != .ok) return error.TestFailed;
     try std.testing.expectEqual(cell.CellValue.zero, event.ok.board_view.get(0, 2));

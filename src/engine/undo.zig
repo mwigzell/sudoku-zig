@@ -45,7 +45,7 @@ test "command.undo.execute reverses a fill" {
     // Fill A3 with seven
     _ = engine.exec(command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }, file_transport.NativeTransport.make(std.testing.io));
+    });
     {
         const v = engine.eventBoard();
         try std.testing.expectEqual(cell.CellValue.seven, v.get(0, 2));
