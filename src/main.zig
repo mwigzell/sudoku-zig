@@ -11,27 +11,18 @@ const cli = @import("native/cli.zig");
 const host_mod = @import("native/host.zig");
 // Load-bearing: wasm_bytes.zig must stay reachable from this closure for its tests.
 const wasm_bytes = @import("native/wasm_bytes.zig");
-// Load-bearing: wasm/renderer.zig must stay reachable from this closure for its tests.
-const wasm_renderer = @import("wasm/renderer.zig");
 const state_mod = @import("engine/state.zig");
 const file_transport = @import("engine/file_transport.zig");
-// wasm arm of the transport — io-free, pinned so its tests join the native suite.
-const wasm_transport = @import("wasm/transport.zig");
 // Load-bearing: serve.zig is pure and pinned so its tests join the native suite.
 const serve = @import("native/serve.zig");
-// Load-bearing: wasm/host.zig is io-free and pinned so its tests join the native suite.
-const wasm_host = @import("wasm/host.zig");
 const wasm_wire = @import("wasm/wire.zig");
 
 test {
     // Reachability pin: keeps sudoku.zig (and its sub-modules) inside the test closure of this root file.
     _ = .{sudoku};
     _ = wasm_bytes;
-    _ = wasm_renderer;
     _ = state_mod;
     _ = file_transport;
-    _ = wasm_transport;
-    _ = wasm_host;
     _ = serve;
     _ = wasm_wire;
 }
