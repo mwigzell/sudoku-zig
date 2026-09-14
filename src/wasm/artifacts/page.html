@@ -160,6 +160,16 @@
       color: var(--conflict-fg);
       background: var(--conflict-bg);
     }
+
+    .cell.selected {
+      outline: 2px solid var(--selection-ring);
+      outline-offset: -2px;
+      z-index: 1;
+    }
+
+    .board:focus {
+      outline: none;
+    }
   </style>
 </head>
 <body>
@@ -171,7 +181,7 @@
   <script type="module">
     import { loadArtifact } from "./glue.js";
     import { newGame } from "../shell.js";
-    import { renderBoard, setStatus } from "../board.js";
+    import { renderBoard, setStatus, wireSelection } from "../board.js";
 
     const statusBar = document.getElementById("status-bar");
     const boardEl = document.getElementById("board");
@@ -186,6 +196,8 @@
       if (!started.ok) throw new Error(started.error ?? "init failed");
 
       renderBoard(boardEl, started.state);
+      wireSelection(boardEl, { row: 0, col: 0 });
+      boardEl.focus();
       setStatus(statusBar, "Ready");
     } catch (err) {
       setStatus(statusBar, `failed to load wasm: ${err && err.message ? err.message : err}`, { error: true });

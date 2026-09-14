@@ -52,3 +52,70 @@ export function setStatus(statusEl, message, { error = false } = {}) {
   statusEl.textContent = message;
   statusEl.className = error ? "error" : "";
 }
+
+export function moveSelection(row, col, key) {
+  switch (key) {
+    case "ArrowUp":
+      return { row: Math.max(0, row - 1), col };
+    case "ArrowDown":
+      return { row: Math.min(GRID_SIZE - 1, row + 1), col };
+    case "ArrowLeft":
+      return { row, col: Math.max(0, col - 1) };
+    case "ArrowRight":
+      return { row, col: Math.min(GRID_SIZE - 1, col + 1) };
+    default:
+      return { row, col };
+  }
+}
+
+export function findCellElement(boardEl, row, col) {
+  for (const cell of boardEl.children) {
+    if (Number(cell.dataset.row) === row && Number(cell.dataset.col) === col) return cell;
+  }
+  return null;
+}
+
+export function applySelection(boardEl, row, col) {
+  for (const cell of boardEl.children) {
+    cell.classList.remove("selected");
+  }
+  const target = findCellElement(boardEl, row, col);
+  if (target) target.classList.add("selected");
+  return { row, col };
+}
+
+const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
+export function wireSelection(boardEl, { row = 0, col = 0, onSelect } = {}) {
+  let selected = { row, col };
+
+  const select = (nextRow, nextCol) => {
+    selected = applySelection(boardEl, nextRow, nextCol);
+    onSelect?.(selected);
+    return selected;
+  };
+
+  boardEl.tabIndex = 0;
+
+  boardEl.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target?.dataset?.row == null || target?.dataset?.col == null) return;
+    select(Number(target.dataset.row), Number(target.dataset.col));
+  });
+
+  boardEl.addEventListener("keydown", (event) => {
+    if (!ARROW_KEYS.has(event.key)) return;
+    event.preventDefault();
+    const next = moveSelection(selected.row, selected.col, event.key);
+    select(next.row, next.col);
+  });
+
+  select(row, col);
+
+  return {
+    getSelection() {
+      return { ...selected };
+    },
+    select,
+  };
+}
