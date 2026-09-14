@@ -218,26 +218,26 @@ function emptyState() {
   };
 }
 
-const openLegend = { fill: true, clear: true };
+const openLegend = { fill: true, clear: true, undo: false, redo: false };
 
 {
   const board = makeMockBoard();
   const status = { textContent: "", className: "" };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  let state = emptyState();
+  const session = { state: emptyState(), legend: openLegend };
   const game = {
     exec(action) {
       assert.equal(action.action, "fill");
       assert.equal(action.row, 0);
       assert.equal(action.col, 2);
       assert.equal(action.digit, 4);
-      state = emptyState();
-      state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
-      return { ok: true, state, msg: null, is_quit: false };
+      session.state = emptyState();
+      session.state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
+      return { ok: true, state: session.state, msg: null, is_quit: false };
     },
     getLegend() {
-      return { fill: true, clear: true, undo: true };
+      return { fill: true, clear: true, undo: true, redo: false };
     },
   };
 
@@ -248,12 +248,11 @@ const openLegend = { fill: true, clear: true };
     status,
     errorModal,
     "4",
-    state,
-    openLegend,
+    session,
     makeRenderElement(),
   );
   assert.equal(outcome.handled, true);
-  assert.equal(state.cells[cellIndex(0, 2)].value, 4);
+  assert.equal(session.state.cells[cellIndex(0, 2)].value, 4);
   assert.equal(findCellElement(board, 0, 2).textContent, "4");
   assert.ok(findCellElement(board, 0, 2).classList.contains("selected"));
   assert.equal(outcome.legend.undo, true);
@@ -264,8 +263,8 @@ const openLegend = { fill: true, clear: true };
   const status = { textContent: "", className: "" };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const selection = { getSelection: () => ({ row: 0, col: 0 }) };
-  const state = emptyState();
-  state.cells[0] = { value: 1, given: true, conflict: false };
+  const session = { state: emptyState(), legend: openLegend };
+  session.state.cells[0] = { value: 1, given: true, conflict: false };
 
   const outcome = handlePlayKey(
     { exec: () => ({ ok: false, error: "cannot modify a puzzle cell" }) },
@@ -274,8 +273,7 @@ const openLegend = { fill: true, clear: true };
     status,
     errorModal,
     "5",
-    state,
-    openLegend,
+    session,
     makeRenderElement(),
   );
   assert.equal(outcome.handled, true);

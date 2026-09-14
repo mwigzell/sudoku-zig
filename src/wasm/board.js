@@ -145,6 +145,13 @@ export function parsePlayKey(key, code = "") {
   return null;
 }
 
+export function applySuccessfulExec(boardEl, selection, statusEl, result, createElement) {
+  renderBoard(boardEl, result.state, createElement);
+  const { row, col } = selection.getSelection();
+  selection.select(row, col);
+  applyEventStatus(statusEl, result);
+}
+
 export function handlePlayKey(
   game,
   boardEl,
@@ -152,8 +159,7 @@ export function handlePlayKey(
   statusEl,
   errorModal,
   key,
-  state,
-  legend,
+  session,
   createElement,
   code = "",
 ) {
@@ -171,11 +177,10 @@ export function handlePlayKey(
     return { handled: true };
   }
 
-  renderBoard(boardEl, result.state, createElement);
-  selection.select(row, col);
-  const nextLegend = game.getLegend();
-  applyEventStatus(statusEl, result);
-  return { handled: true, state: result.state, legend: nextLegend };
+  applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
+  session.state = result.state;
+  session.legend = game.getLegend();
+  return { handled: true, legend: session.legend };
 }
 
 export function wirePlayLoop(
@@ -184,12 +189,9 @@ export function wirePlayLoop(
   selection,
   statusEl,
   errorModal,
-  initialState,
-  initialLegend,
+  session,
+  { onLegendChange } = {},
 ) {
-  let state = initialState;
-  let legend = initialLegend;
-
   boardEl.addEventListener(
     "keydown",
     (event) => {
@@ -200,25 +202,23 @@ export function wirePlayLoop(
         statusEl,
         errorModal,
         event.key,
-        state,
-        legend,
+        session,
         undefined,
         event.code,
       );
       if (!outcome.handled) return;
       event.preventDefault();
-      if (outcome.state) state = outcome.state;
-      if (outcome.legend) legend = outcome.legend;
+      if (outcome.legend) onLegendChange?.(outcome.legend);
     },
     { capture: true },
   );
 
   return {
     getState() {
-      return state;
+      return session.state;
     },
     getLegend() {
-      return legend;
+      return session.legend;
     },
   };
 }

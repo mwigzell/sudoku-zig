@@ -83,6 +83,27 @@
       width: 100%;
     }
 
+    #edit-menu {
+      display: flex;
+      gap: 0.5rem;
+      width: min(100%, var(--board-size));
+    }
+
+    #edit-menu button {
+      font: inherit;
+      padding: 0.375rem 0.875rem;
+      border: 1px solid var(--status-border);
+      border-radius: 6px;
+      background: var(--cell-bg);
+      color: var(--status-fg);
+      cursor: pointer;
+    }
+
+    #edit-menu button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
     #status-bar {
       width: min(100%, var(--board-size));
       min-height: var(--status-min-height);
@@ -216,6 +237,10 @@
 </head>
 <body>
   <main id="app">
+    <nav id="edit-menu" aria-label="Edit">
+      <button type="button" id="edit-undo" disabled>Undo</button>
+      <button type="button" id="edit-redo" disabled>Redo</button>
+    </nav>
     <div id="board" class="board" role="grid" aria-label="Sudoku board"></div>
     <div id="status-bar" role="status" aria-live="polite"></div>
   </main>
@@ -231,9 +256,12 @@
     import { loadArtifact } from "./glue.js";
     import { newGame, wireErrorModal } from "../shell.js";
     import { renderBoard, setStatus, wireSelection, wirePlayLoop } from "../board.js";
+    import { wireEditMenu } from "../menu.js";
 
     const statusBar = document.getElementById("status-bar");
     const boardEl = document.getElementById("board");
+    const undoBtn = document.getElementById("edit-undo");
+    const redoBtn = document.getElementById("edit-redo");
     const errorModal = wireErrorModal(
       document.getElementById("error-modal"),
       document.getElementById("error-modal-msg"),
@@ -251,8 +279,21 @@
 
       renderBoard(boardEl, started.state);
       setStatus(statusBar, "");
+      const session = { state: started.state, legend: started.legend };
       const selection = wireSelection(boardEl, { row: 0, col: 0 });
-      wirePlayLoop(boardEl, game, selection, statusBar, errorModal, started.state, started.legend);
+      const editMenu = wireEditMenu(
+        undoBtn,
+        redoBtn,
+        game,
+        boardEl,
+        selection,
+        statusBar,
+        errorModal,
+        session,
+      );
+      wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
+        onLegendChange: () => editMenu.sync(),
+      });
       boardEl.focus();
     } catch (err) {
       setStatus(statusBar, `failed to load wasm: ${err && err.message ? err.message : err}`, { error: true });

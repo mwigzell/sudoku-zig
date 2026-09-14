@@ -43,6 +43,35 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
   const legend = game.getLegend();
   assert.equal(legend.undo, true, "fill should enable undo");
+  assert.equal(legend.redo, false, "fill alone should not enable redo");
+}
+
+// ── undo / redo ──
+{
+  const before = game.getState();
+  const idx = before.cells.findIndex((c) => c.value === 0 && !c.given);
+  const row = Math.floor(idx / 9);
+  const col = idx % 9;
+  const digit = 5;
+
+  const fill = game.exec({ action: "fill", row, col, digit });
+  assert.equal(fill.ok, true, `fill failed: ${JSON.stringify(fill)}`);
+  assert.equal(fill.state.cells[idx].value, digit);
+
+  const undo = game.exec({ action: "undo" });
+  assert.equal(undo.ok, true, `undo failed: ${JSON.stringify(undo)}`);
+  assert.equal(undo.state.cells[idx].value, 0);
+
+  let legend = game.getLegend();
+  assert.equal(legend.redo, true, "undo should enable redo");
+
+  const redo = game.exec({ action: "redo" });
+  assert.equal(redo.ok, true, `redo failed: ${JSON.stringify(redo)}`);
+  assert.equal(redo.state.cells[idx].value, digit);
+
+  legend = game.getLegend();
+  assert.equal(legend.undo, true);
+  assert.equal(legend.redo, false, "redo should consume redo availability");
 }
 
 // ── error_msg ──
