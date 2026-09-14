@@ -38,6 +38,7 @@ pub const GameEngine = struct {
     state: state_mod.State,
     data_dir: ?[]u8,
     last_save_msg: ?[]u8,
+    event_msg: event.EventMsg = .{},
 
     /// Build an engine from a one-line puzzle string.
     pub fn init(puzzle_str: []const u8) Error!@This() {
@@ -102,9 +103,58 @@ pub const GameEngine = struct {
         self.state.board.validate();
     }
 
+    /// Clear the per-exec `.ok.msg` scratch buffer before appending message parts.
+    pub fn beginEventMsg(self: *@This()) void {
+        self.event_msg.reset();
+    }
+
+    /// Append one `.ok.msg` fragment; multiple sources may contribute in the same exec step.
+    pub fn appendEventMsg(self: *@This(), part: []const u8) void {
+        self.event_msg.append(part);
+    }
+
+    /// Build `.ok` using accumulated msg (null when nothing was appended).
+    pub fn finishOkEvent(self: *@This(), view: board.Board.BoardView, is_quit: bool) Event {
+        return .{ .ok = .{
+            .board_view = view,
+            .msg = self.event_msg.optional(),
+            .is_quit = is_quit,
+        } };
+    }
+
+    /// One error string in engine scratch — safe for wasm JSON after exec returns.
+    pub fn errorEvent(self: *@This(), part: []const u8) Event {
+        self.event_msg.reset();
+        self.event_msg.append(part);
+        return .{ .error_msg = self.event_msg.slice() };
+    }
+
+    pub fn errorEventFmt(self: *@This(), comptime fmt: []const u8, args: anytype) Event {
+        self.event_msg.reset();
+        self.event_msg.appendFmt(fmt, args);
+        return .{ .error_msg = self.event_msg.slice() };
+    }
+
+    pub fn eventFromSetCellError(self: *@This(), row: u4, col: u4, err: anyerror) Event {
+        return switch (err) {
+            error.IsGiven => self.errorEvent("cannot modify a puzzle cell"),
+            else => self.errorEventFmt("set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) }),
+        };
+    }
+
+    pub fn finishOkAfterCellEdit(self: *@This(), row: u4, col: u4) Event {
+        self.state.board.refreshConflictsForCell(row, col);
+        const view = self.state.board.asView();
+        if (view.isConflictingRowCol(row, col)) {
+            self.appendEventMsg("conflict in row, column, or box");
+        }
+        return self.finishOkEvent(view, false);
+    }
+
     /// Route a gameplay command through Board mutation + render update.
     /// Session commands (save/open/new/save_as) are handled in native/shell/sudoku.zig.
     pub fn exec(self: *@This(), cmd: command.Command) Event {
+        self.beginEventMsg();
         switch (cmd) {
             .fill => |f| {
                 return fill_command.execute(self, f);
@@ -130,19 +180,15 @@ pub const GameEngine = struct {
         // Snapshot old value before mutation (only recorded on success)
         const old_value = self.state.board.asView().get(row, col);
         self.state.board.setCell(row, col, digit) catch |err| {
-            var buf: [80]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) }) catch "cell set error";
-            return Event{ .error_msg = msg };
+            return self.eventFromSetCellError(row, col, err);
         };
         // Persist the successful mutation in history
         // First discard stale future entries from any earlier undo branch
         self.state.history.truncateFuture();
         self.state.history.push(row, col, old_value, digit) catch |err| {
-            var buf: [80]u8 = undefined;
-            return Event{ .error_msg = std.fmt.bufPrint(&buf, "history push failed: {s}", .{@errorName(err)}) catch "history error" };
+            return self.errorEventFmt("history push failed: {s}", .{@errorName(err)});
         };
-        self.state.board.refreshConflictsForCell(row, col);
-        return Event{ .ok = .{ .board_view = self.state.board.asView(), .msg = null, .is_quit = false } };
+        return self.finishOkAfterCellEdit(row, col);
     }
 };
 
@@ -295,7 +341,7 @@ test "exec quit → .ok" {
 // Integration chain: exec → board mutation → conflict refresh → event emission
 // Check conflict bits through the returned Event board_view
 
-test "exec fill creates conflict → cell marked" {
+test "exec fill creates conflict → cell marked and status msg set" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
     defer engine.deinit();
 
@@ -304,11 +350,16 @@ test "exec fill creates conflict → cell marked" {
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
     };
 
-    _ = try expectOk(execTest(&engine, fill1));
+    const first = execTest(&engine, fill1);
+    try std.testing.expect(first == .ok);
+    try std.testing.expect(first.ok.msg == null);
 
-    const view = try expectOk(execTest(&engine, command.Command{
+    const second = execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
-    }));
+    });
+    try std.testing.expect(second == .ok);
+    const view = second.ok.board_view;
+    try std.testing.expectEqualStrings("conflict in row, column, or box", second.ok.msg.?);
 
     // Both cells in row 0 must now be flagged as conflicting
     try std.testing.expect(view.isConflictingRowCol(0, 2));
@@ -351,9 +402,12 @@ test "exec fill no conflict → no bits set" {
 
     // Row 0 already has six at (0,0) and seven at (0,1).
     // Fill (0,2) with one — unique across its row, col, and box → clean.
-    const view = try expectOk(execTest(&engine, command.Command{
+    const ev = execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
-    }));
+    });
+    try std.testing.expect(ev == .ok);
+    try std.testing.expect(ev.ok.msg == null);
+    const view = ev.ok.board_view;
 
     // The filled cell must be conflict-free
     try std.testing.expect(!view.isConflictingRowCol(0, 2));
@@ -409,7 +463,7 @@ test "Event.ok can carry a message" {
 
 test "Event.error_msg carries an error string" {
     _ = Event{
-        .error_msg = "cannot modify a given cell",
+        .error_msg = "cannot modify a puzzle cell",
     };
 }
 

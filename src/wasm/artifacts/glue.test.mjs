@@ -52,6 +52,18 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.ok(res.error, "expected error string");
 }
 
+// ── error_msg ──
+{
+  const state = game.getState();
+  const idx = state.cells.findIndex((c) => c.given);
+  assert.ok(idx >= 0, "no given cell in initial state");
+  const row = Math.floor(idx / 9);
+  const col = idx % 9;
+  const res = game.exec({ action: "clear", row, col });
+  assert.equal(res.ok, false, `expected error: ${JSON.stringify(res)}`);
+  assert.match(res.error, /puzzle/i);
+}
+
 // ── serialize round-trip ──
 {
   const before = game.getState();

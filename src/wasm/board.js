@@ -1,4 +1,8 @@
-// board.js — DOM board shell: render GameSnapshot, status bar helpers (#37).
+// board.js — DOM board shell: render GameSnapshot, selection, play loop (#37).
+
+import { applyEventStatus, applyExecResult } from "./shell.js";
+
+export { applyEventStatus };
 
 const GRID_SIZE = 9;
 
@@ -117,5 +121,104 @@ export function wireSelection(boardEl, { row = 0, col = 0, onSelect } = {}) {
       return { ...selected };
     },
     select,
+  };
+}
+
+export function parsePlayKey(key, code = "") {
+  if (key.length === 1 && key >= "1" && key <= "9") {
+    return { type: "fill", digit: Number(key) };
+  }
+  if (key === "0" || code === "Digit0" || code === "Numpad0") {
+    return { type: "clear" };
+  }
+  if (key === " " || key === "Spacebar" || code === "Space") {
+    return { type: "clear" };
+  }
+  if (
+    key === "Delete" ||
+    key === "Backspace" ||
+    code === "Delete" ||
+    code === "Backspace"
+  ) {
+    return { type: "clear" };
+  }
+  return null;
+}
+
+export function handlePlayKey(
+  game,
+  boardEl,
+  selection,
+  statusEl,
+  errorModal,
+  key,
+  state,
+  legend,
+  createElement,
+  code = "",
+) {
+  const play = parsePlayKey(key, code);
+  if (!play) return { handled: false };
+
+  const { row, col } = selection.getSelection();
+  const result =
+    play.type === "fill"
+      ? game.exec({ action: "fill", row, col, digit: play.digit })
+      : game.exec({ action: "clear", row, col });
+
+  if (!result.ok) {
+    applyExecResult(statusEl, errorModal, result);
+    return { handled: true };
+  }
+
+  renderBoard(boardEl, result.state, createElement);
+  selection.select(row, col);
+  const nextLegend = game.getLegend();
+  applyEventStatus(statusEl, result);
+  return { handled: true, state: result.state, legend: nextLegend };
+}
+
+export function wirePlayLoop(
+  boardEl,
+  game,
+  selection,
+  statusEl,
+  errorModal,
+  initialState,
+  initialLegend,
+) {
+  let state = initialState;
+  let legend = initialLegend;
+
+  boardEl.addEventListener(
+    "keydown",
+    (event) => {
+      const outcome = handlePlayKey(
+        game,
+        boardEl,
+        selection,
+        statusEl,
+        errorModal,
+        event.key,
+        state,
+        legend,
+        undefined,
+        event.code,
+      );
+      if (!outcome.handled) return;
+      event.preventDefault();
+      if (outcome.state) state = outcome.state;
+      if (outcome.legend) legend = outcome.legend;
+    },
+    { capture: true },
+  );
+
+  return {
+    getState() {
+      return state;
+    },
+    getLegend() {
+      return legend;
+    },
   };
 }

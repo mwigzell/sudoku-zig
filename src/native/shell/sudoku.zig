@@ -39,6 +39,8 @@ pub const Sudoku = struct {
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
+    /// Status passthrough (same rules as wasm shell.js applyEventStatus): show a message
+    /// only for `.error_msg` or `.ok.msg`; silence when `.ok.msg` is null; never invent copy.
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {

@@ -48,7 +48,8 @@ pub const Facade = struct {
         return self.showLegend_fn(self.context, commands);
     }
 
-    /// Display a message and get user acknowledgement.
+    /// Display an Event-sourced message and get user acknowledgement.
+    /// Used for both `.error_msg` and optional `.ok.msg` — not shell-invented copy.
     pub fn showError(self: *const Facade, msg: []const u8) Error!void {
         return self.showError_fn(self.context, msg);
     }

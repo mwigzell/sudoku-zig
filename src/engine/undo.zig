@@ -10,11 +10,9 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     engine.state.history.pointer -= 1;
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     engine.state.board.setCell(entry.row, entry.col, entry.old_value) catch |err| {
-        var buf: [80]u8 = undefined;
-        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "undo fail: {s}", .{@errorName(err)}) catch "undo failed" };
+        return engine.eventFromSetCellError(entry.row, entry.col, err);
     };
-    engine.state.board.refreshConflictsForCell(entry.row, entry.col);
-    return game_engine.Event{ .ok = .{ .board_view = engine.state.board.asView(), .msg = null, .is_quit = false } };
+    return engine.finishOkAfterCellEdit(entry.row, entry.col);
 }
 
 // ---------------------------------------------------------------------------

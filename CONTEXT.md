@@ -46,7 +46,7 @@ Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or pla
 _Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer)
 
 **Event**:
-Output of `GameEngine.exec()` after a gameplay command — `.ok` carries a `BoardView`, optional message, and `is_quit`; `.error_msg` carries a reason string. Native `Sudoku` passes this to the renderer facade. The wasm boundary serializes the same semantics as JSON (`boundary.zig` / `glue.js`).
+Output of `GameEngine.exec()` after a gameplay command — `.ok` carries a `BoardView`, optional message, and `is_quit`; `.error_msg` carries a reason string. Native `Sudoku` passes this to the renderer facade. The wasm boundary serializes the same semantics as JSON (`boundary.zig` / `glue.js`). **Status copy is Event-sourced only**: `.ok.msg` → web status bar; `.error_msg` → acknowledgement modal (native `showError` analogue).
 _Avoid_: Payload (ambiguous), State dump
 
 **Command**:

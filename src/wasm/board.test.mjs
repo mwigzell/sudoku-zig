@@ -12,7 +12,11 @@ import {
   findCellElement,
   applySelection,
   wireSelection,
+  parsePlayKey,
+  handlePlayKey,
+  wirePlayLoop,
 } from "./board.js";
+import { applyEventStatus, applyExecResult, showErrorModal } from "./shell.js";
 
 assert.equal(cellIndex(2, 4), 22);
 assert.equal(cellIndex(0, 0), 0);
@@ -138,6 +142,33 @@ function makeMockBoard() {
     addEventListener(type, fn) {
       this._listeners[type] = fn;
     },
+    replaceChildren(...nodes) {
+      this.children.length = 0;
+      this.children.push(...nodes);
+    },
+  };
+}
+
+function makeRenderElement() {
+  return (tag) => {
+    const el = { tag, className: "", textContent: "", dataset: {}, attrs: {} };
+    el.setAttribute = (name, value) => {
+      el.attrs[name] = value;
+    };
+    el.classList = {
+      _set: new Set(),
+      add(...names) {
+        names.forEach((n) => this._set.add(n));
+        el.className = [...this._set].join(" ");
+      },
+      remove(...names) {
+        names.forEach((n) => this._set.delete(n));
+      },
+      contains(name) {
+        return this._set.has(name);
+      },
+    };
+    return el;
   };
 }
 
@@ -169,6 +200,105 @@ function makeMockBoard() {
   board._listeners.click({ target });
   assert.deepEqual(controller.getSelection(), { row: 5, col: 5 });
   assert.ok(target.classList.contains("selected"));
+}
+
+// ── play loop (#39) ──
+
+assert.deepEqual(parsePlayKey("5"), { type: "fill", digit: 5 });
+assert.equal(parsePlayKey("ArrowUp"), null);
+assert.deepEqual(parsePlayKey("Backspace"), { type: "clear" });
+assert.deepEqual(parsePlayKey(" "), { type: "clear" });
+assert.deepEqual(parsePlayKey("", "Space"), { type: "clear" });
+assert.deepEqual(parsePlayKey("", "Backspace"), { type: "clear" });
+assert.deepEqual(parsePlayKey("", "Delete"), { type: "clear" });
+
+function emptyState() {
+  return {
+    cells: Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false })),
+  };
+}
+
+const openLegend = { fill: true, clear: true };
+
+{
+  const board = makeMockBoard();
+  const status = { textContent: "", className: "" };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
+  let state = emptyState();
+  const game = {
+    exec(action) {
+      assert.equal(action.action, "fill");
+      assert.equal(action.row, 0);
+      assert.equal(action.col, 2);
+      assert.equal(action.digit, 4);
+      state = emptyState();
+      state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
+      return { ok: true, state, msg: null, is_quit: false };
+    },
+    getLegend() {
+      return { fill: true, clear: true, undo: true };
+    },
+  };
+
+  const outcome = handlePlayKey(
+    game,
+    board,
+    selection,
+    status,
+    errorModal,
+    "4",
+    state,
+    openLegend,
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, true);
+  assert.equal(state.cells[cellIndex(0, 2)].value, 4);
+  assert.equal(findCellElement(board, 0, 2).textContent, "4");
+  assert.ok(findCellElement(board, 0, 2).classList.contains("selected"));
+  assert.equal(outcome.legend.undo, true);
+}
+
+{
+  const board = makeMockBoard();
+  const status = { textContent: "", className: "" };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const selection = { getSelection: () => ({ row: 0, col: 0 }) };
+  const state = emptyState();
+  state.cells[0] = { value: 1, given: true, conflict: false };
+
+  const outcome = handlePlayKey(
+    { exec: () => ({ ok: false, error: "cannot modify a puzzle cell" }) },
+    board,
+    selection,
+    status,
+    errorModal,
+    "5",
+    state,
+    openLegend,
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, true);
+  assert.equal(status.textContent, "");
+  assert.match(errorModal.msgEl.textContent, /puzzle/i);
+  assert.equal(errorModal.el.hidden, false);
+}
+
+{
+  const status = { textContent: "saved to: foo", className: "" };
+  applyEventStatus(status, { ok: true, msg: null });
+  assert.equal(status.textContent, "");
+
+  applyEventStatus(status, { ok: true, msg: "opened: bar" });
+  assert.equal(status.textContent, "opened: bar");
+  assert.equal(status.className, "");
+
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  applyExecResult(status, errorModal, { ok: false, error: "cannot modify a puzzle cell" });
+  assert.equal(status.textContent, "opened: bar");
+  showErrorModal(errorModal, "cannot modify a puzzle cell");
+  assert.equal(errorModal.msgEl.textContent, "cannot modify a puzzle cell");
+  assert.equal(errorModal.el.hidden, false);
 }
 
 console.log("board.test.mjs OK");
