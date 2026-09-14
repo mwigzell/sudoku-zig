@@ -1,40 +1,166 @@
 <!doctype html>
-<!-- page.html — web host stub using structured wasm JSON exports (#31). -->
+<!-- page.html — web host: status bar + responsive board from GameSnapshot (#37). -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sudoku</title>
   <style>
+    :root {
+      --page-bg: #16181d;
+      --page-fg: #e6e6e6;
+      --status-bg: #0e1013;
+      --status-border: #333844;
+      --status-fg: #e6e6e6;
+      --status-error: #ff9b9b;
+      --board-bg: #0e1013;
+      --cell-bg: #16181d;
+      --cell-fg: #e6e6e6;
+      --given-fg: #a8b0c0;
+      --player-fg: #f2f4f8;
+      --conflict-fg: #ff8a8a;
+      --conflict-bg: #3a1f24;
+      --line-cell: #333844;
+      --line-box: #5a6270;
+      --selection-ring: #6ea8fe;
+      --region-tint: rgba(110, 168, 254, 0.12);
+      --cell-min: 2.25rem;
+      --board-min: calc(var(--cell-min) * 9 + 2px);
+    }
+
+    [data-theme="light"] {
+      --page-bg: #eef0f4;
+      --page-fg: #1a1d24;
+      --status-bg: #ffffff;
+      --status-border: #c8ced8;
+      --status-fg: #1a1d24;
+      --status-error: #b42318;
+      --board-bg: #ffffff;
+      --cell-bg: #f8f9fb;
+      --cell-fg: #1a1d24;
+      --given-fg: #4a5568;
+      --player-fg: #111827;
+      --conflict-fg: #b42318;
+      --conflict-bg: #fef2f2;
+      --line-cell: #d0d5dd;
+      --line-box: #667085;
+      --selection-ring: #2563eb;
+      --region-tint: rgba(37, 99, 235, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: system-ui, sans-serif;
-      margin: 1rem;
-      background: #16181d;
-      color: #e6e6e6;
+      margin: 0;
+      padding: 1rem;
+      background: var(--page-bg);
+      color: var(--page-fg);
     }
-    #status {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 14px;
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      width: min(100%, 42rem);
+      margin: 0 auto;
+    }
+
+    #status-bar {
+      width: 100%;
+      font-size: 0.9375rem;
       line-height: 1.45;
-      padding: 0.75rem;
-      border: 1px solid #333844;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid var(--status-border);
       border-radius: 6px;
-      background: #0e1013;
-      white-space: pre-wrap;
+      background: var(--status-bg);
+      color: var(--status-fg);
     }
-    .error { color: #ff9b9b; }
+
+    #status-bar.error {
+      color: var(--status-error);
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      width: min(100%, 90vmin, 36rem);
+      min-width: var(--board-min);
+      aspect-ratio: 1;
+      border: 1px solid var(--line-box);
+      background: var(--board-bg);
+    }
+
+    .cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      min-height: var(--cell-min);
+      font-size: clamp(0.875rem, 3.5vmin, 1.5rem);
+      font-weight: 500;
+      background: var(--cell-bg);
+      color: var(--cell-fg);
+      border-right: 1px solid var(--line-cell);
+      border-bottom: 1px solid var(--line-cell);
+      user-select: none;
+    }
+
+    .cell:nth-child(9n) {
+      border-right: none;
+    }
+
+    .cell:nth-child(n + 73) {
+      border-bottom: none;
+    }
+
+    .cell.box-right {
+      border-right: 1px solid var(--line-box);
+    }
+
+    .cell.box-bottom {
+      border-bottom: 1px solid var(--line-box);
+    }
+
+    .cell:nth-child(9n).box-right {
+      border-right: none;
+    }
+
+    .cell:nth-child(n + 73).box-bottom {
+      border-bottom: none;
+    }
+
+    .cell.given {
+      color: var(--given-fg);
+      font-weight: 600;
+    }
+
+    .cell.player {
+      color: var(--player-fg);
+    }
+
+    .cell.conflict {
+      color: var(--conflict-fg);
+      background: var(--conflict-bg);
+    }
   </style>
 </head>
 <body>
-  <main>
-    <p id="status">loading…</p>
+  <main id="app">
+    <div id="status-bar" role="status" aria-live="polite">loading…</div>
+    <div id="board" class="board" role="grid" aria-label="Sudoku board"></div>
   </main>
 
   <script type="module">
     import { loadArtifact } from "./glue.js";
     import { newGame } from "../shell.js";
+    import { renderBoard, setStatus } from "../board.js";
 
-    const status = document.getElementById("status");
+    const statusBar = document.getElementById("status-bar");
+    const boardEl = document.getElementById("board");
 
     try {
       const res = await fetch("./artifact.wasm");
@@ -45,16 +171,10 @@
       const started = newGame(game, { difficulty: 1 });
       if (!started.ok) throw new Error(started.error ?? "init failed");
 
-      const legend = started.legend;
-      const state = started.state;
-      const filled = state.cells.filter((c) => c.value !== 0).length;
-      status.textContent =
-        `Sudoku wasm ready.\n` +
-        `Legend: fill=${legend.fill} undo=${legend.undo} quit=${legend.quit}\n` +
-        `Cells filled: ${filled}/81`;
+      renderBoard(boardEl, started.state);
+      setStatus(statusBar, "Ready");
     } catch (err) {
-      status.textContent = `failed to load wasm: ${err && err.message ? err.message : err}`;
-      status.classList.add("error");
+      setStatus(statusBar, `failed to load wasm: ${err && err.message ? err.message : err}`, { error: true });
     }
   </script>
 </body>

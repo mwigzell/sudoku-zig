@@ -6,17 +6,17 @@ const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
 
-pub const RouteResult = enum { page, glue, shell, artifact };
+pub const RouteResult = enum { page, glue, shell, board, artifact };
 
 /// The four known routes and the delivered-once set.
 pub const Router = struct {
-    /// Four known routes: page, glue, shell, artifact — one bool each.
-    delivered: [4]bool,
+    /// Five known routes: page, glue, shell, board, artifact — one bool each.
+    delivered: [5]bool,
 
     pub const Error = error{NotFound};
 
     pub fn init() Router {
-        return .{ .delivered = [_]bool{ false, false, false, false } };
+        return .{ .delivered = [_]bool{ false, false, false, false, false } };
     }
 
     /// Maps a request path to its asset; anything else is a router-level 404.
@@ -24,6 +24,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/")) return .page;
         if (std.mem.eql(u8, path, "/glue.js")) return .glue;
         if (std.mem.eql(u8, path, "/shell.js")) return .shell;
+        if (std.mem.eql(u8, path, "/board.js")) return .board;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
         return Error.NotFound;
     }
@@ -156,12 +157,14 @@ fn serveClient(io: std.Io, router: *Router, client: net.Stream) ServeError!void 
             .page => wasm_bytes.page_html,
             .glue => wasm_bytes.glue_js,
             .shell => wasm_bytes.shell_js,
+            .board => wasm_bytes.board_js,
             .artifact => wasm_bytes.wasm_bytes,
         };
         const content_type: []const u8 = switch (result) {
             .page => "text/html",
             .glue => "text/javascript",
             .shell => "text/javascript",
+            .board => "text/javascript",
             .artifact => "application/wasm",
         };
         try writeFull(&w.interface, "200 OK", content_type, body);
@@ -253,6 +256,10 @@ test "serve: route \"/shell.js\" to the shell" {
     try std.testing.expectEqual(RouteResult.shell, Router.route("/shell.js"));
 }
 
+test "serve: route \"/board.js\" to the board module" {
+    try std.testing.expectEqual(RouteResult.board, Router.route("/board.js"));
+}
+
 test "serve: route \"/artifact.wasm\" to the artifact" {
     try std.testing.expectEqual(RouteResult.artifact, Router.route("/artifact.wasm"));
 }
@@ -273,6 +280,9 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.shell);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.board);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.artifact);
