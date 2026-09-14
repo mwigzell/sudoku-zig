@@ -2,6 +2,7 @@
 /// the socket layer lives elsewhere and drives this through Router.route().
 const std = @import("std");
 const net = std.Io.net;
+const builtin = @import("builtin");
 const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
@@ -74,27 +75,27 @@ pub const OpenError = error{Unavailable};
 /// Browser-open seam: prod wires `openBrowser`; tests wire a fake.
 pub const OpenFn = *const fn (io: std.Io, url: []const u8) OpenError!void;
 pub fn openBrowser(io: std.Io, url: []const u8) OpenError!void {
-    var candidates: [3][]const u8 = .{ undefined, undefined, undefined };
-    var count: usize = 0;
     if (std.c.getenv("BROWSER")) |b| {
-        const s = std.mem.span(b);
-        if (s.len > 0) {
-            candidates[count] = s;
-            count += 1;
-        }
+        const browser = std.mem.span(b);
+        if (browser.len > 0 and trySpawn(io, &.{ browser, url })) return;
     }
-    candidates[count] = "xdg-open";
-    count += 1;
-    candidates[count] = "vivaldi";
-    count += 1;
-    for (candidates[0..count]) |cand| {
-        // Fire-and-forget: the browser outlives this call; wait() would
-        // block serving until it exits, so the child is deliberately
-        // not waited on.
-        _ = std.process.spawn(io, .{ .argv = &.{ cand, url } }) catch continue;
-        return;
+
+    switch (builtin.os.tag) {
+        .macos => {
+            if (trySpawn(io, &.{ "open", "-a", "Vivaldi", url })) return;
+            if (trySpawn(io, &.{ "open", url })) return;
+        },
+        else => {
+            if (trySpawn(io, &.{ "xdg-open", url })) return;
+            if (trySpawn(io, &.{ "vivaldi", url })) return;
+        },
     }
     return OpenError.Unavailable;
+}
+
+fn trySpawn(io: std.Io, argv: []const []const u8) bool {
+    _ = std.process.spawn(io, .{ .argv = argv }) catch return false;
+    return true;
 }
 /// Opens the served URL; an Unavailable opener is reported and serving
 /// continues regardless — opening the browser never aborts serving.
