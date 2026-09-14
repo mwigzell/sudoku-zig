@@ -1,5 +1,5 @@
 // Save-file wire format: header/entry/trailer types + pure State blob (de)serialization.
-// File I/O lives in game_engine.zig and file_transport.zig.
+// File I/O lives in native/shell/ session handlers.
 const std = @import("std");
 const mutation_history = @import("mutation_history.zig");
 const state_mod = @import("state.zig");

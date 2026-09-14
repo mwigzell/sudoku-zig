@@ -1,22 +1,22 @@
 // Sudoku facade: owns the command loop — prompt, parse, dispatch to the
 // game engine, and render each resulting event back through the renderer.
 const std = @import("std");
-const facade_mod = @import("renderer/facade.zig");
-const styler = @import("native/ascii/styler.zig");
-const game_engine = @import("engine/game_engine.zig");
-const file_transport = @import("engine/file_transport.zig");
-const config = @import("config.zig");
-const puzzle_gen = @import("puzzle_gen.zig");
-const command = @import("command.zig");
+const facade_mod = @import("../../renderer/facade.zig");
+const styler = @import("../ascii/styler.zig");
+const game_engine = @import("../../engine/game_engine.zig");
+const file_transport = @import("file_transport.zig");
+const config = @import("../../config.zig");
+const puzzle_gen = @import("../../puzzle_gen.zig");
+const command = @import("../../command.zig");
 
-const disambiguate = @import("native/ascii/disambiguate.zig");
-const legend = @import("renderer/legend.zig");
+const disambiguate = @import("../ascii/disambiguate.zig");
+const legend = @import("../../renderer/legend.zig");
 
-const host_mod = @import("native/host.zig");
-const save_command = @import("engine/save.zig");
-const open_command = @import("engine/open.zig");
-const new_command = @import("engine/new.zig");
-const save_as_command = @import("engine/save_as.zig");
+const host_mod = @import("../host.zig");
+const save_command = @import("save.zig");
+const open_command = @import("open.zig");
+const new_command = @import("new.zig");
+const save_as_command = @import("save_as.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 /// One running game: engine + renderer; both deployments show the game, then turn it.
@@ -105,10 +105,10 @@ pub const Sudoku = struct {
     }
 };
 
-const board = @import("board/board.zig");
-const cell = @import("board/cell.zig");
-const styler_t = @import("native/ascii/styler.zig");
-const ascii_renderer = @import("native/ascii/renderer.zig");
+const board = @import("../../board/board.zig");
+const cell = @import("../../board/cell.zig");
+const styler_t = @import("../ascii/styler.zig");
+const ascii_renderer = @import("../ascii/renderer.zig");
 
 test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer

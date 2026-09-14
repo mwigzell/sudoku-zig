@@ -1,7 +1,7 @@
 /// OS-aware filesystem path utilities for the Sudoku save/load feature.
 ///
 /// Resolves platform conventions (XDG on Linux, Application Support on macOS)
-/// so callers like `sudoku.zig` don't need to know about `$HOME`, directory
+/// so callers like `native/shell/sudoku.zig` don't need to know about `$HOME`, directory
 /// creation, or absolute-path detection. All functions return **owned** strings
 /// — caller is responsible for freeing via `gpa.free()`.
 const std = @import("std");

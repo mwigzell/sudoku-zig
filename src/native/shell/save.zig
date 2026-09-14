@@ -1,6 +1,6 @@
 /// Save command handler — delegates to save_as after ensuring a filename is known.
 const std = @import("std");
-const game_engine = @import("game_engine.zig");
+const game_engine = @import("../../engine/game_engine.zig");
 const save_as_command = @import("save_as.zig");
 const file_transport = @import("file_transport.zig");
 const mypath = @import("path.zig");
@@ -13,7 +13,7 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 
 test "command.save.execute saves file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
-        @import("../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../puzzle_gen.zig").PuzzleGen.default(),
     );
     defer engine.deinit();
 

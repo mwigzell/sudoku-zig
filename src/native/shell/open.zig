@@ -1,6 +1,6 @@
 /// Open command handler — reads bytes via transport, loads state through engine codec.
 const std = @import("std");
-const game_engine = @import("game_engine.zig");
+const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
 const mypath = @import("path.zig");
 
@@ -56,7 +56,7 @@ fn doOpen(engine: *game_engine.GameEngine, transport: file_transport.FileTranspo
 
 test "command.open.execute opens file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
-        @import("../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../puzzle_gen.zig").PuzzleGen.default(),
     );
     defer engine.deinit();
 
@@ -93,7 +93,7 @@ test "command.open.execute opens file and returns ok with message" {
 
 test "command.open.execute returns fallback message when path is null" {
     var engine = try game_engine.GameEngine.init(
-        @import("../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../puzzle_gen.zig").PuzzleGen.default(),
     );
     defer engine.deinit();
 

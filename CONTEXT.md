@@ -81,11 +81,11 @@ _Avoid_: Engine (collides with GameEngine)
 
 ### App Shell & Deployments
 
-**Sudoku** (`sudoku.zig`, native app shell):
+**Sudoku** (`native/shell/sudoku.zig`, native app shell):
 Owns the command loop, renderer facade, `FileTransport`, and session command routing (`save`, `open`, `save_as`, `new`) in `handleResult` before delegating gameplay to `GameEngine.exec`. This is the native integrated e2e seam.
 _Avoid_: folding session I/O into GameEngine
 
-**Web app shell** (`page.html`, `glue.js`):
+**Web app shell** (`page.html`, `glue.js`, `wasm/shell.js`):
 JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never parses SUD0 or projects a terminal screen. Session file intents (save/open/new) will live here (#35); gameplay goes through `exec(action_json)`.
 _Avoid_: reintroducing a wasm REPL or ASCII screen feed
 
@@ -97,7 +97,7 @@ _Avoid_: calling the browser renderer "wasm"
 Native terminal substrate — builds `IoSession`, selects AsciiRenderer facade arms. Wasm has no Host analogue; the JS page is the substrate.
 _Avoid_: Host as a concrete object (it's the seam), "session" (that's the native substrate under it)
 
-**FileTransport** (`engine/file_transport.zig`, native arm):
+**FileTransport** (`native/shell/file_transport.zig`, native arm):
 Fn-pointer vtable for file read/write/resolve. **Owned by native `Sudoku`**, passed into session handlers — not by `GameEngine`. The wasm path uses `serialize`/`deserialize` on opaque bytes instead; no wasm transport arm.
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 

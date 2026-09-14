@@ -1,7 +1,7 @@
 // Entry point — parses CLI args, builds the Host (renderer substrate), starts the game loop.
 const std = @import("std");
 const facade = @import("renderer/facade.zig");
-const sudoku = @import("sudoku.zig");
+const sudoku = @import("native/shell/sudoku.zig");
 const config_module = @import("config.zig");
 const ascii_renderer = @import("native/ascii/renderer.zig");
 const logger = @import("logger.zig");
@@ -12,7 +12,7 @@ const host_mod = @import("native/host.zig");
 // Load-bearing: wasm_bytes.zig must stay reachable from this closure for its tests.
 const wasm_bytes = @import("native/wasm_bytes.zig");
 const state_mod = @import("engine/state.zig");
-const file_transport = @import("engine/file_transport.zig");
+const file_transport = @import("native/shell/file_transport.zig");
 // Load-bearing: serve.zig is pure and pinned so its tests join the native suite.
 const serve = @import("native/serve.zig");
 const wasm_wire = @import("wasm/wire.zig");

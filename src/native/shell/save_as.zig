@@ -1,6 +1,6 @@
 /// SaveAs command handler — serializes state and writes bytes through transport.
 const std = @import("std");
-const game_engine = @import("game_engine.zig");
+const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
 const mypath = @import("path.zig");
 
@@ -39,7 +39,7 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 
 test "command.save_as.execute saves file at given path" {
     var engine = try game_engine.GameEngine.init(
-        @import("../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../puzzle_gen.zig").PuzzleGen.default(),
     );
     defer engine.deinit();
 

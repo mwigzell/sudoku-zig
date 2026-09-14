@@ -1,7 +1,6 @@
 // File byte transport behind a vtable seam: write bytes to a named path,
 // read a named path into a caller-freed buffer, and resolve a bare name
-// against the arm's own file store. The native arm uses std.Io byte ops;
-// the wasm arm (transport.zig) uses the page's file_write / file_read imports.
+// against the arm's own file store. Native std.Io byte ops for session handlers.
 const std = @import("std");
 const mypath = @import("path.zig");
 

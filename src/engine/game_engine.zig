@@ -103,7 +103,7 @@ pub const GameEngine = struct {
     }
 
     /// Route a gameplay command through Board mutation + render update.
-    /// Session commands (save/open/new/save_as) are handled in Sudoku.handleResult.
+    /// Session commands (save/open/new/save_as) are handled in native/shell/sudoku.zig.
     pub fn exec(self: *@This(), cmd: command.Command) Event {
         switch (cmd) {
             .fill => |f| {
@@ -148,8 +148,8 @@ pub const GameEngine = struct {
 
 // ────────────────────── co-located tests ──────────────────────
 const puzzle_gen = @import("../puzzle_gen.zig");
-const file_transport = @import("file_transport.zig");
-const open_command = @import("open.zig");
+const file_transport = @import("../native/shell/file_transport.zig");
+const open_command = @import("../native/shell/open.zig");
 
 fn expectOk(e: Event) !board.Board.BoardView {
     return switch (e) {

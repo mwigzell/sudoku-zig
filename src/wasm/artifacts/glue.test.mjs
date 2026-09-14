@@ -1,10 +1,11 @@
-// glue.test.mjs — structured wasm JSON contract (#31).
+// glue.test.mjs — wasm glue + shell session contract.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { loadArtifact } from "./glue.js";
+import { save, open, newGame } from "../shell.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifact.wasm"));
@@ -63,6 +64,22 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const loaded = fresh.deserialize(bytes);
   assert.equal(loaded.ok, true, `deserialize failed: ${JSON.stringify(loaded)}`);
   assert.deepEqual(fresh.getState(), before, "deserialize did not restore state");
+}
+
+// ── shell session round-trip ──
+{
+  const before = game.getState();
+  const saved = save(game);
+  assert.equal(saved.ok, true);
+  assert.ok(saved.bytes.length > 16);
+
+  const fresh = await loadArtifact(wasmBytes);
+  const started = newGame(fresh, { difficulty: 2 });
+  assert.equal(started.ok, true);
+
+  const restored = open(fresh, saved.bytes);
+  assert.equal(restored.ok, true);
+  assert.deepEqual(fresh.getState(), before);
 }
 
 // ── quit ──

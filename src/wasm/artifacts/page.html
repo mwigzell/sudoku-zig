@@ -32,6 +32,7 @@
 
   <script type="module">
     import { loadArtifact } from "./glue.js";
+    import { newGame } from "../shell.js";
 
     const status = document.getElementById("status");
 
@@ -41,11 +42,11 @@
       const bytes = new Uint8Array(await res.arrayBuffer());
 
       const game = await loadArtifact(bytes);
-      const init = game.init({ difficulty: 1 });
-      if (!init.ok) throw new Error(init.error ?? "init failed");
+      const started = newGame(game, { difficulty: 1 });
+      if (!started.ok) throw new Error(started.error ?? "init failed");
 
-      const legend = game.getLegend();
-      const state = game.getState();
+      const legend = started.legend;
+      const state = started.state;
       const filled = state.cells.filter((c) => c.value !== 0).length;
       status.textContent =
         `Sudoku wasm ready.\n` +
