@@ -80,6 +80,7 @@ src/
 
 ## Issue tracker
 
-Local markdown issues live in [`.scratch/sudoku/issues/`](.scratch/sudoku/issues/),
-one file per ticket with `triage:` and `status:` in the header. Closed issues
-are archived under `.scratch/sudoku/issues/closed/`.
+Open work lives on **GitHub**: [mwigzell/sudoku-zig](https://github.com/mwigzell/sudoku-zig/issues).
+See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) for agent workflow (`gh issue list`, triage labels, close when done).
+
+[`.scratch/sudoku/issues/closed/`](.scratch/sudoku/issues/closed/) is a **historical archive** from the early local-agent loop (README experiment record). Issue numbers there do not match GitHub IDs — code and tests are the source of truth for shipped work.
