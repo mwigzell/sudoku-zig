@@ -52,6 +52,13 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 - **Issue lifecycle**: triage labels above are pre-work roles only. When acceptance criteria are verified, close the GitHub issue.
 
+### Closed issues are historical
+
+- **Open issue** = spec for the current slice: acceptance criteria define done.
+- **Issue closed** (`zig build verify` green + criteria met) = **code is source of truth**; the closed issue is historical, not a living spec.
+- **Do not** revert or reshape shipped code to match stale closed-issue, epic, or parent text. Read the running code and tests instead.
+- **Do** update open epics and `CONTEXT.md` when they drift from shipped behaviour — docs catch up to code, not the reverse.
+
 ### Domain docs
 
 Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
@@ -62,7 +69,7 @@ Comments are **signposts, not citations**.
 - Import blocks should carry a one-line note of the module's role.
 - **Never** reference issues, handoffs, sessions, or dates from code: no `Issue N`, `Step N`, `chunk N`, no `spec: issue-XX`, **including test headers**.
 - If a comment describes *intended* behaviour ("will move to…", "chunk 4 adds…") it is stale the moment it is written — describe what the code *is*, not what once changed it.
-- Code is the source of truth; issues are historical and must not need maintaining.
+- Code is the source of truth; **closed** issues are historical and must not need maintaining.
 
 ## Test-suite discipline
 

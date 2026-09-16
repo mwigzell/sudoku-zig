@@ -3,10 +3,11 @@
 import { applyEventStatus, applyExecResult } from "./shell.js";
 import { applySuccessfulExec } from "./board.js";
 
+import { syncMenuBar } from "./menu_bar.js";
+
 /** Mirror legend.undo / legend.redo onto menu controls. */
 export function syncEditMenu(legend, undoBtn, redoBtn) {
-  undoBtn.disabled = !legend.undo;
-  redoBtn.disabled = !legend.redo;
+  syncMenuBar(legend, { undo: undoBtn, redo: redoBtn });
 }
 
 export function parseEditShortcut(event) {
@@ -53,9 +54,13 @@ export function wireEditMenu(
   session,
   createElement,
   root = document,
+  { syncLegend } = {},
 ) {
-  const sync = () => syncEditMenu(session.legend, undoBtn, redoBtn);
-  sync();
+  const syncEdit = () => {
+    if (syncLegend) syncLegend();
+    else syncEditMenu(session.legend, undoBtn, redoBtn);
+  };
+  syncEdit();
 
   const run = (action) => {
     const outcome = handleEditAction(
@@ -68,7 +73,7 @@ export function wireEditMenu(
       session,
       createElement,
     );
-    if (outcome.handled) sync();
+    if (outcome.handled) syncEdit();
     return outcome;
   };
 
@@ -85,5 +90,5 @@ export function wireEditMenu(
     event.preventDefault();
   });
 
-  return { sync, run };
+  return { sync: syncEdit, run };
 }

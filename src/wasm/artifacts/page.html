@@ -32,6 +32,8 @@
         100%
       );
       --status-min-height: calc(0.9375rem * 1.45 + 1.25rem);
+      --page-inset: 1rem;
+      --chrome-rule: 1px solid var(--status-border);
     }
 
     [data-theme="light"] {
@@ -66,11 +68,11 @@
       font-family: system-ui, sans-serif;
       margin: 0;
       min-height: 100dvh;
-      padding: 1rem;
+      padding: var(--page-inset);
+      padding-bottom: max(var(--page-inset), env(safe-area-inset-bottom, 0px));
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
       background: var(--page-bg);
       color: var(--page-fg);
     }
@@ -81,25 +83,82 @@
       align-items: center;
       gap: 0.75rem;
       width: 100%;
+      margin-block: auto;
+      max-height: calc(100dvh - (2 * var(--page-inset)));
     }
 
-    #edit-menu {
+    #menu-bar {
       display: flex;
-      gap: 0.5rem;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      gap: 0;
       width: min(100%, var(--board-size));
+      padding: 0;
+      border-bottom: var(--chrome-rule);
     }
 
-    #edit-menu button {
+    .menu {
+      position: relative;
+    }
+
+    .menu-trigger {
       font: inherit;
-      padding: 0.375rem 0.875rem;
-      border: 1px solid var(--status-border);
-      border-radius: 6px;
-      background: var(--cell-bg);
+      padding: 0.5rem 0.875rem;
+      border: none;
+      border-radius: 0;
+      background: transparent;
       color: var(--status-fg);
       cursor: pointer;
     }
 
-    #edit-menu button:disabled {
+    .menu-trigger:hover,
+    .menu[data-open="true"] .menu-trigger {
+      background: var(--cell-bg);
+    }
+
+    .menu-panel {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      min-width: 10rem;
+      margin: 0;
+      padding: 0.25rem 0;
+      border: 1px solid var(--status-border);
+      border-radius: 6px;
+      background: var(--status-bg);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .menu-panel[hidden] {
+      display: none !important;
+    }
+
+    .menu-panel button {
+      font: inherit;
+      width: 100%;
+      padding: 0.5rem 0.875rem;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      color: var(--status-fg);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .menu-panel button:hover:not(:disabled) {
+      background: var(--cell-bg);
+    }
+
+    .menu-panel button.selected,
+    .menu-panel button[aria-checked="true"] {
+      background: var(--cell-bg);
+      font-weight: 600;
+    }
+
+    .menu-panel button:disabled {
       opacity: 0.45;
       cursor: default;
     }
@@ -111,6 +170,7 @@
       line-height: 1.45;
       padding: 0.625rem 0.75rem;
       border: 1px solid var(--status-border);
+      border-bottom: var(--chrome-rule);
       border-radius: 6px;
       background: var(--status-bg);
       color: var(--status-fg);
@@ -237,9 +297,36 @@
 </head>
 <body>
   <main id="app">
-    <nav id="edit-menu" aria-label="Edit">
-      <button type="button" id="edit-undo" disabled>Undo</button>
-      <button type="button" id="edit-redo" disabled>Redo</button>
+    <nav id="menu-bar" role="menubar" aria-label="Application menu">
+      <div class="menu" data-menu="file">
+        <button type="button" class="menu-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-file-panel">File</button>
+        <div class="menu-panel" id="menu-file-panel" role="menu" hidden>
+          <button type="button" role="menuitem" id="file-new">New</button>
+          <button type="button" role="menuitem" id="file-open">Open</button>
+          <button type="button" role="menuitem" id="file-save">Save</button>
+          <button type="button" role="menuitem" id="file-save-as">Save As</button>
+        </div>
+      </div>
+      <div class="menu" data-menu="edit">
+        <button type="button" class="menu-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-edit-panel">Edit</button>
+        <div class="menu-panel" id="menu-edit-panel" role="menu" hidden>
+          <button type="button" role="menuitem" id="edit-undo" disabled>Undo</button>
+          <button type="button" role="menuitem" id="edit-redo" disabled>Redo</button>
+        </div>
+      </div>
+      <div class="menu" data-menu="view">
+        <button type="button" class="menu-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-view-panel">View</button>
+        <div class="menu-panel" id="menu-view-panel" role="menu" hidden>
+          <button type="button" role="menuitemradio" id="view-light" aria-checked="false">Light</button>
+          <button type="button" role="menuitemradio" id="view-dark" aria-checked="true">Dark</button>
+        </div>
+      </div>
+      <div class="menu" data-menu="help">
+        <button type="button" class="menu-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-help-panel">Help</button>
+        <div class="menu-panel" id="menu-help-panel" role="menu" hidden>
+          <button type="button" role="menuitem" id="help-about">About</button>
+        </div>
+      </div>
     </nav>
     <div id="board" class="board" role="grid" aria-label="Sudoku board"></div>
     <div id="status-bar" role="status" aria-live="polite"></div>
@@ -257,11 +344,13 @@
     import { newGame, wireErrorModal } from "../shell.js";
     import { renderBoard, setStatus, wireSelection, wirePlayLoop } from "../board.js";
     import { wireEditMenu } from "../menu.js";
+    import { collectMenuBarControls, wireMenuBar } from "../menu_bar.js";
+    import { wireThemeMenu } from "../theme.js";
 
     const statusBar = document.getElementById("status-bar");
     const boardEl = document.getElementById("board");
-    const undoBtn = document.getElementById("edit-undo");
-    const redoBtn = document.getElementById("edit-redo");
+    const menuControls = collectMenuBarControls(document);
+    wireThemeMenu(menuControls);
     const errorModal = wireErrorModal(
       document.getElementById("error-modal"),
       document.getElementById("error-modal-msg"),
@@ -281,18 +370,22 @@
       setStatus(statusBar, "");
       const session = { state: started.state, legend: started.legend };
       const selection = wireSelection(boardEl, { row: 0, col: 0 });
+      const menuBar = wireMenuBar(menuControls, session, document);
       const editMenu = wireEditMenu(
-        undoBtn,
-        redoBtn,
+        menuControls.undo,
+        menuControls.redo,
         game,
         boardEl,
         selection,
         statusBar,
         errorModal,
         session,
+        undefined,
+        document,
+        { syncLegend: () => menuBar.sync() },
       );
       wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
-        onLegendChange: () => editMenu.sync(),
+        onLegendChange: () => menuBar.sync(),
       });
       boardEl.focus();
     } catch (err) {
