@@ -134,7 +134,7 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
         .given_bits = self.board.given_bits,
         .flat_board = self.board.toFlat(),
     };
-    writeSaveTrailer(buf[offset..], &trailer);
+    writeSaveTrailer(buf[offset..][0..SAVE_TRAILER_SIZE], &trailer);
 
     return buf;
 }
@@ -165,7 +165,7 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !state_mod.State 
         );
     }
     const entries_end = offset + (header.entry_count * @sizeOf(SaveEntry));
-    const trailer = readSaveTrailer(buf[entries_end..]);
+    const trailer = readSaveTrailer(buf[entries_end..][0..SAVE_TRAILER_SIZE]);
     var state = state_mod.State{
         .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
         .history = history,

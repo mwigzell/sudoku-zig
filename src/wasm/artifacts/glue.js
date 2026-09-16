@@ -40,6 +40,10 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.getLegend());
     },
 
+    getConfig() {
+      return readJson(exports.getConfig());
+    },
+
     getState() {
       return readJson(exports.getState());
     },

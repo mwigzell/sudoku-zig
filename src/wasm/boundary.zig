@@ -3,6 +3,7 @@ const std = @import("std");
 const board = @import("../board/board.zig");
 const cell = @import("../board/cell.zig");
 const command = @import("../command.zig");
+const config = @import("../config.zig");
 const event_mod = @import("../event.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const legend_mod = @import("../renderer/legend.zig");
@@ -78,6 +79,8 @@ const JsonAction = struct {
     row: ?u8 = null,
     col: ?u8 = null,
     digit: ?u8 = null,
+    theme: ?[]const u8 = null,
+    enabled: ?bool = null,
 };
 
 pub fn parseAction(json_text: []const u8) !command.Command {
@@ -112,6 +115,16 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "undo")) return .{ .undo = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "redo")) return .{ .redo = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "quit")) return .{ .quit = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_theme")) {
+        const theme_name = parsed.value.theme orelse return error.MissingField;
+        if (std.ascii.eqlIgnoreCase(theme_name, "light")) return .{ .set_theme = .light };
+        if (std.ascii.eqlIgnoreCase(theme_name, "dark")) return .{ .set_theme = .dark };
+        return error.InvalidTheme;
+    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_region")) {
+        const enabled = parsed.value.enabled orelse return error.MissingField;
+        return .{ .set_region = enabled };
+    }
 
     return error.UnknownAction;
 }
@@ -170,6 +183,15 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     );
 }
 
+pub fn writeConfigJson(out: OutBuffer, view: config.ViewConfig) !void {
+    const theme_name: []const u8 = switch (view.theme) {
+        .dark => "dark",
+        .light => "light",
+    };
+    var mutable = out;
+    try writeJson(&mutable, "{{\"theme\":\"{s}\",\"show_region\":{any}}}", .{ theme_name, view.show_region });
+}
+
 pub fn writeSnapshotJson(w: *std.Io.Writer, snap: wire.GameSnapshot) !void {
     try std.Io.Writer.writeAll(w, "{\"cells\":[");
     for (snap.cells, 0..) |c, i| {
@@ -221,6 +243,20 @@ test "writeEventJson ok embeds state snapshot" {
     const json = out.finishJson();
     try std.testing.expect(std.mem.indexOf(u8, json, "\"ok\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"state\"") != null);
+}
+
+test "parseAction set_theme and set_region" {
+    const theme_cmd = try parseAction("{\"action\":\"set_theme\",\"theme\":\"light\"}");
+    switch (theme_cmd) {
+        .set_theme => |theme| try std.testing.expectEqual(config.ViewTheme.light, theme),
+        else => return error.TestFailed,
+    }
+
+    const region_cmd = try parseAction("{\"action\":\"set_region\",\"enabled\":true}");
+    switch (region_cmd) {
+        .set_region => |enabled| try std.testing.expect(enabled),
+        else => return error.TestFailed,
+    }
 }
 
 test "writeLegendJson reflects undo availability" {

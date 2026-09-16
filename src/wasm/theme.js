@@ -1,7 +1,7 @@
-// theme.js — View menu light/dark theme (#43).
+// theme.js — View menu light/dark theme via engine config (#43).
 
-export function currentTheme(root) {
-  return root?.dataset?.theme === "light" ? "light" : "dark";
+export function themeFromConfig(config) {
+  return config?.theme === "light" ? "light" : "dark";
 }
 
 export function applyTheme(theme, root) {
@@ -9,7 +9,12 @@ export function applyTheme(theme, root) {
   else delete root.dataset.theme;
 }
 
-export function syncThemeMenu(controls, theme) {
+export function applyThemeFromConfig(config, root = document) {
+  applyTheme(themeFromConfig(config), root.documentElement);
+}
+
+export function syncThemeMenu(controls, config) {
+  const theme = themeFromConfig(config);
   if (controls.viewLight) {
     const on = theme === "light";
     controls.viewLight.setAttribute("aria-checked", on ? "true" : "false");
@@ -22,40 +27,31 @@ export function syncThemeMenu(controls, theme) {
   }
 }
 
-export function wireThemeMenu(controls, { root = document, storage = globalThis.localStorage } = {}) {
-  const html = root.documentElement;
-
-  const readStored = () => {
-    try {
-      const value = storage?.getItem("sudoku-theme");
-      if (value === "light" || value === "dark") return value;
-    } catch {
-      /* private mode / disabled storage */
-    }
-    return null;
+export function wireThemeMenu(controls, game, session, { root = document, onChange } = {}) {
+  const sync = () => {
+    syncThemeMenu(controls, session.config);
+    applyThemeFromConfig(session.config, root);
   };
 
-  const save = (theme) => {
-    try {
-      storage?.setItem("sudoku-theme", theme);
-    } catch {
-      /* ignore */
-    }
-  };
+  sync();
 
-  let theme = readStored() ?? currentTheme(html);
-  applyTheme(theme, html);
-  syncThemeMenu(controls, theme);
+  controls.viewLight?.addEventListener("click", () => {
+    if (session.config.theme === "light") return;
+    const result = game.exec({ action: "set_theme", theme: "light" });
+    if (!result.ok) return;
+    session.config = game.getConfig();
+    sync();
+    onChange?.();
+  });
 
-  const select = (next) => {
-    theme = next;
-    applyTheme(theme, html);
-    syncThemeMenu(controls, theme);
-    save(theme);
-  };
+  controls.viewDark?.addEventListener("click", () => {
+    if (session.config.theme === "dark") return;
+    const result = game.exec({ action: "set_theme", theme: "dark" });
+    if (!result.ok) return;
+    session.config = game.getConfig();
+    sync();
+    onChange?.();
+  });
 
-  controls.viewLight?.addEventListener("click", () => select("light"));
-  controls.viewDark?.addEventListener("click", () => select("dark"));
-
-  return { getTheme: () => theme, setTheme: select };
+  return { sync, getTheme: () => themeFromConfig(session.config) };
 }

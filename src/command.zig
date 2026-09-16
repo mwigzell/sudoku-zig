@@ -1,5 +1,6 @@
 // Command vocabulary of the game — data tags + parse entry point.
 const cell_module = @import("board/cell.zig");
+const config = @import("config.zig");
 
 // ---------------------------------------------------------------------------
 // Command Data Types — domain-neutral, consumed by GameEngine.exec()
@@ -12,7 +13,7 @@ pub const SaveData = struct { path: ?[]const u8 };
 pub const OpenData = struct { path: ?[]const u8 };
 pub const NewData = struct { puzzle: ?[]const u8, file: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new, save_as };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new, save_as, set_theme, set_region };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -25,6 +26,8 @@ pub const Command = union(CommandTag) {
     open: OpenData,
     new: NewData,
     save_as: SaveData,
+    set_theme: config.ViewTheme,
+    set_region: bool,
 };
 
 pub const ParseResultTag = enum { valid, error_msg };
@@ -44,7 +47,7 @@ pub const CommandTableEntry = struct {
     name: []const u8,
 };
 
-/// Ordered comptime list of all supported commands.
+/// Ordered comptime list of terminal-visible commands (View prefs use wasm exec only).
 pub const Commands = &[_]CommandTableEntry{
     .{ .tag = .fill, .name = "Fill" },
     .{ .tag = .clear, .name = "Clear" },
@@ -90,9 +93,9 @@ pub const PuzzleResult = union(enum) {
 
 const std = @import("std");
 
-test "CommandTag enum has 9 variants" {
+test "CommandTag enum has 11 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 9), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 11), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -106,7 +109,7 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("SaveAs", getName(.save_as));
 }
 
-test "comptime invariant: CommandTag enum fields == Commands table length" {
+test "comptime invariant: CommandTag covers terminal commands plus view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    try std.testing.expectEqual(enum_field_count, Commands.len);
+    try std.testing.expectEqual(enum_field_count, Commands.len + 2);
 }

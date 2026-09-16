@@ -23,7 +23,7 @@ export const MENU_BAR_MENUS = [
       items: [
         { id: "viewLight", label: "Light" },
         { id: "viewDark", label: "Dark" },
-        { id: "viewRegion", label: "Show region highlights" },
+        { id: "viewRegion", label: "Show Region" },
       ],
     },
   {

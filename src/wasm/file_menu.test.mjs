@@ -25,7 +25,7 @@ function makeRenderElement() {
 
 {
   const board = makeBoard();
-  const session = { state: { cells: [] }, legend: { save: true } };
+  const session = { state: { cells: [] }, legend: { save: true }, config: { theme: "dark", show_region: false } };
   let synced = false;
   refreshSession(
     board,
@@ -35,10 +35,12 @@ function makeRenderElement() {
     { sync: () => { synced = true; } },
     { cells: [{ value: 1, given: true, conflict: false }] },
     { save: true, undo: false },
+    { theme: "light", show_region: true },
     makeRenderElement(),
   );
   assert.equal(session.state.cells[0].value, 1);
   assert.equal(session.legend.undo, false);
+  assert.equal(session.config.theme, "light");
   assert.equal(synced, true);
 }
 
@@ -87,6 +89,9 @@ function makeRenderElement() {
     },
     getLegend() {
       return { new: true, save: true, open: true, save_as: true, undo: false, redo: false };
+    },
+    getConfig() {
+      return { theme: "dark", show_region: false };
     },
     serialize() {
       return new Uint8Array([9, 9, 9]);

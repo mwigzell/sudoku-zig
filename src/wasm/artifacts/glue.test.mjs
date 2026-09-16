@@ -28,6 +28,13 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(legend.undo, false, "fresh game should not offer undo");
 }
 
+// ── config defaults ──
+{
+  const config = game.getConfig();
+  assert.equal(config.theme, "dark");
+  assert.equal(config.show_region, false);
+}
+
 // ── fill ──
 {
   const state = game.getState();
@@ -93,6 +100,23 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.match(res.error, /puzzle/i);
 }
 
+// ── view prefs via config ──
+{
+  let config = game.getConfig();
+  assert.equal(config.theme, "dark");
+  assert.equal(config.show_region, false);
+
+  const light = game.exec({ action: "set_theme", theme: "light" });
+  assert.equal(light.ok, true);
+  config = game.getConfig();
+  assert.equal(config.theme, "light");
+
+  const region = game.exec({ action: "set_region", enabled: true });
+  assert.equal(region.ok, true);
+  config = game.getConfig();
+  assert.equal(config.show_region, true);
+}
+
 // ── serialize round-trip ──
 {
   const before = game.getState();
@@ -110,17 +134,24 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 // ── shell session round-trip ──
 {
   const before = game.getState();
+  const configBefore = game.getConfig();
   const saved = save(game);
   assert.equal(saved.ok, true);
   assert.ok(saved.bytes.length > 16);
 
+  const restored = open(game, saved.bytes);
+  assert.equal(restored.ok, true);
+  assert.deepEqual(game.getState(), before);
+  assert.deepEqual(game.getConfig(), configBefore, "view config survives open on same instance");
+
   const fresh = await loadArtifact(wasmBytes);
   const started = newGame(fresh, { difficulty: 2 });
   assert.equal(started.ok, true);
-
-  const restored = open(fresh, saved.bytes);
-  assert.equal(restored.ok, true);
+  assert.equal(started.config.theme, "dark");
+  const freshOpen = open(fresh, saved.bytes);
+  assert.equal(freshOpen.ok, true);
   assert.deepEqual(fresh.getState(), before);
+  assert.equal(fresh.getConfig().theme, "dark", "SUD0 does not carry view config");
 }
 
 // ── quit ──

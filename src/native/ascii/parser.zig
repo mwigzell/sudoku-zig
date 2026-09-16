@@ -413,9 +413,9 @@ test "disambiguates s -> Save, sa -> SaveAs" {
 }
 
 // comptime registration table tests (moved alongside parser)
-test "comptime invariant: CommandTag enum fields == Commands table length" {
+test "comptime invariant: CommandTag covers terminal commands plus view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    try std.testing.expectEqual(enum_field_count, Commands.len);
+    try std.testing.expectEqual(enum_field_count, Commands.len + 2);
 }
 
 test "Commands table: tag-name mapping" {

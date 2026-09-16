@@ -6,6 +6,7 @@ const cell = @import("../board/cell.zig");
 const _legend = @import("../renderer/legend.zig");
 const Legend = _legend.Legend;
 const command = @import("../command.zig");
+const config = @import("../config.zig");
 
 // Moved to src/event.zig, re-exported for backward compat
 const event = @import("../event.zig");
@@ -36,6 +37,7 @@ pub const Error = error{System};
 /// Owns portable game state and save-dialog metadata. No file transport or I/O here.
 pub const GameEngine = struct {
     state: state_mod.State,
+    view: config.ViewConfig = .{},
     data_dir: ?[]u8,
     last_save_msg: ?[]u8,
     event_msg: event.EventMsg = .{},
@@ -82,6 +84,11 @@ pub const GameEngine = struct {
             .new = true,
             .save_as = true,
         };
+    }
+
+    /// Current view-layer preferences (theme, region highlight).
+    pub fn getConfig(self: *const @This()) config.ViewConfig {
+        return self.view;
     }
 
     /// Serialize full game state to a heap-allocated byte buffer.
@@ -170,6 +177,14 @@ pub const GameEngine = struct {
             },
             .redo => {
                 return redo_command.execute(self);
+            },
+            .set_theme => |theme| {
+                self.view.theme = theme;
+                return self.finishOkEvent(self.state.board.asView(), false);
+            },
+            .set_region => |enabled| {
+                self.view.show_region = enabled;
+                return self.finishOkEvent(self.state.board.asView(), false);
             },
             .save, .open, .new, .save_as => @panic("session command routed in Sudoku"),
         }
@@ -845,6 +860,43 @@ test "getLegend: Save and Open always available" {
     // Save and Open are always available like Fill/Clear/Quit (not state-contingent)
     try std.testing.expect(cmds.save);
     try std.testing.expect(cmds.open);
+}
+
+test "getConfig: default view prefs are dark theme and region off" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    const cfg = engine.getConfig();
+    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
+    try std.testing.expect(!cfg.show_region);
+}
+
+test "exec set_theme and set_region update view config" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+
+    _ = try expectOk(execTest(&engine, command.Command{ .set_theme = .light }));
+    var cfg = engine.getConfig();
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+
+    _ = try expectOk(execTest(&engine, command.Command{ .set_region = true }));
+    cfg = engine.getConfig();
+    try std.testing.expect(cfg.show_region);
+}
+
+test "loadSaveFormat preserves view config" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    defer engine.deinit();
+    engine.view.theme = .light;
+    engine.view.show_region = true;
+
+    const buf = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    try engine.loadSaveFormat(buf);
+    const cfg = engine.getConfig();
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+    try std.testing.expect(cfg.show_region);
 }
 
 test "Save fields moved to GameEngine struct" {

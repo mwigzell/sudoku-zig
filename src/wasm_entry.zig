@@ -77,6 +77,16 @@ export fn getLegend() callconv(.c) u32 {
     return @intFromPtr(out.finishJson().ptr);
 }
 
+/// Current view preferences as JSON.
+export fn getConfig() callconv(.c) u32 {
+    const out = outBuffer();
+    const eng = engineOrError(out) orelse return @intFromPtr(out.finishJson().ptr);
+    boundary.writeConfigJson(out, eng.getConfig()) catch {
+        boundary.writeErrorJson(out, "response write failed") catch {};
+    };
+    return @intFromPtr(out.finishJson().ptr);
+}
+
 /// Current board snapshot as JSON (GameSnapshot wire shape).
 export fn getState() callconv(.c) u32 {
     const out = outBuffer();

@@ -1,56 +1,41 @@
-// region.js — View menu region highlight toggle (#8).
+// region.js — View menu region highlight via engine config (#8).
 
 import { applyRegionHighlight } from "./board.js";
 
-export const REGION_STORAGE_KEY = "sudoku-region-highlight";
-
-export function readRegionEnabled(storage = globalThis.localStorage) {
-  try {
-    return storage?.getItem(REGION_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-export function writeRegionEnabled(enabled, storage = globalThis.localStorage) {
-  try {
-    storage?.setItem(REGION_STORAGE_KEY, enabled ? "true" : "false");
-  } catch {
-    /* ignore */
-  }
-}
-
-export function syncRegionMenu(controls, enabled) {
+export function syncRegionMenu(controls, config) {
   if (!controls.viewRegion) return;
+  const enabled = config?.show_region === true;
   controls.viewRegion.setAttribute("aria-checked", enabled ? "true" : "false");
   controls.viewRegion.classList.toggle("selected", enabled);
 }
 
 export function wireRegionMenu(
   controls,
-  getSelection,
+  game,
+  session,
   boardEl,
-  { storage = globalThis.localStorage } = {},
+  getSelection,
+  { onChange } = {},
 ) {
-  let enabled = readRegionEnabled(storage);
-  syncRegionMenu(controls, enabled);
-
   const syncBoard = () => {
+    syncRegionMenu(controls, session.config);
     const { row, col } = getSelection();
-    applyRegionHighlight(boardEl, row, col, enabled);
+    applyRegionHighlight(boardEl, row, col, session.config.show_region === true);
   };
 
   controls.viewRegion?.addEventListener("click", () => {
-    enabled = !enabled;
-    syncRegionMenu(controls, enabled);
-    writeRegionEnabled(enabled, storage);
+    const next = !session.config.show_region;
+    const result = game.exec({ action: "set_region", enabled: next });
+    if (!result.ok) return;
+    session.config = game.getConfig();
     syncBoard();
+    onChange?.();
   });
 
   syncBoard();
 
   return {
-    isEnabled: () => enabled,
+    isEnabled: () => session.config.show_region === true,
     sync: syncBoard,
   };
 }

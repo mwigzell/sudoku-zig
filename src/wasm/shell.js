@@ -54,5 +54,5 @@ export function open(game, bytes) {
 export function newGame(game, { difficulty = 1, logLevel = 1 } = {}) {
   const result = game.init({ difficulty, logLevel });
   if (!result.ok) return result;
-  return { ok: true, state: game.getState(), legend: game.getLegend() };
+  return { ok: true, state: game.getState(), legend: game.getLegend(), config: game.getConfig() };
 }

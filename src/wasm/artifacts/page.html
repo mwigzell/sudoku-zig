@@ -323,7 +323,7 @@
         <div class="menu-panel" id="menu-view-panel" role="menu" hidden>
           <button type="button" role="menuitemradio" id="view-light" aria-checked="false">Light</button>
           <button type="button" role="menuitemradio" id="view-dark" aria-checked="true">Dark</button>
-          <button type="button" role="menuitemcheckbox" id="view-region" aria-checked="false">Show region highlights</button>
+          <button type="button" role="menuitemcheckbox" id="view-region" aria-checked="false">Show Region</button>
         </div>
       </div>
       <div class="menu" data-menu="help">
@@ -357,7 +357,6 @@
     const statusBar = document.getElementById("status-bar");
     const boardEl = document.getElementById("board");
     const menuControls = collectMenuBarControls(document);
-    wireThemeMenu(menuControls);
     const errorModal = wireErrorModal(
       document.getElementById("error-modal"),
       document.getElementById("error-modal-msg"),
@@ -375,17 +374,30 @@
 
       renderBoard(boardEl, started.state);
       setStatus(statusBar, "");
-      const session = { state: started.state, legend: started.legend };
-      let regionMenu;
+      const session = { state: started.state, legend: started.legend, config: started.config };
+      const menuBar = wireMenuBar(menuControls, session, document);
+      const themeMenu = wireThemeMenu(menuControls, game, session, document, {
+        onChange: () => menuBar.sync(),
+      });
       const selection = wireSelection(boardEl, {
         row: 0,
         col: 0,
-        regionEnabled: () => regionMenu?.isEnabled() ?? false,
+        regionEnabled: () => session.config.show_region === true,
       });
-      regionMenu = wireRegionMenu(menuControls, () => selection.getSelection(), boardEl);
-      const menuBar = wireMenuBar(menuControls, session, document);
+      const regionMenu = wireRegionMenu(
+        menuControls,
+        game,
+        session,
+        boardEl,
+        () => selection.getSelection(),
+        { onChange: () => menuBar.sync() },
+      );
       wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
         difficulty: 1,
+        onViewRefresh: () => {
+          themeMenu.sync();
+          regionMenu.sync();
+        },
       });
       const editMenu = wireEditMenu(
         menuControls.undo,

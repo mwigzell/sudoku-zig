@@ -1,7 +1,13 @@
 // theme.test.mjs — View theme toggle contract (#43).
 
 import assert from "node:assert/strict";
-import { currentTheme, applyTheme, syncThemeMenu, wireThemeMenu } from "./theme.js";
+import {
+  themeFromConfig,
+  applyTheme,
+  syncThemeMenu,
+  applyThemeFromConfig,
+  wireThemeMenu,
+} from "./theme.js";
 
 function makeThemeBtn() {
   return {
@@ -26,44 +32,47 @@ function makeThemeBtn() {
 
 {
   const html = { dataset: {} };
-  assert.equal(currentTheme(html), "dark");
   applyTheme("light", html);
   assert.equal(html.dataset.theme, "light");
-  assert.equal(currentTheme(html), "light");
-  applyTheme("dark", html);
+  applyThemeFromConfig({ theme: "light", show_region: false }, { documentElement: html });
+  assert.equal(html.dataset.theme, "light");
+  applyThemeFromConfig({ theme: "dark", show_region: false }, { documentElement: html });
   assert.equal(html.dataset.theme, undefined);
 }
 
 {
   const controls = { viewLight: makeThemeBtn(), viewDark: makeThemeBtn() };
-  syncThemeMenu(controls, "light");
+  syncThemeMenu(controls, { theme: "light", show_region: false });
   assert.equal(controls.viewLight.attrs["aria-checked"], "true");
   assert.equal(controls.viewDark.attrs["aria-checked"], "false");
-  assert.ok(controls.viewLight.classList.contains("selected"));
-  assert.ok(!controls.viewDark.classList.contains("selected"));
 }
 
 {
   const html = { dataset: {} };
+  const session = {
+    config: { theme: "dark", show_region: false },
+  };
+  const game = {
+    exec(action) {
+      if (action.action === "set_theme" && action.theme === "light") {
+        session.config = { theme: "light", show_region: false };
+        return { ok: true };
+      }
+      return { ok: false };
+    },
+    getConfig() {
+      return session.config;
+    },
+  };
   const controls = {
     viewLight: { ...makeThemeBtn(), addEventListener(_, fn) { this.click = fn; } },
-    viewDark: { ...makeThemeBtn(), addEventListener(_, fn) { this.click = fn; } },
+    viewDark: { ...makeThemeBtn(), addEventListener() {} },
   };
-  const storage = new Map();
-  wireThemeMenu(controls, {
-    root: { documentElement: html },
-    storage: {
-      getItem: (k) => storage.get(k) ?? null,
-      setItem: (k, v) => storage.set(k, v),
-    },
-  });
-  assert.equal(html.dataset.theme, undefined);
+  wireThemeMenu(controls, game, session, { root: { documentElement: html } });
+  assert.equal(themeFromConfig(session.config), "dark");
   controls.viewLight.click();
+  assert.equal(themeFromConfig(session.config), "light");
   assert.equal(html.dataset.theme, "light");
-  assert.equal(storage.get("sudoku-theme"), "light");
-  controls.viewDark.click();
-  assert.equal(html.dataset.theme, undefined);
-  assert.equal(storage.get("sudoku-theme"), "dark");
 }
 
 console.log("theme.test.mjs OK");

@@ -27,14 +27,18 @@ export function refreshSession(
   menuBar,
   state,
   legend,
+  config,
   createElement,
+  onViewRefresh,
 ) {
   renderBoard(boardEl, state, createElement);
   session.state = state;
   session.legend = legend;
+  session.config = config;
   selection.select(0, 0);
   applyEventStatus(statusEl, { ok: true, msg: null });
   menuBar.sync();
+  onViewRefresh?.();
 }
 
 export function downloadBytes(bytes, filename = DEFAULT_SAVE_FILENAME, doc = document) {
@@ -137,7 +141,7 @@ export function wireFileMenu(
   errorModal,
   session,
   menuBar,
-  { difficulty = 1, download = downloadBytes, pick = (session) => pickBytes(document, session), createElement } = {},
+  { difficulty = 1, download = downloadBytes, pick = (session) => pickBytes(document, session), createElement, onViewRefresh } = {},
 ) {
   const fail = (result) => {
     if (result.error) showErrorModal(errorModal, result.error);
@@ -151,7 +155,7 @@ export function wireFileMenu(
       return;
     }
     session.fileHandle = null;
-    refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, result.legend, createElement);
+    refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, result.legend, result.config, createElement, onViewRefresh);
   });
 
   controls.save?.addEventListener("click", async () => {
@@ -186,6 +190,6 @@ export function wireFileMenu(
       return;
     }
     session.fileHandle = picked.handle ?? null;
-    refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, game.getLegend(), createElement);
+    refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, game.getLegend(), game.getConfig(), createElement, onViewRefresh);
   });
 }

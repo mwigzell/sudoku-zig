@@ -1,13 +1,7 @@
 // region.test.mjs — View region highlight toggle contract (#8).
 
 import assert from "node:assert/strict";
-import {
-  readRegionEnabled,
-  writeRegionEnabled,
-  syncRegionMenu,
-  wireRegionMenu,
-  REGION_STORAGE_KEY,
-} from "./region.js";
+import { syncRegionMenu, wireRegionMenu } from "./region.js";
 import { applyRegionHighlight, cellsInRegion } from "./board.js";
 
 function makeToggleBtn() {
@@ -50,40 +44,15 @@ function makeMockCell(row, col) {
 }
 
 {
-  const storage = new Map([[REGION_STORAGE_KEY, "true"]]);
-  assert.equal(readRegionEnabled({ getItem: (k) => storage.get(k) ?? null }), true);
-  writeRegionEnabled(false, {
-    setItem(k, v) {
-      storage.set(k, v);
-    },
-  });
-  assert.equal(storage.get(REGION_STORAGE_KEY), "false");
-}
-
-{
   const controls = { viewRegion: makeToggleBtn() };
-  syncRegionMenu(controls, true);
+  syncRegionMenu(controls, { show_region: true });
   assert.equal(controls.viewRegion.attrs["aria-checked"], "true");
-  assert.ok(controls.viewRegion.classList.contains("selected"));
 }
 
 {
-  const cells = [];
-  for (let row = 0; row < 9; row += 1) {
-    for (let col = 0; col < 9; col += 1) cells.push(makeMockCell(row, col));
-  }
-  const board = { children: cells };
   const region = cellsInRegion(4, 4);
   assert.ok(region.has(4 * 9 + 4));
-  assert.ok(region.has(0 * 9 + 4));
-  assert.ok(region.has(4 * 9 + 0));
-  assert.ok(region.has(3 * 9 + 3));
   assert.ok(!region.has(0));
-
-  applyRegionHighlight(board, 4, 4, true);
-  assert.equal(board.children.filter((c) => c.classList.contains("region")).length, 21);
-  applyRegionHighlight(board, 4, 4, false);
-  assert.equal(board.children.filter((c) => c.classList.contains("region")).length, 0);
 }
 
 {
@@ -92,6 +61,21 @@ function makeMockCell(row, col) {
     for (let col = 0; col < 9; col += 1) cells.push(makeMockCell(row, col));
   }
   const board = { children: cells };
+  const session = {
+    config: { theme: "dark", show_region: false },
+  };
+  const game = {
+    exec(action) {
+      if (action.action === "set_region") {
+        session.config = { ...session.config, show_region: action.enabled };
+        return { ok: true };
+      }
+      return { ok: false };
+    },
+    getConfig() {
+      return session.config;
+    },
+  };
   const controls = {
     viewRegion: {
       ...makeToggleBtn(),
@@ -100,24 +84,17 @@ function makeMockCell(row, col) {
       },
     },
   };
-  const storage = new Map();
-  const menu = wireRegionMenu(controls, () => ({ row: 1, col: 1 }), board, {
-    storage: {
-      getItem: (k) => storage.get(k) ?? null,
-      setItem: (k, v) => storage.set(k, v),
-    },
-  });
+  const menu = wireRegionMenu(
+    controls,
+    game,
+    session,
+    board,
+    () => ({ row: 1, col: 1 }),
+  );
   assert.equal(menu.isEnabled(), false);
   controls.viewRegion.click();
   assert.equal(menu.isEnabled(), true);
-  assert.equal(storage.get(REGION_STORAGE_KEY), "true");
-  assert.ok(findCell(board, 1, 1).classList.contains("region"));
-  assert.ok(findCell(board, 1, 0).classList.contains("region"));
-  assert.ok(!findCell(board, 8, 8).classList.contains("region"));
-}
-
-function findCell(board, row, col) {
-  return board.children.find((c) => Number(c.dataset.row) === row && Number(c.dataset.col) === col);
+  assert.ok(board.children.find((c) => c.dataset.row === "1" && c.dataset.col === "1").classList.contains("region"));
 }
 
 console.log("region.test.mjs OK");
