@@ -13,6 +13,7 @@ pub const menu_js: []const u8 = @embedFile("../wasm/menu.js");
 pub const menu_bar_js: []const u8 = @embedFile("../wasm/menu_bar.js");
 pub const theme_js: []const u8 = @embedFile("../wasm/theme.js");
 pub const file_menu_js: []const u8 = @embedFile("../wasm/file_menu.js");
+pub const region_js: []const u8 = @embedFile("../wasm/region.js");
 
 test "embedded wasm artifact is non-empty" {
     try std.testing.expect(wasm_bytes.len > 8);
@@ -48,6 +49,10 @@ test "embedded theme.js is non-empty" {
 
 test "embedded file_menu.js is non-empty" {
     try std.testing.expect(file_menu_js.len > 0);
+}
+
+test "embedded region.js is non-empty" {
+    try std.testing.expect(region_js.len > 0);
 }
 
 test "embedded wasm artifact starts with the wasm magic header" {

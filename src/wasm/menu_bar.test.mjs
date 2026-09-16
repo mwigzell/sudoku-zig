@@ -17,6 +17,7 @@ function makeControls() {
     redo: makeBtn(),
     viewLight: makeBtn(),
     viewDark: makeBtn(),
+    viewRegion: makeBtn(),
     about: makeBtn(),
   };
 }
@@ -48,6 +49,7 @@ function makeControls() {
   const controls = makeControls();
   controls.viewLight.disabled = true;
   controls.viewDark.disabled = true;
+  controls.viewRegion.disabled = true;
   controls.about.disabled = true;
   syncMenuBar({ new: false, open: false, save: false, save_as: false, undo: false, redo: false }, controls);
   assert.equal(controls.viewLight.disabled, false);

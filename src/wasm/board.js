@@ -10,6 +10,29 @@ export function cellIndex(row, col) {
   return row * GRID_SIZE + col;
 }
 
+export function cellsInRegion(row, col) {
+  const boxRow = Math.floor(row / 3) * 3;
+  const boxCol = Math.floor(col / 3) * 3;
+  const indices = new Set();
+  for (let c = 0; c < GRID_SIZE; c += 1) indices.add(cellIndex(row, c));
+  for (let r = 0; r < GRID_SIZE; r += 1) indices.add(cellIndex(r, col));
+  for (let r = boxRow; r < boxRow + 3; r += 1) {
+    for (let c = boxCol; c < boxCol + 3; c += 1) indices.add(cellIndex(r, c));
+  }
+  return indices;
+}
+
+export function applyRegionHighlight(boardEl, row, col, enabled) {
+  const region = enabled ? cellsInRegion(row, col) : null;
+  for (const cell of boardEl.children) {
+    cell.classList.remove("region");
+    if (!region) continue;
+    const r = Number(cell.dataset.row);
+    const c = Number(cell.dataset.col);
+    if (region.has(cellIndex(r, c))) cell.classList.add("region");
+  }
+}
+
 export function formatDigit(cell) {
   return cell.value === 0 ? "" : String(cell.value);
 }
@@ -90,11 +113,16 @@ export function applySelection(boardEl, row, col) {
 
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
-export function wireSelection(boardEl, { row = 0, col = 0, onSelect } = {}) {
+export function wireSelection(boardEl, { row = 0, col = 0, onSelect, regionEnabled } = {}) {
   let selected = { row, col };
+
+  const syncRegion = (nextRow, nextCol) => {
+    if (regionEnabled) applyRegionHighlight(boardEl, nextRow, nextCol, regionEnabled());
+  };
 
   const select = (nextRow, nextCol) => {
     selected = applySelection(boardEl, nextRow, nextCol);
+    syncRegion(nextRow, nextCol);
     onSelect?.(selected);
     return selected;
   };

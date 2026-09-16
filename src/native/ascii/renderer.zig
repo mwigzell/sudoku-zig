@@ -49,10 +49,11 @@ pub fn AsciiRenderer(StylerType: type) type {
         styler: *StylerType,
         inputSource: input_source.ReaderSource,
         last_filename: ?[]u8,
+        selection: ?styler.CellSelection = null,
 
         /// Construct with writer (all output), styler pointer, and input source.
         pub fn init(allocator: std.mem.Allocator, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
-            return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
+            return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null, .selection = null };
         }
 
         /// Destroy writer + styler heap pointers; keep last_filename free.
@@ -72,7 +73,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 
             for (0..9) |row| {
                 var rowBuf: [256]u8 = undefined;
-                const line = try self.styler.formatRow(row, view, &rowBuf);
+                const line = try self.styler.formatRow(row, view, self.selection, &rowBuf);
                 try self.writer.writeAll(line);
 
                 if (row == 2 or row == 5) {
@@ -276,6 +277,14 @@ pub fn AsciiRenderer(StylerType: type) type {
                         rsl.valid.new.file = path;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },
+                }
+            }
+
+            if (std.meta.activeTag(rsl) == .valid) {
+                switch (rsl.valid) {
+                    .fill => |d| self.selection = .{ .row = d.row, .col = d.col },
+                    .clear => |d| self.selection = .{ .row = d.row, .col = d.col },
+                    else => {},
                 }
             }
 

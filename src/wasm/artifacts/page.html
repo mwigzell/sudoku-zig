@@ -284,6 +284,10 @@
       background: var(--conflict-bg);
     }
 
+    .cell.region:not(.conflict) {
+      box-shadow: inset 0 0 0 9999px var(--region-tint);
+    }
+
     .cell.selected {
       outline: 2px solid var(--selection-ring);
       outline-offset: -2px;
@@ -319,6 +323,7 @@
         <div class="menu-panel" id="menu-view-panel" role="menu" hidden>
           <button type="button" role="menuitemradio" id="view-light" aria-checked="false">Light</button>
           <button type="button" role="menuitemradio" id="view-dark" aria-checked="true">Dark</button>
+          <button type="button" role="menuitemcheckbox" id="view-region" aria-checked="false">Show region highlights</button>
         </div>
       </div>
       <div class="menu" data-menu="help">
@@ -347,6 +352,7 @@
     import { collectMenuBarControls, wireMenuBar } from "../menu_bar.js";
     import { wireThemeMenu } from "../theme.js";
     import { wireFileMenu } from "../file_menu.js";
+    import { wireRegionMenu } from "../region.js";
 
     const statusBar = document.getElementById("status-bar");
     const boardEl = document.getElementById("board");
@@ -370,7 +376,13 @@
       renderBoard(boardEl, started.state);
       setStatus(statusBar, "");
       const session = { state: started.state, legend: started.legend };
-      const selection = wireSelection(boardEl, { row: 0, col: 0 });
+      let regionMenu;
+      const selection = wireSelection(boardEl, {
+        row: 0,
+        col: 0,
+        regionEnabled: () => regionMenu?.isEnabled() ?? false,
+      });
+      regionMenu = wireRegionMenu(menuControls, () => selection.getSelection(), boardEl);
       const menuBar = wireMenuBar(menuControls, session, document);
       wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
         difficulty: 1,

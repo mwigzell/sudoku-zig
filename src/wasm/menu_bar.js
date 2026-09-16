@@ -18,13 +18,14 @@ export const MENU_BAR_MENUS = [
       { id: "redo", label: "Redo", legendKey: "redo" },
     ],
   },
-  {
-    label: "View",
-    items: [
-      { id: "viewLight", label: "Light" },
-      { id: "viewDark", label: "Dark" },
-    ],
-  },
+    {
+      label: "View",
+      items: [
+        { id: "viewLight", label: "Light" },
+        { id: "viewDark", label: "Dark" },
+        { id: "viewRegion", label: "Show region highlights" },
+      ],
+    },
   {
     label: "Help",
     items: [{ id: "about", label: "About" }],
@@ -41,6 +42,7 @@ export function syncMenuBar(legend, controls) {
   if (controls.redo) controls.redo.disabled = !legend.redo;
   if (controls.viewLight) controls.viewLight.disabled = false;
   if (controls.viewDark) controls.viewDark.disabled = false;
+  if (controls.viewRegion) controls.viewRegion.disabled = false;
   if (controls.about) controls.about.disabled = false;
 }
 
@@ -55,6 +57,7 @@ export function collectMenuBarControls(root) {
     redo: root.querySelector("#edit-redo"),
     viewLight: root.querySelector("#view-light"),
     viewDark: root.querySelector("#view-dark"),
+    viewRegion: root.querySelector("#view-region"),
     about: root.querySelector("#help-about"),
   };
 }
