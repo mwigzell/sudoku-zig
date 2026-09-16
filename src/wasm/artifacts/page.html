@@ -346,6 +346,7 @@
     import { wireEditMenu } from "../menu.js";
     import { collectMenuBarControls, wireMenuBar } from "../menu_bar.js";
     import { wireThemeMenu } from "../theme.js";
+    import { wireFileMenu } from "../file_menu.js";
 
     const statusBar = document.getElementById("status-bar");
     const boardEl = document.getElementById("board");
@@ -371,6 +372,9 @@
       const session = { state: started.state, legend: started.legend };
       const selection = wireSelection(boardEl, { row: 0, col: 0 });
       const menuBar = wireMenuBar(menuControls, session, document);
+      wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
+        difficulty: 1,
+      });
       const editMenu = wireEditMenu(
         menuControls.undo,
         menuControls.redo,

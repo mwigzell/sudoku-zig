@@ -7,17 +7,17 @@ const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
 
-pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, artifact };
+pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, file_menu, artifact };
 
 /// The four known routes and the delivered-once set.
 pub const Router = struct {
-    /// Eight known routes: page, glue, shell, board, menu, menu_bar, theme, artifact — one bool each.
-    delivered: [8]bool,
+    /// Nine known routes: page, glue, shell, board, menu, menu_bar, theme, file_menu, artifact.
+    delivered: [9]bool,
 
     pub const Error = error{NotFound};
 
     pub fn init() Router {
-        return .{ .delivered = [_]bool{ false, false, false, false, false, false, false, false } };
+        return .{ .delivered = [_]bool{ false, false, false, false, false, false, false, false, false } };
     }
 
     /// Maps a request path to its asset; anything else is a router-level 404.
@@ -29,6 +29,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/menu.js")) return .menu;
         if (std.mem.eql(u8, path, "/menu_bar.js")) return .menu_bar;
         if (std.mem.eql(u8, path, "/theme.js")) return .theme;
+        if (std.mem.eql(u8, path, "/file_menu.js")) return .file_menu;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
         return Error.NotFound;
     }
@@ -165,6 +166,7 @@ fn serveClient(io: std.Io, router: *Router, client: net.Stream) ServeError!void 
             .menu => wasm_bytes.menu_js,
             .menu_bar => wasm_bytes.menu_bar_js,
             .theme => wasm_bytes.theme_js,
+            .file_menu => wasm_bytes.file_menu_js,
             .artifact => wasm_bytes.wasm_bytes,
         };
         const content_type: []const u8 = switch (result) {
@@ -175,6 +177,7 @@ fn serveClient(io: std.Io, router: *Router, client: net.Stream) ServeError!void 
             .menu => "text/javascript",
             .menu_bar => "text/javascript",
             .theme => "text/javascript",
+            .file_menu => "text/javascript",
             .artifact => "application/wasm",
         };
         try writeFull(&w.interface, "200 OK", content_type, body);
@@ -270,6 +273,7 @@ fn assetBody(result: RouteResult) []const u8 {
         .menu => wasm_bytes.menu_js,
         .menu_bar => wasm_bytes.menu_bar_js,
         .theme => wasm_bytes.theme_js,
+        .file_menu => wasm_bytes.file_menu_js,
         .artifact => wasm_bytes.wasm_bytes,
     };
 }
@@ -329,6 +333,10 @@ test "serve: route \"/theme.js\" to the theme module" {
     try std.testing.expectEqual(RouteResult.theme, Router.route("/theme.js"));
 }
 
+test "serve: route \"/file_menu.js\" to the file menu module" {
+    try std.testing.expectEqual(RouteResult.file_menu, Router.route("/file_menu.js"));
+}
+
 test "serve: route \"/artifact.wasm\" to the artifact" {
     try std.testing.expectEqual(RouteResult.artifact, Router.route("/artifact.wasm"));
 }
@@ -361,6 +369,9 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.theme);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.file_menu);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.artifact);
