@@ -5,6 +5,7 @@ const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
 const boundary = @import("wasm/boundary.zig");
 const wire = @import("wasm/wire.zig");
+const config = @import("config.zig");
 
 const OutCap = 65536;
 var out_buf: [OutCap]u8 = undefined;
@@ -25,19 +26,30 @@ fn engineOrError(out: boundary.OutBuffer) ?*game_engine.GameEngine {
     return &engine;
 }
 
-/// Bootstrap a fresh game from wire difficulty + log level (see wire.BootstrapConfig).
+/// Bootstrap a fresh game from wire difficulty + log level (see wire.WireConfig).
 export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
     const out = outBuffer();
-    const cfg = wire.BootstrapConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
+    const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
         boundary.writeErrorJson(out, "invalid bootstrap config") catch {};
         return @intFromPtr(out.finishJson().ptr);
     };
 
-    logger.min_level = cfg.log_level;
-    if (have_engine) engine.deinit();
+    logger.min_level = wire_cfg.log_level;
 
-    const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty.toPuzzleDifficulty());
-    engine = game_engine.GameEngine.init(puzzle_str) catch {
+    var preserved_theme = config.ViewTheme.dark;
+    var preserved_region = false;
+    if (have_engine) {
+        preserved_theme = engine.cfg.theme;
+        preserved_region = engine.cfg.show_region;
+        engine.deinit();
+    }
+
+    var game_cfg = wire_cfg.toConfig();
+    game_cfg.theme = preserved_theme;
+    game_cfg.show_region = preserved_region;
+
+    const puzzle_str = puzzle_gen.PuzzleGen.generate(game_cfg.difficulty);
+    engine = game_engine.GameEngine.init(puzzle_str, game_cfg) catch {
         boundary.writeErrorJson(out, "engine init failed") catch {};
         return @intFromPtr(out.finishJson().ptr);
     };
@@ -77,11 +89,12 @@ export fn getLegend() callconv(.c) u32 {
     return @intFromPtr(out.finishJson().ptr);
 }
 
-/// Current view preferences as JSON.
+/// Current nominal config as WireConfig JSON.
 export fn getConfig() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return @intFromPtr(out.finishJson().ptr);
-    boundary.writeConfigJson(out, eng.getConfig()) catch {
+    const wire_cfg = wire.WireConfig.fromConfig(eng.getConfig());
+    boundary.writeWireConfigJson(out, wire_cfg) catch {
         boundary.writeErrorJson(out, "response write failed") catch {};
     };
     return @intFromPtr(out.finishJson().ptr);

@@ -1,8 +1,9 @@
-// JSON wire types for the wasm export boundary — bootstrap config and board snapshot.
+// JSON wire types for the wasm export boundary — WireConfig and board snapshot.
 const std = @import("std");
 const board = @import("../board/board.zig");
 const puzzle_gen = @import("../puzzle_gen.zig");
 const logger = @import("../logger.zig");
+const config = @import("../config.zig");
 
 /// Player-facing difficulty on the wasm boundary — explicit u8 wire values, no `.default`.
 pub const PlayerDifficulty = enum(u8) {
@@ -28,12 +29,14 @@ pub const PlayerDifficulty = enum(u8) {
     }
 };
 
-/// Bootstrap payload for wasm `init` — subset of native Config crossing the boundary.
-pub const BootstrapConfig = struct {
+/// Wasm wire twin of the config fields JS reads/writes (`init` args and `getConfig` JSON).
+pub const WireConfig = struct {
     difficulty: PlayerDifficulty,
     log_level: logger.Severity = .info,
+    theme: config.ViewTheme = .dark,
+    show_region: bool = false,
 
-    pub fn fromWire(difficulty: u8, log_level: u8) ?BootstrapConfig {
+    pub fn fromWire(difficulty: u8, log_level: u8) ?WireConfig {
         const pd = PlayerDifficulty.fromWire(difficulty) orelse return null;
         const ll: logger.Severity = switch (log_level) {
             0 => .debug,
@@ -44,6 +47,29 @@ pub const BootstrapConfig = struct {
             else => return null,
         };
         return .{ .difficulty = pd, .log_level = ll };
+    }
+
+    pub fn toConfig(self: WireConfig) config.Config {
+        var cfg = config.Config.default();
+        cfg.difficulty = self.difficulty.toPuzzleDifficulty();
+        cfg.log_level = self.log_level;
+        cfg.theme = self.theme;
+        cfg.show_region = self.show_region;
+        return cfg;
+    }
+
+    pub fn fromConfig(cfg: config.Config) WireConfig {
+        const pd: PlayerDifficulty = switch (cfg.difficulty) {
+            .easy, .default => .easy,
+            .medium => .medium,
+            .hard => .hard,
+        };
+        return .{
+            .difficulty = pd,
+            .log_level = cfg.log_level,
+            .theme = cfg.theme,
+            .show_region = cfg.show_region,
+        };
     }
 };
 
@@ -138,10 +164,32 @@ test "PlayerDifficulty.fromWire rejects invalid wire values" {
     try std.testing.expect(PlayerDifficulty.fromWire(255) == null);
 }
 
-test "BootstrapConfig.fromWire maps difficulty and log level" {
-    const cfg = BootstrapConfig.fromWire(2, @backingInt(logger.Severity.warn)).?;
+test "WireConfig.fromWire maps difficulty and log level" {
+    const cfg = WireConfig.fromWire(2, @backingInt(logger.Severity.warn)).?;
     try std.testing.expectEqual(PlayerDifficulty.medium, cfg.difficulty);
     try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
+    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
+    try std.testing.expect(!cfg.show_region);
+}
+
+test "WireConfig round-trips config fields including view prefs" {
+    var domain = config.Config.default();
+    domain.difficulty = .hard;
+    domain.log_level = .warn;
+    domain.theme = .light;
+    domain.show_region = true;
+
+    const wire_cfg = WireConfig.fromConfig(domain);
+    try std.testing.expectEqual(PlayerDifficulty.hard, wire_cfg.difficulty);
+    try std.testing.expectEqual(logger.Severity.warn, wire_cfg.log_level);
+    try std.testing.expectEqual(config.ViewTheme.light, wire_cfg.theme);
+    try std.testing.expect(wire_cfg.show_region);
+
+    const restored = wire_cfg.toConfig();
+    try std.testing.expectEqual(domain.difficulty, restored.difficulty);
+    try std.testing.expectEqual(domain.log_level, restored.log_level);
+    try std.testing.expectEqual(domain.theme, restored.theme);
+    try std.testing.expectEqual(domain.show_region, restored.show_region);
 }
 
 test "GameSnapshot captures value given conflict from BoardView" {

@@ -9,12 +9,6 @@ pub const RendererKind = enum { ansi, ascii, tui, web };
 /// Light/dark presentation preference for the web shell.
 pub const ViewTheme = enum { dark, light };
 
-/// View-layer preferences owned by the engine, not puzzle state.
-pub const ViewConfig = struct {
-    theme: ViewTheme = .dark,
-    show_region: bool = false,
-};
-
 /// Nominal game configuration — preference + escape hatch.
 pub const Config = struct {
     difficulty: puzzle_gen.Difficulty,
@@ -24,7 +18,8 @@ pub const Config = struct {
     fallback_renderer: ?RendererKind,
     /// Runtime minimum log severity emitted by the Logger; defaults to .info.
     log_level: logger.Severity,
-    view: ViewConfig = .{},
+    theme: ViewTheme = .dark,
+    show_region: bool = false,
 
     /// Hard-coded defaults — main.zig supplies this to the Sudoku layer at init time.
     pub fn default() Config {
@@ -42,4 +37,6 @@ test "config.default produces valid config" {
     if (cfg.difficulty != .easy) return error.TestFailed;
     if (cfg.preferred_renderer != .ansi) return error.TestFailed;
     if (cfg.fallback_renderer != .ansi) return error.TestFailed;
+    if (cfg.theme != .dark) return error.TestFailed;
+    if (cfg.show_region) return error.TestFailed;
 }

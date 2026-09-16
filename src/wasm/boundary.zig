@@ -183,13 +183,22 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     );
 }
 
-pub fn writeConfigJson(out: OutBuffer, view: config.ViewConfig) !void {
-    const theme_name: []const u8 = switch (view.theme) {
+pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
+    const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
         .light => "light",
     };
     var mutable = out;
-    try writeJson(&mutable, "{{\"theme\":\"{s}\",\"show_region\":{any}}}", .{ theme_name, view.show_region });
+    try writeJson(
+        &mutable,
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any}}}",
+        .{
+            @backingInt(wire_cfg.difficulty),
+            @backingInt(wire_cfg.log_level),
+            theme_name,
+            wire_cfg.show_region,
+        },
+    );
 }
 
 pub fn writeSnapshotJson(w: *std.Io.Writer, snap: wire.GameSnapshot) !void {
@@ -231,7 +240,7 @@ test "parseAction rejects unknown action" {
 }
 
 test "writeEventJson ok embeds state snapshot" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
     _ = engine.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = .seven } });
 
@@ -257,6 +266,22 @@ test "parseAction set_theme and set_region" {
         .set_region => |enabled| try std.testing.expect(enabled),
         else => return error.TestFailed,
     }
+}
+
+test "writeWireConfigJson emits WireConfig wire shape" {
+    var buf: [512]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeWireConfigJson(out, .{
+        .difficulty = .medium,
+        .log_level = .info,
+        .theme = .light,
+        .show_region = true,
+    });
+    const json = out.finishJson();
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"difficulty\":2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"theme\":\"light\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"show_region\":true") != null);
 }
 
 test "writeLegendJson reflects undo availability" {

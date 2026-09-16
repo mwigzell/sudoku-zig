@@ -40,6 +40,7 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 test "command.save_as.execute saves file at given path" {
     var engine = try game_engine.GameEngine.init(
         @import("../../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
     );
     defer engine.deinit();
 

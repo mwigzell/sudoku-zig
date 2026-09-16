@@ -72,7 +72,7 @@ Concrete puzzle source today — canned one-line strings keyed by `Difficulty` (
 _Avoid_: treating it as the final Puzzle Repository interface
 
 **Puzzle Repository** (domain slot):
-Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — inline fixtures, no `PuzzleSource` trait yet. A real auto-generator (with solver verification) will extract behind this slot when user stories 8–10 need it. The wasm boundary passes **difficulty only** (`BootstrapConfig`); puzzle strings never cross to JS.
+Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — inline fixtures, no `PuzzleSource` trait yet. A real auto-generator (with solver verification) will extract behind this slot when user stories 8–10 need it. The wasm boundary passes difficulty via **`WireConfig`**; puzzle strings never cross to JS.
 _Avoid_: Puzzle store, PuzzleSource (name reserved for a future interface)
 
 **Solver Service**:
@@ -101,22 +101,26 @@ _Avoid_: Host as a concrete object (it's the seam), "session" (that's the native
 Fn-pointer vtable for file read/write/resolve. **Owned by native `Sudoku`**, passed into session handlers — not by `GameEngine`. The wasm path uses `serialize`/`deserialize` on opaque bytes instead; no wasm transport arm.
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
+**Config** (`config.zig`):
+Nominal preferences — `difficulty`, renderer kinds (native), `log_level`, `theme`, `show_region`. Not puzzle cells or undo history. `GameEngine` owns a `cfg: Config` passed in at `init`. View prefs mutate via wasm `exec` (`set_theme`, `set_region`); they do not live in `Legend`, `State`, or SUD0.
+_Avoid_: folding prefs into Legend or save files
+
 **State**:
 Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State` plus optional dialog metadata (`data_dir`, `last_save_msg`) used by native session handlers.
 _Avoid_: Engine (engine is a runtime object)
 
 ### WASM Wire (`wasm/wire.zig`, `wasm/boundary.zig`, `wasm_entry.zig`)
 
-**BootstrapConfig**:
-Wasm `init` payload — `PlayerDifficulty` (wire values 1/2/3) and optional log level. Maps to native `Difficulty` for `PuzzleGen.generate`; JS never sees puzzle strings.
-_Avoid_: passing puzzle bytes across the boundary at bootstrap
+**WireConfig**:
+Wasm wire twin of the `Config` fields JS reads/writes — `PlayerDifficulty` (1/2/3), log level, `theme`, `show_region`. Maps to `config.Config` at `init`; `getConfig()` returns the same JSON shape. Native-only renderer fields stay off the wire.
+_Avoid_: passing puzzle bytes across the boundary; ad-hoc config JSON shapes
 
 **GameSnapshot**:
 JSON-serializable display twin of `BoardView` — per-cell `value`, `given`, `conflict`. Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
 _Avoid_: duplicating SaveFormat fields in JS
 
 **wasm_entry**:
-Second entry point (not `main.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getState`, `serialize`, `deserialize`. JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
+Second entry point (not `main.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `serialize`, `deserialize`. JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
 _Avoid_: `step(line)`, `page_bytes_out`, or other REPL imports (removed — see ADR-0010)
 
 **glue.js**:

@@ -23,7 +23,7 @@ test "command.redo.execute fails when nothing to redo" {
     const puzzle_gen = @import("../puzzle_gen.zig");
     const command = @import("../command.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     // Fill some cells but never undo — no future to redo
@@ -43,7 +43,7 @@ test "command.redo.execute re-applies an undone fill" {
     const command = @import("../command.zig");
     const undo_command = @import("undo.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     // Fill A3 with seven, then undo

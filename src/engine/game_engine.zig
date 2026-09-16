@@ -37,19 +37,20 @@ pub const Error = error{System};
 /// Owns portable game state and save-dialog metadata. No file transport or I/O here.
 pub const GameEngine = struct {
     state: state_mod.State,
-    view: config.ViewConfig = .{},
+    cfg: config.Config,
     data_dir: ?[]u8,
     last_save_msg: ?[]u8,
     event_msg: event.EventMsg = .{},
 
-    /// Build an engine from a one-line puzzle string.
-    pub fn init(puzzle_str: []const u8) Error!@This() {
+    /// Build an engine from a one-line puzzle string and nominal config.
+    pub fn init(puzzle_str: []const u8, cfg: config.Config) Error!@This() {
         const brd = board.fromOneLineString(puzzle_str) catch return Error.System;
         var self = @This(){
             .state = .{
                 .board = brd,
                 .history = MutationHistory.init(std.heap.page_allocator),
             },
+            .cfg = cfg,
             .data_dir = null,
             .last_save_msg = null,
         };
@@ -86,9 +87,9 @@ pub const GameEngine = struct {
         };
     }
 
-    /// Current view-layer preferences (theme, region highlight).
-    pub fn getConfig(self: *const @This()) config.ViewConfig {
-        return self.view;
+    /// Current nominal configuration (theme, region highlight, bootstrap fields).
+    pub fn getConfig(self: *const @This()) config.Config {
+        return self.cfg;
     }
 
     /// Serialize full game state to a heap-allocated byte buffer.
@@ -179,11 +180,11 @@ pub const GameEngine = struct {
                 return redo_command.execute(self);
             },
             .set_theme => |theme| {
-                self.view.theme = theme;
+                self.cfg.theme = theme;
                 return self.finishOkEvent(self.state.board.asView(), false);
             },
             .set_region => |enabled| {
-                self.view.show_region = enabled;
+                self.cfg.show_region = enabled;
                 return self.finishOkEvent(self.state.board.asView(), false);
             },
             .save, .open, .new, .save_as => @panic("session command routed in Sudoku"),
@@ -231,13 +232,13 @@ fn execTest(engine: *GameEngine, cmd: command.Command) Event {
 }
 
 test "GameEngine init takes puzzle string only — no FileTransport" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
 }
 
 test "loadSaveFormat replaces board and history from SUD0 bytes" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try engine.state.board.setCell(0, 2, .seven);
     try engine.state.history.push(0, 2, .zero, .seven);
@@ -245,7 +246,7 @@ test "loadSaveFormat replaces board and history from SUD0 bytes" {
     const buf = try save_format.toSaveFormat(&engine.state, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    var fresh = try GameEngine.init(puzzle_gen.PuzzleGen.easy());
+    var fresh = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer fresh.deinit();
     try fresh.loadSaveFormat(buf);
 
@@ -254,7 +255,7 @@ test "loadSaveFormat replaces board and history from SUD0 bytes" {
 }
 
 test "toSaveFormat serializes state without engine file methods" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try engine.state.board.setCell(0, 2, .seven);
     try engine.state.history.push(0, 2, .zero, .seven);
@@ -262,14 +263,14 @@ test "toSaveFormat serializes state without engine file methods" {
     const buf = try engine.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy());
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer loaded.deinit();
     try loaded.loadSaveFormat(buf);
     try std.testing.expectEqual(cell.CellValue.seven, loaded.state.board.getCellValue(0, 2));
 }
 
 test "GameEngine fill updates cell value" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const view = try expectOk(execTest(&engine, command.Command{
@@ -279,7 +280,7 @@ test "GameEngine fill updates cell value" {
 }
 
 test "GameEngine init builds board from puzzle string" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     const view = engine.eventBoard();
 
@@ -293,7 +294,7 @@ test "GameEngine init builds board from puzzle string" {
 }
 
 test "codec round-trip via loadSaveFormat and toSaveFormat — no engine file methods" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     _ = try expectOk(execTest(&engine, command.Command{
@@ -303,7 +304,7 @@ test "codec round-trip via loadSaveFormat and toSaveFormat — no engine file me
     const buf = try engine.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy());
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer loaded.deinit();
     try loaded.loadSaveFormat(buf);
 
@@ -315,7 +316,7 @@ test "codec round-trip via loadSaveFormat and toSaveFormat — no engine file me
 // exec(Command) returns structured results with given-cell feedback
 
 test "exec fill non-given cell → .ok" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     _ = try expectOk(execTest(&engine, command.Command{
@@ -324,7 +325,7 @@ test "exec fill non-given cell → .ok" {
 }
 
 test "exec fill given cell → .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const result = execTest(&engine, command.Command{
@@ -334,7 +335,7 @@ test "exec fill given cell → .error_msg" {
 }
 
 test "exec clear given cell → .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const result = execTest(&engine, command.Command{
@@ -344,7 +345,7 @@ test "exec clear given cell → .error_msg" {
 }
 
 test "exec quit → .ok" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const view = try expectOk(execTest(&engine, command.Command{ .quit = {} }));
@@ -357,7 +358,7 @@ test "exec quit → .ok" {
 // Check conflict bits through the returned Event board_view
 
 test "exec fill creates conflict → cell marked and status msg set" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Row 0: cells (0,2) and (0,3) are both empty — fill both with eight
@@ -385,7 +386,7 @@ test "exec fill creates conflict → cell marked and status msg set" {
 }
 
 test "exec clear resolves conflict → previously-conflicting peer now clean" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Create a row-0 conflict pair: (0,2) and (0,3) both eight
@@ -412,7 +413,7 @@ test "exec clear resolves conflict → previously-conflicting peer now clean" {
 }
 
 test "exec fill no conflict → no bits set" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Row 0 already has six at (0,0) and seven at (0,1).
@@ -440,7 +441,7 @@ test "exec fill no conflict → no bits set" {
 }
 
 test "init calls validate so initial conflicts are detected" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // A well-formed puzzle confirms at least that validate runs without crashing.
@@ -487,12 +488,12 @@ test "Event.error_msg carries an error string" {
 test "GameEngine.init propagates invalid puzzle error" {
     try std.testing.expectError(
         Error.System, // board errors are caught and converted to System
-        GameEngine.init("too-short"),
+        GameEngine.init("too-short", config.Config.default()),
     );
 }
 
 test "GameEngine is non-generic, init takes only puzzle string" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     const view = engine.eventBoard();
 
@@ -503,7 +504,7 @@ test "GameEngine is non-generic, init takes only puzzle string" {
 }
 
 test "exec fill returns Event.ok with board_view" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     const view = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
@@ -514,7 +515,7 @@ test "exec fill returns Event.ok with board_view" {
 }
 
 test "eventBoard returns current board view" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const view1 = engine.eventBoard();
@@ -551,7 +552,7 @@ test "MutationHistory: push and count" {
 }
 
 test "exec undo on empty history returns .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const result = switch (execTest(&engine, command.Command{ .undo = {} })) {
@@ -562,7 +563,7 @@ test "exec undo on empty history returns .error_msg" {
 }
 
 test "exec then undo reverses a fill back to zero" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fill A3 (row 0, col 2) with seven
@@ -577,7 +578,7 @@ test "exec then undo reverses a fill back to zero" {
 }
 
 test "exec then undo then redo re-applies the fill" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fill A3 with seven
@@ -596,7 +597,7 @@ test "exec then undo then redo re-applies the fill" {
 }
 
 test "new mutation after undo truncates future redo path" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fill 3 cells A, B, C all on different empty cells
@@ -630,7 +631,7 @@ test "new mutation after undo truncates future redo path" {
 }
 
 test "undo clear restores previous value" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fill B1 (row 1, col 1) with three
@@ -652,7 +653,7 @@ test "undo clear restores previous value" {
 // Multi-step undo/redo integration
 
 test "multiple undo walks history backwards" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fill three cells: A=one at (1,1), B=two at (1,2), C=three at (1,3)
@@ -694,7 +695,7 @@ test "multiple undo walks history backwards" {
 }
 
 test "multiple redo walks forwards correctly" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fill three cells: A=one at (1,1), B=two at (1,2), C=three at (1,3)
@@ -748,7 +749,7 @@ test "multiple redo walks forwards correctly" {
 }
 
 test "redo on empty future returns .error_msg" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fill some cells — no undo yet, so nothing to redo
@@ -765,7 +766,7 @@ test "redo on empty future returns .error_msg" {
 }
 
 test "getLegend: fresh engine has Fill/Clear/Quit only" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const cmds = engine.getLegend();
@@ -777,7 +778,7 @@ test "getLegend: fresh engine has Fill/Clear/Quit only" {
 }
 
 test "getLegend: after fill Undo appears" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     _ = try expectOk(execTest(&engine, command.Command{
@@ -793,7 +794,7 @@ test "getLegend: after fill Undo appears" {
 }
 
 test "getLegend: after undo-one-of-one Redo appears Undo disappears" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     _ = try expectOk(execTest(&engine, command.Command{
@@ -811,7 +812,7 @@ test "getLegend: after undo-one-of-one Redo appears Undo disappears" {
 }
 
 test "getLegend: after partial undo both Undo and Redo available" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     _ = try expectOk(execTest(&engine, command.Command{
@@ -832,7 +833,7 @@ test "getLegend: after partial undo both Undo and Redo available" {
 }
 
 test "getLegend: after full undo Undo hidden Redo replays" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     _ = try expectOk(execTest(&engine, command.Command{
@@ -853,7 +854,7 @@ test "getLegend: after full undo Undo hidden Redo replays" {
     try std.testing.expect(cmds.redo);
 }
 test "getLegend: Save and Open always available" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const cmds = engine.getLegend();
@@ -863,7 +864,7 @@ test "getLegend: Save and Open always available" {
 }
 
 test "getConfig: default view prefs are dark theme and region off" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const cfg = engine.getConfig();
@@ -872,7 +873,7 @@ test "getConfig: default view prefs are dark theme and region off" {
 }
 
 test "exec set_theme and set_region update view config" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     _ = try expectOk(execTest(&engine, command.Command{ .set_theme = .light }));
@@ -885,10 +886,10 @@ test "exec set_theme and set_region update view config" {
 }
 
 test "loadSaveFormat preserves view config" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
-    engine.view.theme = .light;
-    engine.view.show_region = true;
+    engine.cfg.theme = .light;
+    engine.cfg.show_region = true;
 
     const buf = try engine.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
@@ -900,7 +901,7 @@ test "loadSaveFormat preserves view config" {
 }
 
 test "Save fields moved to GameEngine struct" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     // Fields exist on GameEngine (compile-time proof) and start null
@@ -912,7 +913,7 @@ test "open handler loads save file via transport" {
     const tmp_path = "/tmp/sudoku_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
-    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer original.deinit();
     _ = try expectOk(execTest(&original, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
@@ -922,7 +923,7 @@ test "open handler loads save file via transport" {
     defer std.testing.allocator.free(save_buf);
     try transport.write(transport.context, tmp_path, save_buf);
 
-    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer loaded.deinit();
 
     const result = open_command.execute(&loaded, transport, tmp_path);

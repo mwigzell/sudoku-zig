@@ -57,6 +57,7 @@ fn doOpen(engine: *game_engine.GameEngine, transport: file_transport.FileTranspo
 test "command.open.execute opens file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
         @import("../../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -94,6 +95,7 @@ test "command.open.execute opens file and returns ok with message" {
 test "command.open.execute returns fallback message when path is null" {
     var engine = try game_engine.GameEngine.init(
         @import("../../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
     );
     defer engine.deinit();
 

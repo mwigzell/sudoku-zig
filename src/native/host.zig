@@ -142,7 +142,7 @@ test "host: createForTest .ascii preference yields a working facade" {
     defer f.deinit();
 
     // Working facade: renders a real board view without error
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
     try f.render(engine.eventBoard(), null);
 
@@ -177,7 +177,7 @@ test "host: .tui preference falls back to .ascii and yields a working facade" {
     try std.testing.expect(host.have_session);
 
     // Working fallback facade renders a real board view through its session.
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
     try f.render(engine.eventBoard(), null);
 }

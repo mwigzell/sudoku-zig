@@ -28,9 +28,11 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(legend.undo, false, "fresh game should not offer undo");
 }
 
-// ── config defaults ──
+// ── config defaults (WireConfig shape) ──
 {
   const config = game.getConfig();
+  assert.equal(config.difficulty, 1);
+  assert.equal(config.log_level, 1);
   assert.equal(config.theme, "dark");
   assert.equal(config.show_region, false);
 }
@@ -148,6 +150,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const started = newGame(fresh, { difficulty: 2 });
   assert.equal(started.ok, true);
   assert.equal(started.config.theme, "dark");
+  assert.equal(started.config.difficulty, 2);
   const freshOpen = open(fresh, saved.bytes);
   assert.equal(freshOpen.ok, true);
   assert.deepEqual(fresh.getState(), before);

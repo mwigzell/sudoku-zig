@@ -34,7 +34,7 @@ pub const Sudoku = struct {
             .cfg = cfg,
             .renderer = facade,
             .transport = transport,
-            .engine = try game_engine.GameEngine.init(puzzle_str),
+            .engine = try game_engine.GameEngine.init(puzzle_str, cfg),
         };
     }
 
@@ -166,7 +166,7 @@ test "integrated e2e - full seam: open loads saved game" {
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
     // Save known state to disk before running through the renderer
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
     defer original.deinit();
     const setup_transport = file_transport.NativeTransport.make(io);
     const save_buf = try original.toSaveFormat(std.heap.page_allocator);
@@ -243,7 +243,7 @@ test "integrated e2e - run: open file success produces status message, re-render
 
     // Create a save file to open
     const io = std.testing.io;
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard());
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
     defer original.deinit();
     const tmp_path = "/tmp/sudoku_e2e_open_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};

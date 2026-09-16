@@ -13,6 +13,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 test "command.quit.execute returns ok with is_quit true" {
     var engine = try game_engine.GameEngine.init(
         @import("../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../config.zig").Config.default(),
     );
     defer engine.deinit();
 

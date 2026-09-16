@@ -65,6 +65,7 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 test "command.new.execute clears history and loads a puzzle string" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -77,6 +78,7 @@ test "command.new.execute clears history and loads a puzzle string" {
 test "command.new.execute falls back to medium when puzzle is null" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -96,7 +98,7 @@ test "command.new.execute loads puzzle from a file" {
     std.Io.File.writeStreamingAll(file, io, contents) catch return error.TestSkipped;
     file.close(io);
 
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
     defer engine.deinit();
 
     const transport = file_transport.NativeTransport.make(io);
@@ -112,7 +114,7 @@ test "command.new.execute loads puzzle from a file" {
 }
 
 test "command.new.execute returns error when puzzle file is missing" {
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
     defer engine.deinit();
 
     const transport = file_transport.NativeTransport.make(std.testing.io);

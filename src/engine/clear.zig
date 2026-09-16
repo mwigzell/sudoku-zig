@@ -16,7 +16,7 @@ test "command.clear.execute clears a non-given cell" {
     const puzzle_gen = @import("../puzzle_gen.zig");
     const cell = @import("../board/cell.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     // Fill it first
@@ -39,7 +39,7 @@ test "command.clear.execute clears a non-given cell" {
 test "command.clear.execute fails on a given cell" {
     const puzzle_gen = @import("../puzzle_gen.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     const event = execute(&engine, command.ClearData{ .row = 0, .col = 0 });

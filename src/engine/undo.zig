@@ -22,7 +22,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 test "command.undo.execute fails when no history" {
     const puzzle_gen = @import("../puzzle_gen.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     const event = execute(&engine);
@@ -36,7 +36,7 @@ test "command.undo.execute reverses a fill" {
     const puzzle_gen = @import("../puzzle_gen.zig");
     const command = @import("../command.zig");
 
-    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default());
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     // Fill A3 with seven
