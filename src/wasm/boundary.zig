@@ -29,9 +29,6 @@ pub const OutBuffer = struct {
     }
 };
 
-var active_out: ?*OutBuffer = null;
-var writer_stack: [512]u8 = undefined;
-
 fn appendChunk(ctx: *OutBuffer, chunk: []const u8) std.Io.Writer.Error!void {
     const room = ctx.buf.len - ctx.len.*;
     if (chunk.len > room) return error.WriteFailed;
@@ -39,39 +36,46 @@ fn appendChunk(ctx: *OutBuffer, chunk: []const u8) std.Io.Writer.Error!void {
     ctx.len.* += @intCast(chunk.len);
 }
 
-fn jsonDrain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
-    const ctx = active_out orelse return error.WriteFailed;
-    try appendChunk(ctx, w.buffered());
-    w.end = 0;
+const JsonWriter = struct {
+    out: *OutBuffer,
+    stack: [512]u8 = undefined,
+    writer: std.Io.Writer = undefined,
 
-    var data_bytes: usize = 0;
-    if (data.len > 0) {
-        for (data[0 .. data.len - 1]) |s| {
-            try appendChunk(ctx, s);
-            data_bytes += s.len;
-        }
-        const pattern = data[data.len - 1];
-        for (0..splat) |_| {
-            try appendChunk(ctx, pattern);
-            data_bytes += pattern.len;
-        }
+    fn init(out: *OutBuffer, self: *JsonWriter) void {
+        self.out = out;
+        self.writer = .{
+            .vtable = &.{ .drain = drain },
+            .buffer = self.stack[0..],
+        };
     }
-    return data_bytes;
-}
 
-fn jsonWriter(out: *OutBuffer) std.Io.Writer {
-    active_out = out;
-    return .{
-        .vtable = &.{ .drain = jsonDrain },
-        .buffer = writer_stack[0..],
-    };
-}
+    fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        const self: *JsonWriter = @alignCast(@fieldParentPtr("writer", w));
+        try appendChunk(self.out, w.buffered());
+        w.end = 0;
+
+        var data_bytes: usize = 0;
+        if (data.len > 0) {
+            for (data[0 .. data.len - 1]) |s| {
+                try appendChunk(self.out, s);
+                data_bytes += s.len;
+            }
+            const pattern = data[data.len - 1];
+            for (0..splat) |_| {
+                try appendChunk(self.out, pattern);
+                data_bytes += pattern.len;
+            }
+        }
+        return data_bytes;
+    }
+};
 
 fn writeJson(out: *OutBuffer, comptime fmt: []const u8, args: anytype) !void {
     out.reset();
-    var w = jsonWriter(out);
-    try std.Io.Writer.print(&w, fmt, args);
-    try std.Io.Writer.flush(&w);
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(out, &jw);
+    try std.Io.Writer.print(&jw.writer, fmt, args);
+    try std.Io.Writer.flush(&jw.writer);
 }
 
 fn writeJsonString(w: *std.Io.Writer, text: []const u8) !void {
@@ -147,33 +151,35 @@ fn writeErrorJsonTo(w: *std.Io.Writer, msg: []const u8) !void {
 pub fn writeErrorJson(out: OutBuffer, msg: []const u8) !void {
     var mutable = out;
     out.reset();
-    var w = jsonWriter(&mutable);
-    try writeErrorJsonTo(&w, msg);
-    try std.Io.Writer.flush(&w);
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    try writeErrorJsonTo(&jw.writer, msg);
+    try std.Io.Writer.flush(&jw.writer);
 }
 
 pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
     var mutable = out;
     out.reset();
-    var w = jsonWriter(&mutable);
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
     switch (ev) {
-        .error_msg => |msg| try writeErrorJsonTo(&w, msg),
+        .error_msg => |msg| try writeErrorJsonTo(&jw.writer, msg),
         .ok => |data| {
             const snap = wire.GameSnapshot.fromView(data.board_view);
-            try std.Io.Writer.writeAll(&w, "{\"ok\":true,\"is_quit\":");
-            try std.Io.Writer.print(&w, "{any},\"msg\":", .{data.is_quit});
+            try std.Io.Writer.writeAll(&jw.writer, "{\"ok\":true,\"is_quit\":");
+            try std.Io.Writer.print(&jw.writer, "{any},\"msg\":", .{data.is_quit});
             if (data.msg) |m| {
-                try writeJsonString(&w, m);
-                try std.Io.Writer.writeAll(&w, ",");
+                try writeJsonString(&jw.writer, m);
+                try std.Io.Writer.writeAll(&jw.writer, ",");
             } else {
-                try std.Io.Writer.writeAll(&w, "null,");
+                try std.Io.Writer.writeAll(&jw.writer, "null,");
             }
-            try std.Io.Writer.writeAll(&w, "\"state\":");
-            try wire.writeGameSnapshotJson(&w, snap);
-            try std.Io.Writer.writeAll(&w, "}");
+            try std.Io.Writer.writeAll(&jw.writer, "\"state\":");
+            try wire.writeGameSnapshotJson(&jw.writer, snap);
+            try std.Io.Writer.writeAll(&jw.writer, "}");
         },
     }
-    try std.Io.Writer.flush(&w);
+    try std.Io.Writer.flush(&jw.writer);
 }
 
 pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
@@ -216,9 +222,10 @@ pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
 pub fn writeStateJson(out: OutBuffer, view: board.Board.BoardView) !void {
     var mutable = out;
     out.reset();
-    var w = jsonWriter(&mutable);
-    try wire.writeGameSnapshotJson(&w, wire.GameSnapshot.fromView(view));
-    try std.Io.Writer.flush(&w);
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    try wire.writeGameSnapshotJson(&jw.writer, wire.GameSnapshot.fromView(view));
+    try std.Io.Writer.flush(&jw.writer);
 }
 
 test "parseAction fill maps row col digit" {
