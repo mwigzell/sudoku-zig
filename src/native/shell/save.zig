@@ -3,7 +3,6 @@ const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const save_as_command = @import("save_as.zig");
 const file_transport = @import("file_transport.zig");
-const mypath = @import("path.zig");
 
 pub const DEFAULT_SAVE_FILE = "sudoku_save.sud";
 
@@ -19,11 +18,9 @@ test "command.save.execute saves file and returns ok with message" {
     defer engine.deinit();
 
     const transport = file_transport.NativeTransport.make(std.testing.io);
+    defer file_transport.NativeTransport.deinitSession();
     const tmp_path = "/tmp/sudoku_save_command_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
-
-    // Give the engine a data dir
-    engine.data_dir = try mypath.computeDataDir(std.heap.page_allocator);
 
     const event = execute(&engine, transport, DEFAULT_SAVE_FILE);
 

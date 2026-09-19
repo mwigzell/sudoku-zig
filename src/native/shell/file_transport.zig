@@ -17,6 +17,9 @@ pub const FileTransport = struct {
 };
 
 test "FileTransport native: write then readAll round-trips bytes" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
     const transport = NativeTransport.make(std.testing.io);
 
     const path = "/tmp/sudoku_file_transport_test.sud";
@@ -31,6 +34,9 @@ test "FileTransport native: write then readAll round-trips bytes" {
 }
 
 test "FileTransport native: readAll of a missing file errors" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
     const transport = NativeTransport.make(std.testing.io);
 
     const result = transport.readAll(transport.context, "/tmp/sudoku_file_transport_missing.sud");
@@ -38,6 +44,9 @@ test "FileTransport native: readAll of a missing file errors" {
 }
 
 test "FileTransport native: resolve joins a bare name against the data dir" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
     const transport = NativeTransport.make(std.testing.io);
 
     const resolved = transport.resolve(transport.context, "game.sud") catch |err| return err;
@@ -51,6 +60,9 @@ test "FileTransport native: resolve joins a bare name against the data dir" {
 }
 
 test "FileTransport native: resolve passes an absolute path through as an owned copy" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
     const transport = NativeTransport.make(std.testing.io);
 
     const resolved = transport.resolve(transport.context, "/abs/save.sud") catch |err| return err;
@@ -59,10 +71,26 @@ test "FileTransport native: resolve passes an absolute path through as an owned 
     try std.testing.expectEqualStrings("/abs/save.sud", resolved);
 }
 
+test "FileTransport native: resolve remembers last directory for bare names" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
+    const transport = NativeTransport.make(std.testing.io);
+
+    const first = transport.resolve(transport.context, "/tmp/sudoku_transport_remember/a.sud") catch |err| return err;
+    defer transport.free(transport.context, first);
+
+    const second = transport.resolve(transport.context, "b.sud") catch |err| return err;
+    defer transport.free(transport.context, second);
+
+    try std.testing.expectEqualStrings("/tmp/sudoku_transport_remember/b.sud", second);
+}
+
 // Native arm — std.Io file ops. One process, one io handle; make() stores it
 // in a module-level context that the fn pointers borrow through their ctx arg.
 const Context = struct {
     io: std.Io,
+    data_dir: ?[]u8 = null,
 };
 var context: Context = .{ .io = undefined };
 const gpa = std.heap.page_allocator;
@@ -82,6 +110,37 @@ pub const NativeTransport = struct {
             .resolve = resolve,
             .free = free,
         };
+    }
+
+    pub fn resetSession() void {
+        deinitSession();
+    }
+
+    pub fn deinitSession() void {
+        if (context.data_dir) |dir| gpa.free(dir);
+        context.data_dir = null;
+    }
+
+    fn ensureDataDir(ctx: *Context) TransportError![]const u8 {
+        if (ctx.data_dir) |dir| return dir;
+        const dir = mypath.computeDataDir(gpa) catch |err| switch (err) {
+            error.OutOfMemory => return TransportError.OutOfMemory,
+            else => return TransportError.System,
+        };
+        ctx.data_dir = dir;
+        return dir;
+    }
+
+    fn rememberDataDirFromPath(ctx: *Context, resolved_path: []const u8) TransportError!void {
+        const parent = mypath.parentDir(gpa, resolved_path) catch return TransportError.OutOfMemory;
+        if (ctx.data_dir) |old| {
+            if (std.mem.eql(u8, old, parent)) {
+                gpa.free(parent);
+                return;
+            }
+            gpa.free(old);
+        }
+        ctx.data_dir = parent;
     }
 
     fn free(c: *anyopaque, buf: []u8) void {
@@ -109,14 +168,20 @@ pub const NativeTransport = struct {
         return buf;
     }
 
-    // Bare names join against the platform data dir; absolute paths pass straight through as owned copies.
+    // Bare names join against the session data dir; absolute paths pass through.
+    // Each resolve updates the remembered directory from the resolved path.
     fn resolve(c: *anyopaque, name: []const u8) TransportError![]u8 {
-        _ = asContext(c);
-        const data_dir = mypath.computeDataDir(gpa) catch |err| switch (err) {
-            error.OutOfMemory => return TransportError.OutOfMemory,
-            else => return TransportError.System,
+        const ctx = asContext(c);
+        const resolved = if (name.len > 0 and name[0] == '/')
+            gpa.dupe(u8, name) catch return TransportError.OutOfMemory
+        else blk: {
+            const data_dir = ensureDataDir(ctx) catch |err| return err;
+            break :blk mypath.resolveSavePath(gpa, data_dir, name) catch return TransportError.OutOfMemory;
         };
-        errdefer gpa.free(data_dir);
-        return mypath.resolveSavePath(gpa, data_dir, name) catch return TransportError.OutOfMemory;
+        rememberDataDirFromPath(ctx, resolved) catch {
+            gpa.free(resolved);
+            return TransportError.OutOfMemory;
+        };
+        return resolved;
     }
 };

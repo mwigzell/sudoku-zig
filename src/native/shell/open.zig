@@ -2,7 +2,6 @@
 const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
-const mypath = @import("path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: ?[]const u8) game_engine.Event {
     if (path) |file_path| {
@@ -62,18 +61,12 @@ test "command.open.execute opens file and returns ok with message" {
     defer engine.deinit();
 
     const transport = file_transport.NativeTransport.make(std.testing.io);
+    defer file_transport.NativeTransport.deinitSession();
     const tmp_path = "/tmp/sudoku_open_command_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
-    engine.data_dir = try mypath.computeDataDir(std.heap.page_allocator);
-    errdefer std.heap.page_allocator.free(engine.data_dir.?);
-
-    const resolved = try mypath.resolveSavePath(
-        std.heap.page_allocator,
-        engine.data_dir.?,
-        tmp_path,
-    );
-    defer std.heap.page_allocator.free(resolved);
+    const resolved = try transport.resolve(transport.context, tmp_path);
+    defer transport.free(transport.context, resolved);
 
     const save_buf = try engine.toSaveFormat(std.heap.page_allocator);
     defer std.heap.page_allocator.free(save_buf);

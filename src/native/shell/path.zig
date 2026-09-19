@@ -41,6 +41,13 @@ pub fn computeDataDir(gpa: std.mem.Allocator) ![]u8 {
     return data_dir;
 }
 
+/// Parent directory of an absolute or relative file path (owned string).
+pub fn parentDir(gpa: std.mem.Allocator, path: []const u8) ![]u8 {
+    const idx = std.mem.lastIndexOfScalar(u8, path, '/') orelse return gpa.dupe(u8, ".");
+    if (idx == 0) return gpa.dupe(u8, "/");
+    return gpa.dupe(u8, path[0..idx]);
+}
+
 /// Resolves a save file path. If `path` starts with `/`, returns an owned
 /// copy (passthrough). Otherwise joins it against `data_dir`.
 pub fn resolveSavePath(gpa: std.mem.Allocator, data_dir: []const u8, path: []const u8) ![]u8 {
@@ -85,6 +92,18 @@ test "best-effort createDirPath leaves the data dir on disk" {
     _ = dir.createDirPath(io, data_dir) catch {};
     const stat = try dir.statFile(io, data_dir, .{});
     try std.testing.expect(stat.kind == .directory);
+}
+
+test "parentDir extracts directory from absolute path" {
+    const gpa = std.testing.allocator;
+
+    const a = try parentDir(gpa, "/tmp/foo/bar.sud");
+    defer gpa.free(a);
+    try std.testing.expectEqualStrings("/tmp/foo", a);
+
+    const b = try parentDir(gpa, "/tmp/file.sud");
+    defer gpa.free(b);
+    try std.testing.expectEqualStrings("/tmp", b);
 }
 
 test "resolveSavePath joins relative path against data_dir" {

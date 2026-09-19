@@ -2,7 +2,6 @@
 const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
-const mypath = @import("path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: []const u8) game_engine.Event {
     const gpa = std.heap.page_allocator;
@@ -22,13 +21,9 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
-    // Free old save message if present
-    if (engine.last_save_msg) |old_m| gpa.free(old_m);
-
     const msg = std.fmt.allocPrint(gpa, "saved to: {s}", .{resolved}) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
-    engine.last_save_msg = msg;
 
     return game_engine.Event{ .ok = .{
         .board_view = engine.state.board.asView(),
@@ -45,11 +40,9 @@ test "command.save_as.execute saves file at given path" {
     defer engine.deinit();
 
     const transport = file_transport.NativeTransport.make(std.testing.io);
+    defer file_transport.NativeTransport.deinitSession();
     const tmp_path = "/tmp/sudoku_saveas_command_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
-
-    // Give the engine a data dir
-    engine.data_dir = try mypath.computeDataDir(std.heap.page_allocator);
 
     const event = execute(&engine, transport, tmp_path);
 

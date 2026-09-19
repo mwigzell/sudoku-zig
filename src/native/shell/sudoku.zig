@@ -101,9 +101,10 @@ pub const Sudoku = struct {
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
-    /// Release the engine; the passed-in facade is owned by the caller.
+    /// Release the engine and native transport session state.
     pub fn deinit(self: *@This()) void {
         self.engine.deinit();
+        file_transport.NativeTransport.deinitSession();
     }
 };
 

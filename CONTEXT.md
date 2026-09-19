@@ -106,7 +106,7 @@ Nominal preferences — `difficulty`, renderer kinds (native), `log_level`, `the
 _Avoid_: folding prefs into Legend or save files
 
 **State**:
-Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State` plus optional dialog metadata (`data_dir`, `last_save_msg`) used by native session handlers.
+Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State` and nominal `Config`.
 _Avoid_: Engine (engine is a runtime object)
 
 ### WASM Wire (`wasm/wire.zig`, `wasm/boundary.zig`, `wasm_entry.zig`)

@@ -34,12 +34,10 @@ pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
 
-/// Owns portable game state and save-dialog metadata. No file transport or I/O here.
+/// Owns portable game state. No file transport or I/O here.
 pub const GameEngine = struct {
     state: state_mod.State,
     cfg: config.Config,
-    data_dir: ?[]u8,
-    last_save_msg: ?[]u8,
     event_msg: event.EventMsg = .{},
 
     /// Build an engine from a one-line puzzle string and nominal config.
@@ -51,8 +49,6 @@ pub const GameEngine = struct {
                 .history = MutationHistory.init(std.heap.page_allocator),
             },
             .cfg = cfg,
-            .data_dir = null,
-            .last_save_msg = null,
         };
         self.state.board.validate();
         return self;
@@ -61,10 +57,6 @@ pub const GameEngine = struct {
     /// Free the history and any owned string fields.
     pub fn deinit(self: *@This()) void {
         self.state.history.deinit();
-
-        // Free optional string fields
-        if (self.data_dir) |dir| std.heap.page_allocator.free(dir);
-        if (self.last_save_msg) |msg| std.heap.page_allocator.free(msg);
     }
 
     /// Return a snapshot of the current board view.
@@ -104,10 +96,6 @@ pub const GameEngine = struct {
         self.state.history.deinit();
         self.state.board = loaded.board;
         self.state.history = loaded.history;
-        if (self.data_dir) |dir| gpa.free(dir);
-        if (self.last_save_msg) |msg| gpa.free(msg);
-        self.data_dir = null;
-        self.last_save_msg = null;
         self.state.board.validate();
     }
 
@@ -898,14 +886,6 @@ test "loadSaveFormat preserves view config" {
     const cfg = engine.getConfig();
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
     try std.testing.expect(cfg.show_region);
-}
-
-test "Save fields moved to GameEngine struct" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer engine.deinit();
-
-    // Fields exist on GameEngine (compile-time proof) and start null
-    try std.testing.expectEqual(@as(?[]u8, null), engine.data_dir);
 }
 
 test "open handler loads save file via transport" {
