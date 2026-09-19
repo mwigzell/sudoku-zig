@@ -26,11 +26,11 @@ fn engineOrError(out: boundary.OutBuffer) ?*game_engine.GameEngine {
     return &engine;
 }
 
-/// Bootstrap a fresh game from wire difficulty + log level (see wire.WireConfig).
+/// Start a fresh game from WireConfig difficulty and log level.
 export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
     const out = outBuffer();
     const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
-        boundary.writeErrorJson(out, "invalid bootstrap config") catch {};
+        boundary.writeErrorJson(out, "invalid wire config") catch {};
         return @intFromPtr(out.finishJson().ptr);
     };
 

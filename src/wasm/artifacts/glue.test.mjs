@@ -142,6 +142,28 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.deepEqual(fresh.getState(), before, "deserialize did not restore state");
 }
 
+// ── newGame returns fresh state for re-render ──
+{
+  const before = game.getState();
+  const idx = before.cells.findIndex((c) => c.value === 0 && !c.given);
+  assert.ok(idx >= 0, "no fillable cell");
+  const row = Math.floor(idx / 9);
+  const col = idx % 9;
+
+  const fill = game.exec({ action: "fill", row, col, digit: 7 });
+  assert.equal(fill.ok, true);
+  assert.equal(fill.state.cells[idx].value, 7);
+
+  const result = newGame(game, { difficulty: 2, logLevel: 1 });
+  assert.equal(result.ok, true, `newGame failed: ${JSON.stringify(result)}`);
+  assert.deepEqual(result.state, game.getState());
+  assert.deepEqual(result.legend, game.getLegend());
+  assert.deepEqual(result.config, game.getConfig());
+  assert.equal(result.state.cells[idx].value, before.cells[idx].value, "new clears mutations");
+  assert.equal(result.legend.undo, false);
+  assert.equal(result.config.difficulty, 2);
+}
+
 // ── shell session round-trip ──
 {
   const before = game.getState();

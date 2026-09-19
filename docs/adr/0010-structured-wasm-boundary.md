@@ -24,7 +24,7 @@ Native terminal play remains stack-shaped (blocking facade) for now; revisit whe
 
 Replace REPL imports (`page_line_in`, `page_bytes_out`, `page_picker`, `file_read`/`file_write`) with memory exports:
 
-- `init(bootstrap_config)` — difficulty (+ optional log level); `PuzzleGen` stays in Zig.
+- `init(wire_config)` — difficulty (+ optional log level); `PuzzleGen` stays in Zig.
 - `exec(action_json)` → `Event` JSON (`.ok` / `.error_msg`).
 - `getLegend()` → JSON flags (separate from turn outcome).
 - `getState()` or state embedded in exec response — board + given/conflict markers for DOM.

@@ -79,7 +79,7 @@ pub const GameEngine = struct {
         };
     }
 
-    /// Current nominal configuration (theme, region highlight, bootstrap fields).
+    /// Current nominal configuration (theme, region highlight, difficulty, log level).
     pub fn getConfig(self: *const @This()) config.Config {
         return self.cfg;
     }
