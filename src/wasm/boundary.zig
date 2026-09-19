@@ -138,13 +138,17 @@ pub fn writeOkJson(out: OutBuffer) !void {
     try writeJson(&mutable, "{{\"ok\":true}}", .{});
 }
 
+fn writeErrorJsonTo(w: *std.Io.Writer, msg: []const u8) !void {
+    try std.Io.Writer.writeAll(w, "{\"ok\":false,\"error\":");
+    try writeJsonString(w, msg);
+    try std.Io.Writer.writeAll(w, "}");
+}
+
 pub fn writeErrorJson(out: OutBuffer, msg: []const u8) !void {
     var mutable = out;
     out.reset();
     var w = jsonWriter(&mutable);
-    try std.Io.Writer.writeAll(&w, "{\"ok\":false,\"error\":");
-    try writeJsonString(&w, msg);
-    try std.Io.Writer.writeAll(&w, "}");
+    try writeErrorJsonTo(&w, msg);
     try std.Io.Writer.flush(&w);
 }
 
@@ -153,11 +157,7 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
     out.reset();
     var w = jsonWriter(&mutable);
     switch (ev) {
-        .error_msg => |msg| {
-            try std.Io.Writer.writeAll(&w, "{\"ok\":false,\"error\":");
-            try writeJsonString(&w, msg);
-            try std.Io.Writer.writeAll(&w, "}");
-        },
+        .error_msg => |msg| try writeErrorJsonTo(&w, msg),
         .ok => |data| {
             const snap = wire.GameSnapshot.fromView(data.board_view);
             try std.Io.Writer.writeAll(&w, "{\"ok\":true,\"is_quit\":");
