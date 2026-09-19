@@ -49,9 +49,10 @@ export async function loadArtifact(wasmBytes) {
     },
 
     serialize() {
-      const len = exports.serialize();
-      assertLen(len);
-      return new Uint8Array(memory.buffer, exports.outPtr(), len).slice();
+      const ret = exports.serialize();
+      const base = exports.outPtr();
+      if (ret === base) return readJson(base);
+      return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };
     },
 
     deserialize(bytes) {
@@ -63,8 +64,4 @@ export async function loadArtifact(wasmBytes) {
       return exports;
     },
   };
-}
-
-function assertLen(len) {
-  if (!len) throw new Error("serialize returned empty buffer");
 }

@@ -119,16 +119,25 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(config.show_region, true);
 }
 
+// ── serialize errors ──
+{
+  const fresh = await loadArtifact(wasmBytes);
+  const res = fresh.serialize();
+  assert.equal(res.ok, false, `expected error before init: ${JSON.stringify(res)}`);
+  assert.ok(res.error);
+}
+
 // ── serialize round-trip ──
 {
   const before = game.getState();
-  const bytes = game.serialize();
-  assert.ok(bytes.length > 16, "SUD0 blob too small");
+  const saved = game.serialize();
+  assert.equal(saved.ok, true, `serialize failed: ${JSON.stringify(saved)}`);
+  assert.ok(saved.bytes.length > 16, "SUD0 blob too small");
 
   const fresh = await loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
 
-  const loaded = fresh.deserialize(bytes);
+  const loaded = fresh.deserialize(saved.bytes);
   assert.equal(loaded.ok, true, `deserialize failed: ${JSON.stringify(loaded)}`);
   assert.deepEqual(fresh.getState(), before, "deserialize did not restore state");
 }

@@ -32,15 +32,14 @@ export function applyExecResult(statusEl, errorModal, result) {
   applyEventStatus(statusEl, result);
 }
 
-/** Save current game — returns opaque SUD0 bytes. */
+/** Save current game — returns opaque SUD0 bytes or `{ ok: false, error }`. */
 export function save(game) {
-  const bytes = game.serialize();
-  return { ok: true, bytes };
+  return game.serialize();
 }
 
 /** Save-as is the same bytes path until a picker supplies a target name. */
 export function saveAs(game) {
-  return save(game);
+  return game.serialize();
 }
 
 /** Restore game state from opaque SUD0 bytes. */

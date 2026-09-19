@@ -94,7 +94,7 @@ function makeRenderElement() {
       return { theme: "dark", show_region: false };
     },
     serialize() {
-      return new Uint8Array([9, 9, 9]);
+      return { ok: true, bytes: new Uint8Array([9, 9, 9]) };
     },
   };
   const controls = {

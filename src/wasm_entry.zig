@@ -110,20 +110,21 @@ export fn getState() callconv(.c) u32 {
     return @intFromPtr(out.finishJson().ptr);
 }
 
-/// Serialize full game state to SUD0 bytes in the shared out buffer; returns byte length.
+/// Serialize full game state to SUD0 bytes in the shared out buffer.
+/// Success: byte length. Failure: JSON status ptr (same convention as other exports).
 export fn serialize() callconv(.c) u32 {
     const out = outBuffer();
-    const eng = engineOrError(out) orelse return 0;
+    const eng = engineOrError(out) orelse return @intFromPtr(out.finishJson().ptr);
 
     const bytes = eng.toSaveFormat(std.heap.page_allocator) catch {
-        out.reset();
-        return 0;
+        boundary.writeErrorJson(out, "serialize failed") catch {};
+        return @intFromPtr(out.finishJson().ptr);
     };
     defer std.heap.page_allocator.free(bytes);
 
     if (bytes.len > out.buf.len) {
-        out.reset();
-        return 0;
+        boundary.writeErrorJson(out, "serialize buffer overflow") catch {};
+        return @intFromPtr(out.finishJson().ptr);
     }
     out.reset();
     @memcpy(out.buf[0..bytes.len], bytes);
