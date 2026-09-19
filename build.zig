@@ -99,26 +99,41 @@ pub fn build(b: *std.Build) void {
     kcov.addArtifactArg(check); // compiled test artifact
     cov_step.dependOn(&kcov.step);
 
-    // After collection, dump a JSON summary and tell the user where to look.
+    // JSON summary from the collected run — report-only, do not re-execute tests.
     const kcov_sum = b.addSystemCommand(&.{
         "kcov",
         "--dump-summary",
+        "--report-only",
         "--include-path",
         "src",
         "kcov-out",
     });
     kcov_sum.addArtifactArg(check);
+    kcov_sum.step.dependOn(&kcov.step);
     cov_step.dependOn(&kcov_sum.step);
 
     // verify stays report-only; plain cov also opens the browser on demand.
-    const open_cov: *std.Build.Step.Run = switch (@import("builtin").os.tag) {
-        .macos => b.addSystemCommand(&.{ "open", "-a", "Vivaldi", "kcov-out/test/index.html" }),
-        else => b.addSystemCommand(&.{ "vivaldi", "kcov-out/test/index.html" }),
+    // Opener chain matches serve.openBrowser: $BROWSER → generic → vivaldi last.
+    const open_cov_script: []const u8 = switch (@import("builtin").os.tag) {
+        .macos =>
+        \\report="kcov-out/test/index.html"
+        \\if [ -n "$BROWSER" ]; then $BROWSER "$report" && exit 0; fi
+        \\open "$report" && exit 0
+        \\open -a Vivaldi "$report" && exit 0
+        \\exit 1
+        ,
+        else =>
+        \\report="kcov-out/test/index.html"
+        \\if [ -n "$BROWSER" ]; then $BROWSER "$report" && exit 0; fi
+        \\xdg-open "$report" && exit 0
+        \\vivaldi "$report" && exit 0
+        \\exit 1
+        ,
     };
-    open_cov.step.dependOn(&kcov.step);
+    const open_cov = b.addSystemCommand(&.{ "sh", "-c", open_cov_script });
+    open_cov.step.dependOn(&kcov_sum.step);
     // Report-only form: coverage collection + JSON, no browser.
     const cov_report_step = b.step("cov-report", "Run coverage and dump the JSON report");
-    cov_report_step.dependOn(&kcov.step);
     cov_report_step.dependOn(&kcov_sum.step);
     cov_step.dependOn(&open_cov.step);
 
@@ -131,6 +146,5 @@ pub fn build(b: *std.Build) void {
     verify_step.dependOn(&run_tests.step);
     verify_step.dependOn(&fmt_check.step);
     verify_step.dependOn(&glue.step);
-    verify_step.dependOn(&kcov.step);
     verify_step.dependOn(&kcov_sum.step);
 }
