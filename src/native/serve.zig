@@ -9,9 +9,8 @@ const wasm_bytes = @import("wasm_bytes.zig");
 
 pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, file_menu, region, artifact };
 
-/// The four known routes and the delivered-once set.
+/// Known routes and the delivered-once set.
 pub const Router = struct {
-    /// Ten known routes: page, glue, shell, board, menu, menu_bar, theme, file_menu, region, artifact.
     delivered: [10]bool,
 
     pub const Error = error{NotFound};
@@ -46,6 +45,29 @@ pub const Router = struct {
             if (!d) return false;
         }
         return true;
+    }
+
+    pub fn body(result: RouteResult) []const u8 {
+        return switch (result) {
+            .page => wasm_bytes.page_html,
+            .glue => wasm_bytes.glue_js,
+            .shell => wasm_bytes.shell_js,
+            .board => wasm_bytes.board_js,
+            .menu => wasm_bytes.menu_js,
+            .menu_bar => wasm_bytes.menu_bar_js,
+            .theme => wasm_bytes.theme_js,
+            .file_menu => wasm_bytes.file_menu_js,
+            .region => wasm_bytes.region_js,
+            .artifact => wasm_bytes.wasm_bytes,
+        };
+    }
+
+    pub fn contentType(result: RouteResult) []const u8 {
+        return switch (result) {
+            .page => "text/html",
+            .artifact => "application/wasm",
+            .glue, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .region => "text/javascript",
+        };
     }
 };
 /// Errors surfacing from serve(): the port is already owned, or any socket
@@ -166,31 +188,7 @@ fn serveClient(io: std.Io, router: *Router, client: net.Stream) ServeError!void 
     var w_buf: [4096]u8 = undefined;
     var w = client.writer(io, w_buf[0..]);
     if (res) |result| {
-        const body: []const u8 = switch (result) {
-            .page => wasm_bytes.page_html,
-            .glue => wasm_bytes.glue_js,
-            .shell => wasm_bytes.shell_js,
-            .board => wasm_bytes.board_js,
-            .menu => wasm_bytes.menu_js,
-            .menu_bar => wasm_bytes.menu_bar_js,
-            .theme => wasm_bytes.theme_js,
-            .file_menu => wasm_bytes.file_menu_js,
-            .region => wasm_bytes.region_js,
-            .artifact => wasm_bytes.wasm_bytes,
-        };
-        const content_type: []const u8 = switch (result) {
-            .page => "text/html",
-            .glue => "text/javascript",
-            .shell => "text/javascript",
-            .board => "text/javascript",
-            .menu => "text/javascript",
-            .menu_bar => "text/javascript",
-            .theme => "text/javascript",
-            .file_menu => "text/javascript",
-            .region => "text/javascript",
-            .artifact => "application/wasm",
-        };
-        try writeFull(&w.interface, "200 OK", content_type, body);
+        try writeFull(&w.interface, "200 OK", Router.contentType(result), Router.body(result));
         router.markDelivered(result);
     } else |_| {
         try writeFull(&w.interface, "404 Not Found", "text/plain", "not found\n");
@@ -274,21 +272,6 @@ fn resolvePageImport(specifier: []const u8) []const u8 {
     return specifier;
 }
 
-fn assetBody(result: RouteResult) []const u8 {
-    return switch (result) {
-        .page => wasm_bytes.page_html,
-        .glue => wasm_bytes.glue_js,
-        .shell => wasm_bytes.shell_js,
-        .board => wasm_bytes.board_js,
-        .menu => wasm_bytes.menu_js,
-        .menu_bar => wasm_bytes.menu_bar_js,
-        .theme => wasm_bytes.theme_js,
-        .file_menu => wasm_bytes.file_menu_js,
-        .region => wasm_bytes.region_js,
-        .artifact => wasm_bytes.wasm_bytes,
-    };
-}
-
 test "serve: page.html module imports resolve to embedded routes" {
     const page = wasm_bytes.page_html;
     var i: usize = 0;
@@ -305,7 +288,7 @@ test "serve: page.html module imports resolve to embedded routes" {
             std.debug.print("page.html import {s} -> {s} is not served\n", .{ spec, path });
             return error.TestFailed;
         };
-        try std.testing.expect(assetBody(route).len > 0);
+        try std.testing.expect(Router.body(route).len > 0);
         i = spec_end + 1;
     }
 }
@@ -313,7 +296,7 @@ test "serve: page.html module imports resolve to embedded routes" {
 test "serve: page.html wasm fetch path is served" {
     try std.testing.expect(std.mem.indexOf(u8, wasm_bytes.page_html, "fetch(\"./artifact.wasm\")") != null);
     const route = try Router.route("/artifact.wasm");
-    try std.testing.expect(assetBody(route).len > 0);
+    try std.testing.expect(Router.body(route).len > 0);
 }
 
 test "serve: route \"/\" to the page" {
