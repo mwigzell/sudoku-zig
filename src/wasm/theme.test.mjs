@@ -1,4 +1,4 @@
-// theme.test.mjs — View theme toggle contract (#43).
+// theme.test.mjs — View theme toggle contract.
 
 import assert from "node:assert/strict";
 import {

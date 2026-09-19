@@ -1,4 +1,4 @@
-// board.js — DOM board shell: render GameSnapshot, selection, play loop (#37).
+// board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
 import { applyEventStatus, applyExecResult } from "./shell.js";
 

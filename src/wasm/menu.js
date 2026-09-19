@@ -1,4 +1,4 @@
-// menu.js — Edit menu: undo/redo via wasm exec, legend-driven enablement (#40).
+// menu.js — Edit menu: undo/redo via wasm exec, legend-driven enablement.
 
 import { applyEventStatus, applyExecResult } from "./shell.js";
 import { applySuccessfulExec } from "./board.js";

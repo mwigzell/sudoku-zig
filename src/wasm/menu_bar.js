@@ -1,4 +1,4 @@
-// menu_bar.js — top menu bar: legend-driven enablement (#41).
+// menu_bar.js — top menu bar: legend-driven enablement.
 
 /** Web menu skeleton — no Quit (legend.quit ignored on web). */
 export const MENU_BAR_MENUS = [

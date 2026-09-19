@@ -1,4 +1,4 @@
-// Wasm deploy entry — structured JSON exports for the browser shell (#31).
+// Wasm deploy entry — structured JSON exports for the browser shell.
 const std = @import("std");
 const game_engine = @import("engine/game_engine.zig");
 const puzzle_gen = @import("puzzle_gen.zig");

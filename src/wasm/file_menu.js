@@ -1,4 +1,4 @@
-// file_menu.js — File menu session actions via shell.js (#42).
+// file_menu.js — File menu session actions via shell.js.
 
 import { newGame, open, save, saveAs, applyEventStatus, showErrorModal } from "./shell.js";
 import { renderBoard } from "./board.js";

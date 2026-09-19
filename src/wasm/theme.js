@@ -1,4 +1,4 @@
-// theme.js — View menu light/dark theme via engine config (#43).
+// theme.js — View menu light/dark theme via engine config.
 
 export function themeFromConfig(config) {
   return config?.theme === "light" ? "light" : "dark";

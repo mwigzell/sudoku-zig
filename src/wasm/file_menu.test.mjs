@@ -1,4 +1,4 @@
-// file_menu.test.mjs — File menu session contract (#42).
+// file_menu.test.mjs — File menu session contract.
 
 import assert from "node:assert/strict";
 import {

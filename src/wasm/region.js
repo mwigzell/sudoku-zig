@@ -1,4 +1,4 @@
-// region.js — View menu region highlight via engine config (#8).
+// region.js — View menu region highlight via engine config.
 
 import { applyRegionHighlight } from "./board.js";
 

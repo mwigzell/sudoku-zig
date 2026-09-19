@@ -74,6 +74,10 @@ fn writeJson(out: *OutBuffer, comptime fmt: []const u8, args: anytype) !void {
     try std.Io.Writer.flush(&w);
 }
 
+fn writeJsonString(w: *std.Io.Writer, text: []const u8) !void {
+    try std.json.Stringify.encodeJsonString(text, .{}, w);
+}
+
 const JsonAction = struct {
     action: []const u8,
     row: ?u8 = null,
@@ -136,7 +140,12 @@ pub fn writeOkJson(out: OutBuffer) !void {
 
 pub fn writeErrorJson(out: OutBuffer, msg: []const u8) !void {
     var mutable = out;
-    try writeJson(&mutable, "{{\"ok\":false,\"error\":\"{s}\"}}", .{msg});
+    out.reset();
+    var w = jsonWriter(&mutable);
+    try std.Io.Writer.writeAll(&w, "{\"ok\":false,\"error\":");
+    try writeJsonString(&w, msg);
+    try std.Io.Writer.writeAll(&w, "}");
+    try std.Io.Writer.flush(&w);
 }
 
 pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
@@ -145,14 +154,17 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
     var w = jsonWriter(&mutable);
     switch (ev) {
         .error_msg => |msg| {
-            try std.Io.Writer.print(&w, "{{\"ok\":false,\"error\":\"{s}\"}}", .{msg});
+            try std.Io.Writer.writeAll(&w, "{\"ok\":false,\"error\":");
+            try writeJsonString(&w, msg);
+            try std.Io.Writer.writeAll(&w, "}");
         },
         .ok => |data| {
             const snap = wire.GameSnapshot.fromView(data.board_view);
             try std.Io.Writer.writeAll(&w, "{\"ok\":true,\"is_quit\":");
             try std.Io.Writer.print(&w, "{any},\"msg\":", .{data.is_quit});
             if (data.msg) |m| {
-                try std.Io.Writer.print(&w, "\"{s}\",", .{m});
+                try writeJsonString(&w, m);
+                try std.Io.Writer.writeAll(&w, ",");
             } else {
                 try std.Io.Writer.writeAll(&w, "null,");
             }
@@ -282,6 +294,63 @@ test "writeWireConfigJson emits WireConfig wire shape" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"difficulty\":2") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"show_region\":true") != null);
+}
+
+const ErrorWire = struct {
+    ok: bool,
+    @"error": []const u8,
+};
+
+const OkEventWire = struct {
+    ok: bool,
+    is_quit: bool,
+    msg: ?[]const u8 = null,
+};
+
+test "writeErrorJson escapes quotes and newlines" {
+    var buf: [512]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeErrorJson(out, "say \"hello\"\nline2");
+
+    const parsed = try std.json.parseFromSlice(ErrorWire, std.testing.allocator, out.finishJson(), .{});
+    defer parsed.deinit();
+    try std.testing.expect(!parsed.value.ok);
+    try std.testing.expectEqualStrings("say \"hello\"\nline2", parsed.value.@"error");
+}
+
+test "writeEventJson error_msg escapes special characters" {
+    var buf: [512]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeEventJson(out, .{ .error_msg = "bad \"input\"\nretry" });
+
+    const parsed = try std.json.parseFromSlice(ErrorWire, std.testing.allocator, out.finishJson(), .{});
+    defer parsed.deinit();
+    try std.testing.expect(!parsed.value.ok);
+    try std.testing.expectEqualStrings("bad \"input\"\nretry", parsed.value.@"error");
+}
+
+test "writeEventJson ok msg escapes special characters" {
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+
+    var buf: [8192]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    const ev = event_mod.Event{ .ok = .{
+        .board_view = engine.eventBoard(),
+        .is_quit = false,
+        .msg = "saved \"game\"\nok",
+    } };
+    try writeEventJson(out, ev);
+
+    const parsed = try std.json.parseFromSlice(OkEventWire, std.testing.allocator, out.finishJson(), .{
+        .ignore_unknown_fields = true,
+    });
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.ok);
+    try std.testing.expectEqualStrings("saved \"game\"\nok", parsed.value.msg.?);
 }
 
 test "writeLegendJson reflects undo availability" {

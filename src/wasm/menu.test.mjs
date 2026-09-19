@@ -1,4 +1,4 @@
-// menu.test.mjs — Edit menu undo/redo contract (#40).
+// menu.test.mjs — Edit menu undo/redo contract.
 
 import assert from "node:assert/strict";
 import { applySelection } from "./board.js";

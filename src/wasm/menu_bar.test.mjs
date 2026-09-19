@@ -1,4 +1,4 @@
-// menu_bar.test.mjs — menu bar legend sync contract (#41).
+// menu_bar.test.mjs — menu bar legend sync contract.
 
 import assert from "node:assert/strict";
 import { syncMenuBar, wireMenuBar, wireMenuDropdowns, collectMenuBarControls, MENU_BAR_MENUS } from "./menu_bar.js";

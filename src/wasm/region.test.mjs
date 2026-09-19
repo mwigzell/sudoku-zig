@@ -1,4 +1,4 @@
-// region.test.mjs — View region highlight toggle contract (#8).
+// region.test.mjs — View region highlight toggle contract.
 
 import assert from "node:assert/strict";
 import { syncRegionMenu, wireRegionMenu } from "./region.js";

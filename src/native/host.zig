@@ -63,7 +63,7 @@ pub const Host = struct {
         return switch (choice) {
             .ansi, .ascii => self.terminalFacade(choice),
             .tui => error.UnsupportedRenderer, // ncurses substrate not yet wired
-            .web => error.UnsupportedRenderer, // web deployment returns as serve-and-exit (issue 4 Step 8)
+            .web => error.UnsupportedRenderer, // web deployment is serve-and-exit, not stdin/stdout
         };
     }
 

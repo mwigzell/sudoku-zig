@@ -1,4 +1,4 @@
-// glue.js — wasm/JS boundary for structured JSON exports (#31).
+// glue.js — wasm/JS boundary for structured JSON exports.
 // Browser + node compatible: no fetch, no DOM. The page owns fetch and
 // presentation; this module loads the artifact and marshals JSON through
 // linear memory.

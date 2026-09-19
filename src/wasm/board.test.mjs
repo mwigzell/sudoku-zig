@@ -1,4 +1,4 @@
-// board.test.mjs — DOM board shell contract (#37).
+// board.test.mjs — DOM board shell contract.
 
 import assert from "node:assert/strict";
 import {
@@ -101,7 +101,7 @@ assert.equal(formatDigit({ value: 9 }), "9");
   assert.equal(el.className, "");
 }
 
-// ── selection (#38) ──
+// ── selection ──
 
 assert.deepEqual(moveSelection(4, 4, "ArrowUp"), { row: 3, col: 4 });
 assert.deepEqual(moveSelection(0, 0, "ArrowUp"), { row: 0, col: 0 });
@@ -202,7 +202,7 @@ function makeRenderElement() {
   assert.ok(target.classList.contains("selected"));
 }
 
-// ── play loop (#39) ──
+// ── play loop ──
 
 assert.deepEqual(parsePlayKey("5"), { type: "fill", digit: 5 });
 assert.equal(parsePlayKey("ArrowUp"), null);
