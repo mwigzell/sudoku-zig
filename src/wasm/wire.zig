@@ -106,14 +106,8 @@ pub const GameSnapshot = struct {
     }
 };
 
-const JsonCell = struct {
-    value: u8,
-    given: bool,
-    conflict: bool,
-};
-
 const JsonSnapshot = struct {
-    cells: [board.CELL_COUNT]JsonCell,
+    cells: [board.CELL_COUNT]CellSnapshot,
 };
 
 /// Serialize a snapshot to a heap-owned JSON string.

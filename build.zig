@@ -141,10 +141,15 @@ pub fn build(b: *std.Build) void {
     // Tests + format check + coverage run together so the gate can't be
     // shadowed by task-local checklists (handoffs, TDD skill gates).
     const fmt_check = b.addSystemCommand(&.{ "zig", "fmt", "--check", "src", "build.zig" });
-    const verify_step = b.step("verify", "Gate: exe + test + fmt + coverage");
+    const standards_check = b.addSystemCommand(&.{ "env", "FORCE_COLOR=1", "bash", "scripts/verify-standards.sh" });
+    const standards_step = b.step("standards", "Mechanical coding-standards check on branch diff");
+    standards_step.dependOn(&standards_check.step);
+
+    const verify_step = b.step("verify", "Gate: exe + test + fmt + standards + coverage");
     verify_step.dependOn(&exe.step); // entry point must compile — test mode never analyzes main()
     verify_step.dependOn(&run_tests.step);
     verify_step.dependOn(&fmt_check.step);
+    verify_step.dependOn(&standards_check.step);
     verify_step.dependOn(&glue.step);
     verify_step.dependOn(&kcov_sum.step);
 }
