@@ -169,7 +169,7 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
                 try std.Io.Writer.writeAll(&w, "null,");
             }
             try std.Io.Writer.writeAll(&w, "\"state\":");
-            try writeSnapshotJson(&w, snap);
+            try wire.writeGameSnapshotJson(&w, snap);
             try std.Io.Writer.writeAll(&w, "}");
         },
     }
@@ -213,24 +213,11 @@ pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
     );
 }
 
-pub fn writeSnapshotJson(w: *std.Io.Writer, snap: wire.GameSnapshot) !void {
-    try std.Io.Writer.writeAll(w, "{\"cells\":[");
-    for (snap.cells, 0..) |c, i| {
-        if (i > 0) try std.Io.Writer.writeAll(w, ",");
-        try std.Io.Writer.print(
-            w,
-            "{{\"value\":{d},\"given\":{any},\"conflict\":{any}}}",
-            .{ c.value, c.given, c.conflict },
-        );
-    }
-    try std.Io.Writer.writeAll(w, "]}");
-}
-
 pub fn writeStateJson(out: OutBuffer, view: board.Board.BoardView) !void {
     var mutable = out;
     out.reset();
     var w = jsonWriter(&mutable);
-    try writeSnapshotJson(&w, wire.GameSnapshot.fromView(view));
+    try wire.writeGameSnapshotJson(&w, wire.GameSnapshot.fromView(view));
     try std.Io.Writer.flush(&w);
 }
 

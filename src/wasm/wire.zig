@@ -110,19 +110,28 @@ const JsonSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
 };
 
+pub fn writeCellJson(w: *std.Io.Writer, cell: CellSnapshot) !void {
+    try std.Io.Writer.print(
+        w,
+        "{{\"value\":{d},\"given\":{any},\"conflict\":{any}}}",
+        .{ cell.value, cell.given, cell.conflict },
+    );
+}
+
+pub fn writeGameSnapshotJson(w: *std.Io.Writer, snap: GameSnapshot) !void {
+    try std.Io.Writer.writeAll(w, "{\"cells\":[");
+    for (snap.cells, 0..) |cell, i| {
+        if (i > 0) try std.Io.Writer.writeAll(w, ",");
+        try writeCellJson(w, cell);
+    }
+    try std.Io.Writer.writeAll(w, "]}");
+}
+
 /// Serialize a snapshot to a heap-owned JSON string.
 pub fn serializeSnapshot(allocator: std.mem.Allocator, snap: GameSnapshot) ![]u8 {
     var aw = std.Io.Writer.Allocating.init(allocator);
     defer aw.deinit();
-    try aw.writer.print("{{\"cells\":[", .{});
-    for (snap.cells, 0..) |cell, i| {
-        if (i > 0) try aw.writer.writeAll(",");
-        try aw.writer.print(
-            "{{\"value\":{d},\"given\":{any},\"conflict\":{any}}}",
-            .{ cell.value, cell.given, cell.conflict },
-        );
-    }
-    try aw.writer.writeAll("]}");
+    try writeGameSnapshotJson(&aw.writer, snap);
     var list = aw.toArrayList();
     return list.toOwnedSlice(allocator);
 }
