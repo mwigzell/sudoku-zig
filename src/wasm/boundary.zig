@@ -9,6 +9,8 @@ const game_engine = @import("../engine/game_engine.zig");
 const legend_mod = @import("../renderer/legend.zig");
 const wire = @import("wire.zig");
 
+const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
+
 pub const OutBuffer = struct {
     buf: []u8,
     len: *u32,
@@ -157,6 +159,15 @@ pub fn writeErrorJson(out: OutBuffer, msg: []const u8) !void {
     try std.Io.Writer.flush(&jw.writer);
 }
 
+/// Last-resort JSON when structured encoding fails; fits any nonempty out buffer.
+pub fn writeSystemErrorJson(out: OutBuffer) void {
+    out.reset();
+    const n = @min(system_error_json.len, out.buf.len);
+    @memcpy(out.buf[0..n], system_error_json[0..n]);
+    out.len.* = @intCast(n);
+    if (n < out.buf.len) out.buf[n] = 0;
+}
+
 pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
     var mutable = out;
     out.reset();
@@ -300,6 +311,34 @@ const OkEventWire = struct {
     is_quit: bool,
     msg: ?[]const u8 = null,
 };
+
+test "writeSystemErrorJson emits parseable system error" {
+    var buf: [64]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    writeSystemErrorJson(out);
+
+    const parsed = try std.json.parseFromSlice(ErrorWire, std.testing.allocator, out.finishJson(), .{});
+    defer parsed.deinit();
+    try std.testing.expect(!parsed.value.ok);
+    try std.testing.expectEqualStrings("system", parsed.value.@"error");
+}
+
+test "writeErrorJson failure leaves room for system fallback json" {
+    var buf: [32]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try std.testing.expectError(error.WriteFailed, writeErrorJson(
+        out,
+        "this message cannot fit in thirty two bytes of json output",
+    ));
+    writeSystemErrorJson(out);
+
+    const parsed = try std.json.parseFromSlice(ErrorWire, std.testing.allocator, out.finishJson(), .{});
+    defer parsed.deinit();
+    try std.testing.expect(!parsed.value.ok);
+    try std.testing.expectEqualStrings("system", parsed.value.@"error");
+}
 
 test "writeErrorJson escapes quotes and newlines" {
     var buf: [512]u8 = undefined;
