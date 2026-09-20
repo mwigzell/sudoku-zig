@@ -58,7 +58,7 @@ fi
 CHANGED=()
 while IFS= read -r line; do
   CHANGED+=("$line")
-done < <(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD | grep -E '^src/.*\.(zig|js|mjs|html)$|^build\.zig$' || true)
+done < <(git diff --name-only --diff-filter=ACMR "$BASE" | grep -E '^src/.*\.(zig|js|mjs|html)$|^build\.zig$' || true)
 
 banner
 printf '%b base %s — %d changed file(s)\n' "${C_DIM}" "${BASE:0:12}" "${#CHANGED[@]}"
@@ -83,7 +83,7 @@ note_violation() {
 # --- helpers: scan only added/changed lines in the diff ---
 diff_added_lines() {
   local file=$1
-  git diff -U0 "$BASE"...HEAD -- "$file" | sed -n 's/^+//p' | grep -v '^+++' || true
+  git diff -U0 "$BASE" -- "$file" | sed -n 's/^+//p' | grep -v '^+++' || true
 }
 
 check_added_pattern() {
@@ -96,7 +96,7 @@ check_added_pattern() {
 }
 
 # --- 1. Code comments: no issue/session citations (AGENTS.md) ---
-ISSUE_PAT='(\(#[0-9]+\)|Issue [0-9]+|issue [0-9]+|spec: issue-[0-9]+|Step [0-9]+|chunk [0-9]+)'
+ISSUE_PAT='(\(#[0-9]+\)|#[0-9]{2,}|Issue [0-9]+|issue [0-9]+|spec: issue-[0-9]+|[Ss]tep [0-9]+|[Cc]hunk [0-9]+)'
 
 for f in "${CHANGED[@]}"; do
   [[ "$f" =~ \.(zig|js|mjs|html)$ ]] || continue
