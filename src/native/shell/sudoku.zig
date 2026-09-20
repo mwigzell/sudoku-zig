@@ -39,14 +39,14 @@ pub const Sudoku = struct {
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
-    /// Status passthrough (same rules as wasm shell.js applyEventStatus): show a message
-    /// only for `.error_msg` or `.ok.msg`; silence when `.ok.msg` is null; never invent copy.
+    /// Status passthrough (same rules as wasm shell.js applyEventStatus): silence when
+    /// `.ok.msg` is null; never invent copy. `.error_msg` rides `showError` (interactive ack);
+    /// `.ok.msg` rides the non-blocking `render` status slot.
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {
                 if (ev.is_quit) return true;
-                if (ev.msg) |m| try self.renderer.showError(m);
-                try self.renderer.render(ev.board_view, null);
+                try self.renderer.render(ev.board_view, ev.msg);
                 try self.renderer.showLegend(self.engine.getLegend());
                 return false;
             },
@@ -256,7 +256,6 @@ test "integrated e2e - run: open file success produces status message, re-render
     // Canned responses: open <path> -> quit
     const responses = [_][]const u8{
         "open " ++ tmp_path,
-        "", // accept the status message (Press Enter)
         "quit",
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
@@ -366,7 +365,7 @@ test "integrated e2e - run: new command resets board and history" {
     const responses = [_][]const u8{
         "fill A3 7",
         "new",
-        "", // accept the status message (Press Enter)
+        "", // menu choice (flat else — generated puzzle)
         "quit",
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
@@ -429,4 +428,133 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);
     // PlainStyler: no CSI escapes anywhere in the rendered output.
     try std.testing.expect(std.mem.indexOf(u8, contents, "\x1b[") == null);
+}
+// RED: a .ok.msg status renders non-blocking — line-graphics box,
+// no "Press Enter" ack, and the next input line is the next command.
+test "integrated e2e - .ok.msg status is non-blocking; next line is a command" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+    const io = std.testing.io;
+    const gpa = std.heap.page_allocator;
+    const tmp_path = "/tmp/sudoku_status_nonblocking_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
+    defer original.deinit();
+    const setup_transport = file_transport.NativeTransport.make(io);
+    const save_buf = try original.toSaveFormat(gpa);
+    defer gpa.free(save_buf);
+    try setup_transport.write(setup_transport.context, tmp_path, save_buf);
+    const b = original.state.board;
+    const pick: struct { r: u4, c: u4 } = blk: {
+        for (0..9) |r| {
+            for (0..9) |c| {
+                const ru = @as(u4, @intCast(r));
+                const cu = @as(u4, @intCast(c));
+                if (b.isGiven(ru, cu) or b.getCellValue(ru, cu) != cell.CellValue.zero) continue;
+                const seven_bits: u32 = (@as(u32, 1) << 6);
+                if (b.getBoxDigitBits(@intCast(@divTrunc(r, 3)), @intCast(@divTrunc(c, 3))) & seven_bits != 0) continue;
+                var clash = false;
+                for (0..9) |k| {
+                    if (b.getCellValue(ru, @as(u4, @intCast(k))) == cell.CellValue.seven or
+                        b.getCellValue(@as(u4, @intCast(k)), cu) == cell.CellValue.seven)
+                    {
+                        clash = true;
+                        break;
+                    }
+                }
+                if (clash) continue;
+                break :blk .{ .r = ru, .c = cu };
+            }
+        }
+        unreachable; // every generated puzzle leaves a clean cell
+    };
+    const ci: u8 = @intCast(pick.c);
+    const col_letters = "ABCDEFGHI";
+    const col_letter = col_letters[ci % 9];
+    const fill_cmd = try std.fmt.allocPrint(gpa, "fill {c}{d} 7", .{ col_letter, pick.r + 1 });
+    defer gpa.free(fill_cmd);
+    const responses = [_][]const u8{
+        "open",
+        tmp_path,
+        fill_cmd,
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
+    defer sudoku.deinit();
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    // 1. Status message is displayed ...
+    try std.testing.expect(std.mem.indexOf(u8, contents, "opened:") != null);
+    // 2. ... without the interactive ack prompt ...
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") == null);
+    // 3. ... inside a line-graphics frame (side border, or a top edge on the line above).
+    var lines = std.mem.splitScalar(u8, contents, '\n');
+    var prev: ?[]const u8 = null;
+    var framed = false;
+    while (lines.next()) |line| {
+        if (std.mem.indexOf(u8, line, "opened:") != null) {
+            framed = std.mem.indexOf(u8, line, "│") != null or
+                (prev != null and std.mem.indexOf(u8, prev.?, "┌") != null);
+            break;
+        }
+        prev = line;
+    }
+    try std.testing.expect(framed);
+    // 4. The line after the status is read as the next command: the fill lands.
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku.engine.state.board.getCellValue(pick.r, pick.c));
+}
+
+// RED: a .error_msg still acks — Press Enter shown, and the ack Enter
+// is consumed by the ack (does not leak back to the parser as a command).
+test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+    // bare fill → .error_msg; the empty line is the user's ack Enter; quit ends the loop.
+    // The empty line is the user's ack Enter; quit ends the loop.
+    const responses = [_][]const u8{ "fill", "", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
+    defer sudoku.deinit();
+    try sudoku.showGame();
+    var terminated = false;
+    while (true) {
+        if (try sudoku.turn()) {
+            terminated = true;
+            break;
+        }
+    }
+    try std.testing.expect(terminated);
+    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    // routed through showError: the error text is in the output
+    try std.testing.expect(std.mem.indexOf(u8, contents, "fill requires coordinate") != null);
+    // interactive ack prompt present
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);
+    // the ack Enter was consumed by the ack, not re-parsed as a command
+    try std.testing.expect(std.mem.indexOf(u8, contents, "empty input") == null);
+    // exactly one ack — the ack line did not re-enter the parser loop
+    var ack_count: usize = 0;
+    var rest = contents;
+    while (std.mem.indexOfPos(u8, rest, 0, "Press Enter to continue...")) |i| {
+        ack_count += 1;
+        rest = rest[i + "Press Enter to continue...".len ..];
+    }
+    try std.testing.expectEqual(@as(usize, 1), ack_count);
 }

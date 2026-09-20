@@ -37,8 +37,9 @@ pub const Facade = struct {
     getCommandInput_fn: *const fn (*anyopaque, []const []const u8) Error!command.ParseCommandResult,
     deinit_fn: *const fn (*anyopaque) void,
 
-    /// Draw the current board in full. status_msg is a reserved status-bar
-    /// slot; renderers may ignore it.
+    /// Draw the current board in full. When status_msg is non-null, renderers
+    /// with a status surface draw it non-blocking (no input read); null ⇒ plain
+    /// board.
     pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
         return self.render_fn(self.context, view, status_msg);
     }
@@ -48,8 +49,9 @@ pub const Facade = struct {
         return self.showLegend_fn(self.context, commands);
     }
 
-    /// Display an Event-sourced message and get user acknowledgement.
-    /// Used for both `.error_msg` and optional `.ok.msg` — not shell-invented copy.
+    /// Display an `.error_msg` and get user acknowledgement (interactive).
+    /// `.ok.msg` status must not ride this channel — it goes through render's
+    /// status_msg slot.
     pub fn showError(self: *const Facade, msg: []const u8) Error!void {
         return self.showError_fn(self.context, msg);
     }

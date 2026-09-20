@@ -37,6 +37,10 @@ pub fn bottomBorder() []const u8 {
     return " ╰───────┴───────┴───────╯\n";
 }
 
+/// Minimum visible width (columns) for status/error message boxes. Message
+/// lines and the legend can push it wider — never narrower than this.
+const box_min_width: usize = 80;
+
 /// Terminal implementation of the Renderer Facade.
 ///
 /// Stores a writer pointer, a styler
@@ -50,6 +54,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         inputSource: input_source.ReaderSource,
         last_filename: ?[]u8,
         selection: ?styler.CellSelection = null,
+        legend_line_width: usize = 0,
 
         /// Construct with writer (all output), styler pointer, and input source.
         pub fn init(allocator: std.mem.Allocator, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
@@ -64,24 +69,52 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Draw the full board: column header, borders, styled rows via formatRow,
-        /// with box-drawing borders between 3x3 boxes. status_msg is reserved.
+        /// with box-drawing borders between 3x3 boxes. When status_msg is non-null,
+        /// draw it in a box frame below the grid — non-blocking, no input read;
+        /// null ⇒ plain board.
         pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
-            _ = status_msg; // reserved for status bar, not legend
-
             try self.writer.writeAll(columnHeader());
             try self.writer.writeAll(topBorder());
-
             for (0..9) |row| {
                 var rowBuf: [256]u8 = undefined;
                 const line = try self.styler.formatRow(row, view, self.selection, &rowBuf);
                 try self.writer.writeAll(line);
-
                 if (row == 2 or row == 5) {
                     try self.writer.writeAll(midBorder());
                 }
             }
-
             try self.writer.writeAll(bottomBorder());
+            if (status_msg) |msg| try self.drawBox(msg);
+        }
+
+        /// Shared box frame for status and error messages. Width = max(box_min_width,
+        /// legend line width, longest message line + 4) — content never hides.
+        /// One framed line per message line. Pure output — never reads input.
+        fn drawBox(self: *@This(), msg: []const u8) anyerror!void {
+            var width: usize = box_min_width;
+            if (self.legend_line_width > width) width = self.legend_line_width;
+            var probe = std.mem.splitScalar(u8, msg, '\n');
+            while (probe.next()) |ln| {
+                if (ln.len + 4 > width) width = ln.len + 4;
+            }
+            const inner = width - 2;
+            const row = try self.allocator.alloc(u8, inner);
+            defer self.allocator.free(row);
+            const dash = "─";
+            try self.writer.writeAll("┌");
+            for (0..inner) |_| try self.writer.writeAll(dash);
+            try self.writer.writeAll("┐\n");
+            var lines = std.mem.splitScalar(u8, msg, '\n');
+            while (lines.next()) |ln| {
+                for (row) |*c| c.* = ' ';
+                std.mem.copyForwards(u8, row[1..], ln);
+                try self.writer.writeAll("│");
+                try self.writer.writeAll(row);
+                try self.writer.writeAll("│\n");
+            }
+            try self.writer.writeAll("└");
+            for (0..inner) |_| try self.writer.writeAll(dash);
+            try self.writer.writeAll("┘\n");
         }
 
         /// Implement Facade showLegend_fn. Build command legend from Legend,
@@ -96,6 +129,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             const entries = try disambiguate.getMinimumPrefixes(arena.allocator(), names[0..count]);
             const str = try legend.formatLegend(arena.allocator(), entries);
             _ = try self.writer.print("  Command: {s}\n", .{str});
+            self.legend_line_width = 11 + str.len;
         }
 
         /// Read one line from the injected input source.
@@ -108,10 +142,10 @@ pub fn AsciiRenderer(StylerType: type) type {
             return self.allocator.dupe(u8, trimmed) catch return facade.Error.System;
         }
 
-        /// Implement Facade showError_fn. Print the error message, then
+        /// Implement Facade showError_fn. Draw the error in the shared box frame, then
         /// "Press Enter to continue..." and wait on stdin (via injected input source).
         pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-            self.writer.print("{s}\n", .{msg}) catch return facade.Error.System;
+            self.drawBox(msg) catch return facade.Error.System;
             self.writer.print("Press Enter to continue... ", .{}) catch return facade.Error.System;
 
             const line = try self.readLine();
