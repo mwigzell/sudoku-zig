@@ -20,6 +20,7 @@ pub const OpenFileResult = cm.OpenFileResult;
 pub const PuzzleResult = cm.PuzzleResult;
 pub const CommandTableEntry = cm.CommandTableEntry;
 pub const Commands = cm.Commands;
+pub const SessionCommands = cm.SessionCommands;
 pub const getName = cm.getName;
 
 // ---------------------------------------------------------------------------
@@ -30,7 +31,7 @@ const coordError: ParseCommandResult = .{
 
 /// Trim → tokenize → re-dispatch through prefix dispatch (backward compat).
 pub fn parse(input_line: []const u8) ParseCommandResult {
-    var cmds_buf: [9][]const u8 = undefined;
+    var cmds_buf: [Commands.len][]const u8 = undefined;
     for (Commands, 0..) |entry, i| {
         cmds_buf[i] = entry.name;
     }
@@ -64,6 +65,7 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "quit")) return parseQuit();
     if (std.ascii.eqlIgnoreCase(cmd_name, "undo")) return .{ .valid = Command.undo };
     if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{ .valid = Command.redo };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "menu")) return .{ .valid = Command.menu };
     if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
         return .{ .valid = Command{ .save = SaveData{ .path = null } } };
     if (std.ascii.eqlIgnoreCase(cmd_name, "open")) return .{ .valid = Command{ .open = OpenData{ .path = null } } };
@@ -382,40 +384,28 @@ test "parseWithCommands: FI B2 5 resolves to Fill (all caps prefix)" {
     try std.testing.expectEqual(cell_module.CellValue.five, res.valid.fill.digit);
 }
 
-test "parse save command returns valid SaveData with default path" {
+test "parse menu → .valid menu" {
+    const res = parse("menu");
+    try std.testing.expect(res == .valid);
+    try std.testing.expectEqualStrings(@tagName(res.valid), "menu");
+}
+
+test "parse save is not on main-line Commands" {
     const res = parse("save");
+    try std.testing.expect(res == .error_msg);
+}
+
+test "parseWithCommands still resolves session names for menu dispatch" {
+    const names = [_][]const u8{ "Save", "Open" };
+    const res = parseWithCommands("save", &names);
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
-    try std.testing.expectEqual(@as(?[]const u8, null), res.valid.save.path);
-}
-
-test "parse open command w/ path returns valid OpenData" {
-    const res = parse("open testfile.dat");
-    try std.testing.expect(res == .valid);
-    try std.testing.expectEqualStrings(@tagName(res.valid), "open");
-    try std.testing.expect(res.valid.open.path == null);
-}
-
-test "parse save resolves to Save, not ambiguous with SaveAs present" {
-    const res = parse("save");
-    try std.testing.expect(res == .valid);
-    try std.testing.expectEqualStrings(@tagName(res.valid), "save");
-}
-
-test "disambiguates s -> Save, sa -> SaveAs" {
-    const s = parse("s");
-    try std.testing.expect(s == .valid);
-    try std.testing.expectEqualStrings(@tagName(s.valid), "save");
-
-    const sa = parse("sa");
-    try std.testing.expect(sa == .valid);
-    try std.testing.expectEqualStrings(@tagName(sa.valid), "save_as");
 }
 
 // comptime registration table tests (moved alongside parser)
 test "comptime invariant: CommandTag covers terminal commands plus view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    try std.testing.expectEqual(enum_field_count, Commands.len + 2);
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 2);
 }
 
 test "Commands table: tag-name mapping" {
@@ -430,12 +420,8 @@ test "Commands table: tag-name mapping" {
     try std.testing.expect(entries[3].tag == .undo);
     try std.testing.expectEqualStrings("Redo", entries[4].name);
     try std.testing.expect(entries[4].tag == .redo);
-    try std.testing.expectEqualStrings("Save", entries[5].name);
-    try std.testing.expect(entries[5].tag == .save);
-    try std.testing.expectEqualStrings("Open", entries[6].name);
-    try std.testing.expect(entries[6].tag == .open);
-    try std.testing.expectEqualStrings("New", entries[7].name);
-    try std.testing.expect(entries[7].tag == .new);
+    try std.testing.expectEqualStrings("Menu", entries[5].name);
+    try std.testing.expect(entries[5].tag == .menu);
 }
 
 test "getName returns correct display name for each tag" {
@@ -444,6 +430,7 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Quit", getName(.quit));
     try std.testing.expectEqualStrings("Undo", getName(.undo));
     try std.testing.expectEqualStrings("Redo", getName(.redo));
+    try std.testing.expectEqualStrings("Menu", getName(.menu));
     try std.testing.expectEqualStrings("Save", getName(.save));
     try std.testing.expectEqualStrings("Open", getName(.open));
     try std.testing.expectEqualStrings("New", getName(.new));

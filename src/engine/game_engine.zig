@@ -72,6 +72,7 @@ pub const GameEngine = struct {
             .quit = true,
             .undo = self.state.history.pointer > 0,
             .redo = self.state.history.pointer < self.state.history.entries.items.len,
+            .menu = true,
             .save = true,
             .open = true,
             .new = true,
@@ -110,11 +111,12 @@ pub const GameEngine = struct {
     }
 
     /// Build `.ok` using accumulated msg (null when nothing was appended).
-    pub fn finishOkEvent(self: *@This(), view: board.Board.BoardView, is_quit: bool) Event {
+    pub fn finishOkEvent(self: *@This(), view: board.Board.BoardView, is_quit: bool, edited_cell: ?event.CellCoord) Event {
         return .{ .ok = .{
             .board_view = view,
             .msg = self.event_msg.optional(),
             .is_quit = is_quit,
+            .cell = edited_cell,
         } };
     }
 
@@ -144,7 +146,7 @@ pub const GameEngine = struct {
         if (view.isConflictingRowCol(row, col)) {
             self.appendEventMsg("conflict in row, column, or box");
         }
-        return self.finishOkEvent(view, false);
+        return self.finishOkEvent(view, false, .{ .row = row, .col = col });
     }
 
     /// Route a gameplay command through Board mutation + render update.
@@ -169,12 +171,13 @@ pub const GameEngine = struct {
             },
             .set_theme => |theme| {
                 self.cfg.theme = theme;
-                return self.finishOkEvent(self.state.board.asView(), false);
+                return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .set_region => |enabled| {
                 self.cfg.show_region = enabled;
-                return self.finishOkEvent(self.state.board.asView(), false);
+                return self.finishOkEvent(self.state.board.asView(), false, null);
             },
+            .menu => @panic("menu routed in renderer"),
             .save, .open, .new, .save_as => @panic("session command routed in Sudoku"),
         }
     }
@@ -761,8 +764,25 @@ test "getLegend: fresh engine has Fill/Clear/Quit only" {
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
+    try std.testing.expect(cmds.menu);
     try std.testing.expect(!cmds.undo);
     try std.testing.expect(!cmds.redo);
+}
+
+test "finishOkAfterCellEdit sets event cell to mutated coordinates" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    const result = execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.three },
+    });
+    switch (result) {
+        .ok => |data| {
+            try std.testing.expectEqual(@as(u4, 4), data.cell.?.row);
+            try std.testing.expectEqual(@as(u4, 4), data.cell.?.col);
+        },
+        .error_msg => return error.TestFailed,
+    }
 }
 
 test "getLegend: after fill Undo appears" {

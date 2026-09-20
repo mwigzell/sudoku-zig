@@ -49,9 +49,9 @@ pub const Alloc = struct {
         return buildContext(styler.AnsiStyler, ProdFacadeContext, session);
     }
 
-    /// Mock branch: PlainStyler.
+    /// Mock branch: AnsiStyler — same styling as prod; only I/O is canned.
     fn mockBranch(session: *io_session.IoSession) facade.Error!facade.Facade {
-        return buildContext(styler.PlainStyler, MockFacadeContext, session);
+        return buildContext(styler.AnsiStyler, ProdFacadeContext, session);
     }
     /// Plain-styled variant: PlainStyler on the production branch.
     pub fn makePlainFacade(session: *io_session.IoSession) facade.Error!facade.Facade {
@@ -80,8 +80,8 @@ fn ctx(S: type) type {
         }
 
         /// Pass-through methods for Facade vtable wrappers.
-        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) facade.Error!void {
-            self.renderer.render(view, status_msg) catch return facade.Error.System;
+        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?facade.Selection) facade.Error!void {
+            self.renderer.render(view, status_msg, selection) catch return facade.Error.System;
         }
 
         pub fn showLegend(self: *@This(), commands: legend.Legend) facade.Error!void {
@@ -92,8 +92,8 @@ fn ctx(S: type) type {
             return self.renderer.showError(msg);
         }
 
-        pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!command.ParseCommandResult {
-            return self.renderer.getCommandInput(names);
+        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool) facade.Error!command.ParseCommandResult {
+            return self.renderer.getCommandInput(names, show_region);
         }
     };
 }
@@ -191,7 +191,7 @@ test "integrated e2e - prodBranch renders real grid into in-memory writer" {
     defer fac.deinit();
 
     const b = board.Board.init();
-    try fac.render(b.asView(), null);
+    try fac.render(b.asView(), null, null);
 
     const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);
@@ -221,6 +221,7 @@ test "integrated e2e - prodBranch showLegend writes into session writer buffer" 
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = true,
         .save = false,
         .open = false,
         .new = false,
@@ -232,6 +233,8 @@ test "integrated e2e - prodBranch showLegend writes into session writer buffer" 
     try std.testing.expect(std.mem.indexOf(u8, contents, "Command: (F)ill") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "(C)lear") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "(Q)uit") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(M)enu") != null);
     // Disabled flags must not surface — Legend drives the seam, not the renderer.
     try std.testing.expect(std.mem.indexOf(u8, contents, "(U)ndo") == null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(S)ave") == null);
 }

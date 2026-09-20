@@ -53,12 +53,11 @@ pub fn AsciiRenderer(StylerType: type) type {
         styler: *StylerType,
         inputSource: input_source.ReaderSource,
         last_filename: ?[]u8,
-        selection: ?styler.CellSelection = null,
         legend_line_width: usize = 0,
 
         /// Construct with writer (all output), styler pointer, and input source.
         pub fn init(allocator: std.mem.Allocator, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
-            return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null, .selection = null };
+            return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
         }
 
         /// Destroy writer + styler heap pointers; keep last_filename free.
@@ -72,12 +71,13 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// with box-drawing borders between 3x3 boxes. When status_msg is non-null,
         /// draw it in a box frame below the grid — non-blocking, no input read;
         /// null ⇒ plain board.
-        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8) anyerror!void {
+        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?facade.Selection) anyerror!void {
             try self.writer.writeAll(columnHeader());
             try self.writer.writeAll(topBorder());
             for (0..9) |row| {
                 var rowBuf: [256]u8 = undefined;
-                const line = try self.styler.formatRow(row, view, self.selection, &rowBuf);
+                const styler_sel: ?styler.CellSelection = if (selection) |s| .{ .row = s.row, .col = s.col } else null;
+                const line = try self.styler.formatRow(row, view, styler_sel, &rowBuf);
                 try self.writer.writeAll(line);
                 if (row == 2 or row == 5) {
                     try self.writer.writeAll(midBorder());
@@ -120,7 +120,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Implement Facade showLegend_fn. Build command legend from Legend,
         /// disambiguate prefixes, print "Command: ...". Arena allocates temp strings.
         pub fn showLegend(self: *@This(), commands: legend.Legend) anyerror!void {
-            var names: [9][]const u8 = undefined;
+            var names: [6][]const u8 = undefined;
             const count = commands.getNames(&names);
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -200,6 +200,33 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .PuzzleString = owned };
         }
 
+        /// Numbered session/view submenu — Save, Open, New, Save As, Region, hint placeholders.
+        pub fn showMenu(self: *@This(), show_region: bool) facade.Error!_command.ParseCommandResult {
+            const region_state = if (show_region) "on" else "off";
+            self.writer.writeAll("\nMenu:\n") catch return facade.Error.System;
+            self.writer.writeAll("  1) Save\n") catch return facade.Error.System;
+            self.writer.writeAll("  2) Open\n") catch return facade.Error.System;
+            self.writer.writeAll("  3) New\n") catch return facade.Error.System;
+            self.writer.writeAll("  4) Save As\n") catch return facade.Error.System;
+            self.writer.print("  5) Region ({s})\n", .{region_state}) catch return facade.Error.System;
+            self.writer.writeAll("  6) Board Hint (not yet)\n") catch return facade.Error.System;
+            self.writer.writeAll("  7) Cell Hint (not yet)\n") catch return facade.Error.System;
+            self.writer.writeAll("> ") catch return facade.Error.System;
+
+            const pick = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(pick);
+
+            if (std.mem.eql(u8, pick, "1")) return .{ .valid = _command.Command{ .save = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "2")) return .{ .valid = _command.Command{ .open = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "3")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null, .file = null } } };
+            if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .set_region = !show_region } };
+            if (std.mem.eql(u8, pick, "6") or std.mem.eql(u8, pick, "7")) {
+                return .{ .error_msg = "not yet" };
+            }
+            return .{ .error_msg = "invalid menu choice" };
+        }
+
         pub fn newGameOptions(self: *@This()) facade.Error!_command.PuzzleResult {
             const options = [_][]const u8{ "Generate New Puzzle", "Open From File", "Load From URL", "Paste Puzzle String" };
             self.writer.writeAll("\nNew game:\n") catch return facade.Error.System;
@@ -226,7 +253,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
-        pub fn getCommandInput(self: *@This(), names: []const []const u8) facade.Error!_command.ParseCommandResult {
+        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool) facade.Error!_command.ParseCommandResult {
             self.writer.writeAll(">") catch return facade.Error.System;
             self.writer.writeAll(" ") catch return facade.Error.System;
 
@@ -239,6 +266,11 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
 
             var rsl = parser.parseWithCommands(raw, names);
+
+            if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .menu) {
+                rsl = try self.showMenu(show_region);
+            }
+
             // Intercept save_as: get real filename from dialog, cache for future .save
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .save_as)
@@ -314,14 +346,6 @@ pub fn AsciiRenderer(StylerType: type) type {
                 }
             }
 
-            if (std.meta.activeTag(rsl) == .valid) {
-                switch (rsl.valid) {
-                    .fill => |d| self.selection = .{ .row = d.row, .col = d.col },
-                    .clear => |d| self.selection = .{ .row = d.row, .col = d.col },
-                    else => {},
-                }
-            }
-
             return rsl;
         }
     };
@@ -348,10 +372,11 @@ test "showLegend: writes Command: with Fill Clear Quit" {
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = true,
         .save = false,
         .open = false,
-        .new = true,
-        .save_as = true,
+        .new = false,
+        .save_as = false,
     };
     try renderer.showLegend(cmds);
 
@@ -360,6 +385,8 @@ test "showLegend: writes Command: with Fill Clear Quit" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "(F)ill") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "(C)lear") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "(Q)uit") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(M)enu") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(S)ave") == null);
 }
 test "render: renders empty board end-to-end" {
     const io = std.testing.io;
@@ -371,7 +398,7 @@ test "render: renders empty board end-to-end" {
     var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
 
     const b = board.Board.init();
-    try renderer.render(b.asView(), null);
+    try renderer.render(b.asView(), null, null);
 
     const contents = aw.writer.buffered();
 
@@ -416,7 +443,7 @@ test "render: renders with digits placed" {
     @memcpy(flat[27..], &rest);
 
     const b = try board.fromFlat(flat, .{});
-    try renderer.render(b.asView(), null);
+    try renderer.render(b.asView(), null, null);
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, "3") != null);
@@ -827,15 +854,16 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = true,
         .save = true,
         .open = true,
         .new = true,
         .save_as = true,
     };
 
-    var names: [9][]const u8 = undefined;
+    var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count]);
+    const result = try renderer.getCommandInput(names[0..count], false);
 
     switch (result) {
         .valid => |cmd| {
@@ -872,15 +900,16 @@ test "getCommandInput: EOF returns Quit" {
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = false,
         .save = false,
         .open = false,
         .new = false,
         .save_as = false,
     };
 
-    var names: [9][]const u8 = undefined;
+    var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count]);
+    const result = try renderer.getCommandInput(names[0..count], false);
 
     switch (result) {
         .valid => |cmd| {
@@ -914,7 +943,7 @@ test "getCommandInput: save with last_filename set uses cached path" {
 
     var s = styler.PlainStyler{};
     // Only one mock response: the command itself. Save intercept uses cached filename, no dialog.
-    const responses = [_][]const u8{"s\n"};
+    const responses = [_][]const u8{ "m\n", "1\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -935,15 +964,16 @@ test "getCommandInput: save with last_filename set uses cached path" {
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = true,
         .save = true,
         .open = true,
         .new = true,
         .save_as = true,
     };
 
-    var names: [9][]const u8 = undefined;
+    var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count]);
+    const result = try renderer.getCommandInput(names[0..count], false);
 
     switch (result) {
         .valid => |cmd| {
@@ -963,7 +993,7 @@ test "getCommandInput: save with last_filename null prompts and caches" {
 
     var s = styler.PlainStyler{};
     // First response: command "s", second response: filename from save dialog
-    const responses = [_][]const u8{ "s\n", "my_save.sud\n" };
+    const responses = [_][]const u8{ "m\n", "1\n", "my_save.sud\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -981,15 +1011,16 @@ test "getCommandInput: save with last_filename null prompts and caches" {
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = true,
         .save = true,
         .open = true,
         .new = true,
         .save_as = true,
     };
 
-    var names: [9][]const u8 = undefined;
+    var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count]);
+    const result = try renderer.getCommandInput(names[0..count], false);
 
     switch (result) {
         .valid => |cmd| {
@@ -1012,7 +1043,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
 
     var s = styler.PlainStyler{};
     // First save: command + dialog response; second save: only command (no dialog)
-    const responses = [_][]const u8{ "s\n", "first.sud\n", "s\n" };
+    const responses = [_][]const u8{ "m\n", "1\n", "first.sud\n", "m\n", "1\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1030,17 +1061,18 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = true,
         .save = true,
         .open = true,
         .new = true,
         .save_as = true,
     };
 
-    var names: [9][]const u8 = undefined;
+    var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
 
     // First save — should prompt and cache
-    const result1 = try renderer.getCommandInput(names[0..count]);
+    const result1 = try renderer.getCommandInput(names[0..count], false);
     switch (result1) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
@@ -1052,7 +1084,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     }
 
     // Second save — should use cached, no prompt
-    const result2 = try renderer.getCommandInput(names[0..count]);
+    const result2 = try renderer.getCommandInput(names[0..count], false);
     switch (result2) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
@@ -1062,4 +1094,70 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
             try std.testing.expect(false);
         },
     }
+}
+
+test "showMenu: region pick toggles set_region" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"5\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "set_region");
+            try std.testing.expect(cmd.set_region);
+        },
+        .error_msg => try std.testing.expect(false),
+    }
+}
+
+const region_on = "\x1b[48;5;238m";
+
+test "render: no region shading when selection is null" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.AnsiStyler{};
+    var renderer = AsciiRenderer(styler.AnsiStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, std.testing.io) },
+    );
+
+    const b = board.Board.init();
+    try renderer.render(b.asView(), null, null);
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, region_on) == null);
+}
+
+test "render: region shading when selection provided" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.AnsiStyler{};
+    var renderer = AsciiRenderer(styler.AnsiStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, std.testing.io) },
+    );
+
+    const b = board.Board.init();
+    try renderer.render(b.asView(), null, .{ .row = 4, .col = 4 });
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);
 }

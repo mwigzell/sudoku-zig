@@ -13,7 +13,7 @@ pub const SaveData = struct { path: ?[]const u8 };
 pub const OpenData = struct { path: ?[]const u8 };
 pub const NewData = struct { puzzle: ?[]const u8, file: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, save, open, new, save_as, set_theme, set_region };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, new, save_as, set_theme, set_region };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -22,6 +22,7 @@ pub const Command = union(CommandTag) {
     quit: void,
     undo: void,
     redo: void,
+    menu: void,
     save: SaveData,
     open: OpenData,
     new: NewData,
@@ -47,22 +48,29 @@ pub const CommandTableEntry = struct {
     name: []const u8,
 };
 
-/// Ordered comptime list of terminal-visible commands (View prefs use wasm exec only).
+/// Main-line terminal legend and prefix dispatch.
 pub const Commands = &[_]CommandTableEntry{
     .{ .tag = .fill, .name = "Fill" },
     .{ .tag = .clear, .name = "Clear" },
     .{ .tag = .quit, .name = "Quit" },
     .{ .tag = .undo, .name = "Undo" },
     .{ .tag = .redo, .name = "Redo" },
+    .{ .tag = .menu, .name = "Menu" },
+};
+
+/// Session commands reachable from the terminal menu (not main-line legend).
+pub const SessionCommands = &[_]CommandTableEntry{
     .{ .tag = .save, .name = "Save" },
     .{ .tag = .open, .name = "Open" },
     .{ .tag = .new, .name = "New" },
     .{ .tag = .save_as, .name = "SaveAs" },
 };
 
-/// Look up the display name for a command tag from the comptime table.
+/// Look up the display name for a command tag from the comptime tables.
 pub fn getName(tag: CommandTag) []const u8 {
     for (Commands) |entry|
+        if (entry.tag == tag) return entry.name;
+    for (SessionCommands) |entry|
         if (entry.tag == tag) return entry.name;
     @panic("unreachable: unknown command tag");
 }
@@ -93,9 +101,9 @@ pub const PuzzleResult = union(enum) {
 
 const std = @import("std");
 
-test "CommandTag enum has 11 variants" {
+test "CommandTag enum has 12 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 11), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 12), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -104,12 +112,14 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Quit", getName(.quit));
     try std.testing.expectEqualStrings("Undo", getName(.undo));
     try std.testing.expectEqualStrings("Redo", getName(.redo));
+    try std.testing.expectEqualStrings("Menu", getName(.menu));
     try std.testing.expectEqualStrings("Save", getName(.save));
     try std.testing.expectEqualStrings("Open", getName(.open));
     try std.testing.expectEqualStrings("SaveAs", getName(.save_as));
 }
 
-test "comptime invariant: CommandTag covers terminal commands plus view prefs" {
+test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    try std.testing.expectEqual(enum_field_count, Commands.len + 2);
+    // Commands + SessionCommands + set_theme/set_region cover all CommandTag variants.
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 2);
 }

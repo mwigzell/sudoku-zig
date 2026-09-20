@@ -1,7 +1,11 @@
 const command = @import("../command.zig");
 const board = @import("../board/board.zig");
+const event = @import("../event.zig");
 const legend = @import("legend.zig");
 const Legend = legend.Legend;
+
+/// Row/col passed into render for native region highlight; null ⇒ no shading.
+pub const Selection = event.CellCoord;
 
 /// Concrete error set for all Facade method signatures.
 pub const Error = error{System};
@@ -28,20 +32,20 @@ pub const NewGameOptionsResult = union(enum) {
 pub const Facade = struct {
     context: *anyopaque,
 
-    render_fn: *const fn (*anyopaque, board.Board.BoardView, ?[]const u8) Error!void,
+    render_fn: *const fn (*anyopaque, board.Board.BoardView, ?[]const u8, ?Selection) Error!void,
 
     showLegend_fn: *const fn (*anyopaque, Legend) Error!void,
 
     showError_fn: *const fn (*anyopaque, []const u8) Error!void,
 
-    getCommandInput_fn: *const fn (*anyopaque, []const []const u8) Error!command.ParseCommandResult,
+    getCommandInput_fn: *const fn (*anyopaque, []const []const u8, show_region: bool) Error!command.ParseCommandResult,
     deinit_fn: *const fn (*anyopaque) void,
 
     /// Draw the current board in full. When status_msg is non-null, renderers
     /// with a status surface draw it non-blocking (no input read); null ⇒ plain
     /// board.
-    pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
-        return self.render_fn(self.context, view, status_msg);
+    pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection) Error!void {
+        return self.render_fn(self.context, view, status_msg, selection);
     }
 
     /// Draw the command legend for the caller-supplied available commands.
@@ -58,8 +62,8 @@ pub const Facade = struct {
 
     /// Show a prompt and get user command input, parsed against the offered
     /// command names. End-of-input reports as error.System.
-    pub fn getCommandInput(self: *const Facade, names: []const []const u8) Error!command.ParseCommandResult {
-        return self.getCommandInput_fn(self.context, names);
+    pub fn getCommandInput(self: *const Facade, names: []const []const u8, show_region: bool) Error!command.ParseCommandResult {
+        return self.getCommandInput_fn(self.context, names, show_region);
     }
 
     /// Release all renderer-owned memory — the renderer owns its teardown path
@@ -72,9 +76,9 @@ pub const Facade = struct {
 /// Auto-wraps any concrete renderer type into a Facade.
 pub fn Make(comptime CT: type) type {
     return struct {
-        pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8) Error!void {
+        pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            self.render(view, status_msg) catch return error.System;
+            self.render(view, status_msg, selection) catch return error.System;
         }
         pub fn showLegend_wrapper(ctx: *anyopaque, commands: Legend) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
@@ -85,9 +89,9 @@ pub fn Make(comptime CT: type) type {
             self.showError(msg) catch return error.System;
         }
 
-        pub fn getCommandInput_wrapper(ctx: *anyopaque, names: []const []const u8) Error!command.ParseCommandResult {
+        pub fn getCommandInput_wrapper(ctx: *anyopaque, names: []const []const u8, show_region: bool) Error!command.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(names) catch error.System;
+            return self.getCommandInput(names, show_region) catch error.System;
         }
 
         pub fn deinit_wrapper(ctx: *anyopaque) void {

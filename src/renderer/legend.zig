@@ -15,14 +15,14 @@ pub const Legend = struct {
     quit: bool,
     undo: bool,
     redo: bool,
+    menu: bool,
     save: bool,
     open: bool,
     new: bool,
     save_as: bool,
 
-    /// Fill `names` with the active command labels and return the count.
-    /// Caller owns the buffer; the strings point at comptime literals.
-    pub fn getNames(self: Legend, names: *[9][]const u8) usize {
+    /// Fill `names` with main-line terminal commands (play loop + menu entry).
+    pub fn getNames(self: Legend, names: *[6][]const u8) usize {
         var count: usize = 0;
         if (self.fill) {
             names[count] = command.getName(.fill);
@@ -44,20 +44,8 @@ pub const Legend = struct {
             names[count] = command.getName(.redo);
             count += 1;
         }
-        if (self.save) {
-            names[count] = command.getName(.save);
-            count += 1;
-        }
-        if (self.open) {
-            names[count] = command.getName(.open);
-            count += 1;
-        }
-        if (self.new) {
-            names[count] = command.getName(.new);
-            count += 1;
-        }
-        if (self.save_as) {
-            names[count] = command.getName(.save_as);
+        if (self.menu) {
+            names[count] = command.getName(.menu);
             count += 1;
         }
         return count;
@@ -99,6 +87,24 @@ pub fn formatLegend(allocator: mem.Allocator, entries: []const disambiguate.Disa
 // ---------------------------------------------------------------------------
 // Tests (co-located)
 // ---------------------------------------------------------------------------
+
+test "getNames: main line offers menu not session commands" {
+    var names: [6][]const u8 = undefined;
+    const count = (Legend{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .menu = true,
+        .save = true,
+        .open = true,
+        .new = true,
+        .save_as = true,
+    }).getNames(&names);
+    try std.testing.expectEqual(@as(usize, 4), count);
+    try std.testing.expectEqualStrings("Menu", names[3]);
+}
 
 test "formatLegend: five non-colliding commands → each prefix is 1 char" {
     const allocator = std.testing.allocator;

@@ -396,6 +396,7 @@ test "writeLegendJson reflects undo availability" {
         .quit = true,
         .undo = false,
         .redo = false,
+        .menu = true,
         .save = true,
         .open = true,
         .new = true,

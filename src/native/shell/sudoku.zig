@@ -25,6 +25,7 @@ pub const Sudoku = struct {
     cfg: config.Config,
     renderer: facade_mod.Facade,
     transport: file_transport.FileTransport,
+    last_cell: ?facade_mod.Selection = null,
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
@@ -42,11 +43,17 @@ pub const Sudoku = struct {
     /// Status passthrough (same rules as wasm shell.js applyEventStatus): silence when
     /// `.ok.msg` is null; never invent copy. `.error_msg` rides `showError` (interactive ack);
     /// `.ok.msg` rides the non-blocking `render` status slot.
+    fn regionSelection(self: *const @This()) ?facade_mod.Selection {
+        if (!self.engine.cfg.show_region) return null;
+        return self.last_cell;
+    }
+
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {
+                if (ev.cell) |c| self.last_cell = c;
                 if (ev.is_quit) return true;
-                try self.renderer.render(ev.board_view, ev.msg);
+                try self.renderer.render(ev.board_view, ev.msg, self.regionSelection());
                 try self.renderer.showLegend(self.engine.getLegend());
                 return false;
             },
@@ -65,6 +72,10 @@ pub const Sudoku = struct {
                 return false;
             },
             .valid => |cmd| {
+                switch (cmd) {
+                    .new, .open => self.last_cell = null,
+                    else => {},
+                }
                 const event = switch (cmd) {
                     .save => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
@@ -89,15 +100,15 @@ pub const Sudoku = struct {
     /// folded to error.System one level down) or dispatch/render failed.
     pub fn turn(self: *@This()) Error!bool {
         const avail = self.engine.getLegend();
-        var names: [9][]const u8 = undefined;
+        var names: [6][]const u8 = undefined;
         const count = avail.getNames(&names);
-        const result = self.renderer.getCommandInput(names[0..count]) catch return error.System; // I/O read failure treated as system
+        const result = self.renderer.getCommandInput(names[0..count], self.engine.cfg.show_region) catch return error.System;
         return try self.handleResult(result);
     }
 
     /// The first screen: the current board + legend.
     pub fn showGame(self: *@This()) Error!void {
-        try self.renderer.render(self.engine.eventBoard(), null);
+        try self.renderer.render(self.engine.eventBoard(), null, self.regionSelection());
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
@@ -180,7 +191,8 @@ test "integrated e2e - full seam: open loads saved game" {
     // Canned responses: fill a cell -> open dialog -> filename -> quit
     const responses = [_][]const u8{
         "fill B2 7", // Mutate B2 (diverges from saved)
-        "open", // Trigger open dialog prompt
+        "m", // Menu → Open
+        "2",
         tmp_path ++ "\n", // Filename response for the dialog prompt
         "quit",
     };
@@ -215,7 +227,8 @@ test "integrated e2e - save success produces status message, re-render, legend r
 
     // Canned responses: save -> filename prompt -> quit
     const responses = [_][]const u8{
-        "save",
+        "m",
+        "1",
         tmp_path ++ "\n",
         "quit",
     };
@@ -255,7 +268,9 @@ test "integrated e2e - run: open file success produces status message, re-render
 
     // Canned responses: open <path> -> quit
     const responses = [_][]const u8{
-        "open " ++ tmp_path,
+        "m",
+        "2",
+        tmp_path,
         "quit",
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
@@ -284,7 +299,8 @@ test "integrated e2e - run: save uses default filename and returns success" {
 
     // Canned responses: save -> filename prompt -> quit
     const responses = [_][]const u8{
-        "save",
+        "m",
+        "1",
         tmp_path ++ "\n",
         "quit",
     };
@@ -312,7 +328,8 @@ test "integrated e2e - run: fill → save → quit" {
 
     const responses = [_][]const u8{
         "fill A3 7",
-        "save", // save command (triggers dialog for first use)
+        "m",
+        "1", // save (triggers dialog for first use)
         "sudoku_save.sud\n", // answer to save As dialog prompt
         "quit",
     };
@@ -337,7 +354,8 @@ test "integrated e2e - run: save_as writes file and re-renders" {
 
     // Canned responses: command → dialog filename → quit
     const responses = [_][]const u8{
-        "save_as",
+        "m",
+        "4",
         "test_save_as.sud",
         "quit",
     };
@@ -364,8 +382,9 @@ test "integrated e2e - run: new command resets board and history" {
     // feed fill (adds to history), then new (should clear it), then quit
     const responses = [_][]const u8{
         "fill A3 7",
-        "new",
-        "", // menu choice (flat else — generated puzzle)
+        "m",
+        "3", // menu → New
+        "", // newGameOptions fallback → generated hard puzzle
         "quit",
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
@@ -422,7 +441,7 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     const transport = file_transport.NativeTransport.make(std.testing.io);
     var sudoku = try Sudoku.init(cfg, facade, transport);
     defer sudoku.deinit();
-    try sudoku.renderer.render(sudoku.engine.state.board.asView(), null);
+    try sudoku.renderer.render(sudoku.engine.state.board.asView(), null, null);
 
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);
@@ -478,7 +497,8 @@ test "integrated e2e - .ok.msg status is non-blocking; next line is a command" {
     const fill_cmd = try std.fmt.allocPrint(gpa, "fill {c}{d} 7", .{ col_letter, pick.r + 1 });
     defer gpa.free(fill_cmd);
     const responses = [_][]const u8{
-        "open",
+        "m",
+        "2",
         tmp_path,
         fill_cmd,
         "quit",
@@ -557,4 +577,64 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
         rest = rest[i + "Press Enter to continue...".len ..];
     }
     try std.testing.expectEqual(@as(usize, 1), ack_count);
+}
+
+test "integrated e2e - fill does not shade region until show_region enabled" {
+    const region_on = "\x1b[48;5;238m";
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+    const gpa = std.heap.page_allocator;
+    var probe = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), cfg);
+    defer probe.deinit();
+    const b = probe.state.board;
+    const pick: struct { r: u4, c: u4 } = blk: {
+        for (0..9) |r| {
+            for (0..9) |c| {
+                const ru = @as(u4, @intCast(r));
+                const cu = @as(u4, @intCast(c));
+                if (b.isGiven(ru, cu) or b.getCellValue(ru, cu) != cell.CellValue.zero) continue;
+                const seven_bits: u32 = (@as(u32, 1) << 6);
+                if (b.getBoxDigitBits(@intCast(@divTrunc(r, 3)), @intCast(@divTrunc(c, 3))) & seven_bits != 0) continue;
+                var clash = false;
+                for (0..9) |k| {
+                    if (b.getCellValue(ru, @as(u4, @intCast(k))) == cell.CellValue.seven or
+                        b.getCellValue(@as(u4, @intCast(k)), cu) == cell.CellValue.seven)
+                    {
+                        clash = true;
+                        break;
+                    }
+                }
+                if (clash) continue;
+                break :blk .{ .r = ru, .c = cu };
+            }
+        }
+        unreachable;
+    };
+    const col_letters = "ABCDEFGHI";
+    const fill_cmd = try std.fmt.allocPrint(gpa, "fill {c}{d} 7", .{ col_letters[pick.c], pick.r + 1 });
+    defer gpa.free(fill_cmd);
+    const responses = [_][]const u8{ fill_cmd, "m", "5", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    const board_marker = "╰───────┴───────┴───────╯";
+    const first_board_end = std.mem.indexOf(u8, contents, board_marker) orelse return error.TestFailed;
+    const after_fill = contents[0 .. first_board_end + board_marker.len];
+    try std.testing.expect(std.mem.indexOf(u8, after_fill, region_on) == null);
+    try std.testing.expect(sudoku.last_cell != null);
+    try std.testing.expect(sudoku.engine.cfg.show_region);
+    try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);
 }
