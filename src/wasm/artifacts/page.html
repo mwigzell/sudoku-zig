@@ -14,6 +14,9 @@
       --status-fg: #e6e6e6;
       --status-error: #ff9b9b;
       --board-bg: #0e1013;
+      --gutter-bg: #0a0c0f;
+      --label-fg: #8b939e;
+      --frame-border: #5a6270;
       --cell-bg: #16181d;
       --cell-fg: #e6e6e6;
       --given-fg: #a8b0c0;
@@ -25,14 +28,26 @@
       --selection-ring: #6ea8fe;
       --region-tint: rgba(110, 168, 254, 0.12);
       --cell-min: 2.25rem;
-      --board-min: calc(var(--cell-min) * 9 + 2px);
-      --board-size: clamp(
-        var(--board-min),
-        min(calc(100dvw - 2rem), calc(100dvh - 7rem)),
-        100%
-      );
+      --board-min: calc(var(--cell-min) * 10 + 2px);
       --status-min-height: calc(0.9375rem * 1.45 + 1.25rem);
       --page-inset: 1rem;
+      --game-margin: 0.75rem;
+      --menu-block: 2.75rem;
+      --v-chrome: calc(
+        (2 * var(--page-inset))
+        + (2 * var(--game-margin))
+        + var(--status-min-height)
+        + var(--menu-block)
+        + 1.5rem
+      );
+      --board-size: clamp(
+        var(--board-min),
+        min(
+          calc(100dvw - (2 * var(--page-inset)) - (2 * var(--game-margin))),
+          calc(100dvh - var(--v-chrome))
+        ),
+        100%
+      );
       --chrome-rule: 1px solid var(--status-border);
     }
 
@@ -44,6 +59,9 @@
       --status-fg: #1a1d24;
       --status-error: #b42318;
       --board-bg: #ffffff;
+      --gutter-bg: #eef0f4;
+      --label-fg: rgb(102, 112, 133);
+      --frame-border: rgb(102, 112, 133);
       --cell-bg: #f8f9fb;
       --cell-fg: #1a1d24;
       --given-fg: #4a5568;
@@ -73,6 +91,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: center;
       background: var(--page-bg);
       color: var(--page-fg);
     }
@@ -83,8 +102,18 @@
       align-items: center;
       gap: 0.75rem;
       width: 100%;
-      margin-block: auto;
-      max-height: calc(100dvh - (2 * var(--page-inset)));
+      flex: 0 1 auto;
+    }
+
+    #game-shell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      width: min(100%, calc(var(--board-size) + (2 * var(--game-margin))));
+      padding: var(--game-margin);
+      margin-bottom: max(var(--game-margin), env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
     }
 
     #menu-bar {
@@ -220,15 +249,43 @@
       cursor: pointer;
     }
 
-    .board {
+    .board-frame {
+      display: grid;
+      grid-template-columns: 1fr repeat(9, 2fr) 1fr;
+      grid-template-rows: 1fr repeat(9, 2fr) 1fr;
+      width: var(--board-size);
+      aspect-ratio: 1;
+      border: 1px solid var(--frame-border);
+      background: var(--gutter-bg);
+    }
+
+    .gutter-cell,
+    .label-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      min-height: 0;
+      background: var(--gutter-bg);
+      user-select: none;
+      border: none;
+    }
+
+    .label-cell {
+      color: var(--label-fg);
+      font-size: clamp(0.625rem, 28cqmin, 0.875rem);
+      font-weight: 600;
+    }
+
+    .board-play {
       display: grid;
       grid-template-columns: repeat(9, 1fr);
       grid-template-rows: repeat(9, 1fr);
+      grid-column: 2 / 11;
+      grid-row: 2 / 11;
       container-type: size;
-      width: var(--board-size);
-      aspect-ratio: 1;
-      border: 1px solid var(--line-box);
       background: var(--board-bg);
+      border: 1px solid var(--line-box);
     }
 
     .cell {
@@ -294,7 +351,7 @@
       z-index: 1;
     }
 
-    .board:focus {
+    .board-play:focus {
       outline: none;
     }
   </style>
@@ -333,8 +390,10 @@
         </div>
       </div>
     </nav>
-    <div id="board" class="board" role="grid" aria-label="Sudoku board"></div>
-    <div id="status-bar" role="status" aria-live="polite"></div>
+    <div id="game-shell">
+      <div id="board" class="board-frame"></div>
+      <div id="status-bar" role="status" aria-live="polite"></div>
+    </div>
   </main>
 
   <div id="error-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="error-modal-msg">
@@ -347,7 +406,7 @@
   <script type="module">
     import { loadArtifact } from "./glue.js";
     import { newGame, wireErrorModal } from "../shell.js";
-    import { renderBoard, setStatus, wireSelection, wirePlayLoop } from "../board.js";
+    import { renderBoard, getPlayGrid, setStatus, wireSelection, wirePlayLoop } from "../board.js";
     import { wireEditMenu } from "../menu.js";
     import { collectMenuBarControls, wireMenuBar } from "../menu_bar.js";
     import { wireThemeMenu } from "../theme.js";
@@ -415,7 +474,7 @@
       wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
         onLegendChange: () => menuBar.sync(),
       });
-      boardEl.focus();
+      getPlayGrid(boardEl).focus();
     } catch (err) {
       setStatus(statusBar, `failed to load wasm: ${err && err.message ? err.message : err}`, { error: true });
     }

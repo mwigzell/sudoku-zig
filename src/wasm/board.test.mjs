@@ -6,6 +6,8 @@ import {
   cellClasses,
   formatDigit,
   boardCellDescriptors,
+  ensureBoardFrame,
+  getPlayGrid,
   renderBoard,
   setStatus,
   moveSelection,
@@ -15,6 +17,11 @@ import {
   parsePlayKey,
   handlePlayKey,
   wirePlayLoop,
+  COLUMN_LETTERS,
+  FRAME_SIZE,
+  PLAY_OFFSET,
+  GUTTER_FR,
+  PLAY_FR,
 } from "./board.js";
 import { applyEventStatus, applyExecResult, showErrorModal } from "./shell.js";
 
@@ -63,15 +70,58 @@ assert.equal(formatDigit({ value: 9 }), "9");
   assert.ok(desc[1].classes.includes("empty"));
 }
 
-{
-  const boardEl = { _children: [], replaceChildren(...nodes) { this._children = nodes; } };
-  const state = {
-    cells: Array.from({ length: 81 }, (_, i) =>
-      i === 0 ? { value: 1, given: true, conflict: false } : { value: 0, given: false, conflict: false },
-    ),
+// ── framed board ──
+
+assert.equal(FRAME_SIZE, 11);
+assert.equal(PLAY_OFFSET, 1);
+assert.equal(GUTTER_FR, 1);
+assert.equal(PLAY_FR, 2);
+assert.equal(COLUMN_LETTERS, "ABCDEFGHI");
+
+function makeFrameElement() {
+  return {
+    className: "",
+    classList: {
+      _set: new Set(),
+      add(...names) {
+        names.forEach((n) => this._set.add(n));
+      },
+      contains(name) {
+        return this._set.has(name);
+      },
+    },
+    _children: [],
+    attrs: {},
+    style: {},
+    replaceChildren(...nodes) {
+      this._children = nodes;
+    },
+    appendChild(node) {
+      this._children.push(node);
+    },
+    querySelector(sel) {
+      if (sel === ".board-play") {
+        return this._children.find((c) => c.classList?.contains("board-play")) ?? null;
+      }
+      return null;
+    },
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
   };
-  renderBoard(boardEl, state, (tag) => {
-    const el = { tag, className: "", textContent: "", dataset: {}, attrs: {} };
+}
+
+function makeRenderElement() {
+  return (tag) => {
+    const el = {
+      tag,
+      className: "",
+      textContent: "",
+      dataset: {},
+      attrs: {},
+      style: {},
+      _children: [],
+    };
     el.setAttribute = (name, value) => {
       el.attrs[name] = value;
     };
@@ -81,12 +131,78 @@ assert.equal(formatDigit({ value: 9 }), "9");
         names.forEach((n) => this._set.add(n));
         el.className = [...this._set].join(" ");
       },
+      remove(...names) {
+        names.forEach((n) => this._set.delete(n));
+      },
+      contains(name) {
+        return this._set.has(name);
+      },
+    };
+    el.appendChild = (node) => {
+      el._children.push(node);
+    };
+    el.replaceChildren = (...nodes) => {
+      el._children = nodes;
     };
     return el;
-  });
-  assert.equal(boardEl._children.length, 81);
-  assert.equal(boardEl._children[0].textContent, "1");
-  assert.ok(boardEl._children[0].className.includes("given"));
+  };
+}
+
+{
+  const frameEl = makeFrameElement();
+  const createElement = makeRenderElement();
+  const playEl = ensureBoardFrame(frameEl, createElement);
+  assert.ok(frameEl.classList.contains("board-frame"));
+  assert.ok(playEl.classList.contains("board-play"));
+  assert.equal(getPlayGrid(frameEl), playEl);
+
+  const colLabels = frameEl._children.filter((c) => c.classList.contains("col-label"));
+  assert.equal(colLabels.length, 9);
+  assert.deepEqual(colLabels.map((c) => c.textContent), [...COLUMN_LETTERS]);
+
+  const rowLabels = frameEl._children.filter((c) => c.classList.contains("row-label"));
+  assert.equal(rowLabels.length, 9);
+  assert.deepEqual(
+    rowLabels.map((c) => c.textContent),
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+  );
+
+  for (const cell of frameEl._children) {
+    if (cell.classList.contains("col-label") || cell.classList.contains("row-label")) {
+      assert.ok(cell.classList.contains("label-cell"));
+      assert.ok(!cell.classList.contains("cell"));
+    }
+    if (cell.classList.contains("gutter-cell")) {
+      assert.ok(!cell.classList.contains("cell"));
+    }
+  }
+
+  const gutter = frameEl._children.filter((c) => c.classList.contains("gutter-cell"));
+  assert.ok(colLabels.every((c) => c.style.gridRow === "1"), "column labels in top gutter");
+  assert.ok(rowLabels.every((c) => c.style.gridColumn === "1"), "row labels in left gutter");
+  assert.ok(gutter.some((c) => c.style.gridRow === "11"), "bottom gutter band");
+  assert.ok(
+    gutter.some((c) => c.style.gridColumn === "11" && c.style.gridRow !== "11"),
+    "right gutter band",
+  );
+  assert.equal(playEl.style.gridRow, "2 / 11");
+  assert.equal(playEl.style.gridColumn, "2 / 11");
+}
+
+{
+  const frameEl = makeFrameElement();
+  const createElement = makeRenderElement();
+  const state = {
+    cells: Array.from({ length: 81 }, (_, i) =>
+      i === 0 ? { value: 1, given: true, conflict: false } : { value: 0, given: false, conflict: false },
+    ),
+  };
+  renderBoard(frameEl, state, createElement);
+  const playEl = getPlayGrid(frameEl);
+  assert.equal(playEl._children.length, 81);
+  assert.equal(playEl._children[0].textContent, "1");
+  assert.ok(playEl._children[0].classList.contains("given"));
+  assert.ok(playEl._children[0].classList.contains("cell"));
 }
 
 {
@@ -135,10 +251,19 @@ function makeMockBoard() {
       cells.push(makeMockCell(row, col));
     }
   }
-  return {
+  const play = {
     children: cells,
     tabIndex: undefined,
     _listeners: {},
+    classList: {
+      _set: new Set(["board-play"]),
+      add(...names) {
+        names.forEach((n) => this._set.add(n));
+      },
+      contains(name) {
+        return this._set.has(name);
+      },
+    },
     addEventListener(type, fn) {
       this._listeners[type] = fn;
     },
@@ -147,28 +272,29 @@ function makeMockBoard() {
       this.children.push(...nodes);
     },
   };
-}
-
-function makeRenderElement() {
-  return (tag) => {
-    const el = { tag, className: "", textContent: "", dataset: {}, attrs: {} };
-    el.setAttribute = (name, value) => {
-      el.attrs[name] = value;
-    };
-    el.classList = {
-      _set: new Set(),
+  return {
+    classList: {
+      _set: new Set(["board-frame"]),
       add(...names) {
         names.forEach((n) => this._set.add(n));
-        el.className = [...this._set].join(" ");
-      },
-      remove(...names) {
-        names.forEach((n) => this._set.delete(n));
       },
       contains(name) {
         return this._set.has(name);
       },
-    };
-    return el;
+    },
+    querySelector(sel) {
+      return sel === ".board-play" ? play : null;
+    },
+    get _listeners() {
+      return play._listeners;
+    },
+    get tabIndex() {
+      return play.tabIndex;
+    },
+    set tabIndex(value) {
+      play.tabIndex = value;
+    },
+    play,
   };
 }
 
@@ -177,7 +303,7 @@ function makeRenderElement() {
   applySelection(board, 1, 2);
   assert.ok(findCellElement(board, 1, 2).classList.contains("selected"));
   assert.equal(
-    board.children.filter((c) => c.classList.contains("selected")).length,
+    board.play.children.filter((c) => c.classList.contains("selected")).length,
     1,
   );
   applySelection(board, 4, 4);
@@ -192,12 +318,12 @@ function makeRenderElement() {
   assert.deepEqual(controller.getSelection(), { row: 0, col: 0 });
   assert.ok(findCellElement(board, 0, 0).classList.contains("selected"));
 
-  board._listeners.keydown({ key: "ArrowRight", preventDefault() {} });
+  board.play._listeners.keydown({ key: "ArrowRight", preventDefault() {} });
   assert.deepEqual(controller.getSelection(), { row: 0, col: 1 });
   assert.ok(findCellElement(board, 0, 1).classList.contains("selected"));
 
   const target = findCellElement(board, 5, 5);
-  board._listeners.click({ target });
+  board.play._listeners.click({ target });
   assert.deepEqual(controller.getSelection(), { row: 5, col: 5 });
   assert.ok(target.classList.contains("selected"));
 }

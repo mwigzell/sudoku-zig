@@ -5,6 +5,69 @@ import { applyEventStatus, applyExecResult } from "./shell.js";
 export { applyEventStatus };
 
 const GRID_SIZE = 9;
+export const FRAME_SIZE = 11;
+export const PLAY_OFFSET = 1;
+export const GUTTER_FR = 1;
+export const PLAY_FR = 2;
+export const COLUMN_LETTERS = "ABCDEFGHI";
+
+export function getPlayGrid(frameEl) {
+  return frameEl.querySelector(".board-play");
+}
+
+/** Build symmetric frame shell once; return inner 9×9 play grid. */
+export function ensureBoardFrame(frameEl, createElement = (tag) => document.createElement(tag)) {
+  if (typeof frameEl.querySelector === "function") {
+    const existing = getPlayGrid(frameEl);
+    if (existing) return existing;
+  }
+
+  frameEl.classList.add("board-frame");
+  frameEl.replaceChildren();
+  frameEl.setAttribute("role", "group");
+  frameEl.setAttribute("aria-label", "Sudoku board");
+
+  const playEnd = PLAY_OFFSET + GRID_SIZE;
+
+  for (let r = 0; r < FRAME_SIZE; r += 1) {
+    for (let c = 0; c < FRAME_SIZE; c += 1) {
+      if (r >= PLAY_OFFSET && r < playEnd && c >= PLAY_OFFSET && c < playEnd) continue;
+
+      const el = createElement("div");
+      el.style.gridRow = String(r + 1);
+      el.style.gridColumn = String(c + 1);
+
+      if (r === 0 && c >= PLAY_OFFSET && c < playEnd) {
+        el.classList.add("label-cell", "col-label");
+        el.textContent = COLUMN_LETTERS[c - PLAY_OFFSET];
+      } else if (c === 0 && r >= PLAY_OFFSET && r < playEnd) {
+        el.classList.add("label-cell", "row-label");
+        el.textContent = String(r - PLAY_OFFSET + 1);
+      } else {
+        el.classList.add("gutter-cell");
+      }
+      frameEl.appendChild(el);
+    }
+  }
+
+  const playEl = createElement("div");
+  playEl.classList.add("board-play");
+  playEl.setAttribute("role", "grid");
+  playEl.style.gridColumn = "2 / 11";
+  playEl.style.gridRow = "2 / 11";
+  frameEl.appendChild(playEl);
+  return playEl;
+}
+
+function resolvePlayGrid(boardEl) {
+  if (boardEl.classList?.contains("board-play")) return boardEl;
+  if (typeof boardEl.querySelector === "function") {
+    const play = getPlayGrid(boardEl);
+    if (play) return play;
+    return ensureBoardFrame(boardEl);
+  }
+  return boardEl;
+}
 
 export function cellIndex(row, col) {
   return row * GRID_SIZE + col;
@@ -23,8 +86,9 @@ export function cellsInRegion(row, col) {
 }
 
 export function applyRegionHighlight(boardEl, row, col, enabled) {
+  const playEl = resolvePlayGrid(boardEl);
   const region = enabled ? cellsInRegion(row, col) : null;
-  for (const cell of boardEl.children) {
+  for (const cell of playEl.children) {
     cell.classList.remove("region");
     if (!region) continue;
     const r = Number(cell.dataset.row);
@@ -62,7 +126,11 @@ export function boardCellDescriptors(state) {
   });
 }
 
-export function renderBoard(boardEl, state, createElement = (tag) => document.createElement(tag)) {
+export function renderBoard(frameEl, state, createElement = (tag) => document.createElement(tag)) {
+  const playEl =
+    typeof frameEl.querySelector === "function"
+      ? ensureBoardFrame(frameEl, createElement)
+      : resolvePlayGrid(frameEl);
   const cells = boardCellDescriptors(state).map(({ row, col, classes, text }) => {
     const el = createElement("div");
     el.classList.add(...classes);
@@ -72,7 +140,7 @@ export function renderBoard(boardEl, state, createElement = (tag) => document.cr
     el.setAttribute("role", "gridcell");
     return el;
   });
-  boardEl.replaceChildren(...cells);
+  playEl.replaceChildren(...cells);
 }
 
 export function setStatus(statusEl, message, { error = false } = {}) {
@@ -96,46 +164,49 @@ export function moveSelection(row, col, key) {
 }
 
 export function findCellElement(boardEl, row, col) {
-  for (const cell of boardEl.children) {
+  const playEl = resolvePlayGrid(boardEl);
+  for (const cell of playEl.children) {
     if (Number(cell.dataset.row) === row && Number(cell.dataset.col) === col) return cell;
   }
   return null;
 }
 
 export function applySelection(boardEl, row, col) {
-  for (const cell of boardEl.children) {
+  const playEl = resolvePlayGrid(boardEl);
+  for (const cell of playEl.children) {
     cell.classList.remove("selected");
   }
-  const target = findCellElement(boardEl, row, col);
+  const target = findCellElement(playEl, row, col);
   if (target) target.classList.add("selected");
   return { row, col };
 }
 
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
-export function wireSelection(boardEl, { row = 0, col = 0, onSelect, regionEnabled } = {}) {
+export function wireSelection(frameEl, { row = 0, col = 0, onSelect, regionEnabled } = {}) {
+  const playEl = resolvePlayGrid(frameEl);
   let selected = { row, col };
 
   const syncRegion = (nextRow, nextCol) => {
-    if (regionEnabled) applyRegionHighlight(boardEl, nextRow, nextCol, regionEnabled());
+    if (regionEnabled) applyRegionHighlight(playEl, nextRow, nextCol, regionEnabled());
   };
 
   const select = (nextRow, nextCol) => {
-    selected = applySelection(boardEl, nextRow, nextCol);
+    selected = applySelection(playEl, nextRow, nextCol);
     syncRegion(nextRow, nextCol);
     onSelect?.(selected);
     return selected;
   };
 
-  boardEl.tabIndex = 0;
+  playEl.tabIndex = 0;
 
-  boardEl.addEventListener("click", (event) => {
+  playEl.addEventListener("click", (event) => {
     const target = event.target;
     if (target?.dataset?.row == null || target?.dataset?.col == null) return;
     select(Number(target.dataset.row), Number(target.dataset.col));
   });
 
-  boardEl.addEventListener("keydown", (event) => {
+  playEl.addEventListener("keydown", (event) => {
     if (!ARROW_KEYS.has(event.key)) return;
     event.preventDefault();
     const next = moveSelection(selected.row, selected.col, event.key);
@@ -212,7 +283,7 @@ export function handlePlayKey(
 }
 
 export function wirePlayLoop(
-  boardEl,
+  frameEl,
   game,
   selection,
   statusEl,
@@ -220,12 +291,13 @@ export function wirePlayLoop(
   session,
   { onLegendChange } = {},
 ) {
-  boardEl.addEventListener(
+  const playEl = resolvePlayGrid(frameEl);
+  playEl.addEventListener(
     "keydown",
     (event) => {
       const outcome = handlePlayKey(
         game,
-        boardEl,
+        frameEl,
         selection,
         statusEl,
         errorModal,
