@@ -6,6 +6,7 @@ const command = @import("../command.zig");
 const config = @import("../config.zig");
 const event_mod = @import("../event.zig");
 const game_engine = @import("../engine/game_engine.zig");
+const about = @import("../about.zig");
 const legend_mod = @import("../renderer/legend.zig");
 const wire = @import("wire.zig");
 
@@ -190,6 +191,35 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
             try std.Io.Writer.writeAll(&jw.writer, "}");
         },
     }
+    try std.Io.Writer.flush(&jw.writer);
+}
+
+pub fn writeAboutJson(out: OutBuffer) !void {
+    const info = about.get();
+    var mutable = out;
+    mutable.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    try std.Io.Writer.writeAll(&jw.writer, "{\"name\":");
+    try writeJsonString(&jw.writer, info.name);
+    try std.Io.Writer.writeAll(&jw.writer, ",\"version\":");
+    try writeJsonString(&jw.writer, info.version);
+    try std.Io.Writer.writeAll(&jw.writer, ",\"commit\":");
+    try writeJsonString(&jw.writer, info.commit);
+    try std.Io.Writer.writeAll(&jw.writer, ",\"build_date\":");
+    try writeJsonString(&jw.writer, info.build_date);
+    try std.Io.Writer.writeAll(&jw.writer, ",\"copyright\":");
+    try writeJsonString(&jw.writer, info.copyright);
+    try std.Io.Writer.writeAll(&jw.writer, ",\"licence\":");
+    try writeJsonString(&jw.writer, info.licence);
+    try std.Io.Writer.writeAll(&jw.writer, ",\"summary\":");
+    try writeJsonString(&jw.writer, info.summary);
+    try std.Io.Writer.writeAll(&jw.writer, ",\"logo\":[");
+    for (info.logo, 0..) |line, i| {
+        if (i > 0) try std.Io.Writer.writeAll(&jw.writer, ",");
+        try writeJsonString(&jw.writer, line);
+    }
+    try std.Io.Writer.writeAll(&jw.writer, "]}");
     try std.Io.Writer.flush(&jw.writer);
 }
 
@@ -384,6 +414,36 @@ test "writeEventJson ok msg escapes special characters" {
     defer parsed.deinit();
     try std.testing.expect(parsed.value.ok);
     try std.testing.expectEqualStrings("saved \"game\"\nok", parsed.value.msg.?);
+}
+
+const AboutWire = struct {
+    name: []const u8,
+    version: []const u8,
+    commit: []const u8,
+    build_date: []const u8,
+    copyright: []const u8,
+    licence: []const u8,
+    summary: []const u8,
+    logo: []const []const u8,
+};
+
+test "writeAboutJson exposes product metadata" {
+    var buf: [1024]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeAboutJson(out);
+
+    const parsed = try std.json.parseFromSlice(AboutWire, std.testing.allocator, out.finishJson(), .{});
+    defer parsed.deinit();
+    const info = about.get();
+    try std.testing.expectEqualStrings(info.name, parsed.value.name);
+    try std.testing.expectEqualStrings(info.version, parsed.value.version);
+    try std.testing.expectEqualStrings(info.commit, parsed.value.commit);
+    try std.testing.expectEqualStrings(info.build_date, parsed.value.build_date);
+    try std.testing.expectEqualStrings(info.copyright, parsed.value.copyright);
+    try std.testing.expectEqualStrings(info.licence, parsed.value.licence);
+    try std.testing.expectEqualStrings(info.summary, parsed.value.summary);
+    try std.testing.expect(parsed.value.logo.len > 0);
 }
 
 test "writeLegendJson reflects undo availability" {

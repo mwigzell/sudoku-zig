@@ -220,11 +220,24 @@
       z-index: 10;
     }
 
-    #error-modal[hidden] {
+    #error-modal[hidden],
+    #about-modal[hidden] {
       display: none;
     }
 
-    .error-dialog {
+    #about-modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 10;
+    }
+
+    .error-dialog,
+    .about-dialog {
       width: min(100%, 24rem);
       padding: 1rem 1.25rem;
       border: 1px solid var(--status-border);
@@ -239,6 +252,26 @@
       line-height: 1.45;
     }
 
+    #about-logo {
+      margin: 0 0 0.75rem;
+      font-family: ui-monospace, monospace;
+      line-height: 1.2;
+      white-space: pre;
+    }
+
+    #about-modal-title {
+      margin: 0 0 0.5rem;
+      font-size: 1.125rem;
+    }
+
+    #about-summary,
+    #about-copyright,
+    #about-licence {
+      margin: 0 0 0.5rem;
+      line-height: 1.45;
+    }
+
+    #about-modal-dismiss,
     #error-modal-dismiss {
       font: inherit;
       padding: 0.375rem 0.875rem;
@@ -403,9 +436,21 @@
     </div>
   </div>
 
+  <div id="about-modal" hidden role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
+    <div class="about-dialog">
+      <pre id="about-logo"></pre>
+      <h2 id="about-modal-title"></h2>
+      <p id="about-summary"></p>
+      <p id="about-copyright"></p>
+      <p id="about-licence"></p>
+      <button type="button" id="about-modal-dismiss">OK</button>
+    </div>
+  </div>
+
   <script type="module">
     import { loadArtifact } from "./glue.js";
     import { newGame, wireErrorModal } from "../shell.js";
+    import { wireHelpAbout, wireAboutModal } from "../help.js";
     import { renderBoard, getPlayGrid, setStatus, wireSelection, wirePlayLoop } from "../board.js";
     import { wireEditMenu } from "../menu.js";
     import { collectMenuBarControls, wireMenuBar } from "../menu_bar.js";
@@ -421,6 +466,15 @@
       document.getElementById("error-modal-msg"),
       document.getElementById("error-modal-dismiss"),
     );
+    const aboutModal = {
+      el: document.getElementById("about-modal"),
+      titleEl: document.getElementById("about-modal-title"),
+      logoEl: document.getElementById("about-logo"),
+      summaryEl: document.getElementById("about-summary"),
+      copyrightEl: document.getElementById("about-copyright"),
+      licenceEl: document.getElementById("about-licence"),
+    };
+    wireAboutModal(aboutModal.el, document.getElementById("about-modal-dismiss"));
 
     try {
       const res = await fetch("./artifact.wasm");
@@ -474,6 +528,7 @@
       wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
         onLegendChange: () => menuBar.sync(),
       });
+      wireHelpAbout(menuControls.about, game, aboutModal);
       getPlayGrid(boardEl).focus();
     } catch (err) {
       setStatus(statusBar, `failed to load wasm: ${err && err.message ? err.message : err}`, { error: true });

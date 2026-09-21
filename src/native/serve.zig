@@ -7,16 +7,16 @@ const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
 
-pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, file_menu, region, artifact };
+pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, file_menu, region, help, artifact };
 
 /// Known routes and the delivered-once set.
 pub const Router = struct {
-    delivered: [10]bool,
+    delivered: [11]bool,
 
     pub const Error = error{NotFound};
 
     pub fn init() Router {
-        return .{ .delivered = [_]bool{ false, false, false, false, false, false, false, false, false, false } };
+        return .{ .delivered = [_]bool{ false, false, false, false, false, false, false, false, false, false, false } };
     }
 
     /// Maps a request path to its asset; anything else is a router-level 404.
@@ -30,6 +30,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/theme.js")) return .theme;
         if (std.mem.eql(u8, path, "/file_menu.js")) return .file_menu;
         if (std.mem.eql(u8, path, "/region.js")) return .region;
+        if (std.mem.eql(u8, path, "/help.js")) return .help;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
         return Error.NotFound;
     }
@@ -58,6 +59,7 @@ pub const Router = struct {
             .theme => wasm_bytes.theme_js,
             .file_menu => wasm_bytes.file_menu_js,
             .region => wasm_bytes.region_js,
+            .help => wasm_bytes.help_js,
             .artifact => wasm_bytes.wasm_bytes,
         };
     }
@@ -66,7 +68,7 @@ pub const Router = struct {
         return switch (result) {
             .page => "text/html",
             .artifact => "application/wasm",
-            .glue, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .region => "text/javascript",
+            .glue, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .region, .help => "text/javascript",
         };
     }
 };
@@ -335,6 +337,10 @@ test "serve: route \"/region.js\" to the region module" {
     try std.testing.expectEqual(RouteResult.region, Router.route("/region.js"));
 }
 
+test "serve: route \"/help.js\" to the help module" {
+    try std.testing.expectEqual(RouteResult.help, Router.route("/help.js"));
+}
+
 test "serve: route \"/artifact.wasm\" to the artifact" {
     try std.testing.expectEqual(RouteResult.artifact, Router.route("/artifact.wasm"));
 }
@@ -373,6 +379,9 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.region);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.help);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.artifact);

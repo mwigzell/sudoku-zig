@@ -1,3 +1,5 @@
+const about = @import("../../about.zig");
+const display_width = @import("../../display_width.zig");
 const board = @import("../../board/board.zig");
 const cell = @import("../../board/cell.zig");
 const parser = @import("parser.zig");
@@ -40,6 +42,12 @@ pub fn bottomBorder() []const u8 {
 /// Minimum visible width (columns) for status/error message boxes. Message
 /// lines and the legend can push it wider — never narrower than this.
 const box_min_width: usize = 80;
+
+fn menuPickIsQuit(pick: []const u8) bool {
+    return std.mem.eql(u8, pick, "9") or
+        std.ascii.eqlIgnoreCase(pick, "q") or
+        std.ascii.eqlIgnoreCase(pick, "quit");
+}
 
 /// Terminal implementation of the Renderer Facade.
 ///
@@ -95,21 +103,20 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (self.legend_line_width > width) width = self.legend_line_width;
             var probe = std.mem.splitScalar(u8, msg, '\n');
             while (probe.next()) |ln| {
-                if (ln.len + 4 > width) width = ln.len + 4;
+                const cols = display_width.columns(ln);
+                if (cols + 4 > width) width = cols + 4;
             }
             const inner = width - 2;
-            const row = try self.allocator.alloc(u8, inner);
-            defer self.allocator.free(row);
             const dash = "─";
             try self.writer.writeAll("┌");
             for (0..inner) |_| try self.writer.writeAll(dash);
             try self.writer.writeAll("┐\n");
             var lines = std.mem.splitScalar(u8, msg, '\n');
             while (lines.next()) |ln| {
-                for (row) |*c| c.* = ' ';
-                std.mem.copyForwards(u8, row[1..], ln);
+                const padded = try display_width.padColumns(self.allocator, ln, inner);
+                defer self.allocator.free(padded);
                 try self.writer.writeAll("│");
-                try self.writer.writeAll(row);
+                try self.writer.writeAll(padded);
                 try self.writer.writeAll("│\n");
             }
             try self.writer.writeAll("└");
@@ -145,7 +152,9 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Implement Facade showError_fn. Draw the error in the shared box frame, then
         /// "Press Enter to continue..." and wait on stdin (via injected input source).
         pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-            self.drawBox(msg) catch return facade.Error.System;
+            const owned = self.allocator.dupe(u8, msg) catch return facade.Error.System;
+            defer self.allocator.free(owned);
+            self.drawBox(owned) catch return facade.Error.System;
             self.writer.print("Press Enter to continue... ", .{}) catch return facade.Error.System;
 
             const line = try self.readLine();
@@ -211,6 +220,8 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.print("  5) Region ({s})\n", .{region_state}) catch return facade.Error.System;
             self.writer.writeAll("  6) Board Hint (not yet)\n") catch return facade.Error.System;
             self.writer.writeAll("  7) Cell Hint (not yet)\n") catch return facade.Error.System;
+            self.writer.writeAll("  8) About\n") catch return facade.Error.System;
+            self.writer.writeAll("  9) Quit\n") catch return facade.Error.System;
             self.writer.writeAll("> ") catch return facade.Error.System;
 
             const pick = self.readLine() catch return facade.Error.System;
@@ -222,9 +233,23 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .set_region = !show_region } };
             if (std.mem.eql(u8, pick, "6") or std.mem.eql(u8, pick, "7")) {
-                return .{ .error_msg = "not yet" };
+                try self.showError("not yet");
+                return try self.showMenu(show_region);
             }
-            return .{ .error_msg = "invalid menu choice" };
+            if (std.mem.eql(u8, pick, "8")) {
+                try self.showAbout();
+                return try self.showMenu(show_region);
+            }
+            if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
+            try self.showError("invalid menu choice");
+            return try self.showMenu(show_region);
+        }
+
+        /// Help/About — product metadata with acknowledgement.
+        pub fn showAbout(self: *@This()) facade.Error!void {
+            const text = about.formatNativeText(self.allocator) catch return facade.Error.System;
+            defer self.allocator.free(text);
+            try self.showError(text);
         }
 
         pub fn newGameOptions(self: *@This()) facade.Error!_command.PuzzleResult {
@@ -1094,6 +1119,108 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
             try std.testing.expect(false);
         },
     }
+}
+
+test "showAbout: writes name version commit build date and licence" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    try renderer.showAbout();
+
+    const contents = aw.writer.buffered();
+    const info = about.get();
+    try std.testing.expect(std.mem.indexOf(u8, contents, info.name) != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, info.version) != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, info.commit) != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, info.build_date) != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, info.licence) != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);
+}
+
+test "showMenu: quit pick returns quit command" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"9\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+}
+
+test "showMenu: q pick returns quit command" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"q\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+}
+
+test "showMenu: invalid pick re-shows menu until valid choice" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "x\n", "\n", "9\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+
+    const contents = aw.writer.buffered();
+    const menu_count = std.mem.count(u8, contents, "Menu:\n");
+    try std.testing.expectEqual(@as(usize, 2), menu_count);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "invalid menu choice") != null);
 }
 
 test "showMenu: region pick toggles set_region" {

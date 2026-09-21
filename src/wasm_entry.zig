@@ -93,6 +93,13 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     return returnJson(out);
 }
 
+/// Product metadata for Help/About as JSON.
+export fn getAbout() callconv(.c) u32 {
+    const out = outBuffer();
+    boundary.writeAboutJson(out) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
 /// Current command availability flags as JSON.
 export fn getLegend() callconv(.c) u32 {
     const out = outBuffer();

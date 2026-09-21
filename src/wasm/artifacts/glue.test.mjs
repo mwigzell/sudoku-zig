@@ -28,6 +28,19 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(legend.undo, false, "fresh game should not offer undo");
 }
 
+// ── about metadata ──
+{
+  const about = game.getAbout();
+  assert.equal(about.name, "sudoku-zig");
+  assert.match(about.version, /^\d+\.\d+\.\d+$/);
+  assert.ok(about.commit.length >= 6);
+  assert.match(about.build_date, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(about.licence, "MIT");
+  assert.ok(Array.isArray(about.logo) && about.logo.length > 0);
+  assert.ok(about.summary.includes(about.version));
+  assert.ok(about.summary.includes(about.commit));
+}
+
 // ── config defaults (WireConfig shape) ──
 {
   const config = game.getConfig();

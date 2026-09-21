@@ -17,6 +17,7 @@ const file_transport = @import("native/shell/file_transport.zig");
 const serve = @import("native/serve.zig");
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
+const about_mod = @import("about.zig");
 
 test {
     // Reachability pin: keeps sudoku.zig (and its sub-modules) inside the test closure of this root file.
@@ -27,6 +28,7 @@ test {
     _ = serve;
     _ = wasm_wire;
     _ = wasm_boundary;
+    _ = about_mod;
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {

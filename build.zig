@@ -4,6 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const gen_build_info = b.addSystemCommand(&.{ "bash", "scripts/gen-build-info.sh" });
+
     // --- Executable ---
     const exe_mod = b.addModule("sudoku", .{
         .root_source_file = b.path("src/main.zig"),
@@ -18,6 +20,7 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(exe);
+    exe.step.dependOn(&gen_build_info.step);
     // WASM: emit before native compile (@embedFile is parse-time).
     const WASM_OUT = "src/wasm/artifacts/artifact.wasm";
 
@@ -28,10 +31,11 @@ pub fn build(b: *std.Build) void {
         "-target",              "wasm32-freestanding", "-femit-bin=" ++ WASM_OUT,
         "--export=init",        "--export=exec",       "--export=getLegend",
         "--export=getConfig",   "--export=getState",   "--export=serialize",
-        "--export=deserialize", "--export=outPtr",
+        "--export=deserialize", "--export=getAbout",   "--export=outPtr",
     });
     const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });
     wasm_emit.step.dependOn(&mkdir_artifacts.step);
+    wasm_emit.step.dependOn(&gen_build_info.step);
     exe.step.dependOn(&wasm_emit.step);
 
     // clean step — remove cache, build, and coverage dirs for a truly fresh start
@@ -45,7 +49,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // JS glue contract test for the served web page (command-in → full-text-out over the wasm import table).
-    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menu.test.mjs && node src/wasm/menu_bar.test.mjs && node src/wasm/theme.test.mjs && node src/wasm/file_menu.test.mjs && node src/wasm/region.test.mjs" });
+    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menu.test.mjs && node src/wasm/menu_bar.test.mjs && node src/wasm/theme.test.mjs && node src/wasm/file_menu.test.mjs && node src/wasm/region.test.mjs && node src/wasm/help.test.mjs" });
     const glue_step = b.step("glue", "Run the JS glue contract test (node)");
     glue_step.dependOn(&glue.step);
     glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit
@@ -74,6 +78,7 @@ pub fn build(b: *std.Build) void {
         .filters = filters,
     });
     check.step.dependOn(&wasm_emit.step);
+    check.step.dependOn(&gen_build_info.step);
 
     // Run the compiled test binary via addRunArtifact (server-mode IPC).
     // Tests needing fake I/O use std.testing.io (in-process fake); server-mode IPC accommodates that.
