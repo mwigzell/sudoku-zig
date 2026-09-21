@@ -1,34 +1,19 @@
 // Entry point — parses CLI args, builds the Host (renderer substrate), starts the game loop.
 const std = @import("std");
-const facade = @import("renderer/facade.zig");
 const sudoku = @import("native/shell/sudoku.zig");
-const config_module = @import("config.zig");
-const ascii_renderer = @import("native/ascii/renderer.zig");
 const logger = @import("logger.zig");
-const styler = @import("native/ascii/styler.zig");
 const cli = @import("native/cli.zig");
-// main constructs the Host at startup — the import is load-bearing: without it host.zig would not enter this file's test closure.
 const host_mod = @import("native/host.zig");
-// Load-bearing: wasm_bytes.zig must stay reachable from this closure for its tests.
-const wasm_bytes = @import("native/wasm_bytes.zig");
-const state_mod = @import("engine/state.zig");
 const file_transport = @import("native/shell/file_transport.zig");
-// Load-bearing: serve.zig is pure and pinned so its tests join the native suite.
 const serve = @import("native/serve.zig");
+// Wasm JSON contract tests — not reachable from the native play path (see wasm_entry.zig).
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
-const about_mod = @import("about.zig");
 
+// Test builds omit main(), so imports only used there are tree-shaken away.
+// Pin roots whose tests must still run under `zig build test`.
 test {
-    // Reachability pin: keeps sudoku.zig (and its sub-modules) inside the test closure of this root file.
-    _ = .{sudoku};
-    _ = wasm_bytes;
-    _ = state_mod;
-    _ = file_transport;
-    _ = serve;
-    _ = wasm_wire;
-    _ = wasm_boundary;
-    _ = about_mod;
+    _ = .{ sudoku, serve, wasm_wire, wasm_boundary };
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {

@@ -2,12 +2,24 @@
 const std = @import("std");
 const cell = @import("../board/cell.zig");
 
-/// Records one player mutation (fill or clear) so it can be undone/redone.
-pub const MutationEntry = struct {
+/// One player fill or clear.
+pub const CellMutation = struct {
     row: u4,
     col: u4,
     old_value: cell.CellValue,
     new_value: cell.CellValue,
+};
+
+/// Board before a solve. Redo re-runs the solver from this snapshot.
+pub const BoardSnapshot = struct {
+    given_bits: u128,
+    flat: [81]u8,
+};
+
+/// A history step is either one cell edit or one solve.
+pub const MutationEntry = union(enum) {
+    cell: CellMutation,
+    solve_batch: BoardSnapshot,
 };
 
 /// Mutable list of mutation entries with a forward pointer for undo/redo.
@@ -33,14 +45,20 @@ pub const MutationHistory = struct {
         return self.pointer;
     }
 
-    /// Append a mutation, advancing pointer past it.
+    /// Append a cell mutation, advancing pointer past it.
     pub fn push(self: *@This(), row: u4, col: u4, old_value: cell.CellValue, new_value: cell.CellValue) !void {
-        try self.entries.append(self.gpa, .{
+        try self.entries.append(self.gpa, .{ .cell = .{
             .row = row,
             .col = col,
             .old_value = old_value,
             .new_value = new_value,
-        });
+        } });
+        self.pointer = self.entries.items.len;
+    }
+
+    /// Append one solve step. Only the before-snapshot is stored.
+    pub fn pushSolve(self: *@This(), before: BoardSnapshot) !void {
+        try self.entries.append(self.gpa, .{ .solve_batch = before });
         self.pointer = self.entries.items.len;
     }
 
@@ -85,10 +103,11 @@ test "MutationHistory: peekPast returns last committed" {
     _ = h.push(1, 2, .five, .nine) catch unreachable;
 
     const item = h.peekPast() orelse return error.TestFailed;
-    try std.testing.expectEqual(@as(u4, 1), item.row);
-    try std.testing.expectEqual(@as(u4, 2), item.col);
-    try std.testing.expectEqual(cell.CellValue.five, item.old_value);
-    try std.testing.expectEqual(cell.CellValue.nine, item.new_value);
+    const c = item.cell;
+    try std.testing.expectEqual(@as(u4, 1), c.row);
+    try std.testing.expectEqual(@as(u4, 2), c.col);
+    try std.testing.expectEqual(cell.CellValue.five, c.old_value);
+    try std.testing.expectEqual(cell.CellValue.nine, c.new_value);
 }
 
 test "MutationHistory: peekPast returns null when empty" {
@@ -96,4 +115,32 @@ test "MutationHistory: peekPast returns null when empty" {
     defer h.deinit();
 
     try std.testing.expect(h.peekPast() == null);
+}
+
+test "MutationHistory: push stores a cell and pushSolve stores one before snapshot" {
+    var h = MutationHistory.init(std.testing.allocator);
+    defer h.deinit();
+
+    try h.push(0, 2, .zero, .seven);
+    var flat: [81]u8 = @splat(0);
+    flat[0] = 4;
+    try h.pushSolve(.{ .given_bits = 1, .flat = flat });
+
+    switch (h.entries.items[0]) {
+        .cell => |c| {
+            try std.testing.expectEqual(@as(u4, 0), c.row);
+            try std.testing.expectEqual(@as(u4, 2), c.col);
+            try std.testing.expectEqual(cell.CellValue.zero, c.old_value);
+            try std.testing.expectEqual(cell.CellValue.seven, c.new_value);
+        },
+        .solve_batch => return error.TestFailed,
+    }
+    switch (h.entries.items[1]) {
+        .solve_batch => |snap| {
+            try std.testing.expectEqual(@as(u128, 1), snap.given_bits);
+            try std.testing.expectEqual(@as(u8, 4), snap.flat[0]);
+        },
+        .cell => return error.TestFailed,
+    }
+    try std.testing.expectEqual(@as(usize, 2), h.count());
 }

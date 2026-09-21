@@ -13,7 +13,7 @@ pub const SaveData = struct { path: ?[]const u8 };
 pub const OpenData = struct { path: ?[]const u8 };
 pub const NewData = struct { puzzle: ?[]const u8, file: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, new, save_as, set_theme, set_region };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, new, save_as, solve_for_me, set_theme, set_region };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -27,6 +27,7 @@ pub const Command = union(CommandTag) {
     open: OpenData,
     new: NewData,
     save_as: SaveData,
+    solve_for_me: void,
     set_theme: config.ViewTheme,
     set_region: bool,
 };
@@ -64,6 +65,7 @@ pub const SessionCommands = &[_]CommandTableEntry{
     .{ .tag = .open, .name = "Open" },
     .{ .tag = .new, .name = "New" },
     .{ .tag = .save_as, .name = "SaveAs" },
+    .{ .tag = .solve_for_me, .name = "Solve" },
 };
 
 /// Look up the display name for a command tag from the comptime tables.
@@ -101,9 +103,9 @@ pub const PuzzleResult = union(enum) {
 
 const std = @import("std");
 
-test "CommandTag enum has 12 variants" {
+test "CommandTag enum has 13 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 12), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 13), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -116,6 +118,7 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Save", getName(.save));
     try std.testing.expectEqualStrings("Open", getName(.open));
     try std.testing.expectEqualStrings("SaveAs", getName(.save_as));
+    try std.testing.expectEqualStrings("Solve", getName(.solve_for_me));
 }
 
 test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {

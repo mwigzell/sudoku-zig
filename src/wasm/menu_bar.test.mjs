@@ -15,6 +15,7 @@ function makeControls() {
     saveAs: makeBtn(),
     undo: makeBtn(),
     redo: makeBtn(),
+    solve: makeBtn(),
     viewLight: makeBtn(),
     viewDark: makeBtn(),
     viewRegion: makeBtn(),
@@ -42,6 +43,16 @@ function makeControls() {
   assert.equal(controls.saveAs.disabled, true);
   assert.equal(controls.undo.disabled, false);
   assert.equal(controls.redo.disabled, true);
+  assert.equal(controls.solve.disabled, true);
+}
+
+{
+  const controls = makeControls();
+  syncMenuBar(
+    { new: true, open: true, save: true, save_as: true, undo: false, redo: false, solve: true },
+    controls,
+  );
+  assert.equal(controls.solve.disabled, false);
 }
 
 // ── View + Help stay enabled (no legend flags) ──

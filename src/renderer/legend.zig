@@ -20,6 +20,8 @@ pub const Legend = struct {
     open: bool,
     new: bool,
     save_as: bool,
+    /// Menu Solve. Off when the board is full or has any conflict.
+    solve: bool = false,
 
     /// Fill `names` with main-line terminal commands (play loop + menu entry).
     pub fn getNames(self: Legend, names: *[6][]const u8) usize {

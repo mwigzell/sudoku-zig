@@ -30,6 +30,7 @@ const clear_command = @import("clear.zig");
 const undo_command = @import("undo.zig");
 const redo_command = @import("redo.zig");
 const quit_command = @import("quit.zig");
+const solver = @import("../solver.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
@@ -77,7 +78,17 @@ pub const GameEngine = struct {
             .open = true,
             .new = true,
             .save_as = true,
+            .solve = self.canSolve(),
         };
+    }
+
+    /// Solve is offered only when there is an empty cell and no conflict.
+    fn canSolve(self: *const @This()) bool {
+        if (self.state.board.conflict_bits != 0) return false;
+        for (self.state.board.cells) |c| {
+            if (c.value == .zero) return true;
+        }
+        return false;
     }
 
     /// Current nominal configuration (theme, region highlight, difficulty, log level).
@@ -169,6 +180,9 @@ pub const GameEngine = struct {
             .redo => {
                 return redo_command.execute(self);
             },
+            .solve_for_me => {
+                return self.solveForMe();
+            },
             .set_theme => |theme| {
                 self.cfg.theme = theme;
                 return self.finishOkEvent(self.state.board.asView(), false, null);
@@ -196,6 +210,34 @@ pub const GameEngine = struct {
             return self.errorEventFmt("history push failed: {s}", .{@errorName(err)});
         };
         return self.finishOkAfterCellEdit(row, col);
+    }
+
+    /// Fill every empty cell from one solver pass. One history step, not N fills.
+    fn solveForMe(self: *@This()) Event {
+        const before_flat = self.state.board.toFlat();
+        const before_given = self.state.board.given_bits;
+        const solved = solver.solve(self.state.board) catch |err| switch (err) {
+            error.Conflict => return self.errorEvent("board has a conflict"),
+        };
+        switch (solved) {
+            .none => return self.finishOkEvent(self.state.board.asView(), false, null),
+            .solution => |grid| {
+                for (grid, 0..) |digit, i| {
+                    const row: u4 = @intCast(i / 9);
+                    const col: u4 = @intCast(i % 9);
+                    if (self.state.board.getCellValue(row, col) == cell.rawToCellValue(digit)) continue;
+                    self.state.board.setCell(row, col, cell.rawToCellValue(digit)) catch |set_err| {
+                        return self.eventFromSetCellError(row, col, set_err);
+                    };
+                }
+                self.state.history.truncateFuture();
+                self.state.history.pushSolve(.{ .given_bits = before_given, .flat = before_flat }) catch |push_err| {
+                    return self.errorEventFmt("history push failed: {s}", .{@errorName(push_err)});
+                };
+                self.state.board.validate();
+                return self.finishOkEvent(self.state.board.asView(), false, null);
+            },
+        }
     }
 };
 
@@ -226,6 +268,63 @@ test "GameEngine init takes puzzle string only — no FileTransport" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
+}
+
+test "exec solve_for_me fills a known partial as one solve batch" {
+    const solution = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+
+    const ev = execTest(&engine, .{ .solve_for_me = {} });
+    _ = try expectOk(ev);
+    var expected: [81]u8 = undefined;
+    for (solution, 0..) |ch, i| expected[i] = ch - '0';
+    try std.testing.expectEqual(expected, engine.state.board.toFlat());
+    try std.testing.expectEqual(@as(usize, 1), engine.state.history.count());
+    switch (engine.state.history.peekPast().?) {
+        .solve_batch => {},
+        .cell => return error.TestFailed,
+    }
+    try std.testing.expect(ev.ok.msg == null);
+    try std.testing.expect(!engine.getLegend().solve);
+}
+
+test "exec solve_for_me returns ok and leaves an unsolvable board unchanged" {
+    var line: [81]u8 = @splat('0');
+    for (0..8) |c| line[c] = '1' + @as(u8, @intCast(c));
+    line[1 * 9 + 8] = '9';
+    var engine = try GameEngine.init(&line, config.Config.default());
+    defer engine.deinit();
+    const before = engine.state.board.toFlat();
+
+    const ev = execTest(&engine, .{ .solve_for_me = {} });
+    _ = try expectOk(ev);
+    try std.testing.expect(ev.ok.msg == null);
+    try std.testing.expectEqual(before, engine.state.board.toFlat());
+    try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
+}
+
+test "exec solve_for_me errors when the board has a conflict" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    try engine.state.board.setCell(0, 1, .three);
+    engine.state.board.validate();
+    const before = engine.state.board.toFlat();
+
+    const ev = execTest(&engine, .{ .solve_for_me = {} });
+    try expectErrorResult(ev);
+    try std.testing.expectEqual(before, engine.state.board.toFlat());
+    try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
+}
+
+test "legend solve is on only when the board has empties and no conflict" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    try std.testing.expect(engine.getLegend().solve);
+
+    try engine.state.board.setCell(0, 1, .three);
+    engine.state.board.validate();
+    try std.testing.expect(!engine.getLegend().solve);
 }
 
 test "loadSaveFormat replaces board and history from SUD0 bytes" {

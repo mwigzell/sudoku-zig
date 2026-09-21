@@ -136,6 +136,7 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         const enabled = parsed.value.enabled orelse return error.MissingField;
         return .{ .set_region = enabled };
     }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "solve")) return .{ .solve_for_me = {} };
 
     return error.UnknownAction;
 }
@@ -227,7 +228,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     var mutable = out;
     try writeJson(
         &mutable,
-        "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"save_as\":{any}}}",
+        "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"save_as\":{any},\"solve\":{any}}}",
         .{
             legend.fill,
             legend.clear,
@@ -238,6 +239,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
             legend.open,
             legend.new,
             legend.save_as,
+            legend.solve,
         },
     );
 }
@@ -284,6 +286,11 @@ test "parseAction fill maps row col digit" {
 test "parseAction rejects unknown action" {
     const result = parseAction("{\"action\":\"xyzzy\"}");
     try std.testing.expectError(error.UnknownAction, result);
+}
+
+test "parseAction solve maps to solve_for_me" {
+    const cmd = try parseAction("{\"action\":\"solve\"}");
+    try std.testing.expect(cmd == .solve_for_me);
 }
 
 test "writeEventJson ok embeds state snapshot" {

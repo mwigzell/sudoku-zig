@@ -62,6 +62,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         inputSource: input_source.ReaderSource,
         last_filename: ?[]u8,
         legend_line_width: usize = 0,
+        can_solve: bool = false,
 
         /// Construct with writer (all output), styler pointer, and input source.
         pub fn init(allocator: std.mem.Allocator, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
@@ -137,6 +138,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             const str = try legend.formatLegend(arena.allocator(), entries);
             _ = try self.writer.print("  Command: {s}\n", .{str});
             self.legend_line_width = 11 + str.len;
+            self.can_solve = commands.solve;
         }
 
         /// Read one line from the injected input source.
@@ -222,6 +224,11 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.writeAll("  7) Cell Hint (not yet)\n") catch return facade.Error.System;
             self.writer.writeAll("  8) About\n") catch return facade.Error.System;
             self.writer.writeAll("  9) Quit\n") catch return facade.Error.System;
+            if (self.can_solve) {
+                self.writer.writeAll("  10) Solve\n") catch return facade.Error.System;
+            } else {
+                self.writer.writeAll("  10) Solve (unavailable)\n") catch return facade.Error.System;
+            }
             self.writer.writeAll("> ") catch return facade.Error.System;
 
             const pick = self.readLine() catch return facade.Error.System;
@@ -241,6 +248,10 @@ pub fn AsciiRenderer(StylerType: type) type {
                 return try self.showMenu(show_region);
             }
             if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
+            if (std.mem.eql(u8, pick, "10")) {
+                if (!self.can_solve) return try self.showMenu(show_region);
+                return .{ .valid = _command.Command{ .solve_for_me = {} } };
+            }
             try self.showError("invalid menu choice");
             return try self.showMenu(show_region);
         }
@@ -1168,6 +1179,56 @@ test "showMenu: quit pick returns quit command" {
     const result = try renderer.showMenu(false);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+}
+
+test "showMenu: solve pick is ignored when unavailable" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "10\n", "9\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+    const written = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, written, "10) Solve (unavailable)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "invalid menu choice") == null);
+}
+
+test "showMenu: solve pick returns solve when available" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"10\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+    renderer.can_solve = true;
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "solve_for_me"),
         .error_msg => try std.testing.expect(false),
     }
 }

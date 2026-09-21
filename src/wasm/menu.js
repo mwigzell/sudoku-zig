@@ -30,6 +30,7 @@ export function handleEditAction(
 ) {
   if (action === "undo" && !session.legend.undo) return { handled: false };
   if (action === "redo" && !session.legend.redo) return { handled: false };
+  if (action === "solve" && !session.legend.solve) return { handled: false };
 
   const result = game.exec({ action });
   if (!result.ok) {
@@ -79,6 +80,10 @@ export function wireEditMenu(
 
   undoBtn.addEventListener("click", () => run("undo"));
   redoBtn.addEventListener("click", () => run("redo"));
+  if (typeof root.querySelector === "function") {
+    const solveBtn = root.querySelector("#edit-solve");
+    if (solveBtn) solveBtn.addEventListener("click", () => run("solve"));
+  }
 
   root.addEventListener("keydown", (event) => {
     const action = parseEditShortcut(event);

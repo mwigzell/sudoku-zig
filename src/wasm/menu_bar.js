@@ -16,6 +16,7 @@ export const MENU_BAR_MENUS = [
     items: [
       { id: "undo", label: "Undo", legendKey: "undo" },
       { id: "redo", label: "Redo", legendKey: "redo" },
+      { id: "solve", label: "Solve", legendKey: "solve" },
     ],
   },
     {
@@ -40,6 +41,7 @@ export function syncMenuBar(legend, controls) {
   if (controls.saveAs) controls.saveAs.disabled = !legend.save_as;
   if (controls.undo) controls.undo.disabled = !legend.undo;
   if (controls.redo) controls.redo.disabled = !legend.redo;
+  if (controls.solve) controls.solve.disabled = !legend.solve;
   if (controls.viewLight) controls.viewLight.disabled = false;
   if (controls.viewDark) controls.viewDark.disabled = false;
   if (controls.viewRegion) controls.viewRegion.disabled = false;
@@ -55,6 +57,7 @@ export function collectMenuBarControls(root) {
     saveAs: root.querySelector("#file-save-as"),
     undo: root.querySelector("#edit-undo"),
     redo: root.querySelector("#edit-redo"),
+    solve: root.querySelector("#edit-solve"),
     viewLight: root.querySelector("#view-light"),
     viewDark: root.querySelector("#view-dark"),
     viewRegion: root.querySelector("#view-region"),

@@ -29,7 +29,7 @@ test "fromSaveFormat uses mutation_history not game_engine" {
 // ---------------------------------------------------------------------------
 
 pub const SaveFileMagic = [_]u8{ 'S', 'U', 'D', '0' };
-pub const SaveFileVersion: u8 = 1;
+pub const SaveFileVersion: u8 = 2;
 
 pub const SaveFileHeader = struct {
     magic: [4]u8, // "SUD0"
@@ -103,11 +103,12 @@ pub const SaveEntry = struct {
 /// Returns allocated []u8 — caller owns and must free with the same allocator.
 pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 {
     const entry_count = self.history.entries.items.len;
-    const total_size = SAVE_HEADER_SIZE + (entry_count * @sizeOf(SaveEntry)) + SAVE_TRAILER_SIZE;
+    var entries_size: usize = 0;
+    for (self.history.entries.items) |entry| entries_size += entryWireSize(entry);
+    const total_size = SAVE_HEADER_SIZE + entries_size + SAVE_TRAILER_SIZE;
 
     var buf = try gpa.alloc(u8, total_size);
 
-    // Write header
     const header = SaveFileHeader{
         .magic = SaveFileMagic,
         .version_major = 0,
@@ -118,18 +119,10 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
     };
     writeSaveHeader(buf[0..SAVE_HEADER_SIZE], &header);
 
-    // Write SaveEntry records
     var offset: usize = SAVE_HEADER_SIZE;
     for (self.history.entries.items) |entry| {
-        const se = SaveEntry{
-            .coords = (@as(u8, @intCast(entry.row)) << 4) | @as(u8, @intCast(entry.col)),
-            .values = (@as(u8, @backingInt(entry.old_value)) << 4) | @as(u8, @backingInt(entry.new_value)),
-        };
-        buf[offset + 0] = se.coords;
-        buf[offset + 1] = se.values;
-        offset += @sizeOf(SaveEntry);
+        offset += writeEntry(buf[offset..], entry);
     }
-    // Write trailer
     const trailer = SaveFileTrailer{
         .given_bits = self.board.given_bits,
         .flat_board = self.board.toFlat(),
@@ -139,32 +132,82 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
     return buf;
 }
 
+fn entryWireSize(entry: mutation_history.MutationEntry) usize {
+    return switch (entry) {
+        .cell => 3,
+        .solve_batch => 1 + 16 + 81,
+    };
+}
+
+fn writeEntry(buf: []u8, entry: mutation_history.MutationEntry) usize {
+    switch (entry) {
+        .cell => |c| {
+            buf[0] = 1;
+            buf[1] = (@as(u8, @intCast(c.row)) << 4) | @as(u8, @intCast(c.col));
+            buf[2] = (@as(u8, @backingInt(c.old_value)) << 4) | @as(u8, @backingInt(c.new_value));
+            return 3;
+        },
+        .solve_batch => |snap| {
+            buf[0] = 2;
+            const bits = std.mem.toBytes(snap.given_bits);
+            @memcpy(buf[1..17], &bits);
+            @memcpy(buf[17..98], &snap.flat);
+            return 98;
+        },
+    }
+}
+
+fn pushCellEntry(history: *mutation_history.MutationHistory, coords: u8, values: u8) !void {
+    try history.push(
+        @as(u4, @intCast(coords >> 4)),
+        @as(u4, @intCast(coords & 0x0F)),
+        cell.rawToCellValue(@as(u4, @intCast(values >> 4))),
+        cell.rawToCellValue(@as(u4, @intCast(values & 0x0F))),
+    );
+}
+
 /// Deserialize from a toSaveFormat blob into a fresh State.
 pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !state_mod.State {
     const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
     if (!std.mem.eql(u8, &header.magic, "SUD0")) {
         return error.InvalidSaveFile;
     }
-    if (header.version_patch != SaveFileVersion) {
+    if (header.version_patch != 1 and header.version_patch != SaveFileVersion) {
         return error.IncompatibleVersion;
     }
 
     const offset = SAVE_HEADER_SIZE;
     var history = mutation_history.MutationHistory.init(gpa);
-    for (0..header.entry_count) |i| {
-        const idx: usize = offset + (@as(usize, i) * @sizeOf(SaveEntry));
-        const se = SaveEntry{
-            .coords = buf[idx],
-            .values = buf[idx + 1],
-        };
-        try history.push(
-            @as(u4, @intCast(se.coords >> 4)),
-            @as(u4, @intCast(se.coords & 0x0F)),
-            cell.rawToCellValue(@as(u4, @intCast(se.values >> 4))),
-            cell.rawToCellValue(@as(u4, @intCast(se.values & 0x0F))),
-        );
+    errdefer history.deinit();
+    var entries_end: usize = offset;
+    if (header.version_patch == 1) {
+        for (0..header.entry_count) |i| {
+            const idx: usize = offset + (i * @sizeOf(SaveEntry));
+            try pushCellEntry(&history, buf[idx], buf[idx + 1]);
+        }
+        entries_end = offset + (header.entry_count * @sizeOf(SaveEntry));
+    } else {
+        var cursor: usize = offset;
+        for (0..header.entry_count) |_| {
+            const tag = buf[cursor];
+            cursor += 1;
+            switch (tag) {
+                1 => {
+                    try pushCellEntry(&history, buf[cursor], buf[cursor + 1]);
+                    cursor += 2;
+                },
+                2 => {
+                    const given_bits = std.mem.bytesToValue(u128, buf[cursor..][0..16]);
+                    var flat: [81]u8 = undefined;
+                    @memcpy(&flat, buf[cursor + 16 ..][0..81]);
+                    try history.pushSolve(.{ .given_bits = given_bits, .flat = flat });
+                    cursor += 16 + 81;
+                },
+                else => return error.InvalidSaveFile,
+            }
+        }
+        entries_end = cursor;
     }
-    const entries_end = offset + (header.entry_count * @sizeOf(SaveEntry));
     const trailer = readSaveTrailer(buf[entries_end..][0..SAVE_TRAILER_SIZE]);
     var state = state_mod.State{
         .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
@@ -346,25 +389,26 @@ test "toSaveFormat includes history entries and correct trailer" {
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    // Size check: header(11) + 3 entries(6) + trailer(97) = 114
-    try std.testing.expectEqual(@as(usize, SAVE_HEADER_SIZE + (3 * @sizeOf(SaveEntry)) + SAVE_TRAILER_SIZE), buf.len);
+    // Size check: header(11) + 3 tagged cell entries(9) + trailer(97) = 117
+    try std.testing.expectEqual(@as(usize, SAVE_HEADER_SIZE + (3 * 3) + SAVE_TRAILER_SIZE), buf.len);
 
     // Verify entry count from header
     const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
     try std.testing.expectEqual(@as(u16, 3), header.entry_count);
     try std.testing.expectEqual(@as(u16, 3), header.pointer);
 
-    // Verify first entry (row=0, col=2, old=zero, new=seven)
-    const first_entry = buf[SAVE_HEADER_SIZE .. SAVE_HEADER_SIZE + @sizeOf(SaveEntry)];
-    const coords: u8 = first_entry[0];
-    const values: u8 = first_entry[1];
+    // Verify first entry (tag, row=0, col=2, old=zero, new=seven)
+    const first_entry = buf[SAVE_HEADER_SIZE .. SAVE_HEADER_SIZE + 3];
+    try std.testing.expectEqual(@as(u8, 1), first_entry[0]);
+    const coords: u8 = first_entry[1];
+    const values: u8 = first_entry[2];
     try std.testing.expectEqual(@as(u4, 0), @as(u4, @intCast(coords >> 4)));
     try std.testing.expectEqual(@as(u4, 2), @as(u4, @intCast(coords & 0x0F)));
     try std.testing.expectEqual(cell.CellValue.zero, cell.rawToCellValue(values >> 4));
     try std.testing.expectEqual(cell.CellValue.seven, cell.rawToCellValue(values & 0x0F));
 
     // Verify trailer flat_board has the mutations at correct cells
-    const off: usize = SAVE_HEADER_SIZE + (3 * @sizeOf(SaveEntry));
+    const off: usize = SAVE_HEADER_SIZE + (3 * 3);
     const trailer = readSaveTrailer(buf[off..]);
     try std.testing.expectEqual(trailer.given_bits, board_state.given_bits);
     // Cell (0,2) should be seven in trailer
@@ -403,9 +447,93 @@ test "fromSaveFormat round-trip: board state given_bits history" {
     );
     for (st.history.entries.items, loaded.history.entries.items, 0..) |o, l, idx| {
         _ = idx;
-        try std.testing.expectEqual(o.row, l.row);
-        try std.testing.expectEqual(o.col, l.col);
-        try std.testing.expectEqual(o.old_value, l.old_value);
-        try std.testing.expectEqual(o.new_value, l.new_value);
+        switch (o) {
+            .cell => |oc| {
+                const lc = l.cell;
+                try std.testing.expectEqual(oc.row, lc.row);
+                try std.testing.expectEqual(oc.col, lc.col);
+                try std.testing.expectEqual(oc.old_value, lc.old_value);
+                try std.testing.expectEqual(oc.new_value, lc.new_value);
+            },
+            .solve_batch => return error.TestFailed,
+        }
+    }
+}
+
+test "save v2 round-trips a cell entry and one solve snapshot" {
+    var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.easy());
+    var hist = mutation_history.MutationHistory.init(std.testing.allocator);
+    defer hist.deinit();
+
+    try board_state.setCell(0, 0, .four);
+    try hist.push(0, 0, .zero, .four);
+    const before_flat = board_state.toFlat();
+    const before_given = board_state.given_bits;
+    try hist.pushSolve(.{ .given_bits = before_given, .flat = before_flat });
+
+    const st = state_mod.State{ .board = board_state, .history = hist };
+    const buf = try toSaveFormat(&st, std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
+    try std.testing.expectEqual(@as(u8, 2), header.version_patch);
+
+    var loaded = try fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.history.deinit();
+    try std.testing.expect(st.board.equal(loaded.board));
+    try std.testing.expectEqual(@as(usize, 2), loaded.history.entries.items.len);
+    switch (loaded.history.entries.items[0]) {
+        .cell => |c| {
+            try std.testing.expectEqual(@as(u4, 0), c.row);
+            try std.testing.expectEqual(@as(u4, 0), c.col);
+            try std.testing.expectEqual(cell.CellValue.zero, c.old_value);
+            try std.testing.expectEqual(cell.CellValue.four, c.new_value);
+        },
+        .solve_batch => return error.TestFailed,
+    }
+    switch (loaded.history.entries.items[1]) {
+        .solve_batch => |snap| {
+            try std.testing.expectEqual(before_given, snap.given_bits);
+            try std.testing.expectEqual(before_flat, snap.flat);
+        },
+        .cell => return error.TestFailed,
+    }
+}
+
+test "save v1 fixture still loads as a cell entry" {
+    var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.easy());
+    try board_state.setCell(0, 0, .four);
+
+    var buf = try std.testing.allocator.alloc(u8, SAVE_HEADER_SIZE + @sizeOf(SaveEntry) + SAVE_TRAILER_SIZE);
+    defer std.testing.allocator.free(buf);
+    const header = SaveFileHeader{
+        .magic = SaveFileMagic,
+        .version_major = 0,
+        .version_minor = 0,
+        .version_patch = 1,
+        .pointer = 1,
+        .entry_count = 1,
+    };
+    writeSaveHeader(buf[0..SAVE_HEADER_SIZE], &header);
+    buf[SAVE_HEADER_SIZE] = 0;
+    buf[SAVE_HEADER_SIZE + 1] = @as(u8, @backingInt(cell.CellValue.four));
+    const trailer = SaveFileTrailer{
+        .given_bits = board_state.given_bits,
+        .flat_board = board_state.toFlat(),
+    };
+    writeSaveTrailer(buf[SAVE_HEADER_SIZE + @sizeOf(SaveEntry) ..][0..SAVE_TRAILER_SIZE], &trailer);
+
+    var loaded = try fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.history.deinit();
+    try std.testing.expect(board_state.equal(loaded.board));
+    try std.testing.expectEqual(@as(usize, 1), loaded.history.pointer);
+    switch (loaded.history.entries.items[0]) {
+        .cell => |c| {
+            try std.testing.expectEqual(@as(u4, 0), c.row);
+            try std.testing.expectEqual(@as(u4, 0), c.col);
+            try std.testing.expectEqual(cell.CellValue.zero, c.old_value);
+            try std.testing.expectEqual(cell.CellValue.four, c.new_value);
+        },
+        .solve_batch => return error.TestFailed,
     }
 }
