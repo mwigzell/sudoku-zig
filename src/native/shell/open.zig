@@ -18,8 +18,6 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 }
 
 fn doOpen(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, file_path: []const u8) game_engine.Event {
-    const gpa = std.heap.page_allocator;
-
     const resolved = transport.resolve(transport.context, file_path) catch |err| {
         var buf: [80]u8 = undefined;
         return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
@@ -36,17 +34,7 @@ fn doOpen(engine: *game_engine.GameEngine, transport: file_transport.FileTranspo
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
-    const msg = std.fmt.allocPrint(gpa, "opened: {s}", .{resolved}) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
-
-    return .{
-        .ok = .{
-            .board_view = engine.state.board.asView(),
-            .msg = msg,
-            .is_quit = false,
-        },
-    };
+    return engine.finishOpenEvent(resolved);
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +68,44 @@ test "command.open.execute opens file and returns ok with message" {
             try std.testing.expect(data.msg != null);
             const m = data.msg.?;
             try std.testing.expect(std.mem.indexOf(u8, m, "opened") != null);
+        },
+        .error_msg => return error.TestFailed,
+    }
+}
+
+test "command.open.execute warns when the loaded puzzle has no solution" {
+    var engine = try game_engine.GameEngine.init(
+        @import("../../puzzle_gen.zig").PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
+    );
+    defer engine.deinit();
+
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    defer file_transport.NativeTransport.deinitSession();
+    const tmp_path = "/tmp/sudoku_open_dead_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
+
+    var dead: [81]u8 = @splat('0');
+    for (0..8) |c| dead[c] = '1' + @as(u8, @intCast(c));
+    dead[1 * 9 + 8] = '9';
+    var dead_engine = try game_engine.GameEngine.init(&dead, @import("../../config.zig").Config.default());
+    defer dead_engine.deinit();
+
+    const resolved = try transport.resolve(transport.context, tmp_path);
+    defer transport.free(transport.context, resolved);
+
+    const save_buf = try dead_engine.toSaveFormat(std.heap.page_allocator);
+    defer std.heap.page_allocator.free(save_buf);
+    try transport.write(transport.context, resolved, save_buf);
+
+    const event = execute(&engine, transport, tmp_path);
+
+    switch (event) {
+        .ok => |data| {
+            try std.testing.expect(data.msg != null);
+            const m = data.msg.?;
+            try std.testing.expect(std.mem.indexOf(u8, m, "opened") != null);
+            try std.testing.expect(std.mem.indexOf(u8, m, "no solution") != null);
         },
         .error_msg => return error.TestFailed,
     }

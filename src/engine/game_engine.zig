@@ -121,6 +121,35 @@ pub const GameEngine = struct {
         self.event_msg.append(part);
     }
 
+    pub fn appendEventMsgFmt(self: *@This(), comptime fmt: []const u8, args: anytype) void {
+        self.event_msg.appendFmt(fmt, args);
+    }
+
+    fn formatCellLabel(buf: *[2]u8, row: u4, col: u4) []const u8 {
+        buf[0] = @as(u8, 'A') + @as(u8, col);
+        buf[1] = @as(u8, '1') + @as(u8, row);
+        return buf[0..2];
+    }
+
+    fn appendUnsolvableMutationWarning(self: *@This(), row: u4, col: u4) void {
+        var label: [2]u8 = undefined;
+        const coord = formatCellLabel(&label, row, col);
+        self.appendEventMsgFmt("that move leaves the board unsolvable — undo or clear {s}", .{coord});
+    }
+
+    fn appendUnsolvableLoadWarningIfNeeded(self: *@This()) void {
+        const solved = solver.solve(self.state.board) catch return;
+        if (solved == .none) self.appendEventMsg("this puzzle has no solution");
+    }
+
+    /// Build `.ok` after a successful open/load with path + optional solvability warning.
+    pub fn finishOpenEvent(self: *@This(), path: []const u8) Event {
+        self.beginEventMsg();
+        self.appendEventMsgFmt("opened: {s}", .{path});
+        self.appendUnsolvableLoadWarningIfNeeded();
+        return self.finishOkEvent(self.state.board.asView(), false, null);
+    }
+
     /// Build `.ok` using accumulated msg (null when nothing was appended).
     pub fn finishOkEvent(self: *@This(), view: board.Board.BoardView, is_quit: bool, edited_cell: ?event.CellCoord) Event {
         return .{ .ok = .{
@@ -156,6 +185,11 @@ pub const GameEngine = struct {
         const view = self.state.board.asView();
         if (view.isConflictingRowCol(row, col)) {
             self.appendEventMsg("conflict in row, column, or box");
+        } else {
+            const solved = solver.solve(self.state.board) catch {
+                return self.finishOkEvent(view, false, .{ .row = row, .col = col });
+            };
+            if (solved == .none) self.appendUnsolvableMutationWarning(row, col);
         }
         return self.finishOkEvent(view, false, .{ .row = row, .col = col });
     }
@@ -447,13 +481,94 @@ test "exec quit → .ok" {
 // Integration chain: exec → board mutation → conflict refresh → event emission
 // Check conflict bits through the returned Event board_view
 
+test "exec fill that kills solvability warns with the mutated cell" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+
+    const ev = execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
+    });
+    try std.testing.expect(ev == .ok);
+    try std.testing.expect(ev.ok.msg != null);
+    const msg = ev.ok.msg.?;
+    try std.testing.expect(std.mem.indexOf(u8, msg, "unsolvable") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "B2") != null);
+    try std.testing.expect(!ev.ok.board_view.isConflictingRowCol(1, 1));
+}
+
+test "user save fixture: puzzle is already unsolvable; clear after bad fill keeps warning" {
+    const flat: [81]u8 = .{
+        0, 0, 3, 4, 2, 1, 6, 0, 0, 9, 0, 0, 3, 7, 5, 0, 0, 1, 0, 0, 1, 8, 9, 6, 4, 0, 0,
+        0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
+        0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
+    };
+    const given_bits: u128 = 0x54949b0d901361b25254;
+
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    engine.state.board = try board.fromFlat(flat, .{ .given_bits = given_bits });
+    engine.state.board.validate();
+
+    const after_load = try solver.solve(engine.state.board);
+    try std.testing.expect(after_load == .none);
+
+    const filled = execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = 7, .col = 6, .digit = cell.CellValue.seven },
+    });
+    try std.testing.expect(filled == .ok);
+    try std.testing.expect(filled.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, filled.ok.msg.?, "unsolvable") != null);
+
+    const cleared = execTest(&engine, command.Command{
+        .clear = command.ClearData{ .row = 7, .col = 6 },
+    });
+    try std.testing.expect(cleared == .ok);
+    try std.testing.expect(cleared.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, cleared.ok.msg.?, "unsolvable") != null);
+    try std.testing.expect(engine.state.board.equal(
+        try board.fromFlat(flat, .{ .given_bits = given_bits }),
+    ));
+}
+
+test "exec clear after unsolvable fill restores solvable board without warning" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+
+    _ = try expectOk(execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
+    }));
+
+    const cleared = execTest(&engine, command.Command{
+        .clear = command.ClearData{ .row = 1, .col = 1 },
+    });
+    try std.testing.expect(cleared == .ok);
+    try std.testing.expect(cleared.ok.msg == null);
+    const solved = try solver.solve(engine.state.board);
+    try std.testing.expect(solved == .solution);
+}
+
+test "exec undo after unsolvable fill restores solvable board without warning" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+
+    _ = try expectOk(execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
+    }));
+
+    const undo = execTest(&engine, command.Command{ .undo = {} });
+    try std.testing.expect(undo == .ok);
+    try std.testing.expect(undo.ok.msg == null);
+    const solved = try solver.solve(engine.state.board);
+    try std.testing.expect(solved == .solution);
+}
+
 test "exec fill creates conflict → cell marked and status msg set" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
-    // Row 0: cells (0,2) and (0,3) are both empty — fill both with eight
+    // Row 0: cells (0,2) and (0,3) are both empty — duplicate ones create a row conflict
     const fill1 = command.Command{
-        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.eight },
+        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
     };
 
     const first = execTest(&engine, fill1);
@@ -461,7 +576,7 @@ test "exec fill creates conflict → cell marked and status msg set" {
     try std.testing.expect(first.ok.msg == null);
 
     const second = execTest(&engine, command.Command{
-        .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.eight },
+        .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.one },
     });
     try std.testing.expect(second == .ok);
     const view = second.ok.board_view;
