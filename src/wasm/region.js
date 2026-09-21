@@ -19,8 +19,12 @@ export function wireRegionMenu(
 ) {
   const syncBoard = () => {
     syncRegionMenu(controls, session.config);
-    const { row, col } = getSelection();
-    applyRegionHighlight(boardEl, row, col, session.config.show_region === true);
+    const sel = getSelection();
+    if (sel) {
+      applyRegionHighlight(boardEl, sel.row, sel.col, session.config.show_region === true);
+    } else {
+      applyRegionHighlight(boardEl, null, null, false);
+    }
   };
 
   controls.viewRegion?.addEventListener("click", () => {

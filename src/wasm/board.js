@@ -87,7 +87,8 @@ export function cellsInRegion(row, col) {
 
 export function applyRegionHighlight(boardEl, row, col, enabled) {
   const playEl = resolvePlayGrid(boardEl);
-  const region = enabled ? cellsInRegion(row, col) : null;
+  const region =
+    enabled && row != null && col != null ? cellsInRegion(row, col) : null;
   for (const cell of playEl.children) {
     cell.classList.remove("region");
     if (!region) continue;
@@ -171,11 +172,16 @@ export function findCellElement(boardEl, row, col) {
   return null;
 }
 
-export function applySelection(boardEl, row, col) {
+export function clearSelection(boardEl) {
   const playEl = resolvePlayGrid(boardEl);
   for (const cell of playEl.children) {
     cell.classList.remove("selected");
   }
+}
+
+export function applySelection(boardEl, row, col) {
+  const playEl = resolvePlayGrid(boardEl);
+  clearSelection(playEl);
   const target = findCellElement(playEl, row, col);
   if (target) target.classList.add("selected");
   return { row, col };
@@ -183,17 +189,31 @@ export function applySelection(boardEl, row, col) {
 
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
-export function wireSelection(frameEl, { row = 0, col = 0, onSelect, regionEnabled } = {}) {
+export function wireSelection(frameEl, { row, col, onSelect, regionEnabled } = {}) {
   const playEl = resolvePlayGrid(frameEl);
-  let selected = { row, col };
+  /** @type {{ row: number, col: number } | null} */
+  let selected = null;
 
-  const syncRegion = (nextRow, nextCol) => {
-    if (regionEnabled) applyRegionHighlight(playEl, nextRow, nextCol, regionEnabled());
+  const syncRegion = () => {
+    if (!regionEnabled) return;
+    if (selected) {
+      applyRegionHighlight(playEl, selected.row, selected.col, regionEnabled());
+    } else {
+      applyRegionHighlight(playEl, null, null, false);
+    }
+  };
+
+  const deselect = () => {
+    selected = null;
+    clearSelection(playEl);
+    syncRegion();
+    onSelect?.(null);
+    return null;
   };
 
   const select = (nextRow, nextCol) => {
     selected = applySelection(playEl, nextRow, nextCol);
-    syncRegion(nextRow, nextCol);
+    syncRegion();
     onSelect?.(selected);
     return selected;
   };
@@ -203,23 +223,31 @@ export function wireSelection(frameEl, { row = 0, col = 0, onSelect, regionEnabl
   playEl.addEventListener("click", (event) => {
     const target = event.target;
     if (target?.dataset?.row == null || target?.dataset?.col == null) return;
-    select(Number(target.dataset.row), Number(target.dataset.col));
+    const nextRow = Number(target.dataset.row);
+    const nextCol = Number(target.dataset.col);
+    if (selected?.row === nextRow && selected?.col === nextCol) {
+      deselect();
+      return;
+    }
+    select(nextRow, nextCol);
   });
 
   playEl.addEventListener("keydown", (event) => {
     if (!ARROW_KEYS.has(event.key)) return;
+    if (!selected) return;
     event.preventDefault();
     const next = moveSelection(selected.row, selected.col, event.key);
     select(next.row, next.col);
   });
 
-  select(row, col);
+  if (row != null && col != null) select(row, col);
 
   return {
     getSelection() {
-      return { ...selected };
+      return selected ? { ...selected } : null;
     },
     select,
+    deselect,
   };
 }
 
@@ -246,8 +274,8 @@ export function parsePlayKey(key, code = "") {
 
 export function applySuccessfulExec(boardEl, selection, statusEl, result, createElement) {
   renderBoard(boardEl, result.state, createElement);
-  const { row, col } = selection.getSelection();
-  selection.select(row, col);
+  const sel = selection.getSelection();
+  if (sel) selection.select(sel.row, sel.col);
   applyEventStatus(statusEl, result);
 }
 
@@ -265,7 +293,9 @@ export function handlePlayKey(
   const play = parsePlayKey(key, code);
   if (!play) return { handled: false };
 
-  const { row, col } = selection.getSelection();
+  const sel = selection.getSelection();
+  if (!sel) return { handled: false };
+  const { row, col } = sel;
   const result =
     play.type === "fill"
       ? game.exec({ action: "fill", row, col, digit: play.digit })

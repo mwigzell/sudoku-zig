@@ -313,19 +313,35 @@ function makeMockBoard() {
 
 {
   const board = makeMockBoard();
-  const controller = wireSelection(board, { row: 0, col: 0 });
+  const controller = wireSelection(board);
   assert.equal(board.tabIndex, 0);
-  assert.deepEqual(controller.getSelection(), { row: 0, col: 0 });
-  assert.ok(findCellElement(board, 0, 0).classList.contains("selected"));
+  assert.equal(controller.getSelection(), null);
+  assert.equal(
+    board.play.children.filter((c) => c.classList.contains("selected")).length,
+    0,
+  );
 
   board.play._listeners.keydown({ key: "ArrowRight", preventDefault() {} });
-  assert.deepEqual(controller.getSelection(), { row: 0, col: 1 });
-  assert.ok(findCellElement(board, 0, 1).classList.contains("selected"));
+  assert.equal(controller.getSelection(), null);
 
   const target = findCellElement(board, 5, 5);
   board.play._listeners.click({ target });
   assert.deepEqual(controller.getSelection(), { row: 5, col: 5 });
   assert.ok(target.classList.contains("selected"));
+
+  board.play._listeners.click({ target });
+  assert.equal(controller.getSelection(), null);
+  assert.ok(!target.classList.contains("selected"));
+
+  controller.select(0, 0);
+  board.play._listeners.keydown({ key: "ArrowRight", preventDefault() {} });
+  assert.deepEqual(controller.getSelection(), { row: 0, col: 1 });
+}
+
+{
+  const board = makeMockBoard();
+  const controller = wireSelection(board, { row: 0, col: 0 });
+  assert.deepEqual(controller.getSelection(), { row: 0, col: 0 });
 }
 
 // ── play loop ──
@@ -406,6 +422,21 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
   assert.equal(status.textContent, "");
   assert.match(errorModal.msgEl.textContent, /puzzle/i);
   assert.equal(errorModal.el.hidden, false);
+}
+
+{
+  const board = makeMockBoard();
+  const outcome = handlePlayKey(
+    { exec: () => ({ ok: true, state: emptyState() }) },
+    board,
+    { getSelection: () => null, select() {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    "5",
+    { state: emptyState(), legend: openLegend },
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, false);
 }
 
 {

@@ -2,7 +2,14 @@
 
 import assert from "node:assert/strict";
 import { applySelection } from "./board.js";
-import { syncEditMenu, parseEditShortcut, handleEditAction, wireEditMenu } from "./menu.js";
+import {
+  syncEditMenu,
+  parseEditShortcut,
+  handleEditAction,
+  handleDeselect,
+  anyMenuOpen,
+  wireEditMenu,
+} from "./menu.js";
 
 function makeBtn() {
   const handlers = {};
@@ -60,9 +67,32 @@ function makeMockBoard() {
 {
   const undoBtn = makeBtn();
   const redoBtn = makeBtn();
-  syncEditMenu({ undo: false, redo: true }, undoBtn, redoBtn);
+  const deselectBtn = makeBtn();
+  syncEditMenu({ undo: false, redo: true }, { undo: undoBtn, redo: redoBtn, deselect: deselectBtn }, {
+    getSelection: () => ({ row: 0, col: 0 }),
+  });
   assert.equal(undoBtn.disabled, true);
   assert.equal(redoBtn.disabled, false);
+  assert.equal(deselectBtn.disabled, false);
+
+  syncEditMenu({ undo: false, redo: true }, { undo: undoBtn, redo: redoBtn, deselect: deselectBtn }, {
+    getSelection: () => null,
+  });
+  assert.equal(deselectBtn.disabled, true);
+}
+
+// ── deselect ──
+{
+  let selected = { row: 1, col: 2 };
+  const selection = {
+    getSelection: () => selected,
+    deselect() {
+      selected = null;
+    },
+  };
+  assert.equal(handleDeselect(selection).handled, true);
+  assert.equal(selected, null);
+  assert.equal(handleDeselect(selection).handled, false);
 }
 
 // ── keyboard shortcuts ──
@@ -130,9 +160,14 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
 {
   const undoBtn = makeBtn();
   const redoBtn = makeBtn();
+  const deselectBtn = makeBtn();
   const session = { state: emptyState(), legend: { undo: true, redo: false } };
   const listeners = {};
   const root = {
+    querySelectorAll(selector) {
+      if (selector === "#menu-bar .menu") return [{ dataset: { open: "false" } }];
+      return [];
+    },
     addEventListener(type, fn) {
       listeners[type] = fn;
     },
@@ -149,12 +184,22 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     },
   };
 
+  let selected = { row: 0, col: 0 };
+  const selection = {
+    getSelection: () => selected,
+    deselect() {
+      selected = null;
+    },
+    select() {},
+  };
+
   wireEditMenu(
     undoBtn,
     redoBtn,
+    deselectBtn,
     game,
     makeMockBoard(),
-    { getSelection: () => ({ row: 0, col: 0 }), select() {} },
+    selection,
     { textContent: "", className: "" },
     { el: { hidden: true }, msgEl: { textContent: "" } },
     session,
@@ -164,6 +209,7 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
 
   assert.equal(undoBtn.disabled, false);
   assert.equal(redoBtn.disabled, true);
+  assert.equal(deselectBtn.disabled, false);
   undoBtn.click();
   assert.equal(undoBtn.disabled, true);
   assert.equal(redoBtn.disabled, false);
@@ -179,6 +225,36 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     },
   });
   assert.equal(prevented, false, "shortcut should not fire when undo disabled");
+
+  selected = { row: 3, col: 3 };
+  deselectBtn.click();
+  assert.equal(selected, null);
+  assert.equal(deselectBtn.disabled, true);
+
+  selected = { row: 1, col: 1 };
+  let escPrevented = false;
+  listeners.keydown({
+    key: "Escape",
+    preventDefault() {
+      escPrevented = true;
+    },
+  });
+  assert.equal(escPrevented, true);
+  assert.equal(selected, null);
+
+  selected = { row: 2, col: 2 };
+  root.querySelectorAll = () => [{ dataset: { open: "true" } }];
+  escPrevented = false;
+  listeners.keydown({
+    key: "Escape",
+    preventDefault() {
+      escPrevented = true;
+    },
+  });
+  assert.equal(escPrevented, false, "Escape with menu open should not deselect");
+  assert.deepEqual(selected, { row: 2, col: 2 });
 }
+
+assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
 
 console.log("menu.test.mjs OK");

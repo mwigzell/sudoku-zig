@@ -29,7 +29,7 @@ function makeRenderElement() {
   let synced = false;
   refreshSession(
     board,
-    { select: () => {} },
+    { select: () => {}, deselect: () => {} },
     { textContent: "old", className: "" },
     session,
     { sync: () => { synced = true; } },
@@ -109,7 +109,7 @@ function makeRenderElement() {
     controls,
     game,
     board,
-    { select: () => {} },
+    { select: () => {}, deselect: () => {} },
     { textContent: "", className: "" },
     { el: { hidden: true }, msgEl: { textContent: "" } },
     session,

@@ -81,21 +81,21 @@ _Avoid_: Engine (collides with GameEngine)
 
 ### Hints (issue #48)
 
-**Hint** (engine operation, one shared function):
+**Hint** (one command, one engine operation):
 Digit advice backed by the **Solver Service**: a digit that appears in at least one solution of the board *as it stands* — a solvability query, **not** a candidate/constraint check (which can mislead or induce a dead end). Display-only: never writes cells, no history impact. If the board is in a no-solution state, hint answers that honestly instead of a digit — conflicts cannot express it; hint is the first feature that can.
-_Avoid_: "suggestion", bare legal-digit check, a hint that could lead to an unsolvable state
+_Avoid_: "suggestion", bare legal-digit check, a hint that could lead to an unsolvable state; separate "Board Hint" / "Cell Hint" menu items — one `hint` with an optional target
 
 **Blocker**:
-A cell you filled with a digit that **can't belong to any solution** of the board *as played* — the solver's no-solution verdict, pinpointed. **Global** violation: the board may show zero conflict flags yet a blocker exists, because conflicts are local (row/col/box) and blockers are solution-level. With unique-solution puzzles (all PuzzleGen output) blocker ⇔ a wrong player entry. Board Hint ranks blockers first — the hint is the only feature that can name the culprit; the bit-mask conflict validator cannot.
+A cell you filled with a digit that **can't belong to any solution** of the board *as played* — the solver's no-solution verdict, pinpointed. **Global** violation: the board may show zero conflict flags yet a blocker exists, because conflicts are local (row/col/box) and blockers are solution-level. With unique-solution puzzles (all PuzzleGen output) blocker ⇔ a wrong player entry. Engine-pick hint ranks blockers first — the hint is the only feature that can name the culprit; the bit-mask conflict validator cannot.
 _Avoid_: using "blocker" for conflict-flagged cells; a blocker is invisible to the validator
 
-**Board Hint** (`hint`):
-Engine picks the target by locked ranking (issue #48): **(a) blocker** (name it) → **(b) empty cell with fewest local candidates** (solver-verified digit) → **(c) row-major tie-break**. Works with **no** UI target — no selection on web, no argument in terminal. The "what should I do next?" form.
+**Engine-pick mode** (`hint` with no target):
+Engine picks the cell by locked ranking (issue #48): **(a) blocker** (name it) → **(b) empty cell with fewest local candidates** (solver-verified digit) → **(c) row-major tie-break**. Native: menu **Hint** with no `last_cell`; web: **Hint** while nothing is selected (deselect / Esc). The "what should I do next?" form.
 _Avoid_: treating `hint` as always needing a named cell; answering a hint from local constraints alone
 
-**Cell Hint** (`hint <cell>`):
-User names the target — native: cell argument (`hint e5`, `fill`-shape); web: the page's `selection` (JS-owned, ADR-0011 target-as-arg). Engine answers that cell's solution-consistent digit (or the no-solution error).
-_Avoid_: "hint at position", implying local-constraint derivation
+**Targeted mode** (`hint` with `{row, col}`):
+User names the cell — native: `hint e5` or menu **Hint** when driver has `last_cell`; web: board `selection` when set (JS-owned, ADR-0011 target-as-arg). Engine answers that cell's solution-consistent digit (or the no-solution status).
+_Avoid_: "hint at position", implying local-constraint derivation; a permanent auto-selected cell that silently forces targeted mode
 
 ### App Shell & Deployments
 

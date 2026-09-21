@@ -1,13 +1,16 @@
-// menu.js — Edit menu: undo/redo via wasm exec, legend-driven enablement.
+// menu.js — Edit menu: undo/redo/solve/deselect (web only; native has no cell selection).
 
 import { applyEventStatus, applyExecResult } from "./shell.js";
 import { applySuccessfulExec } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
 
-/** Mirror legend.undo / legend.redo onto menu controls. */
-export function syncEditMenu(legend, undoBtn, redoBtn) {
-  syncMenuBar(legend, { undo: undoBtn, redo: redoBtn });
+/** Mirror legend flags and deselect enablement (active only when a cell is selected). */
+export function syncEditMenu(legend, controls, selection) {
+  syncMenuBar(legend, controls);
+  if (controls.deselect) {
+    controls.deselect.disabled = selection?.getSelection?.() == null;
+  }
 }
 
 export function parseEditShortcut(event) {
@@ -16,6 +19,17 @@ export function parseEditShortcut(event) {
   if (event.key === "z" && event.shiftKey) return "redo";
   if (event.key === "Z" && event.shiftKey) return "redo";
   return null;
+}
+
+export function anyMenuOpen(root) {
+  if (typeof root.querySelectorAll !== "function") return false;
+  return [...root.querySelectorAll("#menu-bar .menu")].some((menu) => menu.dataset.open === "true");
+}
+
+export function handleDeselect(selection) {
+  if (!selection.getSelection()) return { handled: false };
+  selection.deselect();
+  return { handled: true };
 }
 
 export function handleEditAction(
@@ -47,6 +61,7 @@ export function handleEditAction(
 export function wireEditMenu(
   undoBtn,
   redoBtn,
+  deselectBtn,
   game,
   boardEl,
   selection,
@@ -57,9 +72,11 @@ export function wireEditMenu(
   root = document,
   { syncLegend } = {},
 ) {
+  const controls = { undo: undoBtn, redo: redoBtn, deselect: deselectBtn };
+
   const syncEdit = () => {
     if (syncLegend) syncLegend();
-    else syncEditMenu(session.legend, undoBtn, redoBtn);
+    syncEditMenu(session.legend, controls, selection);
   };
   syncEdit();
 
@@ -78,14 +95,28 @@ export function wireEditMenu(
     return outcome;
   };
 
+  const runDeselect = () => {
+    const outcome = handleDeselect(selection);
+    if (outcome.handled) syncEdit();
+    return outcome;
+  };
+
   undoBtn.addEventListener("click", () => run("undo"));
   redoBtn.addEventListener("click", () => run("redo"));
+  deselectBtn?.addEventListener("click", () => runDeselect());
   if (typeof root.querySelector === "function") {
     const solveBtn = root.querySelector("#edit-solve");
     if (solveBtn) solveBtn.addEventListener("click", () => run("solve"));
   }
 
   root.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      if (anyMenuOpen(root)) return;
+      const outcome = runDeselect();
+      if (!outcome.handled) return;
+      event.preventDefault();
+      return;
+    }
     const action = parseEditShortcut(event);
     if (!action) return;
     if (action === "undo" && !session.legend.undo) return;
@@ -95,5 +126,5 @@ export function wireEditMenu(
     event.preventDefault();
   });
 
-  return { sync: syncEdit, run };
+  return { sync: syncEdit, run, runDeselect };
 }

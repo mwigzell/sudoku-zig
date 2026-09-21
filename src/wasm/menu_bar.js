@@ -17,6 +17,7 @@ export const MENU_BAR_MENUS = [
       { id: "undo", label: "Undo", legendKey: "undo" },
       { id: "redo", label: "Redo", legendKey: "redo" },
       { id: "solve", label: "Solve", legendKey: "solve" },
+      { id: "deselect", label: "Deselect Cell" },
     ],
   },
     {
@@ -58,6 +59,7 @@ export function collectMenuBarControls(root) {
     undo: root.querySelector("#edit-undo"),
     redo: root.querySelector("#edit-redo"),
     solve: root.querySelector("#edit-solve"),
+    deselect: root.querySelector("#edit-deselect"),
     viewLight: root.querySelector("#view-light"),
     viewDark: root.querySelector("#view-dark"),
     viewRegion: root.querySelector("#view-region"),
@@ -88,15 +90,41 @@ export function wireMenuDropdowns(root = document) {
     if (trigger) trigger.setAttribute("aria-expanded", "true");
   };
 
+  /** True while the primary button is down after a menu-trigger press — enables drag-across. */
+  let barDragging = false;
+  /** Trigger pressed while its menu was open; mouseup on that same trigger toggles closed. */
+  let pendingCloseTrigger = null;
+
+  const endBarDrag = (event) => {
+    if (pendingCloseTrigger && event.target === pendingCloseTrigger) closeAll();
+    barDragging = false;
+    pendingCloseTrigger = null;
+  };
+
   for (const menu of menus) {
     const trigger = menu.querySelector(".menu-trigger");
+    trigger?.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      barDragging = true;
+      if (menu.dataset.open === "true") pendingCloseTrigger = trigger;
+      else {
+        pendingCloseTrigger = null;
+        openMenu(menu);
+      }
+    });
+    // Drag across menu titles switches the open panel.
+    menu.addEventListener("mouseenter", () => {
+      if (!barDragging) return;
+      openMenu(menu);
+    });
+    // Swallow the click that follows mousedown so root click does not instantly close.
     trigger?.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (menu.dataset.open === "true") closeAll();
-      else openMenu(menu);
     });
   }
 
+  root.addEventListener("mouseup", (event) => endBarDrag(event));
   root.addEventListener("click", () => closeAll());
   root.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeAll();

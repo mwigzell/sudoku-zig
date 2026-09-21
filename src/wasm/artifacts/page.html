@@ -407,6 +407,7 @@
           <button type="button" role="menuitem" id="edit-undo" disabled>Undo</button>
           <button type="button" role="menuitem" id="edit-redo" disabled>Redo</button>
           <button type="button" role="menuitem" id="edit-solve" disabled>Solve</button>
+          <button type="button" role="menuitem" id="edit-deselect" disabled aria-keyshortcuts="Escape">Deselect Cell</button>
         </div>
       </div>
       <div class="menu" data-menu="view">
@@ -493,10 +494,10 @@
       const themeMenu = wireThemeMenu(menuControls, game, session, document, {
         onChange: () => menuBar.sync(),
       });
+      let editMenu;
       const selection = wireSelection(boardEl, {
-        row: 0,
-        col: 0,
         regionEnabled: () => session.config.show_region === true,
+        onSelect: () => editMenu?.sync(),
       });
       const regionMenu = wireRegionMenu(
         menuControls,
@@ -513,9 +514,10 @@
           regionMenu.sync();
         },
       });
-      const editMenu = wireEditMenu(
+      editMenu = wireEditMenu(
         menuControls.undo,
         menuControls.redo,
+        menuControls.deselect,
         game,
         boardEl,
         selection,

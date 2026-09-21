@@ -44,7 +44,7 @@ pub fn bottomBorder() []const u8 {
 const box_min_width: usize = 80;
 
 fn menuPickIsQuit(pick: []const u8) bool {
-    return std.mem.eql(u8, pick, "9") or
+    return std.mem.eql(u8, pick, "8") or
         std.ascii.eqlIgnoreCase(pick, "q") or
         std.ascii.eqlIgnoreCase(pick, "quit");
 }
@@ -211,7 +211,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .PuzzleString = owned };
         }
 
-        /// Numbered session/view submenu — Save, Open, New, Save As, Region, hint placeholders.
+        /// Numbered session/view submenu — Save, Open, New, Save As, Region, Hint placeholder.
         pub fn showMenu(self: *@This(), show_region: bool) facade.Error!_command.ParseCommandResult {
             const region_state = if (show_region) "on" else "off";
             self.writer.writeAll("\nMenu:\n") catch return facade.Error.System;
@@ -220,14 +220,13 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.writeAll("  3) New\n") catch return facade.Error.System;
             self.writer.writeAll("  4) Save As\n") catch return facade.Error.System;
             self.writer.print("  5) Region ({s})\n", .{region_state}) catch return facade.Error.System;
-            self.writer.writeAll("  6) Board Hint (not yet)\n") catch return facade.Error.System;
-            self.writer.writeAll("  7) Cell Hint (not yet)\n") catch return facade.Error.System;
-            self.writer.writeAll("  8) About\n") catch return facade.Error.System;
-            self.writer.writeAll("  9) Quit\n") catch return facade.Error.System;
+            self.writer.writeAll("  6) Hint (not yet)\n") catch return facade.Error.System;
+            self.writer.writeAll("  7) About\n") catch return facade.Error.System;
+            self.writer.writeAll("  8) Quit\n") catch return facade.Error.System;
             if (self.can_solve) {
-                self.writer.writeAll("  10) Solve\n") catch return facade.Error.System;
+                self.writer.writeAll("  9) Solve\n") catch return facade.Error.System;
             } else {
-                self.writer.writeAll("  10) Solve (unavailable)\n") catch return facade.Error.System;
+                self.writer.writeAll("  9) Solve (unavailable)\n") catch return facade.Error.System;
             }
             self.writer.writeAll("> ") catch return facade.Error.System;
 
@@ -239,16 +238,16 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "3")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null, .file = null } } };
             if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .set_region = !show_region } };
-            if (std.mem.eql(u8, pick, "6") or std.mem.eql(u8, pick, "7")) {
+            if (std.mem.eql(u8, pick, "6")) {
                 try self.showError("not yet");
                 return try self.showMenu(show_region);
             }
-            if (std.mem.eql(u8, pick, "8")) {
+            if (std.mem.eql(u8, pick, "7")) {
                 try self.showAbout();
                 return try self.showMenu(show_region);
             }
             if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
-            if (std.mem.eql(u8, pick, "10")) {
+            if (std.mem.eql(u8, pick, "9")) {
                 if (!self.can_solve) return try self.showMenu(show_region);
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
@@ -1165,7 +1164,7 @@ test "showMenu: quit pick returns quit command" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"9\n"};
+    const responses = [_][]const u8{"8\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1188,7 +1187,7 @@ test "showMenu: solve pick is ignored when unavailable" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "10\n", "9\n" };
+    const responses = [_][]const u8{ "9\n", "8\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1205,7 +1204,7 @@ test "showMenu: solve pick is ignored when unavailable" {
         .error_msg => try std.testing.expect(false),
     }
     const written = aw.writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, written, "10) Solve (unavailable)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "9) Solve (unavailable)") != null);
     try std.testing.expect(std.mem.indexOf(u8, written, "invalid menu choice") == null);
 }
 
@@ -1214,7 +1213,7 @@ test "showMenu: solve pick returns solve when available" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"10\n"};
+    const responses = [_][]const u8{"9\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1261,7 +1260,7 @@ test "showMenu: invalid pick re-shows menu until valid choice" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "x\n", "\n", "9\n" };
+    const responses = [_][]const u8{ "x\n", "\n", "8\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };

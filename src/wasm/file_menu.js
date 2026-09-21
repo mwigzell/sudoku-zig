@@ -35,7 +35,7 @@ export function refreshSession(
   session.state = state;
   session.legend = legend;
   session.config = config;
-  selection.select(0, 0);
+  selection.deselect();
   applyEventStatus(statusEl, { ok: true, msg: null });
   menuBar.sync();
   onViewRefresh?.();
