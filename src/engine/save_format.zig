@@ -20,7 +20,7 @@ test "fromSaveFormat uses mutation_history not game_engine" {
 
     var loaded = try fromSaveFormat(std.testing.allocator, buf);
     defer loaded.history.deinit();
-    try std.testing.expect(st.board.equal(loaded.board));
+    try std.testing.expect(board.equal(st.board, loaded.board));
     try std.testing.expectEqual(@as(usize, 1), loaded.history.pointer);
 }
 
@@ -125,7 +125,7 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
     }
     const trailer = SaveFileTrailer{
         .given_bits = self.board.given_bits,
-        .flat_board = self.board.toFlat(),
+        .flat_board = board.toFlat(self.board),
     };
     writeSaveTrailer(buf[offset..][0..SAVE_TRAILER_SIZE], &trailer);
 
@@ -438,8 +438,8 @@ test "fromSaveFormat round-trip: board state given_bits history" {
 
     var loaded = try fromSaveFormat(std.testing.allocator, buf);
     defer loaded.history.deinit();
-    // --- Assert board state (cells + given_bits) via Board.equal() ---
-    try std.testing.expect(st.board.equal(loaded.board));
+    // --- Assert board state (cells + given_bits) via board.equal() ---
+    try std.testing.expect(board.equal(st.board, loaded.board));
     try std.testing.expectEqual(st.history.pointer, loaded.history.pointer);
     try std.testing.expectEqual(
         st.history.entries.items.len,
@@ -467,7 +467,7 @@ test "save v2 round-trips a cell entry and one solve snapshot" {
 
     try board_state.setCell(0, 0, .four);
     try hist.push(0, 0, .zero, .four);
-    const before_flat = board_state.toFlat();
+    const before_flat = board.toFlat(board_state);
     const before_given = board_state.given_bits;
     try hist.pushSolve(.{ .given_bits = before_given, .flat = before_flat });
 
@@ -480,7 +480,7 @@ test "save v2 round-trips a cell entry and one solve snapshot" {
 
     var loaded = try fromSaveFormat(std.testing.allocator, buf);
     defer loaded.history.deinit();
-    try std.testing.expect(st.board.equal(loaded.board));
+    try std.testing.expect(board.equal(st.board, loaded.board));
     try std.testing.expectEqual(@as(usize, 2), loaded.history.entries.items.len);
     switch (loaded.history.entries.items[0]) {
         .cell => |c| {
@@ -519,13 +519,13 @@ test "save v1 fixture still loads as a cell entry" {
     buf[SAVE_HEADER_SIZE + 1] = @as(u8, @backingInt(cell.CellValue.four));
     const trailer = SaveFileTrailer{
         .given_bits = board_state.given_bits,
-        .flat_board = board_state.toFlat(),
+        .flat_board = board.toFlat(board_state),
     };
     writeSaveTrailer(buf[SAVE_HEADER_SIZE + @sizeOf(SaveEntry) ..][0..SAVE_TRAILER_SIZE], &trailer);
 
     var loaded = try fromSaveFormat(std.testing.allocator, buf);
     defer loaded.history.deinit();
-    try std.testing.expect(board_state.equal(loaded.board));
+    try std.testing.expect(board.equal(board_state, loaded.board));
     try std.testing.expectEqual(@as(usize, 1), loaded.history.pointer);
     switch (loaded.history.entries.items[0]) {
         .cell => |c| {

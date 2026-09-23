@@ -72,14 +72,14 @@ test "command.undo.execute restores the before snapshot of one solve" {
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
-    const before_flat = engine.state.board.toFlat();
+    const before_flat = board.toFlat(engine.state.board);
     const before_given = engine.state.board.given_bits;
     try engine.state.board.setCell(0, 0, .four);
     try engine.state.history.pushSolve(.{ .given_bits = before_given, .flat = before_flat });
 
     const event = execute(&engine);
     if (event != .ok) return error.TestFailed;
-    try std.testing.expectEqual(before_flat, engine.state.board.toFlat());
+    try std.testing.expectEqual(before_flat, board.toFlat(engine.state.board));
     try std.testing.expectEqual(before_given, engine.state.board.given_bits);
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.pointer);
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.entries.items.len);

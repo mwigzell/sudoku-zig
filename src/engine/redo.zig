@@ -98,7 +98,7 @@ test "command.redo.execute re-solves a solve batch to the captured grid" {
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
-    const before_flat = engine.state.board.toFlat();
+    const before_flat = board.toFlat(engine.state.board);
     const before_given = engine.state.board.given_bits;
     for (solution, 0..) |ch, i| {
         const digit = ch - '0';
@@ -116,6 +116,6 @@ test "command.redo.execute re-solves a solve batch to the captured grid" {
     if (event != .ok) return error.TestFailed;
     var expected: [81]u8 = undefined;
     for (solution, 0..) |ch, i| expected[i] = ch - '0';
-    try std.testing.expectEqual(expected, engine.state.board.toFlat());
+    try std.testing.expectEqual(expected, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
 }

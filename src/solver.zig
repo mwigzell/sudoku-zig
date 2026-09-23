@@ -15,7 +15,7 @@ pub fn solve(b: board.Board) SolveError!SolveResult {
     var work = b;
     work.validate();
     if (work.conflict_bits != 0) return error.Conflict;
-    if (search(&work, 0)) return .{ .solution = work.toFlat() };
+    if (search(&work, 0)) return .{ .solution = board.toFlat(work) };
     return .none;
 }
 
@@ -69,22 +69,22 @@ test "solve returns none when a conflict-free partial has no completion" {
     var line: [81]u8 = @splat('0');
     for (0..8) |c| line[c] = '1' + @as(u8, @intCast(c));
     line[1 * 9 + 8] = '9';
-    var b = try board.fromOneLineString(&line);
-    const before = b.toFlat();
+    const b = try board.fromOneLineString(&line);
+    const before = board.toFlat(b);
     const result = try solve(b);
     try std.testing.expect(result == .none);
-    try std.testing.expectEqual(before, b.toFlat());
+    try std.testing.expectEqual(before, board.toFlat(b));
 }
 
 test "solve errors when the board already has a conflict" {
     var line: [81]u8 = @splat('0');
     line[0] = '5';
     line[1] = '5';
-    var b = try board.fromOneLineString(&line);
-    const before = b.toFlat();
+    const b = try board.fromOneLineString(&line);
+    const before = board.toFlat(b);
     const result = solve(b) catch |err| {
         try std.testing.expectEqual(error.Conflict, err);
-        try std.testing.expectEqual(before, b.toFlat());
+        try std.testing.expectEqual(before, board.toFlat(b));
         return;
     };
     _ = result;

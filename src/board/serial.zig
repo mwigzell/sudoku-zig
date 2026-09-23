@@ -273,6 +273,18 @@ test "Board: equal returns false when cell values differ" {
     try std.testing.expect(!equal(b1, b2));
 }
 
+test "board module re-exports toFlat and equal from serial" {
+    var flat: [board.CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 5;
+
+    const b1 = try fromFlat(flat, .{});
+    const b2 = try fromFlat(flat, .{});
+
+    try std.testing.expect(board.equal(b1, b2));
+    try std.testing.expectEqual(@as(u8, 5), board.toFlat(b1)[0]);
+}
+
 test "Board: equal returns false when given_bits differ" {
     var flat: [board.CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);

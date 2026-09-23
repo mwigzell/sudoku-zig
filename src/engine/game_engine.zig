@@ -248,7 +248,7 @@ pub const GameEngine = struct {
 
     /// Fill every empty cell from one solver pass. One history step, not N fills.
     fn solveForMe(self: *@This()) Event {
-        const before_flat = self.state.board.toFlat();
+        const before_flat = board.toFlat(self.state.board);
         const before_given = self.state.board.given_bits;
         const solved = solver.solve(self.state.board) catch |err| switch (err) {
             error.Conflict => return self.errorEvent("board has a conflict"),
@@ -313,7 +313,7 @@ test "exec solve_for_me fills a known partial as one solve batch" {
     _ = try expectOk(ev);
     var expected: [81]u8 = undefined;
     for (solution, 0..) |ch, i| expected[i] = ch - '0';
-    try std.testing.expectEqual(expected, engine.state.board.toFlat());
+    try std.testing.expectEqual(expected, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.count());
     switch (engine.state.history.peekPast().?) {
         .solve_batch => {},
@@ -329,12 +329,12 @@ test "exec solve_for_me returns ok and leaves an unsolvable board unchanged" {
     line[1 * 9 + 8] = '9';
     var engine = try GameEngine.init(&line, config.Config.default());
     defer engine.deinit();
-    const before = engine.state.board.toFlat();
+    const before = board.toFlat(engine.state.board);
 
     const ev = execTest(&engine, .{ .solve_for_me = {} });
     _ = try expectOk(ev);
     try std.testing.expect(ev.ok.msg == null);
-    try std.testing.expectEqual(before, engine.state.board.toFlat());
+    try std.testing.expectEqual(before, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
 }
 
@@ -343,11 +343,11 @@ test "exec solve_for_me errors when the board has a conflict" {
     defer engine.deinit();
     try engine.state.board.setCell(0, 1, .three);
     engine.state.board.validate();
-    const before = engine.state.board.toFlat();
+    const before = board.toFlat(engine.state.board);
 
     const ev = execTest(&engine, .{ .solve_for_me = {} });
     try expectErrorResult(ev);
-    try std.testing.expectEqual(before, engine.state.board.toFlat());
+    try std.testing.expectEqual(before, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
 }
 
@@ -374,7 +374,7 @@ test "loadSaveFormat replaces board and history from SUD0 bytes" {
     defer fresh.deinit();
     try fresh.loadSaveFormat(buf);
 
-    try std.testing.expect(engine.state.board.equal(fresh.state.board));
+    try std.testing.expect(board.equal(engine.state.board, fresh.state.board));
     try std.testing.expectEqual(@as(usize, 1), fresh.state.history.pointer);
 }
 
@@ -432,7 +432,7 @@ test "codec round-trip via loadSaveFormat and toSaveFormat — no engine file me
     defer loaded.deinit();
     try loaded.loadSaveFormat(buf);
 
-    try std.testing.expect(engine.state.board.equal(loaded.state.board));
+    try std.testing.expect(board.equal(engine.state.board, loaded.state.board));
     try std.testing.expectEqual(engine.state.history.count(), loaded.state.history.count());
     try std.testing.expectEqual(cell.CellValue.seven, loaded.state.board.getCellValue(@as(u4, 0), @as(u4, 2)));
 }
@@ -525,7 +525,8 @@ test "user save fixture: puzzle is already unsolvable; clear after bad fill keep
     try std.testing.expect(cleared == .ok);
     try std.testing.expect(cleared.ok.msg != null);
     try std.testing.expect(std.mem.indexOf(u8, cleared.ok.msg.?, "unsolvable") != null);
-    try std.testing.expect(engine.state.board.equal(
+    try std.testing.expect(board.equal(
+        engine.state.board,
         try board.fromFlat(flat, .{ .given_bits = given_bits }),
     ));
 }

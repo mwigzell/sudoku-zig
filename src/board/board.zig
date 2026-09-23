@@ -211,26 +211,6 @@ pub const Board = struct {
         return BoardView{ ._board = self };
     }
 
-    /// Serialize current cell values to a flat [81]u8 array for saving.
-    /// Each element is the raw digit: 0 for empty, 1-9 for filled.
-    pub fn toFlat(self: Board) [CELL_COUNT]u8 {
-        var flat: [CELL_COUNT]u8 = undefined;
-        for (self.cells, 0..) |cell, i| {
-            flat[i] = @as(u8, @backingInt(cell.value));
-        }
-        return flat;
-    }
-
-    /// Compare two boards: same cell values and given_bits.
-    pub fn equal(self: Board, other: Board) bool {
-        if (self.given_bits != other.given_bits) return false;
-        for (self.cells, other.cells, 0..) |c1, c2, i| {
-            _ = i;
-            if (c1.value != c2.value) return false;
-        }
-        return true;
-    }
-
     /// Set the value at (row, col). Returns error.IsGiven if the cell is a puzzle clue.
     pub fn setCell(self: *Board, row: u4, col: u4, val: CellValue) Error!void {
         if (self.isGiven(row, col)) return error.IsGiven;
@@ -260,10 +240,12 @@ pub const Board = struct {
 
 const serial = @import("serial.zig");
 
-// Backward-compat re-exports (moved to board/serial.zig)
+// Flat-grid codec lives in serial.zig; re-exported here for @import("board/board.zig") callers.
 pub const FlatOpts = serial.FlatOpts;
 pub const fromFlat = serial.fromFlat;
 pub const fromOneLineString = serial.fromOneLineString;
+pub const toFlat = serial.toFlat;
+pub const equal = serial.equal;
 
 // ---------------------------------------------------------------------------
 
