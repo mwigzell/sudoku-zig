@@ -236,6 +236,15 @@ pub const Board = struct {
     pub fn refreshConflictsForCell(self: *Board, row: u4, col: u4) void {
         conflict.refreshConflictsForCell(self, row, col);
     }
+
+    /// True when every cell is filled and no conflict bits are set.
+    pub fn isSolved(self: *const Board) bool {
+        if (self.conflict_bits != 0) return false;
+        for (self.cells) |c| {
+            if (c.value == .zero) return false;
+        }
+        return true;
+    }
 };
 
 const serial = @import("serial.zig");
@@ -259,6 +268,37 @@ test "Board: init produces 81 empty cells and no givens" {
     for (0..CELL_COUNT) |i| {
         try std.testing.expectEqual(CellValue.zero, b.cells[i].value);
     }
+}
+
+test "Board: isSolved is false for an empty board" {
+    const b = Board.init();
+    try std.testing.expect(!b.isSolved());
+}
+
+test "Board: isSolved is false with one empty cell on an otherwise complete grid" {
+    const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var line: [81]u8 = undefined;
+    @memcpy(&line, full);
+    line[40] = '0';
+    var b = try fromOneLineString(&line);
+    b.validate();
+    try std.testing.expect(!b.isSolved());
+}
+
+test "Board: isSolved is true when all cells are filled and conflict-free" {
+    const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var b = try fromOneLineString(full);
+    b.validate();
+    try std.testing.expect(b.isSolved());
+}
+
+test "Board: isSolved is false when every cell is filled but a conflict exists" {
+    const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var b = try fromOneLineString(full);
+    b.cells[0].value = .one;
+    b.cells[1].value = .one;
+    b.validate();
+    try std.testing.expect(!b.isSolved());
 }
 
 test "Board: setCell places a digit on an empty cell" {

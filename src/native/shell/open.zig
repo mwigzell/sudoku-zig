@@ -30,11 +30,7 @@ fn doOpen(engine: *game_engine.GameEngine, transport: file_transport.FileTranspo
     };
     defer transport.free(transport.context, buf);
 
-    engine.loadSaveFormat(buf) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
-
-    return engine.finishOpenEvent(resolved);
+    return engine.openFromSave(buf, resolved);
 }
 
 // ---------------------------------------------------------------------------

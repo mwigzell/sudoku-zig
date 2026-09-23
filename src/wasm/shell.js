@@ -43,10 +43,10 @@ export function saveAs(game) {
 }
 
 /** Restore game state from opaque SUD0 bytes. */
-export function open(game, bytes) {
-  const result = game.deserialize(bytes);
+export function open(game, bytes, { name } = {}) {
+  const result = name ? game.deserialize(bytes, { name }) : game.deserialize(bytes);
   if (!result.ok) return result;
-  return { ok: true, state: game.getState() };
+  return { ok: true, state: result.state, msg: result.msg ?? null };
 }
 
 /** Start a fresh game at the given difficulty (PlayerDifficulty wire values). */

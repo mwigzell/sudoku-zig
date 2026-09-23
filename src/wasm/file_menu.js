@@ -30,13 +30,14 @@ export function refreshSession(
   config,
   createElement,
   onViewRefresh,
+  eventMsg = null,
 ) {
   renderBoard(boardEl, state, createElement);
   session.state = state;
   session.legend = legend;
   session.config = config;
   selection.deselect();
-  applyEventStatus(statusEl, { ok: true, msg: null });
+  applyEventStatus(statusEl, { ok: true, msg: eventMsg });
   menuBar.sync();
   onViewRefresh?.();
 }
@@ -184,12 +185,24 @@ export function wireFileMenu(
     if (!session.legend.open) return;
     const picked = await pick(session);
     if (!picked.ok || picked.cancelled) return;
-    const result = open(game, picked.bytes);
+    const result = open(game, picked.bytes, { name: picked.name });
     if (!result.ok) {
       fail(result);
       return;
     }
     session.fileHandle = picked.handle ?? null;
-    refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, game.getLegend(), game.getConfig(), createElement, onViewRefresh);
+    refreshSession(
+      boardEl,
+      selection,
+      statusEl,
+      session,
+      menuBar,
+      result.state,
+      game.getLegend(),
+      game.getConfig(),
+      createElement,
+      onViewRefresh,
+      result.msg,
+    );
   });
 }

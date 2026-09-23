@@ -45,6 +45,25 @@ function makeRenderElement() {
 }
 
 {
+  const board = makeBoard();
+  const status = { textContent: "old", className: "" };
+  refreshSession(
+    board,
+    { select: () => {}, deselect: () => {} },
+    status,
+    { state: { cells: [] }, legend: {}, config: {} },
+    { sync() {} },
+    { cells: [] },
+    {},
+    {},
+    makeRenderElement(),
+    undefined,
+    "opened: game.sud; this puzzle has no solution",
+  );
+  assert.match(status.textContent, /no solution/i);
+}
+
+{
   assert.equal(filePickerStartIn({}), "documents");
   assert.equal(filePickerStartIn({ fileHandle: { name: "game.sud" } }).name, "game.sud");
 }

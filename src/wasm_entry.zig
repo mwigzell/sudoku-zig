@@ -145,17 +145,24 @@ export fn serialize() callconv(.c) u32 {
     return @intCast(bytes.len);
 }
 
-/// Replace game state from SUD0 bytes in wasm memory; returns JSON status ptr.
-export fn deserialize(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+/// Replace game state from SUD0 bytes in wasm memory; returns Event JSON (same shape as exec).
+/// Optional name_ptr/name_len supply the opened label (web file picker filename).
+export fn deserialize(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
 
     const bytes = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    eng.loadSaveFormat(bytes) catch {
-        return exportError(out, "deserialize failed");
-    };
+    const opened_label: ?[]const u8 = if (name_len > 0)
+        @as([*]const u8, @ptrFromInt(name_ptr))[0..name_len]
+    else
+        null;
 
-    boundary.writeOkJson(out) catch return exportWriteFailed(out);
+    const ev = eng.openFromSave(bytes, opened_label);
+    switch (ev) {
+        .error_msg => |msg| return exportError(out, msg),
+        .ok => {},
+    }
+    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
     return returnJson(out);
 }
 

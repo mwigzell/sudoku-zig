@@ -152,7 +152,36 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
   const loaded = fresh.deserialize(saved.bytes);
   assert.equal(loaded.ok, true, `deserialize failed: ${JSON.stringify(loaded)}`);
+  assert.equal(loaded.msg, null, "solvable load should not warn");
   assert.deepEqual(fresh.getState(), before, "deserialize did not restore state");
+}
+
+// ── deserialize warns on dead puzzle (same as native open) ──
+{
+  const dead = await loadArtifact(wasmBytes);
+  assert.equal(dead.init({ difficulty: 1 }).ok, true);
+  const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
+  assert.equal(bad.ok, true);
+  assert.match(bad.msg ?? "", /unsolvable/i);
+  const saved = dead.serialize();
+  assert.equal(saved.ok, true);
+
+  const fresh = await loadArtifact(wasmBytes);
+  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  const loaded = fresh.deserialize(saved.bytes);
+  assert.equal(loaded.ok, true);
+  assert.match(loaded.msg ?? "", /no solution/i);
+
+  const named = await loadArtifact(wasmBytes);
+  assert.equal(named.init({ difficulty: 1 }).ok, true);
+  const opened = named.deserialize(saved.bytes, { name: "dead.sud" });
+  assert.equal(opened.ok, true);
+  assert.match(opened.msg ?? "", /opened: dead\.sud/i);
+  assert.match(opened.msg ?? "", /no solution/i);
+
+  const shellResult = open(named, saved.bytes, { name: "dead.sud" });
+  assert.equal(shellResult.ok, true);
+  assert.match(shellResult.msg ?? "", /no solution/i);
 }
 
 // ── newGame returns fresh state for re-render ──

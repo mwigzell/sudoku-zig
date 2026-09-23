@@ -4,6 +4,7 @@
 // linear memory.
 
 const SCRATCH = 4096;
+const NAME_SCRATCH = 65536;
 
 const readCString = (memory, ptr) => {
   const view = new Uint8Array(memory.buffer);
@@ -59,9 +60,14 @@ export async function loadArtifact(wasmBytes) {
       return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };
     },
 
-    deserialize(bytes) {
+    deserialize(bytes, { name } = {}) {
       writeBytes(memory, SCRATCH, bytes);
-      return readJson(exports.deserialize(SCRATCH, bytes.length));
+      if (name) {
+        const nameBytes = new TextEncoder().encode(name);
+        writeBytes(memory, NAME_SCRATCH, nameBytes);
+        return readJson(exports.deserialize(SCRATCH, bytes.length, NAME_SCRATCH, nameBytes.length));
+      }
+      return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
     },
 
     get exports() {

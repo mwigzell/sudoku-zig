@@ -111,6 +111,12 @@ pub const GameEngine = struct {
         self.state.board.validate();
     }
 
+    /// Open from SUD0 bytes — native shell and wasm deserialize both call this.
+    pub fn openFromSave(self: *@This(), buf: []const u8, opened_label: ?[]const u8) Event {
+        self.loadSaveFormat(buf) catch |err| return self.errorEvent(@errorName(err));
+        return self.finishLoadEvent(opened_label);
+    }
+
     /// Clear the per-exec `.ok.msg` scratch buffer before appending message parts.
     pub fn beginEventMsg(self: *@This()) void {
         self.event_msg.reset();
@@ -142,10 +148,9 @@ pub const GameEngine = struct {
         if (solved == .none) self.appendEventMsg("this puzzle has no solution");
     }
 
-    /// Build `.ok` after a successful open/load with path + optional solvability warning.
-    pub fn finishOpenEvent(self: *@This(), path: []const u8) Event {
+    fn finishLoadEvent(self: *@This(), opened_label: ?[]const u8) Event {
         self.beginEventMsg();
-        self.appendEventMsgFmt("opened: {s}", .{path});
+        if (opened_label) |label| self.appendEventMsgFmt("opened: {s}", .{label});
         self.appendUnsolvableLoadWarningIfNeeded();
         return self.finishOkEvent(self.state.board.asView(), false, null);
     }
@@ -180,7 +185,7 @@ pub const GameEngine = struct {
         };
     }
 
-    pub fn finishOkAfterCellEdit(self: *@This(), row: u4, col: u4) Event {
+    pub fn finishOkAfterCellEdit(self: *@This(), row: u4, col: u4, was_solved: bool) Event {
         self.state.board.refreshConflictsForCell(row, col);
         const view = self.state.board.asView();
         if (view.isConflictingRowCol(row, col)) {
@@ -190,6 +195,9 @@ pub const GameEngine = struct {
                 return self.finishOkEvent(view, false, .{ .row = row, .col = col });
             };
             if (solved == .none) self.appendUnsolvableMutationWarning(row, col);
+        }
+        if (!was_solved and self.state.board.isSolved()) {
+            self.appendEventMsg("You win!");
         }
         return self.finishOkEvent(view, false, .{ .row = row, .col = col });
     }
@@ -232,6 +240,7 @@ pub const GameEngine = struct {
 
     /// Attempt to fill a cell with a digit. Records mutation in history.
     pub fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) Event {
+        const was_solved = self.state.board.isSolved();
         // Snapshot old value before mutation (only recorded on success)
         const old_value = self.state.board.asView().get(row, col);
         self.state.board.setCell(row, col, digit) catch |err| {
@@ -243,7 +252,7 @@ pub const GameEngine = struct {
         self.state.history.push(row, col, old_value, digit) catch |err| {
             return self.errorEventFmt("history push failed: {s}", .{@errorName(err)});
         };
-        return self.finishOkAfterCellEdit(row, col);
+        return self.finishOkAfterCellEdit(row, col, was_solved);
     }
 
     /// Fill every empty cell from one solver pass. One history step, not N fills.
@@ -359,6 +368,33 @@ test "legend solve is on only when the board has empties and no conflict" {
     try engine.state.board.setCell(0, 1, .three);
     engine.state.board.validate();
     try std.testing.expect(!engine.getLegend().solve);
+}
+
+test "openFromSave warns when SUD0 bytes encode an unsolvable grid" {
+    const flat: [81]u8 = .{
+        0, 0, 3, 4, 2, 1, 6, 0, 0, 9, 0, 0, 3, 7, 5, 0, 0, 1, 0, 0, 1, 8, 9, 6, 4, 0, 0,
+        0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
+        0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
+    };
+    const given_bits: u128 = 0x54949b0d901361b25254;
+
+    var dead = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer dead.deinit();
+    dead.state.board = try board.fromFlat(flat, .{ .given_bits = given_bits });
+    dead.state.board.validate();
+
+    const buf = try dead.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    const ev = engine.openFromSave(buf, "dead.sud");
+    try std.testing.expect(ev == .ok);
+    try std.testing.expect(ev.ok.msg != null);
+    const msg = ev.ok.msg.?;
+    try std.testing.expect(std.mem.indexOf(u8, msg, "opened: dead.sud") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
 }
 
 test "loadSaveFormat replaces board and history from SUD0 bytes" {
@@ -496,7 +532,7 @@ test "exec fill that kills solvability warns with the mutated cell" {
     try std.testing.expect(!ev.ok.board_view.isConflictingRowCol(1, 1));
 }
 
-test "user save fixture: puzzle is already unsolvable; clear after bad fill keeps warning" {
+test "inline unsolvable grid: fill warns and clear restores same dead board" {
     const flat: [81]u8 = .{
         0, 0, 3, 4, 2, 1, 6, 0, 0, 9, 0, 0, 3, 7, 5, 0, 0, 1, 0, 0, 1, 8, 9, 6, 4, 0, 0,
         0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
@@ -982,6 +1018,67 @@ test "getLegend: fresh engine has Fill/Clear/Quit only" {
     try std.testing.expect(cmds.menu);
     try std.testing.expect(!cmds.undo);
     try std.testing.expect(!cmds.redo);
+}
+
+test "exec fill that completes the board announces You win!" {
+    const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var line: [81]u8 = undefined;
+    @memcpy(&line, full);
+    const empty_idx: usize = 40;
+    const fill_digit = line[empty_idx];
+    line[empty_idx] = '0';
+    var engine = try GameEngine.init(&line, config.Config.default());
+    defer engine.deinit();
+    const row: u4 = @intCast(@divTrunc(empty_idx, 9));
+    const col: u4 = @intCast(@mod(empty_idx, 9));
+
+    const ev = execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = row, .col = col, .digit = cell.rawToCellValue(fill_digit - '0') },
+    });
+    try std.testing.expect(ev == .ok);
+    try std.testing.expect(ev.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, ev.ok.msg.?, "You win!") != null);
+}
+
+test "exec fill that does not complete the board has no win message" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    const ev = execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.three },
+    });
+    try std.testing.expect(ev == .ok);
+    if (ev.ok.msg) |msg| {
+        try std.testing.expect(std.mem.indexOf(u8, msg, "You win!") == null);
+    }
+}
+
+test "exec win is not re-announced on an already-solved board" {
+    const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var line: [81]u8 = undefined;
+    @memcpy(&line, full);
+    const empty_idx: usize = 40;
+    const fill_digit = line[empty_idx];
+    line[empty_idx] = '0';
+    var engine = try GameEngine.init(&line, config.Config.default());
+    defer engine.deinit();
+    const row: u4 = @intCast(@divTrunc(empty_idx, 9));
+    const col: u4 = @intCast(@mod(empty_idx, 9));
+    const digit = cell.rawToCellValue(fill_digit - '0');
+
+    const win = execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = row, .col = col, .digit = digit },
+    });
+    try std.testing.expect(win.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, win.ok.msg.?, "You win!") != null);
+
+    const again = execTest(&engine, command.Command{
+        .fill = command.FillData{ .row = row, .col = col, .digit = digit },
+    });
+    try std.testing.expect(again == .ok);
+    if (again.ok.msg) |msg| {
+        try std.testing.expect(std.mem.indexOf(u8, msg, "You win!") == null);
+    }
 }
 
 test "finishOkAfterCellEdit sets event cell to mutated coordinates" {

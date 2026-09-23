@@ -12,10 +12,11 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
         .cell => |c| {
+            const was_solved = engine.state.board.isSolved();
             engine.state.board.setCell(c.row, c.col, c.old_value) catch |err| {
                 return engine.eventFromSetCellError(c.row, c.col, err);
             };
-            return engine.finishOkAfterCellEdit(c.row, c.col);
+            return engine.finishOkAfterCellEdit(c.row, c.col, was_solved);
         },
         .solve_batch => |snap| {
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
