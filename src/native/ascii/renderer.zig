@@ -342,26 +342,18 @@ pub fn AsciiRenderer(StylerType: type) type {
                 }
             }
 
-            // Intercept open: use cached filename or prompt via dialog
+            // Intercept open: always prompt; cache path for the next .save
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .open)
             {
-                if (self.last_filename) |cached| {
-                    rsl.valid.open.path = cached;
-                } else {
-                    const file_result = self.openDialog() catch return .{ .error_msg = "cancelled" };
-
-                    switch (file_result) {
-                        .FileName => |new_path| {
-                            if (self.last_filename) |old| self.allocator.free(old);
-
-                            self.last_filename = new_path;
-
-                            rsl.valid.open.path = new_path;
-                        },
-
-                        .Cancelled => return .{ .error_msg = "cancelled" },
-                    }
+                const file_result = self.openDialog() catch return .{ .error_msg = "cancelled" };
+                switch (file_result) {
+                    .FileName => |new_path| {
+                        if (self.last_filename) |old| self.allocator.free(old);
+                        self.last_filename = new_path;
+                        rsl.valid.open.path = new_path;
+                    },
+                    .Cancelled => return .{ .error_msg = "cancelled" },
                 }
             }
 
@@ -375,6 +367,8 @@ pub fn AsciiRenderer(StylerType: type) type {
                         rsl.valid.new.puzzle = puzzle_str;
                     },
                     .PuzzleFile => |path| {
+                        if (self.last_filename) |old| self.allocator.free(old);
+                        self.last_filename = path;
                         rsl.valid.new.file = path;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },

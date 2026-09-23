@@ -286,6 +286,49 @@ test "integrated e2e - run: open file success produces status message, re-render
     while (true) if (try sudoku_instance.turn()) break;
 }
 
+test "integrated e2e - run: open then save reuses opened path without filename prompt" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+
+    const io = std.testing.io;
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
+    defer original.deinit();
+    const tmp_path = "/tmp/sudoku_e2e_open_save_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+    const setup_transport = file_transport.NativeTransport.make(io);
+    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
+    defer std.heap.page_allocator.free(save_buf);
+    try setup_transport.write(setup_transport.context, tmp_path, save_buf);
+
+    // menu → open → path → menu → save → quit (no filename line after save)
+    const responses = [_][]const u8{
+        "m",
+        "2",
+        tmp_path,
+        "m",
+        "1",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    defer sudoku_instance.deinit();
+
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+
+    const on_disk = setup_transport.readAll(setup_transport.context, tmp_path) catch return error.TestFailed;
+    defer setup_transport.free(setup_transport.context, on_disk);
+    try std.testing.expect(on_disk.len > 0);
+}
+
 test "integrated e2e - run: save uses default filename and returns success" {
     const cfg: config.Config = .{
         .difficulty = .hard,

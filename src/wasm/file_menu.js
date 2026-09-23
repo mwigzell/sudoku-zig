@@ -156,6 +156,7 @@ export function wireFileMenu(
       return;
     }
     session.fileHandle = null;
+    session.boundFilename = null;
     refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, result.legend, result.config, createElement, onViewRefresh);
   });
 
@@ -166,7 +167,12 @@ export function wireFileMenu(
       fail(result);
       return;
     }
-    const saved = await persistBytes(result.bytes, session, DEFAULT_SAVE_FILENAME, { download });
+    const saved = await persistBytes(
+      result.bytes,
+      session,
+      session.boundFilename ?? DEFAULT_SAVE_FILENAME,
+      { download },
+    );
     if (!saved.ok && !saved.cancelled) fail(saved);
   });
 
@@ -191,6 +197,7 @@ export function wireFileMenu(
       return;
     }
     session.fileHandle = picked.handle ?? null;
+    session.boundFilename = picked.name;
     refreshSession(
       boardEl,
       selection,
