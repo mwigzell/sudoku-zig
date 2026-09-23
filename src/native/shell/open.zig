@@ -94,6 +94,7 @@ test "command.open.execute warns when the loaded puzzle has no solution" {
     defer std.heap.page_allocator.free(save_buf);
     try transport.write(transport.context, resolved, save_buf);
 
+    engine.warn_unsolvable_load = true;
     const event = execute(&engine, transport, tmp_path);
 
     switch (event) {

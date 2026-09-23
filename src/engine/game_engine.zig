@@ -1,6 +1,7 @@
 // GameEngine: authoritative game state — board, mutation history, and the exec()
 // command dispatcher; save/restore delegates to save_format.
 const std = @import("std");
+const builtin = @import("builtin");
 const board = @import("../board/board.zig");
 const cell = @import("../board/cell.zig");
 const _legend = @import("../renderer/legend.zig");
@@ -36,10 +37,16 @@ pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
 
 /// Owns portable game state. No file transport or I/O here.
+const SolvabilityProbe = enum { move, load };
+
 pub const GameEngine = struct {
     state: state_mod.State,
     cfg: config.Config,
     event_msg: event.EventMsg = .{},
+    /// After a player move, probe solvability and warn when the board has no completion.
+    warn_dead_moves: bool = !builtin.is_test,
+    /// On open/load, probe solvability and warn when the puzzle has no completion.
+    warn_unsolvable_load: bool = !builtin.is_test,
 
     /// Build an engine from a one-line puzzle string and nominal config.
     pub fn init(puzzle_str: []const u8, cfg: config.Config) Error!@This() {
@@ -143,8 +150,18 @@ pub const GameEngine = struct {
         self.appendEventMsgFmt("that move leaves the board unsolvable — undo or clear {s}", .{coord});
     }
 
+    /// Optional solvability check for warning paths — not used by solve_for_me or redo solve_batch.
+    fn probeSolvability(self: *@This(), when: SolvabilityProbe) ?solver.SolveResult {
+        const enabled = switch (when) {
+            .move => self.warn_dead_moves,
+            .load => self.warn_unsolvable_load,
+        };
+        if (!enabled) return null;
+        return solver.solve(self.state.board) catch null;
+    }
+
     fn appendUnsolvableLoadWarningIfNeeded(self: *@This()) void {
-        const solved = solver.solve(self.state.board) catch return;
+        const solved = self.probeSolvability(.load) orelse return;
         if (solved == .none) self.appendEventMsg("this puzzle has no solution");
     }
 
@@ -190,10 +207,7 @@ pub const GameEngine = struct {
         const view = self.state.board.asView();
         if (view.isConflictingRowCol(row, col)) {
             self.appendEventMsg("conflict in row, column, or box");
-        } else {
-            const solved = solver.solve(self.state.board) catch {
-                return self.finishOkEvent(view, false, .{ .row = row, .col = col });
-            };
+        } else if (self.probeSolvability(.move)) |solved| {
             if (solved == .none) self.appendUnsolvableMutationWarning(row, col);
         }
         if (!was_solved and self.state.board.isSolved()) {
@@ -307,6 +321,16 @@ fn execTest(engine: *GameEngine, cmd: command.Command) Event {
     return engine.exec(cmd);
 }
 
+fn execMoveTest(engine: *GameEngine, cmd: command.Command) Event {
+    engine.warn_dead_moves = true;
+    return engine.exec(cmd);
+}
+
+fn openFromSaveProbeTest(engine: *GameEngine, buf: []const u8, opened_label: ?[]const u8) Event {
+    engine.warn_unsolvable_load = true;
+    return engine.openFromSave(buf, opened_label);
+}
+
 test "GameEngine init takes puzzle string only — no FileTransport" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
@@ -389,7 +413,7 @@ test "openFromSave warns when SUD0 bytes encode an unsolvable grid" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
-    const ev = engine.openFromSave(buf, "dead.sud");
+    const ev = openFromSaveProbeTest(&engine, buf, "dead.sud");
     try std.testing.expect(ev == .ok);
     try std.testing.expect(ev.ok.msg != null);
     const msg = ev.ok.msg.?;
@@ -521,7 +545,7 @@ test "exec fill that kills solvability warns with the mutated cell" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
 
-    const ev = execTest(&engine, command.Command{
+    const ev = execMoveTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
     });
     try std.testing.expect(ev == .ok);
@@ -548,14 +572,14 @@ test "inline unsolvable grid: fill warns and clear restores same dead board" {
     const after_load = try solver.solve(engine.state.board);
     try std.testing.expect(after_load == .none);
 
-    const filled = execTest(&engine, command.Command{
+    const filled = execMoveTest(&engine, command.Command{
         .fill = command.FillData{ .row = 7, .col = 6, .digit = cell.CellValue.seven },
     });
     try std.testing.expect(filled == .ok);
     try std.testing.expect(filled.ok.msg != null);
     try std.testing.expect(std.mem.indexOf(u8, filled.ok.msg.?, "unsolvable") != null);
 
-    const cleared = execTest(&engine, command.Command{
+    const cleared = execMoveTest(&engine, command.Command{
         .clear = command.ClearData{ .row = 7, .col = 6 },
     });
     try std.testing.expect(cleared == .ok);
@@ -571,7 +595,7 @@ test "exec clear after unsolvable fill restores solvable board without warning" 
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
 
-    _ = try expectOk(execTest(&engine, command.Command{
+    _ = try expectOk(execMoveTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
     }));
 
@@ -588,7 +612,7 @@ test "exec undo after unsolvable fill restores solvable board without warning" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
 
-    _ = try expectOk(execTest(&engine, command.Command{
+    _ = try expectOk(execMoveTest(&engine, command.Command{
         .fill = command.FillData{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
     }));
 
