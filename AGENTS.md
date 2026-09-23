@@ -86,7 +86,7 @@ Every cycle gate lives in the build as a single command so task-local checklists
 ```bash
 zig build verify
 ```
-at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + **standards** (`scripts/verify-standards.sh` on the branch diff vs `origin/main`) + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. See `docs/agents/verify-standards.md`. Verify stays report-only; `zig build cov` regenerates the report and opens it in the browser; `zig build cov-report` is the report-only target (no browser).
+at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + **standards** (`scripts/verify-standards.sh` on the branch diff vs `origin/main`) + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. See `docs/agents/verify-standards.md`. **Timing:** `scripts/verify-gate.sh` times the run against `docs/verify-timing.json` — fails on budget overrun or >1.5× last recorded time; updates `last_seconds` on success (commit when it changes). See `docs/agents/verify-timing.md`. Verify stays report-only; `zig build cov` regenerates the report and opens it in the browser; `zig build cov-report` is the report-only target (no browser).
 ## run build
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.

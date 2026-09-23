@@ -1,6 +1,6 @@
 # Verify standards gate
 
-`zig build verify` runs `scripts/verify-standards.sh` after tests and format check.
+`zig build verify-run` runs `scripts/verify-standards.sh` after tests and format check. `zig build verify` wraps that in the timing gate — see `docs/agents/verify-timing.md`.
 
 ## Scope
 

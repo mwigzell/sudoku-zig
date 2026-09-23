@@ -150,11 +150,15 @@ pub fn build(b: *std.Build) void {
     const standards_step = b.step("standards", "Mechanical coding-standards check on branch diff");
     standards_step.dependOn(&standards_check.step);
 
-    const verify_step = b.step("verify", "Gate: exe + test + fmt + standards + coverage");
-    verify_step.dependOn(&exe.step); // entry point must compile — test mode never analyzes main()
-    verify_step.dependOn(&run_tests.step);
-    verify_step.dependOn(&fmt_check.step);
-    verify_step.dependOn(&standards_check.step);
-    verify_step.dependOn(&glue.step);
-    verify_step.dependOn(&kcov_sum.step);
+    const verify_run_step = b.step("verify-run", "Internal: exe + test + fmt + standards + glue + coverage");
+    verify_run_step.dependOn(&exe.step); // entry point must compile — test mode never analyzes main()
+    verify_run_step.dependOn(&run_tests.step);
+    verify_run_step.dependOn(&fmt_check.step);
+    verify_run_step.dependOn(&standards_check.step);
+    verify_run_step.dependOn(&glue.step);
+    verify_run_step.dependOn(&kcov_sum.step);
+
+    const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });
+    const verify_step = b.step("verify", "Gate: verify-run + timing integrity (docs/verify-timing.json)");
+    verify_step.dependOn(&verify_gate.step);
 }
