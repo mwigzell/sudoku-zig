@@ -188,9 +188,9 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Internal — prompt for file path, return owned string.
-        fn openDialog(self: *@This()) facade.Error!_command.OpenFileResult {
-            self.writer.print("Open file: ", .{}) catch return facade.Error.System;
+        /// Prompt for a file path; empty input means cancelled.
+        fn pathDialog(self: *@This(), prompt: []const u8) facade.Error!_command.OpenFileResult {
+            self.writer.print("{s}", .{prompt}) catch return facade.Error.System;
 
             const line = self.readLine() catch return .Cancelled;
 
@@ -198,33 +198,6 @@ pub fn AsciiRenderer(StylerType: type) type {
                 defer self.allocator.free(line);
                 return .Cancelled;
             }
-            // Caller owns `line` — no free needed when returned directly.
-            return .{ .FileName = line };
-        }
-
-        /// Import dialog — prompt for a puzzle text file path.
-        fn importDialog(self: *@This()) facade.Error!_command.ImportFileResult {
-            self.writer.print("Import file: ", .{}) catch return facade.Error.System;
-
-            const line = self.readLine() catch return .Cancelled;
-
-            if (line.len == 0) {
-                defer self.allocator.free(line);
-                return .Cancelled;
-            }
-            // Caller owns `line` — no free needed when returned directly.
-            return .{ .FileName = line };
-        }
-
-        /// Export dialog — prompt for the destination file path.
-        fn exportDialog(self: *@This()) facade.Error!_command.ExportFileResult {
-            self.writer.print("Export file: ", .{}) catch return facade.Error.System;
-            const line = self.readLine() catch return .Cancelled;
-            if (line.len == 0) {
-                defer self.allocator.free(line);
-                return .Cancelled;
-            }
-            // Caller owns `line` — no free needed when returned directly.
             return .{ .FileName = line };
         }
 
@@ -358,7 +331,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .open)
             {
-                const file_result = self.openDialog() catch return .{ .error_msg = "cancelled" };
+                const file_result = self.pathDialog("Open file: ") catch return .{ .error_msg = "cancelled" };
                 switch (file_result) {
                     .FileName => |new_path| {
                         if (self.last_filename) |old| self.allocator.free(old);
@@ -373,7 +346,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .import)
             {
-                const file_result = self.importDialog() catch return .{ .error_msg = "cancelled" };
+                const file_result = self.pathDialog("Import file: ") catch return .{ .error_msg = "cancelled" };
                 switch (file_result) {
                     .FileName => |path| {
                         // Renderer owns the import dialog path; ImportData.path borrows it
@@ -388,7 +361,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .export_puzzle)
             {
-                const file_result = self.exportDialog() catch return .{ .error_msg = "cancelled" };
+                const file_result = self.pathDialog("Export file: ") catch return .{ .error_msg = "cancelled" };
                 switch (file_result) {
                     .FileName => |path| {
                         // Renderer owns the export dialog path; ExportData.path borrows it
@@ -642,7 +615,7 @@ test "openDialog: user enters a file path" {
         source,
     );
 
-    const result = try renderer.openDialog();
+    const result = try renderer.pathDialog("Open file: ");
 
     switch (result) {
         .FileName => |path| {
@@ -673,7 +646,7 @@ test "openDialog: EOF returns Cancelled" {
         source,
     );
 
-    const result = try renderer.openDialog();
+    const result = try renderer.pathDialog("Open file: ");
     switch (result) {
         .Cancelled => try std.testing.expect(true),
         .FileName => |path| {
@@ -699,7 +672,7 @@ test "openDialog: empty input returns Cancelled" {
         source,
     );
 
-    const result = try renderer.openDialog();
+    const result = try renderer.pathDialog("Open file: ");
     switch (result) {
         .Cancelled => try std.testing.expect(true),
         .FileName => |path| {

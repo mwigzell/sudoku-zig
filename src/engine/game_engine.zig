@@ -125,22 +125,40 @@ pub const GameEngine = struct {
         return self.finishLoadEvent(opened_label);
     }
 
-    /// Import a one-line puzzle (81 digits/blanks) from a page-read file.
-    /// Replaces the board and clears history; failure leaves state intact.
-    pub fn importFromLine(self: *@This(), line: []const u8) Event {
+    /// Replace board and clear history from a trimmed one-line puzzle string.
+    /// Failure leaves board and history untouched.
+    pub fn applyOneLinePuzzle(self: *@This(), line: []const u8) board.Error!void {
         const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
-        if (trimmed.len != 81) {
-            return self.errorEvent("import: expected exactly 81 characters");
-        }
-        const imported = board.fromOneLineString(trimmed) catch {
-            return self.errorEvent("import: invalid character in puzzle line");
-        };
+        if (trimmed.len != 81) return board.Error.WrongLength;
+        const imported = try board.fromOneLineString(trimmed);
         self.state.history.deinit();
         self.state.history = MutationHistory.init(std.heap.page_allocator);
         self.state.board = imported;
+    }
+
+    /// Import a one-line puzzle (81 digits/blanks) from a page-read file.
+    pub fn importFromLine(self: *@This(), line: []const u8) Event {
+        self.applyOneLinePuzzle(line) catch |err| switch (err) {
+            board.Error.WrongLength => return self.errorEvent("import: expected exactly 81 characters"),
+            else => return self.errorEvent("import: invalid character in puzzle line"),
+        };
         self.beginEventMsg();
         self.appendEventMsg("import: puzzle loaded");
         return self.finishOkEvent(self.state.board.asView(), false, null);
+    }
+
+    /// New game from a one-line puzzle string (generate dialog or fallback fixture).
+    pub fn newFromOneLinePuzzle(self: *@This(), line: []const u8) Event {
+        self.applyOneLinePuzzle(line) catch {
+            return .{ .error_msg = "could not create new game" };
+        };
+        return .{
+            .ok = .{
+                .board_view = self.state.board.asView(),
+                .msg = "new game started",
+                .is_quit = false,
+            },
+        };
     }
 
     /// Clear the per-exec `.ok.msg` scratch buffer before appending message parts.
@@ -486,6 +504,18 @@ test "importFromLine rejects a short line and leaves board and history intact" {
     const ev = engine.importFromLine("12345");
     try std.testing.expect(ev == .error_msg);
     try std.testing.expectEqualStrings("import: expected exactly 81 characters", ev.error_msg);
+    try std.testing.expectEqual(before, board.toFlat(engine.state.board));
+    try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
+}
+
+test "applyOneLinePuzzle rejects short line without mutating state" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    try engine.state.board.setCell(0, 3, .seven);
+    try engine.state.history.push(0, 3, .zero, .seven);
+    const before = board.toFlat(engine.state.board);
+
+    try std.testing.expectError(board.Error.WrongLength, engine.applyOneLinePuzzle("short"));
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
 }

@@ -2,6 +2,7 @@
 const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
+const read_path = @import("read_path.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: ?[]const u8) game_engine.Event {
     if (path) |file_path| {
@@ -18,19 +19,19 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 }
 
 fn doOpen(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, file_path: []const u8) game_engine.Event {
-    const resolved = transport.resolve(transport.context, file_path) catch |err| {
+    var stage: read_path.Stage = .resolve;
+    const read = read_path.readFileBytes(transport, file_path, &stage) catch |err| {
         var buf: [80]u8 = undefined;
-        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
+        const label: []const u8 = switch (stage) {
+            .resolve => "resolve",
+            .read => "readAll",
+        };
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "{s}: {s}", .{ label, @errorName(err) }) catch "system error" };
     };
-    defer transport.free(transport.context, resolved);
+    defer transport.free(transport.context, read.resolved);
+    defer transport.free(transport.context, read.bytes);
 
-    const buf = transport.readAll(transport.context, resolved) catch |err| {
-        var errbuf: [80]u8 = undefined;
-        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&errbuf, "readAll: {s}", .{@errorName(err)}) catch "system error" };
-    };
-    defer transport.free(transport.context, buf);
-
-    return engine.openFromSave(buf, resolved);
+    return engine.openFromSave(read.bytes, read.resolved);
 }
 
 // ---------------------------------------------------------------------------

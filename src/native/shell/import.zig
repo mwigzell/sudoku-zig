@@ -3,10 +3,11 @@
 ///
 /// Failures (missing file, wrong length, invalid characters) surface as an
 /// error message and leave board and history untouched.
-const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const board = @import("../../board/board.zig");
 const file_transport = @import("file_transport.zig");
+const read_path = @import("read_path.zig");
+const std = @import("std");
 
 pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: ?[]const u8) game_engine.Event {
     if (path == null) {
@@ -16,17 +17,19 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 }
 
 fn doImport(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, file_path: []const u8) game_engine.Event {
-    const resolved = transport.resolve(transport.context, file_path) catch {
-        return .{ .error_msg = "import: cannot read file" };
+    var stage: read_path.Stage = .resolve;
+    const read = read_path.readFileBytes(transport, file_path, &stage) catch |err| {
+        var buf: [80]u8 = undefined;
+        const label: []const u8 = switch (stage) {
+            .resolve => "resolve",
+            .read => "readAll",
+        };
+        return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "{s}: {s}", .{ label, @errorName(err) }) catch "import: cannot read file" };
     };
-    defer transport.free(transport.context, resolved);
+    defer transport.free(transport.context, read.resolved);
+    defer transport.free(transport.context, read.bytes);
 
-    const buf = transport.readAll(transport.context, resolved) catch {
-        return .{ .error_msg = "import: cannot read file" };
-    };
-    defer transport.free(transport.context, buf);
-
-    return engine.importFromLine(buf);
+    return engine.importFromLine(read.bytes);
 }
 
 // ---------------------------------------------------------------------------
