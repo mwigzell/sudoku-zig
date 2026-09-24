@@ -84,6 +84,7 @@ pub const GameEngine = struct {
             .save = true,
             .open = true,
             .new = true,
+            .import = true,
             .save_as = true,
             .solve = self.canSolve(),
         };
@@ -122,6 +123,24 @@ pub const GameEngine = struct {
     pub fn openFromSave(self: *@This(), buf: []const u8, opened_label: ?[]const u8) Event {
         self.loadSaveFormat(buf) catch |err| return self.errorEvent(@errorName(err));
         return self.finishLoadEvent(opened_label);
+    }
+
+    /// Import a one-line puzzle (81 digits/blanks) from a page-read file.
+    /// Replaces the board and clears history; failure leaves state intact.
+    pub fn importFromLine(self: *@This(), line: []const u8) Event {
+        const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
+        if (trimmed.len != 81) {
+            return self.errorEvent("import: expected exactly 81 characters");
+        }
+        const imported = board.fromOneLineString(trimmed) catch {
+            return self.errorEvent("import: invalid character in puzzle line");
+        };
+        self.state.history.deinit();
+        self.state.history = MutationHistory.init(std.heap.page_allocator);
+        self.state.board = imported;
+        self.beginEventMsg();
+        self.appendEventMsg("import: puzzle loaded");
+        return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
     /// Clear the per-exec `.ok.msg` scratch buffer before appending message parts.
@@ -248,7 +267,7 @@ pub const GameEngine = struct {
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .menu => @panic("menu routed in renderer"),
-            .save, .open, .new, .save_as => @panic("session command routed in Sudoku"),
+            .save, .open, .import, .new, .save_as => @panic("session command routed in Sudoku"),
         }
     }
 
@@ -436,6 +455,58 @@ test "loadSaveFormat replaces board and history from SUD0 bytes" {
 
     try std.testing.expect(board.equal(engine.state.board, fresh.state.board));
     try std.testing.expectEqual(@as(usize, 1), fresh.state.history.pointer);
+}
+test "importFromLine loads a one-line puzzle and clears history" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    // Seed one mutation so the reset is observable.
+    try engine.state.board.setCell(0, 3, .seven);
+    try engine.state.history.push(0, 3, .zero, .seven);
+    try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
+
+    const line = puzzle_gen.PuzzleGen.hard();
+    const ev = engine.importFromLine(line);
+    try std.testing.expect(ev == .ok);
+    try std.testing.expectEqualStrings("import: puzzle loaded", ev.ok.msg.?);
+
+    const expected = try board.fromOneLineString(line);
+    try std.testing.expect(board.equal(engine.state.board, expected));
+    try std.testing.expectEqual(@as(usize, 0), engine.state.history.pointer);
+}
+
+test "importFromLine rejects a short line and leaves board and history intact" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    try engine.state.board.setCell(0, 3, .seven);
+    try engine.state.history.push(0, 3, .zero, .seven);
+    const before = board.toFlat(engine.state.board);
+
+    const ev = engine.importFromLine("12345");
+    try std.testing.expect(ev == .error_msg);
+    try std.testing.expectEqualStrings("import: expected exactly 81 characters", ev.error_msg);
+    try std.testing.expectEqual(before, board.toFlat(engine.state.board));
+    try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
+}
+
+test "importFromLine rejects invalid characters without touching state" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    const before = board.toFlat(engine.state.board);
+
+    var bad: [81]u8 = undefined;
+    for (&bad) |*c| c.* = 'z';
+    const ev = engine.importFromLine(bad[0..]);
+    try std.testing.expect(ev == .error_msg);
+    try std.testing.expectEqualStrings("import: invalid character in puzzle line", ev.error_msg);
+    try std.testing.expectEqual(before, board.toFlat(engine.state.board));
+}
+
+test "legend offers import in the web session menu" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    try std.testing.expect(engine.getLegend().import);
 }
 
 test "toSaveFormat serializes state without engine file methods" {

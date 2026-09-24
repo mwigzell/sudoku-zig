@@ -1,78 +1,53 @@
-/// New-game command handler — clears undo history, loads a puzzle string (falling back to medium), returns a fresh board view.
+/// New-game command handler — starts a fresh board from the generated puzzle string (medium fallback) and clears the undo history.
 const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const board = @import("../../board/board.zig");
+const cell = @import("../../board/cell.zig");
 const command = @import("../../command.zig");
 const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
-const file_transport = @import("file_transport.zig");
 
-pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, data: command.NewData) game_engine.Event {
+pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engine.Event {
     engine.state.history.deinit();
     engine.state.history = game_engine.MutationHistory.init(std.heap.page_allocator);
-    if (data.file) |path| {
-        const resolved = transport.resolve(transport.context, path) catch |err| {
-            var buf: [80]u8 = undefined;
-            return .{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
-        };
-        defer transport.free(transport.context, resolved);
-        const buf = transport.readAll(transport.context, resolved) catch |err| {
-            var errbuf: [80]u8 = undefined;
-            return .{ .error_msg = std.fmt.bufPrint(&errbuf, "readAll: {s}", .{@errorName(err)}) catch "system error" };
-        };
-        defer transport.free(transport.context, buf);
-        const trimmed = std.mem.trim(u8, buf, &std.ascii.whitespace);
-        engine.state.board = board.fromOneLineString(trimmed) catch return .{ .error_msg = "could not load puzzle from file" };
-        return .{
-            .ok = .{
-                .board_view = engine.state.board.asView(),
-                .msg = "new game started",
-                .is_quit = false,
-            },
-        };
-    }
 
-    if (data.puzzle) |puzzle_str| {
-        defer std.heap.page_allocator.free(puzzle_str);
+    const puzzle_str = if (data.puzzle) |p| p else PuzzleGen.medium()[0..81];
+    engine.state.board = board.fromOneLineString(puzzle_str) catch {
+        if (data.puzzle) |p| std.heap.page_allocator.free(p);
+        return .{ .error_msg = "could not create new game" };
+    };
+    if (data.puzzle) |p| std.heap.page_allocator.free(p);
 
-        engine.state.board = board.fromOneLineString(puzzle_str) catch return .{ .error_msg = "could not load puzzle" };
-
-        return .{
-            .ok = .{
-                .board_view = engine.state.board.asView(),
-                .msg = "new game started",
-                .is_quit = false,
-            },
-        };
-    } else {
-        const default_puzzle = PuzzleGen.medium();
-
-        engine.state.board = board.fromOneLineString(default_puzzle) catch return .{ .error_msg = "could not create new game" };
-
-        return .{
-            .ok = .{
-                .board_view = engine.state.board.asView(),
-                .msg = "new game started",
-                .is_quit = false,
-            },
-        };
-    }
+    return .{
+        .ok = .{
+            .board_view = engine.state.board.asView(),
+            .msg = "new game started",
+            .is_quit = false,
+        },
+    };
 }
 
 // ---------------------------------------------------------------------------
-// Tests — verify new-game command handler seam
+// Tests — new-game command handler seam
 // ---------------------------------------------------------------------------
 
-test "command.new.execute clears history and loads a puzzle string" {
+test "command.new.execute loads the chosen puzzle and clears history" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
         @import("../../config.zig").Config.default(),
     );
     defer engine.deinit();
 
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    _ = execute(&engine, transport, command.NewData{ .puzzle = null, .file = null });
+    const puzzle = std.heap.page_allocator.dupe(u8, PuzzleGen.easy()) catch return error.TestFailed;
+    const event = execute(&engine, command.NewData{ .puzzle = puzzle });
+    switch (event) {
+        .ok => try std.testing.expectEqual(@as(usize, 0), engine.state.history.count()),
+        .error_msg => return error.TestFailed,
+    }
 
-    try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
+    // easy puzzle: "003..." → A1/A2 empty, A3 given with value 3
+    try std.testing.expect(!engine.state.board.isGiven(0, 0));
+    try std.testing.expect(engine.state.board.isGiven(0, 2));
+    try std.testing.expectEqual(cell.CellValue.three, engine.state.board.getCellValue(0, 2));
 }
 
 test "command.new.execute falls back to medium when puzzle is null" {
@@ -82,45 +57,9 @@ test "command.new.execute falls back to medium when puzzle is null" {
     );
     defer engine.deinit();
 
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    _ = execute(&engine, transport, command.NewData{ .puzzle = null, .file = null });
-
-    // Just makes sure it doesnt panic or leak (the default puzzle has "6" at index 0)
-    _ = engine.state.board.isGiven(0, 0);
-}
-
-test "command.new.execute loads puzzle from a file" {
-    const io = std.testing.io;
-    const tmp_path = "/tmp/sudoku_new_cmd_puzzle_file.sud";
-    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-    const contents = PuzzleGen.default();
-    var file = std.Io.Dir.createFileAbsolute(io, tmp_path, .{}) catch return error.TestSkipped;
-    std.Io.File.writeStreamingAll(file, io, contents) catch return error.TestSkipped;
-    file.close(io);
-
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
-    defer engine.deinit();
-
-    const transport = file_transport.NativeTransport.make(io);
-    const event = execute(&engine, transport, command.NewData{ .puzzle = null, .file = tmp_path });
+    const event = execute(&engine, command.NewData{ .puzzle = null });
     switch (event) {
-        .ok => try std.testing.expect(true),
+        .ok => try std.testing.expectEqual(@as(usize, 0), engine.state.history.count()),
         .error_msg => return error.TestFailed,
-    }
-
-    try std.testing.expect(engine.state.board.isGiven(0, 0)); // puzzle[0]=='6' → A1 given
-    try std.testing.expect(engine.state.board.isGiven(0, 1)); // puzzle[1]=='7' → B1 given
-    try std.testing.expect(!engine.state.board.isGiven(0, 2)); // puzzle[2]=='.' → A3 empty
-}
-
-test "command.new.execute returns error when puzzle file is missing" {
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
-    defer engine.deinit();
-
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    const event = execute(&engine, transport, command.NewData{ .puzzle = null, .file = "/tmp/sudoku_new_cmd_missing.sud" });
-    switch (event) {
-        .error_msg => try std.testing.expect(true),
-        .ok => return error.TestFailed,
     }
 }

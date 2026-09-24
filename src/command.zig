@@ -11,9 +11,10 @@ pub const ClearData = struct { row: u4, col: u4 };
 pub const SaveData = struct { path: ?[]const u8 };
 
 pub const OpenData = struct { path: ?[]const u8 };
-pub const NewData = struct { puzzle: ?[]const u8, file: ?[]const u8 };
+pub const NewData = struct { puzzle: ?[]const u8 };
+pub const ImportData = struct { path: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, new, save_as, solve_for_me, set_theme, set_region };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, new, save_as, solve_for_me, set_theme, set_region };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -25,6 +26,7 @@ pub const Command = union(CommandTag) {
     menu: void,
     save: SaveData,
     open: OpenData,
+    import: ImportData,
     new: NewData,
     save_as: SaveData,
     solve_for_me: void,
@@ -63,6 +65,7 @@ pub const Commands = &[_]CommandTableEntry{
 pub const SessionCommands = &[_]CommandTableEntry{
     .{ .tag = .save, .name = "Save" },
     .{ .tag = .open, .name = "Open" },
+    .{ .tag = .import, .name = "Import" },
     .{ .tag = .new, .name = "New" },
     .{ .tag = .save_as, .name = "SaveAs" },
     .{ .tag = .solve_for_me, .name = "Solve" },
@@ -90,10 +93,11 @@ pub const SaveFileResult = union(enum) {
 /// Result of an open dialog interaction.
 pub const OpenFileResult = SaveFileResult;
 
-/// Result of a new-game puzzle dialog interaction.
+/// Result of an import dialog interaction.
+pub const ImportFileResult = SaveFileResult;
+/// The outcome of a difficulty dialog at New — the user picks a level and the engine generates.
 pub const PuzzleResult = union(enum) {
-    PuzzleString: []u8, // Owned puzzle string — renderer decides source
-    PuzzleFile: []u8, // Owned filename — engine reads + validates
+    PuzzleString: []u8, // Owned puzzle string for the chosen difficulty
     Cancelled,
 };
 
@@ -103,9 +107,9 @@ pub const PuzzleResult = union(enum) {
 
 const std = @import("std");
 
-test "CommandTag enum has 13 variants" {
+test "CommandTag enum has 14 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 13), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 14), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -117,6 +121,7 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Menu", getName(.menu));
     try std.testing.expectEqualStrings("Save", getName(.save));
     try std.testing.expectEqualStrings("Open", getName(.open));
+    try std.testing.expectEqualStrings("Import", getName(.import));
     try std.testing.expectEqualStrings("SaveAs", getName(.save_as));
     try std.testing.expectEqualStrings("Solve", getName(.solve_for_me));
 }

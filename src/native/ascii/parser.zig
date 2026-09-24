@@ -11,6 +11,7 @@ pub const ClearData = cm.ClearData;
 pub const SaveData = cm.SaveData;
 pub const OpenData = cm.OpenData;
 pub const NewData = cm.NewData;
+pub const ImportData = cm.ImportData;
 pub const CommandTag = cm.CommandTag;
 pub const Command = cm.Command;
 pub const ParseResultTag = cm.ParseResultTag;
@@ -69,9 +70,10 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
         return .{ .valid = Command{ .save = SaveData{ .path = null } } };
     if (std.ascii.eqlIgnoreCase(cmd_name, "open")) return .{ .valid = Command{ .open = OpenData{ .path = null } } };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "import")) return .{ .valid = Command{ .import = ImportData{ .path = null } } };
 
     if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) return .{ .valid = Command{ .save_as = SaveData{ .path = null } } };
-    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{ .valid = Command{ .new = NewData{ .puzzle = null, .file = null } } };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{ .valid = Command{ .new = NewData{ .puzzle = null } } };
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{cmd_name}) catch unreachable;
@@ -433,5 +435,6 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Menu", getName(.menu));
     try std.testing.expectEqualStrings("Save", getName(.save));
     try std.testing.expectEqualStrings("Open", getName(.open));
+    try std.testing.expectEqualStrings("Import", getName(.import));
     try std.testing.expectEqualStrings("New", getName(.new));
 }

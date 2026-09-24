@@ -7,6 +7,7 @@ export const MENU_BAR_MENUS = [
     items: [
       { id: "new", label: "New", legendKey: "new" },
       { id: "open", label: "Open", legendKey: "open" },
+      { id: "import", label: "Import", legendKey: "import" },
       { id: "save", label: "Save", legendKey: "save" },
       { id: "saveAs", label: "Save As", legendKey: "save_as" },
     ],
@@ -38,6 +39,7 @@ export const MENU_BAR_MENUS = [
 export function syncMenuBar(legend, controls) {
   if (controls.new) controls.new.disabled = !legend.new;
   if (controls.open) controls.open.disabled = !legend.open;
+  if (controls.import) controls.import.disabled = !legend.import;
   if (controls.save) controls.save.disabled = !legend.save;
   if (controls.saveAs) controls.saveAs.disabled = !legend.save_as;
   if (controls.undo) controls.undo.disabled = !legend.undo;
@@ -54,6 +56,7 @@ export function collectMenuBarControls(root) {
   return {
     new: root.querySelector("#file-new"),
     open: root.querySelector("#file-open"),
+    import: root.querySelector("#file-import"),
     save: root.querySelector("#file-save"),
     saveAs: root.querySelector("#file-save-as"),
     undo: root.querySelector("#edit-undo"),

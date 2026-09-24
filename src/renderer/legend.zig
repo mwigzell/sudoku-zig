@@ -20,6 +20,8 @@ pub const Legend = struct {
     open: bool,
     new: bool,
     save_as: bool,
+    /// Session menu: import a one-line puzzle file (web).
+    import: bool = false,
     /// Menu Solve. Off when the board is full or has any conflict.
     solve: bool = false,
 

@@ -221,7 +221,8 @@
     }
 
     #error-modal[hidden],
-    #about-modal[hidden] {
+    #about-modal[hidden],
+    #new-difficulty-modal[hidden] {
       display: none;
     }
 
@@ -234,6 +235,30 @@
       padding: 1rem;
       background: rgba(0, 0, 0, 0.45);
       z-index: 10;
+    }
+
+    #new-difficulty-modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 10;
+    }
+
+    .new-difficulty-btn {
+      display: block;
+      width: 100%;
+      margin: 0.25rem 0;
+      font: inherit;
+      padding: 0.375rem 0.875rem;
+      border: 1px solid var(--status-border);
+      border-radius: 6px;
+      background: var(--cell-bg);
+      color: var(--status-fg);
+      cursor: pointer;
     }
 
     .error-dialog,
@@ -397,6 +422,7 @@
         <div class="menu-panel" id="menu-file-panel" role="menu" hidden>
           <button type="button" role="menuitem" id="file-new">New</button>
           <button type="button" role="menuitem" id="file-open">Open</button>
+          <button type="button" role="menuitem" id="file-import">Import</button>
           <button type="button" role="menuitem" id="file-save">Save</button>
           <button type="button" role="menuitem" id="file-save-as">Save As</button>
         </div>
@@ -446,6 +472,16 @@
       <p id="about-copyright"></p>
       <p id="about-licence"></p>
       <button type="button" id="about-modal-dismiss">OK</button>
+    </div>
+  </div>
+
+  <div id="new-difficulty-modal" hidden role="dialog" aria-modal="true" aria-labelledby="new-difficulty-title">
+    <div class="about-dialog">
+      <h2 id="new-difficulty-title">New game</h2>
+      <p id="new-difficulty-prompt">Choose a difficulty:</p>
+      <button type="button" class="new-difficulty-btn" data-difficulty="1">Easy</button>
+      <button type="button" class="new-difficulty-btn" data-difficulty="2">Medium</button>
+      <button type="button" class="new-difficulty-btn" data-difficulty="3">Hard</button>
     </div>
   </div>
 
@@ -507,9 +543,16 @@
         () => selection.getSelection(),
         { onChange: () => menuBar.sync() },
       );
+      const difficultyDialog = {
+        el: document.getElementById("new-difficulty-modal"),
+        buttons: [...document.querySelectorAll(".new-difficulty-btn")].map((btn) => ({
+          label: btn.textContent,
+          difficulty: Number(btn.dataset.difficulty),
+          el: btn,
+        })),
+      };
       wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
-        difficulty: 1,
-        onViewRefresh: () => {
+        difficultyDialog,
           themeMenu.sync();
           regionMenu.sync();
         },

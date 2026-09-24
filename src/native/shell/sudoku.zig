@@ -15,6 +15,7 @@ const legend = @import("../../renderer/legend.zig");
 const host_mod = @import("../host.zig");
 const save_command = @import("save.zig");
 const open_command = @import("open.zig");
+const import_command = @import("import.zig");
 const new_command = @import("new.zig");
 const save_as_command = @import("save_as.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
@@ -73,7 +74,7 @@ pub const Sudoku = struct {
             },
             .valid => |cmd| {
                 switch (cmd) {
-                    .new, .open => self.last_cell = null,
+                    .new, .open, .import => self.last_cell = null,
                     else => {},
                 }
                 const event = switch (cmd) {
@@ -82,7 +83,8 @@ pub const Sudoku = struct {
                         break :blk save_command.execute(&self.engine, self.transport, path);
                     },
                     .open => |data| open_command.execute(&self.engine, self.transport, data.path),
-                    .new => |data| new_command.execute(&self.engine, self.transport, data),
+                    .import => |data| import_command.execute(&self.engine, self.transport, data.path),
+                    .new => |data| new_command.execute(&self.engine, data),
                     .save_as => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
                         break :blk save_as_command.execute(&self.engine, self.transport, path);
@@ -398,7 +400,7 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     // Canned responses: command → dialog filename → quit
     const responses = [_][]const u8{
         "m",
-        "4",
+        "5",
         "test_save_as.sud",
         "quit",
     };
@@ -426,8 +428,8 @@ test "integrated e2e - run: new command resets board and history" {
     const responses = [_][]const u8{
         "fill A3 7",
         "m",
-        "3", // menu → New
-        "", // newGameOptions fallback → generated hard puzzle
+        "4", // menu → New
+        "2", // difficulty dialog → Medium (fresh generated puzzle)
         "quit",
     };
     var host = host_mod.Host.createForTest(cfg, &responses);
@@ -442,6 +444,78 @@ test "integrated e2e - run: new command resets board and history" {
 
     // history should be empty after new command clears it
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
+}
+// import via menu: puzzle file loaded into the engine, history reset
+test "integrated e2e - run: import via menu loads puzzle and clears history" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+
+    const board_mod = @import("../../board/board.zig");
+    const io = std.testing.io;
+    const tmp_path = "/tmp/sudoku_e2e_import_ok_test.txt";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+    const puzzle_line = puzzle_gen.PuzzleGen.hard();
+    const setup_transport = file_transport.NativeTransport.make(io);
+    try setup_transport.write(setup_transport.context, tmp_path, puzzle_line);
+
+    // fill (adds history) → menu → Import → path → quit
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "m",
+        "3",
+        tmp_path,
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    defer sudoku_instance.deinit();
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+
+    const expected = board_mod.fromOneLineString(puzzle_line) catch unreachable;
+    try std.testing.expect(board_mod.equal(sudoku_instance.engine.state.board, expected));
+    try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
+}
+
+// import failure: board and history must be left untouched
+test "integrated e2e - run: import failure leaves board and history intact" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+
+    std.Io.Dir.deleteFileAbsolute(std.testing.io, "/tmp/sudoku_e2e_import_fail_test.txt") catch {};
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "m",
+        "3",
+        "/tmp/sudoku_e2e_import_fail_test.txt",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    defer sudoku_instance.deinit();
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+
+    // history survived
+    try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
+    // filled cell A3 (row 2, col 0) still holds seven
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku_instance.engine.state.board.getCellValue(2, 0));
 }
 // Full end-to-end run through the host-built ansi facade
 test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
@@ -660,7 +734,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     const col_letters = "ABCDEFGHI";
     const fill_cmd = try std.fmt.allocPrint(gpa, "fill {c}{d} 7", .{ col_letters[pick.c], pick.r + 1 });
     defer gpa.free(fill_cmd);
-    const responses = [_][]const u8{ fill_cmd, "m", "5", "quit" };
+    const responses = [_][]const u8{ fill_cmd, "m", "6", "quit" };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
     var facade = try host.facade();

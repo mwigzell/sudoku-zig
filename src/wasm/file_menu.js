@@ -1,6 +1,6 @@
 // file_menu.js — File menu session actions via shell.js.
 
-import { newGame, open, save, saveAs, applyEventStatus, showErrorModal } from "./shell.js";
+import { newGame, open, save, saveAs, importPuzzle, applyEventStatus, showErrorModal } from "./shell.js";
 import { renderBoard } from "./board.js";
 
 export const DEFAULT_SAVE_FILENAME = "sudoku.sud";
@@ -18,6 +18,14 @@ export const sudFilePickerTypes = [
     accept: { "application/octet-stream": [".sud"] },
   },
 ];
+
+export const puzzleTextPickerTypes = [
+  {
+    description: "One-line puzzle",
+    accept: { "text/plain": [".txt"] },
+  },
+];
+export const PUZZLE_TEXT_ACCEPT = ".txt,text/plain";
 
 export function refreshSession(
   boardEl,
@@ -95,12 +103,12 @@ export async function persistBytes(
   return { ok: true, filename: suggestedName };
 }
 
-export async function pickBytes(doc = document, session = {}) {
+export async function pickBytes(doc = document, session = {}, { types = sudFilePickerTypes, accept = null } = {}) {
   const win = doc.defaultView;
   if (win?.showOpenFilePicker) {
     try {
       const [handle] = await win.showOpenFilePicker({
-        types: sudFilePickerTypes,
+        types,
         startIn: filePickerStartIn(session),
         multiple: false,
       });
@@ -120,7 +128,7 @@ export async function pickBytes(doc = document, session = {}) {
   return new Promise((resolve) => {
     const input = doc.createElement("input");
     input.type = "file";
-    input.accept = ".sud,application/octet-stream";
+    input.accept = accept ?? ".sud,application/octet-stream";
     input.addEventListener("change", async () => {
       const file = input.files?.[0];
       if (!file) {
@@ -133,6 +141,31 @@ export async function pickBytes(doc = document, session = {}) {
   });
 }
 
+/** Difficulty choices for the New sub-dialog — labels + the difficulty value the game init accepts. */
+export const DIFFICULTIES = [
+  { label: "Easy", difficulty: 1 },
+  { label: "Medium", difficulty: 2 },
+  { label: "Hard", difficulty: 3 },
+];
+
+/** Difficulty sub-dialog for New — picking a level closes the dialog and drives generation. */
+export function wireDifficultyDialog(dialog, onChoose) {
+  for (const button of dialog.buttons) {
+    button.el.addEventListener("click", () => {
+      dialog.el.hidden = true;
+      onChoose(button.difficulty);
+    });
+  }
+  return {
+    open() {
+      dialog.el.hidden = false;
+    },
+    close() {
+      dialog.el.hidden = true;
+    },
+  };
+}
+
 export function wireFileMenu(
   controls,
   game,
@@ -142,14 +175,13 @@ export function wireFileMenu(
   errorModal,
   session,
   menuBar,
-  { difficulty = 1, download = downloadBytes, pick = (session) => pickBytes(document, session), createElement, onViewRefresh } = {},
+  { difficultyDialog, download = downloadBytes, pick = (session, opts) => pickBytes(document, session, opts), createElement, onViewRefresh } = {},
 ) {
   const fail = (result) => {
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
-  controls.new?.addEventListener("click", () => {
-    if (!session.legend.new) return;
+  const startNewGame = (difficulty) => {
     const result = newGame(game, { difficulty });
     if (!result.ok) {
       fail(result);
@@ -158,6 +190,12 @@ export function wireFileMenu(
     session.fileHandle = null;
     session.boundFilename = null;
     refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, result.legend, result.config, createElement, onViewRefresh);
+  };
+  const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
+
+  controls.new?.addEventListener("click", () => {
+    if (!session.legend.new) return;
+    newDialog.open();
   });
 
   controls.save?.addEventListener("click", async () => {
@@ -207,6 +245,33 @@ export function wireFileMenu(
       result.state,
       game.getLegend(),
       game.getConfig(),
+      createElement,
+      onViewRefresh,
+      result.msg,
+    );
+  });
+
+  controls.import?.addEventListener("click", async () => {
+    if (!session.legend.import) return;
+    const picked = await pick(session, { types: puzzleTextPickerTypes, accept: PUZZLE_TEXT_ACCEPT });
+    if (!picked.ok || picked.cancelled) return;
+    const text = new TextDecoder().decode(picked.bytes);
+    const result = importPuzzle(game, text);
+    if (!result.ok) {
+      fail(result);
+      return;
+    }
+    session.fileHandle = null;
+    session.boundFilename = null;
+    refreshSession(
+      boardEl,
+      selection,
+      statusEl,
+      session,
+      menuBar,
+      result.state,
+      result.legend,
+      result.config,
       createElement,
       onViewRefresh,
       result.msg,

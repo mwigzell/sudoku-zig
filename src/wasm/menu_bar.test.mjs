@@ -11,6 +11,7 @@ function makeControls() {
   return {
     new: makeBtn(),
     open: makeBtn(),
+    import: makeBtn(),
     save: makeBtn(),
     saveAs: makeBtn(),
     undo: makeBtn(),
@@ -45,6 +46,11 @@ function makeControls() {
   assert.equal(controls.undo.disabled, false);
   assert.equal(controls.redo.disabled, true);
   assert.equal(controls.solve.disabled, true);
+  // Import mirrors legend.import.
+  syncMenuBar({ import: true }, controls);
+  assert.equal(controls.import.disabled, false);
+  syncMenuBar({ import: false }, controls);
+  assert.equal(controls.import.disabled, true);
 }
 
 {

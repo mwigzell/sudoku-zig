@@ -70,6 +70,12 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
     },
 
+    importPuzzle(text) {
+      const bytes = new TextEncoder().encode(text);
+      writeBytes(memory, SCRATCH, bytes);
+      return readJson(exports.importPuzzle(SCRATCH, bytes.length));
+    },
+
     get exports() {
       return exports;
     },

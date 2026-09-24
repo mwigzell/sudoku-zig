@@ -44,7 +44,7 @@ pub fn bottomBorder() []const u8 {
 const box_min_width: usize = 80;
 
 fn menuPickIsQuit(pick: []const u8) bool {
-    return std.mem.eql(u8, pick, "8") or
+    return std.mem.eql(u8, pick, "9") or
         std.ascii.eqlIgnoreCase(pick, "q") or
         std.ascii.eqlIgnoreCase(pick, "quit");
 }
@@ -61,6 +61,8 @@ pub fn AsciiRenderer(StylerType: type) type {
         styler: *StylerType,
         inputSource: input_source.ReaderSource,
         last_filename: ?[]u8,
+        // Owned dialog path for the import command; not part of the save-target cache.
+        import_path: ?[]u8 = null,
         legend_line_width: usize = 0,
         can_solve: bool = false,
 
@@ -72,6 +74,9 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Destroy writer + styler heap pointers; keep last_filename free.
         pub fn deinit(self: *@This()) void {
             if (self.last_filename) |name| {
+                self.allocator.free(name);
+            }
+            if (self.import_path) |name| {
                 self.allocator.free(name);
             }
         }
@@ -192,41 +197,37 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Internal — difficulty sub-menu; returns an owned puzzle string.
-        fn generatePuzzle(self: *@This()) facade.Error!_command.PuzzleResult {
-            self.writer.writeAll("Difficulty:\n") catch return facade.Error.System;
-            const levels = [_][]const u8{ "Easy", "Medium", "Hard" };
-            for (levels, 0..) |name, i| {
-                self.writer.print("  {d}) {s}\n", .{ i + 1, name }) catch return facade.Error.System;
+        /// Import dialog — prompt for a puzzle text file path.
+        fn importDialog(self: *@This()) facade.Error!_command.ImportFileResult {
+            self.writer.print("Import file: ", .{}) catch return facade.Error.System;
+
+            const line = self.readLine() catch return .Cancelled;
+
+            if (line.len == 0) {
+                defer self.allocator.free(line);
+                return .Cancelled;
             }
-            self.writer.writeAll("> ") catch return facade.Error.System;
-
-            const pick = self.readLine() catch return facade.Error.System;
-            defer self.allocator.free(pick);
-
-            const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else if (std.mem.eql(u8, pick, "2")) Difficulty.medium else if (std.mem.eql(u8, pick, "3")) Difficulty.hard else return .Cancelled;
-
-            const puzzle = PuzzleGen.generate(diff);
-            const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
-            return .{ .PuzzleString = owned };
+            // Caller owns `line` — no free needed when returned directly.
+            return .{ .FileName = line };
         }
 
-        /// Numbered session/view submenu — Save, Open, New, Save As, Region, Hint placeholder.
+        /// Numbered session/view submenu — file operations, view, hint placeholder, quit.
         pub fn showMenu(self: *@This(), show_region: bool) facade.Error!_command.ParseCommandResult {
             const region_state = if (show_region) "on" else "off";
             self.writer.writeAll("\nMenu:\n") catch return facade.Error.System;
             self.writer.writeAll("  1) Save\n") catch return facade.Error.System;
             self.writer.writeAll("  2) Open\n") catch return facade.Error.System;
-            self.writer.writeAll("  3) New\n") catch return facade.Error.System;
-            self.writer.writeAll("  4) Save As\n") catch return facade.Error.System;
-            self.writer.print("  5) Region ({s})\n", .{region_state}) catch return facade.Error.System;
-            self.writer.writeAll("  6) Hint (not yet)\n") catch return facade.Error.System;
-            self.writer.writeAll("  7) About\n") catch return facade.Error.System;
-            self.writer.writeAll("  8) Quit\n") catch return facade.Error.System;
+            self.writer.writeAll("  3) Import\n") catch return facade.Error.System;
+            self.writer.writeAll("  4) New\n") catch return facade.Error.System;
+            self.writer.writeAll("  5) Save As\n") catch return facade.Error.System;
+            self.writer.print("  6) Region ({s})\n", .{region_state}) catch return facade.Error.System;
+            self.writer.writeAll("  7) Hint (not yet)\n") catch return facade.Error.System;
+            self.writer.writeAll("  8) About\n") catch return facade.Error.System;
+            self.writer.writeAll("  9) Quit\n") catch return facade.Error.System;
             if (self.can_solve) {
-                self.writer.writeAll("  9) Solve\n") catch return facade.Error.System;
+                self.writer.writeAll("  10) Solve\n") catch return facade.Error.System;
             } else {
-                self.writer.writeAll("  9) Solve (unavailable)\n") catch return facade.Error.System;
+                self.writer.writeAll("  10) Solve (unavailable)\n") catch return facade.Error.System;
             }
             self.writer.writeAll("> ") catch return facade.Error.System;
 
@@ -235,19 +236,20 @@ pub fn AsciiRenderer(StylerType: type) type {
 
             if (std.mem.eql(u8, pick, "1")) return .{ .valid = _command.Command{ .save = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "2")) return .{ .valid = _command.Command{ .open = .{ .path = null } } };
-            if (std.mem.eql(u8, pick, "3")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null, .file = null } } };
-            if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
-            if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .set_region = !show_region } };
-            if (std.mem.eql(u8, pick, "6")) {
+            if (std.mem.eql(u8, pick, "3")) return .{ .valid = _command.Command{ .import = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null } } };
+            if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .set_region = !show_region } };
+            if (std.mem.eql(u8, pick, "7")) {
                 try self.showError("not yet");
                 return try self.showMenu(show_region);
             }
-            if (std.mem.eql(u8, pick, "7")) {
+            if (std.mem.eql(u8, pick, "8")) {
                 try self.showAbout();
                 return try self.showMenu(show_region);
             }
             if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
-            if (std.mem.eql(u8, pick, "9")) {
+            if (std.mem.eql(u8, pick, "10")) {
                 if (!self.can_solve) return try self.showMenu(show_region);
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
@@ -262,27 +264,18 @@ pub fn AsciiRenderer(StylerType: type) type {
             try self.showError(text);
         }
 
-        pub fn newGameOptions(self: *@This()) facade.Error!_command.PuzzleResult {
-            const options = [_][]const u8{ "Generate New Puzzle", "Open From File", "Load From URL", "Paste Puzzle String" };
-            self.writer.writeAll("\nNew game:\n") catch return facade.Error.System;
-            for (options, 0..) |opt, i| {
-                self.writer.print("{d}) {s}\n", .{ i + 1, opt }) catch return facade.Error.System;
+        /// New = generate — choose a difficulty; returns an owned puzzle string.
+        pub fn newGameDialog(self: *@This()) facade.Error!_command.PuzzleResult {
+            self.writer.writeAll("Difficulty:\n") catch return facade.Error.System;
+            const levels = [_][]const u8{ "Easy", "Medium", "Hard" };
+            for (levels, 0..) |name, i| {
+                self.writer.print("  {d}) {s}\n", .{ i + 1, name }) catch return facade.Error.System;
             }
             self.writer.writeAll("> ") catch return facade.Error.System;
-
-            const selection = self.readLine() catch return facade.Error.System;
-            defer self.allocator.free(selection);
-
-            if (std.mem.eql(u8, selection, "1")) return self.generatePuzzle();
-            if (std.mem.eql(u8, selection, "2")) {
-                const file_result = self.openDialog() catch return .Cancelled;
-                return switch (file_result) {
-                    .FileName => |path| .{ .PuzzleFile = path },
-                    .Cancelled => .Cancelled,
-                };
-            }
-            // No other menu choice is defined yet — a hard puzzle is generated and handed back.
-            const puzzle = PuzzleGen.hard();
+            const pick = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(pick);
+            const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else if (std.mem.eql(u8, pick, "2")) Difficulty.medium else if (std.mem.eql(u8, pick, "3")) Difficulty.hard else return .Cancelled;
+            const puzzle = PuzzleGen.generate(diff);
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
             return .{ .PuzzleString = owned };
         }
@@ -357,19 +350,29 @@ pub fn AsciiRenderer(StylerType: type) type {
                 }
             }
 
+            // Intercept import: prompt for a text file; no filename cache — import does not change the save target
+            if (std.meta.activeTag(rsl) == .valid and
+                std.meta.activeTag(rsl.valid) == .import)
+            {
+                const file_result = self.importDialog() catch return .{ .error_msg = "cancelled" };
+                switch (file_result) {
+                    .FileName => |path| {
+                        // Renderer owns the import dialog path; ImportData.path borrows it
+                        if (self.import_path) |old| self.allocator.free(old);
+                        self.import_path = path;
+                        rsl.valid.import.path = path;
+                    },
+                    .Cancelled => return .{ .error_msg = "cancelled" },
+                }
+            }
             // Intercept new: clear puzzle data, game engine handles it
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .new)
             {
-                const choice_result = self.newGameOptions() catch return .{ .error_msg = "cancelled" };
+                const choice_result = self.newGameDialog() catch return .{ .error_msg = "cancelled" };
                 switch (choice_result) {
                     .PuzzleString => |puzzle_str| {
                         rsl.valid.new.puzzle = puzzle_str;
-                    },
-                    .PuzzleFile => |path| {
-                        if (self.last_filename) |old| self.allocator.free(old);
-                        self.last_filename = path;
-                        rsl.valid.new.file = path;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },
                 }
@@ -672,12 +675,11 @@ test "openDialog: empty input returns Cancelled" {
     }
 }
 
-test "newGameOptions: option 1 shows difficulty sub-menu and returns easy puzzle" {
+test "getCommandInput: New opens difficulty dialog; pick easy loads easy puzzle" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
-
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "1\n", "1\n" };
+    const responses = [_][]const u8{ "m\n", "4\n", "1\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -687,33 +689,50 @@ test "newGameOptions: option 1 shows difficulty sub-menu and returns easy puzzle
         &s,
         source,
     );
-
-    const result = try renderer.newGameOptions();
+    const avail = legend.Legend{
+        .fill = false,
+        .clear = false,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .menu = true,
+        .save = false,
+        .open = false,
+        .new = true,
+        .save_as = false,
+    };
+    var names: [6][]const u8 = undefined;
+    const count = avail.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count], false);
     switch (result) {
-        .PuzzleString => |puzzle| {
-            defer std.heap.page_allocator.free(puzzle);
-            const easy = PuzzleGen.easy();
-            try std.testing.expectEqualStrings(easy, puzzle);
+        .valid => |cmd| {
+            switch (cmd) {
+                .new => |data| {
+                    if (data.puzzle) |puzzle| {
+                        defer std.heap.page_allocator.free(puzzle);
+                        try std.testing.expectEqualStrings(PuzzleGen.easy(), puzzle);
+                    } else return error.TestFailed;
+                },
+                else => return error.TestFailed,
+            }
         },
-        .PuzzleFile => |path| {
-            std.testing.allocator.free(path);
-            try std.testing.expect(false);
-        },
-        .Cancelled => try std.testing.expect(false),
+        .error_msg => return error.TestFailed,
     }
-
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, "1) Easy") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "2) Medium") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "3) Hard") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Open From File") == null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Load From URL") == null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Paste Puzzle String") == null);
 }
 
-test "newGameOptions: option 1 sub-selection 2 returns medium puzzle" {
+test "getCommandInput: New dialog rejects retired pick slots beyond the three difficulties" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
-
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "1\n", "2\n" };
+    // New is now slot 4 — the difficulty dialog only accepts 1-3; "4" must be rejected.
+    const responses = [_][]const u8{ "m\n", "4\n", "5\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -723,141 +742,26 @@ test "newGameOptions: option 1 sub-selection 2 returns medium puzzle" {
         &s,
         source,
     );
-
-    const result = try renderer.newGameOptions();
-    switch (result) {
-        .PuzzleString => |puzzle| {
-            defer std.heap.page_allocator.free(puzzle);
-            try std.testing.expectEqualStrings(PuzzleGen.medium(), puzzle);
-        },
-        .PuzzleFile => |path| {
-            std.testing.allocator.free(path);
-            try std.testing.expect(false);
-        },
-        .Cancelled => try std.testing.expect(false),
-    }
-}
-
-test "newGameOptions: option 1 sub-selection 3 returns hard puzzle" {
-    var aw = Io.Writer.Allocating.init(std.testing.allocator);
-    defer aw.deinit();
-
-    var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "1\n", "3\n" };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    const avail = legend.Legend{
+        .fill = false,
+        .clear = false,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .menu = true,
+        .save = false,
+        .open = false,
+        .new = true,
+        .save_as = false,
     };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-
-    const result = try renderer.newGameOptions();
+    var names: [6][]const u8 = undefined;
+    const count = avail.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count], false);
     switch (result) {
-        .PuzzleString => |puzzle| {
-            defer std.heap.page_allocator.free(puzzle);
-            try std.testing.expectEqualStrings(PuzzleGen.hard(), puzzle);
+        .error_msg => |msg| {
+            try std.testing.expectEqualStrings("cancelled", msg);
         },
-        .PuzzleFile => |path| {
-            std.testing.allocator.free(path);
-            try std.testing.expect(false);
-        },
-        .Cancelled => try std.testing.expect(false),
-    }
-}
-
-test "newGameOptions: out-of-range sub-selection returns Cancelled" {
-    var aw = Io.Writer.Allocating.init(std.testing.allocator);
-    defer aw.deinit();
-
-    var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "1\n", "9\n" };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-
-    const result = try renderer.newGameOptions();
-    switch (result) {
-        .Cancelled => try std.testing.expect(true),
-        .PuzzleString => |puzzle| {
-            std.heap.page_allocator.free(puzzle);
-            try std.testing.expect(false);
-        },
-        .PuzzleFile => |path| {
-            std.testing.allocator.free(path);
-            try std.testing.expect(false);
-        },
-    }
-}
-
-test "newGameOptions: option 2 returns the entered filename as PuzzleFile" {
-    var aw = Io.Writer.Allocating.init(std.testing.allocator);
-    defer aw.deinit();
-
-    var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "2\n", "mypuzzle.sud\n" };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-
-    const result = try renderer.newGameOptions();
-    switch (result) {
-        .PuzzleFile => |path| {
-            defer std.testing.allocator.free(path);
-            try std.testing.expectEqualStrings("mypuzzle.sud", path);
-        },
-        .PuzzleString => |puzzle| {
-            std.heap.page_allocator.free(puzzle);
-            try std.testing.expect(false);
-        },
-        .Cancelled => try std.testing.expect(false),
-    }
-
-    const contents = aw.writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, contents, "Open file:") != null);
-}
-
-test "newGameOptions: option 2 empty filename returns Cancelled" {
-    var aw = Io.Writer.Allocating.init(std.testing.allocator);
-    defer aw.deinit();
-
-    var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "2\n", "\n" };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-
-    const result = try renderer.newGameOptions();
-    switch (result) {
-        .Cancelled => try std.testing.expect(true),
-        .PuzzleFile => |path| {
-            std.testing.allocator.free(path);
-            try std.testing.expect(false);
-        },
-        .PuzzleString => |puzzle| {
-            std.heap.page_allocator.free(puzzle);
-            try std.testing.expect(false);
-        },
+        else => return error.TestFailed,
     }
 }
 
@@ -1158,7 +1062,7 @@ test "showMenu: quit pick returns quit command" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"8\n"};
+    const responses = [_][]const u8{"9\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1176,12 +1080,37 @@ test "showMenu: quit pick returns quit command" {
     }
 }
 
+test "showMenu: import pick returns import command with null path" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"3\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "import");
+            try std.testing.expect(cmd.import.path == null);
+        },
+        .error_msg => try std.testing.expect(false),
+    }
+}
 test "showMenu: solve pick is ignored when unavailable" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "9\n", "8\n" };
+    const responses = [_][]const u8{ "10\n", "9\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1198,7 +1127,7 @@ test "showMenu: solve pick is ignored when unavailable" {
         .error_msg => try std.testing.expect(false),
     }
     const written = aw.writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, written, "9) Solve (unavailable)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "10) Solve (unavailable)") != null);
     try std.testing.expect(std.mem.indexOf(u8, written, "invalid menu choice") == null);
 }
 
@@ -1207,7 +1136,7 @@ test "showMenu: solve pick returns solve when available" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"9\n"};
+    const responses = [_][]const u8{"10\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1254,7 +1183,7 @@ test "showMenu: invalid pick re-shows menu until valid choice" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "x\n", "\n", "8\n" };
+    const responses = [_][]const u8{ "x\n", "\n", "9\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1282,7 +1211,7 @@ test "showMenu: region pick toggles set_region" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"5\n"};
+    const responses = [_][]const u8{"6\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };

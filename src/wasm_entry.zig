@@ -165,6 +165,20 @@ export fn deserialize(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) ca
     boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
     return returnJson(out);
 }
+/// Import a one-line puzzle from a page-read file; codec is the engine's job.
+/// Returns Event JSON (same shape as exec / deserialize).
+export fn importPuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    const eng = engineOrError(out) orelse return returnJson(out);
+    const line = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const ev = eng.importFromLine(line);
+    switch (ev) {
+        .error_msg => |msg| return exportError(out, msg),
+        .ok => {},
+    }
+    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
 
 /// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from serialize).
 export fn outPtr() callconv(.c) u32 {

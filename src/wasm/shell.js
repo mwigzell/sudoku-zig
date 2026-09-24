@@ -55,3 +55,16 @@ export function newGame(game, { difficulty = 1, logLevel = 1 } = {}) {
   if (!result.ok) return result;
   return { ok: true, state: game.getState(), legend: game.getLegend(), config: game.getConfig() };
 }
+
+/** Import a one-line puzzle from page-read file text; engine owns the codec. */
+export function importPuzzle(game, text) {
+  const result = game.importPuzzle(text);
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    state: game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    msg: result.msg ?? null,
+  };
+}
