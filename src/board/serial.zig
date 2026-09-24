@@ -65,6 +65,17 @@ pub fn fromOneLineString(oneLine: []const u8) Error!board.Board {
     return fromFlat(flat, .{});
 }
 
+/// Serialize a board's cell values to the one-line 81-char string — inverse
+/// of fromOneLineString: row-major A1->I9, empty cell -> '0'. No allocation.
+pub fn toOneLineString(b: board.Board) [board.CELL_COUNT]u8 {
+    var line: [board.CELL_COUNT]u8 = undefined;
+    for (b.cells, 0..) |c, i| {
+        const d = @as(u8, @backingInt(c.value));
+        line[i] = if (d == 0) '0' else ('0' + d);
+    }
+    return line;
+}
+
 // ---------------------------------------------------------------------------
 // Tests (co-located)
 // ---------------------------------------------------------------------------
@@ -297,4 +308,35 @@ test "Board: equal returns false when given_bits differ" {
     b2.given_bits &= ~@as(u128, 1);
 
     try std.testing.expect(!equal(b1, b2));
+}
+
+test "Board: toOneLineString emits digits and zeros for empty cells" {
+    var flat: [board.CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    flat[0] = 5;
+    flat[1] = 3;
+    flat[4] = 7;
+    flat[9] = 6;
+
+    const b = try fromFlat(flat, .{});
+    const out = toOneLineString(b);
+    try std.testing.expectEqual(@as(u8, '5'), out[0]);
+    try std.testing.expectEqual(@as(u8, '3'), out[1]);
+    try std.testing.expectEqual(@as(u8, '0'), out[2]);
+    try std.testing.expectEqual(@as(u8, '7'), out[4]);
+    try std.testing.expectEqual(@as(u8, '0'), out[5]);
+    try std.testing.expectEqual(@as(u8, '6'), out[9]);
+    try std.testing.expectEqual(@as(u8, '0'), out[80]);
+}
+
+test "Board: toOneLineString -> fromOneLineString round-trips" {
+    var flat: [board.CELL_COUNT]u8 = undefined;
+    @memset(&flat, 0);
+    var i: usize = 0;
+    while (i < 81) : (i += 3) flat[i] = @as(u8, @intCast(i % 9 + 1));
+
+    const b1 = try fromFlat(flat, .{});
+    const line = toOneLineString(b1);
+    const b2 = try fromOneLineString(&line);
+    try std.testing.expect(equal(b1, b2));
 }

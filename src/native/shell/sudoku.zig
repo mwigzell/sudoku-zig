@@ -16,6 +16,7 @@ const host_mod = @import("../host.zig");
 const save_command = @import("save.zig");
 const open_command = @import("open.zig");
 const import_command = @import("import.zig");
+const export_command = @import("export.zig");
 const new_command = @import("new.zig");
 const save_as_command = @import("save_as.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
@@ -84,6 +85,7 @@ pub const Sudoku = struct {
                     },
                     .open => |data| open_command.execute(&self.engine, self.transport, data.path),
                     .import => |data| import_command.execute(&self.engine, self.transport, data.path),
+                    .export_puzzle => |data| export_command.execute(&self.engine, self.transport, data.path),
                     .new => |data| new_command.execute(&self.engine, data),
                     .save_as => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
@@ -428,7 +430,7 @@ test "integrated e2e - run: new command resets board and history" {
     const responses = [_][]const u8{
         "fill A3 7",
         "m",
-        "4", // menu → New
+        "5", // menu → New
         "2", // difficulty dialog → Medium (fresh generated puzzle)
         "quit",
     };
@@ -515,6 +517,74 @@ test "integrated e2e - run: import failure leaves board and history intact" {
     // history survived
     try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
     // filled cell A3 (row 2, col 0) still holds seven
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku_instance.engine.state.board.getCellValue(2, 0));
+}
+
+// export via menu: current board written to one line, history untouched
+test "integrated e2e - run: export via menu writes one-line file" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+
+    const board_mod = @import("../../board/board.zig");
+    const io = std.testing.io;
+    const tmp_path = "/tmp/sudoku_e2e_export_ok_test.txt";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+
+    // fill (adds history) → menu → Export → path → quit
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "m",
+        "4",
+        tmp_path,
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    defer sudoku_instance.deinit();
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+    const expected = board_mod.toOneLineString(sudoku_instance.engine.state.board);
+    const bytes = transport.readAll(transport.context, tmp_path) catch return error.TestFailed;
+    defer transport.free(transport.context, bytes);
+    try std.testing.expectEqual(@as(usize, 81), bytes.len);
+    try std.testing.expectEqualSlices(u8, &expected, bytes[0..81]);
+    try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
+}
+
+// export failure: board and history must be left untouched
+test "integrated e2e - run: export failure leaves board and history intact" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+    std.Io.Dir.deleteFileAbsolute(std.testing.io, "/tmp/sudoku_e2e_export_missing_dir/x.txt") catch {};
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "m",
+        "4",
+        "/tmp/sudoku_e2e_export_missing_dir/x.txt",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    defer sudoku_instance.deinit();
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+    try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
     try std.testing.expectEqual(cell.CellValue.seven, sudoku_instance.engine.state.board.getCellValue(2, 0));
 }
 // Full end-to-end run through the host-built ansi facade
@@ -734,7 +804,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     const col_letters = "ABCDEFGHI";
     const fill_cmd = try std.fmt.allocPrint(gpa, "fill {c}{d} 7", .{ col_letters[pick.c], pick.r + 1 });
     defer gpa.free(fill_cmd);
-    const responses = [_][]const u8{ fill_cmd, "m", "6", "quit" };
+    const responses = [_][]const u8{ fill_cmd, "m", "7", "quit" };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
     var facade = try host.facade();

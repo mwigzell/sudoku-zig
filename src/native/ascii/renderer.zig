@@ -44,7 +44,7 @@ pub fn bottomBorder() []const u8 {
 const box_min_width: usize = 80;
 
 fn menuPickIsQuit(pick: []const u8) bool {
-    return std.mem.eql(u8, pick, "9") or
+    return std.mem.eql(u8, pick, "10") or
         std.ascii.eqlIgnoreCase(pick, "q") or
         std.ascii.eqlIgnoreCase(pick, "quit");
 }
@@ -63,6 +63,8 @@ pub fn AsciiRenderer(StylerType: type) type {
         last_filename: ?[]u8,
         // Owned dialog path for the import command; not part of the save-target cache.
         import_path: ?[]u8 = null,
+        // Owned dialog path for the export command; not part of the save-target cache.
+        export_path: ?[]u8 = null,
         legend_line_width: usize = 0,
         can_solve: bool = false,
 
@@ -77,6 +79,9 @@ pub fn AsciiRenderer(StylerType: type) type {
                 self.allocator.free(name);
             }
             if (self.import_path) |name| {
+                self.allocator.free(name);
+            }
+            if (self.export_path) |name| {
                 self.allocator.free(name);
             }
         }
@@ -211,6 +216,18 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
+        /// Export dialog — prompt for the destination file path.
+        fn exportDialog(self: *@This()) facade.Error!_command.ExportFileResult {
+            self.writer.print("Export file: ", .{}) catch return facade.Error.System;
+            const line = self.readLine() catch return .Cancelled;
+            if (line.len == 0) {
+                defer self.allocator.free(line);
+                return .Cancelled;
+            }
+            // Caller owns `line` — no free needed when returned directly.
+            return .{ .FileName = line };
+        }
+
         /// Numbered session/view submenu — file operations, view, hint placeholder, quit.
         pub fn showMenu(self: *@This(), show_region: bool) facade.Error!_command.ParseCommandResult {
             const region_state = if (show_region) "on" else "off";
@@ -218,16 +235,17 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.writeAll("  1) Save\n") catch return facade.Error.System;
             self.writer.writeAll("  2) Open\n") catch return facade.Error.System;
             self.writer.writeAll("  3) Import\n") catch return facade.Error.System;
-            self.writer.writeAll("  4) New\n") catch return facade.Error.System;
-            self.writer.writeAll("  5) Save As\n") catch return facade.Error.System;
-            self.writer.print("  6) Region ({s})\n", .{region_state}) catch return facade.Error.System;
-            self.writer.writeAll("  7) Hint (not yet)\n") catch return facade.Error.System;
-            self.writer.writeAll("  8) About\n") catch return facade.Error.System;
-            self.writer.writeAll("  9) Quit\n") catch return facade.Error.System;
+            self.writer.writeAll("  4) Export\n") catch return facade.Error.System;
+            self.writer.writeAll("  5) New\n") catch return facade.Error.System;
+            self.writer.writeAll("  6) Save As\n") catch return facade.Error.System;
+            self.writer.print("  7) Region ({s})\n", .{region_state}) catch return facade.Error.System;
+            self.writer.writeAll("  8) Hint (not yet)\n") catch return facade.Error.System;
+            self.writer.writeAll("  9) About\n") catch return facade.Error.System;
+            self.writer.writeAll("  10) Quit\n") catch return facade.Error.System;
             if (self.can_solve) {
-                self.writer.writeAll("  10) Solve\n") catch return facade.Error.System;
+                self.writer.writeAll("  11) Solve\n") catch return facade.Error.System;
             } else {
-                self.writer.writeAll("  10) Solve (unavailable)\n") catch return facade.Error.System;
+                self.writer.writeAll("  11) Solve (unavailable)\n") catch return facade.Error.System;
             }
             self.writer.writeAll("> ") catch return facade.Error.System;
 
@@ -237,19 +255,20 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "1")) return .{ .valid = _command.Command{ .save = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "2")) return .{ .valid = _command.Command{ .open = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "3")) return .{ .valid = _command.Command{ .import = .{ .path = null } } };
-            if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null } } };
-            if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
-            if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .set_region = !show_region } };
-            if (std.mem.eql(u8, pick, "7")) {
+            if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .export_puzzle = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null } } };
+            if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "7")) return .{ .valid = _command.Command{ .set_region = !show_region } };
+            if (std.mem.eql(u8, pick, "8")) {
                 try self.showError("not yet");
                 return try self.showMenu(show_region);
             }
-            if (std.mem.eql(u8, pick, "8")) {
+            if (std.mem.eql(u8, pick, "9")) {
                 try self.showAbout();
                 return try self.showMenu(show_region);
             }
             if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
-            if (std.mem.eql(u8, pick, "10")) {
+            if (std.mem.eql(u8, pick, "11")) {
                 if (!self.can_solve) return try self.showMenu(show_region);
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
@@ -361,6 +380,21 @@ pub fn AsciiRenderer(StylerType: type) type {
                         if (self.import_path) |old| self.allocator.free(old);
                         self.import_path = path;
                         rsl.valid.import.path = path;
+                    },
+                    .Cancelled => return .{ .error_msg = "cancelled" },
+                }
+            }
+            // Intercept export: prompt for a destination file; no filename cache — like import
+            if (std.meta.activeTag(rsl) == .valid and
+                std.meta.activeTag(rsl.valid) == .export_puzzle)
+            {
+                const file_result = self.exportDialog() catch return .{ .error_msg = "cancelled" };
+                switch (file_result) {
+                    .FileName => |path| {
+                        // Renderer owns the export dialog path; ExportData.path borrows it
+                        if (self.export_path) |old| self.allocator.free(old);
+                        self.export_path = path;
+                        rsl.valid.export_puzzle.path = path;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },
                 }
@@ -679,7 +713,7 @@ test "getCommandInput: New opens difficulty dialog; pick easy loads easy puzzle"
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "m\n", "4\n", "1\n" };
+    const responses = [_][]const u8{ "m\n", "5\n", "1\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -731,8 +765,8 @@ test "getCommandInput: New dialog rejects retired pick slots beyond the three di
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
     var s = styler.PlainStyler{};
-    // New is now slot 4 — the difficulty dialog only accepts 1-3; "4" must be rejected.
-    const responses = [_][]const u8{ "m\n", "4\n", "5\n" };
+    // New is now slot 5 — the difficulty dialog only accepts 1-3; "4" must be rejected.
+    const responses = [_][]const u8{ "m\n", "5\n", "4\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1062,7 +1096,7 @@ test "showMenu: quit pick returns quit command" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"9\n"};
+    const responses = [_][]const u8{"10\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1110,7 +1144,7 @@ test "showMenu: solve pick is ignored when unavailable" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "10\n", "9\n" };
+    const responses = [_][]const u8{ "11\n", "10\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1127,7 +1161,7 @@ test "showMenu: solve pick is ignored when unavailable" {
         .error_msg => try std.testing.expect(false),
     }
     const written = aw.writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, written, "10) Solve (unavailable)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "11) Solve (unavailable)") != null);
     try std.testing.expect(std.mem.indexOf(u8, written, "invalid menu choice") == null);
 }
 
@@ -1136,7 +1170,7 @@ test "showMenu: solve pick returns solve when available" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"10\n"};
+    const responses = [_][]const u8{"11\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1183,7 +1217,7 @@ test "showMenu: invalid pick re-shows menu until valid choice" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "x\n", "\n", "9\n" };
+    const responses = [_][]const u8{ "x\n", "\n", "10\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1211,7 +1245,7 @@ test "showMenu: region pick toggles set_region" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"6\n"};
+    const responses = [_][]const u8{"7\n"};
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };

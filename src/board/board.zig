@@ -253,6 +253,7 @@ const serial = @import("serial.zig");
 pub const FlatOpts = serial.FlatOpts;
 pub const fromFlat = serial.fromFlat;
 pub const fromOneLineString = serial.fromOneLineString;
+pub const toOneLineString = serial.toOneLineString;
 pub const toFlat = serial.toFlat;
 pub const equal = serial.equal;
 
