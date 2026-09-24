@@ -1,6 +1,6 @@
 # Verify timing gate
 
-`zig build verify` runs `scripts/verify-gate.sh`, which times `zig build verify-run` and checks `docs/verify-timing.json`.
+`zig build verify` runs `scripts/verify-gate.sh`, which times `zig build verify-run` with bash's built-in `time` (`TIMEFORMAT='%R'`) and checks `docs/verify-timing.json` with `jq`.
 
 ## Tracking file
 
