@@ -9,7 +9,9 @@ import {
   handleDeselect,
   anyMenuOpen,
   wireEditMenu,
+  handleCopyPuzzle,
 } from "./menu.js";
+import { LEGEND_WIRE_COPY } from "./menu_bar.js";
 
 function makeBtn() {
   const handlers = {};
@@ -256,5 +258,121 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
 }
 
 assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
+
+// ── Copy sends exportPuzzle bytes as clipboard text ──
+{
+  const line = "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
+  let written = null;
+  const session = {
+    legend: { [LEGEND_WIRE_COPY]: true },
+    state: { cells: [{ value: 3, given: false, conflict: false }] },
+  };
+  const game = {
+    exportPuzzle() {
+      return { ok: true, bytes: new TextEncoder().encode(line) };
+    },
+  };
+  const status = { textContent: "", className: "" };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const result = await handleCopyPuzzle(game, session, status, errorModal, {
+    clipboard: { writeText: async (text) => { written = text; } },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(written, line, "clipboard gets exportPuzzle one-line string");
+  assert.match(status.textContent, /copied puzzle/i);
+  assert.equal(errorModal.el.hidden, true);
+}
+
+// ── Copy clipboard denied → error modal; board unchanged ──
+{
+  const session = {
+    legend: { [LEGEND_WIRE_COPY]: true },
+    state: { cells: [{ value: 2, given: true, conflict: false }] },
+  };
+  const before = JSON.stringify(session.state);
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const game = {
+    exportPuzzle() {
+      return { ok: true, bytes: new TextEncoder().encode("2".repeat(81)) };
+    },
+  };
+  const result = await handleCopyPuzzle(
+    game,
+    session,
+    { textContent: "", className: "" },
+    errorModal,
+    {
+      clipboard: {
+        writeText: async () => {
+          throw new Error("denied");
+        },
+      },
+      doc: {
+        createElement() {
+          return {
+            select() {},
+            style: {},
+            setAttribute() {},
+          };
+        },
+        body: { appendChild() {}, removeChild() {} },
+        execCommand() {
+          return false;
+        },
+      },
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(errorModal.el.hidden, false);
+  assert.match(errorModal.msgEl.textContent, /clipboard/i);
+  assert.equal(JSON.stringify(session.state), before);
+}
+
+// ── Copy no-op when legend.copy is off ──
+{
+  let called = false;
+  const session = { legend: {}, state: { cells: [] } };
+  const result = await handleCopyPuzzle(
+    { exportPuzzle() { called = true; return { ok: true, bytes: new Uint8Array(81) }; } },
+    session,
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    { clipboard: { writeText: async () => {} } },
+  );
+  assert.equal(result.handled, false);
+  assert.equal(called, false);
+}
+
+// ── wireEditMenu Copy click ──
+{
+  const copyBtn = makeBtn();
+  const session = { state: emptyState(), legend: { [LEGEND_WIRE_COPY]: true } };
+  let written = null;
+  const lineBytes = new TextEncoder().encode("1".repeat(81));
+  wireEditMenu(
+    makeBtn(),
+    makeBtn(),
+    makeBtn(),
+    {
+      exportPuzzle() {
+        return { ok: true, bytes: lineBytes };
+      },
+    },
+    makeMockBoard(),
+    { getSelection: () => null, deselect() {}, select() {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    makeRenderElement(),
+    { querySelectorAll: () => [], addEventListener() {} },
+    {
+      copyBtn,
+      clipboard: { writeText: async (text) => { written = text; } },
+    },
+  );
+  copyBtn.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(written, "1".repeat(81));
+}
 
 console.log("menu.test.mjs OK");

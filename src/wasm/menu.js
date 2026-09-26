@@ -1,6 +1,7 @@
 // menu.js — Edit menu: undo/redo/solve/deselect (web only; native has no cell selection).
 
-import { applyEventStatus, applyExecResult } from "./shell.js";
+import { applyEventStatus, applyExecResult, showErrorModal, startCopyPuzzleOnClick } from "./shell.js";
+import { LEGEND_WIRE_COPY } from "./menu_bar.js";
 import { applySuccessfulExec } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
@@ -24,6 +25,24 @@ export function parseEditShortcut(event) {
 export function anyMenuOpen(root) {
   if (typeof root.querySelectorAll !== "function") return false;
   return [...root.querySelectorAll("#menu-bar .menu")].some((menu) => menu.dataset.open === "true");
+}
+
+/** Edit → Copy: wasm `exportPuzzle` bytes only; clipboard denied leaves board intact. */
+export async function handleCopyPuzzle(
+  game,
+  session,
+  statusEl,
+  errorModal,
+  { clipboard, doc } = {},
+) {
+  if (!session.legend[LEGEND_WIRE_COPY]) return { handled: false };
+  const result = await startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document });
+  if (!result.ok) {
+    if (result.error) showErrorModal(errorModal, result.error);
+    return { handled: true, ok: false };
+  }
+  applyEventStatus(statusEl, { ok: true, msg: "copied puzzle to clipboard" });
+  return { handled: true, ok: true };
 }
 
 export function handleDeselect(selection) {
@@ -70,9 +89,9 @@ export function wireEditMenu(
   session,
   createElement,
   root = document,
-  { syncLegend } = {},
+  { syncLegend, copyBtn, clipboard = globalThis.navigator?.clipboard } = {},
 ) {
-  const controls = { undo: undoBtn, redo: redoBtn, deselect: deselectBtn };
+  const controls = { undo: undoBtn, redo: redoBtn, deselect: deselectBtn, copy: copyBtn };
 
   const syncEdit = () => {
     if (syncLegend) syncLegend();
@@ -104,6 +123,13 @@ export function wireEditMenu(
   undoBtn.addEventListener("click", () => run("undo"));
   redoBtn.addEventListener("click", () => run("redo"));
   deselectBtn?.addEventListener("click", () => runDeselect());
+  copyBtn?.addEventListener("click", (event) => {
+    event?.stopPropagation?.();
+    void handleCopyPuzzle(game, session, statusEl, errorModal, {
+      clipboard,
+      doc: root.ownerDocument ?? globalThis.document,
+    });
+  });
   if (typeof root.querySelector === "function") {
     const solveBtn = root.querySelector("#edit-solve");
     if (solveBtn) solveBtn.addEventListener("click", () => run("solve"));

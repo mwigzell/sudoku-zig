@@ -228,7 +228,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     var mutable = out;
     try writeJson(
         &mutable,
-        "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"save_as\":{any},\"solve\":{any}}}",
+        "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"save_as\":{any},\"solve\":{any}}}",
         .{
             legend.fill,
             legend.clear,
@@ -240,6 +240,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
             legend.new,
             legend.import,
             legend.@"export",
+            legend.copy,
             legend.save_as,
             legend.solve,
         },

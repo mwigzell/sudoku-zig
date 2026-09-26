@@ -86,6 +86,7 @@ pub const GameEngine = struct {
             .new = true,
             .import = true,
             .@"export" = true,
+            .copy = true,
             .save_as = true,
             .solve = self.canSolve(),
         };
@@ -544,6 +545,12 @@ test "legend offers export in the web session menu" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try std.testing.expect(engine.getLegend().@"export");
+}
+
+test "legend offers copy in the web session menu" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    try std.testing.expect(engine.getLegend().copy);
 }
 
 test "toSaveFormat serializes state without engine file methods" {

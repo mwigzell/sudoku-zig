@@ -61,6 +61,69 @@ export function exportPuzzle(game) {
   return game.exportPuzzle();
 }
 
+/** Fallback when Async Clipboard API is missing or denied (needs user-gesture select). */
+export function copyTextWithExecCommand(text, doc) {
+  if (!doc) return false;
+  const ta = doc.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  doc.body.appendChild(ta);
+  ta.select();
+  try {
+    return doc.execCommand("copy");
+  } finally {
+    doc.body.removeChild(ta);
+  }
+}
+
+export async function writeClipboardText(text, { clipboard = globalThis.navigator?.clipboard, doc } = {}) {
+  const document = doc ?? globalThis.document;
+  if (!document) return { ok: false, error: "copy: clipboard write denied" };
+  if (clipboard?.writeText) {
+    try {
+      await clipboard.writeText(text);
+      return { ok: true };
+    } catch {
+      // fall through to execCommand
+    }
+  }
+  if (copyTextWithExecCommand(text, document)) return { ok: true };
+  return { ok: false, error: "copy: clipboard write denied" };
+}
+
+/** One-line puzzle string from wasm, or an error result. */
+export function puzzleLineForCopy(game) {
+  const exported = exportPuzzle(game);
+  if (!exported.ok) return exported;
+  return { ok: true, text: new TextDecoder().decode(exported.bytes) };
+}
+
+/**
+ * Copy current grid via `exportPuzzle`. Prefer `startCopyPuzzleOnClick` in UI handlers
+ * so `writeText` runs in the same turn as the user click (activation).
+ */
+export async function copyPuzzleToClipboard(game, options = {}) {
+  const line = puzzleLineForCopy(game);
+  if (!line.ok) return line;
+  return writeClipboardText(line.text, options);
+}
+
+/** Start clipboard write in the click turn; returns a Promise for tests. */
+export function startCopyPuzzleOnClick(game, { clipboard = globalThis.navigator?.clipboard, doc } = {}) {
+  const document = doc ?? globalThis.document;
+  const line = puzzleLineForCopy(game);
+  if (!line.ok) return Promise.resolve(line);
+  const pending = clipboard?.writeText?.(line.text);
+  if (pending) {
+    return pending
+      .then(() => ({ ok: true }))
+      .catch(() => writeClipboardText(line.text, { clipboard: null, doc: document }));
+  }
+  return writeClipboardText(line.text, { clipboard: null, doc: document });
+}
+
 /** Import a one-line puzzle from page-read file text; engine owns the codec. */
 export function importPuzzle(game, text) {
   const result = game.importPuzzle(text);

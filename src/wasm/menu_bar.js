@@ -2,6 +2,7 @@
 
 /** Wasm legend JSON key — pairs with Zig `Legend.@"export"` / `CommandTag.@"export"` (see legend.zig). */
 export const LEGEND_WIRE_EXPORT = "export";
+export const LEGEND_WIRE_COPY = "copy";
 
 /** Web menu skeleton — no Quit (legend.quit ignored on web). */
 export const MENU_BAR_MENUS = [
@@ -21,6 +22,7 @@ export const MENU_BAR_MENUS = [
     items: [
       { id: "undo", label: "Undo", legendKey: "undo" },
       { id: "redo", label: "Redo", legendKey: "redo" },
+      { id: "copy", label: "Copy", legendKey: LEGEND_WIRE_COPY },
       { id: "solve", label: "Solve", legendKey: "solve" },
       { id: "deselect", label: "Deselect Cell" },
     ],
@@ -65,6 +67,7 @@ export function collectMenuBarControls(root) {
     saveAs: root.querySelector("#file-save-as"),
     undo: root.querySelector("#edit-undo"),
     redo: root.querySelector("#edit-redo"),
+    copy: root.querySelector("#edit-copy"),
     solve: root.querySelector("#edit-solve"),
     deselect: root.querySelector("#edit-deselect"),
     viewLight: root.querySelector("#view-light"),
@@ -127,6 +130,10 @@ export function wireMenuDropdowns(root = document) {
     });
     // Swallow the click that follows mousedown so root click does not instantly close.
     trigger?.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    const panel = menu.querySelector(".menu-panel");
+    panel?.addEventListener?.("click", (event) => {
       event.stopPropagation();
     });
   }

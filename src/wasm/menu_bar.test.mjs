@@ -8,6 +8,7 @@ import {
   collectMenuBarControls,
   MENU_BAR_MENUS,
   LEGEND_WIRE_EXPORT,
+  LEGEND_WIRE_COPY,
 } from "./menu_bar.js";
 
 function makeBtn() {
@@ -24,6 +25,7 @@ function makeControls() {
     saveAs: makeBtn(),
     undo: makeBtn(),
     redo: makeBtn(),
+    copy: makeBtn(),
     solve: makeBtn(),
     deselect: makeBtn(),
     viewLight: makeBtn(),
@@ -63,6 +65,10 @@ function makeControls() {
   assert.equal(controls.export.disabled, false);
   syncMenuBar({ [LEGEND_WIRE_EXPORT]: false }, controls);
   assert.equal(controls.export.disabled, true);
+  syncMenuBar({ [LEGEND_WIRE_COPY]: true }, controls);
+  assert.equal(controls.copy.disabled, false);
+  syncMenuBar({ [LEGEND_WIRE_COPY]: false }, controls);
+  assert.equal(controls.copy.disabled, true);
 }
 
 {

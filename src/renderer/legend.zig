@@ -27,6 +27,8 @@ pub const Legend = struct {
     import: bool = false,
     /// Session menu: export current grid as a one-line puzzle file (web). Wire key: `wire_export_json_key`.
     @"export": bool = false,
+    /// Edit menu: copy current grid as a one-line puzzle string (web clipboard).
+    copy: bool = false,
     /// Menu Solve. Off when the board is full or has any conflict.
     solve: bool = false,
 
