@@ -3,6 +3,7 @@
 /** Wasm legend JSON key — pairs with Zig `Legend.@"export"` / `CommandTag.@"export"` (see legend.zig). */
 export const LEGEND_WIRE_EXPORT = "export";
 export const LEGEND_WIRE_COPY = "copy";
+export const LEGEND_WIRE_PASTE = "paste";
 
 /** Web menu skeleton — no Quit (legend.quit ignored on web). */
 export const MENU_BAR_MENUS = [
@@ -23,6 +24,7 @@ export const MENU_BAR_MENUS = [
       { id: "undo", label: "Undo", legendKey: "undo" },
       { id: "redo", label: "Redo", legendKey: "redo" },
       { id: "copy", label: "Copy", legendKey: LEGEND_WIRE_COPY },
+      { id: "paste", label: "Paste", legendKey: LEGEND_WIRE_PASTE },
       { id: "solve", label: "Solve", legendKey: "solve" },
       { id: "deselect", label: "Deselect Cell" },
     ],
@@ -68,6 +70,7 @@ export function collectMenuBarControls(root) {
     undo: root.querySelector("#edit-undo"),
     redo: root.querySelector("#edit-redo"),
     copy: root.querySelector("#edit-copy"),
+    paste: root.querySelector("#edit-paste"),
     solve: root.querySelector("#edit-solve"),
     deselect: root.querySelector("#edit-deselect"),
     viewLight: root.querySelector("#view-light"),

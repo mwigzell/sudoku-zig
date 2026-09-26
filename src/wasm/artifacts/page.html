@@ -434,6 +434,7 @@
           <button type="button" role="menuitem" id="edit-undo" disabled>Undo</button>
           <button type="button" role="menuitem" id="edit-redo" disabled>Redo</button>
           <button type="button" role="menuitem" id="edit-copy" disabled>Copy</button>
+          <button type="button" role="menuitem" id="edit-paste" disabled>Paste</button>
           <button type="button" role="menuitem" id="edit-solve" disabled>Solve</button>
           <button type="button" role="menuitem" id="edit-deselect" disabled aria-keyshortcuts="Escape">Deselect Cell</button>
         </div>
@@ -572,7 +573,11 @@
         session,
         undefined,
         document,
-        { syncLegend: () => menuBar.sync(), copyBtn: menuControls.copy },
+        {
+          syncLegend: () => menuBar.sync(),
+          copyBtn: menuControls.copy,
+          pasteBtn: menuControls.paste,
+        },
       );
       wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
         onLegendChange: () => menuBar.sync(),

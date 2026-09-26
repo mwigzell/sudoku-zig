@@ -29,6 +29,8 @@ pub const Legend = struct {
     @"export": bool = false,
     /// Edit menu: copy current grid as a one-line puzzle string (web clipboard).
     copy: bool = false,
+    /// Edit menu: paste a one-line puzzle from the clipboard (web).
+    paste: bool = false,
     /// Menu Solve. Off when the board is full or has any conflict.
     solve: bool = false,
 

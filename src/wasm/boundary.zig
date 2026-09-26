@@ -228,7 +228,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     var mutable = out;
     try writeJson(
         &mutable,
-        "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"save_as\":{any},\"solve\":{any}}}",
+        "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"paste\":{any},\"save_as\":{any},\"solve\":{any}}}",
         .{
             legend.fill,
             legend.clear,
@@ -241,6 +241,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
             legend.import,
             legend.@"export",
             legend.copy,
+            legend.paste,
             legend.save_as,
             legend.solve,
         },
@@ -497,4 +498,25 @@ test "writeLegendJson maps Legend export flag to wire export key" {
     const wire_key = legend_mod.wire_export_json_key;
     try std.testing.expectEqualStrings("export", wire_key);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"export\":true") != null);
+}
+
+test "writeLegendJson includes paste flag" {
+    var buf: [512]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeLegendJson(out, .{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .menu = true,
+        .save = true,
+        .open = true,
+        .new = true,
+        .paste = true,
+        .save_as = true,
+    });
+    const json = out.finishJson();
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"paste\":true") != null);
 }

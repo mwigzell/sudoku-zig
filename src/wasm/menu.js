@@ -1,8 +1,15 @@
 // menu.js — Edit menu: undo/redo/solve/deselect (web only; native has no cell selection).
 
-import { applyEventStatus, applyExecResult, showErrorModal, startCopyPuzzleOnClick } from "./shell.js";
-import { LEGEND_WIRE_COPY } from "./menu_bar.js";
-import { applySuccessfulExec } from "./board.js";
+import {
+  applyEventStatus,
+  applyExecResult,
+  showErrorModal,
+  startCopyPuzzleOnClick,
+  readClipboardText,
+  importPuzzle,
+} from "./shell.js";
+import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
+import { applySuccessfulExec, renderBoard } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
 
@@ -42,6 +49,34 @@ export async function handleCopyPuzzle(
     return { handled: true, ok: false };
   }
   applyEventStatus(statusEl, { ok: true, msg: "copied puzzle to clipboard" });
+  return { handled: true, ok: true };
+}
+
+/** Edit → Paste: clipboard `readText` → wasm `importPuzzle` only; fail closed on read/import errors. */
+export async function handlePastePuzzle(
+  game,
+  session,
+  statusEl,
+  errorModal,
+  { clipboard } = {},
+) {
+  if (!session.legend[LEGEND_WIRE_PASTE]) return { handled: false };
+  const read = await readClipboardText({ clipboard });
+  if (!read.ok) {
+    if (read.error) showErrorModal(errorModal, read.error);
+    return { handled: true, ok: false };
+  }
+  const result = importPuzzle(game, read.text);
+  if (!result.ok) {
+    if (result.error) showErrorModal(errorModal, result.error);
+    return { handled: true, ok: false };
+  }
+  session.fileHandle = null;
+  session.boundFilename = null;
+  session.state = result.state;
+  session.legend = result.legend;
+  session.config = result.config;
+  applyEventStatus(statusEl, { ok: true, msg: result.msg ?? "pasted puzzle from clipboard" });
   return { handled: true, ok: true };
 }
 
@@ -89,9 +124,20 @@ export function wireEditMenu(
   session,
   createElement,
   root = document,
-  { syncLegend, copyBtn, clipboard = globalThis.navigator?.clipboard } = {},
+  {
+    syncLegend,
+    copyBtn,
+    pasteBtn,
+    clipboard = globalThis.navigator?.clipboard,
+  } = {},
 ) {
-  const controls = { undo: undoBtn, redo: redoBtn, deselect: deselectBtn, copy: copyBtn };
+  const controls = {
+    undo: undoBtn,
+    redo: redoBtn,
+    deselect: deselectBtn,
+    copy: copyBtn,
+    paste: pasteBtn,
+  };
 
   const syncEdit = () => {
     if (syncLegend) syncLegend();
@@ -128,6 +174,15 @@ export function wireEditMenu(
     void handleCopyPuzzle(game, session, statusEl, errorModal, {
       clipboard,
       doc: root.ownerDocument ?? globalThis.document,
+    });
+  });
+  pasteBtn?.addEventListener("click", (event) => {
+    event?.stopPropagation?.();
+    void handlePastePuzzle(game, session, statusEl, errorModal, { clipboard }).then((outcome) => {
+      if (!outcome.handled || !outcome.ok) return;
+      renderBoard(boardEl, session.state, createElement);
+      selection.deselect();
+      syncEdit();
     });
   });
   if (typeof root.querySelector === "function") {

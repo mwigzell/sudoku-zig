@@ -78,6 +78,18 @@ export function copyTextWithExecCommand(text, doc) {
   }
 }
 
+export const CLIPBOARD_READ_DENIED_MSG = "paste: clipboard read denied";
+
+export async function readClipboardText({ clipboard = globalThis.navigator?.clipboard } = {}) {
+  if (!clipboard?.readText) return { ok: false, error: CLIPBOARD_READ_DENIED_MSG };
+  try {
+    const text = await clipboard.readText();
+    return { ok: true, text };
+  } catch {
+    return { ok: false, error: CLIPBOARD_READ_DENIED_MSG };
+  }
+}
+
 export async function writeClipboardText(text, { clipboard = globalThis.navigator?.clipboard, doc } = {}) {
   const document = doc ?? globalThis.document;
   if (!document) return { ok: false, error: "copy: clipboard write denied" };
