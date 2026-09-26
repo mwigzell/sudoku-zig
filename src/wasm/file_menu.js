@@ -1,10 +1,21 @@
 // file_menu.js — File menu session actions via shell.js.
 
-import { newGame, open, save, saveAs, importPuzzle, applyEventStatus, showErrorModal } from "./shell.js";
+import {
+  newGame,
+  open,
+  save,
+  saveAs,
+  importPuzzle,
+  exportPuzzle,
+  applyEventStatus,
+  showErrorModal,
+} from "./shell.js";
 import { renderBoard } from "./board.js";
+import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
 export const DEFAULT_SAVE_FILENAME = "sudoku.sud";
 export const SAVE_AS_FILENAME = "sudoku-save.sud";
+export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
 
@@ -103,6 +114,32 @@ export async function persistBytes(
   return { ok: true, filename: suggestedName };
 }
 
+/** Write a one-line puzzle export; does not bind the SUD0 save file handle. */
+export async function persistPuzzleText(
+  bytes,
+  session,
+  suggestedName = DEFAULT_PUZZLE_EXPORT_FILENAME,
+  { win = globalThis, download = downloadBytes } = {},
+) {
+  if (win.showSaveFilePicker) {
+    try {
+      const handle = await win.showSaveFilePicker({
+        suggestedName,
+        types: puzzleTextPickerTypes,
+        startIn: filePickerStartIn(session),
+      });
+      await writeHandle(handle, bytes);
+      return { ok: true, filename: handle.name };
+    } catch (err) {
+      if (err?.name === "AbortError") return { ok: false, cancelled: true };
+      return { ok: false, error: err?.message ?? "export failed" };
+    }
+  }
+
+  download(bytes, suggestedName);
+  return { ok: true, filename: suggestedName };
+}
+
 export async function pickBytes(doc = document, session = {}, { types = sudFilePickerTypes, accept = null } = {}) {
   const win = doc.defaultView;
   if (win?.showOpenFilePicker) {
@@ -175,7 +212,14 @@ export function wireFileMenu(
   errorModal,
   session,
   menuBar,
-  { difficultyDialog, download = downloadBytes, pick = (session, opts) => pickBytes(document, session, opts), createElement, onViewRefresh } = {},
+  {
+    difficultyDialog,
+    download = downloadBytes,
+    pick = (session, opts) => pickBytes(document, session, opts),
+    exportText = persistPuzzleText,
+    createElement,
+    onViewRefresh,
+  } = {},
 ) {
   const fail = (result) => {
     if (result.error) showErrorModal(errorModal, result.error);
@@ -276,5 +320,16 @@ export function wireFileMenu(
       onViewRefresh,
       result.msg,
     );
+  });
+
+  controls.export?.addEventListener("click", async () => {
+    if (!session.legend[LEGEND_WIRE_EXPORT]) return;
+    const result = exportPuzzle(game);
+    if (!result.ok) {
+      fail(result);
+      return;
+    }
+    const saved = await exportText(result.bytes, session, DEFAULT_PUZZLE_EXPORT_FILENAME, { download });
+    if (!saved.ok && !saved.cancelled) fail(saved);
   });
 }

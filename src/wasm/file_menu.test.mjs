@@ -10,6 +10,7 @@ import {
   DEFAULT_SAVE_FILENAME,
   filePickerStartIn,
 } from "./file_menu.js";
+import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
 function makeBtn() {
   return { disabled: false, handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, click() { return this.handlers.click?.(); } };
@@ -396,6 +397,115 @@ function makeRenderElement() {
   );
   await importBtn.click();
   assert.equal(picked, false, "no picker when legend.import is off");
+}
+
+// Export writes bytes from exportPuzzle via the text save path; save target stays bound
+{
+  const lineBytes = new TextEncoder().encode("003020600900305001001806400008102900700000008006708200002609500800203009005010300");
+  const session = {
+    legend: { [LEGEND_WIRE_EXPORT]: true },
+    state: { cells: [{ value: 1, given: true, conflict: false }] },
+    fileHandle: { name: "game.sud" },
+    boundFilename: "game.sud",
+  };
+  let saved = null;
+  const game = {
+    exportPuzzle() {
+      return { ok: true, bytes: lineBytes };
+    },
+  };
+  const exportBtn = makeBtn();
+  wireFileMenu(
+    { export: exportBtn },
+    game,
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      exportText: async (bytes, sessionArg, name) => {
+        assert.equal(sessionArg, session);
+        assert.equal(name, "puzzle.txt");
+        saved = bytes;
+        return { ok: true, filename: "puzzle.txt" };
+      },
+      createElement: makeRenderElement(),
+    },
+  );
+  await exportBtn.click();
+  assert.deepEqual([...saved], [...lineBytes], "save receives exportPuzzle bytes");
+  assert.equal(session.fileHandle.name, "game.sud", "export must not bind SUD0 file handle");
+  assert.equal(session.boundFilename, "game.sud");
+}
+
+// Export failure surfaces error; board and save target unchanged
+{
+  const session = {
+    legend: { [LEGEND_WIRE_EXPORT]: true },
+    state: { cells: [{ value: 2, given: true, conflict: false }] },
+    fileHandle: { name: "game.sud" },
+    boundFilename: "game.sud",
+  };
+  const game = {
+    exportPuzzle() {
+      return { ok: true, bytes: new TextEncoder().encode("x".repeat(81)) };
+    },
+  };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "old" } };
+  const before = JSON.stringify(session.state);
+  const exportBtn = makeBtn();
+  wireFileMenu(
+    { export: exportBtn },
+    game,
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    errorModal,
+    session,
+    { sync() {} },
+    {
+      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      exportText: async () => ({ ok: false, error: "export: write failed" }),
+      createElement: makeRenderElement(),
+    },
+  );
+  await exportBtn.click();
+  assert.equal(errorModal.el.hidden, false);
+  assert.match(errorModal.msgEl.textContent, /write failed/);
+  assert.equal(JSON.stringify(session.state), before);
+  assert.equal(session.fileHandle.name, "game.sud");
+}
+
+// Export is a no-op when the legend does not offer it
+{
+  let called = false;
+  const exportBtn = makeBtn();
+  wireFileMenu(
+    { export: exportBtn },
+    { exportPuzzle() { called = true; return { ok: true }; } },
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    { legend: {}, state: { cells: [] } },
+    { sync() {} },
+    {
+      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      exportText: async () => { throw new Error("must not run"); },
+      createElement: makeRenderElement(),
+    },
+  );
+  await exportBtn.click();
+  assert.equal(called, false);
 }
 
 console.log("file_menu.test.mjs OK");

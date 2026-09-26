@@ -22,6 +22,9 @@ pub const Legend = struct {
     save_as: bool,
     /// Session menu: import a one-line puzzle file (web).
     import: bool = false,
+    /// Session menu: export current grid as a one-line puzzle file (web).
+    /// Field name is `@"export"` because `export` is a Zig keyword; wasm JSON key stays `"export"`.
+    @"export": bool = false,
     /// Menu Solve. Off when the board is full or has any conflict.
     solve: bool = false,
 

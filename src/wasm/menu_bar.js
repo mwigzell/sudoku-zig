@@ -1,5 +1,8 @@
 // menu_bar.js — top menu bar: legend-driven enablement.
 
+/** Wasm `getLegend()` JSON key for File → Export (Zig `Legend.@"export"`). */
+export const LEGEND_WIRE_EXPORT = "export";
+
 /** Web menu skeleton — no Quit (legend.quit ignored on web). */
 export const MENU_BAR_MENUS = [
   {
@@ -8,6 +11,7 @@ export const MENU_BAR_MENUS = [
       { id: "new", label: "New", legendKey: "new" },
       { id: "open", label: "Open", legendKey: "open" },
       { id: "import", label: "Import", legendKey: "import" },
+      { id: "export", label: "Export", legendKey: LEGEND_WIRE_EXPORT },
       { id: "save", label: "Save", legendKey: "save" },
       { id: "saveAs", label: "Save As", legendKey: "save_as" },
     ],
@@ -37,14 +41,13 @@ export const MENU_BAR_MENUS = [
 
 /** Mirror wasm Legend flags onto File + Edit controls. View/Help stay enabled. */
 export function syncMenuBar(legend, controls) {
-  if (controls.new) controls.new.disabled = !legend.new;
-  if (controls.open) controls.open.disabled = !legend.open;
-  if (controls.import) controls.import.disabled = !legend.import;
-  if (controls.save) controls.save.disabled = !legend.save;
-  if (controls.saveAs) controls.saveAs.disabled = !legend.save_as;
-  if (controls.undo) controls.undo.disabled = !legend.undo;
-  if (controls.redo) controls.redo.disabled = !legend.redo;
-  if (controls.solve) controls.solve.disabled = !legend.solve;
+  for (const menu of MENU_BAR_MENUS) {
+    for (const item of menu.items) {
+      if (!item.legendKey) continue;
+      const control = controls[item.id];
+      if (control) control.disabled = !legend[item.legendKey];
+    }
+  }
   if (controls.viewLight) controls.viewLight.disabled = false;
   if (controls.viewDark) controls.viewDark.disabled = false;
   if (controls.viewRegion) controls.viewRegion.disabled = false;
@@ -57,6 +60,7 @@ export function collectMenuBarControls(root) {
     new: root.querySelector("#file-new"),
     open: root.querySelector("#file-open"),
     import: root.querySelector("#file-import"),
+    export: root.querySelector("#file-export"),
     save: root.querySelector("#file-save"),
     saveAs: root.querySelector("#file-save-as"),
     undo: root.querySelector("#edit-undo"),

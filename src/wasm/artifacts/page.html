@@ -423,6 +423,7 @@
           <button type="button" role="menuitem" id="file-new">New</button>
           <button type="button" role="menuitem" id="file-open">Open</button>
           <button type="button" role="menuitem" id="file-import">Import</button>
+          <button type="button" role="menuitem" id="file-export">Export</button>
           <button type="button" role="menuitem" id="file-save">Save</button>
           <button type="button" role="menuitem" id="file-save-as">Save As</button>
         </div>
@@ -553,6 +554,7 @@
       };
       wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
         difficultyDialog,
+        onViewRefresh: () => {
           themeMenu.sync();
           regionMenu.sync();
         },

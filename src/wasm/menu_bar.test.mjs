@@ -1,7 +1,14 @@
 // menu_bar.test.mjs — menu bar legend sync contract.
 
 import assert from "node:assert/strict";
-import { syncMenuBar, wireMenuBar, wireMenuDropdowns, collectMenuBarControls, MENU_BAR_MENUS } from "./menu_bar.js";
+import {
+  syncMenuBar,
+  wireMenuBar,
+  wireMenuDropdowns,
+  collectMenuBarControls,
+  MENU_BAR_MENUS,
+  LEGEND_WIRE_EXPORT,
+} from "./menu_bar.js";
 
 function makeBtn() {
   return { disabled: false };
@@ -12,6 +19,7 @@ function makeControls() {
     new: makeBtn(),
     open: makeBtn(),
     import: makeBtn(),
+    export: makeBtn(),
     save: makeBtn(),
     saveAs: makeBtn(),
     undo: makeBtn(),
@@ -51,6 +59,10 @@ function makeControls() {
   assert.equal(controls.import.disabled, false);
   syncMenuBar({ import: false }, controls);
   assert.equal(controls.import.disabled, true);
+  syncMenuBar({ [LEGEND_WIRE_EXPORT]: true }, controls);
+  assert.equal(controls.export.disabled, false);
+  syncMenuBar({ [LEGEND_WIRE_EXPORT]: false }, controls);
+  assert.equal(controls.export.disabled, true);
 }
 
 {

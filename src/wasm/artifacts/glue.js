@@ -76,6 +76,13 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.importPuzzle(SCRATCH, bytes.length));
     },
 
+    exportPuzzle() {
+      const ret = exports.exportPuzzle();
+      const base = exports.outPtr();
+      if (ret === base) return readJson(base);
+      return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };
+    },
+
     get exports() {
       return exports;
     },

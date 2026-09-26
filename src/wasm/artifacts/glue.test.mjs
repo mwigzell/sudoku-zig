@@ -237,4 +237,31 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(res.is_quit, true);
 }
 
+// ── exportPuzzle ──
+{
+  const EASY =
+    "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
+  const fresh = await loadArtifact(wasmBytes);
+  const res = fresh.exportPuzzle();
+  assert.equal(res.ok, false, "export before init should fail");
+  assert.ok(res.error);
+
+  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  const exported = fresh.exportPuzzle();
+  assert.equal(exported.ok, true, `exportPuzzle failed: ${JSON.stringify(exported)}`);
+  assert.equal(exported.bytes.length, 81);
+  assert.equal(new TextDecoder().decode(exported.bytes), EASY);
+
+  const idx = fresh.getState().cells.findIndex((c) => c.value === 0 && !c.given);
+  assert.ok(idx >= 0);
+  const row = Math.floor(idx / 9);
+  const col = idx % 9;
+  assert.equal(fresh.exec({ action: "fill", row, col, digit: 4 }).ok, true);
+  const afterFill = fresh.exportPuzzle();
+  assert.equal(afterFill.ok, true);
+  const line = new TextDecoder().decode(afterFill.bytes);
+  assert.notEqual(line, EASY);
+  assert.equal(fresh.importPuzzle(line).ok, true);
+}
+
 console.log("glue.test.mjs OK");

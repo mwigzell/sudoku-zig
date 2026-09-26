@@ -56,6 +56,11 @@ export function newGame(game, { difficulty = 1, logLevel = 1 } = {}) {
   return { ok: true, state: game.getState(), legend: game.getLegend(), config: game.getConfig() };
 }
 
+/** Export the current grid as an 81-byte one-line puzzle string. */
+export function exportPuzzle(game) {
+  return game.exportPuzzle();
+}
+
 /** Import a one-line puzzle from page-read file text; engine owns the codec. */
 export function importPuzzle(game, text) {
   const result = game.importPuzzle(text);

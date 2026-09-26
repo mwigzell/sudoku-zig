@@ -31,8 +31,8 @@ pub fn build(b: *std.Build) void {
         "-target",              "wasm32-freestanding",   "-femit-bin=" ++ WASM_OUT,
         "--export=init",        "--export=exec",         "--export=getLegend",
         "--export=getConfig",   "--export=getState",     "--export=serialize",
-        "--export=deserialize", "--export=importPuzzle", "--export=getAbout",
-        "--export=outPtr",
+        "--export=deserialize", "--export=importPuzzle", "--export=exportPuzzle",
+        "--export=getAbout",    "--export=outPtr",
     });
     const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });
     wasm_emit.step.dependOn(&mkdir_artifacts.step);

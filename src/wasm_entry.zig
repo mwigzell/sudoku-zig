@@ -1,6 +1,7 @@
 // Wasm deploy entry — structured JSON exports for the browser shell.
 // Boundary failures propagate to JS only via out_buf JSON, never stderr.
 const std = @import("std");
+const board = @import("board/board.zig");
 const game_engine = @import("engine/game_engine.zig");
 const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
@@ -178,6 +179,19 @@ export fn importPuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     }
     boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
     return returnJson(out);
+}
+
+/// Export the current board as an 81-byte one-line puzzle string (same codec as native export).
+/// Success: byte length at outPtr. Failure: JSON error (same convention as serialize).
+export fn exportPuzzle() callconv(.c) u32 {
+    const out = outBuffer();
+    const eng = engineOrError(out) orelse return returnJson(out);
+    const line = board.toOneLineString(eng.state.board);
+    if (line.len > out.buf.len) return exportError(out, "export buffer overflow");
+    out.reset();
+    @memcpy(out.buf[0..line.len], &line);
+    out.len.* = @intCast(line.len);
+    return @intCast(line.len);
 }
 
 /// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from serialize).
