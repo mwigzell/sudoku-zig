@@ -1,6 +1,8 @@
 // wasm/shell.js — web app shell: session UX + Event presentation.
 // Event.ok.msg → status bar; Event.error_msg → acknowledgement modal (ADR-0010).
 
+import { runWithGeneratingDialog } from "./generating.js";
+
 /** Update the status bar from a successful exec result only. */
 export function applyEventStatus(statusEl, result) {
   if (!result.ok) return;
@@ -95,6 +97,11 @@ export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = 
   } finally {
     game.setGenProgressListener?.(null);
   }
+}
+
+/** First load / New: generate behind modal; user dismisses with Continue. */
+export async function newGameWithGeneratingModal(game, modal, options = {}) {
+  return runWithGeneratingDialog(modal, () => Promise.resolve(newGame(game, options)));
 }
 
 /** Export the current grid as an 81-byte one-line puzzle string. */

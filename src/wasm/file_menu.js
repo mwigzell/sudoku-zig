@@ -11,6 +11,7 @@ import {
   showErrorModal,
   waitForStatusPaint,
 } from "./shell.js";
+import { runWithGeneratingDialog } from "./generating.js";
 import { renderBoard, setStatus } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
@@ -191,9 +192,14 @@ export function wireDifficultyDialog(dialog, onChoose) {
   for (const button of dialog.buttons) {
     button.el.addEventListener("click", () => {
       dialog.el.hidden = true;
-      void Promise.resolve(onChoose(button.difficulty)).catch((err) => {
-        console.error("New game failed:", err);
-      });
+      return (async () => {
+        await waitForStatusPaint();
+        try {
+          await onChoose(button.difficulty);
+        } catch (err) {
+          console.error("New game failed:", err);
+        }
+      })();
     });
   }
   return {
@@ -217,6 +223,7 @@ export function wireFileMenu(
   menuBar,
   {
     difficultyDialog,
+    generatingModal,
     download = downloadBytes,
     pick = (session, opts) => pickBytes(document, session, opts),
     exportText = persistPuzzleText,
@@ -228,33 +235,41 @@ export function wireFileMenu(
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
+  const applyNewGame = (result) => {
+    session.fileHandle = null;
+    session.boundFilename = null;
+    refreshSession(
+      boardEl,
+      selection,
+      statusEl,
+      session,
+      menuBar,
+      result.state,
+      result.legend,
+      result.config,
+      createElement,
+      onViewRefresh,
+      result.msg,
+    );
+  };
+
+  const runNewGame = async (difficulty) => {
+    const result = newGame(game, { difficulty });
+    if (!result.ok) return result;
+    applyNewGame(result);
+    return result;
+  };
+
   const startNewGame = async (difficulty) => {
     try {
-      setStatus(statusEl, "Generating…", { busy: true });
-      await waitForStatusPaint();
-      const result = newGame(game, {
-        difficulty,
-        onGenProgress: (msg) => setStatus(statusEl, msg),
-      });
-      if (!result.ok) {
-        fail(result);
+      if (generatingModal) {
+        const result = await runWithGeneratingDialog(generatingModal, () => runNewGame(difficulty));
+        if (!result.ok) fail(result);
         return;
       }
-      session.fileHandle = null;
-      session.boundFilename = null;
-      refreshSession(
-        boardEl,
-        selection,
-        statusEl,
-        session,
-        menuBar,
-        result.state,
-        result.legend,
-        result.config,
-        createElement,
-        onViewRefresh,
-        result.msg,
-      );
+      await waitForStatusPaint();
+      const result = await runNewGame(difficulty);
+      if (!result.ok) fail(result);
     } catch (err) {
       fail({ ok: false, error: err?.message ?? String(err) });
     }

@@ -13,6 +13,7 @@ pub const menu_js: []const u8 = @embedFile("../wasm/menu.js");
 pub const menu_bar_js: []const u8 = @embedFile("../wasm/menu_bar.js");
 pub const theme_js: []const u8 = @embedFile("../wasm/theme.js");
 pub const file_menu_js: []const u8 = @embedFile("../wasm/file_menu.js");
+pub const generating_js: []const u8 = @embedFile("../wasm/generating.js");
 pub const region_js: []const u8 = @embedFile("../wasm/region.js");
 pub const help_js: []const u8 = @embedFile("../wasm/help.js");
 
@@ -50,6 +51,10 @@ test "embedded theme.js is non-empty" {
 
 test "embedded file_menu.js is non-empty" {
     try std.testing.expect(file_menu_js.len > 0);
+}
+
+test "embedded generating.js is non-empty" {
+    try std.testing.expect(generating_js.len > 0);
 }
 
 test "embedded region.js is non-empty" {

@@ -232,8 +232,64 @@
 
     #error-modal[hidden],
     #about-modal[hidden],
-    #new-difficulty-modal[hidden] {
+    #new-difficulty-modal[hidden],
+    #generating-modal[hidden] {
       display: none;
+    }
+
+    #generating-modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 11;
+    }
+
+    .generating-dialog {
+      width: min(100%, 24rem);
+      padding: 1rem 1.25rem;
+      border: 1px solid var(--status-border);
+      border-radius: 8px;
+      background: var(--status-bg);
+      color: var(--status-fg);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      text-align: center;
+    }
+
+    #generating-spinner[hidden] {
+      display: none;
+    }
+
+    #generating-spinner {
+      width: 2.5rem;
+      height: 2.5rem;
+      margin: 0.75rem auto 1rem;
+      border: 3px solid var(--status-border);
+      border-top-color: var(--status-fg);
+      border-radius: 50%;
+      animation: generating-spin 0.9s linear infinite;
+    }
+
+    @keyframes generating-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #generating-progress-rows {
+      display: none;
+      text-align: left;
+      font-size: 0.875rem;
+      line-height: 1.45;
+      margin: 0 0 1rem;
+    }
+
+    #generating-modal-continue:disabled {
+      opacity: 0.45;
+      cursor: default;
     }
 
     #about-modal {
@@ -488,6 +544,16 @@
     </div>
   </div>
 
+  <div id="generating-modal" hidden role="dialog" aria-modal="true" aria-labelledby="generating-modal-title">
+    <div class="generating-dialog">
+      <h2 id="generating-modal-title">New game</h2>
+      <div id="generating-spinner" aria-hidden="true"></div>
+      <p id="generating-modal-msg">Generating…</p>
+      <div id="generating-progress-rows" aria-live="polite"></div>
+      <button type="button" id="generating-modal-continue" disabled>Continue</button>
+    </div>
+  </div>
+
   <div id="new-difficulty-modal" hidden role="dialog" aria-modal="true" aria-labelledby="new-difficulty-title">
     <div class="about-dialog">
       <h2 id="new-difficulty-title">New game</h2>
@@ -500,7 +566,8 @@
 
   <script type="module">
     import { loadArtifact } from "./glue.js";
-    import { newGame, wireErrorModal } from "../shell.js";
+    import { newGameWithGeneratingModal, wireErrorModal } from "../shell.js";
+    import { wireGeneratingModal } from "../generating.js";
     import { wireHelpAbout, wireAboutModal } from "../help.js";
     import { renderBoard, getPlayGrid, setStatus, wireSelection, wirePlayLoop } from "../board.js";
     import { wireEditMenu } from "../menu.js";
@@ -533,7 +600,13 @@
       const bytes = new Uint8Array(await res.arrayBuffer());
 
       const game = await loadArtifact(bytes);
-      const started = newGame(game, { difficulty: 1 });
+      const generatingModal = wireGeneratingModal({
+        el: document.getElementById("generating-modal"),
+        continueBtn: document.getElementById("generating-modal-continue"),
+        spinnerEl: document.getElementById("generating-spinner"),
+        msgEl: document.getElementById("generating-modal-msg"),
+      });
+      const started = await newGameWithGeneratingModal(game, generatingModal, { difficulty: 1 });
       if (!started.ok) throw new Error(started.error ?? "init failed");
 
       renderBoard(boardEl, started.state);
@@ -566,6 +639,7 @@
       };
       wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
         difficultyDialog,
+        generatingModal,
         onViewRefresh: () => {
           themeMenu.sync();
           regionMenu.sync();

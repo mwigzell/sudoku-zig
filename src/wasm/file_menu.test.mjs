@@ -13,6 +13,16 @@ import {
   filePickerStartIn,
 } from "./file_menu.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
+import { wireGeneratingModal } from "./generating.js";
+
+async function flushDialogPaint() {
+  if (typeof requestAnimationFrame === "function") {
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+  }
+  await Promise.resolve();
+}
 
 function makeBtn() {
   return {
@@ -139,6 +149,9 @@ function makeRenderElement() {
   const renderElement = makeRenderElement();
 
   const newDialog = { el: { hidden: true }, buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }] };
+  const genEl = { hidden: true };
+  const genContinue = makeBtn();
+  const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
   wireFileMenu(
     controls,
     game,
@@ -150,6 +163,7 @@ function makeRenderElement() {
     { sync() {} },
     {
       difficultyDialog: newDialog,
+      generatingModal,
       download(bytes, name) {
         downloaded = { bytes, name };
       },
@@ -160,8 +174,15 @@ function makeRenderElement() {
 
   controls.new.click();
   assert.equal(newDialog.el.hidden, false);
-  await newDialog.buttons[0].el.click();
-  assert.equal(newDialog.el.hidden, true);
+  const pickPromise = newDialog.buttons[0].el.click();
+  await flushDialogPaint();
+  await flushDialogPaint();
+  assert.equal(newDialog.el.hidden, true, "difficulty dismissed before generating");
+  assert.equal(genEl.hidden, false, "generating modal visible during gen");
+  assert.equal(genContinue.disabled, false, "sync init finishes before Continue");
+  genContinue.click();
+  await pickPromise;
+  assert.equal(genEl.hidden, true);
   assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
   controls.save.click();
   assert.deepEqual([...downloaded.bytes], [9, 9, 9]);
@@ -197,6 +218,9 @@ function makeRenderElement() {
     ],
   };
   const controls = { new: makeBtn() };
+  const genEl = { hidden: true };
+  const genContinue = makeBtn();
+  const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
 
   wireFileMenu(
     controls,
@@ -209,6 +233,7 @@ function makeRenderElement() {
     { sync() {} },
     {
       difficultyDialog,
+      generatingModal,
       download() {},
       pick: async () => ({ ok: false, cancelled: true }),
       createElement: makeRenderElement(),
@@ -219,11 +244,57 @@ function makeRenderElement() {
   assert.equal(difficultyDialog.el.hidden, false, "New opens the difficulty dialog");
   assert.equal(initCalls.length, 0, "no puzzle generated until a difficulty is picked");
 
-  await difficultyDialog.buttons[1].el.click(); // Medium
+  const pickPromise = difficultyDialog.buttons[1].el.click(); // Medium
+  await flushDialogPaint();
+  await flushDialogPaint();
   assert.equal(difficultyDialog.el.hidden, true, "dialog closes after a pick");
+  assert.equal(genEl.hidden, false, "generating modal opens");
+  assert.equal(genContinue.disabled, false, "Continue enabled when gen done");
   assert.equal(initCalls.length, 1, "pick drives generation");
   assert.equal(initCalls[0].difficulty, 2, "the picked difficulty is used");
   assert.equal(session.state.cells.length, 1, "board resets from the fresh game");
+  genContinue.click();
+  await pickPromise;
+  assert.equal(genEl.hidden, true, "Continue closes generating modal");
+}
+
+{
+  const genEl = { hidden: true };
+  const genContinue = makeBtn();
+  const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const difficultyDialog = {
+    el: { hidden: true },
+    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
+  };
+  wireFileMenu(
+    { new: makeBtn() },
+    {
+      init() {
+        return { ok: false, error: "gen failed" };
+      },
+    },
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    errorModal,
+    { state: { cells: [] }, legend: { new: true } },
+    { sync() {} },
+    {
+      difficultyDialog,
+      generatingModal,
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      createElement: makeRenderElement(),
+    },
+  );
+  const pickPromise = difficultyDialog.buttons[0].el.click();
+  await flushDialogPaint();
+  await flushDialogPaint();
+  await pickPromise;
+  assert.equal(genEl.hidden, true, "generating modal closes on failure");
+  assert.equal(errorModal.el.hidden, false, "error modal shown");
+  assert.match(errorModal.msgEl.textContent, /gen failed/i);
 }
 
 {
@@ -369,7 +440,7 @@ function makeRenderElement() {
   wireDifficultyDialog(dialog, (difficulty) => {
     chosen = difficulty;
   });
-  dialog.buttons[2].el.click();
+  await dialog.buttons[2].el.click();
   assert.equal(chosen, 3);
   assert.equal(dialog.el.hidden, true);
 }

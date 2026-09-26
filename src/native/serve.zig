@@ -7,16 +7,16 @@ const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
 
-pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, file_menu, region, help, artifact };
+pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, file_menu, generating, region, help, artifact };
 
 /// Known routes and the delivered-once set.
 pub const Router = struct {
-    delivered: [11]bool,
+    delivered: [12]bool,
 
     pub const Error = error{NotFound};
 
     pub fn init() Router {
-        return .{ .delivered = [_]bool{ false, false, false, false, false, false, false, false, false, false, false } };
+        return .{ .delivered = [_]bool{ false, false, false, false, false, false, false, false, false, false, false, false } };
     }
 
     /// Maps a request path to its asset; anything else is a router-level 404.
@@ -29,6 +29,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/menu_bar.js")) return .menu_bar;
         if (std.mem.eql(u8, path, "/theme.js")) return .theme;
         if (std.mem.eql(u8, path, "/file_menu.js")) return .file_menu;
+        if (std.mem.eql(u8, path, "/generating.js")) return .generating;
         if (std.mem.eql(u8, path, "/region.js")) return .region;
         if (std.mem.eql(u8, path, "/help.js")) return .help;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
@@ -58,6 +59,7 @@ pub const Router = struct {
             .menu_bar => wasm_bytes.menu_bar_js,
             .theme => wasm_bytes.theme_js,
             .file_menu => wasm_bytes.file_menu_js,
+            .generating => wasm_bytes.generating_js,
             .region => wasm_bytes.region_js,
             .help => wasm_bytes.help_js,
             .artifact => wasm_bytes.wasm_bytes,
@@ -68,7 +70,7 @@ pub const Router = struct {
         return switch (result) {
             .page => "text/html",
             .artifact => "application/wasm",
-            .glue, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .region, .help => "text/javascript",
+            .glue, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .region, .help => "text/javascript",
         };
     }
 };
@@ -333,6 +335,10 @@ test "serve: route \"/file_menu.js\" to the file menu module" {
     try std.testing.expectEqual(RouteResult.file_menu, Router.route("/file_menu.js"));
 }
 
+test "serve: route \"/generating.js\" to the generating modal module" {
+    try std.testing.expectEqual(RouteResult.generating, Router.route("/generating.js"));
+}
+
 test "serve: route \"/region.js\" to the region module" {
     try std.testing.expectEqual(RouteResult.region, Router.route("/region.js"));
 }
@@ -376,6 +382,9 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.file_menu);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.generating);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.region);
