@@ -96,6 +96,12 @@ pub const Host = struct {
     pub fn deinit(self: *Host) void {
         if (self.have_session) self.session.deinit();
     }
+
+    /// Output writer for the terminal session (stdout in prod, mock buffer in tests).
+    pub fn writer(self: *Host) *std.Io.Writer {
+        if (!self.have_session) self.openSession();
+        return self.session.writer.writer();
+    }
     /// Best-effort data dir: compute the platform path and create it once at
     /// startup (prod entry); a failure logs and continues.
     pub fn ensureDataDir(self: *Host) void {

@@ -17,6 +17,7 @@ const save_command = @import("save.zig");
 const open_command = @import("open.zig");
 const import_command = @import("import.zig");
 const export_command = @import("export.zig");
+const copy_command = @import("copy.zig");
 const new_command = @import("new.zig");
 const save_as_command = @import("save_as.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
@@ -27,16 +28,23 @@ pub const Sudoku = struct {
     cfg: config.Config,
     renderer: facade_mod.Facade,
     transport: file_transport.FileTransport,
+    out: *std.Io.Writer,
     last_cell: ?facade_mod.Selection = null,
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
-    pub fn init(cfg: config.Config, facade: facade_mod.Facade, transport: file_transport.FileTransport) Error!@This() {
+    pub fn init(
+        cfg: config.Config,
+        facade: facade_mod.Facade,
+        transport: file_transport.FileTransport,
+        out: *std.Io.Writer,
+    ) Error!@This() {
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
             .cfg = cfg,
             .renderer = facade,
             .transport = transport,
+            .out = out,
             .engine = try game_engine.GameEngine.init(puzzle_str, cfg),
         };
     }
@@ -86,6 +94,7 @@ pub const Sudoku = struct {
                     .open => |data| open_command.execute(&self.engine, self.transport, data.path),
                     .import => |data| import_command.execute(&self.engine, self.transport, data.path),
                     .@"export" => |data| export_command.execute(&self.engine, self.transport, data.path),
+                    .copy => copy_command.execute(&self.engine, self.out),
                     .new => |data| new_command.execute(&self.engine, data),
                     .save_as => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
@@ -146,7 +155,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku.deinit();
 
     // Act: run the full loop — fill A3 with 4 via prefix dispatch, then quit
@@ -205,7 +214,7 @@ test "integrated e2e - full seam: open loads saved game" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
 
     // Run full loop: open dialog -> filename prompt -> load file -> quit.
@@ -241,7 +250,7 @@ test "integrated e2e - save success produces status message, re-render, legend r
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku.deinit();
 
     try sudoku.showGame();
@@ -282,7 +291,7 @@ test "integrated e2e - run: open file success produces status message, re-render
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
 
     // Act: run full loop - open loads file from command arg, re-renders, shows legend
@@ -322,7 +331,7 @@ test "integrated e2e - run: open then save reuses opened path without filename p
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
 
     try sudoku_instance.showGame();
@@ -356,7 +365,7 @@ test "integrated e2e - run: save uses default filename and returns success" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku.deinit();
 
     // Act: run full loop - save prompts for filename, writes file, re-renders
@@ -385,7 +394,7 @@ test "integrated e2e - run: fill → save → quit" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
@@ -411,7 +420,7 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
@@ -439,7 +448,7 @@ test "integrated e2e - run: new command resets board and history" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
@@ -477,7 +486,7 @@ test "integrated e2e - run: import via menu loads puzzle and clears history" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
@@ -509,7 +518,7 @@ test "integrated e2e - run: import failure leaves board and history intact" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
@@ -547,7 +556,7 @@ test "integrated e2e - run: export via menu writes one-line file" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
@@ -557,6 +566,37 @@ test "integrated e2e - run: export via menu writes one-line file" {
     try std.testing.expectEqual(@as(usize, 81), bytes.len);
     try std.testing.expectEqualSlices(u8, &expected, bytes[0..81]);
     try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
+}
+
+test "integrated e2e - run: copy via menu prints one-line puzzle; history untouched" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "m",
+        "12",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
+    defer sudoku_instance.deinit();
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+
+    const expected = export_command.currentPuzzleLine(&sudoku_instance.engine);
+    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, contents, &expected) != null);
+    try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku_instance.engine.state.board.getCellValue(2, 0));
 }
 
 // export failure: board and history must be left untouched
@@ -580,7 +620,7 @@ test "integrated e2e - run: export failure leaves board and history intact" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
@@ -604,7 +644,7 @@ test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
 
     defer sudoku.deinit();
 
@@ -626,7 +666,7 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku.deinit();
     try sudoku.renderer.render(sudoku.engine.state.board.asView(), null, null);
 
@@ -695,7 +735,7 @@ test "integrated e2e - .ok.msg status is non-blocking; next line is a command" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku.deinit();
     try sudoku.showGame();
     while (true) if (try sudoku.turn()) break;
@@ -738,7 +778,7 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku.deinit();
     try sudoku.showGame();
     var terminated = false;
@@ -810,7 +850,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer());
     defer sudoku.deinit();
 
     try sudoku.showGame();

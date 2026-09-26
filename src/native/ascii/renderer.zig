@@ -220,6 +220,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             } else {
                 self.writer.writeAll("  11) Solve (unavailable)\n") catch return facade.Error.System;
             }
+            self.writer.writeAll("  12) Copy puzzle line\n") catch return facade.Error.System;
             self.writer.writeAll("> ") catch return facade.Error.System;
 
             const pick = self.readLine() catch return facade.Error.System;
@@ -245,6 +246,7 @@ pub fn AsciiRenderer(StylerType: type) type {
                 if (!self.can_solve) return try self.showMenu(show_region);
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
+            if (std.mem.eql(u8, pick, "12")) return .{ .valid = _command.Command{ .copy = {} } };
             try self.showError("invalid menu choice");
             return try self.showMenu(show_region);
         }
@@ -1083,6 +1085,29 @@ test "showMenu: quit pick returns quit command" {
     const result = try renderer.showMenu(false);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+}
+
+test "showMenu: copy pick returns copy command" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"12\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "copy"),
         .error_msg => try std.testing.expect(false),
     }
 }

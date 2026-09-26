@@ -9,6 +9,11 @@ const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
 const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
 
+/// Shared encoder for File → Export and Edit → Copy (native/web wasm uses the same codec in-engine).
+pub fn currentPuzzleLine(engine: *const game_engine.GameEngine) [81]u8 {
+    return board.toOneLineString(engine.state.board);
+}
+
 pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: ?[]const u8) game_engine.Event {
     if (path) |p| {
         const gpa = std.heap.page_allocator;
@@ -18,7 +23,7 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
         };
         defer transport.free(transport.context, resolved);
 
-        const line = board.toOneLineString(engine.state.board);
+        const line = currentPuzzleLine(engine);
         transport.write(transport.context, resolved, &line) catch |err| {
             return game_engine.Event{ .error_msg = @errorName(err) };
         };
@@ -48,7 +53,7 @@ test "export.execute writes a one-line file matching toOneLineString(current boa
     const tmp_path = "/tmp/sudoku_export_command_test.txt";
     defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
 
-    const before = board.toOneLineString(engine.state.board);
+    const before = currentPuzzleLine(&engine);
     const event = execute(&engine, transport, tmp_path);
     switch (event) {
         .ok => |ok| {

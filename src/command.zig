@@ -15,7 +15,7 @@ pub const NewData = struct { puzzle: ?[]const u8 };
 pub const ImportData = struct { path: ?[]const u8 };
 pub const ExportData = struct { path: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, @"export", new, save_as, solve_for_me, set_theme, set_region };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, @"export", copy, new, save_as, solve_for_me, set_theme, set_region };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -29,6 +29,7 @@ pub const Command = union(CommandTag) {
     open: OpenData,
     import: ImportData,
     @"export": ExportData,
+    copy: void,
     new: NewData,
     save_as: SaveData,
     solve_for_me: void,
@@ -69,6 +70,7 @@ pub const SessionCommands = &[_]CommandTableEntry{
     .{ .tag = .open, .name = "Open" },
     .{ .tag = .import, .name = "Import" },
     .{ .tag = .@"export", .name = "Export" },
+    .{ .tag = .copy, .name = "Copy" },
     .{ .tag = .new, .name = "New" },
     .{ .tag = .save_as, .name = "SaveAs" },
     .{ .tag = .solve_for_me, .name = "Solve" },
@@ -112,9 +114,9 @@ pub const PuzzleResult = union(enum) {
 
 const std = @import("std");
 
-test "CommandTag enum has 15 variants" {
+test "CommandTag enum has 16 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 15), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 16), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -128,6 +130,7 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Open", getName(.open));
     try std.testing.expectEqualStrings("Import", getName(.import));
     try std.testing.expectEqualStrings("Export", getName(.@"export"));
+    try std.testing.expectEqualStrings("Copy", getName(.copy));
     try std.testing.expectEqualStrings("SaveAs", getName(.save_as));
     try std.testing.expectEqualStrings("Solve", getName(.solve_for_me));
 }
