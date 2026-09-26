@@ -1,5 +1,7 @@
 // theme.js — View menu light/dark theme via engine config.
 
+import { applyEventStatus } from "./shell.js";
+
 export function themeFromConfig(config) {
   return config?.theme === "light" ? "light" : "dark";
 }
@@ -27,7 +29,7 @@ export function syncThemeMenu(controls, config) {
   }
 }
 
-export function wireThemeMenu(controls, game, session, { root = document, onChange } = {}) {
+export function wireThemeMenu(controls, game, session, { root = document, onChange, statusEl } = {}) {
   const sync = () => {
     syncThemeMenu(controls, session.config);
     applyThemeFromConfig(session.config, root);
@@ -41,6 +43,7 @@ export function wireThemeMenu(controls, game, session, { root = document, onChan
     if (!result.ok) return;
     session.config = game.getConfig();
     sync();
+    if (statusEl) applyEventStatus(statusEl, result);
     onChange?.();
   });
 
@@ -50,6 +53,7 @@ export function wireThemeMenu(controls, game, session, { root = document, onChan
     if (!result.ok) return;
     session.config = game.getConfig();
     sync();
+    if (statusEl) applyEventStatus(statusEl, result);
     onChange?.();
   });
 

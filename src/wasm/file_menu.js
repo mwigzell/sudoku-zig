@@ -9,6 +9,7 @@ import {
   importPuzzle,
   exportPuzzle,
   applyEventStatus,
+  clearEventStatus,
   showErrorModal,
   waitForStatusPaint,
 } from "./shell.js";
@@ -262,6 +263,7 @@ export function wireFileMenu(
   };
 
   const startNewGame = async (difficulty) => {
+    clearEventStatus(statusEl);
     try {
       if (generatingModal) {
         const result = await newGameWithGeneratingModal(game, generatingModal, {
@@ -288,6 +290,7 @@ export function wireFileMenu(
   controls.new?.addEventListener("click", () => {
     if (!session.legend.new) return;
     menuBar.closeAll?.();
+    clearEventStatus(statusEl);
     newDialog.open();
   });
 
@@ -304,7 +307,11 @@ export function wireFileMenu(
       session.boundFilename ?? DEFAULT_SAVE_FILENAME,
       { download },
     );
-    if (!saved.ok && !saved.cancelled) fail(saved);
+    if (saved.ok) {
+      applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
+    } else if (!saved.ok && !saved.cancelled) {
+      fail(saved);
+    }
   });
 
   controls.saveAs?.addEventListener("click", async () => {
@@ -315,11 +322,16 @@ export function wireFileMenu(
       return;
     }
     const saved = await persistBytes(result.bytes, session, SAVE_AS_FILENAME, { saveAs: true, download });
-    if (!saved.ok && !saved.cancelled) fail(saved);
+    if (saved.ok) {
+      applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
+    } else if (!saved.ok && !saved.cancelled) {
+      fail(saved);
+    }
   });
 
   controls.open?.addEventListener("click", async () => {
     if (!session.legend.open) return;
+    clearEventStatus(statusEl);
     const picked = await pick(session);
     if (!picked.ok || picked.cancelled) return;
     const result = open(game, picked.bytes, { name: picked.name });
@@ -346,6 +358,7 @@ export function wireFileMenu(
 
   controls.import?.addEventListener("click", async () => {
     if (!session.legend.import) return;
+    clearEventStatus(statusEl);
     const picked = await pick(session, { types: puzzleTextPickerTypes, accept: PUZZLE_TEXT_ACCEPT });
     if (!picked.ok || picked.cancelled) return;
     const text = new TextDecoder().decode(picked.bytes);
@@ -379,6 +392,10 @@ export function wireFileMenu(
       return;
     }
     const saved = await exportText(result.bytes, session, DEFAULT_PUZZLE_EXPORT_FILENAME, { download });
-    if (!saved.ok && !saved.cancelled) fail(saved);
+    if (saved.ok) {
+      applyEventStatus(statusEl, { ok: true, msg: `exported: ${saved.filename}` });
+    } else if (!saved.ok && !saved.cancelled) {
+      fail(saved);
+    }
   });
 }

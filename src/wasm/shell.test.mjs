@@ -1,7 +1,11 @@
 // shell.test.mjs — worker gen handoff: import on success, no import on cancel.
 
 import assert from "node:assert/strict";
-import { newGameWithGeneratingModal, newGameWithWorkerGen } from "./shell.js";
+import {
+  NEW_GAME_STARTED_MSG,
+  newGameWithGeneratingModal,
+  newGameWithWorkerGen,
+} from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
 
 function makeContinueBtn() {
@@ -154,6 +158,7 @@ async function flushDialogPaint() {
   modal.continueBtn.click();
   const out = await running;
   assert.equal(out.ok, true);
+  assert.equal(out.msg, NEW_GAME_STARTED_MSG);
   assert.equal(importCalls.length, 1);
   assert.equal(importCalls[0], line);
 }
@@ -255,4 +260,5 @@ async function flushDialogPaint() {
   modal.continueBtn.click();
   const out = await running;
   assert.equal(out.ok, true);
+  assert.equal(out.msg, NEW_GAME_STARTED_MSG);
 }

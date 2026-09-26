@@ -628,7 +628,13 @@
 
   <script type="module">
     import { loadArtifact } from "./glue.js";
-    import { canUseGenWorker, newGameWithGeneratingModal, showErrorModal, wireErrorModal } from "../shell.js";
+    import {
+      applyEventStatus,
+      canUseGenWorker,
+      newGameWithGeneratingModal,
+      showErrorModal,
+      wireErrorModal,
+    } from "../shell.js";
     import { wireGeneratingModal } from "../generating.js";
     import { wireHelpAbout, wireAboutModal } from "../help.js";
     import { renderBoard, getPlayGrid, setStatus, wireSelection, wirePlayLoop } from "../board.js";
@@ -688,9 +694,15 @@
         ? { state: game.getState(), legend: game.getLegend(), config: game.getConfig() }
         : { state: started.state, legend: started.legend, config: started.config };
       renderBoard(boardEl, session.state);
-      setStatus(statusBar, "");
+      if (started.ok) {
+        applyEventStatus(statusBar, { ok: true, msg: started.msg });
+      } else {
+        setStatus(statusBar, "");
+      }
       const menuBar = wireMenuBar(menuControls, session, document);
-      const themeMenu = wireThemeMenu(menuControls, game, session, document, {
+      const themeMenu = wireThemeMenu(menuControls, game, session, {
+        root: document,
+        statusEl: statusBar,
         onChange: () => menuBar.sync(),
       });
       let editMenu;
@@ -704,7 +716,7 @@
         session,
         boardEl,
         () => selection.getSelection(),
-        { onChange: () => menuBar.sync() },
+        { onChange: () => menuBar.sync(), statusEl: statusBar },
       );
       const difficultyDialog = {
         el: document.getElementById("new-difficulty-modal"),

@@ -12,6 +12,11 @@ export function applyEventStatus(statusEl, result) {
   statusEl.className = "";
 }
 
+/** Clear the status bar (same as a successful exec with no message). */
+export function clearEventStatus(statusEl) {
+  applyEventStatus(statusEl, { ok: true, msg: null });
+}
+
 /** Show an Event.error_msg in the blocking error modal. */
 export function showErrorModal(modal, message) {
   modal.msgEl.textContent = message;
@@ -85,14 +90,17 @@ export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = 
       state: game.getState(),
       legend: game.getLegend(),
       config: game.getConfig(),
-      msg: result.msg ?? "new game started",
+      msg: result.msg ?? NEW_GAME_STARTED_MSG,
     };
   } finally {
     game.setGenProgressListener?.(null);
   }
 }
 
-/** Apply a generated 81-char line on the main-thread engine (`importPuzzle` codec). */
+/** Status copy for wasm `init` / File → New (matches engine `Event.ok.msg`). */
+export const NEW_GAME_STARTED_MSG = "new game started";
+
+/** Load a one-line puzzle via `importPuzzle` (paste, file import, export round-trip). */
 export function applyImportedLine(game, line) {
   const result = game.importPuzzle(line);
   if (!result.ok) return result;
@@ -103,6 +111,13 @@ export function applyImportedLine(game, line) {
     config: game.getConfig(),
     msg: result.msg ?? "import: puzzle loaded",
   };
+}
+
+/** Worker/sync gen handoff: same codec as import; status reflects New, not Import. */
+export function applyGeneratedLineAsNewGame(game, line) {
+  const result = applyImportedLine(game, line);
+  if (!result.ok) return result;
+  return { ...result, msg: NEW_GAME_STARTED_MSG };
 }
 
 /** Worker gen → import on main; modal + optional Cancel. */
@@ -125,7 +140,7 @@ export async function newGameWithWorkerGen(
     cancelRef.fn = cancel;
     const gen = await promise;
     if (gen.cancelled || !gen.ok) return gen;
-    return applyImportedLine(game, gen.line);
+    return applyGeneratedLineAsNewGame(game, gen.line);
   });
 }
 
@@ -148,7 +163,7 @@ export async function newGameWithSyncGenerate(
         if (gen.error === "cancelled") return { ok: false, cancelled: true };
         return gen;
       }
-      return applyImportedLine(game, gen.line);
+      return applyGeneratedLineAsNewGame(game, gen.line);
     } finally {
       game.setGenProgressListener?.(null);
     }
