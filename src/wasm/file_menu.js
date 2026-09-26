@@ -2,6 +2,7 @@
 
 import {
   newGame,
+  newGameWithGeneratingModal,
   open,
   save,
   saveAs,
@@ -11,7 +12,6 @@ import {
   showErrorModal,
   waitForStatusPaint,
 } from "./shell.js";
-import { runWithGeneratingDialog } from "./generating.js";
 import { renderBoard, setStatus } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
@@ -224,6 +224,7 @@ export function wireFileMenu(
   {
     difficultyDialog,
     generatingModal,
+    genWorker,
     download = downloadBytes,
     pick = (session, opts) => pickBytes(document, session, opts),
     exportText = persistPuzzleText,
@@ -263,8 +264,16 @@ export function wireFileMenu(
   const startNewGame = async (difficulty) => {
     try {
       if (generatingModal) {
-        const result = await runWithGeneratingDialog(generatingModal, () => runNewGame(difficulty));
-        if (!result.ok) fail(result);
+        const result = await newGameWithGeneratingModal(game, generatingModal, {
+          difficulty,
+          genWorker,
+        });
+        if (result.cancelled) return;
+        if (!result.ok) {
+          fail(result);
+          return;
+        }
+        applyNewGame(result);
         return;
       }
       await waitForStatusPaint();

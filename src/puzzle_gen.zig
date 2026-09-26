@@ -40,11 +40,38 @@ pub const PuzzleGen = struct {
     threadlocal var generated_line: [81]u8 = undefined;
     threadlocal var play_progress_fn: ?GenProgressFn = null;
     threadlocal var play_progress_ctx: ?*anyopaque = null;
+    threadlocal var play_abort_fn: ?*const fn (?*anyopaque) bool = null;
+    threadlocal var play_abort_ctx: ?*anyopaque = null;
+    threadlocal var play_aborted: bool = false;
 
     /// Optional live feedback during `generate()` (wasm status bar, native stderr, etc.).
     pub fn setPlayProgress(callback: ?GenProgressFn, ctx: ?*anyopaque) void {
         play_progress_fn = callback;
         play_progress_ctx = ctx;
+    }
+
+    /// Optional cooperative cancel (wasm worker / main gen); polled at progress boundaries.
+    pub fn setPlayAbort(callback: ?*const fn (?*anyopaque) bool, ctx: ?*anyopaque) void {
+        play_abort_fn = callback;
+        play_abort_ctx = ctx;
+        play_aborted = false;
+    }
+
+    /// Returns whether the last `generate()` pass was aborted; clears the latch.
+    pub fn takePlayAborted() bool {
+        const v = play_aborted;
+        play_aborted = false;
+        return v;
+    }
+
+    fn checkPlayAbort() bool {
+        if (play_abort_fn) |cb| {
+            if (cb(play_abort_ctx)) {
+                play_aborted = true;
+                return true;
+            }
+        }
+        return false;
     }
 
     /// Fixed puzzles for deterministic tests (`GameEngine.init`, save-format tests, etc.).
@@ -80,12 +107,19 @@ pub const PuzzleGen = struct {
     fn generateForPlay(diff: Difficulty, out: *[81]u8) void {
         const progress = playProgressCallback();
         while (true) {
-            reportProgress(progress.callback, progress.ctx, .round);
+            if (checkPlayAbort()) return;
+            reportProgress(progress.callback, progress.ctx, .round) catch return;
             var prng = std.Random.DefaultPrng.init(runtimeSeed());
-            generateInto(diff, prng.random(), out, progress.callback, progress.ctx) catch {
-                reportProgress(progress.callback, progress.ctx, .dig_hole);
-                generateIntoDigHole(diff, prng.random(), out, progress.callback, progress.ctx) catch continue;
-                return;
+            generateInto(diff, prng.random(), out, progress.callback, progress.ctx) catch |err| switch (err) {
+                error.GenAborted => return,
+                else => {
+                    reportProgress(progress.callback, progress.ctx, .dig_hole) catch return;
+                    generateIntoDigHole(diff, prng.random(), out, progress.callback, progress.ctx) catch |e| switch (e) {
+                        error.GenAborted => return,
+                        else => continue,
+                    };
+                    return;
+                },
             };
             return;
         }
@@ -112,7 +146,7 @@ pub const PuzzleGen = struct {
         const target = rng.intRangeAtMost(usize, range.min, range.max);
         var attempt: u16 = 0;
         while (attempt < 256) : (attempt += 1) {
-            reportProgress(progress, progress_ctx, .{ .attempt = .{ .n = attempt + 1, .max = 256 } });
+            try reportProgress(progress, progress_ctx, .{ .attempt = .{ .n = attempt + 1, .max = 256 } });
             var solution: [81]u8 = undefined;
             shuffledSolution(rng, &solution);
             var puzzle = try board.fromFlat(solution, .{ .given_bits = allGivensMask() });
@@ -130,7 +164,7 @@ pub const PuzzleGen = struct {
                 step +%= 1;
                 const g_now = countGivensBoard(&puzzle);
                 if (step == 1 or step % 8 == 0 or step == to_clear.len) {
-                    reportProgress(progress, progress_ctx, .{ .carve = .{
+                    try reportProgress(progress, progress_ctx, .{ .carve = .{
                         .givens = g_now,
                         .target = target,
                         .step = step,
@@ -139,8 +173,8 @@ pub const PuzzleGen = struct {
             }
             if (countGivensBoard(&puzzle) != target) continue;
             const givens = countGivensBoard(&puzzle);
-            reportProgress(progress, progress_ctx, .{ .strip = .{ .givens = givens, .target = target } });
-            reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens } });
+            try reportProgress(progress, progress_ctx, .{ .strip = .{ .givens = givens, .target = target } });
+            try reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens } });
             if (try solver.countSolutions(puzzle, 2) != 1) continue;
             const line = serial.toOneLineString(puzzle);
             @memcpy(out, &line);
@@ -166,7 +200,7 @@ pub const PuzzleGen = struct {
         const target = rng.intRangeAtMost(usize, range.min, range.max);
         var attempt: u8 = 0;
         while (attempt < 16) : (attempt += 1) {
-            reportProgress(progress, progress_ctx, .{ .attempt = .{ .n = @intCast(attempt + 1), .max = 16 } });
+            try reportProgress(progress, progress_ctx, .{ .attempt = .{ .n = @intCast(attempt + 1), .max = 16 } });
             var solution: [81]u8 = undefined;
             shuffledSolution(rng, &solution);
             var puzzle = try board.fromFlat(solution, .{ .given_bits = allGivensMask() });
@@ -184,12 +218,12 @@ pub const PuzzleGen = struct {
                 puzzle.refreshConflictsForCell(row, col);
                 step +%= 1;
                 const givens_now = countGivensBoard(&puzzle);
-                reportProgress(progress, progress_ctx, .{ .carve = .{
+                try reportProgress(progress, progress_ctx, .{ .carve = .{
                     .givens = givens_now,
                     .target = target,
                     .step = step,
                 } });
-                reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens_now } });
+                try reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens_now } });
                 const solutions = try solver.countSolutions(puzzle, 2);
                 if (solutions != 1) {
                     puzzle.setCell(row, col, saved_val) catch unreachable;
@@ -199,7 +233,7 @@ pub const PuzzleGen = struct {
             }
             const givens = countGivensBoard(&puzzle);
             if (givens < range.min or givens > range.max) continue;
-            reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens } });
+            try reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens } });
             if (try solver.countSolutions(puzzle, 2) != 1) continue;
             const line = serial.toOneLineString(puzzle);
             @memcpy(out, &line);
@@ -210,6 +244,7 @@ pub const PuzzleGen = struct {
 };
 
 pub const GenerationFailed = error{GenerationFailed};
+pub const GenAborted = error{GenAborted};
 
 /// Optional progress for bench, verify-slow, and live play (`setPlayProgress`).
 pub const GenProgressEvent = union(enum) {
@@ -228,8 +263,10 @@ pub const GenProgressEvent = union(enum) {
 
 pub const GenProgressFn = *const fn (event: GenProgressEvent, ctx: ?*anyopaque) void;
 
-fn reportProgress(progress: ?GenProgressFn, ctx: ?*anyopaque, event: GenProgressEvent) void {
+fn reportProgress(progress: ?GenProgressFn, ctx: ?*anyopaque, event: GenProgressEvent) GenAborted!void {
+    if (PuzzleGen.checkPlayAbort()) return error.GenAborted;
     if (progress) |cb| cb(event, ctx);
+    if (PuzzleGen.checkPlayAbort()) return error.GenAborted;
 }
 
 /// Compact `(phase, a, b)` for wasm host import — keep in sync with `formatGenProgress` in shell.js.

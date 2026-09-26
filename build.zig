@@ -27,11 +27,12 @@ pub fn build(b: *std.Build) void {
     // --export forces the step symbol into the wasm export table (wasm-ld);
     // `export fn` alone is a no-op on this toolchain snapshot.
     const wasm_emit = b.addSystemCommand(&.{
-        "zig",                  "build-exe",             "src/wasm_entry.zig",
-        "-target",              "wasm32-freestanding",   "-femit-bin=" ++ WASM_OUT,
-        "--export=init",        "--export=exec",         "--export=getLegend",
-        "--export=getConfig",   "--export=getState",     "--export=serialize",
-        "--export=deserialize", "--export=importPuzzle", "--export=exportPuzzle",
+        "zig",                  "build-exe",               "src/wasm_entry.zig",
+        "-target",              "wasm32-freestanding",     "-femit-bin=" ++ WASM_OUT,
+        "--export=init",        "--export=exec",           "--export=getLegend",
+        "--export=getConfig",   "--export=getState",       "--export=serialize",
+        "--export=deserialize", "--export=importPuzzle",   "--export=exportPuzzle",
+        "--export=bootstrap",   "--export=generatePuzzle", "--export=requestGenAbort",
         "--export=getAbout",    "--export=outPtr",
     });
     const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });
@@ -44,13 +45,19 @@ pub fn build(b: *std.Build) void {
     const clean_step = b.step("clean", "Remove .zig-cache, zig-out, kcov-out");
     clean_step.dependOn(&rm_all.step);
 
-    // run step
+    // run step — passthru: `zig build run -- -r web` (0.17; see docs/zig-testing.md)
     const run_cmd = b.addRunArtifact(exe);
+    run_cmd.addPassthruArgs();
     const run_step = b.step("run", "Run the Sudoku game");
     run_step.dependOn(&run_cmd.step);
 
+    const run_web = b.addRunArtifact(exe);
+    run_web.addArgs(&.{ "-r", "web" });
+    const web_step = b.step("web", "Serve embedded Sudoku web UI");
+    web_step.dependOn(&run_web.step);
+
     // JS glue contract test for the served web page (command-in → full-text-out over the wasm import table).
-    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menu.test.mjs && node src/wasm/menu_bar.test.mjs && node src/wasm/theme.test.mjs && node src/wasm/generating.test.mjs && node src/wasm/file_menu.test.mjs && node src/wasm/region.test.mjs && node src/wasm/help.test.mjs" });
+    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menu.test.mjs && node src/wasm/menu_bar.test.mjs && node src/wasm/theme.test.mjs && node src/wasm/gen_client.test.mjs && node src/wasm/shell.test.mjs && node src/wasm/generating.test.mjs && node src/wasm/file_menu.test.mjs && node src/wasm/region.test.mjs && node src/wasm/help.test.mjs" });
     const glue_step = b.step("glue", "Run the JS glue contract test (node)");
     glue_step.dependOn(&glue.step);
     glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit

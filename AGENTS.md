@@ -90,6 +90,7 @@ at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + **standard
 ## run build
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.
+- web UI: `zig build web` or `zig build run -- -r web` (run step uses `addPassthruArgs` on 0.17).
 ## run test
 zig build test
 or

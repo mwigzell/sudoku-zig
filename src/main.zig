@@ -25,8 +25,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     const log = logger.Logger(.sudoku);
     log.debug("Starting sudoku game.", .{});
 
-    // web deployment: the binary serves the embedded page and exits when every
-    // asset has been delivered — no game loop, no Host.
+    // Web: serve embedded assets on loopback until exit — no native game loop.
     if (cfg.preferred_renderer == .web) {
         serve.serve(init.io, serve.openBrowser) catch |err| {
             if (err == serve.ServeError.AddressInUse) {

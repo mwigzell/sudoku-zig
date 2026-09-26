@@ -1,9 +1,10 @@
-// generating.test.mjs — generating modal + Continue gate (issue #57 step 1).
+// generating.test.mjs — generating modal + Continue gate.
 
 import assert from "node:assert/strict";
 import {
   GENERATING_MSG_BUSY,
   GENERATING_MSG_DONE,
+  GENERATING_MSG_CANCELLING,
   wireGeneratingModal,
   runWithGeneratingDialog,
 } from "./generating.js";
@@ -88,4 +89,29 @@ function makeContinueBtn() {
   assert.equal(out.ok, false);
   assert.equal(out.error, "nope");
   assert.equal(el.hidden, true, "failure closes without Continue");
+}
+
+{
+  const el = { hidden: true };
+  const spinnerEl = { hidden: true };
+  const msgEl = { textContent: "" };
+  const continueBtn = makeContinueBtn();
+  const cancelBtn = makeContinueBtn();
+  const modal = wireGeneratingModal({ el, continueBtn, cancelBtn, spinnerEl, msgEl });
+
+  modal.setCancelling();
+  assert.equal(msgEl.textContent, GENERATING_MSG_CANCELLING);
+  assert.equal(spinnerEl.hidden, true);
+  assert.equal(cancelBtn.disabled, true);
+  assert.equal(continueBtn.disabled, true);
+}
+
+{
+  const el = { hidden: true };
+  const continueBtn = makeContinueBtn();
+  const modal = wireGeneratingModal({ el, continueBtn });
+
+  const out = await runWithGeneratingDialog(modal, async () => ({ ok: false, cancelled: true }));
+  assert.equal(out.cancelled, true);
+  assert.equal(el.hidden, true, "cancelled closes without Continue");
 }

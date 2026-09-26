@@ -18,7 +18,23 @@ const EASY_FIXTURE =
 
 assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
-// ── init ──
+// ── bootstrap + generatePuzzle (worker handoff) ──
+{
+  const boot = game.bootstrap({ difficulty: 2, logLevel: 1 });
+  assert.equal(boot.ok, true, `bootstrap failed: ${JSON.stringify(boot)}`);
+  const empty = game.getState().cells.every((c) => c.value === 0);
+  assert.equal(empty, true, "bootstrap starts from an empty grid");
+}
+
+{
+  const gen = game.generatePuzzle({ difficulty: 1, logLevel: 1 });
+  assert.equal(gen.ok, true, `generatePuzzle failed: ${JSON.stringify(gen)}`);
+  assert.equal(gen.line.length, 81);
+  const imported = game.importPuzzle(gen.line);
+  assert.equal(imported.ok, true, `import after generate failed: ${JSON.stringify(imported)}`);
+}
+
+// ── init (sync main-thread path; glue contract) ──
 {
   const res = game.init({ difficulty: 1, logLevel: 1 });
   assert.equal(res.ok, true, `init failed: ${JSON.stringify(res)}`);

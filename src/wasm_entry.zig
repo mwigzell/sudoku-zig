@@ -16,6 +16,7 @@ var out_len: u32 = 0;
 
 var engine: game_engine.GameEngine = undefined;
 var have_engine: bool = false;
+var gen_abort_requested: bool = false;
 
 fn outBuffer() boundary.OutBuffer {
     return .{ .buf = &out_buf, .len = &out_len };
@@ -49,6 +50,87 @@ fn engineOrError(out: boundary.OutBuffer) ?*game_engine.GameEngine {
     return &engine;
 }
 
+const empty_puzzle_line: [81]u8 = blk: {
+    var line: [81]u8 = undefined;
+    @memset(&line, '0');
+    break :blk line;
+};
+
+fn preservedViewPrefs() struct { theme: config.ViewTheme, show_region: bool } {
+    if (!have_engine) return .{ .theme = .dark, .show_region = false };
+    return .{ .theme = engine.cfg.theme, .show_region = engine.cfg.show_region };
+}
+
+fn deinitEngineIfAny() void {
+    if (have_engine) {
+        engine.deinit();
+        have_engine = false;
+    }
+}
+
+/// Create engine from an empty grid (no generation) — main thread before worker handoff.
+export fn bootstrap(difficulty: u32, log_level: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
+        return exportError(out, "invalid wire config");
+    };
+
+    logger.min_level = wire_cfg.log_level;
+
+    const prefs = preservedViewPrefs();
+    deinitEngineIfAny();
+
+    var game_cfg = wire_cfg.toConfig();
+    game_cfg.theme = prefs.theme;
+    game_cfg.show_region = prefs.show_region;
+
+    engine = game_engine.GameEngine.init(empty_puzzle_line[0..], game_cfg) catch {
+        return exportError(out, "engine init failed");
+    };
+    have_engine = true;
+
+    boundary.writeOkMsgJson(out, "engine ready") catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
+/// Worker / sync gen: request cooperative abort (polled during puzzle_gen progress).
+export fn requestGenAbort() callconv(.c) void {
+    gen_abort_requested = true;
+}
+
+fn wasmPlayAbortCheck(_: ?*anyopaque) bool {
+    return gen_abort_requested;
+}
+
+/// Generate a puzzle line off the main engine (Web Worker entry).
+export fn generatePuzzle(difficulty: u32, log_level: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
+        return exportError(out, "invalid wire config");
+    };
+
+    logger.min_level = wire_cfg.log_level;
+
+    gen_abort_requested = false;
+    if (builtin.cpu.arch == .wasm32) {
+        puzzle_gen.PuzzleGen.setPlayProgress(wasmGenProgress, null);
+        puzzle_gen.PuzzleGen.setPlayAbort(wasmPlayAbortCheck, null);
+    }
+    defer {
+        if (builtin.cpu.arch == .wasm32) {
+            puzzle_gen.PuzzleGen.setPlayProgress(null, null);
+            puzzle_gen.PuzzleGen.setPlayAbort(null, null);
+        }
+    }
+
+    const puzzle_str = puzzle_gen.PuzzleGen.generate(wire_cfg.toConfig().difficulty);
+    if (puzzle_gen.PuzzleGen.takePlayAborted()) {
+        return exportError(out, "cancelled");
+    }
+    boundary.writeOkLineJson(out, puzzle_str) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
 /// Start a fresh game from WireConfig difficulty and log level.
 export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
     const out = outBuffer();
@@ -58,17 +140,12 @@ export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
 
     logger.min_level = wire_cfg.log_level;
 
-    var preserved_theme = config.ViewTheme.dark;
-    var preserved_region = false;
-    if (have_engine) {
-        preserved_theme = engine.cfg.theme;
-        preserved_region = engine.cfg.show_region;
-        engine.deinit();
-    }
+    const prefs = preservedViewPrefs();
+    deinitEngineIfAny();
 
     var game_cfg = wire_cfg.toConfig();
-    game_cfg.theme = preserved_theme;
-    game_cfg.show_region = preserved_region;
+    game_cfg.theme = prefs.theme;
+    game_cfg.show_region = prefs.show_region;
 
     if (builtin.cpu.arch == .wasm32) {
         puzzle_gen.PuzzleGen.setPlayProgress(wasmGenProgress, null);

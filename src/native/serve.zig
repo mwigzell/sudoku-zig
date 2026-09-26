@@ -7,22 +7,29 @@ const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
 
-pub const RouteResult = enum { page, glue, shell, board, menu, menu_bar, theme, file_menu, generating, region, help, artifact };
+pub const RouteResult = enum { page, glue, gen_client, gen_worker, shell, board, menu, menu_bar, theme, file_menu, generating, region, help, artifact };
 
-/// Known routes and the delivered-once set.
+const route_count = switch (@typeInfo(RouteResult)) {
+    .@"enum" => |e| e.field_names.len,
+    else => unreachable,
+};
+
+/// Known routes and the delivered-once set (tests: `allDelivered`).
 pub const Router = struct {
-    delivered: [12]bool,
+    delivered: [route_count]bool,
 
     pub const Error = error{NotFound};
 
     pub fn init() Router {
-        return .{ .delivered = [_]bool{ false, false, false, false, false, false, false, false, false, false, false, false } };
+        return .{ .delivered = std.mem.zeroes([route_count]bool) };
     }
 
     /// Maps a request path to its asset; anything else is a router-level 404.
     pub fn route(path: []const u8) Error!RouteResult {
         if (std.mem.eql(u8, path, "/")) return .page;
         if (std.mem.eql(u8, path, "/glue.js")) return .glue;
+        if (std.mem.eql(u8, path, "/gen_client.js")) return .gen_client;
+        if (std.mem.eql(u8, path, "/gen_worker.js")) return .gen_worker;
         if (std.mem.eql(u8, path, "/shell.js")) return .shell;
         if (std.mem.eql(u8, path, "/board.js")) return .board;
         if (std.mem.eql(u8, path, "/menu.js")) return .menu;
@@ -53,6 +60,8 @@ pub const Router = struct {
         return switch (result) {
             .page => wasm_bytes.page_html,
             .glue => wasm_bytes.glue_js,
+            .gen_client => wasm_bytes.gen_client_js,
+            .gen_worker => wasm_bytes.gen_worker_js,
             .shell => wasm_bytes.shell_js,
             .board => wasm_bytes.board_js,
             .menu => wasm_bytes.menu_js,
@@ -70,7 +79,7 @@ pub const Router = struct {
         return switch (result) {
             .page => "text/html",
             .artifact => "application/wasm",
-            .glue, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .region, .help => "text/javascript",
+            .glue, .gen_client, .gen_worker, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .region, .help => "text/javascript",
         };
     }
 };
@@ -96,8 +105,7 @@ pub fn bindLoopback(io: std.Io, port: u16) BindError!net.Server {
         else => BindError.System,
     };
 }
-/// Serves the embedded web assets to loopback clients and returns once every
-/// known route has been served at least once — no lingering server process.
+/// Serves the embedded web UI on loopback until the process is stopped (Ctrl+C).
 pub fn serve(io: std.Io, open: OpenFn) ServeError!void {
     return serveWith(io, bindLoopback, open);
 }
@@ -163,7 +171,7 @@ fn serveWith(io: std.Io, bind: BindFn, open: OpenFn) ServeError!void {
     const url = std.fmt.bufPrint(&url_buf, "http://127.0.0.1:{d}/", .{bound_port.?}) catch return ServeError.System;
     openOrReport(io, open, url);
     var router = Router.init();
-    while (!router.allDelivered()) {
+    while (true) {
         const client = server.accept(io) catch return ServeError.System;
         errdefer client.close(io);
         try serveClient(io, &router, client);
@@ -269,31 +277,45 @@ fn captureDrain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.I
     return data_bytes;
 }
 
-/// Resolve an ESM specifier from page.html (served at "/") to the HTTP path Router expects.
-fn resolvePageImport(specifier: []const u8) []const u8 {
-    if (std.mem.startsWith(u8, specifier, "./")) return specifier[1..];
-    if (std.mem.startsWith(u8, specifier, "../")) return specifier[2..];
-    return specifier;
-}
-
-test "serve: page.html module imports resolve to embedded routes" {
-    const page = wasm_bytes.page_html;
+fn expectJsImportsServed(source: []const u8, base_path: []const u8) !void {
     var i: usize = 0;
-    while (std.mem.indexOfPos(u8, page, i, "from \"")) |start| {
+    while (std.mem.indexOfPos(u8, source, i, "from \"")) |start| {
         const spec_start = start + 6;
-        const spec_end = std.mem.indexOfPos(u8, page, spec_start, "\"") orelse break;
-        const spec = page[spec_start..spec_end];
+        const spec_end = std.mem.indexOfPos(u8, source, spec_start, "\"") orelse break;
+        const spec = source[spec_start..spec_end];
         if (!std.mem.endsWith(u8, spec, ".js")) {
             i = spec_end + 1;
             continue;
         }
-        const path = resolvePageImport(spec);
+        const path = if (std.mem.startsWith(u8, spec, "./"))
+            spec[1..]
+        else if (std.mem.startsWith(u8, spec, "../"))
+            spec[2..]
+        else
+            spec;
         const route = Router.route(path) catch {
-            std.debug.print("page.html import {s} -> {s} is not served\n", .{ spec, path });
+            std.debug.print("{s} import {s} -> {s} is not served\n", .{ base_path, spec, path });
             return error.TestFailed;
         };
         try std.testing.expect(Router.body(route).len > 0);
         i = spec_end + 1;
+    }
+}
+
+test "serve: page.html module imports resolve to embedded routes" {
+    try expectJsImportsServed(wasm_bytes.page_html, "page.html");
+}
+
+test "serve: embedded JS transitive imports resolve to embedded routes" {
+    const modules = [_]struct { name: []const u8, body: []const u8 }{
+        .{ .name = "shell.js", .body = wasm_bytes.shell_js },
+        .{ .name = "board.js", .body = wasm_bytes.board_js },
+        .{ .name = "menu.js", .body = wasm_bytes.menu_js },
+        .{ .name = "file_menu.js", .body = wasm_bytes.file_menu_js },
+        .{ .name = "gen_worker.js", .body = wasm_bytes.gen_worker_js },
+    };
+    for (modules) |m| {
+        try expectJsImportsServed(m.body, m.name);
     }
 }
 
@@ -309,6 +331,14 @@ test "serve: route \"/\" to the page" {
 
 test "serve: route \"/glue.js\" to the glue" {
     try std.testing.expectEqual(RouteResult.glue, Router.route("/glue.js"));
+}
+
+test "serve: route \"/gen_client.js\" to the gen client module" {
+    try std.testing.expectEqual(RouteResult.gen_client, Router.route("/gen_client.js"));
+}
+
+test "serve: route \"/gen_worker.js\" to the gen worker module" {
+    try std.testing.expectEqual(RouteResult.gen_worker, Router.route("/gen_worker.js"));
 }
 
 test "serve: route \"/shell.js\" to the shell" {
@@ -364,6 +394,12 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.glue);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.gen_client);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.gen_worker);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.shell);

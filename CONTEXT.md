@@ -108,7 +108,7 @@ JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never
 _Avoid_: reintroducing a wasm REPL or ASCII screen feed
 
 **RendererKind** (`-r`, native only):
-The user-facing renderer *place*: `ansi`, `ascii`, `tui`, `web`. `-r web` serves embedded static assets and exits — no game loop in the native binary. Renderer selection is native-only; the wasm deployment is web by construction.
+The user-facing renderer *place*: `ansi`, `ascii`, `tui`, `web`. `-r web` runs a loopback static server for embedded assets until the process stops (Ctrl+C); there is no native `Sudoku` play loop — the browser + JS shell is the runtime. Renderer selection is native-only; the wasm deployment is web by construction.
 _Avoid_: calling the browser renderer "wasm"
 
 **Host** (`native/host.zig`):

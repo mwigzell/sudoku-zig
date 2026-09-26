@@ -44,6 +44,21 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.init(difficulty, logLevel));
     },
 
+    /** Empty-grid engine only (no generation); main thread before worker handoff. */
+    bootstrap({ difficulty = 1, logLevel = 1 } = {}) {
+      return readJson(exports.bootstrap(difficulty, logLevel));
+    },
+
+    /** Run `generateForPlay` in this instance; returns `{ ok, line }` JSON for worker handoff. */
+    generatePuzzle({ difficulty = 1, logLevel = 1 } = {}) {
+      return readJson(exports.generatePuzzle(difficulty, logLevel));
+    },
+
+    /** Ask in-flight `generatePuzzle` to stop at the next progress boundary. */
+    requestGenAbort() {
+      exports.requestGenAbort?.();
+    },
+
     exec(action) {
       const json = JSON.stringify(action);
       writeBytes(memory, SCRATCH, new TextEncoder().encode(json));

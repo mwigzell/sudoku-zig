@@ -146,6 +146,18 @@ pub fn writeOkJson(out: OutBuffer) !void {
     try writeJson(&mutable, "{{\"ok\":true}}", .{});
 }
 
+/// Success JSON with an 81-char puzzle line (`generatePuzzle` worker handoff).
+pub fn writeOkLineJson(out: OutBuffer, line: []const u8) !void {
+    var mutable = out;
+    out.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    try std.Io.Writer.writeAll(&jw.writer, "{\"ok\":true,\"line\":");
+    try writeJsonString(&jw.writer, line);
+    try std.Io.Writer.writeAll(&jw.writer, "}");
+    try std.Io.Writer.flush(&jw.writer);
+}
+
 pub fn writeOkMsgJson(out: OutBuffer, msg: []const u8) !void {
     var mutable = out;
     out.reset();
@@ -358,6 +370,11 @@ const ErrorWire = struct {
     @"error": []const u8,
 };
 
+const OkLineWire = struct {
+    ok: bool,
+    line: []const u8,
+};
+
 const OkEventWire = struct {
     ok: bool,
     is_quit: bool,
@@ -390,6 +407,19 @@ test "writeErrorJson failure leaves room for system fallback json" {
     defer parsed.deinit();
     try std.testing.expect(!parsed.value.ok);
     try std.testing.expectEqualStrings("system", parsed.value.@"error");
+}
+
+test "writeOkLineJson emits parseable puzzle line" {
+    var buf: [256]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    const line = "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
+    try writeOkLineJson(out, line);
+
+    const parsed = try std.json.parseFromSlice(OkLineWire, std.testing.allocator, out.finishJson(), .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.ok);
+    try std.testing.expectEqualStrings(line, parsed.value.line);
 }
 
 test "writeErrorJson escapes quotes and newlines" {

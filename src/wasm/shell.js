@@ -2,6 +2,7 @@
 // Event.ok.msg → status bar; Event.error_msg → acknowledgement modal (ADR-0010).
 
 import { runWithGeneratingDialog } from "./generating.js";
+import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 
 /** Update the status bar from a successful exec result only. */
 export function applyEventStatus(statusEl, result) {
@@ -99,10 +100,90 @@ export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = 
   }
 }
 
-/** First load / New: generate behind modal; user dismisses with Continue. */
+/** Apply a generated 81-char line on the main-thread engine (`importPuzzle` codec). */
+export function applyImportedLine(game, line) {
+  const result = game.importPuzzle(line);
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    state: game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    msg: result.msg ?? "import: puzzle loaded",
+  };
+}
+
+/** Worker gen → import on main; modal + optional Cancel. */
+export async function newGameWithWorkerGen(game, modal, { difficulty = 1, logLevel = 1, genWorker, onGenProgress } = {}) {
+  return runWithGeneratingDialog(modal, async (cancelRef) => {
+    const { promise, cancel } = startGenInWorker({
+      workerUrl: genWorker.workerUrl,
+      wasmBytes: genWorker.wasmBytes,
+      difficulty,
+      logLevel,
+      onProgress: onGenProgress
+        ? (phase, a, b) => onGenProgress(formatGenProgress(phase, a, b))
+        : undefined,
+      WorkerCtor: genWorker.WorkerCtor,
+      fetchFn: genWorker.fetchFn,
+    });
+    cancelRef.fn = cancel;
+    const gen = await promise;
+    if (gen.cancelled || !gen.ok) return gen;
+    return applyImportedLine(game, gen.line);
+  });
+}
+
+/** Main-thread `generatePuzzle` + import (modal spinner; blocks main thread). */
+export async function newGameWithSyncGenerate(game, modal, { difficulty = 1, logLevel = 1, onGenProgress } = {}) {
+  return runWithGeneratingDialog(modal, async (cancelRef) => {
+    cancelRef.fn = () => game.requestGenAbort?.();
+    game.setGenProgressListener?.(
+      onGenProgress ? (phase, a, b) => onGenProgress(formatGenProgress(phase, a, b)) : null,
+    );
+    try {
+      if (typeof game.generatePuzzle !== "function") {
+        return newGame(game, { difficulty, logLevel });
+      }
+      const gen = game.generatePuzzle({ difficulty, logLevel });
+      if (!gen.ok) {
+        if (gen.error === "cancelled") return { ok: false, cancelled: true };
+        return gen;
+      }
+      return applyImportedLine(game, gen.line);
+    } finally {
+      game.setGenProgressListener?.(null);
+    }
+  });
+}
+
+function shouldFallbackFromWorker(result) {
+  if (result.ok || result.cancelled) return false;
+  const err = result.error ?? "";
+  // Only when Workers are missing — sync gen blocks the main thread (Cancel cannot run).
+  return err === "workers unavailable";
+}
+
+/** First load / New: prefer worker gen; fall back to main-thread generate or legacy `init`. */
 export async function newGameWithGeneratingModal(game, modal, options = {}) {
+  const { difficulty = 1, logLevel = 1, genWorker, onGenProgress } = options;
+  if (genWorker && canUseGenWorker()) {
+    const workerResult = await newGameWithWorkerGen(game, modal, {
+      difficulty,
+      logLevel,
+      genWorker,
+      onGenProgress,
+    });
+    if (!shouldFallbackFromWorker(workerResult)) return workerResult;
+    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, onGenProgress });
+  }
+  if (typeof game.generatePuzzle === "function") {
+    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, onGenProgress });
+  }
   return runWithGeneratingDialog(modal, () => Promise.resolve(newGame(game, options)));
 }
+
+export { canUseGenWorker };
 
 /** Export the current grid as an 81-byte one-line puzzle string. */
 export function exportPuzzle(game) {

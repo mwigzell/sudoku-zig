@@ -252,9 +252,9 @@ function makeRenderElement() {
   assert.equal(genContinue.disabled, false, "Continue enabled when gen done");
   assert.equal(initCalls.length, 1, "pick drives generation");
   assert.equal(initCalls[0].difficulty, 2, "the picked difficulty is used");
-  assert.equal(session.state.cells.length, 1, "board resets from the fresh game");
   genContinue.click();
   await pickPromise;
+  assert.equal(session.state.cells.length, 1, "board resets after Continue applies the game");
   assert.equal(genEl.hidden, true, "Continue closes generating modal");
 }
 

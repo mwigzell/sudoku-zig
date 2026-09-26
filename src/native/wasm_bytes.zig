@@ -7,6 +7,8 @@ const std = @import("std");
 pub const wasm_bytes: []const u8 = @embedFile("../wasm/artifacts/artifact.wasm");
 pub const page_html: []const u8 = @embedFile("../wasm/artifacts/page.html");
 pub const glue_js: []const u8 = @embedFile("../wasm/artifacts/glue.js");
+pub const gen_worker_js: []const u8 = @embedFile("../wasm/artifacts/gen_worker.js");
+pub const gen_client_js: []const u8 = @embedFile("../wasm/gen_client.js");
 pub const shell_js: []const u8 = @embedFile("../wasm/shell.js");
 pub const board_js: []const u8 = @embedFile("../wasm/board.js");
 pub const menu_js: []const u8 = @embedFile("../wasm/menu.js");
@@ -27,6 +29,14 @@ test "embedded page.html is non-empty" {
 
 test "embedded glue.js is non-empty" {
     try std.testing.expect(glue_js.len > 0);
+}
+
+test "embedded gen_worker.js is non-empty" {
+    try std.testing.expect(gen_worker_js.len > 0);
+}
+
+test "embedded gen_client.js is non-empty" {
+    try std.testing.expect(gen_client_js.len > 0);
 }
 
 test "embedded shell.js is non-empty" {
