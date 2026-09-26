@@ -65,6 +65,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         import_path: ?[]u8 = null,
         // Owned dialog path for the export command; not part of the save-target cache.
         export_path: ?[]u8 = null,
+        paste_line: ?[]u8 = null,
         legend_line_width: usize = 0,
         can_solve: bool = false,
 
@@ -83,6 +84,9 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             if (self.export_path) |name| {
                 self.allocator.free(name);
+            }
+            if (self.paste_line) |line| {
+                self.allocator.free(line);
             }
         }
 
@@ -201,6 +205,19 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
+        /// Prompt for a one-line puzzle string; empty input means cancelled.
+        fn puzzleLineDialog(self: *@This()) facade.Error!_command.OpenFileResult {
+            self.writer.writeAll("Paste puzzle line: ") catch return facade.Error.System;
+
+            const line = self.readLine() catch return .Cancelled;
+
+            if (line.len == 0) {
+                defer self.allocator.free(line);
+                return .Cancelled;
+            }
+            return .{ .FileName = line };
+        }
+
         /// Numbered session/view submenu — file operations, view, hint placeholder, quit.
         pub fn showMenu(self: *@This(), show_region: bool) facade.Error!_command.ParseCommandResult {
             const region_state = if (show_region) "on" else "off";
@@ -221,6 +238,7 @@ pub fn AsciiRenderer(StylerType: type) type {
                 self.writer.writeAll("  11) Solve (unavailable)\n") catch return facade.Error.System;
             }
             self.writer.writeAll("  12) Copy puzzle line\n") catch return facade.Error.System;
+            self.writer.writeAll("  13) Paste puzzle line\n") catch return facade.Error.System;
             self.writer.writeAll("> ") catch return facade.Error.System;
 
             const pick = self.readLine() catch return facade.Error.System;
@@ -247,6 +265,7 @@ pub fn AsciiRenderer(StylerType: type) type {
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
             if (std.mem.eql(u8, pick, "12")) return .{ .valid = _command.Command{ .copy = {} } };
+            if (std.mem.eql(u8, pick, "13")) return .{ .valid = _command.Command{ .paste = .{ .line = null } } };
             try self.showError("invalid menu choice");
             return try self.showMenu(show_region);
         }
@@ -355,6 +374,18 @@ pub fn AsciiRenderer(StylerType: type) type {
                         if (self.import_path) |old| self.allocator.free(old);
                         self.import_path = path;
                         rsl.valid.import.path = path;
+                    },
+                    .Cancelled => return .{ .error_msg = "cancelled" },
+                }
+            }
+            // Intercept paste: prompt for a one-line puzzle; engine owns parse/validate.
+            if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .paste) {
+                const line_result = self.puzzleLineDialog() catch return .{ .error_msg = "cancelled" };
+                switch (line_result) {
+                    .FileName => |line| {
+                        if (self.paste_line) |old| self.allocator.free(old);
+                        self.paste_line = line;
+                        rsl.valid.paste.line = line;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },
                 }
@@ -1085,6 +1116,32 @@ test "showMenu: quit pick returns quit command" {
     const result = try renderer.showMenu(false);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+}
+
+test "showMenu: paste pick returns paste command with null line" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"13\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false);
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "paste");
+            try std.testing.expect(cmd.paste.line == null);
+        },
         .error_msg => try std.testing.expect(false),
     }
 }

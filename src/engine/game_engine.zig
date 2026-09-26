@@ -288,7 +288,7 @@ pub const GameEngine = struct {
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .menu => @panic("menu routed in renderer"),
-            .save, .open, .import, .@"export", .copy, .new, .save_as => @panic("session command routed in Sudoku"),
+            .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => @panic("session command routed in Sudoku"),
         }
     }
 
