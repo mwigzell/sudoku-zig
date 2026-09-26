@@ -15,7 +15,7 @@ pub const NewData = struct { puzzle: ?[]const u8 };
 pub const ImportData = struct { path: ?[]const u8 };
 pub const ExportData = struct { path: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, export_puzzle, new, save_as, solve_for_me, set_theme, set_region };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, @"export", new, save_as, solve_for_me, set_theme, set_region };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -28,7 +28,7 @@ pub const Command = union(CommandTag) {
     save: SaveData,
     open: OpenData,
     import: ImportData,
-    export_puzzle: ExportData,
+    @"export": ExportData,
     new: NewData,
     save_as: SaveData,
     solve_for_me: void,
@@ -68,7 +68,7 @@ pub const SessionCommands = &[_]CommandTableEntry{
     .{ .tag = .save, .name = "Save" },
     .{ .tag = .open, .name = "Open" },
     .{ .tag = .import, .name = "Import" },
-    .{ .tag = .export_puzzle, .name = "Export" },
+    .{ .tag = .@"export", .name = "Export" },
     .{ .tag = .new, .name = "New" },
     .{ .tag = .save_as, .name = "SaveAs" },
     .{ .tag = .solve_for_me, .name = "Solve" },
@@ -127,7 +127,7 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Save", getName(.save));
     try std.testing.expectEqualStrings("Open", getName(.open));
     try std.testing.expectEqualStrings("Import", getName(.import));
-    try std.testing.expectEqualStrings("Export", getName(.export_puzzle));
+    try std.testing.expectEqualStrings("Export", getName(.@"export"));
     try std.testing.expectEqualStrings("SaveAs", getName(.save_as));
     try std.testing.expectEqualStrings("Solve", getName(.solve_for_me));
 }

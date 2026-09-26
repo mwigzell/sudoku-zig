@@ -1,6 +1,6 @@
 // menu_bar.js — top menu bar: legend-driven enablement.
 
-/** Wasm `getLegend()` JSON key for File → Export (Zig `Legend.@"export"`). */
+/** Wasm legend JSON key — pairs with Zig `Legend.@"export"` / `CommandTag.@"export"` (see legend.zig). */
 export const LEGEND_WIRE_EXPORT = "export";
 
 /** Web menu skeleton — no Quit (legend.quit ignored on web). */

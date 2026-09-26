@@ -228,7 +228,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "1")) return .{ .valid = _command.Command{ .save = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "2")) return .{ .valid = _command.Command{ .open = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "3")) return .{ .valid = _command.Command{ .import = .{ .path = null } } };
-            if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .export_puzzle = .{ .path = null } } };
+            if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .@"export" = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null } } };
             if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "7")) return .{ .valid = _command.Command{ .set_region = !show_region } };
@@ -359,7 +359,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             // Intercept export: prompt for a destination file; no filename cache — like import
             if (std.meta.activeTag(rsl) == .valid and
-                std.meta.activeTag(rsl.valid) == .export_puzzle)
+                std.meta.activeTag(rsl.valid) == .@"export")
             {
                 const file_result = self.pathDialog("Export file: ") catch return .{ .error_msg = "cancelled" };
                 switch (file_result) {
@@ -367,7 +367,7 @@ pub fn AsciiRenderer(StylerType: type) type {
                         // Renderer owns the export dialog path; ExportData.path borrows it
                         if (self.export_path) |old| self.allocator.free(old);
                         self.export_path = path;
-                        rsl.valid.export_puzzle.path = path;
+                        rsl.valid.@"export".path = path;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },
                 }

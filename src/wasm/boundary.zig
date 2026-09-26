@@ -224,7 +224,6 @@ pub fn writeAboutJson(out: OutBuffer) !void {
     try std.Io.Writer.flush(&jw.writer);
 }
 
-/// Wasm Legend JSON keys mirror `legend_mod.Legend` fields; `export` uses `Legend.@"export"` in Zig.
 pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     var mutable = out;
     try writeJson(
@@ -240,7 +239,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
             legend.open,
             legend.new,
             legend.import,
-            legend.@"export", // wire key "export" — not `legend.export` (Zig keyword)
+            legend.@"export",
             legend.save_as,
             legend.solve,
         },
@@ -474,4 +473,27 @@ test "writeLegendJson reflects undo availability" {
     });
     const json = out.finishJson();
     try std.testing.expect(std.mem.indexOf(u8, json, "\"undo\":false") != null);
+}
+
+test "writeLegendJson maps Legend export flag to wire export key" {
+    var buf: [512]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeLegendJson(out, .{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = false,
+        .redo = false,
+        .menu = true,
+        .save = true,
+        .open = true,
+        .new = true,
+        .@"export" = true,
+        .save_as = true,
+    });
+    const json = out.finishJson();
+    const wire_key = legend_mod.wire_export_json_key;
+    try std.testing.expectEqualStrings("export", wire_key);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"export\":true") != null);
 }

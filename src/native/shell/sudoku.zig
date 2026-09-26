@@ -85,7 +85,7 @@ pub const Sudoku = struct {
                     },
                     .open => |data| open_command.execute(&self.engine, self.transport, data.path),
                     .import => |data| import_command.execute(&self.engine, self.transport, data.path),
-                    .export_puzzle => |data| export_command.execute(&self.engine, self.transport, data.path),
+                    .@"export" => |data| export_command.execute(&self.engine, self.transport, data.path),
                     .new => |data| new_command.execute(&self.engine, data),
                     .save_as => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
