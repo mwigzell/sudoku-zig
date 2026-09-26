@@ -7,7 +7,7 @@ const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
 
-pub const RouteResult = enum { page, glue, gen_client, gen_worker, shell, board, menu, menu_bar, theme, file_menu, generating, region, help, artifact };
+pub const RouteResult = enum { page, glue, gen_client, gen_worker, shell, board, menu, menu_bar, theme, file_menu, generating, gen_progress_rows, gen_progress_format, region, help, artifact };
 
 const route_count = switch (@typeInfo(RouteResult)) {
     .@"enum" => |e| e.field_names.len,
@@ -37,6 +37,8 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/theme.js")) return .theme;
         if (std.mem.eql(u8, path, "/file_menu.js")) return .file_menu;
         if (std.mem.eql(u8, path, "/generating.js")) return .generating;
+        if (std.mem.eql(u8, path, "/gen_progress_rows.js")) return .gen_progress_rows;
+        if (std.mem.eql(u8, path, "/gen_progress_format.js")) return .gen_progress_format;
         if (std.mem.eql(u8, path, "/region.js")) return .region;
         if (std.mem.eql(u8, path, "/help.js")) return .help;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
@@ -69,6 +71,8 @@ pub const Router = struct {
             .theme => wasm_bytes.theme_js,
             .file_menu => wasm_bytes.file_menu_js,
             .generating => wasm_bytes.generating_js,
+            .gen_progress_rows => wasm_bytes.gen_progress_rows_js,
+            .gen_progress_format => wasm_bytes.gen_progress_format_js,
             .region => wasm_bytes.region_js,
             .help => wasm_bytes.help_js,
             .artifact => wasm_bytes.wasm_bytes,
@@ -79,7 +83,7 @@ pub const Router = struct {
         return switch (result) {
             .page => "text/html",
             .artifact => "application/wasm",
-            .glue, .gen_client, .gen_worker, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .region, .help => "text/javascript",
+            .glue, .gen_client, .gen_worker, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .gen_progress_rows, .gen_progress_format, .region, .help => "text/javascript",
         };
     }
 };
@@ -313,6 +317,9 @@ test "serve: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "menu.js", .body = wasm_bytes.menu_js },
         .{ .name = "file_menu.js", .body = wasm_bytes.file_menu_js },
         .{ .name = "gen_worker.js", .body = wasm_bytes.gen_worker_js },
+        .{ .name = "generating.js", .body = wasm_bytes.generating_js },
+        .{ .name = "gen_progress_rows.js", .body = wasm_bytes.gen_progress_rows_js },
+        .{ .name = "gen_progress_format.js", .body = wasm_bytes.gen_progress_format_js },
     };
     for (modules) |m| {
         try expectJsImportsServed(m.body, m.name);
@@ -369,6 +376,14 @@ test "serve: route \"/generating.js\" to the generating modal module" {
     try std.testing.expectEqual(RouteResult.generating, Router.route("/generating.js"));
 }
 
+test "serve: route \"/gen_progress_rows.js\" to the progress row module" {
+    try std.testing.expectEqual(RouteResult.gen_progress_rows, Router.route("/gen_progress_rows.js"));
+}
+
+test "serve: route \"/gen_progress_format.js\" to the progress format module" {
+    try std.testing.expectEqual(RouteResult.gen_progress_format, Router.route("/gen_progress_format.js"));
+}
+
 test "serve: route \"/region.js\" to the region module" {
     try std.testing.expectEqual(RouteResult.region, Router.route("/region.js"));
 }
@@ -421,6 +436,12 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.generating);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.gen_progress_rows);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.gen_progress_format);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.region);

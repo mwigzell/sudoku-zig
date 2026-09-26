@@ -259,10 +259,6 @@
       text-align: center;
     }
 
-    #generating-spinner[hidden] {
-      display: none;
-    }
-
     #generating-spinner {
       width: 2.5rem;
       height: 2.5rem;
@@ -285,6 +281,31 @@
       font-size: 0.875rem;
       line-height: 1.45;
       margin: 0 0 1rem;
+      /* Hint + up to four row lines — limits height jump as rows appear/disappear */
+      min-height: calc(0.75rem * 1.45 + 4 * 0.875rem * 1.45);
+    }
+
+    #generating-spinner[hidden] {
+      height: 0;
+      width: 0;
+      margin: 0;
+      border-width: 0;
+      overflow: hidden;
+      animation: none;
+    }
+
+    .gen-progress-row[hidden] {
+      display: none;
+    }
+
+    .gen-progress-attempt-hint {
+      font-size: 0.75rem;
+      color: var(--label-fg);
+      margin: 0.15rem 0 0.35rem 0.15rem;
+    }
+
+    .gen-progress-attempt-hint[hidden] {
+      display: none;
     }
 
     #generating-modal-continue:disabled,
@@ -575,6 +596,36 @@
     </div>
   </div>
 
+  <script>
+    (function () {
+      const statusBar = document.getElementById("status-bar");
+      const errorModal = document.getElementById("error-modal");
+      const errorMsg = document.getElementById("error-modal-msg");
+      const dismiss = document.getElementById("error-modal-dismiss");
+      dismiss?.addEventListener("click", () => {
+        if (errorModal) errorModal.hidden = true;
+      });
+      function showBootFailure(message) {
+        if (statusBar) {
+          statusBar.textContent = message;
+          statusBar.className = "error";
+        }
+        if (errorModal && errorMsg) {
+          errorMsg.textContent = message;
+          errorModal.hidden = false;
+        }
+      }
+      window.addEventListener("error", (ev) => {
+        if (ev.message) showBootFailure(String(ev.message));
+      });
+      window.addEventListener("unhandledrejection", (ev) => {
+        const r = ev.reason;
+        const msg = r && r.message ? r.message : String(r ?? "load failed");
+        showBootFailure(msg);
+      });
+    })();
+  </script>
+
   <script type="module">
     import { loadArtifact } from "./glue.js";
     import { canUseGenWorker, newGameWithGeneratingModal, showErrorModal, wireErrorModal } from "../shell.js";
@@ -617,6 +668,7 @@
         cancelBtn: document.getElementById("generating-modal-cancel"),
         spinnerEl: document.getElementById("generating-spinner"),
         msgEl: document.getElementById("generating-modal-msg"),
+        progressRowsEl: document.getElementById("generating-progress-rows"),
       });
       if (typeof game.bootstrap === "function") {
         const boot = game.bootstrap({ difficulty: 1, logLevel: 1 });

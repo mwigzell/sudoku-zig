@@ -269,7 +269,7 @@ fn reportProgress(progress: ?GenProgressFn, ctx: ?*anyopaque, event: GenProgress
     if (PuzzleGen.checkPlayAbort()) return error.GenAborted;
 }
 
-/// Compact `(phase, a, b)` for wasm host import — keep in sync with `formatGenProgress` in shell.js.
+/// Compact `(phase, a, b)` for wasm host import — keep in sync with `formatGenProgress` in gen_progress_format.js.
 pub fn encodeProgressWire(event: GenProgressEvent) struct { phase: u32, a: u32, b: u32 } {
     return switch (event) {
         .round => .{ .phase = 0, .a = 0, .b = 0 },

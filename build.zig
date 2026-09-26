@@ -57,7 +57,7 @@ pub fn build(b: *std.Build) void {
     web_step.dependOn(&run_web.step);
 
     // JS glue contract test for the served web page (command-in → full-text-out over the wasm import table).
-    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menu.test.mjs && node src/wasm/menu_bar.test.mjs && node src/wasm/theme.test.mjs && node src/wasm/gen_client.test.mjs && node src/wasm/shell.test.mjs && node src/wasm/generating.test.mjs && node src/wasm/file_menu.test.mjs && node src/wasm/region.test.mjs && node src/wasm/help.test.mjs" });
+    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menu.test.mjs && node src/wasm/menu_bar.test.mjs && node src/wasm/theme.test.mjs && node src/wasm/gen_client.test.mjs && node src/wasm/shell.test.mjs && node src/wasm/gen_progress_rows.test.mjs && node src/wasm/gen_progress_rows_dom.test.mjs && node src/wasm/generating.test.mjs && node src/wasm/file_menu.test.mjs && node src/wasm/region.test.mjs && node src/wasm/help.test.mjs" });
     const glue_step = b.step("glue", "Run the JS glue contract test (node)");
     glue_step.dependOn(&glue.step);
     glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit

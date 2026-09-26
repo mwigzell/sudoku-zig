@@ -3,6 +3,7 @@
 
 import { runWithGeneratingDialog } from "./generating.js";
 import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
+import { createGenProgressModalSink } from "./gen_progress_rows.js";
 
 /** Update the status bar from a successful exec result only. */
 export function applyEventStatus(statusEl, result) {
@@ -52,24 +53,15 @@ export function open(game, bytes, { name } = {}) {
   return { ok: true, state: result.state, msg: result.msg ?? null };
 }
 
-/** Wire encoding from wasm `encodeProgressWire` / Zig `GenProgressEvent`. */
-export function formatGenProgress(phase, a, b) {
-  switch (phase) {
-    case 0:
-      return "Generating: new attempt…";
-    case 1:
-      return "Generating: carving clues…";
-    case 2:
-      return `Generating: try ${a}/${b}`;
-    case 3:
-      return `Generating: ${a} givens (target ≤${b})`;
-    case 4:
-      return `Generating: ${a} givens → ≤${b}`;
-    case 5:
-      return `Generating: checking uniqueness (${a} givens)…`;
-    default:
-      return "Generating…";
-  }
+export { formatGenProgress } from "./gen_progress_format.js";
+import { formatGenProgress } from "./gen_progress_format.js";
+
+function mergeGenProgressHandlers(onProgressWire, onGenProgress) {
+  if (!onProgressWire && !onGenProgress) return undefined;
+  return (phase, a, b) => {
+    onProgressWire?.(phase, a, b);
+    onGenProgress?.(formatGenProgress(phase, a, b));
+  };
 }
 
 /** Yield so the status bar can paint before a blocking wasm `init`. */
@@ -114,16 +106,19 @@ export function applyImportedLine(game, line) {
 }
 
 /** Worker gen → import on main; modal + optional Cancel. */
-export async function newGameWithWorkerGen(game, modal, { difficulty = 1, logLevel = 1, genWorker, onGenProgress } = {}) {
+export async function newGameWithWorkerGen(
+  game,
+  modal,
+  { difficulty = 1, logLevel = 1, genWorker, onGenProgress, onProgressWire } = {},
+) {
+  const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
   return runWithGeneratingDialog(modal, async (cancelRef) => {
     const { promise, cancel } = startGenInWorker({
       workerUrl: genWorker.workerUrl,
       wasmBytes: genWorker.wasmBytes,
       difficulty,
       logLevel,
-      onProgress: onGenProgress
-        ? (phase, a, b) => onGenProgress(formatGenProgress(phase, a, b))
-        : undefined,
+      onProgress,
       WorkerCtor: genWorker.WorkerCtor,
       fetchFn: genWorker.fetchFn,
     });
@@ -135,12 +130,15 @@ export async function newGameWithWorkerGen(game, modal, { difficulty = 1, logLev
 }
 
 /** Main-thread `generatePuzzle` + import (modal spinner; blocks main thread). */
-export async function newGameWithSyncGenerate(game, modal, { difficulty = 1, logLevel = 1, onGenProgress } = {}) {
+export async function newGameWithSyncGenerate(
+  game,
+  modal,
+  { difficulty = 1, logLevel = 1, onGenProgress, onProgressWire } = {},
+) {
+  const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
   return runWithGeneratingDialog(modal, async (cancelRef) => {
     cancelRef.fn = () => game.requestGenAbort?.();
-    game.setGenProgressListener?.(
-      onGenProgress ? (phase, a, b) => onGenProgress(formatGenProgress(phase, a, b)) : null,
-    );
+    game.setGenProgressListener?.(onProgress ?? null);
     try {
       if (typeof game.generatePuzzle !== "function") {
         return newGame(game, { difficulty, logLevel });
@@ -167,18 +165,22 @@ function shouldFallbackFromWorker(result) {
 /** First load / New: prefer worker gen; fall back to main-thread generate or legacy `init`. */
 export async function newGameWithGeneratingModal(game, modal, options = {}) {
   const { difficulty = 1, logLevel = 1, genWorker, onGenProgress } = options;
+  const rowSink =
+    typeof modal?.renderProgressRows === "function" ? createGenProgressModalSink(modal) : null;
+  const onProgressWire = rowSink ? (phase, a, b) => rowSink.push(phase, a, b) : undefined;
+  const genProgress = { onGenProgress, onProgressWire };
   if (genWorker && canUseGenWorker()) {
     const workerResult = await newGameWithWorkerGen(game, modal, {
       difficulty,
       logLevel,
       genWorker,
-      onGenProgress,
+      ...genProgress,
     });
     if (!shouldFallbackFromWorker(workerResult)) return workerResult;
-    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, onGenProgress });
+    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, ...genProgress });
   }
   if (typeof game.generatePuzzle === "function") {
-    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, onGenProgress });
+    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, ...genProgress });
   }
   return runWithGeneratingDialog(modal, () => Promise.resolve(newGame(game, options)));
 }

@@ -115,3 +115,70 @@ function makeContinueBtn() {
   assert.equal(out.cancelled, true);
   assert.equal(el.hidden, true, "cancelled closes without Continue");
 }
+
+{
+  function makeRowEl() {
+    return {
+      className: "",
+      textContent: "",
+      hidden: false,
+      classList: { _set: new Set(), add(...n) { n.forEach((x) => this._set.add(x)); }, contains(n) { return this._set.has(n); } },
+    };
+  }
+  const progressRowsEl = {
+    style: { display: "none" },
+    _children: [],
+    appendChild(c) {
+      this._children.push(c);
+    },
+    replaceChildren(...n) {
+      this._children = n.length ? n : [];
+    },
+    querySelectorAll(sel) {
+      if (sel === ".gen-progress-row") {
+        return this._children.filter((c) => c.classList._set.has("gen-progress-row"));
+      }
+      return this._children;
+    },
+    querySelector(sel) {
+      if (sel === ".gen-progress-attempt-hint") {
+        return this._children.find((c) => c.classList._set.has("gen-progress-attempt-hint"));
+      }
+      return undefined;
+    },
+    insertBefore(node, ref) {
+      const idx = ref ? this._children.indexOf(ref) : this._children.length;
+      this._children.splice(idx >= 0 ? idx : this._children.length, 0, node);
+    },
+  };
+  const el = { hidden: true };
+  const continueBtn = makeContinueBtn();
+  const modal = wireGeneratingModal({
+    el,
+    continueBtn,
+    progressRowsEl,
+    createElement: () => makeRowEl(),
+  });
+  modal.open();
+  assert.equal(progressRowsEl.style.display, "block");
+  assert.equal(progressRowsEl.querySelectorAll(".gen-progress-row").length, 4);
+  assert.equal(progressRowsEl._children.length, 5);
+  modal.renderProgressRows({
+    rows: [
+      "Generating: new attempt…",
+      "Generating: try 2/256",
+      "Generating: 36 givens (target ≤40)",
+      "Generating: checking uniqueness (28 givens)…",
+      "",
+    ],
+    attemptHint: "Fast strip",
+  });
+  modal.setReady(true);
+  assert.equal(progressRowsEl.style.display, "block", "progress stays visible until Continue");
+  assert.equal(
+    progressRowsEl.querySelectorAll(".gen-progress-row")[3].textContent,
+    "Generating: checking uniqueness (28 givens)…",
+  );
+  modal.close();
+  assert.equal(progressRowsEl.style.display, "none");
+}
