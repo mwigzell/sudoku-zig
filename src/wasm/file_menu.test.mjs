@@ -7,6 +7,8 @@ import {
   persistBytes,
   pickBytes,
   wireFileMenu,
+  wireDifficultyDialog,
+  DIFFICULTIES,
   DEFAULT_SAVE_FILENAME,
   filePickerStartIn,
 } from "./file_menu.js";
@@ -211,6 +213,114 @@ function makeRenderElement() {
   assert.equal(initCalls.length, 1, "pick drives generation");
   assert.equal(initCalls[0].difficulty, 2, "the picked difficulty is used");
   assert.equal(session.state.cells.length, 1, "board resets from the fresh game");
+}
+
+{
+  const session = {
+    state: { cells: [] },
+    legend: { new: true },
+    fileHandle: { name: "bound.sud" },
+    boundFilename: "bound.sud",
+  };
+  const difficultyDialog = {
+    el: { hidden: true },
+    buttons: [{ label: "Hard", difficulty: 3, el: makeBtn() }],
+  };
+  wireFileMenu(
+    { new: makeBtn() },
+    {
+      init() {
+        return { ok: true };
+      },
+      getState() {
+        return { cells: [{ value: 9, given: true, conflict: false }] };
+      },
+      getLegend() {
+        return { new: true };
+      },
+      getConfig() {
+        return { show_region: false };
+      },
+    },
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog,
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      createElement: makeRenderElement(),
+    },
+  );
+  difficultyDialog.buttons[0].el.click();
+  assert.equal(session.fileHandle, null, "save target unbound after New");
+  assert.equal(session.boundFilename, null, "bound filename cleared after New");
+}
+
+{
+  let initCalled = false;
+  const session = { state: { cells: [] }, legend: {} };
+  const newBtn = makeBtn();
+  const difficultyDialog = {
+    el: { hidden: true },
+    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
+  };
+  wireFileMenu(
+    { new: newBtn },
+    {
+      init() {
+        initCalled = true;
+        return { ok: true };
+      },
+      getState() {
+        return { cells: [] };
+      },
+      getLegend() {
+        return {};
+      },
+      getConfig() {
+        return {};
+      },
+    },
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog,
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      createElement: makeRenderElement(),
+    },
+  );
+  newBtn.click();
+  assert.equal(difficultyDialog.el.hidden, true, "legend.new off → dialog stays closed");
+  assert.equal(initCalled, false, "legend.new off → no generation");
+}
+
+{
+  assert.equal(DIFFICULTIES.length, 3);
+  assert.deepEqual(
+    DIFFICULTIES.map((d) => d.difficulty),
+    [1, 2, 3],
+    "web New dialog matches native easy/medium/hard wire values",
+  );
+  let chosen = null;
+  const dialog = {
+    el: { hidden: true },
+    buttons: DIFFICULTIES.map((d) => ({ ...d, el: makeBtn() })),
+  };
+  wireDifficultyDialog(dialog, (difficulty) => {
+    chosen = difficulty;
+  });
+  dialog.buttons[2].el.click();
+  assert.equal(chosen, 3);
+  assert.equal(dialog.el.hidden, true);
 }
 
 {

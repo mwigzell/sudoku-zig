@@ -10,14 +10,6 @@ pub const Selection = event.CellCoord;
 /// Concrete error set for all Facade method signatures.
 pub const Error = error{System};
 
-/// Options returned by new-game dialog.
-pub const NewGameOptions = enum { Generated, FromFile, FromUrl, PasteString };
-
-/// Result of a new-game options selection. Wraps the positive choice with cancellation.
-pub const NewGameOptionsResult = union(enum) {
-    Choice: NewGameOptions,
-    Cancelled,
-};
 /// Vtable interface shared by all deployments (terminal, web): the loop
 /// sees only these methods plus the renderer's error set collapsed to
 /// error.System.
