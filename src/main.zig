@@ -1,7 +1,6 @@
 // Entry point — parses CLI args, builds the Host (renderer substrate), starts the game loop.
 const std = @import("std");
 const sudoku = @import("native/shell/sudoku.zig");
-const puzzle_gen = @import("puzzle_gen.zig");
 const logger = @import("logger.zig");
 const cli = @import("native/cli.zig");
 const host_mod = @import("native/host.zig");
@@ -59,8 +58,6 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
         return err;
     };
     defer facade_f.deinit();
-    puzzle_gen.setPlayProgressIo(init.io);
-    defer puzzle_gen.setPlayProgressIo(null);
     var game = try sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io), host.writer());
     defer game.deinit();
 

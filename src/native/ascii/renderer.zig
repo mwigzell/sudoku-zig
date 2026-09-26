@@ -17,9 +17,8 @@ const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
-/// Implements the Facade vtable so the same game engine loop works over ASCII and
-/// other renderers (a web renderer would fill this same shape with Canvas/JS
-/// interop).
+/// Native terminal Facade implementation (ASCII/ANSI). Web presentation is JS
+/// from wasm JSON; it does not implement this vtable today.
 ///
 /// Parameterised over StylerType so tests can use PlainStyler and
 /// production code swaps in ANSI-capable styler at runtime.
@@ -279,6 +278,13 @@ pub fn AsciiRenderer(StylerType: type) type {
             try self.showError(text);
         }
 
+        /// Live puzzle-gen feedback on the session writer (Facade vtable pass-through).
+        pub fn reportGenProgress(self: *@This(), event: puzzle_gen.GenProgressEvent) facade.Error!void {
+            var msg_buf: [96]u8 = undefined;
+            const msg = puzzle_gen.formatProgressEvent(event, &msg_buf) orelse return;
+            self.writer.print("{s}\n", .{msg}) catch return facade.Error.System;
+        }
+
         /// New = generate — choose a difficulty; returns an owned puzzle string.
         pub fn newGameDialog(self: *@This()) facade.Error!_command.PuzzleResult {
             self.writer.writeAll("Difficulty:\n") catch return facade.Error.System;
@@ -290,11 +296,15 @@ pub fn AsciiRenderer(StylerType: type) type {
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
             const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else if (std.mem.eql(u8, pick, "2")) Difficulty.medium else if (std.mem.eql(u8, pick, "3")) Difficulty.hard else return .Cancelled;
-            puzzle_gen.PuzzleGen.setPlayProgress(puzzle_gen.reportPlayProgressToWriter, self.writer);
-            defer {
-                puzzle_gen.finishPlayProgressLine(self.writer);
-                puzzle_gen.PuzzleGen.setPlayProgress(null, null);
-            }
+            const Self = @This();
+            const progress_ctx = struct {
+                fn sink(event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {
+                    const renderer: *Self = @ptrCast(@alignCast(ctx.?));
+                    renderer.reportGenProgress(event) catch {};
+                }
+            };
+            puzzle_gen.PuzzleGen.setPlayProgress(progress_ctx.sink, self);
+            defer puzzle_gen.PuzzleGen.setPlayProgress(null, null);
             const puzzle = PuzzleGen.generate(diff);
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
             return .{ .PuzzleString = owned };
@@ -467,6 +477,21 @@ test "showLegend: writes Command: with Fill Clear Quit" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "(M)enu") != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, "(S)ave") == null);
 }
+
+test "reportGenProgress: writes formatted line to session writer" {
+    const io = std.testing.io;
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
+
+    try renderer.reportGenProgress(.{ .attempt = .{ .n = 2, .max = 256 } });
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "Generating: try 2/256") != null);
+}
+
 test "render: renders empty board end-to-end" {
     const io = std.testing.io;
 

@@ -21,6 +21,7 @@ const copy_command = @import("copy.zig");
 const paste_command = @import("paste.zig");
 const new_command = @import("new.zig");
 const save_as_command = @import("save_as.zig");
+const gen_progress = @import("gen_progress.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 /// One running game: engine + renderer; both deployments show the game, then turn it.
@@ -40,11 +41,9 @@ pub const Sudoku = struct {
         transport: file_transport.FileTransport,
         out: *std.Io.Writer,
     ) Error!@This() {
-        puzzle_gen.PuzzleGen.setPlayProgress(puzzle_gen.reportPlayProgressToWriter, out);
-        defer {
-            puzzle_gen.finishPlayProgressLine(out);
-            puzzle_gen.PuzzleGen.setPlayProgress(null, null);
-        }
+        var renderer_facade = facade;
+        puzzle_gen.PuzzleGen.setPlayProgress(gen_progress.playProgressToFacade, @ptrCast(&renderer_facade));
+        defer puzzle_gen.PuzzleGen.setPlayProgress(null, null);
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
             .cfg = cfg,

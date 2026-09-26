@@ -9,6 +9,7 @@ const board = @import("../../board/board.zig");
 const legend = @import("../../renderer/legend.zig");
 const command = @import("../../command.zig");
 const io_session = @import("../../native/io_session.zig");
+const puzzle_gen = @import("../../puzzle_gen.zig");
 
 pub const Alloc = struct {
     /// Static factory — resolve the reader branch, allocate styler/renderer/context,
@@ -94,6 +95,10 @@ fn ctx(S: type) type {
 
         pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool) facade.Error!command.ParseCommandResult {
             return self.renderer.getCommandInput(names, show_region);
+        }
+
+        pub fn reportGenProgress(self: *@This(), event: puzzle_gen.GenProgressEvent) facade.Error!void {
+            return self.renderer.reportGenProgress(event);
         }
     };
 }

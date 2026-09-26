@@ -11,12 +11,6 @@ pub const Difficulty = enum { default, easy, medium, hard };
 const base_solution = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
 
 threadlocal var seed_salt: u64 = 0x9E3779B97F4A7C15;
-threadlocal var play_progress_io: ?std.Io = null;
-
-/// Native terminal: `Io` handle for live stdout progress (`main` sets this once per run).
-pub fn setPlayProgressIo(io: ?std.Io) void {
-    play_progress_io = io;
-}
 
 fn runtimeSeed() u64 {
     seed_salt +%= 0xD1B54A32D192ED03;
@@ -259,22 +253,6 @@ pub fn formatProgressEvent(event: GenProgressEvent, buf: []u8) ?[]const u8 {
         .carve => |c| std.fmt.bufPrint(buf, "Generating: {d} givens → ≤{d}", .{ c.givens, c.target }) catch null,
         .uniqueness_check => |u| std.fmt.bufPrint(buf, "Generating: checking uniqueness ({d} givens)…", .{u.givens}) catch null,
     };
-}
-
-/// Native play: append one progress line to stdout via `Io` (0.17 — not `posix.write`).
-pub fn reportPlayProgressToWriter(event: GenProgressEvent, ctx: ?*anyopaque) void {
-    _ = ctx;
-    const io = play_progress_io orelse return;
-    var msg_buf: [96]u8 = undefined;
-    const msg = formatProgressEvent(event, &msg_buf) orelse return;
-    var line: [128]u8 = undefined;
-    const payload = std.fmt.bufPrint(&line, "{s}\n", .{msg}) catch return;
-    std.Io.File.writeStreamingAll(std.Io.File.stdout(), io, payload) catch {};
-}
-
-/// No-op kept for call-site symmetry (progress lines already end with `\n`).
-pub fn finishPlayProgressLine(ctx: ?*anyopaque) void {
-    _ = ctx;
 }
 
 fn givensRange(diff: Difficulty) struct { min: usize, max: usize } {

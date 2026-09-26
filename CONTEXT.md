@@ -42,8 +42,8 @@ _Avoid_: Column slice (implies copying)
 ### Rendering & Interaction
 
 **Renderer** (native):
-Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or plain) is the concrete implementation today; it receives `Event` snapshots from the game loop and never reads Board internals directly. The browser does **not** use a Zig renderer — JS builds the DOM from wasm JSON (`GameSnapshot`).
-_Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer)
+Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or plain) is the concrete implementation today; it receives `Event` snapshots from the game loop and never reads Board internals directly. **All native terminal output** (board, prompts, session dialogs, **live puzzle-gen progress**) goes through the renderer **`Facade`** and its session **`Io.Writer`** — not stdout or `Io` hooks from domain modules. Gen progress: `Facade.reportGenProgress(GenProgressEvent)`. The browser does **not** use a Zig renderer — JS builds the DOM from wasm JSON (`GameSnapshot`).
+_Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer); parallel `Sudoku.out` / domain stdout for progress
 
 **Event**:
 Output of `GameEngine.exec()` after a gameplay command — `.ok` carries a `BoardView`, optional message, and `is_quit`; `.error_msg` carries a reason string. Native `Sudoku` passes this to the renderer facade. The wasm boundary serializes the same semantics as JSON (`boundary.zig` / `glue.js`). **Status copy is Event-sourced only**: `.ok.msg` → web status bar; `.error_msg` → acknowledgement modal (native `showError` analogue).
@@ -68,15 +68,15 @@ Given a Board state, reports which cells conflict with the digit in their row (9
 _Avoid_: Checker (implies boolean only)
 
 **PuzzleGen**:
-Concrete puzzle source today — canned one-line strings keyed by `Difficulty` (`easy`, `medium`, `hard`, plus a legacy `default` fixture). Used by native `Config`, wasm `init`, and tests. Not a general generator yet.
-_Avoid_: treating it as the final Puzzle Repository interface
+Play path: **live generation** for `easy` / `medium` / `hard` via `generateForPlay` (fast strip, then dig-hole fallback), with **unique-solution** checks through **`solver.countSolutions`**. Optional **`GenProgressEvent`** callbacks during `generate()` — **no I/O inside this module**; hosts wire sinks (native Facade, wasm import, tests). **Test binary only:** fixed one-line fixtures (`useGenerateFixtures` / `builtin.is_test`). Legacy **`default`** remains a dot-blanked fixture string. Used by native startup/New, wasm `init`, and tests.
+_Avoid_: stdout, threadlocal `Io`, or platform-specific generator policy inside `puzzle_gen`; treating canned lines as the play path outside tests
 
 **Puzzle Repository** (domain slot):
-Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — inline fixtures, no `PuzzleSource` trait yet. A real auto-generator (with solver verification) will extract behind this slot when user stories 8–10 need it. The wasm boundary passes difficulty via **`WireConfig`**; puzzle strings never cross to JS.
+Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — live gen for play, fixtures for deterministic tests; no `PuzzleSource` trait yet. The wasm boundary passes difficulty via **`WireConfig`** at `init`; generated grids load as engine state (not a separate puzzle export on New). One-line strings cross to JS only via **`importPuzzle` / `exportPuzzle`** (Import/Export/Copy/Paste), not by reimplementing the codec in JS.
 _Avoid_: Puzzle store, PuzzleSource (name reserved for a future interface)
 
 **Solver Service**:
-Backtracking solver that completes or verifies puzzles by iterating RowView, ColView, and Box cell sets to compute valid candidates. Extracted behind an interface when both "generate" and "solve-for-me" features need it.
+Backtracking solver (`solver.zig`): completes boards, **`countSolutions`** (cap 2) for **generation uniqueness** and solvability probes, plus solve-for-me / hint paths. Pure — no I/O.
 _Avoid_: Engine (collides with GameEngine)
 
 ### Hints (issue #48)

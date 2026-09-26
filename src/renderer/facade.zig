@@ -2,6 +2,7 @@ const command = @import("../command.zig");
 const board = @import("../board/board.zig");
 const event = @import("../event.zig");
 const legend = @import("legend.zig");
+const puzzle_gen = @import("../puzzle_gen.zig");
 const Legend = legend.Legend;
 
 /// Row/col passed into render for native region highlight; null ⇒ no shading.
@@ -10,9 +11,12 @@ pub const Selection = event.CellCoord;
 /// Concrete error set for all Facade method signatures.
 pub const Error = error{System};
 
-/// Vtable interface shared by all deployments (terminal, web): the loop
-/// sees only these methods plus the renderer's error set collapsed to
-/// error.System.
+/// Native terminal renderer vtable: `Sudoku` and `AsciiRenderer` use this loop.
+/// Browser play uses wasm JSON exports + JS DOM (ADR-0010) — not this type.
+/// A future Zig web/canvas renderer would implement the same shape if added.
+///
+/// The loop sees only these methods plus the renderer's error set collapsed to
+/// `error.System`.
 ///
 /// Contract:
 ///   * A turn = getCommandInput → dispatch → render + showLegend after a
@@ -31,6 +35,9 @@ pub const Facade = struct {
     showError_fn: *const fn (*anyopaque, []const u8) Error!void,
 
     getCommandInput_fn: *const fn (*anyopaque, []const []const u8, show_region: bool) Error!command.ParseCommandResult,
+
+    report_gen_progress_fn: *const fn (*anyopaque, puzzle_gen.GenProgressEvent) Error!void,
+
     deinit_fn: *const fn (*anyopaque) void,
 
     /// Draw the current board in full. When status_msg is non-null, renderers
@@ -56,6 +63,11 @@ pub const Facade = struct {
     /// command names. End-of-input reports as error.System.
     pub fn getCommandInput(self: *const Facade, names: []const []const u8, show_region: bool) Error!command.ParseCommandResult {
         return self.getCommandInput_fn(self.context, names, show_region);
+    }
+
+    /// Live puzzle generation feedback (native terminal); not gameplay `Event` status.
+    pub fn reportGenProgress(self: *const Facade, gen_event: puzzle_gen.GenProgressEvent) Error!void {
+        return self.report_gen_progress_fn(self.context, gen_event);
     }
 
     /// Release all renderer-owned memory — the renderer owns its teardown path
@@ -86,6 +98,11 @@ pub fn Make(comptime CT: type) type {
             return self.getCommandInput(names, show_region) catch error.System;
         }
 
+        pub fn reportGenProgress_wrapper(ctx: *anyopaque, gen_event: puzzle_gen.GenProgressEvent) Error!void {
+            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
+            return self.reportGenProgress(gen_event);
+        }
+
         pub fn deinit_wrapper(ctx: *anyopaque) void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             self.deinit();
@@ -99,6 +116,7 @@ pub fn Make(comptime CT: type) type {
                 .showLegend_fn = showLegend_wrapper,
                 .showError_fn = showError_wrapper,
                 .getCommandInput_fn = getCommandInput_wrapper,
+                .report_gen_progress_fn = reportGenProgress_wrapper,
                 .deinit_fn = deinit_wrapper,
             };
         }
