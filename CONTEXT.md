@@ -147,4 +147,4 @@ _Avoid_: embedding game rules or SaveFormat parsing
 
 ## Architectural Decisions
 
-See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, command schema, difficulty thresholds).
+See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, ADR-0011 layer ownership, ADR-0013 Android entry options).

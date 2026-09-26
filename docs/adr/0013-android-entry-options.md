@@ -1,0 +1,62 @@
+# ADR-0013 — Android entry options (APK host, WebView + wasm, EGL)
+
+Status: proposed
+Date: 2026-09-24
+
+## Context
+
+The portable core (`GameEngine`, board, SUD0 codec, wasm `exec` + JSON wire — ADR-0010) is intentionally UI-agnostic. Deployments today:
+
+- **Native terminal** — `Sudoku` + blocking AsciiRenderer + `FileTransport` (ADR-0011).
+- **Web** — embedded `artifact.wasm` + JS shell; static serve on desktop (`native/serve.zig`).
+
+Android is a plausible **third thin entry**, not a fork of game logic. Community patterns fall into three buckets:
+
+1. **Gradle + Kotlin/JNI** — JVM owns Activity and UI; Zig builds to `.so` with `Java_*` exports (e.g. [ZigOnAndroid](https://github.com/davthecodercom/ZigOnAndroid)).
+2. **Zig-driven APK, minimal or no app Java** — cross-compile for Android ABIs; package/sign/install from **`build.zig`** (Android SDK + NDK + `jarsigner`; see [ZigAndroidTemplate](https://github.com/ikskuh/ZigAndroidTemplate), [Ziggit discussion](https://ziggit.dev/t/zig-android/4997), lineage [rawdrawandroid](https://github.com/cnlohr/rawdrawandroid)). Examples include pure **EGL/GLES** UI, or **TextView/Button via JNI** when needed.
+3. **Reuse the web shell on device** — a native **host** serves the same `page.html` / JS / wasm over **loopback HTTP** and displays it in **WebView** (Chromium-derived on device, not “Chrome the app”). Desktop already proves the artifact graph via `serve` + embedded bytes.
+
+ADR-0011’s **twin test** applies: Android must not duplicate engine rules or SUD0 parsing; it adds lifecycle, I/O, and presentation only.
+
+## Decision
+
+**Not implemented in this ADR** — record options and the default slice if Android work is opened.
+
+### Recommended first vertical slice (when pursued)
+
+**Zig APK pipeline + wasm host + WebView**
+
+| Layer | Responsibility |
+|--------|----------------|
+| `build.zig` (Android target) | APK assemble, multi-ABI `.so`, keystore/sign, `adb` install — pattern from [ZigAndroidTemplate](https://github.com/ikskuh/ZigAndroidTemplate) |
+| Host binary (Zig) | Bind `127.0.0.1:<port>`, serve same routes/MIME as `native/serve.zig` (embedded wasm + JS) |
+| WebView (or minimal JNI to create WebView) | Load `http://127.0.0.1:<port>/`; game UI unchanged |
+| `wasm_entry` + JS | Unchanged contract (ADR-0010); File menu may need Android-specific I/O later |
+
+Rationale: reuses shipped wasm/JS UI; matches “UI-agnostic engine + thin entry”; avoids EGL widget work for v1.
+
+### Alternatives (explicit, not default)
+
+| Path | When | Cost |
+|------|------|------|
+| **Gradle + Kotlin shell** | Play-store polish, Compose chrome, deep OS integration | JVM shell + JNI glue; Zig as library |
+| **EGL / pure native draw** ([ZigAndroidTemplate `egl`](https://github.com/ikskuh/ZigAndroidTemplate)) | Mobile UI distinct from web; max control | New renderer; no wasm reuse on screen |
+| **JNI widgets only for shell** ([`textview` / `invocationhandler`](https://github.com/ikskuh/ZigAndroidTemplate)) | Tiny native chrome around a canvas/WebView | Hybrid JNI surface |
+
+### Placement rules (ADR-0011)
+
+- **Engine / wasm module** — no Android SDK types, no `ANativeWindow` in core.
+- **Android host** — process lifecycle, HTTP server thread, WebView (or EGL context), cleartext localhost policy, permissions.
+- **Session file I/O on device** — shell/JS (same as web FS Access gap today); not new engine APIs without an issue.
+
+### Android packaging facts (non-negotiable)
+
+- An **APK/AAB** still requires SDK, NDK, signing (`jarsigner` or equivalent) — “no Java” means **no Kotlin app source**, not zero JDK/SDK tooling.
+- **Cleartext HTTP** to localhost may require network security config for WebView on recent API levels.
+
+## Consequences
+
+- No code change until an issue opens an Android slice; this ADR prevents debating placement ad hoc.
+- If WebView slice lands, extend **twin** wording in ADR-0011 from “two entries” to “native terminal, web wasm, optional Android host” without moving state into `GameEngine`.
+- EGL-native Android UI remains valid but is a **separate product bet** — do not block wasm-host path on it.
+- Reference implementations for build/sign: [ZigAndroidTemplate](https://github.com/ikskuh/ZigAndroidTemplate); JNI-in-Gradle reference: [ZigOnAndroid](https://github.com/davthecodercom/ZigOnAndroid).
