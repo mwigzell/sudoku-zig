@@ -10,7 +10,9 @@ const std = @import("std");
 const Io = std.Io;
 const facade = @import("../../renderer/facade.zig");
 const input_source = @import("../../native/input_source.zig");
-const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
+const puzzle_gen = @import("../../puzzle_gen.zig");
+const PuzzleGen = puzzle_gen.PuzzleGen;
+
 const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 
 /// Terminal renderer for the 9x9 Sudoku board.
@@ -288,6 +290,11 @@ pub fn AsciiRenderer(StylerType: type) type {
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
             const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else if (std.mem.eql(u8, pick, "2")) Difficulty.medium else if (std.mem.eql(u8, pick, "3")) Difficulty.hard else return .Cancelled;
+            puzzle_gen.PuzzleGen.setPlayProgress(puzzle_gen.reportPlayProgressToWriter, self.writer);
+            defer {
+                puzzle_gen.finishPlayProgressLine(self.writer);
+                puzzle_gen.PuzzleGen.setPlayProgress(null, null);
+            }
             const puzzle = PuzzleGen.generate(diff);
             const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
             return .{ .PuzzleString = owned };

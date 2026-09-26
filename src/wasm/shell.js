@@ -49,11 +49,52 @@ export function open(game, bytes, { name } = {}) {
   return { ok: true, state: result.state, msg: result.msg ?? null };
 }
 
+/** Wire encoding from wasm `encodeProgressWire` / Zig `GenProgressEvent`. */
+export function formatGenProgress(phase, a, b) {
+  switch (phase) {
+    case 0:
+      return "Generating: new attempt…";
+    case 1:
+      return "Generating: carving clues…";
+    case 2:
+      return `Generating: try ${a}/${b}`;
+    case 3:
+      return `Generating: ${a} givens (target ≤${b})`;
+    case 4:
+      return `Generating: ${a} givens → ≤${b}`;
+    case 5:
+      return `Generating: checking uniqueness (${a} givens)…`;
+    default:
+      return "Generating…";
+  }
+}
+
+/** Yield so the status bar can paint before a blocking wasm `init`. */
+export function waitForStatusPaint() {
+  if (typeof requestAnimationFrame !== "function") return Promise.resolve();
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
 /** Start a fresh game at the given difficulty (PlayerDifficulty wire values). */
-export function newGame(game, { difficulty = 1, logLevel = 1 } = {}) {
-  const result = game.init({ difficulty, logLevel });
-  if (!result.ok) return result;
-  return { ok: true, state: game.getState(), legend: game.getLegend(), config: game.getConfig() };
+export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = {}) {
+  game.setGenProgressListener?.(
+    onGenProgress ? (phase, a, b) => onGenProgress(formatGenProgress(phase, a, b)) : null,
+  );
+  try {
+    const result = game.init({ difficulty, logLevel });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      state: game.getState(),
+      legend: game.getLegend(),
+      config: game.getConfig(),
+      msg: result.msg ?? "new game started",
+    };
+  } finally {
+    game.setGenProgressListener?.(null);
+  }
 }
 
 /** Export the current grid as an 81-byte one-line puzzle string. */

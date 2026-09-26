@@ -9,8 +9,9 @@ import {
   exportPuzzle,
   applyEventStatus,
   showErrorModal,
+  waitForStatusPaint,
 } from "./shell.js";
-import { renderBoard } from "./board.js";
+import { renderBoard, setStatus } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
 export const DEFAULT_SAVE_FILENAME = "sudoku.sud";
@@ -190,7 +191,9 @@ export function wireDifficultyDialog(dialog, onChoose) {
   for (const button of dialog.buttons) {
     button.el.addEventListener("click", () => {
       dialog.el.hidden = true;
-      onChoose(button.difficulty);
+      void Promise.resolve(onChoose(button.difficulty)).catch((err) => {
+        console.error("New game failed:", err);
+      });
     });
   }
   return {
@@ -225,20 +228,42 @@ export function wireFileMenu(
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
-  const startNewGame = (difficulty) => {
-    const result = newGame(game, { difficulty });
-    if (!result.ok) {
-      fail(result);
-      return;
+  const startNewGame = async (difficulty) => {
+    try {
+      setStatus(statusEl, "Generating…", { busy: true });
+      await waitForStatusPaint();
+      const result = newGame(game, {
+        difficulty,
+        onGenProgress: (msg) => setStatus(statusEl, msg),
+      });
+      if (!result.ok) {
+        fail(result);
+        return;
+      }
+      session.fileHandle = null;
+      session.boundFilename = null;
+      refreshSession(
+        boardEl,
+        selection,
+        statusEl,
+        session,
+        menuBar,
+        result.state,
+        result.legend,
+        result.config,
+        createElement,
+        onViewRefresh,
+        result.msg,
+      );
+    } catch (err) {
+      fail({ ok: false, error: err?.message ?? String(err) });
     }
-    session.fileHandle = null;
-    session.boundFilename = null;
-    refreshSession(boardEl, selection, statusEl, session, menuBar, result.state, result.legend, result.config, createElement, onViewRefresh);
   };
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
 
   controls.new?.addEventListener("click", () => {
     if (!session.legend.new) return;
+    menuBar.closeAll?.();
     newDialog.open();
   });
 

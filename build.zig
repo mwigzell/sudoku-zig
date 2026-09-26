@@ -162,4 +162,15 @@ pub fn build(b: *std.Build) void {
     const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });
     const verify_step = b.step("verify", "Gate: verify-run + timing integrity (docs/verify-timing.json)");
     verify_step.dependOn(&verify_gate.step);
+
+    // Slow tests (generator properties, etc.) — delivery phase; not part of verify.
+    const run_slow_tests = b.addSystemCommand(&.{
+        "zig", "test", "src/puzzle_gen_live.zig", "-lc", "--test-filter", "puzzle_gen live",
+    });
+    const verify_slow_run_step = b.step("verify-slow-run", "Internal: costly tests (puzzle_gen live, …)");
+    verify_slow_run_step.dependOn(&run_slow_tests.step);
+
+    const verify_slow_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-slow-gate.sh" });
+    const verify_slow_step = b.step("verify-slow", "Slow gate: verify-slow-run + timing (docs/verify-slow-timing.json)");
+    verify_slow_step.dependOn(&verify_slow_gate.step);
 }

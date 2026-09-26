@@ -146,6 +146,17 @@ pub fn writeOkJson(out: OutBuffer) !void {
     try writeJson(&mutable, "{{\"ok\":true}}", .{});
 }
 
+pub fn writeOkMsgJson(out: OutBuffer, msg: []const u8) !void {
+    var mutable = out;
+    out.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    try std.Io.Writer.writeAll(&jw.writer, "{\"ok\":true,\"msg\":");
+    try writeJsonString(&jw.writer, msg);
+    try std.Io.Writer.writeAll(&jw.writer, "}");
+    try std.Io.Writer.flush(&jw.writer);
+}
+
 fn writeErrorJsonTo(w: *std.Io.Writer, msg: []const u8) !void {
     try std.Io.Writer.writeAll(w, "{\"ok\":false,\"error\":");
     try writeJsonString(w, msg);

@@ -23,7 +23,10 @@ import {
   GUTTER_FR,
   PLAY_FR,
 } from "./board.js";
-import { applyEventStatus, applyExecResult, showErrorModal } from "./shell.js";
+import { applyEventStatus, applyExecResult, showErrorModal, formatGenProgress } from "./shell.js";
+
+assert.equal(formatGenProgress(4, 71, 36), "Generating: 71 givens → ≤36");
+assert.equal(formatGenProgress(0, 0, 0), "Generating: new attempt…");
 
 assert.equal(cellIndex(2, 4), 22);
 assert.equal(cellIndex(0, 0), 0);

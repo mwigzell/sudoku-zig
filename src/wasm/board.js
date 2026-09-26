@@ -144,9 +144,9 @@ export function renderBoard(frameEl, state, createElement = (tag) => document.cr
   playEl.replaceChildren(...cells);
 }
 
-export function setStatus(statusEl, message, { error = false } = {}) {
+export function setStatus(statusEl, message, { error = false, busy = false } = {}) {
   statusEl.textContent = message;
-  statusEl.className = error ? "error" : "";
+  statusEl.className = error ? "error" : busy ? "generating" : "";
 }
 
 export function moveSelection(row, col, key) {

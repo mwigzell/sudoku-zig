@@ -209,6 +209,16 @@
       color: var(--status-error);
     }
 
+    #status-bar.generating {
+      animation: status-generating-pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes status-generating-pulse {
+      50% {
+        opacity: 0.55;
+      }
+    }
+
     #error-modal {
       position: fixed;
       inset: 0;

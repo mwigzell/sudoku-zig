@@ -12,6 +12,10 @@ const wasmBytes = readFileSync(join(here, "artifact.wasm"));
 
 const game = await loadArtifact(wasmBytes);
 
+/** Fixed easy grid — live `init` gen is non-deterministic; unsolvable-move tests need this. */
+const EASY_FIXTURE =
+  "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
+
 assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── init ──
@@ -160,6 +164,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const dead = await loadArtifact(wasmBytes);
   assert.equal(dead.init({ difficulty: 1 }).ok, true);
+  assert.equal(dead.importPuzzle(EASY_FIXTURE).ok, true);
   const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(bad.ok, true);
   assert.match(bad.msg ?? "", /unsolvable/i);
@@ -201,7 +206,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.deepEqual(result.state, game.getState());
   assert.deepEqual(result.legend, game.getLegend());
   assert.deepEqual(result.config, game.getConfig());
-  assert.equal(result.state.cells[idx].value, before.cells[idx].value, "new clears mutations");
+  assert.notEqual(result.state.cells[idx].value, 7, "new clears player fill");
+  assert.notDeepEqual(result.state, fill.state, "new replaces board");
   assert.equal(result.legend.undo, false);
   assert.equal(result.config.difficulty, 2);
 }
@@ -239,18 +245,19 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── exportPuzzle ──
 {
-  const EASY =
-    "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
   const fresh = await loadArtifact(wasmBytes);
   const res = fresh.exportPuzzle();
   assert.equal(res.ok, false, "export before init should fail");
   assert.ok(res.error);
 
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
-  const exported = fresh.exportPuzzle();
+  let exported = fresh.exportPuzzle();
   assert.equal(exported.ok, true, `exportPuzzle failed: ${JSON.stringify(exported)}`);
   assert.equal(exported.bytes.length, 81);
-  assert.equal(new TextDecoder().decode(exported.bytes), EASY);
+
+  assert.equal(fresh.importPuzzle(EASY_FIXTURE).ok, true);
+  exported = fresh.exportPuzzle();
+  assert.equal(new TextDecoder().decode(exported.bytes), EASY_FIXTURE);
 
   const idx = fresh.getState().cells.findIndex((c) => c.value === 0 && !c.given);
   assert.ok(idx >= 0);
@@ -260,7 +267,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const afterFill = fresh.exportPuzzle();
   assert.equal(afterFill.ok, true);
   const line = new TextDecoder().decode(afterFill.bytes);
-  assert.notEqual(line, EASY);
+  assert.notEqual(line, EASY_FIXTURE);
   assert.equal(fresh.importPuzzle(line).ok, true);
 }
 

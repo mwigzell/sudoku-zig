@@ -40,6 +40,11 @@ pub const Sudoku = struct {
         transport: file_transport.FileTransport,
         out: *std.Io.Writer,
     ) Error!@This() {
+        puzzle_gen.PuzzleGen.setPlayProgress(puzzle_gen.reportPlayProgressToWriter, out);
+        defer {
+            puzzle_gen.finishPlayProgressLine(out);
+            puzzle_gen.PuzzleGen.setPlayProgress(null, null);
+        }
         const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
             .cfg = cfg,

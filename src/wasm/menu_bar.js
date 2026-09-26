@@ -153,8 +153,8 @@ export function wireMenuDropdowns(root = document) {
 
 /** Keep menu controls aligned with session.legend; File handlers wired in C.6. */
 export function wireMenuBar(controls, session, root) {
-  if (root) wireMenuDropdowns(root);
+  const dropdowns = root ? wireMenuDropdowns(root) : null;
   const sync = () => syncMenuBar(session.legend, controls);
   sync();
-  return { sync };
+  return { sync, closeAll: () => dropdowns?.closeAll() };
 }

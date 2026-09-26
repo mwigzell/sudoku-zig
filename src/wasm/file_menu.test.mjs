@@ -15,7 +15,18 @@ import {
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
 function makeBtn() {
-  return { disabled: false, handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, click() { return this.handlers.click?.(); } };
+  return {
+    disabled: false,
+    handlers: {},
+    addEventListener(type, fn) {
+      this.handlers[type] = fn;
+    },
+    async click() {
+      const r = this.handlers.click?.();
+      if (r != null && typeof r.then === "function") await r;
+      return r;
+    },
+  };
 }
 
 function makeBoard() {
@@ -149,7 +160,7 @@ function makeRenderElement() {
 
   controls.new.click();
   assert.equal(newDialog.el.hidden, false);
-  newDialog.buttons[0].el.click();
+  await newDialog.buttons[0].el.click();
   assert.equal(newDialog.el.hidden, true);
   assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
   controls.save.click();
@@ -208,11 +219,51 @@ function makeRenderElement() {
   assert.equal(difficultyDialog.el.hidden, false, "New opens the difficulty dialog");
   assert.equal(initCalls.length, 0, "no puzzle generated until a difficulty is picked");
 
-  difficultyDialog.buttons[1].el.click(); // Medium
+  await difficultyDialog.buttons[1].el.click(); // Medium
   assert.equal(difficultyDialog.el.hidden, true, "dialog closes after a pick");
   assert.equal(initCalls.length, 1, "pick drives generation");
   assert.equal(initCalls[0].difficulty, 2, "the picked difficulty is used");
   assert.equal(session.state.cells.length, 1, "board resets from the fresh game");
+}
+
+{
+  const status = { textContent: "", className: "" };
+  const session = { state: { cells: [] }, legend: { new: true } };
+  const difficultyDialog = {
+    el: { hidden: true },
+    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
+  };
+  wireFileMenu(
+    { new: makeBtn() },
+    {
+      init() {
+        return { ok: true, msg: "new game started" };
+      },
+      getState() {
+        return { cells: [{ value: 2, given: false, conflict: false }] };
+      },
+      getLegend() {
+        return { new: true };
+      },
+      getConfig() {
+        return { show_region: false };
+      },
+    },
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    status,
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog,
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      createElement: makeRenderElement(),
+    },
+  );
+  await difficultyDialog.buttons[0].el.click();
+  assert.match(status.textContent, /new game started/i);
 }
 
 {
@@ -255,7 +306,7 @@ function makeRenderElement() {
       createElement: makeRenderElement(),
     },
   );
-  difficultyDialog.buttons[0].el.click();
+  await difficultyDialog.buttons[0].el.click();
   assert.equal(session.fileHandle, null, "save target unbound after New");
   assert.equal(session.boundFilename, null, "bound filename cleared after New");
 }

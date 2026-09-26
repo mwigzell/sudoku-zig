@@ -19,14 +19,27 @@ const writeBytes = (memory, ptr, bytes) => {
   view.set(bytes, ptr);
 };
 
+let genProgressListener = null;
+
 export async function loadArtifact(wasmBytes) {
-  const { instance } = await WebAssembly.instantiate(wasmBytes, {});
+  const imports = {
+    env: {
+      sudoku_gen_progress(phase, a, b) {
+        genProgressListener?.(phase, a, b);
+      },
+    },
+  };
+  const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
   const { exports } = instance;
   const memory = exports.memory;
 
   const readJson = (ptr) => JSON.parse(readCString(memory, ptr));
 
   return {
+    setGenProgressListener(fn) {
+      genProgressListener = fn ?? null;
+    },
+
     init({ difficulty = 1, logLevel = 1 } = {}) {
       return readJson(exports.init(difficulty, logLevel));
     },

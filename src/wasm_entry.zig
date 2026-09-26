@@ -1,5 +1,6 @@
 // Wasm deploy entry — structured JSON exports for the browser shell.
 // Boundary failures propagate to JS only via out_buf JSON, never stderr.
+const builtin = @import("builtin");
 const std = @import("std");
 const board = @import("board/board.zig");
 const game_engine = @import("engine/game_engine.zig");
@@ -69,13 +70,18 @@ export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
     game_cfg.theme = preserved_theme;
     game_cfg.show_region = preserved_region;
 
+    if (builtin.cpu.arch == .wasm32) {
+        puzzle_gen.PuzzleGen.setPlayProgress(wasmGenProgress, null);
+    }
+    defer if (builtin.cpu.arch == .wasm32) puzzle_gen.PuzzleGen.setPlayProgress(null, null);
+
     const puzzle_str = puzzle_gen.PuzzleGen.generate(game_cfg.difficulty);
     engine = game_engine.GameEngine.init(puzzle_str, game_cfg) catch {
         return exportError(out, "engine init failed");
     };
     have_engine = true;
 
-    boundary.writeOkJson(out) catch return exportWriteFailed(out);
+    boundary.writeOkMsgJson(out, "new game started") catch return exportWriteFailed(out);
     return returnJson(out);
 }
 
@@ -198,5 +204,28 @@ export fn exportPuzzle() callconv(.c) u32 {
 export fn outPtr() callconv(.c) u32 {
     return @intFromPtr(&out_buf);
 }
+
+const wasm_gen_progress_host = if (builtin.cpu.arch == .wasm32) struct {
+    extern "env" fn sudoku_gen_progress(phase: u32, a: u32, b: u32) void;
+
+    threadlocal var last_uniqueness_givens: u32 = 0;
+
+    fn callback(event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {
+        _ = ctx;
+        const w = puzzle_gen.encodeProgressWire(event);
+        // Dedupe hot uniqueness_check during dig-hole; keep other phases for the status bar.
+        if (w.phase == 5) {
+            if (last_uniqueness_givens == w.a) return;
+            last_uniqueness_givens = w.a;
+        } else if (w.phase == 0) {
+            last_uniqueness_givens = 0;
+        }
+        sudoku_gen_progress(w.phase, w.a, w.b);
+    }
+} else struct {
+    fn callback(_: puzzle_gen.GenProgressEvent, _: ?*anyopaque) void {}
+};
+
+const wasmGenProgress = wasm_gen_progress_host.callback;
 
 pub fn main() void {}
