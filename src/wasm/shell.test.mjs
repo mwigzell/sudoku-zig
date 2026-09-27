@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import {
   NEW_GAME_STARTED_MSG,
+  initializeWebSession,
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
 } from "./shell.js";
@@ -143,7 +144,11 @@ async function flushDialogPaint() {
       return {};
     },
     getConfig() {
-      return { theme: "dark", show_region: false };
+      return { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
+    },
+    importPuzzleNewGame(text, difficulty) {
+      importCalls.push(text);
+      return { ok: true, msg: "import: puzzle loaded" };
     },
   };
   const modal = makeModal();
@@ -200,7 +205,7 @@ async function flushDialogPaint() {
       return {};
     },
     getConfig() {
-      return {};
+      return { difficulty: 1, log_level: 1 };
     },
   };
   const modal = makeModal();
@@ -232,8 +237,9 @@ async function flushDialogPaint() {
       progressCb?.(2, 7, 256);
       return { ok: true, line };
     },
-    importPuzzle(text) {
+    importPuzzleNewGame(text, difficulty) {
       assert.equal(text, line);
+      assert.equal(difficulty, 2);
       return { ok: true, msg: "import: puzzle loaded" };
     },
     getState() {
@@ -243,7 +249,7 @@ async function flushDialogPaint() {
       return {};
     },
     getConfig() {
-      return {};
+      return { difficulty: 2, log_level: 1 };
     },
   };
   const progressRowsEl = makeProgressRowsEl();
@@ -261,4 +267,68 @@ async function flushDialogPaint() {
   const out = await running;
   assert.equal(out.ok, true);
   assert.equal(out.msg, NEW_GAME_STARTED_MSG);
+}
+
+// ── initializeWebSession: host config boot, optional resume, no auto-New ──
+{
+  const hostCfg = { difficulty: 2, log_level: 1, theme: "dark", show_region: false };
+  const game = {
+    bootstrapHostConfig(cfg) {
+      assert.deepEqual(cfg, {
+        difficulty: 2,
+        logLevel: 1,
+        theme: "dark",
+        show_region: false,
+      });
+      return { ok: true, msg: "engine ready" };
+    },
+    getState() {
+      return { cells: [{ value: 0, given: false, conflict: false }] };
+    },
+    getLegend() {
+      return { new: true };
+    },
+    getConfig() {
+      return { difficulty: 2, log_level: 1, theme: "dark", show_region: false };
+    },
+    deserialize() {
+      return { ok: false };
+    },
+  };
+  const out = await initializeWebSession(game, {
+    fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
+  });
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, "empty");
+  assert.equal(out.config.difficulty, 2);
+}
+
+{
+  const hostCfg = { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
+  let deserialized = false;
+  const game = {
+    bootstrapHostConfig() {
+      return { ok: true };
+    },
+    deserialize(bytes) {
+      deserialized = bytes.length === 2;
+      return { ok: true, msg: "open: resumed.sud0", state: { cells: [] } };
+    },
+    getState() {
+      return { cells: [{ value: 5, given: true, conflict: false }] };
+    },
+    getLegend() {
+      return {};
+    },
+    getConfig() {
+      return hostCfg;
+    },
+  };
+  const out = await initializeWebSession(game, {
+    fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
+    storedSud0Bytes: new Uint8Array([1, 2]),
+  });
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, "resumed");
+  assert.equal(deserialized, true);
 }

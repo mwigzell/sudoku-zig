@@ -136,25 +136,100 @@ export function applyImportedLine(game, line) {
 }
 
 /** Worker/sync gen handoff: same codec as import; status reflects New, not Import. */
-export function applyGeneratedLineAsNewGame(game, line) {
-  const result = applyImportedLine(game, line);
+export function applyGeneratedLineAsNewGame(game, line, { difficulty } = {}) {
+  const result =
+    difficulty != null && typeof game.importPuzzleNewGame === "function"
+      ? (() => {
+          const importResult = game.importPuzzleNewGame(line, difficulty);
+          if (!importResult.ok) return importResult;
+          return {
+            ok: true,
+            state: game.getState(),
+            legend: game.getLegend(),
+            config: game.getConfig(),
+            msg: importResult.msg ?? "import: puzzle loaded",
+          };
+        })()
+      : applyImportedLine(game, line);
   if (!result.ok) return result;
   return { ...result, msg: NEW_GAME_STARTED_MSG };
+}
+
+export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
+  const res = await fetchFn("./host-config.json");
+  if (!res.ok) throw new Error(`host-config fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export function bootstrapEngineFromHostConfig(game, hostCfg) {
+  return game.bootstrapHostConfig({
+    difficulty: hostCfg.difficulty,
+    logLevel: hostCfg.log_level,
+    theme: hostCfg.theme,
+    show_region: hostCfg.show_region,
+  });
+}
+
+/** Restore SUD0 bytes when present; returns session bundle or null. */
+export function tryRestoreStoredSession(game, sud0Bytes) {
+  if (!sud0Bytes?.length) return null;
+  const result = game.deserialize(sud0Bytes);
+  if (!result.ok) return null;
+  return {
+    ok: true,
+    state: result.state ?? game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    msg: result.msg ?? null,
+  };
+}
+
+/**
+ * Host config + empty engine, or resume stored session — never auto-starts New Game.
+ */
+export async function initializeWebSession(game, { fetchFn, storedSud0Bytes } = {}) {
+  const hostCfg = await fetchHostStartupConfig(fetchFn);
+  const boot = bootstrapEngineFromHostConfig(game, hostCfg);
+  if (!boot.ok) return boot;
+
+  const restored = tryRestoreStoredSession(game, storedSud0Bytes);
+  if (restored?.ok) {
+    return { ok: true, kind: "resumed", hostCfg, ...restored };
+  }
+
+  return {
+    ok: true,
+    kind: "empty",
+    hostCfg,
+    state: game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    msg: boot.msg ?? null,
+  };
+}
+
+function genWireFromEngine(game, options) {
+  const cfg = game.getConfig();
+  return {
+    difficulty: options.difficulty ?? cfg.difficulty,
+    logLevel: options.logLevel ?? cfg.log_level,
+  };
 }
 
 /** Worker gen → import on main; modal + optional Cancel. */
 export async function newGameWithWorkerGen(
   game,
   modal,
-  { difficulty = 1, logLevel = 1, genWorker, onGenProgress, onProgressWire } = {},
+  { difficulty, logLevel, genWorker, onGenProgress, onProgressWire } = {},
 ) {
+  const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
   return runWithGeneratingDialog(modal, async (cancelRef) => {
     const { promise, cancel } = startGenInWorker({
       workerUrl: genWorker.workerUrl,
       wasmBytes: genWorker.wasmBytes,
-      difficulty,
-      logLevel,
+      difficulty: wire.difficulty,
+      logLevel: wire.logLevel,
       onProgress,
       WorkerCtor: genWorker.WorkerCtor,
       fetchFn: genWorker.fetchFn,
@@ -162,7 +237,7 @@ export async function newGameWithWorkerGen(
     cancelRef.fn = cancel;
     const gen = await promise;
     if (gen.cancelled || !gen.ok) return gen;
-    return applyGeneratedLineAsNewGame(game, gen.line);
+    return applyGeneratedLineAsNewGame(game, gen.line, { difficulty: wire.difficulty });
   });
 }
 
@@ -170,22 +245,23 @@ export async function newGameWithWorkerGen(
 export async function newGameWithSyncGenerate(
   game,
   modal,
-  { difficulty = 1, logLevel = 1, onGenProgress, onProgressWire } = {},
+  { difficulty, logLevel, onGenProgress, onProgressWire } = {},
 ) {
+  const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
   return runWithGeneratingDialog(modal, async (cancelRef) => {
     cancelRef.fn = () => game.requestGenAbort?.();
     game.setGenProgressListener?.(onProgress ?? null);
     try {
       if (typeof game.generatePuzzle !== "function") {
-        return newGame(game, { difficulty, logLevel });
+        return newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel });
       }
-      const gen = game.generatePuzzle({ difficulty, logLevel });
+      const gen = game.generatePuzzle({ difficulty: wire.difficulty, logLevel: wire.logLevel });
       if (!gen.ok) {
         if (gen.error === "cancelled") return { ok: false, cancelled: true };
         return gen;
       }
-      return applyGeneratedLineAsNewGame(game, gen.line);
+      return applyGeneratedLineAsNewGame(game, gen.line, { difficulty: wire.difficulty });
     } finally {
       game.setGenProgressListener?.(null);
     }
@@ -201,25 +277,36 @@ function shouldFallbackFromWorker(result) {
 
 /** First load / New: prefer worker gen; fall back to main-thread generate or legacy `init`. */
 export async function newGameWithGeneratingModal(game, modal, options = {}) {
-  const { difficulty = 1, logLevel = 1, genWorker, onGenProgress } = options;
+  const { genWorker, onGenProgress } = options;
+  const wire = genWireFromEngine(game, options);
   const rowSink =
     typeof modal?.renderProgressRows === "function" ? createGenProgressModalSink(modal) : null;
   const onProgressWire = rowSink ? (phase, a, b) => rowSink.push(phase, a, b) : undefined;
   const genProgress = { onGenProgress, onProgressWire };
   if (genWorker && canUseGenWorker()) {
     const workerResult = await newGameWithWorkerGen(game, modal, {
-      difficulty,
-      logLevel,
+      difficulty: wire.difficulty,
+      logLevel: wire.logLevel,
       genWorker,
       ...genProgress,
     });
     if (!shouldFallbackFromWorker(workerResult)) return workerResult;
-    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, ...genProgress });
+    return newGameWithSyncGenerate(game, modal, {
+      difficulty: wire.difficulty,
+      logLevel: wire.logLevel,
+      ...genProgress,
+    });
   }
   if (typeof game.generatePuzzle === "function") {
-    return newGameWithSyncGenerate(game, modal, { difficulty, logLevel, ...genProgress });
+    return newGameWithSyncGenerate(game, modal, {
+      difficulty: wire.difficulty,
+      logLevel: wire.logLevel,
+      ...genProgress,
+    });
   }
-  return runWithGeneratingDialog(modal, () => Promise.resolve(newGame(game, options)));
+  return runWithGeneratingDialog(modal, () =>
+    Promise.resolve(newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel })),
+  );
 }
 
 export { canUseGenWorker };

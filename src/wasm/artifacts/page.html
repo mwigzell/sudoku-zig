@@ -632,7 +632,7 @@
     import {
       applyEventStatus,
       canUseGenWorker,
-      newGameWithGeneratingModal,
+      initializeWebSession,
       showErrorModal,
       wireErrorModal,
     } from "../shell.js";
@@ -677,26 +677,30 @@
         msgEl: document.getElementById("generating-modal-msg"),
         progressRowsEl: document.getElementById("generating-progress-rows"),
       });
-      if (typeof game.bootstrap === "function") {
-        const boot = game.bootstrap({ difficulty: 1, logLevel: 1 });
-        if (!boot.ok) throw new Error(boot.error ?? "bootstrap failed");
-        renderBoard(boardEl, game.getState());
+      const sessionStorageKey = "sudoku-zig-session";
+      let storedSud0Bytes;
+      try {
+        const raw = localStorage.getItem(sessionStorageKey);
+        if (raw) storedSud0Bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+      } catch {
+        storedSud0Bytes = undefined;
       }
+
       const genWorker = canUseGenWorker()
         ? { workerUrl: new URL("./gen_worker.js", import.meta.url).href, wasmBytes: bytes }
         : undefined;
-      const started = await newGameWithGeneratingModal(game, generatingModal, {
-        difficulty: 1,
-        genWorker,
-      });
-      if (!started.ok && !started.cancelled) throw new Error(started.error ?? "init failed");
 
-      const session = started.cancelled
-        ? { state: game.getState(), legend: game.getLegend(), config: game.getConfig() }
-        : { state: started.state, legend: started.legend, config: started.config };
+      const boot = await initializeWebSession(game, { storedSud0Bytes });
+      if (!boot.ok) throw new Error(boot.error ?? "session init failed");
+
+      const session = {
+        state: boot.state,
+        legend: boot.legend,
+        config: boot.config,
+      };
       renderBoard(boardEl, session.state);
-      if (started.ok) {
-        applyEventStatus(statusBar, { ok: true, msg: started.msg });
+      if (boot.kind === "resumed" && boot.msg) {
+        applyEventStatus(statusBar, { ok: true, msg: boot.msg });
       } else {
         setStatus(statusBar, "");
       }

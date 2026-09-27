@@ -9,6 +9,7 @@ const logger = @import("logger.zig");
 const boundary = @import("wasm/boundary.zig");
 const wire = @import("wasm/wire.zig");
 const config = @import("config.zig");
+const startup_config = @import("startup_config.zig");
 
 const OutCap = 65536;
 var out_buf: [OutCap]u8 = undefined;
@@ -68,21 +69,25 @@ fn deinitEngineIfAny() void {
     }
 }
 
-/// Create engine from an empty grid (no generation) — main thread before worker handoff.
-export fn bootstrap(difficulty: u32, log_level: u32) callconv(.c) u32 {
+/// Empty-grid engine from host-resolved startup config (disk + CLI via serve — same contract as native).
+/// theme: 0 = dark, 1 = light; show_region: 0 = false, 1 = true.
+export fn bootstrapHostConfig(
+    difficulty: u32,
+    log_level: u32,
+    theme: u32,
+    show_region: u32,
+) callconv(.c) u32 {
     const out = outBuffer();
-    const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
-        return exportError(out, "invalid wire config");
-    };
+    const theme_enum: config.ViewTheme = if (theme == 1) .light else .dark;
+    const game_cfg = startup_config.configFromHostWire(
+        @intCast(difficulty),
+        @intCast(log_level),
+        theme_enum,
+        show_region != 0,
+    ) catch return exportError(out, "invalid host startup config");
 
-    logger.min_level = wire_cfg.log_level;
-
-    const prefs = preservedViewPrefs();
+    startup_config.applyLoggerFromStartup(game_cfg);
     deinitEngineIfAny();
-
-    var game_cfg = wire_cfg.toConfig();
-    game_cfg.theme = prefs.theme;
-    game_cfg.show_region = prefs.show_region;
 
     engine = game_engine.GameEngine.init(empty_puzzle_line[0..], game_cfg) catch {
         return exportError(out, "engine init failed");
@@ -260,6 +265,24 @@ export fn importPuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
         .error_msg => |msg| return exportError(out, msg),
         .ok => {},
     }
+    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
+/// Import a generated puzzle line and set nominal difficulty for this New game.
+export fn importPuzzleNewGame(in_ptr: u32, in_len: u32, difficulty: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    const eng = engineOrError(out) orelse return returnJson(out);
+    const pd = wire.PlayerDifficulty.fromWire(@intCast(difficulty)) orelse {
+        return exportError(out, "invalid difficulty");
+    };
+    const line = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const ev = eng.importFromLine(line);
+    switch (ev) {
+        .error_msg => |msg| return exportError(out, msg),
+        .ok => {},
+    }
+    eng.cfg.difficulty = pd.toPuzzleDifficulty();
     boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
     return returnJson(out);
 }

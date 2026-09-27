@@ -44,9 +44,13 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.init(difficulty, logLevel));
     },
 
-    /** Empty-grid engine only (no generation); main thread before worker handoff. */
-    bootstrap({ difficulty = 1, logLevel = 1 } = {}) {
-      return readJson(exports.bootstrap(difficulty, logLevel));
+    /** Host-resolved startup config (native disk+CLI analogue). All fields required — no glue defaults. */
+    bootstrapHostConfig({ difficulty, logLevel, theme, show_region }) {
+      const themeWire = theme === "light" ? 1 : 0;
+      const regionWire = show_region ? 1 : 0;
+      return readJson(
+        exports.bootstrapHostConfig(difficulty, logLevel, themeWire, regionWire),
+      );
     },
 
     /** Run `generateForPlay` in this instance; returns `{ ok, line }` JSON for worker handoff. */
@@ -102,6 +106,12 @@ export async function loadArtifact(wasmBytes) {
       const bytes = new TextEncoder().encode(text);
       writeBytes(memory, SCRATCH, bytes);
       return readJson(exports.importPuzzle(SCRATCH, bytes.length));
+    },
+
+    importPuzzleNewGame(text, difficulty) {
+      const bytes = new TextEncoder().encode(text);
+      writeBytes(memory, SCRATCH, bytes);
+      return readJson(exports.importPuzzleNewGame(SCRATCH, bytes.length, difficulty));
     },
 
     exportPuzzle() {

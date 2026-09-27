@@ -18,20 +18,41 @@ const EASY_FIXTURE =
 
 assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
-// ── bootstrap + generatePuzzle (worker handoff) ──
+// ── host startup config (CLI / disk analogue) drives GameEngine.cfg ──
 {
-  const boot = game.bootstrap({ difficulty: 2, logLevel: 1 });
-  assert.equal(boot.ok, true, `bootstrap failed: ${JSON.stringify(boot)}`);
-  const empty = game.getState().cells.every((c) => c.value === 0);
-  assert.equal(empty, true, "bootstrap starts from an empty grid");
+  const hostGame = await loadArtifact(wasmBytes);
+  const boot = hostGame.bootstrapHostConfig({
+    difficulty: 3,
+    logLevel: 2,
+    theme: "light",
+    show_region: true,
+  });
+  assert.equal(boot.ok, true, `bootstrapHostConfig failed: ${JSON.stringify(boot)}`);
+  const cfg = hostGame.getConfig();
+  assert.equal(cfg.difficulty, 3, "wasm engine difficulty must match host startup wire");
+  assert.equal(cfg.log_level, 2, "wasm engine log_level must match host startup wire");
+  assert.equal(cfg.theme, "light");
+  assert.equal(cfg.show_region, true);
 }
 
+// ── bootstrapHostConfig + generatePuzzle (worker handoff) ──
 {
-  const gen = game.generatePuzzle({ difficulty: 1, logLevel: 1 });
+  const handoff = await loadArtifact(wasmBytes);
+  const boot = handoff.bootstrapHostConfig({
+    difficulty: 2,
+    logLevel: 1,
+    theme: "dark",
+    show_region: false,
+  });
+  assert.equal(boot.ok, true, `bootstrapHostConfig failed: ${JSON.stringify(boot)}`);
+  const empty = handoff.getState().cells.every((c) => c.value === 0);
+  assert.equal(empty, true, "host bootstrap starts from an empty grid");
+  const gen = handoff.generatePuzzle({ difficulty: 2, logLevel: 1 });
   assert.equal(gen.ok, true, `generatePuzzle failed: ${JSON.stringify(gen)}`);
   assert.equal(gen.line.length, 81);
-  const imported = game.importPuzzle(gen.line);
+  const imported = handoff.importPuzzleNewGame(gen.line, 2);
   assert.equal(imported.ok, true, `import after generate failed: ${JSON.stringify(imported)}`);
+  assert.equal(handoff.getConfig().difficulty, 2, "New game import sets engine difficulty");
 }
 
 // ── init (sync main-thread path; glue contract) ──

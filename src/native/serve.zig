@@ -6,8 +6,31 @@ const builtin = @import("builtin");
 const logger = @import("../logger.zig");
 const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
+const config = @import("../config.zig");
+const startup_config = @import("../startup_config.zig");
 
-pub const RouteResult = enum { page, glue, gen_client, gen_worker, shell, board, menu, menu_bar, theme, file_menu, generating, gen_progress_rows, gen_progress_format, region, help, artifact };
+pub const RouteResult = enum {
+    page,
+    glue,
+    gen_client,
+    gen_worker,
+    shell,
+    board,
+    menu,
+    menu_bar,
+    theme,
+    file_menu,
+    generating,
+    gen_progress_rows,
+    gen_progress_format,
+    region,
+    help,
+    host_config,
+    artifact,
+};
+
+var active_host_config: config.Config = config.Config.default();
+var host_config_body_buf: [256]u8 = undefined;
 
 const route_count = switch (@typeInfo(RouteResult)) {
     .@"enum" => |e| e.field_names.len,
@@ -41,6 +64,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/gen_progress_format.js")) return .gen_progress_format;
         if (std.mem.eql(u8, path, "/region.js")) return .region;
         if (std.mem.eql(u8, path, "/help.js")) return .help;
+        if (std.mem.eql(u8, path, "/host-config.json")) return .host_config;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
         return Error.NotFound;
     }
@@ -75,6 +99,7 @@ pub const Router = struct {
             .gen_progress_format => wasm_bytes.gen_progress_format_js,
             .region => wasm_bytes.region_js,
             .help => wasm_bytes.help_js,
+            .host_config => "", // dynamic — see `hostConfigBody`
             .artifact => wasm_bytes.wasm_bytes,
         };
     }
@@ -83,10 +108,15 @@ pub const Router = struct {
         return switch (result) {
             .page => "text/html",
             .artifact => "application/wasm",
+            .host_config => "application/json",
             .glue, .gen_client, .gen_worker, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .gen_progress_rows, .gen_progress_format, .region, .help => "text/javascript",
         };
     }
 };
+
+fn hostConfigBody() ServeError![]const u8 {
+    return startup_config.formatHostStartupJson(active_host_config, &host_config_body_buf) catch return ServeError.System;
+}
 /// Errors surfacing from serve(): the port is already owned, or any socket
 /// fault — mapped to System so only AddressInUse needs caller-specific handling.
 pub const ServeError = error{ AddressInUse, System };
@@ -111,7 +141,13 @@ pub fn bindLoopback(io: std.Io, port: u16) BindError!net.Server {
 }
 /// Serves the embedded web UI on loopback until the process is stopped (Ctrl+C).
 pub fn serve(io: std.Io, open: OpenFn) ServeError!void {
-    return serveWith(io, bindLoopback, open);
+    return serveWithHostConfig(io, bindLoopback, open, config.Config.default());
+}
+
+/// Web renderer: propagate host-resolved startup `Config` from the native entry layer.
+pub fn serveWithHostConfig(io: std.Io, bind: BindFn, open: OpenFn, host_cfg: config.Config) ServeError!void {
+    active_host_config = host_cfg;
+    return serveWith(io, bind, open);
 }
 /// Errors from opening a browser for the served URL: no opener available.
 pub const OpenError = error{Unavailable};
@@ -204,7 +240,11 @@ fn serveClient(io: std.Io, router: *Router, client: net.Stream) ServeError!void 
     var w_buf: [4096]u8 = undefined;
     var w = client.writer(io, w_buf[0..]);
     if (res) |result| {
-        try writeFull(&w.interface, "200 OK", Router.contentType(result), Router.body(result));
+        const body: []const u8 = if (result == .host_config)
+            try hostConfigBody()
+        else
+            Router.body(result);
+        try writeFull(&w.interface, "200 OK", Router.contentType(result), body);
         router.markDelivered(result);
     } else |_| {
         try writeFull(&w.interface, "404 Not Found", "text/plain", "not found\n");
@@ -392,6 +432,26 @@ test "serve: route \"/help.js\" to the help module" {
     try std.testing.expectEqual(RouteResult.help, Router.route("/help.js"));
 }
 
+test "serve: route \"/host-config.json\" to host startup config" {
+    try std.testing.expectEqual(RouteResult.host_config, Router.route("/host-config.json"));
+}
+
+test "serve: host-config body reflects active host Config" {
+    active_host_config = .{
+        .difficulty = .medium,
+        .preferred_renderer = .web,
+        .fallback_renderer = .ansi,
+        .log_level = .debug,
+        .theme = .light,
+        .show_region = true,
+    };
+    const body = try hostConfigBody();
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"difficulty\":2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"log_level\":0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"theme\":\"light\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "true") != null);
+}
+
 test "serve: route \"/artifact.wasm\" to the artifact" {
     try std.testing.expectEqual(RouteResult.artifact, Router.route("/artifact.wasm"));
 }
@@ -448,6 +508,9 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.help);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.host_config);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.artifact);

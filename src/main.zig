@@ -9,11 +9,12 @@ const serve = @import("native/serve.zig");
 // Wasm JSON contract tests — not reachable from the native play path (see wasm_entry.zig).
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
+const startup_config = @import("startup_config.zig");
 
 // Test builds omit main(), so imports only used there are tree-shaken away.
 // Pin roots whose tests must still run under `zig build test`.
 test {
-    _ = .{ sudoku, serve, wasm_wire, wasm_boundary };
+    _ = .{ sudoku, serve, wasm_wire, wasm_boundary, startup_config };
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
@@ -27,7 +28,7 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
 
     // Web: serve embedded assets on loopback until exit — no native game loop.
     if (cfg.preferred_renderer == .web) {
-        serve.serve(init.io, serve.openBrowser) catch |err| {
+        serve.serveWithHostConfig(init.io, serve.bindLoopback, serve.openBrowser, cfg) catch |err| {
             if (err == serve.ServeError.AddressInUse) {
                 log.fatal("web server failed to start — port {d} is already in use.", .{serve.Port});
             } else {

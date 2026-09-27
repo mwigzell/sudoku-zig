@@ -273,6 +273,9 @@ function makeRenderElement() {
       init() {
         return { ok: false, error: "gen failed" };
       },
+      getConfig() {
+        return { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
+      },
     },
     makeBoard(),
     { select: () => {}, deselect: () => {} },
