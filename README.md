@@ -28,6 +28,7 @@ The codebase was produced with a local AI agent in a tight loop: Pi (terminal ag
 - **Command disambiguation** — type partial or prefix-matched commands (`sa` → save-as, `f` → fill)
 - **Save & restore** — binary save format with versioned header/trailer, stored under `~/.local/share/sudoku`
 - **ANSI styled** terminal renderer (styler is swappable)
+- **Web UI (loopback + WASM)** — `-r web` serves embedded wasm/JS on localhost; same engine and save format as native, no separate web codebase for game logic
 
 ## CLI
 
