@@ -85,15 +85,30 @@ stdin/stdout is ever touched by the suite.
 
 ```
 src/
-├── main.zig            entry point, IoSession wiring
-├── sudoku.zig          the game: prompt → parse → exec loop
-├── cli.zig             --help / --version / --renderer parsing
-├── version.zig         app version (0.1.0)
-├── board.zig / board/  domain: cells, conflicts, validation
-├── engine/             mutations (fill, clear, undo/redo), new game, save/open
-├── renderer/           facade + AsciiRenderer (ANSI styler, command parsing)
-├── puzzle_gen.zig      difficulty-based puzzle generation
-└── io_session.zig      stdin/stdout source union (prod + mock)
+├── main.zig              process entry (CLI, Host, `-r web` → serve)
+├── wasm_entry.zig        wasm export table (browser build)
+├── command.zig           command vocabulary + Hint/Fill payloads
+├── event.zig             exec results (.ok / .error_msg)
+├── solver.zig            backtracking solver (hints, generation, solve-for-me)
+├── puzzle_gen.zig        live puzzle generation + difficulty
+├── about.zig             Help/About metadata (native + wasm)
+├── board/                cells, validation, conflicts, SUD0 serial codec
+├── engine/               GameEngine.exec — fill, clear, undo/redo, hint, save format
+├── renderer/             Facade vtable + legend (native presentation seam)
+├── native/
+│   ├── host.zig          Io session + renderer factory (ansi / ascii / web branch)
+│   ├── cli.zig           --help / --version / --renderer
+│   ├── serve.zig         loopback static server + browser open
+│   ├── io_session.zig    stdin/stdout (prod + mock for tests)
+│   ├── shell/            Sudoku app loop, save/open/import, paths, FileTransport
+│   └── ascii/            terminal renderer, parser, styler, menu dialogs
+└── wasm/
+    ├── boundary.zig      JSON exec + snapshot encoding (ADR-0010)
+    ├── wire.zig          shared wire types / cell JSON
+    ├── *.js              browser shell (board, menus, file UX, help)
+    └── artifacts/        emitted artifact.wasm, glue.js, page.html
+
+docs/ — ADRs, agent/verify notes. build.zig — native exe, wasm emit, test, verify, cov.
 ```
 
 ## Issue tracker
