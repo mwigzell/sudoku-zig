@@ -53,9 +53,26 @@ zig-out/bin/sudoku --version
 Or run directly: `zig build run` (the 0.17 builder consumes flags after `run`,
 so pass program flags via the built binary).
 
+Web UI: `zig build run -- -r web` or `zig-out/bin/sudoku -r web` (opens or logs a loopback URL).
+
+## Known to run on
+
+Maintainer-tested native builds; **`zig build verify`** is run on the host OS listed below.
+
+| OS | Native terminal | Default save location | `-r web` (loopback + browser) |
+|----|-----------------|------------------------|-------------------------------|
+| **macOS** | yes | `~/Library/Application Support/sudoku/` | yes |
+| **Linux** | yes | `~/.local/share/sudoku/` | yes |
+| **Windows** | not yet | — | not yet |
+
+**Browser:** any modern desktop browser on the **same machine** as the running `sudoku` process when using `-r web` (WASM + static assets served locally).
+
+Native **Windows** is tracked in [issue #60](https://github.com/mwigzell/sudoku-zig/issues/60) (cross-compile, paths, argv, browser open).
+
 ## Tests
 
 ```sh
+zig build verify                      # release gate: tests, fmt check, standards, coverage, wasm glue tests
 zig build test                        # full suite (silent = pass)
 zig build test -Dtest-filter='name'   # single test
 zig build cov                         # kcov coverage report
