@@ -2,7 +2,6 @@
 const std = @import("std");
 const sudoku = @import("native/shell/sudoku.zig");
 const logger = @import("logger.zig");
-const cli = @import("native/cli.zig");
 const host_mod = @import("native/host.zig");
 const file_transport = @import("native/shell/file_transport.zig");
 const serve = @import("native/serve.zig");
@@ -10,18 +9,19 @@ const serve = @import("native/serve.zig");
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
 const startup_config = @import("startup_config.zig");
+const settings_store = @import("settings_store.zig");
 
 // Test builds omit main(), so imports only used there are tree-shaken away.
 // Pin roots whose tests must still run under `zig build test`.
 test {
-    _ = .{ sudoku, serve, wasm_wire, wasm_boundary, startup_config };
+    _ = .{ sudoku, serve, wasm_wire, wasm_boundary, startup_config, settings_store };
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
     // Parse CLI flags (renderer, difficulty, log level) and apply the log severity before any further output.
     var arg_it = std.process.Args.iterate(init.minimal.args);
-    const cfg = cli.parseCLI(&arg_it) catch unreachable;
-    logger.min_level = cfg.log_level;
+    const cfg = startup_config.resolveStartupConfig(std.heap.page_allocator, init.io, &arg_it) catch unreachable;
+    startup_config.applyLoggerFromStartup(cfg);
 
     const log = logger.Logger(.sudoku);
     log.debug("Starting sudoku game.", .{});

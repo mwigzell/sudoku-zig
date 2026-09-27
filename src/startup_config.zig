@@ -1,4 +1,4 @@
-// Startup config contract: host-resolved Config (disk + CLI, #61) is what native
+// Startup config contract: host-resolved Config (disk + CLI) is what native
 // Sudoku and wasm GameEngine must use — not JS literals or a second default path.
 const std = @import("std");
 const config = @import("config.zig");
@@ -8,6 +8,8 @@ const wire = @import("wasm/wire.zig");
 const cli = @import("native/cli.zig");
 const sudoku = @import("native/shell/sudoku.zig");
 const host_mod = @import("native/host.zig");
+const settings_store = @import("settings_store.zig");
+const path = @import("native/shell/path.zig");
 
 /// View/theme fields the host wire carries alongside difficulty and log level.
 pub fn configFromHostWire(
@@ -74,6 +76,54 @@ fn emptyPuzzleLine() [81]u8 {
 pub fn initEngineFromStartup(startup: config.Config) game_engine.Error!game_engine.GameEngine {
     applyLoggerFromStartup(startup);
     return game_engine.GameEngine.init(emptyPuzzleLine()[0..], startup);
+}
+
+/// Load persisted settings, apply CLI overrides, save merged config (native entry).
+pub fn resolveStartupConfig(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    cli_it: *std.process.Args.Iterator,
+) settings_store.Error!config.Config {
+    const data_dir = path.computeDataDir(gpa) catch return settings_store.loadOrDefault(gpa, io, ".");
+    defer gpa.free(data_dir);
+    std.Io.Dir.cwd().createDirPath(io, data_dir) catch {};
+
+    var cfg = try settings_store.loadOrDefault(gpa, io, data_dir);
+    cfg = cli.parseCLIWithBase(cli_it, cfg) catch |err| switch (err) {
+        cli.ParseError.HelpRequested, cli.ParseError.UnknownFlag => unreachable,
+    };
+    try settings_store.save(gpa, io, data_dir, cfg);
+    return cfg;
+}
+
+test "CLI overrides persist on top of saved settings" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const saved = config.Config{
+        .difficulty = .easy,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+        .theme = .dark,
+        .show_region = false,
+    };
+    try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, saved);
+
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const argv: [3][*:0]const u8 = .{ "sudoku", "-d", "hard" };
+    var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
+
+    var cfg = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    cfg = try cli.parseCLIWithBase(&it, cfg);
+    try settings_store.save(std.testing.allocator, io, data_path, cfg);
+
+    const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    try std.testing.expectEqual(config.Difficulty.hard, restored.difficulty);
+    try std.testing.expectEqual(config.RendererKind.ansi, restored.preferred_renderer);
 }
 
 test "host startup JSON matches Config wire fields" {

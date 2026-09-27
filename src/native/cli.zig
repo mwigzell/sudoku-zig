@@ -20,11 +20,11 @@ const usage_fmt =
     \\  -d, --difficulty <level> Puzzle difficulty (easy, medium, hard)
     \\  -v, --log-level <level>  Minimum log severity (debug, info, warn, err, fatal)
 ;
-/// Iterate argv and return a Config with defaults overridden by flags.
-pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
+/// Iterate argv and return a Config with `base` overridden by flags.
+pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Config) ParseError!config.Config {
     _ = iterator.next(); // skip process name
 
-    var cfg = config.Config.default();
+    var cfg = base;
 
     while (iterator.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -60,6 +60,11 @@ pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
     }
 
     return cfg;
+}
+
+/// Iterate argv and return a Config with code defaults overridden by flags.
+pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
+    return parseCLIWithBase(iterator, config.Config.default());
 }
 
 fn parseRenderer(kind: []const u8) ?config.RendererKind {
