@@ -26,6 +26,7 @@ export const MENU_BAR_MENUS = [
       { id: "copy", label: "Copy", legendKey: LEGEND_WIRE_COPY },
       { id: "paste", label: "Paste", legendKey: LEGEND_WIRE_PASTE },
       { id: "solve", label: "Solve", legendKey: "solve" },
+      { id: "hint", label: "Hint" },
       { id: "deselect", label: "Deselect Cell" },
     ],
   },
@@ -72,6 +73,7 @@ export function collectMenuBarControls(root) {
     copy: root.querySelector("#edit-copy"),
     paste: root.querySelector("#edit-paste"),
     solve: root.querySelector("#edit-solve"),
+    hint: root.querySelector("#edit-hint"),
     deselect: root.querySelector("#edit-deselect"),
     viewLight: root.querySelector("#view-light"),
     viewDark: root.querySelector("#view-dark"),
@@ -114,6 +116,35 @@ export function wireMenuDropdowns(root = document) {
     pendingCloseTrigger = null;
   };
 
+  const doc = root.ownerDocument ?? globalThis.document;
+  const panelItemSelector =
+    ".menu-panel button[role=menuitem], .menu-panel button[role=menuitemradio], .menu-panel button[role=menuitemcheckbox]";
+
+  /** Trigger mousedown suppresses the item's native click — activate release target ourselves. */
+  const activateDragReleaseMenuItem = (event) => {
+    if (!barDragging || event.button !== 0) return;
+    if (typeof doc.elementFromPoint !== "function") return;
+    const hit = doc.elementFromPoint(event.clientX, event.clientY);
+    const item = hit?.closest?.(panelItemSelector) ?? null;
+    if (!item || item.disabled) return;
+    const panel = item.closest?.(".menu-panel");
+    if (!panel || panel.hidden) return;
+    const menu = panel.closest?.(".menu");
+    if (menu?.dataset?.open !== "true") return;
+    item.click();
+  };
+
+  const onBarMouseUp = (event) => {
+    activateDragReleaseMenuItem(event);
+    endBarDrag(event);
+  };
+
+  if (doc?.addEventListener) {
+    doc.addEventListener("mouseup", onBarMouseUp, { capture: true });
+  } else {
+    root.addEventListener?.("mouseup", onBarMouseUp);
+  }
+
   for (const menu of menus) {
     const trigger = menu.querySelector(".menu-trigger");
     trigger?.addEventListener("mousedown", (event) => {
@@ -141,7 +172,6 @@ export function wireMenuDropdowns(root = document) {
     });
   }
 
-  root.addEventListener("mouseup", (event) => endBarDrag(event));
   root.addEventListener("click", () => closeAll());
   root.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeAll();

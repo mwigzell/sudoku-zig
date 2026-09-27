@@ -31,6 +31,7 @@ const clear_command = @import("clear.zig");
 const undo_command = @import("undo.zig");
 const redo_command = @import("redo.zig");
 const quit_command = @import("quit.zig");
+const hint_command = @import("hint.zig");
 const solver = @import("../solver.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
@@ -178,18 +179,6 @@ pub const GameEngine = struct {
         self.event_msg.appendFmt(fmt, args);
     }
 
-    fn formatCellLabel(buf: *[2]u8, row: u4, col: u4) []const u8 {
-        buf[0] = @as(u8, 'A') + @as(u8, col);
-        buf[1] = @as(u8, '1') + @as(u8, row);
-        return buf[0..2];
-    }
-
-    fn appendUnsolvableMutationWarning(self: *@This(), row: u4, col: u4) void {
-        var label: [2]u8 = undefined;
-        const coord = formatCellLabel(&label, row, col);
-        self.appendEventMsgFmt("that move leaves the board unsolvable — undo or clear {s}", .{coord});
-    }
-
     /// Optional solvability check for warning paths — not used by solve_for_me or redo solve_batch.
     fn probeSolvability(self: *@This(), when: SolvabilityProbe) ?solver.SolveResult {
         const enabled = switch (when) {
@@ -202,7 +191,7 @@ pub const GameEngine = struct {
 
     fn appendUnsolvableLoadWarningIfNeeded(self: *@This()) void {
         const solved = self.probeSolvability(.load) orelse return;
-        if (solved == .none) self.appendEventMsg("this puzzle has no solution");
+        if (solved == .none) hint_command.appendLoadNoSolutionMsg(self);
     }
 
     fn finishLoadEvent(self: *@This(), opened_label: ?[]const u8) Event {
@@ -248,7 +237,7 @@ pub const GameEngine = struct {
         if (view.isConflictingRowCol(row, col)) {
             self.appendEventMsg("conflict in row, column, or box");
         } else if (self.probeSolvability(.move)) |solved| {
-            if (solved == .none) self.appendUnsolvableMutationWarning(row, col);
+            if (solved == .none) hint_command.appendNoSolutionMsg(self);
         }
         if (!was_solved and self.state.board.isSolved()) {
             self.appendEventMsg("You win!");
@@ -278,6 +267,9 @@ pub const GameEngine = struct {
             },
             .solve_for_me => {
                 return self.solveForMe();
+            },
+            .hint => |h| {
+                return hint_command.execute(self, h);
             },
             .set_theme => |theme| {
                 self.cfg.theme = theme;
@@ -663,7 +655,7 @@ test "exec quit → .ok" {
 // Integration chain: exec → board mutation → conflict refresh → event emission
 // Check conflict bits through the returned Event board_view
 
-test "exec fill that kills solvability warns with the mutated cell" {
+test "exec fill on dead board emits no-solution tag on ok msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
 
@@ -673,8 +665,8 @@ test "exec fill that kills solvability warns with the mutated cell" {
     try std.testing.expect(ev == .ok);
     try std.testing.expect(ev.ok.msg != null);
     const msg = ev.ok.msg.?;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "unsolvable") != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "B2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "(no-solution)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "(blocker)") == null);
     try std.testing.expect(!ev.ok.board_view.isConflictingRowCol(1, 1));
 }
 
@@ -699,14 +691,14 @@ test "inline unsolvable grid: fill warns and clear restores same dead board" {
     });
     try std.testing.expect(filled == .ok);
     try std.testing.expect(filled.ok.msg != null);
-    try std.testing.expect(std.mem.indexOf(u8, filled.ok.msg.?, "unsolvable") != null);
+    try std.testing.expect(std.mem.indexOf(u8, filled.ok.msg.?, "(no-solution)") != null);
 
     const cleared = execMoveTest(&engine, command.Command{
         .clear = command.ClearData{ .row = 7, .col = 6 },
     });
     try std.testing.expect(cleared == .ok);
     try std.testing.expect(cleared.ok.msg != null);
-    try std.testing.expect(std.mem.indexOf(u8, cleared.ok.msg.?, "unsolvable") != null);
+    try std.testing.expect(std.mem.indexOf(u8, cleared.ok.msg.?, "(no-solution)") != null);
     try std.testing.expect(board.equal(
         engine.state.board,
         try board.fromFlat(flat, .{ .given_bits = given_bits }),

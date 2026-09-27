@@ -26,6 +26,13 @@ pub const BOX_DIMENSION: u4 = 3;
 // Cells per box = 9.
 pub const BoxCellCount = BOX_DIMENSION * BOX_DIMENSION;
 
+/// Chess-style coordinate label (e.g. A1) into `buf` (two ASCII bytes).
+pub fn formatCellLabel(buf: *[2]u8, row: u4, col: u4) []const u8 {
+    buf[0] = 'A' + @as(u8, @intCast(col));
+    buf[1] = '1' + @as(u8, @intCast(row));
+    return buf[0..2];
+}
+
 /// The canonical 9×9 Sudoku board state, backed by flat storage + a given-bitmask.
 pub const Board = struct {
     cells: [CELL_COUNT]Cell,

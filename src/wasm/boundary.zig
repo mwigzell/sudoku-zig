@@ -137,6 +137,10 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         return .{ .set_region = enabled };
     }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "solve")) return .{ .solve_for_me = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "hint")) {
+        if ((row == null) != (col == null)) return error.MissingField;
+        return .{ .hint = .{ .row = row, .col = col } };
+    }
 
     return error.UnknownAction;
 }
@@ -313,6 +317,21 @@ test "parseAction fill maps row col digit" {
 test "parseAction rejects unknown action" {
     const result = parseAction("{\"action\":\"xyzzy\"}");
     try std.testing.expectError(error.UnknownAction, result);
+}
+
+test "parseAction hint maps optional row col" {
+    const bare = try parseAction("{\"action\":\"hint\"}");
+    try std.testing.expect(bare == .hint);
+    try std.testing.expect(bare.hint.row == null and bare.hint.col == null);
+
+    const targeted = try parseAction("{\"action\":\"hint\",\"row\":2,\"col\":4}");
+    try std.testing.expect(targeted == .hint);
+    try std.testing.expectEqual(@as(?u4, 2), targeted.hint.row);
+    try std.testing.expectEqual(@as(?u4, 4), targeted.hint.col);
+
+    const d1 = try parseAction("{\"action\":\"hint\",\"row\":0,\"col\":3}");
+    try std.testing.expectEqual(@as(?u4, 0), d1.hint.row);
+    try std.testing.expectEqual(@as(?u4, 3), d1.hint.col);
 }
 
 test "parseAction solve maps to solve_for_me" {

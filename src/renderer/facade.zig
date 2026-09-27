@@ -34,7 +34,7 @@ pub const Facade = struct {
 
     showError_fn: *const fn (*anyopaque, []const u8) Error!void,
 
-    getCommandInput_fn: *const fn (*anyopaque, []const []const u8, show_region: bool) Error!command.ParseCommandResult,
+    getCommandInput_fn: *const fn (*anyopaque, []const []const u8, show_region: bool, hint_target: ?Selection) Error!command.ParseCommandResult,
 
     report_gen_progress_fn: *const fn (*anyopaque, puzzle_gen.GenProgressEvent) Error!void,
 
@@ -61,8 +61,8 @@ pub const Facade = struct {
 
     /// Show a prompt and get user command input, parsed against the offered
     /// command names. End-of-input reports as error.System.
-    pub fn getCommandInput(self: *const Facade, names: []const []const u8, show_region: bool) Error!command.ParseCommandResult {
-        return self.getCommandInput_fn(self.context, names, show_region);
+    pub fn getCommandInput(self: *const Facade, names: []const []const u8, show_region: bool, hint_target: ?Selection) Error!command.ParseCommandResult {
+        return self.getCommandInput_fn(self.context, names, show_region, hint_target);
     }
 
     /// Live puzzle generation feedback (native terminal); not gameplay `Event` status.
@@ -93,9 +93,9 @@ pub fn Make(comptime CT: type) type {
             self.showError(msg) catch return error.System;
         }
 
-        pub fn getCommandInput_wrapper(ctx: *anyopaque, names: []const []const u8, show_region: bool) Error!command.ParseCommandResult {
+        pub fn getCommandInput_wrapper(ctx: *anyopaque, names: []const []const u8, show_region: bool, hint_target: ?Selection) Error!command.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(names, show_region) catch error.System;
+            return self.getCommandInput(names, show_region, hint_target) catch error.System;
         }
 
         pub fn reportGenProgress_wrapper(ctx: *anyopaque, gen_event: puzzle_gen.GenProgressEvent) Error!void {

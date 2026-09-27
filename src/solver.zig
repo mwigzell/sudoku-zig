@@ -72,6 +72,12 @@ fn search(work: *board.Board, start: usize) bool {
     return false;
 }
 
+/// Count digits 1–9 that can occupy `(row, col)` without row/col/box clash on a board copy.
+/// Used by hint engine-pick to prefer empties with fewer local options (selection only; digit still from `solve`).
+pub fn candidateCountForEmptyCell(work: *board.Board, row: u4, col: u4) u8 {
+    return candidateCount(work, row, col);
+}
+
 fn candidateCount(work: *board.Board, row: u4, col: u4) u8 {
     var n: u8 = 0;
     var digit: u8 = 1;

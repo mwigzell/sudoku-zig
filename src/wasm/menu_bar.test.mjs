@@ -229,20 +229,27 @@ function makeControls() {
     };
   }
 
-  const rootListeners = {};
+  const docListeners = {};
+  const doc = {
+    elementFromPoint() {
+      return null;
+    },
+    addEventListener(type, fn, opts) {
+      if (type === "mouseup" && opts?.capture) docListeners.mouseup = fn;
+    },
+  };
   const root = {
+    ownerDocument: doc,
     querySelectorAll(selector) {
       if (selector === "#menu-bar .menu") return menus;
       return [];
     },
-    addEventListener(type, fn) {
-      rootListeners[type] = fn;
-    },
+    addEventListener() {},
   };
 
   wireMenuDropdowns(root);
 
-  triggerListeners[0].mousedown({ preventDefault() {}, stopPropagation() {} });
+  triggerListeners[0].mousedown({ preventDefault() {}, stopPropagation() {}, button: 0 });
   assert.equal(menus[0].panel.hidden, false);
   assert.equal(menus[0].dataset.open, "true");
 
@@ -251,8 +258,89 @@ function makeControls() {
   assert.equal(menus[1].panel.hidden, false);
   assert.equal(menus[1].dataset.open, "true");
 
-  rootListeners.mouseup({ target: menus[1].trigger });
-  assert.equal(menus[1].panel.hidden, false, "menu stays open after mouseup");
+  docListeners.mouseup({ button: 0, target: menus[1].trigger, clientX: 0, clientY: 0 });
+  assert.equal(menus[1].panel.hidden, false, "menu stays open after mouseup on trigger");
+}
+
+// ── drag File → New: release over item runs its click handler ──
+{
+  let newClicks = 0;
+  const fileTrigger = {
+    attrs: {},
+    closest(sel) {
+      return sel === ".menu-trigger" ? fileTrigger : null;
+    },
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
+  };
+  let fileMenuEl;
+  const filePanel = {
+    _hidden: false,
+    closest(sel) {
+      if (sel === ".menu") return fileMenuEl;
+      return null;
+    },
+  };
+  Object.defineProperty(filePanel, "hidden", {
+    get() {
+      return this._hidden;
+    },
+    set(v) {
+      this._hidden = v;
+    },
+  });
+  fileMenuEl = {
+    dataset: { open: "false" },
+    querySelector(sel) {
+      if (sel === ".menu-panel") return filePanel;
+      if (sel === ".menu-trigger") return fileTrigger;
+      return null;
+    },
+    addEventListener() {},
+  };
+  const newBtn = {
+    disabled: false,
+    closest(sel) {
+      if (typeof sel === "string" && sel.includes("menu-panel button")) return newBtn;
+      if (sel === ".menu-panel") return filePanel;
+      if (sel === ".menu") return fileMenuEl;
+      return null;
+    },
+    click() {
+      newClicks += 1;
+    },
+  };
+  const triggerListeners = {};
+  fileTrigger.addEventListener = (type, fn) => {
+    triggerListeners[type] = fn;
+  };
+  const docListeners = {};
+  const doc = {
+    elementFromPoint() {
+      return newBtn;
+    },
+    addEventListener(type, fn, opts) {
+      if (type === "mouseup" && opts?.capture) docListeners.mouseup = fn;
+    },
+  };
+  const root = {
+    ownerDocument: doc,
+    querySelectorAll(sel) {
+      return sel === "#menu-bar .menu" ? [fileMenuEl] : [];
+    },
+    addEventListener() {},
+  };
+  wireMenuDropdowns(root);
+  triggerListeners.mousedown({ preventDefault() {}, stopPropagation() {}, button: 0 });
+  filePanel._hidden = false;
+  docListeners.mouseup({
+    button: 0,
+    clientX: 10,
+    clientY: 10,
+    target: fileTrigger,
+  });
+  assert.equal(newClicks, 1);
 }
 
 console.log("menu_bar.test.mjs OK");

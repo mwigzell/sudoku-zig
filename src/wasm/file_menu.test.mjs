@@ -82,7 +82,7 @@ function makeRenderElement() {
     {},
     makeRenderElement(),
     undefined,
-    "opened: game.sud; this puzzle has no solution",
+    "opened: game.sud; this puzzle has no solution (no-solution)",
   );
   assert.match(status.textContent, /no solution/i);
 }

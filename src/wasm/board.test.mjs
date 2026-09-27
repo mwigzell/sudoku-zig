@@ -13,6 +13,7 @@ import {
   moveSelection,
   findCellElement,
   applySelection,
+  readSelection,
   wireSelection,
   parsePlayKey,
   handlePlayKey,
@@ -270,9 +271,23 @@ function makeMockBoard() {
     addEventListener(type, fn) {
       this._listeners[type] = fn;
     },
+    contains(node) {
+      return this.children.includes(node);
+    },
+    querySelector(sel) {
+      if (sel !== ".selected[data-row][data-col]") return null;
+      return cells.find((c) => c.classList.contains("selected")) ?? null;
+    },
     replaceChildren(...nodes) {
       this.children.length = 0;
       this.children.push(...nodes);
+    },
+    _docListeners: {},
+    ownerDocument: null,
+  };
+  play.ownerDocument = {
+    addEventListener(type, fn) {
+      play._docListeners[type] = fn;
     },
   };
   return {
@@ -316,6 +331,54 @@ function makeMockBoard() {
 
 {
   const board = makeMockBoard();
+  applySelection(board, 0, 3);
+  let synced = null;
+  assert.deepEqual(
+    readSelection(board, {
+      getSelection: () => ({ row: 1, col: 2 }),
+      select(row, col) {
+        synced = { row, col };
+      },
+    }),
+    { row: 0, col: 3 },
+  );
+  assert.deepEqual(synced, { row: 0, col: 3 });
+  applySelection(board, 5, 5);
+  assert.deepEqual(readSelection(board, { getSelection: () => null }), { row: 5, col: 5 });
+}
+
+{
+  const { handleEditAction } = await import("./menu.js");
+  const session = {
+    state: {
+      cells: Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false })),
+    },
+    legend: { undo: false, redo: false },
+  };
+  const board = makeMockBoard();
+  applySelection(board, 1, 2);
+  const status = { textContent: "D1 takes 9 (placement)", className: "" };
+  handleEditAction(
+    "hint",
+    {
+      exec(action) {
+        assert.deepEqual(action, { action: "hint", row: 1, col: 2 });
+        return { ok: true, state: session.state, msg: "C2 takes 4 (placement)", is_quit: false };
+      },
+      getLegend: () => session.legend,
+    },
+    board,
+    { getSelection: () => ({ row: 0, col: 3 }), select() {} },
+    status,
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    (tag) => ({ tag, classList: { _set: new Set(), add() {}, remove() {} }, dataset: {} }),
+  );
+  assert.match(status.textContent, /C2 takes 4/);
+}
+
+{
+  const board = makeMockBoard();
   const controller = wireSelection(board);
   assert.equal(board.tabIndex, 0);
   assert.equal(controller.getSelection(), null);
@@ -324,20 +387,39 @@ function makeMockBoard() {
     0,
   );
 
-  board.play._listeners.keydown({ key: "ArrowRight", preventDefault() {} });
+  board.play._docListeners.keydown?.({
+    key: "ArrowRight",
+    preventDefault() {},
+    target: board.play,
+  });
   assert.equal(controller.getSelection(), null);
 
   const target = findCellElement(board, 5, 5);
-  board.play._listeners.click({ target });
+  const clickCell = (cell) => {
+    const event = { target: { closest: () => cell } };
+    board.play._listeners.pointerdown?.(event);
+    board.play._listeners.click(event);
+  };
+  clickCell(target);
   assert.deepEqual(controller.getSelection(), { row: 5, col: 5 });
   assert.ok(target.classList.contains("selected"));
 
-  board.play._listeners.click({ target });
+  clickCell(target);
   assert.equal(controller.getSelection(), null);
   assert.ok(!target.classList.contains("selected"));
 
+  const c1 = findCellElement(board, 0, 2);
+  const c2 = findCellElement(board, 1, 2);
+  board.play._listeners.pointerdown?.({ target: { closest: () => c1 } });
+  board.play._listeners.click?.({ target: { closest: () => c2 } });
+  assert.deepEqual(controller.getSelection(), { row: 1, col: 2 });
+
   controller.select(0, 0);
-  board.play._listeners.keydown({ key: "ArrowRight", preventDefault() {} });
+  board.play._docListeners.keydown?.({
+    key: "ArrowRight",
+    preventDefault() {},
+    target: board.play,
+  });
   assert.deepEqual(controller.getSelection(), { row: 0, col: 1 });
 }
 

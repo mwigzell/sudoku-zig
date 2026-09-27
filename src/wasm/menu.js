@@ -2,6 +2,7 @@
 
 import {
   applyEventStatus,
+  applyHintExecStatus,
   applyExecResult,
   showErrorModal,
   startCopyPuzzleOnClick,
@@ -9,15 +10,17 @@ import {
   importPuzzle,
 } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
-import { applySuccessfulExec, renderBoard } from "./board.js";
+import { applySuccessfulExec, readSelection, renderBoard } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
 
 /** Mirror legend flags and deselect enablement (active only when a cell is selected). */
-export function syncEditMenu(legend, controls, selection) {
+export function syncEditMenu(legend, controls, selection, boardEl) {
   syncMenuBar(legend, controls);
   if (controls.deselect) {
-    controls.deselect.disabled = selection?.getSelection?.() == null;
+    const sel =
+      boardEl != null ? readSelection(boardEl, selection) : selection?.getSelection?.();
+    controls.deselect.disabled = sel == null;
   }
 }
 
@@ -86,6 +89,13 @@ export function handleDeselect(selection) {
   return { handled: true };
 }
 
+function execPayloadForEditAction(action, boardEl, selection) {
+  if (action !== "hint") return { action };
+  const sel = readSelection(boardEl, selection);
+  if (!sel) return { action: "hint" };
+  return { action: "hint", row: sel.row, col: sel.col };
+}
+
 export function handleEditAction(
   action,
   game,
@@ -100,15 +110,24 @@ export function handleEditAction(
   if (action === "redo" && !session.legend.redo) return { handled: false };
   if (action === "solve" && !session.legend.solve) return { handled: false };
 
-  const result = game.exec({ action });
+  const result = game.exec(execPayloadForEditAction(action, boardEl, selection));
   if (!result.ok) {
     applyExecResult(statusEl, errorModal, result);
     return { handled: true };
   }
 
-  applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
+  // Hint is display-only — skip re-render (board unchanged).
+  if (action === "hint") {
+    applyHintExecStatus(statusEl, errorModal, result);
+    session.state = result.state;
+    session.legend = game.getLegend();
+    return { handled: true, legend: session.legend };
+  }
+
   session.state = result.state;
+
   session.legend = game.getLegend();
+  applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
   return { handled: true, legend: session.legend };
 }
 
@@ -141,7 +160,7 @@ export function wireEditMenu(
 
   const syncEdit = () => {
     if (syncLegend) syncLegend();
-    syncEditMenu(session.legend, controls, selection);
+    syncEditMenu(session.legend, controls, selection, boardEl);
   };
   syncEdit();
 
@@ -188,6 +207,8 @@ export function wireEditMenu(
   if (typeof root.querySelector === "function") {
     const solveBtn = root.querySelector("#edit-solve");
     if (solveBtn) solveBtn.addEventListener("click", () => run("solve"));
+    const hintBtn = root.querySelector("#edit-hint");
+    if (hintBtn) hintBtn.addEventListener("click", () => run("hint"));
   }
 
   root.addEventListener("keydown", (event) => {

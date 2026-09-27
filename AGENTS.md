@@ -91,6 +91,15 @@ at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + **standard
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.
 - web UI: `zig build web` or `zig build run -- -r web` (run step uses `addPassthruArgs` on 0.17).
+### Web menubar drag-release (do not regress)
+
+Classic menubar: **mousedown** menu title → drag → **mouseup** on item. Implemented in `src/wasm/menu_bar.js` (`wireMenuDropdowns`).
+
+- **Trigger `mousedown` uses `preventDefault()`** so the menu opens and drag-across titles works. That **suppresses the native `click`** on the item you release over. **Click-then-click on items still works**; drag-release does **not** without extra wiring.
+- **Fix:** while `barDragging`, on **document capture `mouseup`**, use **`elementFromPoint(clientX, clientY)`** (not `event.target` — target often stays the **trigger**), find a **`.menu-panel` button** (menuitem / menuitemradio / menuitemcheckbox), then **`item.click()`**. File/Edit handlers stay **per-button `click` listeners** (`file_menu.js`, `menu.js`).
+- **Do not** “fix” drag by only moving Edit to panel delegation + `elementFromPoint` on the synthetic click (clientX/Y **0** hits the wrong node). **Do not** skip synthesis when `target === item under pointer` — after a trigger drag they differ.
+- Contract test: `src/wasm/menu_bar.test.mjs` (File → New drag-release).
+
 ## run test
 zig build test
 or

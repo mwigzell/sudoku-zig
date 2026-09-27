@@ -12,6 +12,7 @@ import {
   handleCopyPuzzle,
   handlePastePuzzle,
 } from "./menu.js";
+import { applyHintExecStatus } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 
 function makeBtn() {
@@ -22,7 +23,8 @@ function makeBtn() {
       handlers[type] = fn;
     },
     click() {
-      handlers.click?.();
+      const event = { stopPropagation() {} };
+      handlers.click?.(event);
     },
   };
 }
@@ -141,6 +143,111 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
   assert.equal(session.legend.redo, true);
 }
 
+// ── hint exec status: msg on bar; empty ok preserves bar, no modal ──
+{
+  const status = { textContent: "keep me", className: "" };
+  const modal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  applyHintExecStatus(status, modal, { ok: true, msg: null });
+  assert.equal(status.textContent, "keep me");
+  assert.equal(modal.el.hidden, true);
+  applyHintExecStatus(status, modal, { ok: true, msg: "B2 takes 6 (placement)" });
+  assert.equal(status.textContent, "B2 takes 6 (placement)");
+}
+
+// ── hint: engine-pick when deselected ──
+{
+  const session = { state: emptyState(), legend: { undo: false, redo: false } };
+  const game = {
+    exec(action) {
+      assert.deepEqual(action, { action: "hint" });
+      return { ok: true, state: session.state, msg: "A1 takes 5 (placement)", is_quit: false };
+    },
+    getLegend() {
+      return session.legend;
+    },
+  };
+  const status = { textContent: "", className: "" };
+  const outcome = handleEditAction(
+    "hint",
+    game,
+    makeMockBoard(),
+    { getSelection: () => null, select() {} },
+    status,
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, true);
+  assert.match(status.textContent, /placement/);
+}
+
+// ── hint: targeted when cell selected ──
+{
+  const session = { state: emptyState(), legend: { undo: false, redo: false } };
+  const game = {
+    exec(action) {
+      assert.deepEqual(action, { action: "hint", row: 1, col: 2 });
+      return { ok: true, state: session.state, msg: "C2 takes 3 (placement)", is_quit: false };
+    },
+    getLegend() {
+      return session.legend;
+    },
+  };
+  const outcome = handleEditAction(
+    "hint",
+    game,
+    makeMockBoard(),
+    { getSelection: () => ({ row: 1, col: 2 }), select() {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, true);
+}
+
+// ── wireEditMenu Hint menuitem click shows status ──
+{
+  const hintBtn = makeBtn();
+  hintBtn.id = "edit-hint";
+  const root = {
+    querySelector(sel) {
+      if (sel === "#edit-hint") return hintBtn;
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+    addEventListener() {},
+  };
+  const session = { state: emptyState(), legend: { undo: false, redo: false } };
+  const status = { textContent: "keep", className: "" };
+  const game = {
+    exec(action) {
+      assert.deepEqual(action, { action: "hint", row: 2, col: 3 });
+      return { ok: true, state: session.state, msg: "D4 takes 7 (placement)", is_quit: false };
+    },
+    getLegend() {
+      return session.legend;
+    },
+  };
+  wireEditMenu(
+    makeBtn(),
+    makeBtn(),
+    makeBtn(),
+    game,
+    makeMockBoard(),
+    { getSelection: () => ({ row: 2, col: 3 }), select() {} },
+    status,
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    makeRenderElement(),
+    root,
+  );
+  hintBtn.click();
+  assert.match(status.textContent, /D4 takes 7 \(placement\)/);
+}
+
 // ── disabled when legend false ──
 {
   const session = { state: emptyState(), legend: { undo: false, redo: false } };
@@ -162,11 +269,17 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
 // ── wireEditMenu click updates enablement ──
 {
   const undoBtn = makeBtn();
+  undoBtn.id = "edit-undo";
   const redoBtn = makeBtn();
+  redoBtn.id = "edit-redo";
   const deselectBtn = makeBtn();
+  deselectBtn.id = "edit-deselect";
   const session = { state: emptyState(), legend: { undo: true, redo: false } };
   const listeners = {};
   const root = {
+    querySelector() {
+      return null;
+    },
     querySelectorAll(selector) {
       if (selector === "#menu-bar .menu") return [{ dataset: { open: "false" } }];
       return [];

@@ -74,6 +74,8 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
 
     if (std.ascii.eqlIgnoreCase(cmd_name, "SaveAs")) return .{ .valid = Command{ .save_as = SaveData{ .path = null } } };
     if (std.ascii.eqlIgnoreCase(cmd_name, "new")) return .{ .valid = Command{ .new = NewData{ .puzzle = null } } };
+    if (std.ascii.eqlIgnoreCase(cmd_name, "Hint")) return parseHint(it);
+    if (std.ascii.eqlIgnoreCase(cmd_name, "Solve")) return .{ .valid = Command.solve_for_me };
 
     var buf: [32]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{cmd_name}) catch unreachable;
@@ -159,6 +161,15 @@ fn parseFill(coord_str: []const u8, digit_s: []const u8) ParseCommandResult {
             .digit = cell_module.rawToCellValue(dch - '0'),
         },
     } };
+}
+
+/// Hint with optional coordinate — omit args for engine-pick.
+fn parseHint(it: anytype) ParseCommandResult {
+    const coord_s = it.next();
+    if (coord_s == null) return .{ .valid = Command{ .hint = .{} } };
+    const pos = parseCoordinate(coord_s.?) orelse return coordError;
+    if (it.next() != null) return .{ .error_msg = "hint takes at most one coordinate" };
+    return .{ .valid = Command{ .hint = .{ .row = pos.row, .col = pos.col } } };
 }
 
 /// Clear requires a chess-style coordinate.
@@ -402,6 +413,23 @@ test "parseWithCommands still resolves session names for menu dispatch" {
     const res = parseWithCommands("save", &names);
     try std.testing.expect(res == .valid);
     try std.testing.expectEqualStrings(@tagName(res.valid), "save");
+}
+
+test "parseWithCommands: hint engine-pick" {
+    const names = [_][]const u8{"Hint"};
+    const res = parseWithCommands("hint", &names);
+    try std.testing.expect(res == .valid);
+    try std.testing.expectEqualStrings(@tagName(res.valid), "hint");
+    try std.testing.expect(res.valid.hint.row == null and res.valid.hint.col == null);
+}
+
+test "parseWithCommands: hint targeted coordinate" {
+    const names = [_][]const u8{"Hint"};
+    const res = parseWithCommands("hint e5", &names);
+    try std.testing.expect(res == .valid);
+    try std.testing.expectEqualStrings(@tagName(res.valid), "hint");
+    try std.testing.expectEqual(@as(?u4, 4), res.valid.hint.row);
+    try std.testing.expectEqual(@as(?u4, 4), res.valid.hint.col);
 }
 
 // comptime registration table tests (moved alongside parser)

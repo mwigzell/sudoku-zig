@@ -93,8 +93,8 @@ fn ctx(S: type) type {
             return self.renderer.showError(msg);
         }
 
-        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool) facade.Error!command.ParseCommandResult {
-            return self.renderer.getCommandInput(names, show_region);
+        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool, hint_target: ?facade.Selection) facade.Error!command.ParseCommandResult {
+            return self.renderer.getCommandInput(names, show_region, hint_target);
         }
 
         pub fn reportGenProgress(self: *@This(), event: puzzle_gen.GenProgressEvent) facade.Error!void {

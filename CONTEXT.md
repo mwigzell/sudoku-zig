@@ -90,11 +90,11 @@ A cell you filled with a digit that **can't belong to any solution** of the boar
 _Avoid_: using "blocker" for conflict-flagged cells; a blocker is invisible to the validator
 
 **Engine-pick mode** (`hint` with no target):
-Engine picks the cell by locked ranking (issue #48): **(a) blocker** (name it) → **(b) empty cell with fewest local candidates** (solver-verified digit) → **(c) row-major tie-break**. Native: menu **Hint** with no `last_cell`; web: **Hint** while nothing is selected (deselect / Esc). The "what should I do next?" form.
+Engine picks the cell by locked ranking (issue #48): **(a) blocker** (name it) → **(b) empty cell with fewest local candidates** (solver-verified digit) → **(c) row-major tie-break**. Native: **`m` menu → Hint** with no `last_cell`; web: **Edit → Hint** while nothing is selected (deselect / Esc). The "what should I do next?" form.
 _Avoid_: treating `hint` as always needing a named cell; answering a hint from local constraints alone
 
 **Targeted mode** (`hint` with `{row, col}`):
-User names the cell — native: `hint e5` or menu **Hint** when driver has `last_cell`; web: board `selection` when set (JS-owned, ADR-0011 target-as-arg). Engine answers that cell's solution-consistent digit (or the no-solution status).
+User names the cell — native: `hint e5` (optional parser) or **menu Hint** when driver has `last_cell`; web: board `selection` when set (JS-owned, ADR-0011 target-as-arg). Engine answers that cell's solution-consistent digit (or the no-solution status).
 _Avoid_: "hint at position", implying local-constraint derivation; a permanent auto-selected cell that silently forces targeted mode
 
 ### App Shell & Deployments
@@ -104,7 +104,7 @@ Owns the command loop, renderer facade, `FileTransport`, and session command rou
 _Avoid_: folding session I/O into GameEngine
 
 **Web app shell** (`page.html`, `glue.js`, `wasm/shell.js`):
-JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never parses SUD0 or projects a terminal screen. Session file intents (save/open/new) will live here (#35); gameplay goes through `exec(action_json)`.
+JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never parses SUD0 or projects a terminal screen. Session file intents (save/open/new) will live here (#35); gameplay goes through `exec(action_json)`. Board cell selection (`readSelection`, pointer on the play grid) is shell-owned; **Edit → Hint** passes it as an optional hint target when set.
 _Avoid_: reintroducing a wasm REPL or ASCII screen feed
 
 **RendererKind** (`-r`, native only):

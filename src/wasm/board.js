@@ -187,6 +187,31 @@ export function applySelection(boardEl, row, col) {
   return { row, col };
 }
 
+/** Highlighted play cell from DOM (mouse selection truth when in sync with the grid). */
+export function selectionFromDom(boardEl) {
+  const playEl = resolvePlayGrid(boardEl);
+  const marked = playEl.querySelector?.(".selected[data-row][data-col]");
+  if (!marked) return null;
+  return { row: Number(marked.dataset.row), col: Number(marked.dataset.col) };
+}
+
+/** Selected cell for commands — DOM wins; resync controller when it drifted. */
+export function readSelection(boardEl, selection) {
+  const dom = selectionFromDom(boardEl);
+  const live = selection.getSelection?.() ?? null;
+  let picked = null;
+  if (dom) {
+    if (!live || live.row !== dom.row || live.col !== dom.col) {
+      selection.select?.(dom.row, dom.col);
+    }
+    picked = dom;
+  } else if (live) {
+    selection.select?.(live.row, live.col);
+    picked = live;
+  }
+  return picked;
+}
+
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 export function wireSelection(frameEl, { row, col, onSelect, regionEnabled } = {}) {
@@ -220,25 +245,52 @@ export function wireSelection(frameEl, { row, col, onSelect, regionEnabled } = {
 
   playEl.tabIndex = 0;
 
+  const cellFromEvent = (event) => {
+    const el = event.target?.closest?.("[data-row][data-col]");
+    if (!el || !playEl.contains(el)) return null;
+    return { row: Number(el.dataset.row), col: Number(el.dataset.col) };
+  };
+
+  /** Track press target so click-to-deselect only toggles off when press+click match. */
+  let pointerDownCell = null;
+  const doc = playEl.ownerDocument ?? globalThis.document;
+  doc.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!playEl.contains(event.target)) pointerDownCell = null;
+    },
+    { capture: true },
+  );
+  playEl.addEventListener("pointerdown", (event) => {
+    pointerDownCell = cellFromEvent(event);
+  });
   playEl.addEventListener("click", (event) => {
-    const target = event.target;
-    if (target?.dataset?.row == null || target?.dataset?.col == null) return;
-    const nextRow = Number(target.dataset.row);
-    const nextCol = Number(target.dataset.col);
-    if (selected?.row === nextRow && selected?.col === nextCol) {
+    const cell = cellFromEvent(event);
+    if (!cell) return;
+    const { row: nextRow, col: nextCol } = cell;
+    const sameAsSelected = selected?.row === nextRow && selected?.col === nextCol;
+    const sameAsPress =
+      pointerDownCell?.row === nextRow && pointerDownCell?.col === nextCol;
+    if (sameAsSelected && sameAsPress) {
       deselect();
       return;
     }
     select(nextRow, nextCol);
   });
 
-  playEl.addEventListener("keydown", (event) => {
+  const onArrowKey = (event) => {
     if (!ARROW_KEYS.has(event.key)) return;
     if (!selected) return;
+    const target = event.target;
+    if (typeof target?.closest === "function") {
+      if (target.closest("input, textarea, select, [contenteditable=true]")) return;
+    }
     event.preventDefault();
     const next = moveSelection(selected.row, selected.col, event.key);
     select(next.row, next.col);
-  });
+  };
+
+  doc.addEventListener("keydown", onArrowKey);
 
   if (row != null && col != null) select(row, col);
 

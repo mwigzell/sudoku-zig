@@ -121,7 +121,7 @@ pub const Sudoku = struct {
         const avail = self.engine.getLegend();
         var names: [6][]const u8 = undefined;
         const count = avail.getNames(&names);
-        const result = self.renderer.getCommandInput(names[0..count], self.engine.cfg.show_region) catch return error.System;
+        const result = self.renderer.getCommandInput(names[0..count], self.engine.cfg.show_region, self.last_cell) catch return error.System;
         return try self.handleResult(result);
     }
 
@@ -873,6 +873,33 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
         rest = rest[i + "Press Enter to continue...".len ..];
     }
     try std.testing.expectEqual(@as(usize, 1), ack_count);
+}
+
+test "integrated e2e - menu hint returns placement status without mutating board" {
+    const cfg: config.Config = .{
+        .difficulty = .easy,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+
+    const responses = [_][]const u8{ "m", "8", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer());
+    defer sudoku_instance.deinit();
+    const before = export_command.currentPuzzleLine(&sudoku_instance.engine);
+
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+
+    const after = export_command.currentPuzzleLine(&sudoku_instance.engine);
+    try std.testing.expectEqualSlices(u8, &before, &after);
+    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "(placement)") != null);
 }
 
 test "integrated e2e - fill does not shade region until show_region enabled" {

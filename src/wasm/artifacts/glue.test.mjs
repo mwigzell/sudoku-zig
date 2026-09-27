@@ -48,6 +48,45 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(legend.undo, false, "fresh game should not offer undo");
 }
 
+// ── clear dead-end cell then targeted hint → placement on restored grid ──
+{
+  const fresh = await loadArtifact(wasmBytes);
+  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  assert.equal(fresh.importPuzzle(EASY_FIXTURE).ok, true);
+  assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
+  assert.equal(fresh.exec({ action: "clear", row: 1, col: 1 }).ok, true);
+  const hint = fresh.exec({ action: "hint", row: 1, col: 1 });
+  assert.equal(hint.ok, true, JSON.stringify(hint));
+  assert.match(hint.msg ?? "", /B2 takes [1-9] \(placement\)/);
+}
+
+// ── hint (engine-pick placement must show ASCII digit, not control char) ──
+{
+  const fresh = await loadArtifact(wasmBytes);
+  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  const res = fresh.exec({ action: "hint" });
+  assert.equal(res.ok, true, `hint failed: ${JSON.stringify(res)}`);
+  assert.match(res.msg ?? "", /\(placement\)/);
+  assert.match(res.msg ?? "", /[1-9]/);
+  assert.doesNotMatch(res.msg ?? "", /\x08/);
+}
+
+// ── hint on dead board: ok msg with no-solution tag (not error) ──
+{
+  const fresh = await loadArtifact(wasmBytes);
+  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  assert.equal(fresh.importPuzzle(EASY_FIXTURE).ok, true);
+  assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
+  const pick = fresh.exec({ action: "hint" });
+  assert.equal(pick.ok, true, JSON.stringify(pick));
+  assert.match(pick.msg ?? "", /\(no-solution\)/);
+  assert.equal(pick.error, undefined);
+  const targeted = fresh.exec({ action: "hint", row: 1, col: 1 });
+  assert.equal(targeted.ok, true, JSON.stringify(targeted));
+  assert.match(targeted.msg ?? "", /\(no-solution\)/);
+  assert.match(targeted.msg ?? "", /B2/);
+}
+
 // ── about metadata ──
 {
   const about = game.getAbout();
@@ -183,7 +222,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(dead.importPuzzle(EASY_FIXTURE).ok, true);
   const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(bad.ok, true);
-  assert.match(bad.msg ?? "", /unsolvable/i);
+  assert.match(bad.msg ?? "", /no solution/i);
+  assert.doesNotMatch(bad.msg ?? "", /\(blocker\)/);
   const saved = dead.serialize();
   assert.equal(saved.ok, true);
 

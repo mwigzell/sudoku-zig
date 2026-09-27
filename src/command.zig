@@ -8,6 +8,10 @@ const config = @import("config.zig");
 
 pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
 pub const ClearData = struct { row: u4, col: u4 };
+pub const HintData = struct {
+    row: ?u4 = null,
+    col: ?u4 = null,
+};
 pub const SaveData = struct { path: ?[]const u8 };
 
 pub const OpenData = struct { path: ?[]const u8 };
@@ -16,7 +20,7 @@ pub const ImportData = struct { path: ?[]const u8 };
 pub const ExportData = struct { path: ?[]const u8 };
 pub const PasteData = struct { line: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, @"export", copy, paste, new, save_as, solve_for_me, set_theme, set_region };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, @"export", copy, paste, new, save_as, solve_for_me, hint, set_theme, set_region };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -35,6 +39,7 @@ pub const Command = union(CommandTag) {
     new: NewData,
     save_as: SaveData,
     solve_for_me: void,
+    hint: HintData,
     set_theme: config.ViewTheme,
     set_region: bool,
 };
@@ -77,6 +82,7 @@ pub const SessionCommands = &[_]CommandTableEntry{
     .{ .tag = .new, .name = "New" },
     .{ .tag = .save_as, .name = "SaveAs" },
     .{ .tag = .solve_for_me, .name = "Solve" },
+    .{ .tag = .hint, .name = "Hint" },
 };
 
 /// Look up the display name for a command tag from the comptime tables.
@@ -117,9 +123,9 @@ pub const PuzzleResult = union(enum) {
 
 const std = @import("std");
 
-test "CommandTag enum has 17 variants" {
+test "CommandTag enum has 18 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 17), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 18), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -137,6 +143,7 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Paste", getName(.paste));
     try std.testing.expectEqualStrings("SaveAs", getName(.save_as));
     try std.testing.expectEqualStrings("Solve", getName(.solve_for_me));
+    try std.testing.expectEqualStrings("Hint", getName(.hint));
 }
 
 test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {

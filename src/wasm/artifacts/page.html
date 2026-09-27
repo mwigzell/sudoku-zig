@@ -531,6 +531,7 @@
           <button type="button" role="menuitem" id="edit-copy" disabled>Copy</button>
           <button type="button" role="menuitem" id="edit-paste" disabled>Paste</button>
           <button type="button" role="menuitem" id="edit-solve" disabled>Solve</button>
+          <button type="button" role="menuitem" id="edit-hint">Hint</button>
           <button type="button" role="menuitem" id="edit-deselect" disabled aria-keyshortcuts="Escape">Deselect Cell</button>
         </div>
       </div>
@@ -708,7 +709,9 @@
       let editMenu;
       const selection = wireSelection(boardEl, {
         regionEnabled: () => session.config.show_region === true,
-        onSelect: () => editMenu?.sync(),
+        onSelect: () => {
+          editMenu?.sync();
+        },
       });
       const regionMenu = wireRegionMenu(
         menuControls,

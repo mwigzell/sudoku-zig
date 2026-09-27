@@ -5,11 +5,22 @@ import { runWithGeneratingDialog } from "./generating.js";
 import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
 
+/** Apply `.ok.msg` to the status bar. */
+export function applyOkStatus(statusEl, result) {
+  if (!result.ok) return;
+  const msg = result.msg;
+  if (typeof msg === "string" && msg.length > 0) {
+    statusEl.textContent = msg;
+    statusEl.className = "";
+    return;
+  }
+  statusEl.textContent = "";
+  statusEl.className = "";
+}
+
 /** Update the status bar from a successful exec result only. */
 export function applyEventStatus(statusEl, result) {
-  if (!result.ok) return;
-  statusEl.textContent = result.msg ?? "";
-  statusEl.className = "";
+  applyOkStatus(statusEl, result);
 }
 
 /** Clear the status bar (same as a successful exec with no message). */
@@ -39,6 +50,17 @@ export function applyExecResult(statusEl, errorModal, result) {
     return;
   }
   applyEventStatus(statusEl, result);
+}
+
+/** Hint exec → status bar only; `.ok.msg` hint semantics never use the error modal. */
+export function applyHintExecStatus(statusEl, errorModal, result) {
+  if (!result.ok) {
+    applyExecResult(statusEl, errorModal, result);
+    return;
+  }
+  if (typeof result.msg === "string" && result.msg.length > 0) {
+    applyEventStatus(statusEl, result);
+  }
 }
 
 /** Save current game — returns opaque SUD0 bytes or `{ ok: false, error }`. */
