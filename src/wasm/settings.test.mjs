@@ -1,6 +1,7 @@
 // settings.test.mjs — Settings dialog contract.
 
 import assert from "node:assert/strict";
+import { hostViewPrefsForPersist } from "./shell.js";
 import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settings.js";
 
 {
@@ -29,7 +30,11 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
   const persistCalls = [];
   const game = {
     getConfig() {
-      return { warn_solvability: execCalls.at(-1)?.enabled === true };
+      return {
+        theme: "dark",
+        show_region: false,
+        warn_solvability: execCalls.at(-1)?.enabled === true,
+      };
     },
     exec(action) {
       execCalls.push(action);
@@ -71,6 +76,11 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
   assert.deepEqual(execCalls[0], { action: "set_warn_solvability", enabled: true });
   assert.equal(session.config.warn_solvability, true);
   assert.equal(persistCalls.length, 1);
+  assert.deepEqual(hostViewPrefsForPersist(persistCalls[0]), {
+    theme: "dark",
+    show_region: false,
+    warn_solvability: true,
+  });
 
   dismissSettings();
   assert.equal(modal.el.hidden, true);

@@ -10,6 +10,37 @@ import {
 } from "./shell.js";
 import { wireThemeMenu } from "./theme.js";
 import { wireRegionMenu } from "./region.js";
+import { assertWebBootConfig } from "./shell.js";
+import { primeWebBootChrome } from "./theme.js";
+
+/** Test double: bootstrap args mirror wasm getConfig() after host bootstrap. */
+function makeHostLinkedGame() {
+  let live = null;
+  return {
+    bootstrapHostConfig(args) {
+      live = {
+        difficulty: args.difficulty,
+        log_level: args.logLevel,
+        theme: args.theme === "light" ? "light" : "dark",
+        show_region: args.show_region === true,
+        warn_solvability: args.warn_solvability === true,
+      };
+      return { ok: true, msg: "engine ready" };
+    },
+    getState() {
+      return { cells: [] };
+    },
+    getLegend() {
+      return {};
+    },
+    getConfig() {
+      return live ? { ...live } : {};
+    },
+    deserialize() {
+      return { ok: false };
+    },
+  };
+}
 
 // Host /host-config.json (from disk on serve) drives wasm bootstrap — not glue defaults.
 {
@@ -20,25 +51,7 @@ import { wireRegionMenu } from "./region.js";
     show_region: true,
     warn_solvability: true,
   };
-  let bootstrapArgs;
-  const game = {
-    bootstrapHostConfig(args) {
-      bootstrapArgs = args;
-      return { ok: true };
-    },
-    getState() {
-      return { cells: [] };
-    },
-    getLegend() {
-      return {};
-    },
-    getConfig() {
-      return {};
-    },
-    deserialize() {
-      return { ok: false };
-    },
-  };
+  const game = makeHostLinkedGame();
 
   const hostCfg = await fetchHostStartupConfig(async () => ({
     ok: true,
@@ -47,21 +60,34 @@ import { wireRegionMenu } from "./region.js";
   assert.deepEqual(hostCfg, hostFromFile);
 
   bootstrapEngineFromHostConfig(game, hostCfg);
-  assert.deepEqual(bootstrapArgs, {
-    difficulty: 2,
-    logLevel: 0,
-    theme: "light",
-    show_region: true,
-    warn_solvability: true,
-  });
+  assertWebBootConfig(game.getConfig(), "engine after bootstrap");
 
   const boot = await initializeWebSession(game, {
     fetchFn: async () => ({ ok: true, json: async () => hostFromFile }),
   });
   assert.equal(boot.ok, true);
-  assert.equal(bootstrapArgs.difficulty, 2);
-  assert.equal(bootstrapArgs.theme, "light");
-  assert.equal(bootstrapArgs.warn_solvability, true);
+  assertWebBootConfig(boot.config);
+  assert.equal(boot.config.difficulty, 2);
+  assert.equal(boot.config.log_level, 0);
+  assert.equal(boot.config.theme, "light");
+  assert.equal(boot.hostCfg, undefined);
+}
+
+{
+  const hostFromFile = {
+    difficulty: 2,
+    log_level: 0,
+    theme: "light",
+    show_region: true,
+    warn_solvability: true,
+  };
+  const game = makeHostLinkedGame();
+  const boot = await initializeWebSession(game, {
+    fetchFn: async () => ({ ok: true, json: async () => hostFromFile }),
+  });
+  const html = { dataset: {} };
+  primeWebBootChrome(boot, { documentElement: html });
+  assert.equal(html.dataset.theme, "light");
 }
 
 // View menu persist POST writes the same shape the host merges into settings.json.

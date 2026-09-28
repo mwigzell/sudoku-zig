@@ -1,6 +1,6 @@
 // theme.js — View menu light/dark theme via engine config.
 
-import { applyEventStatus } from "./shell.js";
+import { applyEventStatus, assertWebBootConfig } from "./shell.js";
 
 export function themeFromConfig(config) {
   return config?.theme === "light" ? "light" : "dark";
@@ -18,6 +18,12 @@ export function applyThemeFromConfig(config, root = document) {
 /** Host/engine config → `html[data-theme]` before modals (launch New runs before wireThemeMenu). */
 export function applyBootTheme(boot, root = document) {
   if (boot?.ok && boot.config) applyThemeFromConfig(boot.config, root);
+}
+
+/** page.html boot order: full engine config, then theme on `<html>` before any modal. */
+export function primeWebBootChrome(boot, root = document) {
+  assertWebBootConfig(boot.config);
+  applyBootTheme(boot, root);
 }
 
 export function syncThemeMenu(controls, config) {

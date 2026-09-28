@@ -155,6 +155,26 @@ export function applyGeneratedLineAsNewGame(game, line, { difficulty } = {}) {
   return { ...result, msg: NEW_GAME_STARTED_MSG };
 }
 
+/** Keys the web shell requires on `boot.config` after `initializeWebSession`. */
+export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
+  "difficulty",
+  "log_level",
+  "theme",
+  "show_region",
+  "warn_solvability",
+];
+
+export function assertWebBootConfig(config, label = "boot.config") {
+  if (!config || typeof config !== "object") {
+    throw new Error(`${label}: missing config object`);
+  }
+  for (const key of REQUIRED_WEB_BOOT_CONFIG_KEYS) {
+    if (config[key] === undefined) {
+      throw new Error(`${label}: missing ${key}`);
+    }
+  }
+}
+
 export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
   const res = await fetchFn("./host-config.json");
   if (!res.ok) throw new Error(`host-config fetch failed: ${res.status}`);

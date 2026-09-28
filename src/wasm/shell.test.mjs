@@ -8,6 +8,8 @@ import {
   offerInitialNewGame,
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
+  assertWebBootConfig,
+  REQUIRED_WEB_BOOT_CONFIG_KEYS,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
 
@@ -402,5 +404,19 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "new");
   assert.equal(initDifficulty, 2);
+}
+
+{
+  for (const key of REQUIRED_WEB_BOOT_CONFIG_KEYS) {
+    const cfg = {
+      difficulty: 1,
+      log_level: 1,
+      theme: "dark",
+      show_region: false,
+      warn_solvability: false,
+    };
+    delete cfg[key];
+    assert.throws(() => assertWebBootConfig(cfg), new RegExp(`missing ${key}`));
+  }
 }
 
