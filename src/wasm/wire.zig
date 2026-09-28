@@ -35,6 +35,7 @@ pub const WireConfig = struct {
     log_level: logger.Severity = .info,
     theme: config.ViewTheme = .dark,
     show_region: bool = false,
+    warn_solvability: bool = false,
 
     pub fn fromWire(difficulty: u8, log_level: u8) ?WireConfig {
         const pd = PlayerDifficulty.fromWire(difficulty) orelse return null;
@@ -55,6 +56,7 @@ pub const WireConfig = struct {
         cfg.log_level = self.log_level;
         cfg.theme = self.theme;
         cfg.show_region = self.show_region;
+        cfg.warn_solvability = self.warn_solvability;
         return cfg;
     }
 
@@ -69,6 +71,7 @@ pub const WireConfig = struct {
             .log_level = cfg.log_level,
             .theme = cfg.theme,
             .show_region = cfg.show_region,
+            .warn_solvability = cfg.warn_solvability,
         };
     }
 };

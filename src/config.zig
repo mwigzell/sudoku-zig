@@ -20,6 +20,8 @@ pub const Config = struct {
     log_level: logger.Severity,
     theme: ViewTheme = .dark,
     show_region: bool = false,
+    /// Proactive solvability warnings after moves and on load (single player toggle).
+    warn_solvability: bool = false,
 
     /// Hard-coded defaults — main.zig supplies this to the Sudoku layer at init time.
     pub fn default() Config {
@@ -39,4 +41,5 @@ test "config.default produces valid config" {
     if (cfg.fallback_renderer != .ansi) return error.TestFailed;
     if (cfg.theme != .dark) return error.TestFailed;
     if (cfg.show_region) return error.TestFailed;
+    if (cfg.warn_solvability) return error.TestFailed;
 }

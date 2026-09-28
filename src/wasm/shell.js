@@ -167,7 +167,18 @@ export function bootstrapEngineFromHostConfig(game, hostCfg) {
     logLevel: hostCfg.log_level,
     theme: hostCfg.theme,
     show_region: hostCfg.show_region,
+    warn_solvability: hostCfg.warn_solvability === true,
   });
+}
+
+/** Persist player prefs to host settings.json (web serve POST). */
+export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
+  const res = await fetchFn("./settings.json", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ warn_solvability: config.warn_solvability === true }),
+  });
+  if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
 }
 
 /** Restore SUD0 bytes when present; returns session bundle or null. */
@@ -205,6 +216,46 @@ export async function initializeWebSession(game, { fetchFn, storedSud0Bytes } = 
     legend: game.getLegend(),
     config: game.getConfig(),
     msg: boot.msg ?? null,
+  };
+}
+
+/**
+ * First visit after empty boot: generating New Game modal (host difficulty).
+ * Skipped when a stored session was restored.
+ */
+export async function offerInitialNewGame(game, boot, generatingModal, { genWorker } = {}) {
+  if (!boot.ok || boot.kind !== "empty") return boot;
+
+  const difficulty = boot.config?.difficulty ?? boot.hostCfg?.difficulty ?? 1;
+  const logLevel = boot.config?.log_level ?? boot.hostCfg?.log_level;
+  const started = await newGameWithGeneratingModal(game, generatingModal, {
+    difficulty,
+    logLevel,
+    genWorker,
+  });
+  if (!started.ok && !started.cancelled) {
+    return { ok: false, error: started.error ?? "New game failed", kind: "empty" };
+  }
+  if (started.cancelled) {
+    return {
+      ok: true,
+      kind: "empty",
+      hostCfg: boot.hostCfg,
+      state: game.getState(),
+      legend: game.getLegend(),
+      config: game.getConfig(),
+      msg: null,
+      cancelled: true,
+    };
+  }
+  return {
+    ok: true,
+    kind: "new",
+    hostCfg: boot.hostCfg,
+    state: started.state,
+    legend: started.legend,
+    config: started.config,
+    msg: started.msg,
   };
 }
 

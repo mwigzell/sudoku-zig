@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   NEW_GAME_STARTED_MSG,
   initializeWebSession,
+  offerInitialNewGame,
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
 } from "./shell.js";
@@ -271,7 +272,7 @@ async function flushDialogPaint() {
 
 // ── initializeWebSession: host config boot, optional resume, no auto-New ──
 {
-  const hostCfg = { difficulty: 2, log_level: 1, theme: "dark", show_region: false };
+  const hostCfg = { difficulty: 2, log_level: 1, theme: "dark", show_region: false, warn_solvability: false };
   const game = {
     bootstrapHostConfig(cfg) {
       assert.deepEqual(cfg, {
@@ -279,6 +280,7 @@ async function flushDialogPaint() {
         logLevel: 1,
         theme: "dark",
         show_region: false,
+        warn_solvability: false,
       });
       return { ok: true, msg: "engine ready" };
     },
@@ -332,3 +334,14 @@ async function flushDialogPaint() {
   assert.equal(out.kind, "resumed");
   assert.equal(deserialized, true);
 }
+
+// ── offerInitialNewGame: skip resume; empty boot runs generating New ──
+{
+  const resumed = await offerInitialNewGame(
+    {},
+    { ok: true, kind: "resumed", state: {}, legend: {}, config: {} },
+    null,
+  );
+  assert.equal(resumed.kind, "resumed");
+}
+

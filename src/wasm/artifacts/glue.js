@@ -45,11 +45,12 @@ export async function loadArtifact(wasmBytes) {
     },
 
     /** Host-resolved startup config (native disk+CLI analogue). All fields required — no glue defaults. */
-    bootstrapHostConfig({ difficulty, logLevel, theme, show_region }) {
+    bootstrapHostConfig({ difficulty, logLevel, theme, show_region, warn_solvability }) {
       const themeWire = theme === "light" ? 1 : 0;
       const regionWire = show_region ? 1 : 0;
+      const warnWire = warn_solvability ? 1 : 0;
       return readJson(
-        exports.bootstrapHostConfig(difficulty, logLevel, themeWire, regionWire),
+        exports.bootstrapHostConfig(difficulty, logLevel, themeWire, regionWire, warnWire),
       );
     },
 

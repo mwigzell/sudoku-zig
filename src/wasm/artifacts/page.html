@@ -232,6 +232,7 @@
 
     #error-modal[hidden],
     #about-modal[hidden],
+    #settings-modal[hidden],
     #new-difficulty-modal[hidden],
     #generating-modal[hidden] {
       display: none;
@@ -321,7 +322,8 @@
       margin-top: 0.75rem;
     }
 
-    #about-modal {
+    #about-modal,
+    #settings-modal {
       position: fixed;
       inset: 0;
       display: flex;
@@ -391,6 +393,16 @@
       line-height: 1.45;
     }
 
+    #settings-warn-solvability-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin: 0 0 1rem;
+      line-height: 1.45;
+      cursor: pointer;
+    }
+
+    #settings-modal-dismiss,
     #about-modal-dismiss,
     #error-modal-dismiss {
       font: inherit;
@@ -521,6 +533,7 @@
           <button type="button" role="menuitem" id="file-export">Export</button>
           <button type="button" role="menuitem" id="file-save">Save</button>
           <button type="button" role="menuitem" id="file-save-as">Save As</button>
+          <button type="button" role="menuitem" id="file-settings">Settings</button>
         </div>
       </div>
       <div class="menu" data-menu="edit">
@@ -560,6 +573,17 @@
     <div class="error-dialog">
       <p id="error-modal-msg"></p>
       <button type="button" id="error-modal-dismiss">OK</button>
+    </div>
+  </div>
+
+  <div id="settings-modal" hidden role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="about-dialog">
+      <h2 id="settings-modal-title">Settings</h2>
+      <label id="settings-warn-solvability-label">
+        <input type="checkbox" id="settings-warn-solvability" />
+        Warn when the puzzle has no solution
+      </label>
+      <button type="button" id="settings-modal-dismiss">OK</button>
     </div>
   </div>
 
@@ -633,11 +657,14 @@
       applyEventStatus,
       canUseGenWorker,
       initializeWebSession,
+      offerInitialNewGame,
+      persistHostSettings,
       showErrorModal,
       wireErrorModal,
     } from "../shell.js";
     import { wireGeneratingModal } from "../generating.js";
     import { wireHelpAbout, wireAboutModal } from "../help.js";
+    import { wireSettingsMenu } from "../settings.js";
     import { renderBoard, getPlayGrid, setStatus, wireSelection, wirePlayLoop } from "../board.js";
     import { wireEditMenu } from "../menu.js";
     import { collectMenuBarControls, wireMenuBar } from "../menu_bar.js";
@@ -662,6 +689,11 @@
       licenceEl: document.getElementById("about-licence"),
     };
     wireAboutModal(aboutModal.el, document.getElementById("about-modal-dismiss"));
+    const settingsModal = {
+      el: document.getElementById("settings-modal"),
+      checkbox: document.getElementById("settings-warn-solvability"),
+      dismissEl: document.getElementById("settings-modal-dismiss"),
+    };
 
     try {
       const res = await fetch("./artifact.wasm");
@@ -693,14 +725,19 @@
       const boot = await initializeWebSession(game, { storedSud0Bytes });
       if (!boot.ok) throw new Error(boot.error ?? "session init failed");
 
+      const ready = await offerInitialNewGame(game, boot, generatingModal, { genWorker });
+      if (!ready.ok) throw new Error(ready.error ?? "New game failed");
+
       const session = {
-        state: boot.state,
-        legend: boot.legend,
-        config: boot.config,
+        state: ready.state,
+        legend: ready.legend,
+        config: ready.config,
       };
       renderBoard(boardEl, session.state);
-      if (boot.kind === "resumed" && boot.msg) {
-        applyEventStatus(statusBar, { ok: true, msg: boot.msg });
+      if (ready.kind === "resumed" && ready.msg) {
+        applyEventStatus(statusBar, { ok: true, msg: ready.msg });
+      } else if (ready.kind === "new" && ready.msg) {
+        applyEventStatus(statusBar, { ok: true, msg: ready.msg });
       } else {
         setStatus(statusBar, "");
       }
@@ -764,6 +801,16 @@
         onLegendChange: () => menuBar.sync(),
       });
       wireHelpAbout(menuControls.about, game, aboutModal);
+      wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
+        closeMenus: () => menuBar.closeAll?.(),
+        onPersist: async (cfg) => {
+          try {
+            await persistHostSettings(cfg);
+          } catch (err) {
+            showErrorModal(errorModal, err?.message ?? String(err));
+          }
+        },
+      });
       getPlayGrid(boardEl).focus();
     } catch (err) {
       const msg = `failed to load wasm: ${err && err.message ? err.message : err}`;

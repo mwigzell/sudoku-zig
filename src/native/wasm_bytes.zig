@@ -20,6 +20,7 @@ pub const gen_progress_rows_js: []const u8 = @embedFile("../wasm/gen_progress_ro
 pub const gen_progress_format_js: []const u8 = @embedFile("../wasm/gen_progress_format.js");
 pub const region_js: []const u8 = @embedFile("../wasm/region.js");
 pub const help_js: []const u8 = @embedFile("../wasm/help.js");
+pub const settings_js: []const u8 = @embedFile("../wasm/settings.js");
 
 test "embedded wasm artifact is non-empty" {
     try std.testing.expect(wasm_bytes.len > 8);
@@ -83,6 +84,10 @@ test "embedded region.js is non-empty" {
 
 test "embedded help.js is non-empty" {
     try std.testing.expect(help_js.len > 0);
+}
+
+test "embedded settings.js is non-empty" {
+    try std.testing.expect(settings_js.len > 0);
 }
 
 test "embedded wasm artifact starts with the wasm magic header" {

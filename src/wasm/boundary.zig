@@ -136,6 +136,10 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         const enabled = parsed.value.enabled orelse return error.MissingField;
         return .{ .set_region = enabled };
     }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_warn_solvability")) {
+        const enabled = parsed.value.enabled orelse return error.MissingField;
+        return .{ .set_warn_solvability = enabled };
+    }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "solve")) return .{ .solve_for_me = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "hint")) {
         if ((row == null) != (col == null)) return error.MissingField;
@@ -283,12 +287,13 @@ pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
     var mutable = out;
     try writeJson(
         &mutable,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
             theme_name,
             wire_cfg.show_region,
+            wire_cfg.warn_solvability,
         },
     );
 }
@@ -364,6 +369,12 @@ test "parseAction set_theme and set_region" {
     const region_cmd = try parseAction("{\"action\":\"set_region\",\"enabled\":true}");
     switch (region_cmd) {
         .set_region => |enabled| try std.testing.expect(enabled),
+        else => return error.TestFailed,
+    }
+
+    const warn_cmd = try parseAction("{\"action\":\"set_warn_solvability\",\"enabled\":true}");
+    switch (warn_cmd) {
+        .set_warn_solvability => |enabled| try std.testing.expect(enabled),
         else => return error.TestFailed,
     }
 }

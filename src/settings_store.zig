@@ -13,6 +13,7 @@ const JsonSettings = struct {
     show_region: bool,
     preferred_renderer: []const u8,
     fallback_renderer: ?[]const u8 = null,
+    warn_solvability: ?bool = null,
 };
 
 pub const Error = error{
@@ -66,6 +67,7 @@ pub fn configFromJson(parsed: JsonSettings) Error!config.Config {
         .log_level = try parseLogLevel(parsed.log_level),
         .theme = try parseTheme(parsed.theme),
         .show_region = parsed.show_region,
+        .warn_solvability = parsed.warn_solvability orelse false,
     };
 }
 
@@ -78,6 +80,7 @@ fn jsonFromConfig(cfg: config.Config) JsonSettings {
         .show_region = cfg.show_region,
         .preferred_renderer = @tagName(cfg.preferred_renderer),
         .fallback_renderer = fallback_name,
+        .warn_solvability = cfg.warn_solvability,
     };
 }
 
@@ -171,6 +174,19 @@ test "settings round-trip preserves Config fields" {
     try std.testing.expectEqual(original.log_level, restored.log_level);
     try std.testing.expectEqual(original.theme, restored.theme);
     try std.testing.expectEqual(original.show_region, restored.show_region);
+    try std.testing.expectEqual(original.warn_solvability, restored.warn_solvability);
+}
+
+test "settings round-trip preserves warn_solvability" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var original = config.Config.default();
+    original.warn_solvability = true;
+    try saveInDir(std.testing.allocator, io, tmp.dir, original);
+    const restored = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    try std.testing.expect(restored.warn_solvability);
 }
 
 test "missing settings file yields Config.default()" {

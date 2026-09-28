@@ -20,7 +20,7 @@ pub const ImportData = struct { path: ?[]const u8 };
 pub const ExportData = struct { path: ?[]const u8 };
 pub const PasteData = struct { line: ?[]const u8 };
 
-pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, @"export", copy, paste, new, save_as, solve_for_me, hint, set_theme, set_region };
+pub const CommandTag = enum { fill, clear, quit, undo, redo, menu, save, open, import, @"export", copy, paste, new, save_as, solve_for_me, hint, set_theme, set_region, set_warn_solvability, settings };
 
 /// Command a player can issue to the game.
 pub const Command = union(CommandTag) {
@@ -42,6 +42,8 @@ pub const Command = union(CommandTag) {
     hint: HintData,
     set_theme: config.ViewTheme,
     set_region: bool,
+    set_warn_solvability: bool,
+    settings: void,
 };
 
 pub const ParseResultTag = enum { valid, error_msg };
@@ -123,9 +125,9 @@ pub const PuzzleResult = union(enum) {
 
 const std = @import("std");
 
-test "CommandTag enum has 18 variants" {
+test "CommandTag enum has 20 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 18), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 20), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -148,6 +150,6 @@ test "getName returns correct display name for each tag" {
 
 test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    // Commands + SessionCommands + set_theme/set_region cover all CommandTag variants.
-    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 2);
+    // Commands + SessionCommands + view/pref tags cover all CommandTag variants.
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 4);
 }

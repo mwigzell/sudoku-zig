@@ -8,6 +8,8 @@ const log = logger.Logger(.serve);
 const wasm_bytes = @import("wasm_bytes.zig");
 const config = @import("../config.zig");
 const startup_config = @import("../startup_config.zig");
+const settings_store = @import("../settings_store.zig");
+const shell_path = @import("shell/path.zig");
 
 pub const RouteResult = enum {
     page,
@@ -25,6 +27,7 @@ pub const RouteResult = enum {
     gen_progress_format,
     region,
     help,
+    settings,
     host_config,
     artifact,
 };
@@ -64,6 +67,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/gen_progress_format.js")) return .gen_progress_format;
         if (std.mem.eql(u8, path, "/region.js")) return .region;
         if (std.mem.eql(u8, path, "/help.js")) return .help;
+        if (std.mem.eql(u8, path, "/settings.js")) return .settings;
         if (std.mem.eql(u8, path, "/host-config.json")) return .host_config;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
         return Error.NotFound;
@@ -99,6 +103,7 @@ pub const Router = struct {
             .gen_progress_format => wasm_bytes.gen_progress_format_js,
             .region => wasm_bytes.region_js,
             .help => wasm_bytes.help_js,
+            .settings => wasm_bytes.settings_js,
             .host_config => "", // dynamic — see `hostConfigBody`
             .artifact => wasm_bytes.wasm_bytes,
         };
@@ -109,13 +114,35 @@ pub const Router = struct {
             .page => "text/html",
             .artifact => "application/wasm",
             .host_config => "application/json",
-            .glue, .gen_client, .gen_worker, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .gen_progress_rows, .gen_progress_format, .region, .help => "text/javascript",
+            .glue, .gen_client, .gen_worker, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
         };
     }
 };
 
 fn hostConfigBody() ServeError![]const u8 {
     return startup_config.formatHostStartupJson(active_host_config, &host_config_body_buf) catch return ServeError.System;
+}
+
+const SettingsPostBody = struct {
+    warn_solvability: ?bool = null,
+};
+
+fn requestBody(request: []const u8) ?[]const u8 {
+    const sep = std.mem.indexOf(u8, request, "\r\n\r\n") orelse return null;
+    return request[sep + 4 ..];
+}
+
+fn applySettingsPost(io: std.Io, body: []const u8) ServeError!void {
+    const parsed = std.json.parseFromSlice(SettingsPostBody, std.heap.page_allocator, body, .{}) catch return ServeError.System;
+    defer parsed.deinit();
+    if (parsed.value.warn_solvability) |enabled| {
+        active_host_config.warn_solvability = enabled;
+    }
+    const gpa = std.heap.page_allocator;
+    const data_dir = shell_path.computeDataDir(gpa) catch return ServeError.System;
+    defer gpa.free(data_dir);
+    std.Io.Dir.cwd().createDirPath(io, data_dir) catch {};
+    settings_store.save(gpa, io, data_dir, active_host_config) catch return ServeError.System;
 }
 /// Errors surfacing from serve(): the port is already owned, or any socket
 /// fault — mapped to System so only AddressInUse needs caller-specific handling.
@@ -231,14 +258,23 @@ fn serveClient(io: std.Io, router: *Router, client: net.Stream) ServeError!void 
         if (std.mem.indexOfPos(u8, in_buf[0..used], 0, "\r\n\r\n") != null) break :outer;
     }
 
-    const line_end = std.mem.indexOfPos(u8, in_buf[0..used], 0, "\r\n") orelse return ServeError.System;
-    var fields = std.mem.splitScalar(u8, in_buf[0..line_end], ' ');
-    _ = fields.next() orelse return ServeError.System; // method
-    const path = fields.next() orelse return ServeError.System;
+    const request = in_buf[0..used];
+    const line_end = std.mem.indexOfPos(u8, request, 0, "\r\n") orelse return ServeError.System;
+    var fields = std.mem.splitScalar(u8, request[0..line_end], ' ');
+    const method = fields.next() orelse return ServeError.System;
+    const req_path = fields.next() orelse return ServeError.System;
 
-    const res = Router.route(path);
     var w_buf: [4096]u8 = undefined;
     var w = client.writer(io, w_buf[0..]);
+
+    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/settings.json")) {
+        const body = requestBody(request) orelse return ServeError.System;
+        try applySettingsPost(io, body);
+        try writeFull(&w.interface, "204 No Content", "application/json", "");
+        return;
+    }
+
+    const res = Router.route(req_path);
     if (res) |result| {
         const body: []const u8 = if (result == .host_config)
             try hostConfigBody()
@@ -432,6 +468,10 @@ test "serve: route \"/help.js\" to the help module" {
     try std.testing.expectEqual(RouteResult.help, Router.route("/help.js"));
 }
 
+test "serve: route \"/settings.js\" to the settings module" {
+    try std.testing.expectEqual(RouteResult.settings, Router.route("/settings.js"));
+}
+
 test "serve: route \"/host-config.json\" to host startup config" {
     try std.testing.expectEqual(RouteResult.host_config, Router.route("/host-config.json"));
 }
@@ -508,6 +548,9 @@ test "serve: allDelivered false until each route marked, true after; re-marking 
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.help);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.settings);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.host_config);

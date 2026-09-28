@@ -16,6 +16,7 @@ export const MENU_BAR_MENUS = [
       { id: "export", label: "Export", legendKey: LEGEND_WIRE_EXPORT },
       { id: "save", label: "Save", legendKey: "save" },
       { id: "saveAs", label: "Save As", legendKey: "save_as" },
+      { id: "settings", label: "Settings" },
     ],
   },
   {
@@ -57,6 +58,7 @@ export function syncMenuBar(legend, controls) {
   if (controls.viewDark) controls.viewDark.disabled = false;
   if (controls.viewRegion) controls.viewRegion.disabled = false;
   if (controls.about) controls.about.disabled = false;
+  if (controls.settings) controls.settings.disabled = false;
 }
 
 /** Resolve menu control elements from the page shell. */
@@ -68,6 +70,7 @@ export function collectMenuBarControls(root) {
     export: root.querySelector("#file-export"),
     save: root.querySelector("#file-save"),
     saveAs: root.querySelector("#file-save-as"),
+    settings: root.querySelector("#file-settings"),
     undo: root.querySelector("#edit-undo"),
     redo: root.querySelector("#edit-redo"),
     copy: root.querySelector("#edit-copy"),

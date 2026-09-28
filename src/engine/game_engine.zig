@@ -45,9 +45,14 @@ pub const GameEngine = struct {
     cfg: config.Config,
     event_msg: event.EventMsg = .{},
     /// After a player move, probe solvability and warn when the board has no completion.
-    warn_dead_moves: bool = !builtin.is_test,
+    warn_dead_moves: bool = false,
     /// On open/load, probe solvability and warn when the puzzle has no completion.
-    warn_unsolvable_load: bool = !builtin.is_test,
+    warn_unsolvable_load: bool = false,
+
+    fn applySolvabilityWarningsFromConfig(self: *@This()) void {
+        self.warn_dead_moves = self.cfg.warn_solvability;
+        self.warn_unsolvable_load = self.cfg.warn_solvability;
+    }
 
     /// Build an engine from a one-line puzzle string and nominal config.
     pub fn init(puzzle_str: []const u8, cfg: config.Config) Error!@This() {
@@ -59,6 +64,7 @@ pub const GameEngine = struct {
             },
             .cfg = cfg,
         };
+        self.applySolvabilityWarningsFromConfig();
         self.state.board.validate();
         return self;
     }
@@ -279,6 +285,12 @@ pub const GameEngine = struct {
                 self.cfg.show_region = enabled;
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
+            .set_warn_solvability => |enabled| {
+                self.cfg.warn_solvability = enabled;
+                self.applySolvabilityWarningsFromConfig();
+                return self.finishOkEvent(self.state.board.asView(), false, null);
+            },
+            .settings => @panic("settings routed in Sudoku"),
             .menu => @panic("menu routed in renderer"),
             .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => @panic("session command routed in Sudoku"),
         }
@@ -1328,6 +1340,22 @@ test "getConfig: default view prefs are dark theme and region off" {
     const cfg = engine.getConfig();
     try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
     try std.testing.expect(!cfg.show_region);
+}
+
+test "exec set_warn_solvability toggles engine warning flags" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    try std.testing.expect(!engine.warn_dead_moves);
+    try std.testing.expect(!engine.warn_unsolvable_load);
+
+    _ = try expectOk(execTest(&engine, command.Command{ .set_warn_solvability = true }));
+    try std.testing.expect(engine.warn_dead_moves);
+    try std.testing.expect(engine.warn_unsolvable_load);
+    try std.testing.expect(engine.getConfig().warn_solvability);
+
+    _ = try expectOk(execTest(&engine, command.Command{ .set_warn_solvability = false }));
+    try std.testing.expect(!engine.warn_dead_moves);
+    try std.testing.expect(!engine.warn_unsolvable_load);
 }
 
 test "exec set_theme and set_region update view config" {

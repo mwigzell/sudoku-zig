@@ -17,6 +17,7 @@ pub fn configFromHostWire(
     log_level: u8,
     theme: config.ViewTheme,
     show_region: bool,
+    warn_solvability: bool,
 ) error{InvalidHostWire}!config.Config {
     const partial = wire.WireConfig.fromWire(difficulty, log_level) orelse return error.InvalidHostWire;
     var cfg = config.Config.default();
@@ -24,6 +25,7 @@ pub fn configFromHostWire(
     cfg.log_level = partial.log_level;
     cfg.theme = theme;
     cfg.show_region = show_region;
+    cfg.warn_solvability = warn_solvability;
     return cfg;
 }
 
@@ -34,6 +36,7 @@ pub fn expectStartupLiveOnEngine(engine: *const game_engine.GameEngine, startup:
     try std.testing.expectEqual(startup.log_level, live.log_level);
     try std.testing.expectEqual(startup.theme, live.theme);
     try std.testing.expectEqual(startup.show_region, live.show_region);
+    try std.testing.expectEqual(startup.warn_solvability, live.warn_solvability);
 }
 
 pub fn applyLoggerFromStartup(startup: config.Config) void {
@@ -49,12 +52,13 @@ pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
             theme_name,
             wire_cfg.show_region,
+            wire_cfg.warn_solvability,
         },
     );
 }
@@ -139,7 +143,7 @@ test "host startup JSON matches Config wire fields" {
     var buf: [128]u8 = undefined;
     const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false}",
         json,
     );
 }
@@ -183,6 +187,7 @@ test "host wire startup config matches GameEngine.cfg (web host analogue)" {
         @backingInt(logger.Severity.warn),
         .light,
         true,
+        false,
     );
 
     var engine = try initEngineFromStartup(startup);
