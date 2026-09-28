@@ -32,7 +32,7 @@ One pipeline (**`resolveStartupConfig`** / **`startup_config.zig`**):
 
 1. Load **`settings.json`** from the platform data directory (or defaults if missing/invalid).
 2. Apply **CLI** overrides.
-3. **Save** merged result back to disk (so CLI changes stick).
+3. **Save** player prefs back to disk (CLI `-d`/`-v`/view flags stick; renderer is not written).
 4. Pass that struct into the runtime — native **`Sudoku.init(cfg, …)`**; web **`serveWithHostConfig(cfg)`** → page **`bootstrapHostConfig`** (legacy wasm **`bootstrap(u32,u32)`** removed).
 
 Web session boot (**#62**): fetch host config → bootstrap engine → optional **SUD0 resume** from page session storage; if boot is empty (no resume), **generating New Game** uses host/default difficulty — not glue/page literals. **File → New** keeps an explicit difficulty picker for that action.
@@ -40,7 +40,7 @@ Web session boot (**#62**): fetch host config → bootstrap engine → optional 
 ### Persistence file
 
 - **Path:** `settings.json` under the platform data directory (`settings_store`; paths documented in README).
-- **Keys (stable JSON):** `difficulty`, `log_level`, `theme`, `show_region`, `warn_solvability`, `preferred_renderer`, optional `fallback_renderer`.
+- **Keys (stable JSON):** `difficulty`, `log_level`, `theme`, `show_region`, `warn_solvability` only. **`preferred_renderer` / `fallback_renderer` are not part of this file** — choose deployment with CLI `-r` each run; stale renderer keys in old files are ignored on load.
 - **Native in-session save:** `Sudoku` persists after view/settings commands when a data dir is configured (`settings_store.save`).
 - **Web in-session save:** menubar actions **`POST /settings.json`**; serve merges partial JSON into host `Config` and writes disk (same nominal fields as native save).
 
@@ -48,16 +48,17 @@ Web session boot (**#62**): fetch host config → bootstrap engine → optional 
 
 ### In-app editing (product rule)
 
-Every **`settings.json` field that affects normal play or presentation** must be **editable in the supported front end** for that deployment — menubar, modal, or native numbered **Menu** — not only via CLI or manual file edit.
+Every **`settings.json` field** must be **editable in the supported front end** for that deployment — menubar, modal, or native numbered **Menu** — not only via CLI or manual file edit.
 
 | Field | Web UI (expected) | Native UI (expected) |
 |--------|-------------------|----------------------|
-| `theme` | View (or equivalent) | Menu / Settings |
-| `show_region` | View | Menu → Region |
-| `warn_solvability` | File → Settings | Menu → Settings |
-| `difficulty` | Settings and/or New flows | Menu / Settings |
-| `log_level` | Settings | Menu / Settings |
-| `preferred_renderer`, `fallback_renderer` | **Excluded** — CLI + file only (deployment choice) |
+| `theme` | View (or equivalent) | Menu → 14) Settings → 4) |
+| `show_region` | View | Menu → 7) Region |
+| `warn_solvability` | File → Settings | Menu → 14) Settings → 1) |
+| `difficulty` | File → Settings and/or New flows | Menu → 14) Settings → 2) |
+| `log_level` | File → Settings | Menu → 14) Settings → 3) |
+
+Renderer / fallback kinds live on **`Config`** for host routing but are **outside** this table: **CLI `-r`** (and in-memory defaults), not menubar or `settings.json`.
 
 Splitting controls across **File → Settings** and **View** on web is acceptable; hiding a persisted field behind disk-only edit is **not**.
 
@@ -69,7 +70,7 @@ Single toggle **`warn_solvability`** (default **off**) drives proactive move/loa
 
 ## Consequences
 
-- New persisted prefs require: `Config` + `settings.json` schema, engine `exec`/command handler, **both** persistence paths (native save + web POST), and **UI on each supported platform** unless explicitly listed as CLI/disk-only like renderer choice.
+- New persisted prefs require: `Config` + `settings.json` schema, engine `exec`/command handler, **both** persistence paths (native save + web POST), and **UI on each supported platform**. Renderer choice is not a persisted pref until product explicitly adds it.
 - **`CONTEXT.md`** WireConfig / glossary should stay aligned with fields JS may read/write; renderer kinds stay off the wasm wire.
 - Contract tests: `settings_store`, `startup_config`, `serve` POST merge, `host_settings.test.mjs`, glue host bootstrap — extend when adding fields.
 - ADR-0010 wasm boundary remains JSON `init`/`exec`/`getConfig`; this ADR owns **where config comes from at boot** and **how changes return to disk**, not the REPL-shaped shell.

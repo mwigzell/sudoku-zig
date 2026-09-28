@@ -194,12 +194,12 @@ export function bootstrapEngineFromHostConfig(game, hostCfg) {
 const DIFFICULTY_WIRE = { 1: "easy", 2: "medium", 3: "hard" };
 const LOG_WIRE = ["debug", "info", "warn", "err", "fatal"];
 
-function difficultyName(config) {
+export function difficultyName(config) {
   if (typeof config.difficulty === "string") return config.difficulty;
   return DIFFICULTY_WIRE[config.difficulty] ?? "easy";
 }
 
-function logLevelName(config) {
+export function logLevelName(config) {
   if (typeof config.log_level === "string") return config.log_level;
   return LOG_WIRE[config.log_level] ?? "info";
 }

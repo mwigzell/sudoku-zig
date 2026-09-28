@@ -8,9 +8,13 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
   const modal = {
     el: { hidden: true },
     checkbox: { checked: false },
+    difficultySelect: { value: "easy" },
+    logLevelSelect: { value: "info" },
   };
-  syncSettingsModal(modal, { warn_solvability: true });
+  syncSettingsModal(modal, { warn_solvability: true, difficulty: 2, log_level: 2 });
   assert.equal(modal.checkbox.checked, true);
+  assert.equal(modal.difficultySelect.value, "medium");
+  assert.equal(modal.logLevelSelect.value, "warn");
   syncSettingsModal(modal, { warn_solvability: false });
   assert.equal(modal.checkbox.checked, false);
 }
@@ -86,6 +90,43 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
 
   dismissSettings();
   assert.equal(modal.el.hidden, true);
+}
+
+{
+  const execCalls = [];
+  const game = {
+    getConfig() {
+      const last = execCalls.at(-1);
+      return {
+        difficulty: last?.difficulty === "hard" ? 3 : 1,
+        log_level: 1,
+        warn_solvability: false,
+      };
+    },
+    exec(action) {
+      execCalls.push(action);
+      return { ok: true };
+    },
+  };
+  const session = { config: { difficulty: 1 } };
+  let onDifficultyChange;
+  const modal = {
+    el: { hidden: true },
+    checkbox: { addEventListener() {} },
+    difficultySelect: {
+      value: "easy",
+      addEventListener(type, fn) {
+        if (type === "change") onDifficultyChange = fn;
+      },
+    },
+    logLevelSelect: { addEventListener() {} },
+    dismissEl: { addEventListener() {} },
+  };
+  wireSettingsMenu({ addEventListener() {} }, game, session, modal, {});
+  modal.difficultySelect.value = "hard";
+  await onDifficultyChange();
+  assert.deepEqual(execCalls[0], { action: "set_difficulty", difficulty: "hard" });
+  assert.equal(session.config.difficulty, 3);
 }
 
 console.log("settings.test.mjs OK");

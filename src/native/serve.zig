@@ -495,10 +495,14 @@ test "serve: route \"/settings.js\" to the settings module" {
 test "mergeSettingsPostPatch updates view prefs on Config" {
     var cfg = config.Config.default();
     mergeSettingsPostPatch(&cfg, .{
+        .difficulty = "hard",
+        .log_level = "debug",
         .theme = "light",
         .show_region = true,
         .warn_solvability = true,
     });
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
     try std.testing.expect(cfg.show_region);
     try std.testing.expect(cfg.warn_solvability);

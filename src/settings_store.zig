@@ -9,14 +9,22 @@ const log = logger.Logger(.sudoku);
 /// Basename written under the platform data directory.
 pub const file_name = "settings.json";
 
-const JsonSettings = struct {
+/// On-disk JSON schema — player prefs only (`Config` renderer fields are CLI / in-memory).
+const JsonSettingsFile = struct {
+    difficulty: ?[]const u8 = null,
+    log_level: ?[]const u8 = null,
+    theme: ?[]const u8 = null,
+    show_region: ?bool = null,
+    warn_solvability: ?bool = null,
+};
+
+/// Player-editable fields only — matches menubar/menu + ADR-0014 (no renderer choice).
+const JsonPlayerSettings = struct {
     difficulty: []const u8,
     log_level: []const u8,
     theme: []const u8,
     show_region: bool,
-    preferred_renderer: []const u8,
-    fallback_renderer: ?[]const u8 = null,
-    warn_solvability: ?bool = null,
+    warn_solvability: bool,
 };
 
 /// Errors from load/save/path resolution (invalid disk JSON maps to defaults on load).
@@ -43,14 +51,6 @@ fn parseDifficulty(name: []const u8) Error!config.Difficulty {
     return Error.UnsupportedValue;
 }
 
-fn parseRenderer(name: []const u8) Error!config.RendererKind {
-    if (std.mem.eql(u8, name, "ansi")) return .ansi;
-    if (std.mem.eql(u8, name, "ascii")) return .ascii;
-    if (std.mem.eql(u8, name, "tui")) return .tui;
-    if (std.mem.eql(u8, name, "web")) return .web;
-    return Error.UnsupportedValue;
-}
-
 fn parseLogLevel(name: []const u8) Error!logger.Severity {
     if (std.mem.eql(u8, name, "debug")) return .debug;
     if (std.mem.eql(u8, name, "info")) return .info;
@@ -66,34 +66,34 @@ fn parseTheme(name: []const u8) Error!config.ViewTheme {
     return Error.UnsupportedValue;
 }
 
-/// Map parsed `settings.json` fields into a `Config` (strict enum strings).
-pub fn configFromJson(parsed: JsonSettings) Error!config.Config {
-    const fallback: ?config.RendererKind = if (parsed.fallback_renderer) |fb|
-        try parseRenderer(fb)
-    else
-        null;
-    return .{
-        .difficulty = try parseDifficulty(parsed.difficulty),
-        .preferred_renderer = try parseRenderer(parsed.preferred_renderer),
-        .fallback_renderer = fallback,
-        .log_level = try parseLogLevel(parsed.log_level),
-        .theme = try parseTheme(parsed.theme),
-        .show_region = parsed.show_region,
-        .warn_solvability = parsed.warn_solvability orelse false,
-    };
+fn configFromJsonFile(parsed: JsonSettingsFile) Error!config.Config {
+    var cfg = config.Config.default();
+    if (parsed.difficulty) |name| cfg.difficulty = try parseDifficulty(name);
+    if (parsed.log_level) |name| cfg.log_level = try parseLogLevel(name);
+    if (parsed.theme) |name| cfg.theme = try parseTheme(name);
+    if (parsed.show_region) |on| cfg.show_region = on;
+    if (parsed.warn_solvability) |on| cfg.warn_solvability = on;
+    return cfg;
 }
 
-fn jsonFromConfig(cfg: config.Config) JsonSettings {
-    const fallback_name: ?[]const u8 = if (cfg.fallback_renderer) |fb| @tagName(fb) else null;
+fn jsonPlayerFromConfig(cfg: config.Config) JsonPlayerSettings {
     return .{
         .difficulty = @tagName(cfg.difficulty),
         .log_level = @tagName(cfg.log_level),
         .theme = @tagName(cfg.theme),
         .show_region = cfg.show_region,
-        .preferred_renderer = @tagName(cfg.preferred_renderer),
-        .fallback_renderer = fallback_name,
         .warn_solvability = cfg.warn_solvability,
     };
+}
+
+fn writePlayerJson(gpa: std.mem.Allocator, cfg: config.Config) Error![]u8 {
+    const payload = jsonPlayerFromConfig(cfg);
+    var aw = std.Io.Writer.Allocating.init(gpa);
+    defer aw.deinit();
+    try std.json.Stringify.value(payload, .{}, &aw.writer);
+    try std.Io.Writer.writeAll(&aw.writer, "\n");
+    try std.Io.Writer.flush(&aw.writer);
+    return aw.toOwnedSlice() catch return Error.OutOfMemory;
 }
 
 /// Owned absolute or data-dir-relative path to `settings.json`.
@@ -102,9 +102,9 @@ pub fn settingsPath(gpa: std.mem.Allocator, data_dir: []const u8) Error![]u8 {
 }
 
 fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
-    const parsed = std.json.parseFromSlice(JsonSettings, gpa, bytes, .{}) catch return config.Config.default();
+    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch return config.Config.default();
     defer parsed.deinit();
-    return configFromJson(parsed.value) catch return config.Config.default();
+    return configFromJsonFile(parsed.value) catch return config.Config.default();
 }
 
 /// Read `file_name` from `dir`; missing or invalid file → `Config.default()`.
@@ -130,20 +130,14 @@ pub fn loadOrDefault(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) E
     return loadBytes(gpa, bytes);
 }
 
-/// Write `cfg` as JSON to `dir/file_name` (truncate).
+/// Persist player-editable prefs only (no renderer keys). Used by startup, menu, and web POST.
 pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: config.Config) Error!void {
-    const payload = jsonFromConfig(cfg);
-    var aw = std.Io.Writer.Allocating.init(gpa);
-    defer aw.deinit();
-    try std.json.Stringify.value(payload, .{}, &aw.writer);
-    try std.Io.Writer.writeAll(&aw.writer, "\n");
-    try std.Io.Writer.flush(&aw.writer);
-    const text = aw.toOwnedSlice() catch return Error.OutOfMemory;
+    const text = try writePlayerJson(gpa, cfg);
     defer gpa.free(text);
     dir.writeFile(io, .{ .sub_path = file_name, .data = text, .flags = .{ .truncate = true } }) catch return Error.System;
 }
 
-/// Write `cfg` under `data_dir`, creating parent directories when needed.
+/// Persist player-editable prefs under `data_dir` (no renderer keys).
 pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: config.Config) Error!void {
     const file_path = try settingsPath(gpa, data_dir);
     defer gpa.free(file_path);
@@ -152,13 +146,7 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
     defer gpa.free(parent);
     ensureSettingsDir(io, parent);
 
-    const payload = jsonFromConfig(cfg);
-    var aw = std.Io.Writer.Allocating.init(gpa);
-    defer aw.deinit();
-    try std.json.Stringify.value(payload, .{}, &aw.writer);
-    try std.Io.Writer.writeAll(&aw.writer, "\n");
-    try std.Io.Writer.flush(&aw.writer);
-    const text = aw.toOwnedSlice() catch return Error.OutOfMemory;
+    const text = try writePlayerJson(gpa, cfg);
     defer gpa.free(text);
 
     std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{
@@ -168,7 +156,45 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
     }) catch return Error.System;
 }
 
-test "settings round-trip preserves Config fields" {
+test "save omits renderer keys; load uses code default for renderer" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var cfg = config.Config.default();
+    cfg.preferred_renderer = .web;
+    cfg.fallback_renderer = .ascii;
+    cfg.theme = .light;
+    try saveInDir(std.testing.allocator, io, tmp.dir, cfg);
+
+    const bytes = tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited) catch unreachable;
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "preferred_renderer") == null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"theme\":\"light\"") != null);
+
+    const restored = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    try std.testing.expectEqual(config.RendererKind.ansi, restored.preferred_renderer);
+    try std.testing.expectEqual(config.ViewTheme.light, restored.theme);
+}
+
+test "load ignores stale renderer keys on disk" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const legacy =
+        \\{"difficulty":"easy","log_level":"info","theme":"dark","show_region":false,"preferred_renderer":"web","fallback_renderer":"ansi","warn_solvability":false}
+        \\
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = legacy, .flags = .{ .truncate = true } });
+
+    const loaded = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    try std.testing.expectEqual(config.Difficulty.easy, loaded.difficulty);
+    try std.testing.expectEqual(config.RendererKind.ansi, loaded.preferred_renderer);
+    try std.testing.expectEqual(config.RendererKind.ansi, loaded.fallback_renderer.?);
+}
+
+test "settings round-trip preserves player fields" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -180,17 +206,17 @@ test "settings round-trip preserves Config fields" {
         .log_level = .warn,
         .theme = .light,
         .show_region = true,
+        .warn_solvability = true,
     };
 
     try saveInDir(std.testing.allocator, io, tmp.dir, original);
     const restored = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
     try std.testing.expectEqual(original.difficulty, restored.difficulty);
-    try std.testing.expectEqual(original.preferred_renderer, restored.preferred_renderer);
-    try std.testing.expectEqual(original.fallback_renderer, restored.fallback_renderer);
     try std.testing.expectEqual(original.log_level, restored.log_level);
     try std.testing.expectEqual(original.theme, restored.theme);
     try std.testing.expectEqual(original.show_region, restored.show_region);
     try std.testing.expectEqual(original.warn_solvability, restored.warn_solvability);
+    try std.testing.expectEqual(config.RendererKind.ansi, restored.preferred_renderer);
 }
 
 test "settings round-trip preserves warn_solvability" {

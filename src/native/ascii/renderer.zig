@@ -13,6 +13,8 @@ const input_source = @import("../../native/input_source.zig");
 const puzzle_gen = @import("../../puzzle_gen.zig");
 const PuzzleGen = puzzle_gen.PuzzleGen;
 
+const config = @import("../../config.zig");
+const logger = @import("../../logger.zig");
 const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
 
 /// Terminal renderer for the 9x9 Sudoku board.
@@ -226,24 +228,91 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Solvability-warnings toggle — mirrors web File → Settings.
-        fn showSettingsDialog(self: *@This(), show_region: bool, warn_solvability: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
-            const warn_state = if (warn_solvability) "on" else "off";
-            self.writer.print("Settings — solvability warnings: {s}\nToggle? (y/n)\n> ", .{warn_state}) catch return facade.Error.System;
+        fn pickDifficulty(self: *@This()) facade.Error!Difficulty {
+            self.writer.writeAll("Difficulty:\n  1) Easy\n  2) Medium\n  3) Hard\n> ") catch return facade.Error.System;
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
-            if (std.ascii.eqlIgnoreCase(pick, "y")) {
+            if (std.mem.eql(u8, pick, "1")) return .easy;
+            if (std.mem.eql(u8, pick, "2")) return .medium;
+            if (std.mem.eql(u8, pick, "3")) return .hard;
+            try self.showError("invalid choice — enter 1, 2, or 3");
+            return try self.pickDifficulty();
+        }
+
+        fn pickLogLevel(self: *@This()) facade.Error!logger.Severity {
+            self.writer.writeAll("Log level:\n  1) debug\n  2) info\n  3) warn\n  4) err\n  5) fatal\n> ") catch return facade.Error.System;
+            const pick = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(pick);
+            if (std.mem.eql(u8, pick, "1")) return .debug;
+            if (std.mem.eql(u8, pick, "2")) return .info;
+            if (std.mem.eql(u8, pick, "3")) return .warn;
+            if (std.mem.eql(u8, pick, "4")) return .err;
+            if (std.mem.eql(u8, pick, "5")) return .fatal;
+            try self.showError("invalid choice — enter 1–5");
+            return try self.pickLogLevel();
+        }
+
+        fn pickTheme(self: *@This()) facade.Error!config.ViewTheme {
+            self.writer.writeAll("Theme:\n  1) dark\n  2) light\n> ") catch return facade.Error.System;
+            const pick = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(pick);
+            if (std.mem.eql(u8, pick, "1")) return .dark;
+            if (std.mem.eql(u8, pick, "2")) return .light;
+            try self.showError("invalid choice — enter 1 or 2");
+            return try self.pickTheme();
+        }
+
+        /// Terminal settings sheet (native); web uses File → Settings modal.
+        fn showSettingsMenu(
+            self: *@This(),
+            show_region: bool,
+            warn_solvability: bool,
+            difficulty: Difficulty,
+            log_level: logger.Severity,
+            theme: config.ViewTheme,
+            hint_target: ?facade.Selection,
+        ) facade.Error!_command.ParseCommandResult {
+            const warn_state = if (warn_solvability) "on" else "off";
+            self.writer.writeAll("\nSettings:\n") catch return facade.Error.System;
+            self.writer.print("  1) Solvability warnings ({s})\n", .{warn_state}) catch return facade.Error.System;
+            self.writer.print("  2) Default difficulty ({s})\n", .{@tagName(difficulty)}) catch return facade.Error.System;
+            self.writer.print("  3) Log level ({s})\n", .{@tagName(log_level)}) catch return facade.Error.System;
+            self.writer.print("  4) Theme ({s})\n", .{@tagName(theme)}) catch return facade.Error.System;
+            self.writer.writeAll("  5) Back\n> ") catch return facade.Error.System;
+            const pick = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(pick);
+            if (std.mem.eql(u8, pick, "1")) {
                 return .{ .valid = _command.Command{ .set_warn_solvability = !warn_solvability } };
             }
-            if (std.ascii.eqlIgnoreCase(pick, "n")) {
-                return try self.showMenu(show_region, warn_solvability, hint_target);
+            if (std.mem.eql(u8, pick, "2")) {
+                const diff = try self.pickDifficulty();
+                return .{ .valid = _command.Command{ .set_difficulty = diff } };
             }
-            try self.showError("invalid choice — enter y or n");
-            return try self.showSettingsDialog(show_region, warn_solvability, hint_target);
+            if (std.mem.eql(u8, pick, "3")) {
+                const level = try self.pickLogLevel();
+                return .{ .valid = _command.Command{ .set_log_level = level } };
+            }
+            if (std.mem.eql(u8, pick, "4")) {
+                const picked = try self.pickTheme();
+                return .{ .valid = _command.Command{ .set_theme = picked } };
+            }
+            if (std.mem.eql(u8, pick, "5")) {
+                return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, hint_target);
+            }
+            try self.showError("invalid settings choice");
+            return try self.showSettingsMenu(show_region, warn_solvability, difficulty, log_level, theme, hint_target);
         }
 
         /// Numbered session/view submenu — file operations, view, hint, quit.
-        pub fn showMenu(self: *@This(), show_region: bool, warn_solvability: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
+        pub fn showMenu(
+            self: *@This(),
+            show_region: bool,
+            warn_solvability: bool,
+            difficulty: Difficulty,
+            log_level: logger.Severity,
+            theme: config.ViewTheme,
+            hint_target: ?facade.Selection,
+        ) facade.Error!_command.ParseCommandResult {
             const region_state = if (show_region) "on" else "off";
             self.writer.writeAll("\nMenu:\n") catch return facade.Error.System;
             self.writer.writeAll("  1) Save\n") catch return facade.Error.System;
@@ -281,18 +350,20 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             if (std.mem.eql(u8, pick, "9")) {
                 try self.showAbout();
-                return try self.showMenu(show_region, warn_solvability, hint_target);
+                return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, hint_target);
             }
             if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
             if (std.mem.eql(u8, pick, "11")) {
-                if (!self.can_solve) return try self.showMenu(show_region, warn_solvability, hint_target);
+                if (!self.can_solve) return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, hint_target);
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
             if (std.mem.eql(u8, pick, "12")) return .{ .valid = _command.Command{ .copy = {} } };
             if (std.mem.eql(u8, pick, "13")) return .{ .valid = _command.Command{ .paste = .{ .line = null } } };
-            if (std.mem.eql(u8, pick, "14")) return try self.showSettingsDialog(show_region, warn_solvability, hint_target);
+            if (std.mem.eql(u8, pick, "14")) {
+                return try self.showSettingsMenu(show_region, warn_solvability, difficulty, log_level, theme, hint_target);
+            }
             try self.showError("invalid menu choice");
-            return try self.showMenu(show_region, warn_solvability, hint_target);
+            return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, hint_target);
         }
 
         /// Help/About — product metadata with acknowledgement.
@@ -335,7 +406,16 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
-        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool, warn_solvability: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
+        pub fn getCommandInput(
+            self: *@This(),
+            names: []const []const u8,
+            show_region: bool,
+            warn_solvability: bool,
+            difficulty: Difficulty,
+            log_level: logger.Severity,
+            theme: config.ViewTheme,
+            hint_target: ?facade.Selection,
+        ) facade.Error!_command.ParseCommandResult {
             self.writer.writeAll(">") catch return facade.Error.System;
             self.writer.writeAll(" ") catch return facade.Error.System;
 
@@ -350,7 +430,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             var rsl = parser.parseWithCommands(raw, names);
 
             if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .menu) {
-                rsl = try self.showMenu(show_region, warn_solvability, hint_target);
+                rsl = try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, hint_target);
             }
 
             // Intercept save_as: get real filename from dialog, cache for future .save
@@ -799,7 +879,7 @@ test "getCommandInput: New opens difficulty dialog; pick easy loads easy puzzle"
     };
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| {
             switch (cmd) {
@@ -852,7 +932,7 @@ test "getCommandInput: New dialog rejects retired pick slots beyond the three di
     };
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
     switch (result) {
         .error_msg => |msg| {
             try std.testing.expectEqualStrings("cancelled", msg);
@@ -892,7 +972,7 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -938,7 +1018,7 @@ test "getCommandInput: EOF returns Quit" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -1002,7 +1082,7 @@ test "getCommandInput: save with last_filename set uses cached path" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -1049,7 +1129,7 @@ test "getCommandInput: save with last_filename null prompts and caches" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -1101,7 +1181,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     const count = avail.getNames(&names);
 
     // First save — should prompt and cache
-    const result1 = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result1 = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
     switch (result1) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
@@ -1113,7 +1193,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     }
 
     // Second save — should use cached, no prompt
-    const result2 = try renderer.getCommandInput(names[0..count], false, false, null);
+    const result2 = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, null);
     switch (result2) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
@@ -1169,7 +1249,7 @@ test "showMenu: quit pick returns quit command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1192,7 +1272,7 @@ test "showMenu: paste pick returns paste command with null line" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "paste");
@@ -1218,7 +1298,7 @@ test "showMenu: copy pick returns copy command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "copy"),
         .error_msg => try std.testing.expect(false),
@@ -1241,7 +1321,7 @@ test "showMenu: import pick returns import command with null path" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "import");
@@ -1266,7 +1346,7 @@ test "showMenu: solve pick is ignored when unavailable" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1293,7 +1373,7 @@ test "showMenu: solve pick returns solve when available" {
     );
     renderer.can_solve = true;
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "solve_for_me"),
         .error_msg => try std.testing.expect(false),
@@ -1316,7 +1396,7 @@ test "showMenu: q pick returns quit command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1339,7 +1419,7 @@ test "showMenu: invalid pick re-shows menu until valid choice" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1367,7 +1447,7 @@ test "showMenu: hint pick returns engine-pick when no target cell" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "hint");
@@ -1396,7 +1476,7 @@ test "showMenu: hint pick uses last cell for targeted hint" {
     );
 
     const target: facade.Selection = .{ .row = 2, .col = 4 };
-    const result = try renderer.showMenu(false, false, target);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, target);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "hint");
@@ -1423,7 +1503,7 @@ test "showMenu: region pick toggles set_region" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "set_region");
@@ -1438,7 +1518,7 @@ test "showMenu: settings enables solvability warnings" {
     defer aw.deinit();
 
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{ "14\n", "y\n" };
+    const responses = [_][]const u8{ "14\n", "1\n" };
     const source: input_source.ReaderSource = .{
         .mock = input_source.MockSource.init(std.testing.allocator, &responses),
     };
@@ -1449,7 +1529,7 @@ test "showMenu: settings enables solvability warnings" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, null);
+    const result = try renderer.showMenu(false, false, .easy, .info, .dark, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "set_warn_solvability");

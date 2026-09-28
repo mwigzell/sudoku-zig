@@ -1,8 +1,12 @@
-// settings.js — File → Settings: solvability warning toggle.
+// settings.js — File → Settings: warn, default difficulty, log level.
 
-/** Sync checkbox from wasm getConfig(). */
+import { difficultyName, logLevelName } from "./shell.js";
+
+/** Sync controls from wasm getConfig(). */
 export function syncSettingsModal(modal, config) {
-  modal.checkbox.checked = config.warn_solvability === true;
+  if (modal.checkbox) modal.checkbox.checked = config.warn_solvability === true;
+  if (modal.difficultySelect) modal.difficultySelect.value = difficultyName(config);
+  if (modal.logLevelSelect) modal.logLevelSelect.value = logLevelName(config);
 }
 
 /** Open the settings dialog with current config. */
@@ -11,7 +15,17 @@ export function showSettingsModal(modal, config) {
   modal.el.hidden = false;
 }
 
-/** File → Settings: toggle warn_solvability and persist via host. */
+async function applySettingChange(game, session, modal, onPersist, execFn) {
+  const result = execFn();
+  if (!result.ok) {
+    syncSettingsModal(modal, session.config ?? game.getConfig());
+    return;
+  }
+  session.config = game.getConfig();
+  if (onPersist) await onPersist(session.config);
+}
+
+/** File → Settings: prefs and persist via host. */
 export function wireSettingsMenu(
   settingsBtn,
   game,
@@ -27,13 +41,23 @@ export function wireSettingsMenu(
 
   modal.checkbox?.addEventListener("change", async () => {
     const enabled = modal.checkbox.checked;
-    const result = game.exec({ action: "set_warn_solvability", enabled });
-    if (!result.ok) {
-      modal.checkbox.checked = !enabled;
-      return;
-    }
-    session.config = game.getConfig();
-    if (onPersist) await onPersist(session.config);
+    await applySettingChange(game, session, modal, onPersist, () =>
+      game.exec({ action: "set_warn_solvability", enabled }),
+    );
+  });
+
+  modal.difficultySelect?.addEventListener("change", async () => {
+    const difficulty = modal.difficultySelect.value;
+    await applySettingChange(game, session, modal, onPersist, () =>
+      game.exec({ action: "set_difficulty", difficulty }),
+    );
+  });
+
+  modal.logLevelSelect?.addEventListener("change", async () => {
+    const log_level = modal.logLevelSelect.value;
+    await applySettingChange(game, session, modal, onPersist, () =>
+      game.exec({ action: "set_log_level", log_level }),
+    );
   });
 
   modal.dismissEl?.addEventListener("click", () => {

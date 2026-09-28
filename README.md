@@ -58,16 +58,16 @@ Web UI: `zig build run -- -r web` or `zig-out/bin/sudoku -r web` (opens or logs 
 
 ## Settings (`settings.json`)
 
-Nominal game preferences (difficulty, log level, theme, region shading, solvability warnings, renderer choice) are stored as JSON in the **same data directory** as native save files:
+Player preferences (difficulty, log level, theme, region shading, solvability warnings) are stored as JSON in the **same data directory** as native save files. Pick the UI with **`-r`** (`ansi`, `web`, …) on each launch — not via `settings.json`:
 
 | OS | `settings.json` |
 |----|-----------------|
 | **macOS** | `~/Library/Application Support/sudoku/settings.json` |
 | **Linux** | `~/.local/share/sudoku/settings.json` |
 
-**Native terminal:** on startup the app loads this file, applies CLI overrides, and saves the merged result. In session, **Menu → 14) Settings** toggles solvability warnings; **Menu → 7) Region** toggles region shading — both write back to `settings.json`.
+**Native terminal:** on startup the app loads this file, applies CLI overrides, and saves the merged result. In session, **Menu → 14) Settings** (terminal submenu) edits warnings, difficulty, log level, and theme; **7) Region** toggles region shading — all write back to `settings.json`. (Web uses **File → Settings** in the menubar — different shell, same `settings.json` fields.)
 
-**Web (`-r web`):** the host serves `/host-config.json` from that file at startup. **File → Settings** and **View** (theme, region) POST partial updates to `/settings.json` on the host, which merges and saves to disk.
+**Web (`-r web`):** the host serves `/host-config.json` from that file at startup. **File → Settings** (warn, difficulty, log level) and **View** (theme, region) POST partial updates to `/settings.json` on the host, which merges and saves to disk.
 
 ## Known to run on
 

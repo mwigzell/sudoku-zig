@@ -120,7 +120,7 @@ Fn-pointer vtable for file read/write/resolve. **Owned by native `Sudoku`**, pas
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
 **Config** (`config.zig`):
-Nominal preferences — `difficulty`, renderer kinds (native), `log_level`, `theme`, `show_region`, `warn_solvability`. Not puzzle cells or undo history. `GameEngine` owns a `cfg: Config` passed in at `init`. Persisted in **`settings.json`**; startup merge load → CLI → save (**ADR-0014**). In session, prefs mutate via commands/`exec`; each player-facing field must be editable in the platform UI (menubar/menu), except renderer choice (CLI/disk). They do not live in `Legend`, `State`, or SUD0.
+Nominal preferences — `difficulty`, `log_level`, `theme`, `show_region`, `warn_solvability` on disk; **`Config`** also carries renderer kinds for native host routing (CLI per run, not **`settings.json`**). Not puzzle cells or undo history. `GameEngine` owns `cfg` at `init`. Startup: load player prefs → CLI on full `Config` → save player prefs (**ADR-0014**). In session, disk-backed fields mutate via commands/`exec` and platform UI. They do not live in `Legend`, `State`, or SUD0.
 _Avoid_: folding prefs into Legend or save files; JS boot defaults that override host-resolved config
 
 **State**:

@@ -1381,6 +1381,18 @@ test "exec set_theme and set_region update view config" {
     try std.testing.expect(cfg.show_region);
 }
 
+test "exec set_difficulty and set_log_level update config" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    _ = try expectOk(execTest(&engine, command.Command{ .set_difficulty = .hard }));
+    try std.testing.expectEqual(config.Difficulty.hard, engine.getConfig().difficulty);
+
+    _ = try expectOk(execTest(&engine, command.Command{ .set_log_level = .debug }));
+    try std.testing.expectEqual(logger.Severity.debug, engine.getConfig().log_level);
+    try std.testing.expectEqual(logger.Severity.debug, logger.min_level);
+}
+
 test "loadSaveFormat preserves view config" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();

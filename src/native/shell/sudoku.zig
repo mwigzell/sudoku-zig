@@ -103,7 +103,7 @@ pub const Sudoku = struct {
             },
             .valid => |cmd| {
                 const persist_after = switch (cmd) {
-                    .set_region, .set_warn_solvability => true,
+                    .set_region, .set_warn_solvability, .set_theme, .set_difficulty, .set_log_level => true,
                     else => false,
                 };
                 switch (cmd) {
@@ -146,6 +146,9 @@ pub const Sudoku = struct {
             names[0..count],
             self.engine.cfg.show_region,
             self.engine.cfg.warn_solvability,
+            self.engine.cfg.difficulty,
+            self.engine.cfg.log_level,
+            self.engine.cfg.theme,
             self.last_cell,
         ) catch return error.System;
         return try self.handleResult(result);
@@ -988,6 +991,31 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);
 }
 
+test "integrated e2e: menu Settings persists difficulty to settings.json" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const cfg = config.Config.default();
+    const responses = [_][]const u8{ "menu\n", "14\n", "2\n", "3\n", "quit\n" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(io);
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    try std.testing.expectEqual(config.Difficulty.hard, app.engine.cfg.difficulty);
+    const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    try std.testing.expectEqual(config.Difficulty.hard, restored.difficulty);
+}
+
 test "integrated e2e: menu Settings persists warn_solvability to settings.json" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -996,7 +1024,7 @@ test "integrated e2e: menu Settings persists warn_solvability to settings.json" 
     defer std.testing.allocator.free(data_path);
 
     const cfg = config.Config.default();
-    const responses = [_][]const u8{ "menu\n", "14\n", "y\n", "quit\n" };
+    const responses = [_][]const u8{ "menu\n", "14\n", "1\n", "quit\n" };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
     var facade = try host.facade();

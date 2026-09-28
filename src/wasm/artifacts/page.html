@@ -393,13 +393,34 @@
       line-height: 1.45;
     }
 
+    #settings-modal label {
+      display: block;
+      margin: 0 0 0.875rem;
+      line-height: 1.45;
+    }
+
     #settings-warn-solvability-label {
       display: flex;
       align-items: flex-start;
       gap: 0.5rem;
-      margin: 0 0 1rem;
-      line-height: 1.45;
       cursor: pointer;
+    }
+
+    #settings-difficulty-label select,
+    #settings-log-level-label select {
+      display: block;
+      margin-top: 0.35rem;
+      width: 100%;
+      font: inherit;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid var(--status-border);
+      border-radius: 6px;
+      background: var(--cell-bg);
+      color: var(--status-fg);
+    }
+
+    #settings-modal-dismiss {
+      margin-top: 0.5rem;
     }
 
     #settings-modal-dismiss,
@@ -583,6 +604,24 @@
         <input type="checkbox" id="settings-warn-solvability" />
         Warn when the puzzle has no solution
       </label>
+      <label id="settings-difficulty-label">
+        Default difficulty
+        <select id="settings-difficulty">
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </label>
+      <label id="settings-log-level-label">
+        Log level
+        <select id="settings-log-level">
+          <option value="debug">Debug</option>
+          <option value="info">Info</option>
+          <option value="warn">Warn</option>
+          <option value="err">Error</option>
+          <option value="fatal">Fatal</option>
+        </select>
+      </label>
       <button type="button" id="settings-modal-dismiss">OK</button>
     </div>
   </div>
@@ -692,6 +731,8 @@
     const settingsModal = {
       el: document.getElementById("settings-modal"),
       checkbox: document.getElementById("settings-warn-solvability"),
+      difficultySelect: document.getElementById("settings-difficulty"),
+      logLevelSelect: document.getElementById("settings-log-level"),
       dismissEl: document.getElementById("settings-modal-dismiss"),
     };
 

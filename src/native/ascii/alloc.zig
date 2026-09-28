@@ -8,6 +8,8 @@ const facade = @import("../../renderer/facade.zig");
 const board = @import("../../board/board.zig");
 const legend = @import("../../renderer/legend.zig");
 const command = @import("../../command.zig");
+const config = @import("../../config.zig");
+const logger = @import("../../logger.zig");
 const io_session = @import("../../native/io_session.zig");
 const puzzle_gen = @import("../../puzzle_gen.zig");
 
@@ -93,8 +95,17 @@ fn ctx(S: type) type {
             return self.renderer.showError(msg);
         }
 
-        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool, warn_solvability: bool, hint_target: ?facade.Selection) facade.Error!command.ParseCommandResult {
-            return self.renderer.getCommandInput(names, show_region, warn_solvability, hint_target);
+        pub fn getCommandInput(
+            self: *@This(),
+            names: []const []const u8,
+            show_region: bool,
+            warn_solvability: bool,
+            difficulty: config.Difficulty,
+            log_level: logger.Severity,
+            theme: config.ViewTheme,
+            hint_target: ?facade.Selection,
+        ) facade.Error!command.ParseCommandResult {
+            return self.renderer.getCommandInput(names, show_region, warn_solvability, difficulty, log_level, theme, hint_target);
         }
 
         pub fn reportGenProgress(self: *@This(), event: puzzle_gen.GenProgressEvent) facade.Error!void {

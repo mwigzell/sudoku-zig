@@ -4,6 +4,7 @@ const board = @import("../board/board.zig");
 const cell = @import("../board/cell.zig");
 const command = @import("../command.zig");
 const config = @import("../config.zig");
+const logger = @import("../logger.zig");
 const event_mod = @import("../event.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const about = @import("../about.zig");
@@ -393,6 +394,18 @@ test "parseAction set_theme and set_region" {
     const warn_cmd = try parseAction("{\"action\":\"set_warn_solvability\",\"enabled\":true}");
     switch (warn_cmd) {
         .set_warn_solvability => |enabled| try std.testing.expect(enabled),
+        else => return error.TestFailed,
+    }
+
+    const diff_cmd = try parseAction("{\"action\":\"set_difficulty\",\"difficulty\":\"medium\"}");
+    switch (diff_cmd) {
+        .set_difficulty => |diff| try std.testing.expectEqual(config.Difficulty.medium, diff),
+        else => return error.TestFailed,
+    }
+
+    const log_cmd = try parseAction("{\"action\":\"set_log_level\",\"log_level\":\"warn\"}");
+    switch (log_cmd) {
+        .set_log_level => |level| try std.testing.expectEqual(logger.Severity.warn, level),
         else => return error.TestFailed,
     }
 }

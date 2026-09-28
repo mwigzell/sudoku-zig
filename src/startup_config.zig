@@ -82,7 +82,7 @@ pub fn initEngineFromStartup(startup: config.Config) game_engine.Error!game_engi
     return game_engine.GameEngine.init(emptyPuzzleLine()[0..], startup);
 }
 
-/// Load persisted settings, apply CLI overrides, save merged config (native entry).
+/// Load player prefs from disk, apply CLI on full `Config`, persist player prefs only.
 pub fn resolveStartupConfig(
     gpa: std.mem.Allocator,
     io: std.Io,
