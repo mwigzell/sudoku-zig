@@ -195,7 +195,7 @@ test "Sudoku.init uses CLI-resolved startup config on engine" {
     var facade = try host.facade();
     defer facade.deinit();
 
-    var app = try sudoku.Sudoku.init(startup, facade, @import("native/shell/file_transport.zig").NativeTransport.make(std.testing.io), host.writer());
+    var app = try sudoku.Sudoku.init(startup, facade, @import("native/shell/file_transport.zig").NativeTransport.make(std.testing.io), host.writer(), null);
     defer app.deinit();
 
     try std.testing.expectEqual(startup.difficulty, app.cfg.difficulty);

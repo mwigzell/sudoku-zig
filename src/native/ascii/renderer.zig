@@ -226,8 +226,24 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
+        /// Solvability-warnings toggle — mirrors web File → Settings.
+        fn showSettingsDialog(self: *@This(), show_region: bool, warn_solvability: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
+            const warn_state = if (warn_solvability) "on" else "off";
+            self.writer.print("Settings — solvability warnings: {s}\nToggle? (y/n)\n> ", .{warn_state}) catch return facade.Error.System;
+            const pick = self.readLine() catch return facade.Error.System;
+            defer self.allocator.free(pick);
+            if (std.ascii.eqlIgnoreCase(pick, "y")) {
+                return .{ .valid = _command.Command{ .set_warn_solvability = !warn_solvability } };
+            }
+            if (std.ascii.eqlIgnoreCase(pick, "n")) {
+                return try self.showMenu(show_region, warn_solvability, hint_target);
+            }
+            try self.showError("invalid choice — enter y or n");
+            return try self.showSettingsDialog(show_region, warn_solvability, hint_target);
+        }
+
         /// Numbered session/view submenu — file operations, view, hint, quit.
-        pub fn showMenu(self: *@This(), show_region: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
+        pub fn showMenu(self: *@This(), show_region: bool, warn_solvability: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
             const region_state = if (show_region) "on" else "off";
             self.writer.writeAll("\nMenu:\n") catch return facade.Error.System;
             self.writer.writeAll("  1) Save\n") catch return facade.Error.System;
@@ -247,6 +263,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             self.writer.writeAll("  12) Copy puzzle line\n") catch return facade.Error.System;
             self.writer.writeAll("  13) Paste puzzle line\n") catch return facade.Error.System;
+            self.writer.writeAll("  14) Settings\n") catch return facade.Error.System;
             self.writer.writeAll("> ") catch return facade.Error.System;
 
             const pick = self.readLine() catch return facade.Error.System;
@@ -264,17 +281,18 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             if (std.mem.eql(u8, pick, "9")) {
                 try self.showAbout();
-                return try self.showMenu(show_region, hint_target);
+                return try self.showMenu(show_region, warn_solvability, hint_target);
             }
             if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
             if (std.mem.eql(u8, pick, "11")) {
-                if (!self.can_solve) return try self.showMenu(show_region, hint_target);
+                if (!self.can_solve) return try self.showMenu(show_region, warn_solvability, hint_target);
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
             if (std.mem.eql(u8, pick, "12")) return .{ .valid = _command.Command{ .copy = {} } };
             if (std.mem.eql(u8, pick, "13")) return .{ .valid = _command.Command{ .paste = .{ .line = null } } };
+            if (std.mem.eql(u8, pick, "14")) return try self.showSettingsDialog(show_region, warn_solvability, hint_target);
             try self.showError("invalid menu choice");
-            return try self.showMenu(show_region, hint_target);
+            return try self.showMenu(show_region, warn_solvability, hint_target);
         }
 
         /// Help/About — product metadata with acknowledgement.
@@ -317,7 +335,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
-        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
+        pub fn getCommandInput(self: *@This(), names: []const []const u8, show_region: bool, warn_solvability: bool, hint_target: ?facade.Selection) facade.Error!_command.ParseCommandResult {
             self.writer.writeAll(">") catch return facade.Error.System;
             self.writer.writeAll(" ") catch return facade.Error.System;
 
@@ -332,7 +350,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             var rsl = parser.parseWithCommands(raw, names);
 
             if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .menu) {
-                rsl = try self.showMenu(show_region, hint_target);
+                rsl = try self.showMenu(show_region, warn_solvability, hint_target);
             }
 
             // Intercept save_as: get real filename from dialog, cache for future .save
@@ -781,7 +799,7 @@ test "getCommandInput: New opens difficulty dialog; pick easy loads easy puzzle"
     };
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, null);
     switch (result) {
         .valid => |cmd| {
             switch (cmd) {
@@ -834,7 +852,7 @@ test "getCommandInput: New dialog rejects retired pick slots beyond the three di
     };
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, null);
     switch (result) {
         .error_msg => |msg| {
             try std.testing.expectEqualStrings("cancelled", msg);
@@ -874,7 +892,7 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -920,7 +938,7 @@ test "getCommandInput: EOF returns Quit" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -984,7 +1002,7 @@ test "getCommandInput: save with last_filename set uses cached path" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -1031,7 +1049,7 @@ test "getCommandInput: save with last_filename null prompts and caches" {
 
     var names: [6][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, false, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -1083,7 +1101,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     const count = avail.getNames(&names);
 
     // First save — should prompt and cache
-    const result1 = try renderer.getCommandInput(names[0..count], false, null);
+    const result1 = try renderer.getCommandInput(names[0..count], false, false, null);
     switch (result1) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
@@ -1095,7 +1113,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
     }
 
     // Second save — should use cached, no prompt
-    const result2 = try renderer.getCommandInput(names[0..count], false, null);
+    const result2 = try renderer.getCommandInput(names[0..count], false, false, null);
     switch (result2) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "save");
@@ -1151,7 +1169,7 @@ test "showMenu: quit pick returns quit command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1174,7 +1192,7 @@ test "showMenu: paste pick returns paste command with null line" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "paste");
@@ -1200,7 +1218,7 @@ test "showMenu: copy pick returns copy command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "copy"),
         .error_msg => try std.testing.expect(false),
@@ -1223,7 +1241,7 @@ test "showMenu: import pick returns import command with null path" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "import");
@@ -1248,7 +1266,7 @@ test "showMenu: solve pick is ignored when unavailable" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1275,7 +1293,7 @@ test "showMenu: solve pick returns solve when available" {
     );
     renderer.can_solve = true;
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "solve_for_me"),
         .error_msg => try std.testing.expect(false),
@@ -1298,7 +1316,7 @@ test "showMenu: q pick returns quit command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1321,7 +1339,7 @@ test "showMenu: invalid pick re-shows menu until valid choice" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1349,7 +1367,7 @@ test "showMenu: hint pick returns engine-pick when no target cell" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "hint");
@@ -1378,7 +1396,7 @@ test "showMenu: hint pick uses last cell for targeted hint" {
     );
 
     const target: facade.Selection = .{ .row = 2, .col = 4 };
-    const result = try renderer.showMenu(false, target);
+    const result = try renderer.showMenu(false, false, target);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "hint");
@@ -1405,11 +1423,37 @@ test "showMenu: region pick toggles set_region" {
         source,
     );
 
-    const result = try renderer.showMenu(false, null);
+    const result = try renderer.showMenu(false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "set_region");
             try std.testing.expect(cmd.set_region);
+        },
+        .error_msg => try std.testing.expect(false),
+    }
+}
+
+test "showMenu: settings enables solvability warnings" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{ "14\n", "y\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false, false, null);
+    switch (result) {
+        .valid => |cmd| {
+            try std.testing.expectEqualStrings(@tagName(cmd), "set_warn_solvability");
+            try std.testing.expect(cmd.set_warn_solvability);
         },
         .error_msg => try std.testing.expect(false),
     }

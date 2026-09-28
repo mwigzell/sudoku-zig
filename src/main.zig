@@ -10,6 +10,7 @@ const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
 const startup_config = @import("startup_config.zig");
 const settings_store = @import("settings_store.zig");
+const shell_path = @import("native/shell/path.zig");
 
 // Test builds omit main(), so imports only used there are tree-shaken away.
 // Pin roots whose tests must still run under `zig build test`.
@@ -58,7 +59,13 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
         return err;
     };
     defer facade_f.deinit();
-    var game = try sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io), host.writer());
+    const data_dir = shell_path.computeDataDir(std.heap.page_allocator) catch ".";
+    defer if (!std.mem.eql(u8, data_dir, ".")) std.heap.page_allocator.free(data_dir);
+    const settings_persist: ?sudoku.SettingsPersist = if (std.mem.eql(u8, data_dir, "."))
+        null
+    else
+        .{ .io = init.io, .data_dir = data_dir };
+    var game = try sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io), host.writer(), settings_persist);
     defer game.deinit();
 
     // Command loop: menu → play → save/open, until the player quits.

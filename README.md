@@ -26,7 +26,8 @@ The codebase was produced with a local AI agent in a tight loop: Pi (terminal ag
 - **Puzzle generation** with easy/medium/hard difficulty (cells removed by a backtracking solver)
 - **Conflicts** — the board tracks and displays cell conflicts as you play
 - **Command disambiguation** — type partial or prefix-matched commands (`sa` → save-as, `f` → fill)
-- **Save & restore** — binary save format with versioned header/trailer, stored under `~/.local/share/sudoku`
+- **Save & restore** — binary save format with versioned header/trailer, stored under the platform data directory (see below)
+- **Persistent settings** — `settings.json` beside saves; native **Menu → Settings** / **Region**, web **File → Settings** and **View**, CLI flags merged at startup
 - **ANSI styled** terminal renderer (styler is swappable)
 - **Web UI (loopback + WASM)** — `-r web` serves embedded wasm/JS on localhost; same engine and save format as native, no separate web codebase for game logic
 
@@ -54,6 +55,19 @@ Or run directly: `zig build run` (the 0.17 builder consumes flags after `run`,
 so pass program flags via the built binary).
 
 Web UI: `zig build run -- -r web` or `zig-out/bin/sudoku -r web` (opens or logs a loopback URL).
+
+## Settings (`settings.json`)
+
+Nominal game preferences (difficulty, log level, theme, region shading, solvability warnings, renderer choice) are stored as JSON in the **same data directory** as native save files:
+
+| OS | `settings.json` |
+|----|-----------------|
+| **macOS** | `~/Library/Application Support/sudoku/settings.json` |
+| **Linux** | `~/.local/share/sudoku/settings.json` |
+
+**Native terminal:** on startup the app loads this file, applies CLI overrides, and saves the merged result. In session, **Menu → 14) Settings** toggles solvability warnings; **Menu → 7) Region** toggles region shading — both write back to `settings.json`.
+
+**Web (`-r web`):** the host serves `/host-config.json` from that file at startup. **File → Settings** and **View** (theme, region) POST partial updates to `/settings.json` on the host, which merges and saves to disk.
 
 ## Known to run on
 
