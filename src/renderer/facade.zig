@@ -24,6 +24,9 @@ pub const Error = error{System};
 ///     itself completes each interactive call (see the method docs).
 ///   * Borrowed arguments (view, commands, msg, names) are caller-owned;
 ///     a renderer must not retain them past the call.
+///   * Live menu/settings labels cross only via scalar args on
+///     getCommandInput (Sudoku passes engine config each turn). No bundled
+///     pref types on the facade — see AGENTS.md “Native renderer facade seam”.
 ///   * The facade is caller-owned and dead after deinit.
 pub const Facade = struct {
     context: *anyopaque,

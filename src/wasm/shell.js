@@ -191,13 +191,33 @@ export function bootstrapEngineFromHostConfig(game, hostCfg) {
   });
 }
 
-/** View/settings fields the host writes to settings.json (web POST). */
-export function hostViewPrefsForPersist(config) {
+const DIFFICULTY_WIRE = { 1: "easy", 2: "medium", 3: "hard" };
+const LOG_WIRE = ["debug", "info", "warn", "err", "fatal"];
+
+function difficultyName(config) {
+  if (typeof config.difficulty === "string") return config.difficulty;
+  return DIFFICULTY_WIRE[config.difficulty] ?? "easy";
+}
+
+function logLevelName(config) {
+  if (typeof config.log_level === "string") return config.log_level;
+  return LOG_WIRE[config.log_level] ?? "info";
+}
+
+/** User-editable settings.json fields (excludes renderer choice). */
+export function hostSettingsForPersist(config) {
   return {
+    difficulty: difficultyName(config),
+    log_level: logLevelName(config),
     theme: config.theme === "light" ? "light" : "dark",
     show_region: config.show_region === true,
     warn_solvability: config.warn_solvability === true,
   };
+}
+
+/** @deprecated use hostSettingsForPersist */
+export function hostViewPrefsForPersist(config) {
+  return hostSettingsForPersist(config);
 }
 
 /** Persist player prefs to host settings.json (web serve POST). */
@@ -205,7 +225,7 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
   const res = await fetchFn("./settings.json", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(hostViewPrefsForPersist(config)),
+    body: JSON.stringify(hostSettingsForPersist(config)),
   });
   if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
 }

@@ -77,6 +77,8 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
   assert.equal(session.config.warn_solvability, true);
   assert.equal(persistCalls.length, 1);
   assert.deepEqual(hostViewPrefsForPersist(persistCalls[0]), {
+    difficulty: "easy",
+    log_level: "info",
     theme: "dark",
     show_region: false,
     warn_solvability: true,

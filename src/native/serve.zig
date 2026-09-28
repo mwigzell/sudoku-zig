@@ -124,12 +124,24 @@ fn hostConfigBody() ServeError![]const u8 {
 }
 
 const SettingsPostBody = struct {
+    difficulty: ?[]const u8 = null,
+    log_level: ?[]const u8 = null,
     theme: ?[]const u8 = null,
     show_region: ?bool = null,
     warn_solvability: ?bool = null,
 };
 
+fn mergeDifficultyPatch(cfg: *config.Config, name: []const u8) void {
+    if (std.mem.eql(u8, name, "easy")) cfg.difficulty = .easy else if (std.mem.eql(u8, name, "medium")) cfg.difficulty = .medium else if (std.mem.eql(u8, name, "hard")) cfg.difficulty = .hard;
+}
+
+fn mergeLogLevelPatch(cfg: *config.Config, name: []const u8) void {
+    if (std.mem.eql(u8, name, "debug")) cfg.log_level = .debug else if (std.mem.eql(u8, name, "info")) cfg.log_level = .info else if (std.mem.eql(u8, name, "warn")) cfg.log_level = .warn else if (std.mem.eql(u8, name, "err")) cfg.log_level = .err else if (std.mem.eql(u8, name, "fatal")) cfg.log_level = .fatal;
+}
+
 fn mergeSettingsPostPatch(cfg: *config.Config, patch: SettingsPostBody) void {
+    if (patch.difficulty) |name| mergeDifficultyPatch(cfg, name);
+    if (patch.log_level) |name| mergeLogLevelPatch(cfg, name);
     if (patch.theme) |name| {
         cfg.theme = if (std.mem.eql(u8, name, "light")) .light else .dark;
     }

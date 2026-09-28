@@ -62,6 +62,16 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Native renderer facade seam
+
+The terminal `Facade` vtable (`src/renderer/facade.zig`, ADR-0009) is **settled**. Web play does not use it (wasm JSON + JS menubar).
+
+- **Change the vtable only** when a new *kind* of Sudoku→renderer interaction is needed (a new method), not to model config or menu state more neatly.
+- **Menu and Settings UI** need live prefs (region, warn, difficulty, theme, log level, …). Pass them as **extra scalar parameters on the existing `getCommandInput` call** — `Sudoku.turn()` copies from `engine.getConfig()` each turn. Ugly parameter lists are fine; they keep the seam explicit.
+- **Do not** introduce facade-side config structs (e.g. bundled “menu prefs” types), sync hooks, or renderer-held config pointers to avoid lengthening that parameter list.
+- **Product rule:** user-facing `settings.json` fields (except `preferred_renderer`) must be editable in-app on each supported platform; native edits still flow as `Command` results from the menu path, then persist like today.
+
 ## Code comments
 
 Comments are **signposts, not citations**.

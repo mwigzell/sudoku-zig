@@ -26,3 +26,4 @@ The bar for retroactive readability improvements on working comptime code is hig
 - Future contributors encounter the `Make(CT)` pattern as-is and learn the binding convention
 - If WASM renderer integration reveals a genuine flaw in how function pointers are bound, that earns its own ADR with evidence
 - The current pattern constrains future changes implicitly: any new facade method must be added to both the struct field and every concrete renderer's function table — that coupling is intentional and worth keeping visible
+- More native menu/settings prefs extend **`getCommandInput` scalar parameters** from `Sudoku` (engine config snapshot per turn), not new facade types or pref-sync methods — see AGENTS.md “Native renderer facade seam”

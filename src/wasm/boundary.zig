@@ -92,6 +92,8 @@ const JsonAction = struct {
     digit: ?u8 = null,
     theme: ?[]const u8 = null,
     enabled: ?bool = null,
+    difficulty: ?[]const u8 = null,
+    log_level: ?[]const u8 = null,
 };
 
 pub fn parseAction(json_text: []const u8) !command.Command {
@@ -139,6 +141,22 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_warn_solvability")) {
         const enabled = parsed.value.enabled orelse return error.MissingField;
         return .{ .set_warn_solvability = enabled };
+    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_difficulty")) {
+        const name = parsed.value.difficulty orelse return error.MissingField;
+        if (std.ascii.eqlIgnoreCase(name, "easy")) return .{ .set_difficulty = .easy };
+        if (std.ascii.eqlIgnoreCase(name, "medium")) return .{ .set_difficulty = .medium };
+        if (std.ascii.eqlIgnoreCase(name, "hard")) return .{ .set_difficulty = .hard };
+        return error.InvalidDifficulty;
+    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_log_level")) {
+        const name = parsed.value.log_level orelse return error.MissingField;
+        if (std.ascii.eqlIgnoreCase(name, "debug")) return .{ .set_log_level = .debug };
+        if (std.ascii.eqlIgnoreCase(name, "info")) return .{ .set_log_level = .info };
+        if (std.ascii.eqlIgnoreCase(name, "warn")) return .{ .set_log_level = .warn };
+        if (std.ascii.eqlIgnoreCase(name, "err")) return .{ .set_log_level = .err };
+        if (std.ascii.eqlIgnoreCase(name, "fatal")) return .{ .set_log_level = .fatal };
+        return error.InvalidLogLevel;
     }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "solve")) return .{ .solve_for_me = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "hint")) {

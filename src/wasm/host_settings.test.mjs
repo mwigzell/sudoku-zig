@@ -106,13 +106,21 @@ function makeHostLinkedGame() {
   assert.equal(posts[0].url, "./settings.json");
   assert.equal(posts[0].init.method, "POST");
   assert.deepEqual(posts[0].body, {
+    difficulty: "easy",
+    log_level: "info",
     theme: "light",
     show_region: true,
     warn_solvability: false,
   });
   assert.deepEqual(
     hostViewPrefsForPersist({ theme: "dark", show_region: false, warn_solvability: true }),
-    { theme: "dark", show_region: false, warn_solvability: true },
+    {
+      difficulty: "easy",
+      log_level: "info",
+      theme: "dark",
+      show_region: false,
+      warn_solvability: true,
+    },
   );
 }
 
@@ -155,6 +163,8 @@ function makeHostLinkedGame() {
   btn.click();
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(posts[0], {
+    difficulty: "easy",
+    log_level: "info",
     theme: "light",
     show_region: false,
     warn_solvability: true,
@@ -201,6 +211,8 @@ function makeHostLinkedGame() {
   btn.click();
   await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(posts[0], {
+    difficulty: "easy",
+    log_level: "info",
     theme: "dark",
     show_region: true,
     warn_solvability: false,

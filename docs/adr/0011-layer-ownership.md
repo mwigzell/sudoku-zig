@@ -13,7 +13,7 @@ Placement drift. A recurring failure mode across this project: implementation is
 - `showError` implemented as fire-and-forget in wasm — ack contract of an interactive surface dropped (issues #25/#26 era).
 - Region highlight memo (issue #46, 2026-12) — both attempts pulled the "last cell" memo into the **renderer**; it belongs in the driver (native) / page (web), exactly where the twin already keeps selection.
 
-`AGENTS.md` says closed issues are historical and code is source of truth, but none of these was caught because there was no *written* rule saying which layer owns which concern. ADR-0010 pins the wasm boundary and engine I/O-freeness but not the general placement law.
+`AGENTS.md` says closed issues are historical and code is source of truth, but none of these was caught because there was no *written* rule saying which layer owns which concern. ADR-0010 pins the wasm boundary and engine I/O-freeness; **ADR-0014** pins persistent settings, host bootstrap, and in-app editing — but not the full placement law in this table.
 
 This project's unique asset is the **twin deployment**: one portable core, two thin entries (native driver `src/native/shell/sudoku.zig`; wasm `src/wasm` + `src/wasm_entry.zig`). Any placement question already has an answer in the sibling deployment.
 
@@ -30,6 +30,8 @@ Placement decisions cite the twin before they invent a new home. Ownership table
 | Session lifecycle (`new`/`open`/`save`/`save_as`) | driver (native) / JS app (web) | renderers |
 | `io: std.Io` | host + transport arms, capability-injected (ADR-0010) | engine, facade, board, `event` |
 | Rendering (paint, shade, borders) | renderer, **stateless painter** over `(view, status, selection/args)` | any concern state; see #46 AC |
+| Nominal user prefs (`Config`, `settings.json`) | **`GameEngine.cfg`**; load/save via **`settings_store`** (native **`Sudoku`**) or **`serve`** POST (web) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
+| Settings / view pref **UI** | Native **Menu** (+ **`getCommandInput`** scalars from driver); web **menubar** + modals + **`exec`** | disk or CLI as the **only** way to change a persisted player-facing field (ADR-0014) |
 
 Rules:
 

@@ -120,8 +120,8 @@ Fn-pointer vtable for file read/write/resolve. **Owned by native `Sudoku`**, pas
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
 **Config** (`config.zig`):
-Nominal preferences — `difficulty`, renderer kinds (native), `log_level`, `theme`, `show_region`. Not puzzle cells or undo history. `GameEngine` owns a `cfg: Config` passed in at `init`. View prefs mutate via wasm `exec` (`set_theme`, `set_region`); they do not live in `Legend`, `State`, or SUD0.
-_Avoid_: folding prefs into Legend or save files
+Nominal preferences — `difficulty`, renderer kinds (native), `log_level`, `theme`, `show_region`, `warn_solvability`. Not puzzle cells or undo history. `GameEngine` owns a `cfg: Config` passed in at `init`. Persisted in **`settings.json`**; startup merge load → CLI → save (**ADR-0014**). In session, prefs mutate via commands/`exec`; each player-facing field must be editable in the platform UI (menubar/menu), except renderer choice (CLI/disk). They do not live in `Legend`, `State`, or SUD0.
+_Avoid_: folding prefs into Legend or save files; JS boot defaults that override host-resolved config
 
 **State**:
 Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State` and nominal `Config`.
@@ -147,4 +147,4 @@ _Avoid_: embedding game rules or SaveFormat parsing
 
 ## Architectural Decisions
 
-See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, ADR-0011 layer ownership, ADR-0013 Android entry options).
+See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, ADR-0011 layer ownership, ADR-0014 persistent settings and in-app editing, ADR-0013 Android entry options).

@@ -24,7 +24,7 @@ Native terminal play remains stack-shaped (blocking facade) for now; revisit whe
 
 Replace REPL imports (`page_line_in`, `page_bytes_out`, `page_picker`, `file_read`/`file_write`) with memory exports:
 
-- `init(wire_config)` — difficulty (+ optional log level); `PuzzleGen` stays in Zig.
+- `init(wire_config)` / **`bootstrapHostConfig`** — host-resolved **`Config`** (from disk + CLI via `/host-config.json` on web); `PuzzleGen` stays in Zig. Boot authority and persistence rules: **ADR-0014**.
 - `exec(action_json)` → `Event` JSON (`.ok` / `.error_msg`).
 - `getLegend()` → JSON flags (separate from turn outcome).
 - `getState()` or state embedded in exec response — board + given/conflict markers for DOM.
@@ -49,3 +49,4 @@ Wire format for slice B: **length-prefixed or NUL-terminated JSON strings** in w
 - Native session commands stay in the command parser; `Sudoku.handleResult` intercepts before `exec` (minimal parser churn).
 - A future real DOM front-end (splash, modals, FS Access) is JS-owned; wasm never blocks for UI acknowledgement.
 - Parity tests (shared action fixtures, compare state JSON native vs wasm) are recommended after slice B basics land.
+- Player **`settings.json`** and menubar/menu editing are **not** defined in this ADR — see **ADR-0014** (#61–#63).

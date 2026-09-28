@@ -8,6 +8,7 @@ const _legend = @import("../renderer/legend.zig");
 const Legend = _legend.Legend;
 const command = @import("../command.zig");
 const config = @import("../config.zig");
+const logger = @import("../logger.zig");
 
 // Moved to src/event.zig, re-exported for backward compat
 const event = @import("../event.zig");
@@ -288,6 +289,15 @@ pub const GameEngine = struct {
             .set_warn_solvability => |enabled| {
                 self.cfg.warn_solvability = enabled;
                 self.applySolvabilityWarningsFromConfig();
+                return self.finishOkEvent(self.state.board.asView(), false, null);
+            },
+            .set_difficulty => |diff| {
+                self.cfg.difficulty = diff;
+                return self.finishOkEvent(self.state.board.asView(), false, null);
+            },
+            .set_log_level => |level| {
+                self.cfg.log_level = level;
+                logger.min_level = level;
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .settings => @panic("settings routed in Sudoku"),

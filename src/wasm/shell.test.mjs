@@ -280,7 +280,13 @@ async function flushDialogPaint() {
       show_region: true,
       warn_solvability: false,
     }),
-    { theme: "light", show_region: true, warn_solvability: false },
+    {
+      difficulty: "easy",
+      log_level: "info",
+      theme: "light",
+      show_region: true,
+      warn_solvability: false,
+    },
   );
 }
 
