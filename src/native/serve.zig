@@ -149,7 +149,7 @@ fn applySettingsPost(io: std.Io, body: []const u8) ServeError!void {
     const gpa = std.heap.page_allocator;
     const data_dir = shell_path.computeDataDir(gpa) catch return ServeError.System;
     defer gpa.free(data_dir);
-    std.Io.Dir.cwd().createDirPath(io, data_dir) catch {};
+    settings_store.ensureSettingsDir(io, data_dir);
     settings_store.save(gpa, io, data_dir, active_host_config) catch return ServeError.System;
 }
 /// Errors surfacing from serve(): the port is already owned, or any socket

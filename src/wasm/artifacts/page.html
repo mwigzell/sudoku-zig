@@ -668,7 +668,7 @@
     import { renderBoard, getPlayGrid, setStatus, wireSelection, wirePlayLoop } from "../board.js";
     import { wireEditMenu } from "../menu.js";
     import { collectMenuBarControls, wireMenuBar } from "../menu_bar.js";
-    import { wireThemeMenu } from "../theme.js";
+    import { applyBootTheme, wireThemeMenu } from "../theme.js";
     import { wireFileMenu } from "../file_menu.js";
     import { wireRegionMenu } from "../region.js";
 
@@ -714,7 +714,8 @@
       try {
         const raw = localStorage.getItem(sessionStorageKey);
         if (raw) storedSud0Bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
-      } catch {
+      } catch (err) {
+        console.warn("session restore skipped:", err);
         storedSud0Bytes = undefined;
       }
 
@@ -724,6 +725,7 @@
 
       const boot = await initializeWebSession(game, { storedSud0Bytes });
       if (!boot.ok) throw new Error(boot.error ?? "session init failed");
+      applyBootTheme(boot, document);
 
       const ready = await offerInitialNewGame(game, boot, generatingModal, { genWorker });
       if (!ready.ok) throw new Error(ready.error ?? "New game failed");

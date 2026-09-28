@@ -6,6 +6,7 @@ import {
   applyTheme,
   syncThemeMenu,
   applyThemeFromConfig,
+  applyBootTheme,
   wireThemeMenu,
 } from "./theme.js";
 
@@ -28,6 +29,17 @@ function makeThemeBtn() {
     },
     addEventListener() {},
   };
+}
+
+{
+  const html = { dataset: {} };
+  applyBootTheme(
+    { ok: true, kind: "empty", config: { theme: "light", show_region: false } },
+    { documentElement: html },
+  );
+  assert.equal(html.dataset.theme, "light");
+  applyBootTheme({ ok: false }, { documentElement: html });
+  assert.equal(html.dataset.theme, "light");
 }
 
 {

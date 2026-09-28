@@ -357,3 +357,50 @@ async function flushDialogPaint() {
   assert.equal(resumed.kind, "resumed");
 }
 
+{
+  const missing = await offerInitialNewGame(
+    {},
+    { ok: true, kind: "empty", state: {}, legend: {}, config: {} },
+    null,
+  );
+  assert.equal(missing.ok, false);
+  assert.match(missing.error, /engine config/);
+}
+
+{
+  let initDifficulty;
+  const game = {
+    getConfig() {
+      return { difficulty: 2, log_level: 1 };
+    },
+    init({ difficulty }) {
+      initDifficulty = difficulty;
+      return { ok: true, msg: NEW_GAME_STARTED_MSG };
+    },
+    getState() {
+      return { cells: [] };
+    },
+    getLegend() {
+      return {};
+    },
+  };
+  const modal = makeModal();
+  const running = offerInitialNewGame(
+    game,
+    {
+      ok: true,
+      kind: "empty",
+      config: { difficulty: 2, log_level: 1 },
+      state: {},
+      legend: {},
+    },
+    modal,
+  );
+  await flushDialogPaint();
+  modal.continueBtn.click();
+  const out = await running;
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, "new");
+  assert.equal(initDifficulty, 2);
+}
+

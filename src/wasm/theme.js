@@ -15,6 +15,11 @@ export function applyThemeFromConfig(config, root = document) {
   applyTheme(themeFromConfig(config), root.documentElement);
 }
 
+/** Host/engine config → `html[data-theme]` before modals (launch New runs before wireThemeMenu). */
+export function applyBootTheme(boot, root = document) {
+  if (boot?.ok && boot.config) applyThemeFromConfig(boot.config, root);
+}
+
 export function syncThemeMenu(controls, config) {
   const theme = themeFromConfig(config);
   if (controls.viewLight) {

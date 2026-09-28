@@ -90,7 +90,7 @@ pub fn resolveStartupConfig(
 ) settings_store.Error!config.Config {
     const data_dir = path.computeDataDir(gpa) catch return settings_store.loadOrDefault(gpa, io, ".");
     defer gpa.free(data_dir);
-    std.Io.Dir.cwd().createDirPath(io, data_dir) catch {};
+    settings_store.ensureSettingsDir(io, data_dir);
 
     var cfg = try settings_store.loadOrDefault(gpa, io, data_dir);
     cfg = cli.parseCLIWithBase(cli_it, cfg) catch |err| switch (err) {

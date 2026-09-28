@@ -214,13 +214,12 @@ export async function initializeWebSession(game, { fetchFn, storedSud0Bytes } = 
 
   const restored = tryRestoreStoredSession(game, storedSud0Bytes);
   if (restored?.ok) {
-    return { ok: true, kind: "resumed", hostCfg, ...restored };
+    return { ok: true, kind: "resumed", ...restored };
   }
 
   return {
     ok: true,
     kind: "empty",
-    hostCfg,
     state: game.getState(),
     legend: game.getLegend(),
     config: game.getConfig(),
@@ -235,8 +234,10 @@ export async function initializeWebSession(game, { fetchFn, storedSud0Bytes } = 
 export async function offerInitialNewGame(game, boot, generatingModal, { genWorker } = {}) {
   if (!boot.ok || boot.kind !== "empty") return boot;
 
-  const difficulty = boot.config?.difficulty ?? boot.hostCfg?.difficulty ?? 1;
-  const logLevel = boot.config?.log_level ?? boot.hostCfg?.log_level;
+  const { difficulty, log_level: logLevel } = boot.config ?? {};
+  if (difficulty == null || logLevel == null) {
+    return { ok: false, error: "missing engine config after host bootstrap", kind: "empty" };
+  }
   const started = await newGameWithGeneratingModal(game, generatingModal, {
     difficulty,
     logLevel,
@@ -249,7 +250,6 @@ export async function offerInitialNewGame(game, boot, generatingModal, { genWork
     return {
       ok: true,
       kind: "empty",
-      hostCfg: boot.hostCfg,
       state: game.getState(),
       legend: game.getLegend(),
       config: game.getConfig(),
@@ -260,7 +260,6 @@ export async function offerInitialNewGame(game, boot, generatingModal, { genWork
   return {
     ok: true,
     kind: "new",
-    hostCfg: boot.hostCfg,
     state: started.state,
     legend: started.legend,
     config: started.config,

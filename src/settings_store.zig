@@ -4,6 +4,9 @@ const config = @import("config.zig");
 const logger = @import("logger.zig");
 const path = @import("native/shell/path.zig");
 
+const log = logger.Logger(.sudoku);
+
+/// Basename written under the platform data directory.
 pub const file_name = "settings.json";
 
 const JsonSettings = struct {
@@ -16,6 +19,7 @@ const JsonSettings = struct {
     warn_solvability: ?bool = null,
 };
 
+/// Errors from load/save/path resolution (invalid disk JSON maps to defaults on load).
 pub const Error = error{
     OutOfMemory,
     InvalidJson,
@@ -23,6 +27,13 @@ pub const Error = error{
     WriteFailed,
     System,
 };
+
+/// Best-effort `createDirPath` for settings storage; logs and continues on failure.
+pub fn ensureSettingsDir(io: std.Io, dir_path: []const u8) void {
+    std.Io.Dir.cwd().createDirPath(io, dir_path) catch |err| {
+        log.warn("could not create settings directory '{s}': {s}", .{ dir_path, @errorName(err) });
+    };
+}
 
 fn parseDifficulty(name: []const u8) Error!config.Difficulty {
     if (std.mem.eql(u8, name, "easy")) return .easy;
@@ -55,6 +66,7 @@ fn parseTheme(name: []const u8) Error!config.ViewTheme {
     return Error.UnsupportedValue;
 }
 
+/// Map parsed `settings.json` fields into a `Config` (strict enum strings).
 pub fn configFromJson(parsed: JsonSettings) Error!config.Config {
     const fallback: ?config.RendererKind = if (parsed.fallback_renderer) |fb|
         try parseRenderer(fb)
@@ -84,6 +96,7 @@ fn jsonFromConfig(cfg: config.Config) JsonSettings {
     };
 }
 
+/// Owned absolute or data-dir-relative path to `settings.json`.
 pub fn settingsPath(gpa: std.mem.Allocator, data_dir: []const u8) Error![]u8 {
     return path.resolveSavePath(gpa, data_dir, file_name) catch return Error.OutOfMemory;
 }
@@ -94,7 +107,7 @@ fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
     return configFromJson(parsed.value) catch return config.Config.default();
 }
 
-/// Missing or invalid file → `Config.default()`.
+/// Read `file_name` from `dir`; missing or invalid file → `Config.default()`.
 pub fn loadOrDefaultInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir) Error!config.Config {
     const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch |err| switch (err) {
         error.FileNotFound => return config.Config.default(),
@@ -104,6 +117,7 @@ pub fn loadOrDefaultInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir) E
     return loadBytes(gpa, bytes);
 }
 
+/// Read settings from `data_dir` on disk; missing or invalid → `Config.default()`.
 pub fn loadOrDefault(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) Error!config.Config {
     const file_path = try settingsPath(gpa, data_dir);
     defer gpa.free(file_path);
@@ -116,6 +130,7 @@ pub fn loadOrDefault(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) E
     return loadBytes(gpa, bytes);
 }
 
+/// Write `cfg` as JSON to `dir/file_name` (truncate).
 pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: config.Config) Error!void {
     const payload = jsonFromConfig(cfg);
     var aw = std.Io.Writer.Allocating.init(gpa);
@@ -128,13 +143,14 @@ pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: confi
     dir.writeFile(io, .{ .sub_path = file_name, .data = text, .flags = .{ .truncate = true } }) catch return Error.System;
 }
 
+/// Write `cfg` under `data_dir`, creating parent directories when needed.
 pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: config.Config) Error!void {
     const file_path = try settingsPath(gpa, data_dir);
     defer gpa.free(file_path);
 
     const parent = try path.parentDir(gpa, file_path);
     defer gpa.free(parent);
-    std.Io.Dir.cwd().createDirPath(io, parent) catch {};
+    ensureSettingsDir(io, parent);
 
     const payload = jsonFromConfig(cfg);
     var aw = std.Io.Writer.Allocating.init(gpa);
