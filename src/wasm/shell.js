@@ -171,12 +171,21 @@ export function bootstrapEngineFromHostConfig(game, hostCfg) {
   });
 }
 
+/** View/settings fields the host writes to settings.json (web POST). */
+export function hostViewPrefsForPersist(config) {
+  return {
+    theme: config.theme === "light" ? "light" : "dark",
+    show_region: config.show_region === true,
+    warn_solvability: config.warn_solvability === true,
+  };
+}
+
 /** Persist player prefs to host settings.json (web serve POST). */
 export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
   const res = await fetchFn("./settings.json", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ warn_solvability: config.warn_solvability === true }),
+    body: JSON.stringify(hostViewPrefsForPersist(config)),
   });
   if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
 }

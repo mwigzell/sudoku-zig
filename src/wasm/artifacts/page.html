@@ -742,10 +742,18 @@
         setStatus(statusBar, "");
       }
       const menuBar = wireMenuBar(menuControls, session, document);
+      const persistViewSettings = async (cfg) => {
+        try {
+          await persistHostSettings(cfg);
+        } catch (err) {
+          showErrorModal(errorModal, err?.message ?? String(err));
+        }
+      };
       const themeMenu = wireThemeMenu(menuControls, game, session, {
         root: document,
         statusEl: statusBar,
         onChange: () => menuBar.sync(),
+        onPersist: persistViewSettings,
       });
       let editMenu;
       const selection = wireSelection(boardEl, {
@@ -760,7 +768,7 @@
         session,
         boardEl,
         () => selection.getSelection(),
-        { onChange: () => menuBar.sync(), statusEl: statusBar },
+        { onChange: () => menuBar.sync(), onPersist: persistViewSettings, statusEl: statusBar },
       );
       const difficultyDialog = {
         el: document.getElementById("new-difficulty-modal"),
@@ -803,13 +811,7 @@
       wireHelpAbout(menuControls.about, game, aboutModal);
       wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
         closeMenus: () => menuBar.closeAll?.(),
-        onPersist: async (cfg) => {
-          try {
-            await persistHostSettings(cfg);
-          } catch (err) {
-            showErrorModal(errorModal, err?.message ?? String(err));
-          }
-        },
+        onPersist: persistViewSettings,
       });
       getPlayGrid(boardEl).focus();
     } catch (err) {

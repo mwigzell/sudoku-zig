@@ -130,6 +130,28 @@ test "CLI overrides persist on top of saved settings" {
     try std.testing.expectEqual(config.RendererKind.ansi, restored.preferred_renderer);
 }
 
+test "host startup JSON reflects Config loaded from settings.json on disk" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var on_disk = config.Config.default();
+    on_disk.difficulty = .medium;
+    on_disk.log_level = .debug;
+    on_disk.theme = .light;
+    on_disk.show_region = true;
+    on_disk.warn_solvability = true;
+    try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, on_disk);
+
+    const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    var buf: [160]u8 = undefined;
+    const json = try formatHostStartupJson(loaded, &buf);
+    try std.testing.expectEqualStrings(
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true}",
+        json,
+    );
+}
+
 test "host startup JSON matches Config wire fields" {
     const startup = config.Config{
         .difficulty = .medium,

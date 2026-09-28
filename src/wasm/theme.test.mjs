@@ -68,11 +68,20 @@ function makeThemeBtn() {
     viewLight: { ...makeThemeBtn(), addEventListener(_, fn) { this.click = fn; } },
     viewDark: { ...makeThemeBtn(), addEventListener() {} },
   };
-  wireThemeMenu(controls, game, session, { root: { documentElement: html } });
+  const persistCalls = [];
+  wireThemeMenu(controls, game, session, {
+    root: { documentElement: html },
+    onPersist: async (cfg) => {
+      persistCalls.push(cfg);
+    },
+  });
   assert.equal(themeFromConfig(session.config), "dark");
   controls.viewLight.click();
+  await new Promise((r) => setTimeout(r, 0));
   assert.equal(themeFromConfig(session.config), "light");
   assert.equal(html.dataset.theme, "light");
+  assert.equal(persistCalls.length, 1);
+  assert.equal(persistCalls[0].theme, "light");
 }
 
 console.log("theme.test.mjs OK");

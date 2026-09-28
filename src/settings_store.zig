@@ -195,3 +195,25 @@ test "missing settings file yields Config.default()" {
     const cfg = try loadOrDefaultInDir(std.testing.allocator, std.testing.io, tmp.dir);
     try std.testing.expectEqual(config.Config.default().difficulty, cfg.difficulty);
 }
+
+test "loadOrDefaultInDir reads view prefs from settings.json on disk" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var on_disk = config.Config.default();
+    on_disk.theme = .light;
+    on_disk.show_region = true;
+    on_disk.warn_solvability = true;
+    try saveInDir(std.testing.allocator, io, tmp.dir, on_disk);
+
+    const loaded = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    try std.testing.expectEqual(config.ViewTheme.light, loaded.theme);
+    try std.testing.expect(loaded.show_region);
+    try std.testing.expect(loaded.warn_solvability);
+
+    const bytes = tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited) catch unreachable;
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"theme\":\"light\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"show_region\":true") != null);
+}

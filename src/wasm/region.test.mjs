@@ -84,17 +84,26 @@ function makeMockCell(row, col) {
       },
     },
   };
+  const persistCalls = [];
   const menu = wireRegionMenu(
     controls,
     game,
     session,
     board,
     () => ({ row: 1, col: 1 }),
+    {
+      onPersist: async (cfg) => {
+        persistCalls.push(cfg);
+      },
+    },
   );
   assert.equal(menu.isEnabled(), false);
   controls.viewRegion.click();
+  await new Promise((r) => setTimeout(r, 0));
   assert.equal(menu.isEnabled(), true);
   assert.ok(board.children.find((c) => c.dataset.row === "1" && c.dataset.col === "1").classList.contains("region"));
+  assert.equal(persistCalls.length, 1);
+  assert.equal(persistCalls[0].show_region, true);
 }
 
 console.log("region.test.mjs OK");

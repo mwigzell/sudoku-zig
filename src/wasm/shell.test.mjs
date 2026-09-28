@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import {
   NEW_GAME_STARTED_MSG,
+  hostViewPrefsForPersist,
   initializeWebSession,
   offerInitialNewGame,
   newGameWithGeneratingModal,
@@ -268,6 +269,17 @@ async function flushDialogPaint() {
   const out = await running;
   assert.equal(out.ok, true);
   assert.equal(out.msg, NEW_GAME_STARTED_MSG);
+}
+
+{
+  assert.deepEqual(
+    hostViewPrefsForPersist({
+      theme: "light",
+      show_region: true,
+      warn_solvability: false,
+    }),
+    { theme: "light", show_region: true, warn_solvability: false },
+  );
 }
 
 // ── initializeWebSession: host config boot, optional resume, no auto-New ──

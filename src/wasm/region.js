@@ -16,7 +16,7 @@ export function wireRegionMenu(
   session,
   boardEl,
   getSelection,
-  { onChange, statusEl } = {},
+  { onChange, onPersist, statusEl } = {},
 ) {
   const syncBoard = () => {
     syncRegionMenu(controls, session.config);
@@ -29,13 +29,16 @@ export function wireRegionMenu(
   };
 
   controls.viewRegion?.addEventListener("click", () => {
-    const next = !session.config.show_region;
-    const result = game.exec({ action: "set_region", enabled: next });
-    if (!result.ok) return;
-    session.config = game.getConfig();
-    syncBoard();
-    if (statusEl) applyEventStatus(statusEl, result);
-    onChange?.();
+    void (async () => {
+      const next = !session.config.show_region;
+      const result = game.exec({ action: "set_region", enabled: next });
+      if (!result.ok) return;
+      session.config = game.getConfig();
+      syncBoard();
+      if (statusEl) applyEventStatus(statusEl, result);
+      onChange?.();
+      if (onPersist) await onPersist(session.config);
+    })();
   });
 
   syncBoard();

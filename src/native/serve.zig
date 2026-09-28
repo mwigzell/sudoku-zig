@@ -124,8 +124,18 @@ fn hostConfigBody() ServeError![]const u8 {
 }
 
 const SettingsPostBody = struct {
+    theme: ?[]const u8 = null,
+    show_region: ?bool = null,
     warn_solvability: ?bool = null,
 };
+
+fn mergeSettingsPostPatch(cfg: *config.Config, patch: SettingsPostBody) void {
+    if (patch.theme) |name| {
+        cfg.theme = if (std.mem.eql(u8, name, "light")) .light else .dark;
+    }
+    if (patch.show_region) |enabled| cfg.show_region = enabled;
+    if (patch.warn_solvability) |enabled| cfg.warn_solvability = enabled;
+}
 
 fn requestBody(request: []const u8) ?[]const u8 {
     const sep = std.mem.indexOf(u8, request, "\r\n\r\n") orelse return null;
@@ -135,9 +145,7 @@ fn requestBody(request: []const u8) ?[]const u8 {
 fn applySettingsPost(io: std.Io, body: []const u8) ServeError!void {
     const parsed = std.json.parseFromSlice(SettingsPostBody, std.heap.page_allocator, body, .{}) catch return ServeError.System;
     defer parsed.deinit();
-    if (parsed.value.warn_solvability) |enabled| {
-        active_host_config.warn_solvability = enabled;
-    }
+    mergeSettingsPostPatch(&active_host_config, parsed.value);
     const gpa = std.heap.page_allocator;
     const data_dir = shell_path.computeDataDir(gpa) catch return ServeError.System;
     defer gpa.free(data_dir);
@@ -470,6 +478,42 @@ test "serve: route \"/help.js\" to the help module" {
 
 test "serve: route \"/settings.js\" to the settings module" {
     try std.testing.expectEqual(RouteResult.settings, Router.route("/settings.js"));
+}
+
+test "mergeSettingsPostPatch updates view prefs on Config" {
+    var cfg = config.Config.default();
+    mergeSettingsPostPatch(&cfg, .{
+        .theme = "light",
+        .show_region = true,
+        .warn_solvability = true,
+    });
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+    try std.testing.expect(cfg.show_region);
+    try std.testing.expect(cfg.warn_solvability);
+}
+
+test "settings POST JSON patch is written to settings.json on disk" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var cfg = config.Config.default();
+    const body = "{\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false}";
+    const parsed = std.json.parseFromSlice(SettingsPostBody, std.testing.allocator, body, .{}) catch unreachable;
+    defer parsed.deinit();
+    mergeSettingsPostPatch(&cfg, parsed.value);
+    try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, cfg);
+
+    const bytes = tmp.dir.readFileAlloc(io, settings_store.file_name, std.testing.allocator, std.Io.Limit.unlimited) catch unreachable;
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"theme\":\"light\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"show_region\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"warn_solvability\":false") != null);
+
+    const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    try std.testing.expectEqual(config.ViewTheme.light, loaded.theme);
+    try std.testing.expect(loaded.show_region);
+    try std.testing.expect(!loaded.warn_solvability);
 }
 
 test "serve: route \"/host-config.json\" to host startup config" {

@@ -29,7 +29,12 @@ export function syncThemeMenu(controls, config) {
   }
 }
 
-export function wireThemeMenu(controls, game, session, { root = document, onChange, statusEl } = {}) {
+export function wireThemeMenu(
+  controls,
+  game,
+  session,
+  { root = document, onChange, onPersist, statusEl } = {},
+) {
   const sync = () => {
     syncThemeMenu(controls, session.config);
     applyThemeFromConfig(session.config, root);
@@ -38,23 +43,29 @@ export function wireThemeMenu(controls, game, session, { root = document, onChan
   sync();
 
   controls.viewLight?.addEventListener("click", () => {
-    if (session.config.theme === "light") return;
-    const result = game.exec({ action: "set_theme", theme: "light" });
-    if (!result.ok) return;
-    session.config = game.getConfig();
-    sync();
-    if (statusEl) applyEventStatus(statusEl, result);
-    onChange?.();
+    void (async () => {
+      if (session.config.theme === "light") return;
+      const result = game.exec({ action: "set_theme", theme: "light" });
+      if (!result.ok) return;
+      session.config = game.getConfig();
+      sync();
+      if (statusEl) applyEventStatus(statusEl, result);
+      onChange?.();
+      if (onPersist) await onPersist(session.config);
+    })();
   });
 
   controls.viewDark?.addEventListener("click", () => {
-    if (session.config.theme === "dark") return;
-    const result = game.exec({ action: "set_theme", theme: "dark" });
-    if (!result.ok) return;
-    session.config = game.getConfig();
-    sync();
-    if (statusEl) applyEventStatus(statusEl, result);
-    onChange?.();
+    void (async () => {
+      if (session.config.theme === "dark") return;
+      const result = game.exec({ action: "set_theme", theme: "dark" });
+      if (!result.ok) return;
+      session.config = game.getConfig();
+      sync();
+      if (statusEl) applyEventStatus(statusEl, result);
+      onChange?.();
+      if (onPersist) await onPersist(session.config);
+    })();
   });
 
   return { sync, getTheme: () => themeFromConfig(session.config) };
