@@ -3,7 +3,7 @@ const game_engine = @import("game_engine.zig");
 const command = @import("../command.zig");
 const cell = @import("../board/cell.zig");
 const config = @import("../config.zig");
-const puzzle_gen = @import("../puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen/mod.zig");
 
 /// Execute a fill command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine, fill_data: command.FillData) game_engine.Event {

@@ -1,9 +1,9 @@
 // Live puzzle generation — run via `zig build verify-slow` (not `verify`).
 // Wall-clock bound: scripts/verify-slow-gate.sh (45s suite budget).
 const std = @import("std");
-const board = @import("board/board.zig");
-const puzzle_gen = @import("puzzle_gen.zig");
-const solver = @import("solver.zig");
+const board = @import("../board/board.zig");
+const puzzle_gen = @import("mod.zig");
+const solver = @import("../solver.zig");
 
 test "puzzle_gen live: generateInto yields unique solvable puzzle in givens range" {
     var prng = std.Random.DefaultPrng.init(0x1234_5678);

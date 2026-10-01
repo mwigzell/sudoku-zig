@@ -6,7 +6,7 @@ const styler = @import("../ascii/styler.zig");
 const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
 const config = @import("../../config.zig");
-const puzzle_gen = @import("../../puzzle_gen.zig");
+const puzzle_gen = @import("../../puzzle_gen/mod.zig");
 const command = @import("../../command.zig");
 const settings_store = @import("../../settings_store.zig");
 

@@ -159,4 +159,4 @@ test "import: missing file rejected, board and history unchanged" {
     try std.testing.expect(std.mem.eql(u8, pre, post));
 }
 
-const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
+const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;

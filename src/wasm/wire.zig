@@ -1,7 +1,7 @@
 // JSON wire types for the wasm export boundary — WireConfig and board snapshot.
 const std = @import("std");
 const board = @import("../board/board.zig");
-const puzzle_gen = @import("../puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const logger = @import("../logger.zig");
 const config = @import("../config.zig");
 

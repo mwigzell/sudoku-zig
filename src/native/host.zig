@@ -11,7 +11,7 @@ const cell = @import("../board/cell.zig");
 const Alloc = @import("../native/ascii/alloc.zig").Alloc;
 const game_engine = @import("../engine/game_engine.zig");
 const file_transport = @import("shell/file_transport.zig");
-const puzzle_gen = @import("../puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const mypath = @import("shell/path.zig");
 const logger = @import("../logger.zig");
 

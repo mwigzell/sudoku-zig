@@ -4,7 +4,7 @@ const board = @import("../../board/board.zig");
 const config = @import("../../config.zig");
 const cell = @import("../../board/cell.zig");
 const std = @import("std");
-const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
+const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
 
 pub fn execute(engine: *game_engine.GameEngine, line: ?[]const u8) game_engine.Event {
     if (line == null) return .{ .error_msg = "paste: no puzzle line specified" };

@@ -144,7 +144,7 @@ pub fn execute(engine: *game_engine.GameEngine, hint: command.HintData) game_eng
 }
 
 test "hint: unsolvable board returns no-solution tag" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
     engine.warn_dead_moves = true;
     const fill_ev = engine.exec(command.Command{
@@ -171,7 +171,7 @@ fn firstEmptyPlayerCell(engine: *game_engine.GameEngine) ?struct { row: u4, col:
 }
 
 test "hint: targeted consistent tag" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     const sr = try solver.solve(engine.state.board);
@@ -196,7 +196,7 @@ test "hint: targeted consistent tag" {
 }
 
 test "hint: targeted blocker tag when completion disagrees with cell" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     const sr = try solver.solve(engine.state.board);
@@ -221,7 +221,7 @@ test "hint: targeted blocker tag when completion disagrees with cell" {
 }
 
 test "hint: engine-pick surfaces blocker before placement" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     const sr = try solver.solve(engine.state.board);
@@ -246,7 +246,7 @@ test "hint: engine-pick surfaces blocker before placement" {
 }
 
 test "hint: targeted empty cell returns placement tag" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     const ev = engine.exec(command.Command{
@@ -266,7 +266,7 @@ test "hint: targeted empty cell returns placement tag" {
 }
 
 test "hint: targeted on dead board returns no-solution not blocker" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
     engine.warn_dead_moves = true;
     const fill_ev = engine.exec(command.Command{
@@ -285,7 +285,7 @@ test "hint: targeted on dead board returns no-solution not blocker" {
 }
 
 test "hint: engine-pick on complete puzzle reports complete" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
     const solved = engine.exec(command.Command{ .solve_for_me = {} });
     try std.testing.expect(solved == .ok);
@@ -297,7 +297,7 @@ test "hint: engine-pick on complete puzzle reports complete" {
 }
 
 test "hint: engine-pick on solvable board returns placement" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     const ev = engine.exec(command.Command{ .hint = .{} });
@@ -307,7 +307,7 @@ test "hint: engine-pick on solvable board returns placement" {
 }
 
 test "fill on dead board uses no-solution hint copy only" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
     engine.warn_dead_moves = true;
 

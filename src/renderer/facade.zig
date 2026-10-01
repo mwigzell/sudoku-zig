@@ -4,7 +4,7 @@ const logger = @import("../logger.zig");
 const board = @import("../board/board.zig");
 const event = @import("../event.zig");
 const legend = @import("legend.zig");
-const puzzle_gen = @import("../puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const Legend = legend.Legend;
 
 /// Row/col passed into render for native region highlight; null ⇒ no shading.

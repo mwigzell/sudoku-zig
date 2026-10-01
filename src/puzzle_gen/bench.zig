@@ -1,8 +1,8 @@
 // Ad-hoc generator bench — not in main.zig graph. Run: scripts/bench-puzzle-gen.sh
 const std = @import("std");
-const puzzle_gen = @import("puzzle_gen.zig");
-const board = @import("board/board.zig");
-const solver = @import("solver.zig");
+const puzzle_gen = @import("mod.zig");
+const board = @import("../board/board.zig");
+const solver = @import("../solver.zig");
 
 fn benchProgress(event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {
     _ = ctx;

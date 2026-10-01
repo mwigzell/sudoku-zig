@@ -3,7 +3,7 @@ const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const cell = @import("../../board/cell.zig");
 const command = @import("../../command.zig");
-const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
+const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
 
 pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engine.Event {
     const puzzle_str = if (data.puzzle) |p| p else PuzzleGen.medium()[0..81];

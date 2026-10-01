@@ -58,7 +58,7 @@ pub const Event = union(enum) {
     },
     error_msg: []const u8,
 };
-const puzzle_gen = @import("puzzle_gen.zig");
+const puzzle_gen = @import("puzzle_gen/mod.zig");
 
 test "EventMsg append joins multiple parts" {
     var msg: EventMsg = .{};

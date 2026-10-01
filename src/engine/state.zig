@@ -9,7 +9,7 @@ pub const State = struct {
 
 // Io-free codec round-trip over State (seam: save_format takes/returns State)
 const save_format = @import("save_format.zig");
-const puzzle_gen = @import("../puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const std = @import("std");
 
 test "State codec: toSaveFormat/fromSaveFormat round-trip without std.Io" {

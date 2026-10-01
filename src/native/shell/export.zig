@@ -7,7 +7,7 @@ const board = @import("../../board/board.zig");
 const config = @import("../../config.zig");
 const game_engine = @import("../../engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
-const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
+const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
 
 /// Shared encoder for File → Export and Edit → Copy (native/web wasm uses the same codec in-engine).
 pub fn currentPuzzleLine(engine: *const game_engine.GameEngine) [81]u8 {

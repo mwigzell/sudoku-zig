@@ -1,8 +1,9 @@
-const board = @import("board/board.zig");
+//! Live puzzle generation, difficulty fixtures, and progress callbacks (`live` / `bench` are adjunct tools).
+const board = @import("../board/board.zig");
 const builtin = @import("builtin");
-const cell = @import("board/cell.zig");
-const serial = @import("board/serial.zig");
-const solver = @import("solver.zig");
+const cell = @import("../board/cell.zig");
+const serial = @import("../board/serial.zig");
+const solver = @import("../solver.zig");
 const std = @import("std");
 
 /// Canonical puzzle difficulty levels. `.default` is the legacy dot-blanked fixture.

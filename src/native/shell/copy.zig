@@ -5,7 +5,7 @@ const board = @import("../../board/board.zig");
 const config = @import("../../config.zig");
 const game_engine = @import("../../engine/game_engine.zig");
 const export_command = @import("export.zig");
-const PuzzleGen = @import("../../puzzle_gen.zig").PuzzleGen;
+const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
 
 pub fn execute(engine: *game_engine.GameEngine, out: *std.Io.Writer) game_engine.Event {
     const line = export_command.currentPuzzleLine(engine);

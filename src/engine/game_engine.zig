@@ -353,7 +353,7 @@ pub const GameEngine = struct {
 };
 
 // ────────────────────── co-located tests ──────────────────────
-const puzzle_gen = @import("../puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const file_transport = @import("../native/shell/file_transport.zig");
 const open_command = @import("../native/shell/open.zig");
 

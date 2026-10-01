@@ -1,4 +1,4 @@
-const puzzle_gen = @import("puzzle_gen.zig");
+const puzzle_gen = @import("puzzle_gen/mod.zig");
 const logger = @import("logger.zig");
 
 pub const Difficulty = puzzle_gen.Difficulty;

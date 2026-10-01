@@ -11,7 +11,7 @@ const command = @import("../../command.zig");
 const config = @import("../../config.zig");
 const logger = @import("../../logger.zig");
 const io_session = @import("../../native/io_session.zig");
-const puzzle_gen = @import("../../puzzle_gen.zig");
+const puzzle_gen = @import("../../puzzle_gen/mod.zig");
 
 pub const Alloc = struct {
     /// Static factory — resolve the reader branch, allocate styler/renderer/context,

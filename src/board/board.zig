@@ -2,7 +2,7 @@ const std = @import("std");
 const CellValue = @import("cell.zig").CellValue;
 const Cell = @import("cell.zig").Cell;
 const rawToCellValue = @import("cell.zig").rawToCellValue;
-const puzzle_gen = @import("../puzzle_gen.zig");
+const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const validator = @import("validator.zig");
 
 const conflict = @import("conflict.zig");

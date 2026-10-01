@@ -13,7 +13,7 @@ pub fn execute(engine: *game_engine.GameEngine, clear_data: command.ClearData) g
 
 test "command.clear.execute clears a non-given cell" {
     const std = @import("std");
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const cell = @import("../board/cell.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
@@ -37,7 +37,7 @@ test "command.clear.execute clears a non-given cell" {
 }
 
 test "command.clear.execute fails on a given cell" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();

@@ -172,7 +172,7 @@ pub fn build(b: *std.Build) void {
 
     // Slow tests (generator properties, etc.) — delivery phase; not part of verify.
     const run_slow_tests = b.addSystemCommand(&.{
-        "zig", "test", "src/puzzle_gen_live.zig", "-lc", "--test-filter", "puzzle_gen live",
+        "zig", "test", "src/puzzle_gen/live.zig", "-lc", "--test-filter", "puzzle_gen live",
     });
     const verify_slow_run_step = b.step("verify-slow-run", "Internal: costly tests (puzzle_gen live, …)");
     verify_slow_run_step.dependOn(&run_slow_tests.step);

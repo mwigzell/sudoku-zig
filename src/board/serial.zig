@@ -154,7 +154,7 @@ test "Board: constructs from flat puzzle array with correct values" {
 }
 
 test "Board: fromOneLineString parses digits and dots correctly" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const fixture = puzzle_gen.PuzzleGen.default();
     const b = try fromOneLineString(fixture);
 

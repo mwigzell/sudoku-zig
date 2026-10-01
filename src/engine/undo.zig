@@ -33,7 +33,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 // ---------------------------------------------------------------------------
 
 test "command.undo.execute fails when no history" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
@@ -46,7 +46,7 @@ test "command.undo.execute fails when no history" {
 }
 
 test "command.undo.execute reverses a fill" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const command = @import("../command.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
@@ -68,7 +68,7 @@ test "command.undo.execute reverses a fill" {
 }
 
 test "command.undo.execute restores the before snapshot of one solve" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();

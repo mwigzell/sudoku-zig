@@ -364,7 +364,7 @@ test "parseAction solve maps to solve_for_me" {
 }
 
 test "writeEventJson ok embeds state snapshot" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
     _ = engine.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = .seven } });
 
@@ -508,7 +508,7 @@ test "writeEventJson error_msg escapes special characters" {
 }
 
 test "writeEventJson ok msg escapes special characters" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
     var buf: [8192]u8 = undefined;

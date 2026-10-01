@@ -51,7 +51,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 // ---------------------------------------------------------------------------
 
 test "command.redo.execute fails when nothing to redo" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const command = @import("../command.zig");
 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
@@ -70,7 +70,7 @@ test "command.redo.execute fails when nothing to redo" {
 }
 
 test "command.redo.execute re-applies an undone fill" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const command = @import("../command.zig");
     const undo_command = @import("undo.zig");
 
@@ -92,7 +92,7 @@ test "command.redo.execute re-applies an undone fill" {
 }
 
 test "command.redo.execute re-solves a solve batch to the captured grid" {
-    const puzzle_gen = @import("../puzzle_gen.zig");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const undo_command = @import("undo.zig");
     const solution = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
 

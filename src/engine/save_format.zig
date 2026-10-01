@@ -5,7 +5,7 @@ const mutation_history = @import("mutation_history.zig");
 const state_mod = @import("state.zig");
 const board = @import("../board/board.zig");
 const cell = @import("../board/cell.zig");
-const _puzzle_gen = @import("../puzzle_gen.zig");
+const _puzzle_gen = @import("../puzzle_gen/mod.zig");
 
 test "fromSaveFormat uses mutation_history not game_engine" {
     var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.default());

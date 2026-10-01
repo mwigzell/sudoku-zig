@@ -10,12 +10,12 @@ const std = @import("std");
 const Io = std.Io;
 const facade = @import("../../renderer/facade.zig");
 const input_source = @import("../../native/input_source.zig");
-const puzzle_gen = @import("../../puzzle_gen.zig");
+const puzzle_gen = @import("../../puzzle_gen/mod.zig");
 const PuzzleGen = puzzle_gen.PuzzleGen;
 
 const config = @import("../../config.zig");
 const logger = @import("../../logger.zig");
-const Difficulty = @import("../../puzzle_gen.zig").Difficulty;
+const Difficulty = @import("../../puzzle_gen/mod.zig").Difficulty;
 
 /// Terminal renderer for the 9x9 Sudoku board.
 ///

@@ -104,7 +104,10 @@ src/
 ├── command.zig           command vocabulary + Hint/Fill payloads
 ├── event.zig             exec results (.ok / .error_msg)
 ├── solver.zig            backtracking solver (hints, generation, solve-for-me)
-├── puzzle_gen.zig        live puzzle generation + difficulty
+├── puzzle_gen/             live generation + difficulty
+│   ├── mod.zig           PuzzleGen, Difficulty, generate
+│   ├── live.zig          verify-slow property tests
+│   └── bench.zig         ad-hoc bench (scripts/bench-puzzle-gen.sh)
 ├── about.zig             Help/About metadata (native + wasm)
 ├── board/                cells, validation, conflicts, SUD0 serial codec
 ├── engine/               GameEngine.exec — fill, clear, undo/redo, hint, save format
