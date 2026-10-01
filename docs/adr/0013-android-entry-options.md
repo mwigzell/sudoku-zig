@@ -1,6 +1,6 @@
 # ADR-0013 — Android entry options (APK host, WebView + wasm, EGL)
 
-Status: proposed
+Status: accepted
 Date: 2026-09-24
 
 ## Context
@@ -8,19 +8,19 @@ Date: 2026-09-24
 The portable core (`GameEngine`, board, SUD0 codec, wasm `exec` + JSON wire — ADR-0010) is intentionally UI-agnostic. Deployments today:
 
 - **Native terminal** — `Sudoku` + blocking AsciiRenderer + `FileTransport` (ADR-0011).
-- **Web** — embedded `artifact.wasm` + JS shell; static serve on desktop (`native/serve.zig`).
+- **Desktop web** — embedded `artifact.wasm` + JS shell; loopback static host (`src/web_host/`, `-r web`).
 
 Android is a plausible **third thin entry**, not a fork of game logic. Community patterns fall into three buckets:
 
 1. **Gradle + Kotlin/JNI** — JVM owns Activity and UI; Zig builds to `.so` with `Java_*` exports (e.g. [ZigOnAndroid](https://github.com/davthecodercom/ZigOnAndroid)).
 2. **Zig-driven APK, minimal or no app Java** — cross-compile for Android ABIs; package/sign/install from `build.zig` (Android SDK + NDK + `jarsigner`; see [ZigAndroidTemplate](https://github.com/ikskuh/ZigAndroidTemplate), [Ziggit discussion](https://ziggit.dev/t/zig-android/4997), lineage [rawdrawandroid](https://github.com/cnlohr/rawdrawandroid)). Examples include pure **EGL/GLES** UI, or **TextView/Button via JNI** when needed.
-3. **Reuse the web shell on device** — a native **host** serves the same `page.html` / JS / wasm over **loopback HTTP** and displays it in **WebView** (Chromium-derived on device, not “Chrome the app”). Desktop already proves the artifact graph via `serve` + embedded bytes.
+3. **Reuse the web shell on device** — a native **host** serves the same `page.html` / JS / wasm over **loopback HTTP** and displays it in **WebView** (Chromium-derived on device, not “Chrome the app”). Desktop already proves the artifact graph via **`web_host`** + embedded bytes.
 
 ADR-0011’s **sibling-entry test** applies: Android must not duplicate engine rules or SUD0 parsing; it adds lifecycle, I/O, and presentation only.
 
 ## Decision
 
-**Not implemented in this ADR** — record options and the default slice if Android work is opened.
+**Default Android path:** Zig-driven APK (no Gradle/AGP), **`web_host`** loopback + WebView + existing JS/wasm shell. Shared loopback code lives in **`src/web_host/`** (shipped for desktop `-r web`); **`src/android/`** platform entry and packaging are implemented separately.
 
 ### Default (when pursued)
 
@@ -32,7 +32,7 @@ The Android **shell** is a thin native **host**: process lifecycle, loopback sta
 | Layer                        | Responsibility                                                                                                                                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `build.zig` (Android target) | Sole packaging orchestrator: SDK/NDK invoke, multi-ABI `.so`, manifest/resources, dex for bootstrap classes if any, sign, `adb` install — pattern from [ZigAndroidTemplate](https://github.com/ikskuh/ZigAndroidTemplate) |
-| Host (Zig `.so` + JNI)       | Bind `127.0.0.1:<port>`, serve same routes/MIME as `native/serve.zig` (embedded wasm + JS); lifecycle hooks as needed                                                                                                     |
+| Host (Zig `.so` + JNI)       | Link **`web_host`** — bind `127.0.0.1:<port>`, same routes/MIME as desktop; lifecycle via JNI `startHost` / `stopHost`                                                                                                      |
 | Minimal Java/DEX bootstrap   | Only what WebView/Activity need (small compiled surface, not an app codebase)                                                                                                                                             |
 | WebView                      | Load `http://127.0.0.1:<port>/`; no duplicate DOM or menubar in native code                                                                                                                                               |
 | `wasm_entry` + JS            | Unchanged contract (ADR-0010); session file I/O on device via shell/JS like web                                                                                                                                           |
@@ -70,8 +70,8 @@ Rationale: reuses shipped wasm/JS UI; matches “UI-agnostic engine + thin entry
 
 ## Consequences
 
-- No code change until an issue opens an Android slice; this ADR prevents debating placement ad hoc.
-- If WebView slice lands, keep ADR-0011’s **N-entry** list current (native terminal, desktop web wasm, Android host) without moving state into `GameEngine`.
+- **`web_host`** is the shared loopback layer for desktop web and Android; do not fork HTTP routes or embed tables per platform.
+- Keep ADR-0011’s **N-entry** list current (native terminal, desktop web, Android host) without moving state into `GameEngine`.
 - EGL-native Android UI remains valid but is a **separate product bet** — do not block wasm-host path on it.
 - Default build/sign reference: [ZigAndroidTemplate](https://github.com/ikskuh/ZigAndroidTemplate). Gradle+JNI reference only if the Kotlin path is opened: [ZigOnAndroid](https://github.com/davthecodercom/ZigOnAndroid).
 

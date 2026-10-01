@@ -140,11 +140,11 @@ for f in "${CHANGED[@]}"; do
   [[ "$f" == src/web_host/* ]] || continue
   check_added_pattern "$f" 'fn assetBody' \
     "parallel assetBody helper (use Router.body/contentType)"
-  added="$(diff_added_lines "$f")"
-  if echo "$added" | grep -q 'fn serveClient'; then
-    if echo "$added" | grep -qE 'embed\.(page_html|glue_js)'; then
+  if [[ -f "$f" ]] && grep -q '^fn serveClient' "$f"; then
+    serve_body="$(awk '/^fn serveClient\(/,/^fn [a-zA-Z_]/ { if (/^fn [a-zA-Z_]/ && !/^fn serveClient/) exit; print }' "$f")"
+    if echo "$serve_body" | grep -qE 'embed\.(page_html|glue_js)|wasm_bytes\.'; then
       note_violation "inline route asset switch in serveClient ${f} (use Router.body/contentType)" \
-        "$(echo "$added" | grep -E 'embed\.(page_html|glue_js)' | head -2 | sed 's/^/+ /')"
+        "$(echo "$serve_body" | grep -E 'embed\.(page_html|glue_js)|wasm_bytes\.' | head -2 | sed 's/^/  /')"
     fi
   fi
 done

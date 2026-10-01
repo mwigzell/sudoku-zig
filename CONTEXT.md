@@ -110,6 +110,14 @@ Front-end **entries** share one core; **shell** and **host** mean different laye
 
 There is **no** separate Android app shell beside native and wasm. Informal “Android shell” in ADRs means the thin **process host** (lifecycle + WebView + JNI), not new game UI.
 
+**N front-end entries** (ADR-0011; `main` dispatches only):
+
+| Entry | Wiring |
+|--------|--------|
+| Native terminal | `desktop_terminal` → `Host` + `Sudoku` |
+| Desktop web | `desktop_web` → `web_host` + browser |
+| Android host | `src/android/` → `web_host` + WebView (ADR-0013) |
+
 **Sudoku** (`native/shell/sudoku.zig`, native app shell):
 Owns the command loop, renderer facade, `FileTransport`, and session command routing (`save`, `open`, `save_as`, `new`) in `handleResult` before delegating gameplay to `GameEngine.exec`. This is the native integrated e2e seam.
 _Avoid_: folding session I/O into GameEngine
@@ -127,8 +135,16 @@ Native terminal substrate — builds `IoSession`, selects AsciiRenderer facade a
 _Avoid_: folding `serve` / loopback into `Host`; "session" (that's the terminal substrate under it)
 
 **web_host** (`src/web_host/`):
-Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, settings POST. Desktop `-r web` and Android WebView both use this layer; desktop **`openBrowser`** stays in `main.zig`, not inside `web_host`.
+Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, settings POST. Desktop `-r web` and Android WebView both use this layer; desktop browser open stays in **`native/desktop_web.zig`** (`open_browser`), not inside `web_host`.
 _Avoid_: duplicating menubar/DOM in native or Java; calling it `native/host`
+
+**Desktop web entry** (`native/desktop_web.zig`):
+Wires **`web_host.runWithHostConfig`**, fatal bind errors, and **`whenHostReady`** → **`open_browser`**. Called from `main` when `-r web`.
+_Avoid_: loopback or embed logic here; folding terminal `Host` into this module
+
+**Desktop terminal entry** (`native/desktop_terminal.zig`):
+Wires **`Host`**, renderer facade, and **`Sudoku`** play loop. Called from `main` for non-web renderers.
+_Avoid_: web_host or browser open here
 
 **Android platform entry** (`src/android/`, issue #64):
 Minimal Java/DEX + JNI (`jni_host.zig`) — package **`com.wigzell.sudoku_zig`**, `MainActivity`, WebView, permissions, cleartext localhost. Starts **`web_host`** on a background thread; **`loadUrl`** when the port is bound.

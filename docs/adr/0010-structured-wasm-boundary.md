@@ -35,7 +35,7 @@ Wire format for slice B: **length-prefixed or NUL-terminated JSON strings** in w
 ### Delete from wasm path
 
 - `WasmRenderer`, `WasmHost`, `WasmTransport`, `step(line)` command loop, ASCII screen feed.
-- Keep: `wasm_bytes` embed, `-r web` static serve (`native/serve.zig`), `artifact.wasm` compile gate.
+- Keep: embedded web assets (`src/web_host/embed.zig`), `-r web` loopback host (`src/web_host/`), `artifact.wasm` compile gate.
 
 ### Testing
 

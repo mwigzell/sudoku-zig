@@ -99,7 +99,7 @@ stdin/stdout is ever touched by the suite.
 
 ```
 src/
-├── main.zig              process entry (CLI, Host, `-r web` → serve)
+├── main.zig              process entry (CLI → desktop_web | desktop_terminal)
 ├── wasm_entry.zig        wasm export table (browser build)
 ├── command.zig           command vocabulary + Hint/Fill payloads
 ├── event.zig             exec results (.ok / .error_msg)
@@ -109,10 +109,16 @@ src/
 ├── board/                cells, validation, conflicts, SUD0 serial codec
 ├── engine/               GameEngine.exec — fill, clear, undo/redo, hint, save format
 ├── renderer/             Facade vtable + legend (native presentation seam)
+├── web_host/             loopback static host (desktop `-r web` + Android)
+│   ├── mod.zig           bind, accept thread, settings POST
+│   ├── router.zig        path → embedded asset
+│   └── embed.zig         @embedFile wasm/JS/HTML bytes
 ├── native/
-│   ├── host.zig          Io session + renderer factory (ansi / ascii / web branch)
+│   ├── desktop_web.zig   `-r web` entry (web_host + open browser)
+│   ├── desktop_terminal.zig  terminal play entry (Host + Sudoku)
+│   ├── open_browser.zig  desktop browser opener ($BROWSER / open / xdg-open)
+│   ├── host.zig          Io session + renderer factory (terminal only)
 │   ├── cli.zig           --help / --version / --renderer
-│   ├── serve.zig         loopback static server + browser open
 │   ├── io_session.zig    stdin/stdout (prod + mock for tests)
 │   ├── shell/            Sudoku app loop, save/open/import, paths, FileTransport
 │   └── ascii/            terminal renderer, parser, styler, menu dialogs

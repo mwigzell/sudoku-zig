@@ -33,7 +33,7 @@ One pipeline (**`resolveStartupConfig`** / **`startup_config.zig`**):
 1. Load **`settings.json`** from the platform data directory (or defaults if missing/invalid).
 2. Apply **CLI** overrides.
 3. **Save** player prefs back to disk (CLI `-d`/`-v`/view flags stick; renderer is not written).
-4. Pass that struct into the runtime — native **`Sudoku.init(cfg, …)`**; web **`serveWithHostConfig(cfg)`** → page **`bootstrapHostConfig`** (legacy wasm **`bootstrap(u32,u32)`** removed).
+4. Pass that struct into the runtime — native **`Sudoku.init(cfg, …)`**; web **`web_host.runWithHostConfig(cfg, …)`** (via **`desktop_web`**) → page **`bootstrapHostConfig`** (legacy wasm **`bootstrap(u32,u32)`** removed).
 
 Web session boot (**#62**): fetch host config → bootstrap engine → optional **SUD0 resume** from page session storage; if boot is empty (no resume), **generating New Game** uses host/default difficulty — not glue/page literals. **File → New** keeps an explicit difficulty picker for that action.
 
@@ -42,7 +42,7 @@ Web session boot (**#62**): fetch host config → bootstrap engine → optional 
 - **Path:** `settings.json` under the platform data directory (`settings_store`; paths documented in README).
 - **Keys (stable JSON):** `difficulty`, `log_level`, `theme`, `show_region`, `warn_solvability` only. **`preferred_renderer` / `fallback_renderer` are not part of this file** — choose deployment with CLI `-r` each run; stale renderer keys in old files are ignored on load.
 - **Native in-session save:** `Sudoku` persists after view/settings commands when a data dir is configured (`settings_store.save`).
-- **Web in-session save:** menubar actions **`POST /settings.json`**; serve merges partial JSON into host `Config` and writes disk (same nominal fields as native save).
+- **Web in-session save:** menubar actions **`POST /settings.json`**; **`web_host`** merges partial JSON into host `Config` and writes disk (same nominal fields as native save).
 
 **Session bytes** (in-progress puzzle) remain separate: native save files / web `localStorage` SUD0 — not mixed into `settings.json`.
 
@@ -72,13 +72,13 @@ Single toggle **`warn_solvability`** (default **off**) drives proactive move/loa
 
 - New persisted prefs require: `Config` + `settings.json` schema, engine `exec`/command handler, **both** persistence paths (native save + web POST), and **UI on each supported platform**. Renderer choice is not a persisted pref until product explicitly adds it.
 - **`CONTEXT.md`** WireConfig / glossary should stay aligned with fields JS may read/write; renderer kinds stay off the wasm wire.
-- Contract tests: `settings_store`, `startup_config`, `serve` POST merge, `host_settings.test.mjs`, glue host bootstrap — extend when adding fields.
+- Contract tests: `settings_store`, `startup_config`, `web_host` POST merge, `host_settings.test.mjs`, glue host bootstrap — extend when adding fields.
 - ADR-0010 wasm boundary remains JSON `init`/`exec`/`getConfig`; this ADR owns **where config comes from at boot** and **how changes return to disk**, not the REPL-shaped shell.
 - ADR-0011 layer table references this ADR for settings ownership rows.
 
 ## References
 
 - `src/config.zig`, `src/settings_store.zig`, `src/startup_config.zig`
-- `src/native/shell/sudoku.zig`, `src/native/serve.zig`
+- `src/native/shell/sudoku.zig`, `src/native/desktop_web.zig`, `src/web_host/mod.zig`
 - `src/wasm/shell.js` (`initializeWebSession`, `hostSettingsForPersist`, `persistHostSettings`)
 - README — Settings section (data-dir paths)

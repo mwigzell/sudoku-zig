@@ -15,7 +15,15 @@ Placement drift. A recurring failure mode across this project: implementation is
 
 `AGENTS.md` says closed issues are historical and code is source of truth, but none of these was caught because there was no *written* rule saying which layer owns which concern. ADR-0010 pins the wasm boundary and engine I/O-freeness; **ADR-0014** pins persistent settings, host bootstrap, and in-app editing — but not the full placement law in this table.
 
-This project's unique asset is **one portable core, N thin front-end entries** — e.g. native terminal (`src/native/shell/sudoku.zig`), desktop/web wasm (`src/wasm` + loopback host), optional Android host + WebView (ADR-0013). Any placement question should be resolved by comparing **sibling entries**, not inventing a one-off home.
+This project's unique asset is **one portable core, N thin front-end entries**. Any placement question should be resolved by comparing **sibling entries**, not inventing a one-off home.
+
+**Front-end entries (authoritative list):**
+
+| Entry | Process wiring | Play surface |
+|--------|----------------|--------------|
+| **Native terminal** | `main` → `native/desktop_terminal.zig` → `Host` + `Sudoku` | Terminal renderer facade (`native/shell/`) |
+| **Desktop web** | `main` → `native/desktop_web.zig` → `web_host` + browser open | JS shell (`src/wasm/`) + wasm |
+| **Android host** | `src/android/` JNI + minimal Java bootstrap → `web_host` | WebView loading loopback URL + same JS shell (ADR-0013 default) |
 
 ## Decision
 
@@ -30,7 +38,7 @@ Placement decisions cite a sibling entry before they invent a new home. Ownershi
 | Session lifecycle (`new`/`open`/`save`/`save_as`) | driver (native) / JS app (web) | renderers |
 | `io: std.Io` | host + transport arms, capability-injected (ADR-0010) | engine, facade, board, `event` |
 | Rendering (paint, shade, borders) | renderer, **stateless painter** over `(view, status, selection/args)` | any concern state; see #46 AC |
-| Nominal user prefs (`Config`, `settings.json`) | **`GameEngine.cfg`**; load/save via **`settings_store`** (native **`Sudoku`**) or **`serve`** POST (web) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
+| Nominal user prefs (`Config`, `settings.json`) | **`GameEngine.cfg`**; load/save via **`settings_store`** (native **`Sudoku`**) or **`web_host`** POST (web) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
 | Settings / view pref **UI** | Native **Menu** (+ **`getCommandInput`** scalars from driver); web **menubar** + modals + **`exec`** | disk or CLI as the **only** way to change a persisted player-facing field (ADR-0014) |
 
 Rules:
