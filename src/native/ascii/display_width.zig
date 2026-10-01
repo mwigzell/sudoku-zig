@@ -1,5 +1,4 @@
-// display_width.zig — monospace terminal column count for UTF-8 text.
-
+// Monospace terminal column count for UTF-8 text (ascii renderer + native About box).
 const std = @import("std");
 
 /// Visible columns in a fixed-width terminal (one column per UTF-8 codepoint here).

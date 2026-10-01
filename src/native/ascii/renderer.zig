@@ -1,5 +1,6 @@
 const about = @import("../../about.zig");
-const display_width = @import("../../display_width.zig");
+const display_width = @import("display_width.zig");
+const about_format = @import("about_format.zig");
 const board = @import("../../board/board.zig");
 const cell = @import("../../board/cell.zig");
 const parser = @import("parser.zig");
@@ -368,7 +369,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 
         /// Help/About — product metadata with acknowledgement.
         pub fn showAbout(self: *@This()) facade.Error!void {
-            const text = about.formatNativeText(self.allocator) catch return facade.Error.System;
+            const text = about_format.formatNativeText(self.allocator) catch return facade.Error.System;
             defer self.allocator.free(text);
             try self.showError(text);
         }
