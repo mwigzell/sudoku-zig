@@ -12,9 +12,10 @@ const wasm_boundary = @import("wasm/boundary.zig");
 const settings_store = @import("settings_store.zig");
 const web_host = @import("web_host/mod.zig");
 const open_browser = @import("native/open_browser.zig");
+const android_jni_host = @import("android/jni_host.zig");
 
 test {
-    _ = .{ sudoku, desktop_web, desktop_terminal, web_host, open_browser, wasm_wire, wasm_boundary, startup_config, settings_store };
+    _ = .{ sudoku, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, settings_store };
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {

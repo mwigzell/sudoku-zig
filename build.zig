@@ -1,4 +1,5 @@
 const std = @import("std");
+const android_build = @import("build/android.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -180,4 +181,9 @@ pub fn build(b: *std.Build) void {
     const verify_slow_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-slow-gate.sh" });
     const verify_slow_step = b.step("verify-slow", "Slow gate: verify-slow-run + timing (docs/verify-slow-timing.json)");
     verify_slow_step.dependOn(&verify_slow_gate.step);
+
+    _ = android_build.addAndroidStep(b, .{
+        .wasm_emit = &wasm_emit.step,
+        .gen_build_info = &gen_build_info.step,
+    });
 }

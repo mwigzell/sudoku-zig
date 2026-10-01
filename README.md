@@ -56,6 +56,8 @@ so pass program flags via the built binary).
 
 Web UI: `zig build run -- -r web` or `zig-out/bin/sudoku -r web` (opens or logs a loopback URL).
 
+Android (in progress): cross-compile the JNI host with NDK configured — see [docs/android-ndk.md](docs/android-ndk.md) (`zig build android` → `zig-out/lib/libsudoku_zig.so`).
+
 ## Settings (`settings.json`)
 
 Player preferences (difficulty, log level, theme, region shading, solvability warnings) are stored as JSON in the **same data directory** as native save files. Pick the UI with **`-r`** (`ansi`, `web`, …) on each launch — not via `settings.json`:
