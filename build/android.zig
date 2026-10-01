@@ -1,10 +1,18 @@
-//! Cross-compile `libsudoku_zig.so` (arm64-v8a) with the Android NDK — APK packaging is a later step.
+//! Android build entry: cross-compile the JNI `.so` and package a debug-signed APK (no Gradle).
 const std = @import("std");
 
 /// Bionic link stubs for `aarch64-linux-android` (matches common arm64 AVDs on Apple Silicon).
 pub const android_api_level: u32 = 29;
 
 pub const LibName = "sudoku_zig";
+pub const ApkName = "sudoku.apk";
+const OutDir = "zig-out/android";
+const SoPath = "zig-out/lib/libsudoku_zig.so";
+const BootstrapRoot = "src/android/bootstrap";
+const ManifestPath = BootstrapRoot ++ "/AndroidManifest.xml";
+const ResourcePath = BootstrapRoot ++ "/res";
+const JavaSourceMain = BootstrapRoot ++ "/MainActivity.java";
+const JavaSourceJni = BootstrapRoot ++ "/JniHost.java";
 
 pub fn addAndroidStep(b: *std.Build, deps: struct {
     wasm_emit: *std.Build.Step,
@@ -17,9 +25,11 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
             "-c",
             "echo 'error: Android NDK not found. Set ANDROID_NDK_HOME or install NDK (Side by side) via SDK Manager.' >&2; exit 1",
         });
-        const step = b.step("android", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
-        step.dependOn(&fail.step);
-        return step;
+        const android_lib_fail = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
+        android_lib_fail.dependOn(&fail.step);
+        const android_fail = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
+        android_fail.dependOn(&fail.step);
+        return android_fail;
     };
 
     const target = b.resolveTargetQuery(.{
@@ -68,24 +78,59 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     shared.step.dependOn(deps.gen_build_info);
 
     const install = b.addInstallArtifact(shared, .{});
-    const step = b.step("android", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
-    step.dependOn(&install.step);
-    return step;
+    const android_lib_step = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
+    android_lib_step.dependOn(&install.step);
+
+    const sdk_opt = b.option([]const u8, "sdk", "Android SDK root (default: $ANDROID_HOME or $ANDROID_SDK_ROOT)");
+    const sdk_root = resolveSdkRoot(sdk_opt) orelse {
+        const fail = b.addSystemCommand(&.{
+            "sh",
+            "-c",
+            "echo 'error: Android SDK not found. Set ANDROID_HOME or ANDROID_SDK_ROOT.' >&2; exit 1",
+        });
+        fail.step.dependOn(&install.step);
+        const step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
+        step.dependOn(&fail.step);
+        return step;
+    };
+
+    const package_apk = b.addSystemCommand(&.{
+        "bash",
+        "scripts/android-package.sh",
+        sdk_root,
+        b.fmt("{d}", .{android_api_level}),
+        OutDir,
+        JavaSourceMain,
+        JavaSourceJni,
+        ManifestPath,
+        ResourcePath,
+        SoPath,
+        ApkName,
+    });
+    package_apk.step.dependOn(&install.step);
+
+    const android_step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
+    android_step.dependOn(&package_apk.step);
+    return android_step;
 }
 
 fn resolveNdkRoot(override: ?[]const u8) ?[]const u8 {
     if (override) |p| return p;
-    if (lookupEnv("ANDROID_NDK_HOME")) |p| return p;
-    return lookupEnv("ANDROID_NDK_ROOT");
+    if (lookupEnvLiteral("ANDROID_NDK_HOME")) |p| return p;
+    return lookupEnvLiteral("ANDROID_NDK_ROOT");
 }
 
-fn lookupEnv(name: []const u8) ?[]const u8 {
-    var name_buf: [128]u8 = undefined;
-    if (name.len >= name_buf.len) return null;
-    @memcpy(name_buf[0..name.len], name);
-    name_buf[name.len] = 0;
-    const value = std.c.getenv(@ptrCast(&name_buf)) orelse return null;
-    return std.mem.sliceTo(value, 0);
+fn resolveSdkRoot(override: ?[]const u8) ?[]const u8 {
+    if (override) |p| return p;
+    if (lookupEnvLiteral("ANDROID_HOME")) |p| return p;
+    return lookupEnvLiteral("ANDROID_SDK_ROOT");
+}
+
+fn lookupEnvLiteral(name: [*:0]const u8) ?[]const u8 {
+    const value = std.c.getenv(name) orelse return null;
+    const slice = std.mem.sliceTo(value, 0);
+    if (slice.len == 0) return null;
+    return slice;
 }
 
 fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.LazyPath {
