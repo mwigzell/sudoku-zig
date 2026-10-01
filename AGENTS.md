@@ -16,6 +16,20 @@ When proposing work or building features, prioritise end-to-end completeness ove
 4. **Wider than deeper.** Touch all layers once before perfecting any single layer. Tests exercise the same code paths `main()` uses — not wrapper functions only tests call.
 5. **Each cycle produces a runnable demo.** Even two commands working end-to-end, proven by `zig build run`.
 
+## Entry shape — always long-term, not “small app” shortcuts
+
+Repo size or slice size **does not** relax structure. **Do not** tell the user that inline wiring in `main.zig` is “acceptable for a small Zig app” or defer extraction to a follow-up unless they explicitly asked to defer.
+
+**`src/main.zig` is a switchboard only:** resolve startup config (and shared inputs like `data_dir` once), then dispatch to a **thin entry arm** — e.g. `native/desktop_web.zig`, `native/desktop_terminal.zig`, future `android/` JNI. No browser open, no Sudoku loop, no HTTP serve loop, no fat error policy in `main`.
+
+**Shared modules stay deployment-agnostic:** `web_host` serves loopback; desktop browser open stays in the entry arm (`open_browser` + ready callback). Callbacks and comments must match reality — if a fn-pointer is passed, document **who calls it on which platform**; never imply it is unused on desktop.
+
+**Public API hygiene:** no unused `pub fn` “for later” without a caller or test; prefer one obvious production path per entry (e.g. desktop web → `desktop_web.run` → `web_host.runWithHostConfig`).
+
+**When adding a second deployment (web vs terminal vs Android):** extract or extend an entry module in the **same change** that introduces the branch — do not grow `main` into a hodgepodge and “clean up later.”
+
+Placement rules: ADR-0011 (N thin entries), `CONTEXT.md` (shell vs `web_host` vs platform entry).
+
 ## Zig version & stdlib notes
 
 We are on **Zig 0.17** (dev snapshot). Consult `docs/zig-testing.md` for the stdlib API surface

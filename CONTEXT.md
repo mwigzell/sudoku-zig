@@ -105,7 +105,7 @@ Front-end **entries** share one core; **shell** and **host** mean different laye
 |------|----------------------|---------------------|
 | **Native app shell** | `src/native/shell/` — terminal command loop, menu, `FileTransport` | Not used |
 | **Web app shell** | `src/wasm/*.js`, `page.html`, `glue.js` — DOM, menubar, `exec` | **Same files**, loaded in WebView |
-| **`web_host`** | Zig loopback HTTP + embedded bytes (today `native/serve.zig` + `wasm_bytes.zig`; target `src/web_host/`) | Same module, background thread |
+| **`web_host`** | Zig loopback HTTP + embedded bytes (`src/web_host/`) | Same module, background thread |
 | **Android platform entry** | `src/android/` — JNI + minimal Java/DEX bootstrap (Activity, WebView, manifest) | Lifecycle + WebView; **not** a second JS shell |
 
 There is **no** separate Android app shell beside native and wasm. Informal “Android shell” in ADRs means the thin **process host** (lifecycle + WebView + JNI), not new game UI.
@@ -126,7 +126,7 @@ _Avoid_: calling the browser renderer "wasm"
 Native terminal substrate — builds `IoSession`, selects AsciiRenderer facade arms. Not loopback web serving; that is **`web_host`**. Wasm has no `Host` type; the JS page is the substrate.
 _Avoid_: folding `serve` / loopback into `Host`; "session" (that's the terminal substrate under it)
 
-**web_host** (planned `src/web_host/`; today `native/serve.zig`):
+**web_host** (`src/web_host/`):
 Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, settings POST. Desktop `-r web` and Android WebView both use this layer; desktop **`openBrowser`** stays in `main.zig`, not inside `web_host`.
 _Avoid_: duplicating menubar/DOM in native or Java; calling it `native/host`
 

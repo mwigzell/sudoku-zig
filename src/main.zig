@@ -1,76 +1,38 @@
-// Entry point — parses CLI args, builds the Host (renderer substrate), starts the game loop.
+// Process entry: resolve startup config, dispatch to the desktop web or terminal entry arm.
 const std = @import("std");
 const sudoku = @import("native/shell/sudoku.zig");
 const logger = @import("logger.zig");
-const host_mod = @import("native/host.zig");
-const file_transport = @import("native/shell/file_transport.zig");
-const serve = @import("native/serve.zig");
+const desktop_web = @import("native/desktop_web.zig");
+const desktop_terminal = @import("native/desktop_terminal.zig");
+const startup_config = @import("startup_config.zig");
+const shell_path = @import("native/shell/path.zig");
 // Wasm JSON contract tests — not reachable from the native play path (see wasm_entry.zig).
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
-const startup_config = @import("startup_config.zig");
 const settings_store = @import("settings_store.zig");
-const shell_path = @import("native/shell/path.zig");
+const web_host = @import("web_host/mod.zig");
+const open_browser = @import("native/open_browser.zig");
 
-// Test builds omit main(), so imports only used there are tree-shaken away.
-// Pin roots whose tests must still run under `zig build test`.
 test {
-    _ = .{ sudoku, serve, wasm_wire, wasm_boundary, startup_config, settings_store };
+    _ = .{ sudoku, desktop_web, desktop_terminal, web_host, open_browser, wasm_wire, wasm_boundary, startup_config, settings_store };
 }
 
 pub fn main(init: std.process.Init) sudoku.Error!void {
-    // Parse CLI flags (renderer, difficulty, log level) and apply the log severity before any further output.
     var arg_it = std.process.Args.iterate(init.minimal.args);
-    const cfg = startup_config.resolveStartupConfig(std.heap.page_allocator, init.io, &arg_it) catch unreachable;
+    const gpa = std.heap.page_allocator;
+    const cfg = startup_config.resolveStartupConfig(gpa, init.io, &arg_it) catch unreachable;
     startup_config.applyLoggerFromStartup(cfg);
 
     const log = logger.Logger(.sudoku);
     log.debug("Starting sudoku game.", .{});
 
-    // Web: serve embedded assets on loopback until exit — no native game loop.
+    const data_dir = shell_path.computeDataDir(gpa) catch ".";
+    defer if (!std.mem.eql(u8, data_dir, ".")) gpa.free(data_dir);
+
     if (cfg.preferred_renderer == .web) {
-        serve.serveWithHostConfig(init.io, serve.bindLoopback, serve.openBrowser, cfg) catch |err| {
-            if (err == serve.ServeError.AddressInUse) {
-                log.fatal("web server failed to start — port {d} is already in use.", .{serve.Port});
-            } else {
-                log.fatal("web server failed to start: {s}.", .{@errorName(err)});
-            }
-        };
+        desktop_web.run(init.io, cfg, data_dir);
         return;
     }
 
-    // Host owns the renderer substrate and I/O session for this process (see native/host.zig).
-    var host = host_mod.Host.create(cfg, init.io, std.heap.page_allocator);
-    defer host.deinit();
-    var facade_f = host.facade() catch |err| {
-        // Renderer requested but not available in this build — tell the player which one, separately for "unimplemented" and "no fallback".
-        if (err == error.UnsupportedRenderer) {
-            log.fatal(
-                "renderer '{s}' is not available in this build.\nAvailable renderers: ansi, ascii.",
-                .{@tagName(cfg.preferred_renderer)},
-            );
-        }
-        if (err == error.NoFallbackConfigured) {
-            log.fatal(
-                "renderer '{s}' is unavailable and no fallback renderer is configured.",
-                .{@tagName(cfg.preferred_renderer)},
-            );
-        }
-        return err;
-    };
-    defer facade_f.deinit();
-    const data_dir = shell_path.computeDataDir(std.heap.page_allocator) catch ".";
-    defer if (!std.mem.eql(u8, data_dir, ".")) std.heap.page_allocator.free(data_dir);
-    const settings_persist: ?sudoku.SettingsPersist = if (std.mem.eql(u8, data_dir, "."))
-        null
-    else
-        .{ .io = init.io, .data_dir = data_dir };
-    var game = try sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io), host.writer(), settings_persist);
-    defer game.deinit();
-
-    // Command loop: menu → play → save/open, until the player quits.
-    try game.showGame();
-    while (true) if (try game.turn()) break;
-
-    log.debug("Ending sudoku game.", .{});
+    try desktop_terminal.run(init.io, gpa, cfg, data_dir);
 }

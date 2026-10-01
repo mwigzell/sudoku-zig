@@ -135,16 +135,16 @@ for f in "${CHANGED[@]}"; do
   check_added_pattern "$f" "$RETIRED_PAT" "retired architecture symbol reintroduced"
 done
 
-# --- 6. DRY: one route→asset map on Router (serve.zig) ---
+# --- 6. DRY: one route→asset map on Router (web_host) ---
 for f in "${CHANGED[@]}"; do
-  [[ "$f" == *serve.zig ]] || continue
+  [[ "$f" == src/web_host/* ]] || continue
   check_added_pattern "$f" 'fn assetBody' \
     "parallel assetBody helper (use Router.body/contentType)"
   added="$(diff_added_lines "$f")"
   if echo "$added" | grep -q 'fn serveClient'; then
-    if echo "$added" | grep -qE 'wasm_bytes\.(page_html|glue_js)'; then
+    if echo "$added" | grep -qE 'embed\.(page_html|glue_js)'; then
       note_violation "inline route asset switch in serveClient ${f} (use Router.body/contentType)" \
-        "$(echo "$added" | grep -E 'wasm_bytes\.(page_html|glue_js)' | head -2 | sed 's/^/+ /')"
+        "$(echo "$added" | grep -E 'embed\.(page_html|glue_js)' | head -2 | sed 's/^/+ /')"
     fi
   fi
 done
