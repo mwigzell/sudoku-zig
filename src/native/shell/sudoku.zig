@@ -25,7 +25,7 @@ const save_as_command = @import("save_as.zig");
 const gen_progress = @import("gen_progress.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
-/// One running game: engine + renderer; both deployments show the game, then turn it.
+/// One running game: engine + renderer; each entry shows the game, then turns it.
 pub const SettingsPersist = struct {
     io: std.Io,
     data_dir: []const u8,

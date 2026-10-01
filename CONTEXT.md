@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-A playable Sudoku game as a WASM module compiled from Zig, running in the browser with a thin vanilla JS shell. A terminal front-end (AsciiRenderer) proves the architecture first; both deployments share the same portable GameEngine core. (Note: a true TUI is an ncurses front-end — not implemented yet.)
+A playable Sudoku game as a WASM module compiled from Zig, running in the browser with a thin vanilla JS shell. A terminal front-end (AsciiRenderer) proves the architecture first; every front-end entry shares the same portable GameEngine core. (Note: a true TUI is an ncurses front-end — not implemented yet.)
 
 See `.scratch/sudoku/prd.md` for full PRD and user stories.
 

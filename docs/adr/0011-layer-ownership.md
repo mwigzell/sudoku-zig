@@ -11,15 +11,15 @@ Placement drift. A recurring failure mode across this project: implementation is
 - `save_format` manufacturing a `GameEngine` from bytes — codec smuggling a runtime object.
 - `WebGame` second app object in the wasm path — a parallel application beside the core instead of a thin entry (2026-08-31 owner ruling).
 - `showError` implemented as fire-and-forget in wasm — ack contract of an interactive surface dropped (issues #25/#26 era).
-- Region highlight memo (issue #46, 2026-12) — both attempts pulled the "last cell" memo into the **renderer**; it belongs in the driver (native) / page (web), exactly where the twin already keeps selection.
+- Region highlight memo (issue #46, 2026-12) — both attempts pulled the "last cell" memo into the **renderer**; it belongs in the driver (native) / page (web), exactly where sibling entries already keep selection.
 
 `AGENTS.md` says closed issues are historical and code is source of truth, but none of these was caught because there was no *written* rule saying which layer owns which concern. ADR-0010 pins the wasm boundary and engine I/O-freeness; **ADR-0014** pins persistent settings, host bootstrap, and in-app editing — but not the full placement law in this table.
 
-This project's unique asset is the **twin deployment**: one portable core, two thin entries (native driver `src/native/shell/sudoku.zig`; wasm `src/wasm` + `src/wasm_entry.zig`). Any placement question already has an answer in the sibling deployment.
+This project's unique asset is **one portable core, N thin front-end entries** — e.g. native terminal (`src/native/shell/sudoku.zig`), desktop/web wasm (`src/wasm` + loopback host), optional Android host + WebView (ADR-0013). Any placement question should be resolved by comparing **sibling entries**, not inventing a one-off home.
 
 ## Decision
 
-Placement decisions cite the twin before they invent a new home. Ownership table (as of this ADR; "never" is load-bearing):
+Placement decisions cite a sibling entry before they invent a new home. Ownership table (as of this ADR; "never" is load-bearing):
 
 | Concern | Owning layer | Never in |
 |---|---|---|
@@ -35,10 +35,10 @@ Placement decisions cite the twin before they invent a new home. Ownership table
 
 Rules:
 
-1. **Twin test** — before any new field, method, or seam, ask: what does the sibling deployment do here? If the answer differs, say why explicitly (issue Decisions section).
+1. **Sibling-entry test** — before any new field, method, or seam, ask: what do other supported entries do here? If the answer differs, say why explicitly (issue Decisions section).
 2. **Renderer is a painter** — it accepts call args each render and stores nothing per-session. If a renderer needs to remember something between renders, the memory belongs in the driver (native) or the JS app (web) that calls it.
 3. **Engine is state + pure rules** — no capability handles, no `io`, no I/O fns, no objects it manufactured from bytes.
-4. **One core, two thin entries** — no second app object, no second startup path per deployment (ADR-0010).
+4. **One core, N thin entries** — per entry, no second app object and no second startup path in the same process (ADR-0010).
 5. **Issue Decisions sections carry placements** — every new concern's home and non-homes are written in the issue body before RED, citing this table.
 
 ## Consequences

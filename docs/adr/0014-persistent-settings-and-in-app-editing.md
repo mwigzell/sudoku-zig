@@ -11,7 +11,7 @@ Gaps that motivated this ADR as a **standing product rule** (not only a one-off 
 
 - Disk is not the product UI — users must not rely on hand-editing JSON for normal preference changes.
 - Web boot must not invent difficulty/log defaults in JS when the host already resolved `Config` from disk + CLI (**#62**).
-- Native and web are **twins** (ADR-0011): the same nominal fields in `config.Config` / `settings.json` should be changeable through each platform’s interactive shell where that platform is supported.
+- Each supported **front-end entry** is a **sibling** (ADR-0011): the same nominal fields in `config.Config` / `settings.json` should be changeable through that entry’s interactive shell where the platform is supported.
 
 ## Decision
 
