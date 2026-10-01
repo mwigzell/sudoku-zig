@@ -99,6 +99,17 @@ _Avoid_: "hint at position", implying local-constraint derivation; a permanent a
 
 ### App Shell & Deployments
 
+Front-end **entries** share one core; **shell** and **host** mean different layers. Use this table before inventing a new folder (e.g. an “Android shell” that duplicates JS UI):
+
+| Term | Meaning in this repo | Android (ADR-0013) |
+|------|----------------------|---------------------|
+| **Native app shell** | `src/native/shell/` — terminal command loop, menu, `FileTransport` | Not used |
+| **Web app shell** | `src/wasm/*.js`, `page.html`, `glue.js` — DOM, menubar, `exec` | **Same files**, loaded in WebView |
+| **`web_host`** | Zig loopback HTTP + embedded bytes (today `native/serve.zig` + `wasm_bytes.zig`; target `src/web_host/`) | Same module, background thread |
+| **Android platform entry** | `src/android/` — JNI + minimal Java/DEX bootstrap (Activity, WebView, manifest) | Lifecycle + WebView; **not** a second JS shell |
+
+There is **no** separate Android app shell beside native and wasm. Informal “Android shell” in ADRs means the thin **process host** (lifecycle + WebView + JNI), not new game UI.
+
 **Sudoku** (`native/shell/sudoku.zig`, native app shell):
 Owns the command loop, renderer facade, `FileTransport`, and session command routing (`save`, `open`, `save_as`, `new`) in `handleResult` before delegating gameplay to `GameEngine.exec`. This is the native integrated e2e seam.
 _Avoid_: folding session I/O into GameEngine
@@ -111,9 +122,17 @@ _Avoid_: reintroducing a wasm REPL or ASCII screen feed
 The user-facing renderer *place*: `ansi`, `ascii`, `tui`, `web`. `-r web` runs a loopback static server for embedded assets until the process stops (Ctrl+C); there is no native `Sudoku` play loop — the browser + JS shell is the runtime. Renderer selection is native-only; the wasm deployment is web by construction.
 _Avoid_: calling the browser renderer "wasm"
 
-**Host** (`native/host.zig`):
-Native terminal substrate — builds `IoSession`, selects AsciiRenderer facade arms. Wasm has no Host analogue; the JS page is the substrate.
-_Avoid_: Host as a concrete object (it's the seam), "session" (that's the native substrate under it)
+**Host** (`native/host.zig`, terminal only):
+Native terminal substrate — builds `IoSession`, selects AsciiRenderer facade arms. Not loopback web serving; that is **`web_host`**. Wasm has no `Host` type; the JS page is the substrate.
+_Avoid_: folding `serve` / loopback into `Host`; "session" (that's the terminal substrate under it)
+
+**web_host** (planned `src/web_host/`; today `native/serve.zig`):
+Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, settings POST. Desktop `-r web` and Android WebView both use this layer; desktop **`openBrowser`** stays in `main.zig`, not inside `web_host`.
+_Avoid_: duplicating menubar/DOM in native or Java; calling it `native/host`
+
+**Android platform entry** (`src/android/`, issue #64):
+Minimal Java/DEX + JNI (`jni_host.zig`) — `MainActivity`, WebView, permissions, cleartext localhost. Starts **`web_host`** on a background thread; **`loadUrl`** when the port is bound.
+_Avoid_: `android/shell` JS, Gradle app layer (default path), EGL UI in the same entry
 
 **FileTransport** (`native/shell/file_transport.zig`, native arm):
 Fn-pointer vtable for file read/write/resolve. **Owned by native `Sudoku`**, passed into session handlers — not by `GameEngine`. The wasm path uses `serialize`/`deserialize` on opaque bytes instead; no wasm transport arm.
