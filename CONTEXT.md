@@ -131,7 +131,7 @@ Loopback static server for the **web app shell** — routes, embedded page/JS/wa
 _Avoid_: duplicating menubar/DOM in native or Java; calling it `native/host`
 
 **Android platform entry** (`src/android/`, issue #64):
-Minimal Java/DEX + JNI (`jni_host.zig`) — `MainActivity`, WebView, permissions, cleartext localhost. Starts **`web_host`** on a background thread; **`loadUrl`** when the port is bound.
+Minimal Java/DEX + JNI (`jni_host.zig`) — package **`com.wigzell.sudoku_zig`**, `MainActivity`, WebView, permissions, cleartext localhost. Starts **`web_host`** on a background thread; **`loadUrl`** when the port is bound.
 _Avoid_: `android/shell` JS, Gradle app layer (default path), EGL UI in the same entry
 
 **FileTransport** (`native/shell/file_transport.zig`, native arm):
