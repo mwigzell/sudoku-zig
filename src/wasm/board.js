@@ -341,6 +341,7 @@ export function handlePlayKey(
   session,
   createElement,
   code = "",
+  onSessionPersist = () => {},
 ) {
   const play = parsePlayKey(key, code);
   if (!play) return { handled: false };
@@ -361,6 +362,7 @@ export function handlePlayKey(
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
   session.state = result.state;
   session.legend = game.getLegend();
+  onSessionPersist();
   return { handled: true, legend: session.legend };
 }
 
@@ -371,7 +373,7 @@ export function wirePlayLoop(
   statusEl,
   errorModal,
   session,
-  { onLegendChange } = {},
+  { onLegendChange, onSessionPersist = () => {} } = {},
 ) {
   const playEl = resolvePlayGrid(frameEl);
   playEl.addEventListener(
@@ -387,6 +389,7 @@ export function wirePlayLoop(
         session,
         undefined,
         event.code,
+        onSessionPersist,
       );
       if (!outcome.handled) return;
       event.preventDefault();

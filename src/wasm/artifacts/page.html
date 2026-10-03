@@ -697,6 +697,7 @@
       canUseGenWorker,
       initializeWebSession,
       offerInitialNewGame,
+      persistWebSessionSnapshot,
       persistHostSettings,
       showErrorModal,
       wireErrorModal,
@@ -750,21 +751,11 @@
         msgEl: document.getElementById("generating-modal-msg"),
         progressRowsEl: document.getElementById("generating-progress-rows"),
       });
-      const sessionStorageKey = "sudoku-zig-session";
-      let storedSud0Bytes;
-      try {
-        const raw = localStorage.getItem(sessionStorageKey);
-        if (raw) storedSud0Bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
-      } catch (err) {
-        console.warn("session restore skipped:", err);
-        storedSud0Bytes = undefined;
-      }
-
       const genWorker = canUseGenWorker()
         ? { workerUrl: new URL("./gen_worker.js", import.meta.url).href, wasmBytes: bytes }
         : undefined;
 
-      const boot = await initializeWebSession(game, { storedSud0Bytes });
+      const boot = await initializeWebSession(game);
       if (!boot.ok) throw new Error(boot.error ?? "session init failed");
       primeWebBootChrome(boot, document);
 
@@ -775,6 +766,11 @@
         state: ready.state,
         legend: ready.legend,
         config: ready.config,
+        boundFilename: ready.boundFilename ?? null,
+        fileHandle: null,
+      };
+      const persistSession = () => {
+        persistWebSessionSnapshot(game, session);
       };
       renderBoard(boardEl, session.state);
       if (ready.kind === "resumed" && ready.msg) {
@@ -829,6 +825,7 @@
           themeMenu.sync();
           regionMenu.sync();
         },
+        onSessionPersist: persistSession,
       });
       editMenu = wireEditMenu(
         menuControls.undo,
@@ -850,12 +847,15 @@
       );
       wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
         onLegendChange: () => menuBar.sync(),
+        onSessionPersist: persistSession,
       });
       wireHelpAbout(menuControls.about, game, aboutModal);
       wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
         closeMenus: () => menuBar.closeAll?.(),
         onPersist: persistViewSettings,
       });
+      persistSession();
+      globalThis.addEventListener("beforeunload", persistSession);
       getPlayGrid(boardEl).focus();
     } catch (err) {
       const msg = `failed to load wasm: ${err && err.message ? err.message : err}`;

@@ -6,6 +6,7 @@ import {
   hostViewPrefsForPersist,
   initializeWebSession,
   offerInitialNewGame,
+  persistWebSessionSnapshot,
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
   assertWebBootConfig,
@@ -292,6 +293,30 @@ async function flushDialogPaint() {
 
 // ── initializeWebSession: host config boot, optional resume, no auto-New ──
 {
+  let persisted = null;
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
+    },
+  };
+  let postedUrl = null;
+  await persistWebSessionSnapshot(game, { boundFilename: "opened.sud" }, async (_url, init) => {
+    postedUrl = _url;
+    persisted = JSON.parse(init.body);
+    return { ok: true, status: 204 };
+  });
+  assert.equal(postedUrl, "./settings.json");
+  assert.equal(persisted.session_b64, "AQID");
+  assert.equal(persisted.current_file, "opened.sud");
+
+  await persistWebSessionSnapshot(game, { boundFilename: null }, async (_url, init) => {
+    persisted = JSON.parse(init.body);
+    return { ok: true, status: 204 };
+  });
+  assert.equal(persisted.current_file, null);
+}
+
+{
   const hostCfg = { difficulty: 2, log_level: 1, theme: "dark", show_region: false, warn_solvability: false };
   const game = {
     bootstrapHostConfig(cfg) {
@@ -326,7 +351,7 @@ async function flushDialogPaint() {
 }
 
 {
-  const hostCfg = { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
+  const hostCfg = { difficulty: 1, log_level: 1, theme: "dark", show_region: false, session_b64: "AQI=", current_file: "resumed.sud" };
   let deserialized = false;
   const game = {
     bootstrapHostConfig() {
@@ -348,11 +373,11 @@ async function flushDialogPaint() {
   };
   const out = await initializeWebSession(game, {
     fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
-    storedSud0Bytes: new Uint8Array([1, 2]),
   });
   assert.equal(out.ok, true);
   assert.equal(out.kind, "resumed");
   assert.equal(deserialized, true);
+  assert.equal(out.boundFilename, "resumed.sud");
 }
 
 // ── offerInitialNewGame: skip resume; empty boot runs generating New ──

@@ -453,6 +453,7 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
   const session = { state: emptyState(), legend: openLegend };
+  let persisted = 0;
   const game = {
     exec(action) {
       assert.equal(action.action, "fill");
@@ -477,12 +478,17 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
     "4",
     session,
     makeRenderElement(),
+    "",
+    () => {
+      persisted += 1;
+    },
   );
   assert.equal(outcome.handled, true);
   assert.equal(session.state.cells[cellIndex(0, 2)].value, 4);
   assert.equal(findCellElement(board, 0, 2).textContent, "4");
   assert.ok(findCellElement(board, 0, 2).classList.contains("selected"));
   assert.equal(outcome.legend.undo, true);
+  assert.equal(persisted, 1, "successful board edits should trigger session persistence");
 }
 
 {

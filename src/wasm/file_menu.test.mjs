@@ -119,6 +119,47 @@ function makeRenderElement() {
 {
   const board = makeBoard();
   const session = {
+    legend: { open: true },
+    state: { cells: [] },
+  };
+  let persistCalls = 0;
+  const controls = { open: makeBtn() };
+  wireFileMenu(
+    controls,
+    {
+      deserialize() {
+        return { ok: true, state: { cells: [{ value: 1, given: false, conflict: false }] }, msg: "opened: game.sud" };
+      },
+      getLegend() {
+        return { open: true, save: true, save_as: true };
+      },
+      getConfig() {
+        return { theme: "dark", show_region: false };
+      },
+    },
+    board,
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      createElement: makeRenderElement(),
+      pick: async () => ({ ok: true, name: "game.sud", bytes: new Uint8Array([1]), handle: { name: "game.sud" } }),
+      onSessionPersist: () => {
+        persistCalls += 1;
+      },
+    },
+  );
+  await controls.open.click();
+  assert.equal(session.boundFilename, "game.sud");
+  assert.equal(persistCalls, 1, "open should trigger session persistence");
+}
+
+{
+  const board = makeBoard();
+  const session = {
     legend: { new: true, open: true, save: true, save_as: true },
     state: { cells: [] },
   };

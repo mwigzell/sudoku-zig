@@ -39,6 +39,7 @@ pub const Sudoku = struct {
     out: *std.Io.Writer,
     settings_persist: ?SettingsPersist = null,
     last_cell: ?facade_mod.Selection = null,
+    current_file_path: ?[]u8 = null,
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
@@ -67,6 +68,24 @@ pub const Sudoku = struct {
         const sp = self.settings_persist orelse return;
         self.cfg = self.engine.getConfig();
         settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, self.cfg) catch {};
+    }
+
+    fn setCurrentFilePath(self: *@This(), path_value: []const u8) void {
+        if (self.current_file_path) |old| std.heap.page_allocator.free(old);
+        self.current_file_path = std.heap.page_allocator.dupe(u8, path_value) catch null;
+    }
+
+    fn clearCurrentFilePath(self: *@This()) void {
+        if (self.current_file_path) |old| std.heap.page_allocator.free(old);
+        self.current_file_path = null;
+    }
+
+    fn persistCurrentFileIfNeeded(self: *@This()) void {
+        const sp = self.settings_persist orelse return;
+        settings_store.saveSessionMeta(std.heap.page_allocator, sp.io, sp.data_dir, .{
+            .current_file = self.current_file_path,
+            .session_b64 = null,
+        }) catch {};
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
@@ -113,9 +132,32 @@ pub const Sudoku = struct {
                 const event = switch (cmd) {
                     .save => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                        break :blk save_command.execute(&self.engine, self.transport, path);
+                        const resolved = self.transport.resolve(self.transport.context, path) catch {
+                            break :blk save_command.execute(&self.engine, self.transport, path);
+                        };
+                        defer self.transport.free(self.transport.context, resolved);
+                        const ev = save_command.execute(&self.engine, self.transport, resolved);
+                        if (ev == .ok) {
+                            self.setCurrentFilePath(resolved);
+                            self.persistCurrentFileIfNeeded();
+                        }
+                        break :blk ev;
                     },
-                    .open => |data| open_command.execute(&self.engine, self.transport, data.path),
+                    .open => |data| blk: {
+                        const raw = data.path orelse {
+                            break :blk open_command.execute(&self.engine, self.transport, data.path);
+                        };
+                        const resolved = self.transport.resolve(self.transport.context, raw) catch {
+                            break :blk open_command.execute(&self.engine, self.transport, data.path);
+                        };
+                        defer self.transport.free(self.transport.context, resolved);
+                        const ev = open_command.execute(&self.engine, self.transport, resolved);
+                        if (ev == .ok) {
+                            self.setCurrentFilePath(resolved);
+                            self.persistCurrentFileIfNeeded();
+                        }
+                        break :blk ev;
+                    },
                     .import => |data| import_command.execute(&self.engine, self.transport, data.path),
                     .@"export" => |data| export_command.execute(&self.engine, self.transport, data.path),
                     .copy => copy_command.execute(&self.engine, self.out),
@@ -123,7 +165,16 @@ pub const Sudoku = struct {
                     .new => |data| new_command.execute(&self.engine, data),
                     .save_as => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                        break :blk save_as_command.execute(&self.engine, self.transport, path);
+                        const resolved = self.transport.resolve(self.transport.context, path) catch {
+                            break :blk save_as_command.execute(&self.engine, self.transport, path);
+                        };
+                        defer self.transport.free(self.transport.context, resolved);
+                        const ev = save_as_command.execute(&self.engine, self.transport, resolved);
+                        if (ev == .ok) {
+                            self.setCurrentFilePath(resolved);
+                            self.persistCurrentFileIfNeeded();
+                        }
+                        break :blk ev;
                     },
                     else => self.engine.exec(cmd),
                 };
@@ -160,8 +211,19 @@ pub const Sudoku = struct {
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
+    /// Startup restore: open a previously-tracked session file path and return engine event.
+    pub fn restoreFromPath(self: *@This(), file_path: []const u8) game_engine.Event {
+        const event = open_command.execute(&self.engine, self.transport, file_path);
+        if (event == .ok) {
+            self.setCurrentFilePath(file_path);
+            self.persistCurrentFileIfNeeded();
+        }
+        return event;
+    }
+
     /// Release the engine and native transport session state.
     pub fn deinit(self: *@This()) void {
+        self.clearCurrentFilePath();
         self.engine.deinit();
         file_transport.NativeTransport.deinitSession();
     }

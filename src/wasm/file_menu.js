@@ -231,6 +231,7 @@ export function wireFileMenu(
     exportText = persistPuzzleText,
     createElement,
     onViewRefresh,
+    onSessionPersist = () => {},
   } = {},
 ) {
   const fail = (result) => {
@@ -253,6 +254,7 @@ export function wireFileMenu(
       onViewRefresh,
       result.msg,
     );
+    onSessionPersist();
   };
 
   const runNewGame = async (difficulty) => {
@@ -309,6 +311,8 @@ export function wireFileMenu(
     );
     if (saved.ok) {
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
+      session.boundFilename = saved.filename ?? session.boundFilename ?? null;
+      onSessionPersist();
     } else if (!saved.ok && !saved.cancelled) {
       fail(saved);
     }
@@ -324,6 +328,8 @@ export function wireFileMenu(
     const saved = await persistBytes(result.bytes, session, SAVE_AS_FILENAME, { saveAs: true, download });
     if (saved.ok) {
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
+      session.boundFilename = saved.filename ?? session.boundFilename ?? null;
+      onSessionPersist();
     } else if (!saved.ok && !saved.cancelled) {
       fail(saved);
     }
@@ -354,6 +360,7 @@ export function wireFileMenu(
       onViewRefresh,
       result.msg,
     );
+    onSessionPersist();
   });
 
   controls.import?.addEventListener("click", async () => {
@@ -382,6 +389,7 @@ export function wireFileMenu(
       onViewRefresh,
       result.msg,
     );
+    onSessionPersist();
   });
 
   controls.export?.addEventListener("click", async () => {
