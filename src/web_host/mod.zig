@@ -43,14 +43,10 @@ pub const OnReadyFn = *const fn (io: std.Io, url: []const u8) void;
 const Session = struct {
     host_config: config.Config,
     data_dir: []const u8,
-    host_config_body_buf: [512]u8,
+    host_config_body_buf: [256]u8,
 
-    fn hostConfigBody(self: *Session, io: std.Io) ServeError![]const u8 {
-        const meta = settings_store.loadSessionMetaOrNull(std.heap.page_allocator, io, self.data_dir) catch return ServeError.System;
-        defer if (meta) |value| settings_store.freeSessionMeta(std.heap.page_allocator, value);
-        const current_file = if (meta) |value| value.current_file else null;
-        const session_b64 = if (meta) |value| value.session_b64 else null;
-        return startup_config.formatHostStartupJson(self.host_config, current_file, session_b64, &self.host_config_body_buf) catch return ServeError.System;
+    fn hostConfigBody(self: *Session) ServeError![]const u8 {
+        return startup_config.formatHostStartupJson(self.host_config, &self.host_config_body_buf) catch return ServeError.System;
     }
 };
 
@@ -60,8 +56,6 @@ const SettingsPostBody = struct {
     theme: ?[]const u8 = null,
     show_region: ?bool = null,
     warn_solvability: ?bool = null,
-    current_file: ?[]const u8 = null,
-    session_b64: ?[]const u8 = null,
 };
 
 fn mergeDifficultyPatch(cfg: *config.Config, name: []const u8) void {
@@ -96,12 +90,6 @@ fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
     settings_store.ensureSettingsDir(io, session.data_dir);
     settings_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
-    if (parsed.value.current_file != null or parsed.value.session_b64 != null) {
-        settings_store.saveSessionMeta(gpa, io, session.data_dir, .{
-            .current_file = parsed.value.current_file,
-            .session_b64 = parsed.value.session_b64,
-        }) catch return ServeError.System;
-    }
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -266,12 +254,13 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         try writeFull(&w.interface, "204 No Content", "application/json", "");
         return;
     }
+
     const res = Router.route(req_path);
     if (res) |result| {
-        const body: []const u8 = switch (result) {
-            .host_config => try session.hostConfigBody(io),
-            else => Router.body(result),
-        };
+        const body: []const u8 = if (result == .host_config)
+            try session.hostConfigBody()
+        else
+            Router.body(result);
         try writeFull(&w.interface, "200 OK", Router.contentType(result), body);
         rt_router.markDelivered(result);
     } else |_| {
@@ -486,7 +475,7 @@ test "web_host: host-config body reflects active host Config" {
         .data_dir = ".",
         .host_config_body_buf = undefined,
     };
-    const body = try session.hostConfigBody(std.testing.io);
+    const body = try session.hostConfigBody();
     try std.testing.expect(std.mem.indexOf(u8, body, "\"difficulty\":2") != null);
     try std.testing.expect(std.mem.indexOf(u8, body, "\"log_level\":0") != null);
     try std.testing.expect(std.mem.indexOf(u8, body, "\"theme\":\"light\"") != null);

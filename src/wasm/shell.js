@@ -230,40 +230,6 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
   if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
 }
 
-function encodeSud0Base64(bytes) {
-  let text = "";
-  for (let i = 0; i < bytes.length; i += 1) text += String.fromCharCode(bytes[i]);
-  return btoa(text);
-}
-
-function decodeSud0Base64(raw) {
-  return Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
-}
-
-export async function persistWebSessionSnapshot(game, session, fetchFn = globalThis.fetch) {
-  const saved = game.serialize?.();
-  if (!saved?.ok || !saved.bytes) return;
-  const payload = {
-    current_file:
-      typeof session?.boundFilename === "string" && session.boundFilename.length > 0
-        ? session.boundFilename
-        : null,
-    session_b64: encodeSud0Base64(saved.bytes),
-  };
-  try {
-    const res = await fetchFn("./settings.json", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(`session persist failed: ${res.status}`);
-    }
-  } catch (err) {
-    console.warn("session persist skipped:", err);
-  }
-}
-
 /** Restore SUD0 bytes when present; returns session bundle or null. */
 export function tryRestoreStoredSession(game, sud0Bytes) {
   if (!sud0Bytes?.length) return null;
@@ -281,19 +247,14 @@ export function tryRestoreStoredSession(game, sud0Bytes) {
 /**
  * Host config + empty engine, or resume stored session — never auto-starts New Game.
  */
-export async function initializeWebSession(game, { fetchFn } = {}) {
+export async function initializeWebSession(game, { fetchFn, storedSud0Bytes } = {}) {
   const hostCfg = await fetchHostStartupConfig(fetchFn);
   const boot = bootstrapEngineFromHostConfig(game, hostCfg);
   if (!boot.ok) return boot;
 
-  const storedSud0Bytes = hostCfg?.session_b64 ? decodeSud0Base64(hostCfg.session_b64) : undefined;
-  const boundFilename =
-    typeof hostCfg?.current_file === "string" && hostCfg.current_file.length > 0
-      ? hostCfg.current_file
-      : null;
   const restored = tryRestoreStoredSession(game, storedSud0Bytes);
   if (restored?.ok) {
-    return { ok: true, kind: "resumed", boundFilename, ...restored };
+    return { ok: true, kind: "resumed", ...restored };
   }
 
   return {
@@ -303,7 +264,6 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     legend: game.getLegend(),
     config: game.getConfig(),
     msg: boot.msg ?? null,
-    boundFilename,
   };
 }
 

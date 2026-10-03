@@ -44,7 +44,7 @@ pub fn applyLoggerFromStartup(startup: config.Config) void {
 }
 
 /// JSON body for `/host-config.json` — same shape as wasm `getConfig()`.
-pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config, current_file: ?[]const u8, session_b64: ?[]const u8) !void {
+pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
     const wire_cfg = wire.WireConfig.fromConfig(startup);
     const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
@@ -52,7 +52,7 @@ pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config, current_f
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"current_file\":",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
@@ -61,15 +61,11 @@ pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config, current_f
             wire_cfg.warn_solvability,
         },
     );
-    try std.json.Stringify.value(current_file, .{}, w);
-    try std.Io.Writer.writeAll(w, ",\"session_b64\":");
-    try std.json.Stringify.value(session_b64, .{}, w);
-    try std.Io.Writer.writeAll(w, "}");
 }
 
-pub fn formatHostStartupJson(startup: config.Config, current_file: ?[]const u8, session_b64: ?[]const u8, buf: []u8) ![]const u8 {
+pub fn formatHostStartupJson(startup: config.Config, buf: []u8) ![]const u8 {
     var w = std.Io.Writer.fixed(buf);
-    try writeHostStartupJson(&w, startup, current_file, session_b64);
+    try writeHostStartupJson(&w, startup);
     try std.Io.Writer.flush(&w);
     return w.buffered();
 }
@@ -149,9 +145,9 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
 
     const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
     var buf: [160]u8 = undefined;
-    const json = try formatHostStartupJson(loaded, null, null, &buf);
+    const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"current_file\":null,\"session_b64\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true}",
         json,
     );
 }
@@ -166,10 +162,10 @@ test "host startup JSON matches Config wire fields" {
         .show_region = true,
     };
 
-    var buf: [256]u8 = undefined;
-    const json = try formatHostStartupJson(startup, null, null, &buf);
+    var buf: [128]u8 = undefined;
+    const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"current_file\":null,\"session_b64\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false}",
         json,
     );
 }
