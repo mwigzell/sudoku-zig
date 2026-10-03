@@ -52,13 +52,16 @@ pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
             theme_name,
             wire_cfg.show_region,
             wire_cfg.warn_solvability,
+            startup.auto_restore,
+            startup.auto_new,
+            startup.auto_save,
         },
     );
 }
@@ -141,13 +144,16 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
     on_disk.theme = .light;
     on_disk.show_region = true;
     on_disk.warn_solvability = true;
+    on_disk.auto_restore = true;
+    on_disk.auto_new = true;
+    on_disk.auto_save = true;
     try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, on_disk);
 
     const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
-    var buf: [160]u8 = undefined;
+    var buf: [256]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true}",
         json,
     );
 }
@@ -160,12 +166,15 @@ test "host startup JSON matches Config wire fields" {
         .log_level = .debug,
         .theme = .light,
         .show_region = true,
+        .auto_restore = true,
+        .auto_new = false,
+        .auto_save = true,
     };
 
-    var buf: [128]u8 = undefined;
+    var buf: [256]u8 = undefined;
     const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true}",
         json,
     );
 }

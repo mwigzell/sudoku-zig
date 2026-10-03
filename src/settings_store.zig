@@ -16,6 +16,9 @@ const JsonSettingsFile = struct {
     theme: ?[]const u8 = null,
     show_region: ?bool = null,
     warn_solvability: ?bool = null,
+    auto_restore: ?bool = null,
+    auto_new: ?bool = null,
+    auto_save: ?bool = null,
 };
 
 /// Player-editable fields only — matches menubar/menu + ADR-0014 (no renderer choice).
@@ -25,6 +28,9 @@ const JsonPlayerSettings = struct {
     theme: []const u8,
     show_region: bool,
     warn_solvability: bool,
+    auto_restore: bool,
+    auto_new: bool,
+    auto_save: bool,
 };
 
 /// Errors from load/save/path resolution (invalid disk JSON maps to defaults on load).
@@ -73,6 +79,9 @@ fn configFromJsonFile(parsed: JsonSettingsFile) Error!config.Config {
     if (parsed.theme) |name| cfg.theme = try parseTheme(name);
     if (parsed.show_region) |on| cfg.show_region = on;
     if (parsed.warn_solvability) |on| cfg.warn_solvability = on;
+    if (parsed.auto_restore) |on| cfg.auto_restore = on;
+    if (parsed.auto_new) |on| cfg.auto_new = on;
+    if (parsed.auto_save) |on| cfg.auto_save = on;
     return cfg;
 }
 
@@ -83,6 +92,9 @@ fn jsonPlayerFromConfig(cfg: config.Config) JsonPlayerSettings {
         .theme = @tagName(cfg.theme),
         .show_region = cfg.show_region,
         .warn_solvability = cfg.warn_solvability,
+        .auto_restore = cfg.auto_restore,
+        .auto_new = cfg.auto_new,
+        .auto_save = cfg.auto_save,
     };
 }
 
@@ -207,6 +219,9 @@ test "settings round-trip preserves player fields" {
         .theme = .light,
         .show_region = true,
         .warn_solvability = true,
+        .auto_restore = true,
+        .auto_new = true,
+        .auto_save = true,
     };
 
     try saveInDir(std.testing.allocator, io, tmp.dir, original);
@@ -216,6 +231,9 @@ test "settings round-trip preserves player fields" {
     try std.testing.expectEqual(original.theme, restored.theme);
     try std.testing.expectEqual(original.show_region, restored.show_region);
     try std.testing.expectEqual(original.warn_solvability, restored.warn_solvability);
+    try std.testing.expectEqual(original.auto_restore, restored.auto_restore);
+    try std.testing.expectEqual(original.auto_new, restored.auto_new);
+    try std.testing.expectEqual(original.auto_save, restored.auto_save);
     try std.testing.expectEqual(config.RendererKind.ansi, restored.preferred_renderer);
 }
 
@@ -258,4 +276,21 @@ test "loadOrDefaultInDir reads view prefs from settings.json on disk" {
     defer std.testing.allocator.free(bytes);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"show_region\":true") != null);
+}
+
+test "load missing behavior flags defaults them to false" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const legacy =
+        \\{"difficulty":"easy","log_level":"info","theme":"dark","show_region":false,"warn_solvability":false}
+        \\
+    ;
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = legacy, .flags = .{ .truncate = true } });
+
+    const loaded = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    try std.testing.expect(!loaded.auto_restore);
+    try std.testing.expect(!loaded.auto_new);
+    try std.testing.expect(!loaded.auto_save);
 }
