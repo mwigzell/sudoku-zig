@@ -95,6 +95,48 @@ check_added_pattern() {
   fi
 }
 
+added_public_symbol_lines() {
+  local file=$1
+  git diff -U0 "$BASE" -- "$file" | awk '
+    /^@@/ {
+      if (match($0, /\+[0-9]+/)) {
+        line = substr($0, RSTART + 1, RLENGTH - 1) - 1
+      }
+      next
+    }
+    /^\+\+\+/ { next }
+    /^\+/ {
+      line++
+      txt = substr($0, 2)
+      if (txt ~ /^[[:space:]]*pub[[:space:]]+fn[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/ ||
+          txt ~ /^[[:space:]]*pub[[:space:]]+const[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*(struct|enum|union|opaque)\b/ ||
+          txt ~ /^[[:space:]]*pub[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:/) {
+        print line ":" txt
+      }
+      next
+    }
+    /^-/ { next }
+    { line++ }
+  ' || true
+}
+
+has_doc_comment_above() {
+  local file=$1 line=$2
+  local n=$((line - 1))
+  while [[ $n -ge 1 ]]; do
+    local prev
+    prev="$(awk -v n="$n" 'NR==n { print; exit }' "$file")"
+    local trimmed="${prev#"${prev%%[![:space:]]*}"}"
+    if [[ -z "$trimmed" ]]; then
+      n=$((n - 1))
+      continue
+    fi
+    [[ "$trimmed" =~ ^// ]] && return 0
+    return 1
+  done
+  return 1
+}
+
 # --- 1. Code comments: no issue/session citations (AGENTS.md) ---
 ISSUE_PAT='(\(#[0-9]+\)|#[0-9]{2,}|Issue [0-9]+|issue [0-9]+|spec: issue-[0-9]+|[Ss]tep [0-9]+|[Cc]hunk [0-9]+)'
 
@@ -168,10 +210,23 @@ for f in "${CHANGED[@]}"; do
   fi
 done
 
+# --- 9. Public Zig API docs are mandatory (.coding-standards.md) ---
+for f in "${CHANGED[@]}"; do
+  [[ "$f" =~ \.zig$ ]] || continue
+  while IFS= read -r rec; do
+    [[ -z "$rec" ]] && continue
+    line_no="${rec%%:*}"
+    sym="${rec#*:}"
+    if ! has_doc_comment_above "$f" "$line_no"; then
+      note_violation "undocumented public Zig symbol in ${f}:${line_no}" "+ ${sym}"
+    fi
+  done < <(added_public_symbol_lines "$f")
+done
+
 # --- report ---
 if [[ $FAIL -eq 0 ]]; then
   pass_line "mechanical standards clean (${#CHANGED[@]} file(s))"
-  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects\n' "${C_DIM}"
+  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs\n' "${C_DIM}"
   printf '%b judgement calls (SOLID/spec) still need two-axis review\n' "${C_DIM}"
   exit 0
 fi

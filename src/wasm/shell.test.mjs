@@ -290,9 +290,17 @@ async function flushDialogPaint() {
   );
 }
 
-// ── initializeWebSession: host config boot, optional resume, no auto-New ──
+// ── initializeWebSession: host config boot + host startup policy payload ──
 {
-  const hostCfg = { difficulty: 2, log_level: 1, theme: "dark", show_region: false, warn_solvability: false };
+  const hostCfg = {
+    difficulty: 2,
+    log_level: 1,
+    theme: "dark",
+    show_region: false,
+    warn_solvability: false,
+    startup_action: "new",
+    startup_warn_restore_unavailable: false,
+  };
   const game = {
     bootstrapHostConfig(cfg) {
       assert.deepEqual(cfg, {
@@ -323,18 +331,22 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "empty");
   assert.equal(out.config.difficulty, 2);
+  assert.equal(out.startup_action, "new");
+  assert.equal(out.startup_warn_restore_unavailable, false);
 }
 
 {
-  const hostCfg = { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
-  let deserialized = false;
+  const hostCfg = {
+    difficulty: 1,
+    log_level: 1,
+    theme: "dark",
+    show_region: false,
+    startup_action: "idle",
+    startup_warn_restore_unavailable: true,
+  };
   const game = {
     bootstrapHostConfig() {
       return { ok: true };
-    },
-    deserialize(bytes) {
-      deserialized = bytes.length === 2;
-      return { ok: true, msg: "open: resumed.sud0", state: { cells: [] } };
     },
     getState() {
       return { cells: [{ value: 5, given: true, conflict: false }] };
@@ -348,27 +360,36 @@ async function flushDialogPaint() {
   };
   const out = await initializeWebSession(game, {
     fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
-    storedSud0Bytes: new Uint8Array([1, 2]),
   });
   assert.equal(out.ok, true);
-  assert.equal(out.kind, "resumed");
-  assert.equal(deserialized, true);
+  assert.equal(out.kind, "empty");
+  assert.equal(out.startup_action, "idle");
+  assert.equal(out.startup_warn_restore_unavailable, true);
 }
 
-// ── offerInitialNewGame: skip resume; empty boot runs generating New ──
+// ── offerInitialNewGame: action=new runs generation; action=idle remains manual ──
 {
-  const resumed = await offerInitialNewGame(
+  const manual = await offerInitialNewGame(
     {},
-    { ok: true, kind: "resumed", state: {}, legend: {}, config: {} },
+    {
+      ok: true,
+      kind: "empty",
+      startup_action: "idle",
+      startup_warn_restore_unavailable: true,
+      state: {},
+      legend: {},
+      config: {},
+    },
     null,
   );
-  assert.equal(resumed.kind, "resumed");
+  assert.equal(manual.kind, "empty");
+  assert.match(manual.msg, /auto-restore unavailable/);
 }
 
 {
   const missing = await offerInitialNewGame(
     {},
-    { ok: true, kind: "empty", state: {}, legend: {}, config: {} },
+    { ok: true, kind: "empty", startup_action: "new", state: {}, legend: {}, config: {} },
     null,
   );
   assert.equal(missing.ok, false);
@@ -398,6 +419,7 @@ async function flushDialogPaint() {
     {
       ok: true,
       kind: "empty",
+      startup_action: "new",
       config: { difficulty: 2, log_level: 1 },
       state: {},
       legend: {},

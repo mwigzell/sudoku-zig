@@ -9,6 +9,7 @@ const config = @import("../../config.zig");
 const puzzle_gen = @import("../../puzzle_gen/mod.zig");
 const command = @import("../../command.zig");
 const settings_store = @import("../../settings_store.zig");
+const startup_policy = @import("../../startup_policy.zig");
 
 const disambiguate = @import("../ascii/disambiguate.zig");
 const legend = @import("../../renderer/legend.zig");
@@ -39,6 +40,12 @@ pub const Sudoku = struct {
     out: *std.Io.Writer,
     settings_persist: ?SettingsPersist = null,
     last_cell: ?facade_mod.Selection = null,
+
+    pub const StartupPolicyResult = struct {
+        attempted_restore: bool,
+        restore_failed: bool,
+        rendered: bool,
+    };
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
@@ -158,6 +165,45 @@ pub const Sudoku = struct {
     pub fn showGame(self: *@This()) Error!void {
         try self.renderer.render(self.engine.eventBoard(), null, self.regionSelection());
         try self.renderer.showLegend(self.engine.getLegend());
+    }
+
+    /// Runs restore through the existing open-command seam using transport
+    /// resolution and engine codec behavior.
+    pub fn restoreFromPath(self: *@This(), file_path: []const u8) game_engine.Event {
+        return open_command.execute(&self.engine, self.transport, file_path);
+    }
+
+    /// Startup action executor for native play; action selection is centralized
+    /// in `startup_policy.evaluate` so web/native share one decision contract.
+    pub fn runStartupPolicy(self: *@This(), current_file: ?[]const u8) Error!StartupPolicyResult {
+        const decision = startup_policy.evaluate(.{
+            .auto_restore = self.cfg.auto_restore,
+            .auto_new = self.cfg.auto_new,
+            .has_current_file = current_file != null,
+            .restore_supported = true,
+        });
+
+        if (decision.action == .restore) {
+            const event = self.restoreFromPath(current_file.?);
+            switch (event) {
+                .ok => {
+                    _ = try self.handleEvent(event);
+                    return .{ .attempted_restore = true, .restore_failed = false, .rendered = true };
+                },
+                .error_msg => |msg| {
+                    try self.renderer.showError(msg);
+                    return .{ .attempted_restore = true, .restore_failed = true, .rendered = false };
+                },
+            }
+        }
+
+        if (decision.action == .new) {
+            const event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
+            _ = try self.handleEvent(event);
+            return .{ .attempted_restore = false, .restore_failed = false, .rendered = true };
+        }
+
+        return .{ .attempted_restore = false, .restore_failed = false, .rendered = false };
     }
 
     /// Release the engine and native transport session state.
@@ -1039,4 +1085,99 @@ test "integrated e2e: menu Settings persists warn_solvability to settings.json" 
     try std.testing.expect(app.engine.cfg.warn_solvability);
     const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expect(restored.warn_solvability);
+}
+
+test "startup policy: auto_restore false and auto_new false keeps manual startup" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+        .auto_restore = false,
+        .auto_new = false,
+    };
+    var host = host_mod.Host.createForTest(cfg, &[0][]const u8{});
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(std.testing.io), host.writer(), null);
+    defer app.deinit();
+
+    const before = export_command.currentPuzzleLine(&app.engine);
+    const startup = try app.runStartupPolicy(null);
+    const after = export_command.currentPuzzleLine(&app.engine);
+
+    try std.testing.expect(!startup.attempted_restore);
+    try std.testing.expect(!startup.restore_failed);
+    try std.testing.expect(!startup.rendered);
+    try std.testing.expectEqualSlices(u8, &before, &after);
+}
+
+test "startup policy: auto_restore true restores from current_file path" {
+    const io = std.testing.io;
+    const tmp_path = "/tmp/sudoku_startup_restore_ok.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+        .auto_restore = true,
+    };
+
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
+    defer original.deinit();
+    const transport = file_transport.NativeTransport.make(io);
+    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
+    defer std.heap.page_allocator.free(save_buf);
+    try transport.write(transport.context, tmp_path, save_buf);
+    const saved_b2 = original.eventBoard().get(1, 1);
+
+    var host = host_mod.Host.createForTest(cfg, &[0][]const u8{});
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), null);
+    defer app.deinit();
+    _ = app.engine.exec(.{ .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.seven } });
+
+    const startup = try app.runStartupPolicy(tmp_path);
+    try std.testing.expect(startup.attempted_restore);
+    try std.testing.expect(!startup.restore_failed);
+    try std.testing.expect(startup.rendered);
+    try std.testing.expectEqual(saved_b2, app.engine.eventBoard().get(1, 1));
+}
+
+test "startup policy: restore failure blocks and does not auto-new fallback in same run" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+        .auto_restore = true,
+        .auto_new = true,
+    };
+
+    const responses = [_][]const u8{ "\n" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(std.testing.io), host.writer(), null);
+    defer app.deinit();
+    const before = export_command.currentPuzzleLine(&app.engine);
+
+    const startup = try app.runStartupPolicy("/tmp/missing_startup_restore_file.sud");
+    const after = export_command.currentPuzzleLine(&app.engine);
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+
+    try std.testing.expect(startup.attempted_restore);
+    try std.testing.expect(startup.restore_failed);
+    try std.testing.expect(!startup.rendered);
+    try std.testing.expectEqualSlices(u8, &before, &after);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Press Enter to continue...") != null);
 }

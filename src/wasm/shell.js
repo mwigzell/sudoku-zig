@@ -230,32 +230,13 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
   if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
 }
 
-/** Restore SUD0 bytes when present; returns session bundle or null. */
-export function tryRestoreStoredSession(game, sud0Bytes) {
-  if (!sud0Bytes?.length) return null;
-  const result = game.deserialize(sud0Bytes);
-  if (!result.ok) return null;
-  return {
-    ok: true,
-    state: result.state ?? game.getState(),
-    legend: game.getLegend(),
-    config: game.getConfig(),
-    msg: result.msg ?? null,
-  };
-}
-
 /**
- * Host config + empty engine, or resume stored session — never auto-starts New Game.
+ * Host config bootstrap + startup policy payload from /host-config.json.
  */
-export async function initializeWebSession(game, { fetchFn, storedSud0Bytes } = {}) {
+export async function initializeWebSession(game, { fetchFn } = {}) {
   const hostCfg = await fetchHostStartupConfig(fetchFn);
   const boot = bootstrapEngineFromHostConfig(game, hostCfg);
   if (!boot.ok) return boot;
-
-  const restored = tryRestoreStoredSession(game, storedSud0Bytes);
-  if (restored?.ok) {
-    return { ok: true, kind: "resumed", ...restored };
-  }
 
   return {
     ok: true,
@@ -264,15 +245,28 @@ export async function initializeWebSession(game, { fetchFn, storedSud0Bytes } = 
     legend: game.getLegend(),
     config: game.getConfig(),
     msg: boot.msg ?? null,
+    startup_action: hostCfg.startup_action ?? "idle",
+    startup_warn_restore_unavailable: hostCfg.startup_warn_restore_unavailable === true,
   };
 }
 
 /**
- * First visit after empty boot: generating New Game modal (host difficulty).
- * Skipped when a stored session was restored.
+ * Applies host startup policy: either auto-New or manual idle with optional warning.
+ * Web restore is capability-limited, so host must never route "restore" here.
  */
 export async function offerInitialNewGame(game, boot, generatingModal, { genWorker } = {}) {
-  if (!boot.ok || boot.kind !== "empty") return boot;
+  if (!boot.ok) return boot;
+  if (boot.kind !== "empty") return boot;
+
+  if (boot.startup_action === "restore") {
+    return { ok: false, error: "restore startup action is unsupported on web", kind: "empty" };
+  }
+  if (boot.startup_action === "idle") {
+    return {
+      ...boot,
+      msg: boot.startup_warn_restore_unavailable ? "auto-restore unavailable on web; startup remains manual" : boot.msg ?? null,
+    };
+  }
 
   const { difficulty, log_level: logLevel } = boot.config ?? {};
   if (difficulty == null || logLevel == null) {

@@ -43,10 +43,12 @@ pub const OnReadyFn = *const fn (io: std.Io, url: []const u8) void;
 const Session = struct {
     host_config: config.Config,
     data_dir: []const u8,
+    /// Host-computed startup metadata: web restore depends on capability+path.
+    has_current_file: bool,
     host_config_body_buf: [256]u8,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
-        return startup_config.formatHostStartupJson(self.host_config, &self.host_config_body_buf) catch return ServeError.System;
+        return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, false, &self.host_config_body_buf) catch return ServeError.System;
     }
 };
 
@@ -201,9 +203,12 @@ fn bindProbe(io: std.Io, bind: BindFn, gate: *ReadyGate, session: *Session) Serv
 pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
     shutdown_requested.store(false, .release);
 
+    const current_file = settings_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch null;
+    defer if (current_file) |p| std.heap.page_allocator.free(p);
     var session = Session{
         .host_config = host_cfg,
         .data_dir = data_dir,
+        .has_current_file = current_file != null,
         .host_config_body_buf = undefined,
     };
     var gate: ReadyGate = .{};
@@ -473,6 +478,7 @@ test "web_host: host-config body reflects active host Config" {
             .show_region = true,
         },
         .data_dir = ".",
+        .has_current_file = false,
         .host_config_body_buf = undefined,
     };
     const body = try session.hostConfigBody();

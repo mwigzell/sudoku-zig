@@ -750,21 +750,11 @@
         msgEl: document.getElementById("generating-modal-msg"),
         progressRowsEl: document.getElementById("generating-progress-rows"),
       });
-      const sessionStorageKey = "sudoku-zig-session";
-      let storedSud0Bytes;
-      try {
-        const raw = localStorage.getItem(sessionStorageKey);
-        if (raw) storedSud0Bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
-      } catch (err) {
-        console.warn("session restore skipped:", err);
-        storedSud0Bytes = undefined;
-      }
-
       const genWorker = canUseGenWorker()
         ? { workerUrl: new URL("./gen_worker.js", import.meta.url).href, wasmBytes: bytes }
         : undefined;
 
-      const boot = await initializeWebSession(game, { storedSud0Bytes });
+      const boot = await initializeWebSession(game);
       if (!boot.ok) throw new Error(boot.error ?? "session init failed");
       primeWebBootChrome(boot, document);
 
@@ -777,9 +767,7 @@
         config: ready.config,
       };
       renderBoard(boardEl, session.state);
-      if (ready.kind === "resumed" && ready.msg) {
-        applyEventStatus(statusBar, { ok: true, msg: ready.msg });
-      } else if (ready.kind === "new" && ready.msg) {
+      if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {
         applyEventStatus(statusBar, { ok: true, msg: ready.msg });
       } else {
         setStatus(statusBar, "");

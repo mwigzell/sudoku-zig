@@ -38,6 +38,7 @@ Rules from `AGENTS.md`, `CONTEXT.md`, and `.coding-standards.md` that grep can c
 | Serve DRY | No `assetBody` or inline asset switches in `serveClient` |
 | Wire DRY | No parallel `JsonCell` + `CellSnapshot` structs |
 | Test side effects | No live `openBrowser()` in unit tests |
+| Public API docs | Added Zig `pub` symbols must have a preceding comment line |
 
 ## What it does not enforce
 

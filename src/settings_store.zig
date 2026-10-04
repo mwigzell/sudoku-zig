@@ -19,6 +19,7 @@ const JsonSettingsFile = struct {
     auto_restore: ?bool = null,
     auto_new: ?bool = null,
     auto_save: ?bool = null,
+    current_file: ?[]const u8 = null,
 };
 
 /// Player-editable fields only — matches menubar/menu + ADR-0014 (no renderer choice).
@@ -31,6 +32,7 @@ const JsonPlayerSettings = struct {
     auto_restore: bool,
     auto_new: bool,
     auto_save: bool,
+    current_file: ?[]const u8 = null,
 };
 
 /// Errors from load/save/path resolution (invalid disk JSON maps to defaults on load).
@@ -98,8 +100,9 @@ fn jsonPlayerFromConfig(cfg: config.Config) JsonPlayerSettings {
     };
 }
 
-fn writePlayerJson(gpa: std.mem.Allocator, cfg: config.Config) Error![]u8 {
-    const payload = jsonPlayerFromConfig(cfg);
+fn writePlayerJson(gpa: std.mem.Allocator, cfg: config.Config, current_file: ?[]const u8) Error![]u8 {
+    var payload = jsonPlayerFromConfig(cfg);
+    payload.current_file = current_file;
     var aw = std.Io.Writer.Allocating.init(gpa);
     defer aw.deinit();
     try std.json.Stringify.value(payload, .{}, &aw.writer);
@@ -117,6 +120,13 @@ fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
     const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch return config.Config.default();
     defer parsed.deinit();
     return configFromJsonFile(parsed.value) catch return config.Config.default();
+}
+
+fn loadCurrentFileBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!?[]u8 {
+    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch return null;
+    defer parsed.deinit();
+    const file_path = parsed.value.current_file orelse return null;
+    return gpa.dupe(u8, file_path) catch return Error.OutOfMemory;
 }
 
 /// Read `file_name` from `dir`; missing or invalid file → `Config.default()`.
@@ -142,9 +152,50 @@ pub fn loadOrDefault(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) E
     return loadBytes(gpa, bytes);
 }
 
+/// Loads the optional current-file pointer metadata used by startup restore
+/// policy; returns null when unset/missing/unreadable.
+pub fn loadCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) Error!?[]u8 {
+    const file_path = try settingsPath(gpa, data_dir);
+    defer gpa.free(file_path);
+
+    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return null,
+    };
+    defer gpa.free(bytes);
+    return loadCurrentFileBytes(gpa, bytes);
+}
+
+/// Updates only the startup restore pointer metadata while preserving current
+/// player settings fields in `settings.json`.
+pub fn setCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, current_file: ?[]const u8) Error!void {
+    const cfg = try loadOrDefault(gpa, io, data_dir);
+
+    const file_path = try settingsPath(gpa, data_dir);
+    defer gpa.free(file_path);
+
+    const parent = try path.parentDir(gpa, file_path);
+    defer gpa.free(parent);
+    ensureSettingsDir(io, parent);
+
+    const text = try writePlayerJson(gpa, cfg, current_file);
+    defer gpa.free(text);
+
+    std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{
+        .sub_path = file_path,
+        .data = text,
+        .flags = .{ .truncate = true },
+    }) catch return Error.System;
+}
+
 /// Persist player-editable prefs only (no renderer keys). Used by startup, menu, and web POST.
 pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: config.Config) Error!void {
-    const text = try writePlayerJson(gpa, cfg);
+    const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch null;
+    defer if (bytes) |b| gpa.free(b);
+    const current_file = if (bytes) |b| try loadCurrentFileBytes(gpa, b) else null;
+    defer if (current_file) |p| gpa.free(p);
+
+    const text = try writePlayerJson(gpa, cfg, current_file);
     defer gpa.free(text);
     dir.writeFile(io, .{ .sub_path = file_name, .data = text, .flags = .{ .truncate = true } }) catch return Error.System;
 }
@@ -158,7 +209,12 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
     defer gpa.free(parent);
     ensureSettingsDir(io, parent);
 
-    const text = try writePlayerJson(gpa, cfg);
+    const existing = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch null;
+    defer if (existing) |b| gpa.free(b);
+    const current_file = if (existing) |b| try loadCurrentFileBytes(gpa, b) else null;
+    defer if (current_file) |p| gpa.free(p);
+
+    const text = try writePlayerJson(gpa, cfg, current_file);
     defer gpa.free(text);
 
     std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{
@@ -293,4 +349,37 @@ test "load missing behavior flags defaults them to false" {
     try std.testing.expect(!loaded.auto_restore);
     try std.testing.expect(!loaded.auto_new);
     try std.testing.expect(!loaded.auto_save);
+}
+
+test "setCurrentFile persists pointer and loadCurrentFile returns it" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    try setCurrentFile(std.testing.allocator, io, data_path, "/tmp/sudoku_restore_step2.sud");
+    const current = try loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current != null);
+    try std.testing.expectEqualStrings("/tmp/sudoku_restore_step2.sud", current.?);
+}
+
+test "save preserves existing current_file pointer" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    try setCurrentFile(std.testing.allocator, io, data_path, "/tmp/sudoku_restore_preserve.sud");
+
+    var cfg = config.Config.default();
+    cfg.theme = .light;
+    try save(std.testing.allocator, io, data_path, cfg);
+
+    const current = try loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current != null);
+    try std.testing.expectEqualStrings("/tmp/sudoku_restore_preserve.sud", current.?);
 }

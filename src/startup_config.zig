@@ -10,6 +10,7 @@ const sudoku = @import("native/shell/sudoku.zig");
 const host_mod = @import("native/host.zig");
 const settings_store = @import("settings_store.zig");
 const path = @import("native/shell/path.zig");
+const startup_policy = @import("startup_policy.zig");
 
 /// View/theme fields the host wire carries alongside difficulty and log level.
 pub fn configFromHostWire(
@@ -45,14 +46,36 @@ pub fn applyLoggerFromStartup(startup: config.Config) void {
 
 /// JSON body for `/host-config.json` — same shape as wasm `getConfig()`.
 pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
+    return writeHostStartupJsonWithPolicy(w, startup, false, true);
+}
+
+/// Host bootstrap JSON for web clients, including shared startup policy action
+/// so browser code can follow the same decision as native startup.
+pub fn writeHostStartupJsonWithPolicy(
+    w: *std.Io.Writer,
+    startup: config.Config,
+    has_current_file: bool,
+    restore_supported: bool,
+) !void {
     const wire_cfg = wire.WireConfig.fromConfig(startup);
+    const decision = startup_policy.evaluate(.{
+        .auto_restore = startup.auto_restore,
+        .auto_new = startup.auto_new,
+        .has_current_file = has_current_file,
+        .restore_supported = restore_supported,
+    });
+    const startup_action: []const u8 = switch (decision.action) {
+        .restore => "restore",
+        .new => "new",
+        .idle => "idle",
+    };
     const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
         .light => "light",
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"startup_action\":\"{s}\",\"startup_warn_restore_unavailable\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
@@ -62,6 +85,8 @@ pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
             startup.auto_restore,
             startup.auto_new,
             startup.auto_save,
+            startup_action,
+            decision.warn_restore_unavailable,
         },
     );
 }
@@ -69,6 +94,20 @@ pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
 pub fn formatHostStartupJson(startup: config.Config, buf: []u8) ![]const u8 {
     var w = std.Io.Writer.fixed(buf);
     try writeHostStartupJson(&w, startup);
+    try std.Io.Writer.flush(&w);
+    return w.buffered();
+}
+
+/// Formats host startup JSON with explicit policy context (current-file
+/// presence + restore capability) for platform adapters.
+pub fn formatHostStartupJsonWithPolicy(
+    startup: config.Config,
+    has_current_file: bool,
+    restore_supported: bool,
+    buf: []u8,
+) ![]const u8 {
+    var w = std.Io.Writer.fixed(buf);
+    try writeHostStartupJsonWithPolicy(&w, startup, has_current_file, restore_supported);
     try std.Io.Writer.flush(&w);
     return w.buffered();
 }
@@ -153,7 +192,7 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
     var buf: [256]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"startup_action\":\"new\",\"startup_warn_restore_unavailable\":false}",
         json,
     );
 }
@@ -174,9 +213,19 @@ test "host startup JSON matches Config wire fields" {
     var buf: [256]u8 = undefined;
     const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"startup_action\":\"idle\",\"startup_warn_restore_unavailable\":false}",
         json,
     );
+}
+
+test "host startup JSON policy degrades restore when restore is unsupported" {
+    var cfg = config.Config.default();
+    cfg.auto_restore = true;
+    cfg.auto_new = true;
+    var buf: [256]u8 = undefined;
+    const json = try formatHostStartupJsonWithPolicy(cfg, true, false, &buf);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_action\":\"new\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_warn_restore_unavailable\":true") != null);
 }
 
 test "CLI-resolved startup config is GameEngine.cfg and logger min_level" {
