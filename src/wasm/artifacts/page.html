@@ -670,6 +670,7 @@
       <button type="button" class="new-difficulty-btn" data-difficulty="1">Easy</button>
       <button type="button" class="new-difficulty-btn" data-difficulty="2">Medium</button>
       <button type="button" class="new-difficulty-btn" data-difficulty="3">Hard</button>
+      <button type="button" id="new-difficulty-cancel">Cancel</button>
     </div>
   </div>
 
@@ -824,6 +825,7 @@
           difficulty: Number(btn.dataset.difficulty),
           el: btn,
         })),
+        cancelBtn: document.getElementById("new-difficulty-cancel"),
       };
       wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
         difficultyDialog,

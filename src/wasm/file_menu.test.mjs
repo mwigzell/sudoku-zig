@@ -449,6 +449,21 @@ function makeRenderElement() {
 }
 
 {
+  let chosen = null;
+  const dialog = {
+    el: { hidden: false },
+    buttons: DIFFICULTIES.map((d) => ({ ...d, el: makeBtn() })),
+    cancelBtn: makeBtn(),
+  };
+  wireDifficultyDialog(dialog, (difficulty) => {
+    chosen = difficulty;
+  });
+  await dialog.cancelBtn.click();
+  assert.equal(dialog.el.hidden, true);
+  assert.equal(chosen, null);
+}
+
+{
   let downloaded = null;
   const session = {};
   const out = await persistBytes(new Uint8Array([4, 5]), session, DEFAULT_SAVE_FILENAME, {

@@ -203,6 +203,9 @@ export function wireDifficultyDialog(dialog, onChoose) {
       })();
     });
   }
+  dialog.cancelBtn?.addEventListener("click", () => {
+    dialog.el.hidden = true;
+  });
   return {
     open() {
       dialog.el.hidden = false;
