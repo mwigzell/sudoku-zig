@@ -3,11 +3,8 @@
 const std = @import("std");
 const config = @import("config.zig");
 const logger = @import("logger.zig");
-const game_engine = @import("engine/game_engine.zig");
 const wire = @import("wasm/wire.zig");
 const cli = @import("native/cli.zig");
-const sudoku = @import("native/shell/sudoku.zig");
-const host_mod = @import("native/host.zig");
 const settings_store = @import("settings_store.zig");
 const path = @import("native/shell/path.zig");
 const startup_policy = @import("startup_policy.zig");
@@ -19,6 +16,9 @@ pub fn configFromHostWire(
     theme: config.ViewTheme,
     show_region: bool,
     warn_solvability: bool,
+    auto_restore: bool,
+    auto_new: bool,
+    auto_save: bool,
 ) error{InvalidHostWire}!config.Config {
     const partial = wire.WireConfig.fromWire(difficulty, log_level) orelse return error.InvalidHostWire;
     var cfg = config.Config.default();
@@ -27,17 +27,10 @@ pub fn configFromHostWire(
     cfg.theme = theme;
     cfg.show_region = show_region;
     cfg.warn_solvability = warn_solvability;
+    cfg.auto_restore = auto_restore;
+    cfg.auto_new = auto_new;
+    cfg.auto_save = auto_save;
     return cfg;
-}
-
-/// Same nominal fields `getConfig()` JSON exposes must match host startup config.
-pub fn expectStartupLiveOnEngine(engine: *const game_engine.GameEngine, startup: config.Config) !void {
-    const live = engine.getConfig();
-    try std.testing.expectEqual(startup.difficulty, live.difficulty);
-    try std.testing.expectEqual(startup.log_level, live.log_level);
-    try std.testing.expectEqual(startup.theme, live.theme);
-    try std.testing.expectEqual(startup.show_region, live.show_region);
-    try std.testing.expectEqual(startup.warn_solvability, live.warn_solvability);
 }
 
 pub fn applyLoggerFromStartup(startup: config.Config) void {
@@ -112,16 +105,13 @@ pub fn formatHostStartupJsonWithPolicy(
     return w.buffered();
 }
 
-fn emptyPuzzleLine() [81]u8 {
-    var line: [81]u8 = undefined;
-    @memset(&line, '0');
-    return line;
-}
-
-/// Native path analogue: `parseCLI` → logger + `GameEngine.init`.
-pub fn initEngineFromStartup(startup: config.Config) game_engine.Error!game_engine.GameEngine {
-    applyLoggerFromStartup(startup);
-    return game_engine.GameEngine.init(emptyPuzzleLine()[0..], startup);
+fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
+    const live = engine.getConfig();
+    try std.testing.expectEqual(startup.difficulty, live.difficulty);
+    try std.testing.expectEqual(startup.log_level, live.log_level);
+    try std.testing.expectEqual(startup.theme, live.theme);
+    try std.testing.expectEqual(startup.show_region, live.show_region);
+    try std.testing.expectEqual(startup.warn_solvability, live.warn_solvability);
 }
 
 /// Load player prefs from disk, apply CLI on full `Config`, persist player prefs only.
@@ -229,49 +219,34 @@ test "host startup JSON policy degrades restore when restore is unsupported" {
 }
 
 test "CLI-resolved startup config is GameEngine.cfg and logger min_level" {
+    const startup_engine = @import("startup_engine.zig");
     const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "hard", "-v", "warn" };
     var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
     _ = it.next();
     const startup = try cli.parseCLI(&it);
 
-    var engine = try initEngineFromStartup(startup);
+    var engine = try startup_engine.initEngineFromStartup(startup);
     defer engine.deinit();
 
-    try expectStartupLiveOnEngine(&engine, startup);
+    try expectStartupConfigOnEngine(&engine, startup);
     try std.testing.expectEqual(startup.log_level, logger.min_level);
 }
 
-test "Sudoku.init uses CLI-resolved startup config on engine" {
-    const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "medium", "-v", "debug" };
-    var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
-    _ = it.next();
-    const startup = try cli.parseCLI(&it);
-    applyLoggerFromStartup(startup);
-
-    var host = host_mod.Host.createForTest(startup, &[0][]const u8{});
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-
-    var app = try sudoku.Sudoku.init(startup, facade, @import("native/shell/file_transport.zig").NativeTransport.make(std.testing.io), host.writer(), null);
-    defer app.deinit();
-
-    try std.testing.expectEqual(startup.difficulty, app.cfg.difficulty);
-    try std.testing.expectEqual(startup.log_level, app.cfg.log_level);
-    try expectStartupLiveOnEngine(&app.engine, startup);
-}
-
 test "host wire startup config matches GameEngine.cfg (web host analogue)" {
+    const startup_engine = @import("startup_engine.zig");
     const startup = try configFromHostWire(
         @backingInt(wire.PlayerDifficulty.hard),
         @backingInt(logger.Severity.warn),
         .light,
         true,
         false,
+        true,
+        true,
+        true,
     );
 
-    var engine = try initEngineFromStartup(startup);
+    var engine = try startup_engine.initEngineFromStartup(startup);
     defer engine.deinit();
 
-    try expectStartupLiveOnEngine(&engine, startup);
+    try expectStartupConfigOnEngine(&engine, startup);
 }

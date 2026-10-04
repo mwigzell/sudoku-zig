@@ -58,6 +58,9 @@ const SettingsPostBody = struct {
     theme: ?[]const u8 = null,
     show_region: ?bool = null,
     warn_solvability: ?bool = null,
+    auto_restore: ?bool = null,
+    auto_new: ?bool = null,
+    auto_save: ?bool = null,
 };
 
 fn mergeDifficultyPatch(cfg: *config.Config, name: []const u8) void {
@@ -77,6 +80,9 @@ pub fn mergeSettingsPostPatch(cfg: *config.Config, patch: SettingsPostBody) void
     }
     if (patch.show_region) |enabled| cfg.show_region = enabled;
     if (patch.warn_solvability) |enabled| cfg.warn_solvability = enabled;
+    if (patch.auto_restore) |enabled| cfg.auto_restore = enabled;
+    if (patch.auto_new) |enabled| cfg.auto_new = enabled;
+    if (patch.auto_save) |enabled| cfg.auto_save = enabled;
 }
 
 fn requestBody(request: []const u8) ?[]const u8 {
@@ -431,12 +437,18 @@ test "mergeSettingsPostPatch updates view prefs on Config" {
         .theme = "light",
         .show_region = true,
         .warn_solvability = true,
+        .auto_restore = true,
+        .auto_new = true,
+        .auto_save = true,
     });
     try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
     try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
     try std.testing.expect(cfg.show_region);
     try std.testing.expect(cfg.warn_solvability);
+    try std.testing.expect(cfg.auto_restore);
+    try std.testing.expect(cfg.auto_new);
+    try std.testing.expect(cfg.auto_save);
 }
 
 test "settings POST JSON patch is written to settings.json on disk" {
@@ -445,7 +457,7 @@ test "settings POST JSON patch is written to settings.json on disk" {
     defer tmp.cleanup();
 
     var cfg = config.Config.default();
-    const body = "{\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false}";
+    const body = "{\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true}";
     const parsed = std.json.parseFromSlice(SettingsPostBody, std.testing.allocator, body, .{}) catch unreachable;
     defer parsed.deinit();
     mergeSettingsPostPatch(&cfg, parsed.value);
@@ -456,11 +468,17 @@ test "settings POST JSON patch is written to settings.json on disk" {
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"show_region\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"warn_solvability\":false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"auto_restore\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"auto_new\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bytes, "\"auto_save\":true") != null);
 
     const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
     try std.testing.expectEqual(config.ViewTheme.light, loaded.theme);
     try std.testing.expect(loaded.show_region);
     try std.testing.expect(!loaded.warn_solvability);
+    try std.testing.expect(loaded.auto_restore);
+    try std.testing.expect(loaded.auto_new);
+    try std.testing.expect(loaded.auto_save);
 }
 
 test "web_host: route \"/host-config.json\" to host startup config" {

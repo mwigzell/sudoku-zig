@@ -77,6 +77,9 @@ export fn bootstrapHostConfig(
     theme: u32,
     show_region: u32,
     warn_solvability: u32,
+    auto_restore: u32,
+    auto_new: u32,
+    auto_save: u32,
 ) callconv(.c) u32 {
     const out = outBuffer();
     const theme_enum: config.ViewTheme = if (theme == 1) .light else .dark;
@@ -86,6 +89,9 @@ export fn bootstrapHostConfig(
         theme_enum,
         show_region != 0,
         warn_solvability != 0,
+        auto_restore != 0,
+        auto_new != 0,
+        auto_save != 0,
     ) catch return exportError(out, "invalid host startup config");
 
     startup_config.applyLoggerFromStartup(game_cfg);

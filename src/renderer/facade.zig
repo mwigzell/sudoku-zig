@@ -47,6 +47,9 @@ pub const Facade = struct {
         difficulty: config.Difficulty,
         log_level: logger.Severity,
         theme: config.ViewTheme,
+        auto_restore: bool,
+        auto_new: bool,
+        auto_save: bool,
         hint_target: ?Selection,
     ) Error!command.ParseCommandResult,
 
@@ -83,9 +86,12 @@ pub const Facade = struct {
         difficulty: config.Difficulty,
         log_level: logger.Severity,
         theme: config.ViewTheme,
+        auto_restore: bool,
+        auto_new: bool,
+        auto_save: bool,
         hint_target: ?Selection,
     ) Error!command.ParseCommandResult {
-        return self.getCommandInput_fn(self.context, names, show_region, warn_solvability, difficulty, log_level, theme, hint_target);
+        return self.getCommandInput_fn(self.context, names, show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
     }
 
     /// Live puzzle generation feedback (native terminal); not gameplay `Event` status.
@@ -124,10 +130,13 @@ pub fn Make(comptime CT: type) type {
             difficulty: config.Difficulty,
             log_level: logger.Severity,
             theme: config.ViewTheme,
+            auto_restore: bool,
+            auto_new: bool,
+            auto_save: bool,
             hint_target: ?Selection,
         ) Error!command.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(names, show_region, warn_solvability, difficulty, log_level, theme, hint_target) catch error.System;
+            return self.getCommandInput(names, show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target) catch error.System;
         }
 
         pub fn reportGenProgress_wrapper(ctx: *anyopaque, gen_event: puzzle_gen.GenProgressEvent) Error!void {

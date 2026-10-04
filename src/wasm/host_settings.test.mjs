@@ -24,6 +24,9 @@ function makeHostLinkedGame() {
         theme: args.theme === "light" ? "light" : "dark",
         show_region: args.show_region === true,
         warn_solvability: args.warn_solvability === true,
+        auto_restore: args.auto_restore === true,
+        auto_new: args.auto_new === true,
+        auto_save: args.auto_save === true,
       };
       return { ok: true, msg: "engine ready" };
     },
@@ -50,6 +53,9 @@ function makeHostLinkedGame() {
     theme: "light",
     show_region: true,
     warn_solvability: true,
+    auto_restore: true,
+    auto_new: true,
+    auto_save: true,
   };
   const game = makeHostLinkedGame();
 
@@ -80,6 +86,9 @@ function makeHostLinkedGame() {
     theme: "light",
     show_region: true,
     warn_solvability: true,
+    auto_restore: true,
+    auto_new: true,
+    auto_save: true,
   };
   const game = makeHostLinkedGame();
   const boot = await initializeWebSession(game, {
@@ -99,7 +108,7 @@ function makeHostLinkedGame() {
   };
 
   await persistHostSettings(
-    { theme: "light", show_region: true, warn_solvability: false },
+    { theme: "light", show_region: true, warn_solvability: false, auto_restore: true, auto_new: true, auto_save: true },
     fetchMock,
   );
   assert.equal(posts.length, 1);
@@ -111,15 +120,21 @@ function makeHostLinkedGame() {
     theme: "light",
     show_region: true,
     warn_solvability: false,
+    auto_restore: true,
+    auto_new: true,
+    auto_save: true,
   });
   assert.deepEqual(
-    hostViewPrefsForPersist({ theme: "dark", show_region: false, warn_solvability: true }),
+    hostViewPrefsForPersist({ theme: "dark", show_region: false, warn_solvability: true, auto_restore: false, auto_new: false, auto_save: false }),
     {
       difficulty: "easy",
       log_level: "info",
       theme: "dark",
       show_region: false,
       warn_solvability: true,
+      auto_restore: false,
+      auto_new: false,
+      auto_save: false,
     },
   );
 }
@@ -127,11 +142,11 @@ function makeHostLinkedGame() {
 // Theme menu change triggers POST payload derived from engine getConfig().
 {
   const posts = [];
-  const session = { config: { theme: "dark", show_region: false } };
+  const session = { config: { theme: "dark", show_region: false, auto_restore: false, auto_new: false, auto_save: false } };
   const game = {
     exec(action) {
       if (action.action === "set_theme" && action.theme === "light") {
-        session.config = { theme: "light", show_region: false, warn_solvability: true };
+        session.config = { theme: "light", show_region: false, warn_solvability: true, auto_restore: false, auto_new: false, auto_save: false };
         return { ok: true };
       }
       return { ok: false };
@@ -168,17 +183,20 @@ function makeHostLinkedGame() {
     theme: "light",
     show_region: false,
     warn_solvability: true,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
   });
 }
 
 // Region menu toggle POSTs show_region to settings.json.
 {
   const posts = [];
-  const session = { config: { theme: "dark", show_region: false } };
+  const session = { config: { theme: "dark", show_region: false, auto_restore: false, auto_new: false, auto_save: false } };
   const game = {
     exec(action) {
       if (action.action === "set_region") {
-        session.config = { theme: "dark", show_region: action.enabled };
+        session.config = { theme: "dark", show_region: action.enabled, auto_restore: false, auto_new: false, auto_save: false };
         return { ok: true };
       }
       return { ok: false };
@@ -216,6 +234,9 @@ function makeHostLinkedGame() {
     theme: "dark",
     show_region: true,
     warn_solvability: false,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
   });
 }
 

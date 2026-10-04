@@ -36,6 +36,9 @@ pub const WireConfig = struct {
     theme: config.ViewTheme = .dark,
     show_region: bool = false,
     warn_solvability: bool = false,
+    auto_restore: bool = false,
+    auto_new: bool = false,
+    auto_save: bool = false,
 
     pub fn fromWire(difficulty: u8, log_level: u8) ?WireConfig {
         const pd = PlayerDifficulty.fromWire(difficulty) orelse return null;
@@ -57,6 +60,9 @@ pub const WireConfig = struct {
         cfg.theme = self.theme;
         cfg.show_region = self.show_region;
         cfg.warn_solvability = self.warn_solvability;
+        cfg.auto_restore = self.auto_restore;
+        cfg.auto_new = self.auto_new;
+        cfg.auto_save = self.auto_save;
         return cfg;
     }
 
@@ -72,6 +78,9 @@ pub const WireConfig = struct {
             .theme = cfg.theme,
             .show_region = cfg.show_region,
             .warn_solvability = cfg.warn_solvability,
+            .auto_restore = cfg.auto_restore,
+            .auto_new = cfg.auto_new,
+            .auto_save = cfg.auto_save,
         };
     }
 };
@@ -184,18 +193,27 @@ test "WireConfig round-trips config fields including view prefs" {
     domain.log_level = .warn;
     domain.theme = .light;
     domain.show_region = true;
+    domain.auto_restore = true;
+    domain.auto_new = true;
+    domain.auto_save = true;
 
     const wire_cfg = WireConfig.fromConfig(domain);
     try std.testing.expectEqual(PlayerDifficulty.hard, wire_cfg.difficulty);
     try std.testing.expectEqual(logger.Severity.warn, wire_cfg.log_level);
     try std.testing.expectEqual(config.ViewTheme.light, wire_cfg.theme);
     try std.testing.expect(wire_cfg.show_region);
+    try std.testing.expect(wire_cfg.auto_restore);
+    try std.testing.expect(wire_cfg.auto_new);
+    try std.testing.expect(wire_cfg.auto_save);
 
     const restored = wire_cfg.toConfig();
     try std.testing.expectEqual(domain.difficulty, restored.difficulty);
     try std.testing.expectEqual(domain.log_level, restored.log_level);
     try std.testing.expectEqual(domain.theme, restored.theme);
     try std.testing.expectEqual(domain.show_region, restored.show_region);
+    try std.testing.expectEqual(domain.auto_restore, restored.auto_restore);
+    try std.testing.expectEqual(domain.auto_new, restored.auto_new);
+    try std.testing.expectEqual(domain.auto_save, restored.auto_save);
 }
 
 test "GameSnapshot captures value given conflict from BoardView" {

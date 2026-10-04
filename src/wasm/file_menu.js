@@ -231,6 +231,7 @@ export function wireFileMenu(
     exportText = persistPuzzleText,
     createElement,
     onViewRefresh,
+    onPersist,
   } = {},
 ) {
   const fail = (result) => {
@@ -296,6 +297,8 @@ export function wireFileMenu(
 
   controls.save?.addEventListener("click", async () => {
     if (!session.legend.save) return;
+    // Auto-save mode keeps manual Save inert; explicit state lives in File menu.
+    if (session.config?.auto_save === true) return;
     const result = save(game);
     if (!result.ok) {
       fail(result);
@@ -326,6 +329,25 @@ export function wireFileMenu(
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
     } else if (!saved.ok && !saved.cancelled) {
       fail(saved);
+    }
+  });
+
+  controls.autoSave?.addEventListener("click", async () => {
+    const enabled = session.config?.auto_save !== true;
+    const result = game.exec({ action: "set_auto_save", enabled });
+    if (!result.ok) {
+      fail(result);
+      return;
+    }
+    session.config = game.getConfig();
+    menuBar.sync();
+    onViewRefresh?.();
+    if (onPersist) {
+      try {
+        await onPersist(session.config);
+      } catch (err) {
+        showErrorModal(errorModal, err?.message ?? String(err));
+      }
     }
   });
 

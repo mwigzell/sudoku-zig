@@ -279,6 +279,9 @@ async function flushDialogPaint() {
       theme: "light",
       show_region: true,
       warn_solvability: false,
+      auto_restore: true,
+      auto_new: true,
+      auto_save: true,
     }),
     {
       difficulty: "easy",
@@ -286,6 +289,9 @@ async function flushDialogPaint() {
       theme: "light",
       show_region: true,
       warn_solvability: false,
+      auto_restore: true,
+      auto_new: true,
+      auto_save: true,
     },
   );
 }
@@ -298,6 +304,9 @@ async function flushDialogPaint() {
     theme: "dark",
     show_region: false,
     warn_solvability: false,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
     startup_action: "new",
     startup_warn_restore_unavailable: false,
   };
@@ -309,6 +318,9 @@ async function flushDialogPaint() {
         theme: "dark",
         show_region: false,
         warn_solvability: false,
+        auto_restore: false,
+        auto_new: false,
+        auto_save: false,
       });
       return { ok: true, msg: "engine ready" };
     },
@@ -319,7 +331,16 @@ async function flushDialogPaint() {
       return { new: true };
     },
     getConfig() {
-      return { difficulty: 2, log_level: 1, theme: "dark", show_region: false };
+      return {
+        difficulty: 2,
+        log_level: 1,
+        theme: "dark",
+        show_region: false,
+        warn_solvability: false,
+        auto_restore: false,
+        auto_new: false,
+        auto_save: false,
+      };
     },
     deserialize() {
       return { ok: false };
@@ -341,6 +362,10 @@ async function flushDialogPaint() {
     log_level: 1,
     theme: "dark",
     show_region: false,
+    warn_solvability: false,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
     startup_action: "idle",
     startup_warn_restore_unavailable: true,
   };
@@ -442,6 +467,9 @@ async function flushDialogPaint() {
       theme: "dark",
       show_region: false,
       warn_solvability: false,
+      auto_restore: false,
+      auto_new: false,
+      auto_save: false,
     };
     delete cfg[key];
     assert.throws(() => assertWebBootConfig(cfg), new RegExp(`missing ${key}`));

@@ -43,6 +43,9 @@ pub const CommandTag = enum {
     set_warn_solvability,
     set_difficulty,
     set_log_level,
+    set_auto_restore,
+    set_auto_new,
+    set_auto_save,
     settings,
 };
 
@@ -69,6 +72,9 @@ pub const Command = union(CommandTag) {
     set_warn_solvability: bool,
     set_difficulty: config.Difficulty,
     set_log_level: logger.Severity,
+    set_auto_restore: bool,
+    set_auto_new: bool,
+    set_auto_save: bool,
     settings: void,
 };
 
@@ -153,7 +159,7 @@ const std = @import("std");
 
 test "CommandTag enum has 22 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 22), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 25), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -177,5 +183,5 @@ test "getName returns correct display name for each tag" {
 test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
     // Commands + SessionCommands + view/pref tags cover all CommandTag variants.
-    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 6);
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 9);
 }

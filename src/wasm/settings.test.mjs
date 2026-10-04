@@ -10,11 +10,17 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
     checkbox: { checked: false },
     difficultySelect: { value: "easy" },
     logLevelSelect: { value: "info" },
+    autoRestoreCheckbox: { checked: false },
+    autoNewCheckbox: { checked: false },
+    autoSaveCheckbox: { checked: false },
   };
-  syncSettingsModal(modal, { warn_solvability: true, difficulty: 2, log_level: 2 });
+  syncSettingsModal(modal, { warn_solvability: true, difficulty: 2, log_level: 2, auto_restore: true, auto_new: true, auto_save: true });
   assert.equal(modal.checkbox.checked, true);
   assert.equal(modal.difficultySelect.value, "medium");
   assert.equal(modal.logLevelSelect.value, "warn");
+  assert.equal(modal.autoRestoreCheckbox.checked, true);
+  assert.equal(modal.autoNewCheckbox.checked, true);
+  assert.equal(modal.autoSaveCheckbox.checked, true);
   syncSettingsModal(modal, { warn_solvability: false });
   assert.equal(modal.checkbox.checked, false);
 }
@@ -38,6 +44,9 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
         theme: "dark",
         show_region: false,
         warn_solvability: execCalls.at(-1)?.enabled === true,
+        auto_restore: false,
+        auto_new: false,
+        auto_save: false,
       };
     },
     exec(action) {
@@ -86,6 +95,9 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
     theme: "dark",
     show_region: false,
     warn_solvability: true,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
   });
 
   dismissSettings();
@@ -127,6 +139,39 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
   await onDifficultyChange();
   assert.deepEqual(execCalls[0], { action: "set_difficulty", difficulty: "hard" });
   assert.equal(session.config.difficulty, 3);
+}
+
+{
+  const execCalls = [];
+  const game = {
+    getConfig() {
+      return { auto_save: execCalls.at(-1)?.enabled === true };
+    },
+    exec(action) {
+      execCalls.push(action);
+      return { ok: true };
+    },
+  };
+  const session = { config: { auto_save: false } };
+  let onAutoSaveChange;
+  const modal = {
+    el: { hidden: true },
+    checkbox: { addEventListener() {} },
+    difficultySelect: { addEventListener() {} },
+    logLevelSelect: { addEventListener() {} },
+    autoSaveCheckbox: {
+      checked: false,
+      addEventListener(type, fn) {
+        if (type === "change") onAutoSaveChange = fn;
+      },
+    },
+    dismissEl: { addEventListener() {} },
+  };
+  wireSettingsMenu({ addEventListener() {} }, game, session, modal, {});
+  modal.autoSaveCheckbox.checked = true;
+  await onAutoSaveChange();
+  assert.deepEqual(execCalls[0], { action: "set_auto_save", enabled: true });
+  assert.equal(session.config.auto_save, true);
 }
 
 console.log("settings.test.mjs OK");

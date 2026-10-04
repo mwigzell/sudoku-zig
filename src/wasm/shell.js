@@ -162,6 +162,9 @@ export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
   "theme",
   "show_region",
   "warn_solvability",
+  "auto_restore",
+  "auto_new",
+  "auto_save",
 ];
 
 export function assertWebBootConfig(config, label = "boot.config") {
@@ -188,6 +191,9 @@ export function bootstrapEngineFromHostConfig(game, hostCfg) {
     theme: hostCfg.theme,
     show_region: hostCfg.show_region,
     warn_solvability: hostCfg.warn_solvability === true,
+    auto_restore: hostCfg.auto_restore === true,
+    auto_new: hostCfg.auto_new === true,
+    auto_save: hostCfg.auto_save === true,
   });
 }
 
@@ -212,6 +218,9 @@ export function hostSettingsForPersist(config) {
     theme: config.theme === "light" ? "light" : "dark",
     show_region: config.show_region === true,
     warn_solvability: config.warn_solvability === true,
+    auto_restore: config.auto_restore === true,
+    auto_new: config.auto_new === true,
+    auto_save: config.auto_save === true,
   };
 }
 

@@ -103,9 +103,23 @@ fn ctx(S: type) type {
             difficulty: config.Difficulty,
             log_level: logger.Severity,
             theme: config.ViewTheme,
+            auto_restore: bool,
+            auto_new: bool,
+            auto_save: bool,
             hint_target: ?facade.Selection,
         ) facade.Error!command.ParseCommandResult {
-            return self.renderer.getCommandInput(names, show_region, warn_solvability, difficulty, log_level, theme, hint_target);
+            return self.renderer.getCommandInput(
+                names,
+                show_region,
+                warn_solvability,
+                difficulty,
+                log_level,
+                theme,
+                auto_restore,
+                auto_new,
+                auto_save,
+                hint_target,
+            );
         }
 
         pub fn reportGenProgress(self: *@This(), event: puzzle_gen.GenProgressEvent) facade.Error!void {

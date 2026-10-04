@@ -291,6 +291,18 @@ pub const GameEngine = struct {
                 self.applySolvabilityWarningsFromConfig();
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
+            .set_auto_restore => |enabled| {
+                self.cfg.auto_restore = enabled;
+                return self.finishOkEvent(self.state.board.asView(), false, null);
+            },
+            .set_auto_new => |enabled| {
+                self.cfg.auto_new = enabled;
+                return self.finishOkEvent(self.state.board.asView(), false, null);
+            },
+            .set_auto_save => |enabled| {
+                self.cfg.auto_save = enabled;
+                return self.finishOkEvent(self.state.board.asView(), false, null);
+            },
             .set_difficulty => |diff| {
                 self.cfg.difficulty = diff;
                 return self.finishOkEvent(self.state.board.asView(), false, null);
@@ -1391,6 +1403,20 @@ test "exec set_difficulty and set_log_level update config" {
     _ = try expectOk(execTest(&engine, command.Command{ .set_log_level = .debug }));
     try std.testing.expectEqual(logger.Severity.debug, engine.getConfig().log_level);
     try std.testing.expectEqual(logger.Severity.debug, logger.min_level);
+}
+
+test "exec startup auto flags update config" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    _ = try expectOk(execTest(&engine, command.Command{ .set_auto_restore = true }));
+    _ = try expectOk(execTest(&engine, command.Command{ .set_auto_new = true }));
+    _ = try expectOk(execTest(&engine, command.Command{ .set_auto_save = true }));
+
+    const cfg = engine.getConfig();
+    try std.testing.expect(cfg.auto_restore);
+    try std.testing.expect(cfg.auto_new);
+    try std.testing.expect(cfg.auto_save);
 }
 
 test "loadSaveFormat preserves view config" {

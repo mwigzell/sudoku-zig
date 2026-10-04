@@ -7,6 +7,9 @@ export function syncSettingsModal(modal, config) {
   if (modal.checkbox) modal.checkbox.checked = config.warn_solvability === true;
   if (modal.difficultySelect) modal.difficultySelect.value = difficultyName(config);
   if (modal.logLevelSelect) modal.logLevelSelect.value = logLevelName(config);
+  if (modal.autoRestoreCheckbox) modal.autoRestoreCheckbox.checked = config.auto_restore === true;
+  if (modal.autoNewCheckbox) modal.autoNewCheckbox.checked = config.auto_new === true;
+  if (modal.autoSaveCheckbox) modal.autoSaveCheckbox.checked = config.auto_save === true;
 }
 
 /** Open the settings dialog with current config. */
@@ -57,6 +60,27 @@ export function wireSettingsMenu(
     const log_level = modal.logLevelSelect.value;
     await applySettingChange(game, session, modal, onPersist, () =>
       game.exec({ action: "set_log_level", log_level }),
+    );
+  });
+
+  modal.autoRestoreCheckbox?.addEventListener("change", async () => {
+    const enabled = modal.autoRestoreCheckbox.checked;
+    await applySettingChange(game, session, modal, onPersist, () =>
+      game.exec({ action: "set_auto_restore", enabled }),
+    );
+  });
+
+  modal.autoNewCheckbox?.addEventListener("change", async () => {
+    const enabled = modal.autoNewCheckbox.checked;
+    await applySettingChange(game, session, modal, onPersist, () =>
+      game.exec({ action: "set_auto_new", enabled }),
+    );
+  });
+
+  modal.autoSaveCheckbox?.addEventListener("change", async () => {
+    const enabled = modal.autoSaveCheckbox.checked;
+    await applySettingChange(game, session, modal, onPersist, () =>
+      game.exec({ action: "set_auto_save", enabled }),
     );
   });
 

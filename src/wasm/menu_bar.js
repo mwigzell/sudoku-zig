@@ -16,6 +16,7 @@ export const MENU_BAR_MENUS = [
       { id: "export", label: "Export", legendKey: LEGEND_WIRE_EXPORT },
       { id: "save", label: "Save", legendKey: "save" },
       { id: "saveAs", label: "Save As", legendKey: "save_as" },
+      { id: "autoSave", label: "Auto Save" },
       { id: "settings", label: "Settings" },
     ],
   },
@@ -46,7 +47,7 @@ export const MENU_BAR_MENUS = [
 ];
 
 /** Mirror wasm Legend flags onto File + Edit controls. View/Help stay enabled. */
-export function syncMenuBar(legend, controls) {
+export function syncMenuBar(legend, controls, config = {}) {
   for (const menu of MENU_BAR_MENUS) {
     for (const item of menu.items) {
       if (!item.legendKey) continue;
@@ -59,6 +60,13 @@ export function syncMenuBar(legend, controls) {
   if (controls.viewRegion) controls.viewRegion.disabled = false;
   if (controls.about) controls.about.disabled = false;
   if (controls.settings) controls.settings.disabled = false;
+  const autoSaveOn = config.auto_save === true;
+  if (controls.save) controls.save.disabled = controls.save.disabled || autoSaveOn;
+  if (controls.autoSave) {
+    controls.autoSave.disabled = false;
+    controls.autoSave.setAttribute("aria-checked", autoSaveOn ? "true" : "false");
+    controls.autoSave.textContent = `Auto Save (${autoSaveOn ? "On" : "Off"})`;
+  }
 }
 
 /** Resolve menu control elements from the page shell. */
@@ -70,6 +78,7 @@ export function collectMenuBarControls(root) {
     export: root.querySelector("#file-export"),
     save: root.querySelector("#file-save"),
     saveAs: root.querySelector("#file-save-as"),
+    autoSave: root.querySelector("#file-auto-save"),
     settings: root.querySelector("#file-settings"),
     undo: root.querySelector("#edit-undo"),
     redo: root.querySelector("#edit-redo"),
@@ -187,7 +196,7 @@ export function wireMenuDropdowns(root = document) {
 /** Keep menu controls aligned with session.legend; File handlers wired in C.6. */
 export function wireMenuBar(controls, session, root) {
   const dropdowns = root ? wireMenuDropdowns(root) : null;
-  const sync = () => syncMenuBar(session.legend, controls);
+  const sync = () => syncMenuBar(session.legend, controls, session.config ?? {});
   sync();
   return { sync, closeAll: () => dropdowns?.closeAll() };
 }

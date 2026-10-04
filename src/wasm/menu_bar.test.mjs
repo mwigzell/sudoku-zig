@@ -13,7 +13,7 @@ import {
 } from "./menu_bar.js";
 
 function makeBtn() {
-  return { disabled: false };
+  return { disabled: false, textContent: "", setAttribute() {} };
 }
 
 function makeControls() {
@@ -24,6 +24,8 @@ function makeControls() {
     export: makeBtn(),
     save: makeBtn(),
     saveAs: makeBtn(),
+    autoSave: makeBtn(),
+    settings: makeBtn(),
     undo: makeBtn(),
     redo: makeBtn(),
     copy: makeBtn(),
@@ -50,6 +52,7 @@ function makeControls() {
       redo: false,
     },
     controls,
+    { auto_save: false },
   );
   assert.equal(controls.new.disabled, false);
   assert.equal(controls.open.disabled, true);
@@ -75,6 +78,13 @@ function makeControls() {
   assert.equal(controls.paste.disabled, false);
   syncMenuBar({ [LEGEND_WIRE_PASTE]: false }, controls);
   assert.equal(controls.paste.disabled, true);
+}
+
+{
+  const controls = makeControls();
+  syncMenuBar({ save: true }, controls, { auto_save: true });
+  assert.equal(controls.save.disabled, true);
+  assert.equal(controls.autoSave.textContent, "Auto Save (On)");
 }
 
 {

@@ -143,6 +143,18 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         const enabled = parsed.value.enabled orelse return error.MissingField;
         return .{ .set_warn_solvability = enabled };
     }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_auto_restore")) {
+        const enabled = parsed.value.enabled orelse return error.MissingField;
+        return .{ .set_auto_restore = enabled };
+    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_auto_new")) {
+        const enabled = parsed.value.enabled orelse return error.MissingField;
+        return .{ .set_auto_new = enabled };
+    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_auto_save")) {
+        const enabled = parsed.value.enabled orelse return error.MissingField;
+        return .{ .set_auto_save = enabled };
+    }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_difficulty")) {
         const name = parsed.value.difficulty orelse return error.MissingField;
         if (std.ascii.eqlIgnoreCase(name, "easy")) return .{ .set_difficulty = .easy };
@@ -306,13 +318,16 @@ pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
     var mutable = out;
     try writeJson(
         &mutable,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
             theme_name,
             wire_cfg.show_region,
             wire_cfg.warn_solvability,
+            wire_cfg.auto_restore,
+            wire_cfg.auto_new,
+            wire_cfg.auto_save,
         },
     );
 }
@@ -397,6 +412,24 @@ test "parseAction set_theme and set_region" {
         else => return error.TestFailed,
     }
 
+    const auto_restore_cmd = try parseAction("{\"action\":\"set_auto_restore\",\"enabled\":true}");
+    switch (auto_restore_cmd) {
+        .set_auto_restore => |enabled| try std.testing.expect(enabled),
+        else => return error.TestFailed,
+    }
+
+    const auto_new_cmd = try parseAction("{\"action\":\"set_auto_new\",\"enabled\":false}");
+    switch (auto_new_cmd) {
+        .set_auto_new => |enabled| try std.testing.expect(!enabled),
+        else => return error.TestFailed,
+    }
+
+    const auto_save_cmd = try parseAction("{\"action\":\"set_auto_save\",\"enabled\":true}");
+    switch (auto_save_cmd) {
+        .set_auto_save => |enabled| try std.testing.expect(enabled),
+        else => return error.TestFailed,
+    }
+
     const diff_cmd = try parseAction("{\"action\":\"set_difficulty\",\"difficulty\":\"medium\"}");
     switch (diff_cmd) {
         .set_difficulty => |diff| try std.testing.expectEqual(config.Difficulty.medium, diff),
@@ -419,11 +452,17 @@ test "writeWireConfigJson emits WireConfig wire shape" {
         .log_level = .info,
         .theme = .light,
         .show_region = true,
+        .auto_restore = true,
+        .auto_new = true,
+        .auto_save = true,
     });
     const json = out.finishJson();
     try std.testing.expect(std.mem.indexOf(u8, json, "\"difficulty\":2") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"show_region\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"auto_restore\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"auto_new\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"auto_save\":true") != null);
 }
 
 const ErrorWire = struct {

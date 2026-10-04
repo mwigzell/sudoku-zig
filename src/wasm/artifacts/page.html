@@ -554,6 +554,7 @@
           <button type="button" role="menuitem" id="file-export">Export</button>
           <button type="button" role="menuitem" id="file-save">Save</button>
           <button type="button" role="menuitem" id="file-save-as">Save As</button>
+          <button type="button" role="menuitemcheckbox" id="file-auto-save" aria-checked="false">Auto Save (Off)</button>
           <button type="button" role="menuitem" id="file-settings">Settings</button>
         </div>
       </div>
@@ -621,6 +622,18 @@
           <option value="err">Error</option>
           <option value="fatal">Fatal</option>
         </select>
+      </label>
+      <label id="settings-auto-restore-label">
+        <input type="checkbox" id="settings-auto-restore" />
+        Auto restore current file on startup
+      </label>
+      <label id="settings-auto-new-label">
+        <input type="checkbox" id="settings-auto-new" />
+        Auto start new game when restore is unavailable
+      </label>
+      <label id="settings-auto-save-label">
+        <input type="checkbox" id="settings-auto-save" />
+        Auto save after changes
       </label>
       <button type="button" id="settings-modal-dismiss">OK</button>
     </div>
@@ -733,6 +746,9 @@
       checkbox: document.getElementById("settings-warn-solvability"),
       difficultySelect: document.getElementById("settings-difficulty"),
       logLevelSelect: document.getElementById("settings-log-level"),
+      autoRestoreCheckbox: document.getElementById("settings-auto-restore"),
+      autoNewCheckbox: document.getElementById("settings-auto-new"),
+      autoSaveCheckbox: document.getElementById("settings-auto-save"),
       dismissEl: document.getElementById("settings-modal-dismiss"),
     };
 
@@ -817,6 +833,7 @@
           themeMenu.sync();
           regionMenu.sync();
         },
+        onPersist: persistViewSettings,
       });
       editMenu = wireEditMenu(
         menuControls.undo,

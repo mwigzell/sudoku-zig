@@ -26,6 +26,10 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
     logLevel: 2,
     theme: "light",
     show_region: true,
+    warn_solvability: true,
+    auto_restore: true,
+    auto_new: true,
+    auto_save: true,
   });
   assert.equal(boot.ok, true, `bootstrapHostConfig failed: ${JSON.stringify(boot)}`);
   const cfg = hostGame.getConfig();
@@ -33,7 +37,10 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(cfg.log_level, 2, "wasm engine log_level must match host startup wire");
   assert.equal(cfg.theme, "light");
   assert.equal(cfg.show_region, true);
-  assert.equal(cfg.warn_solvability, false);
+  assert.equal(cfg.warn_solvability, true);
+  assert.equal(cfg.auto_restore, true);
+  assert.equal(cfg.auto_new, true);
+  assert.equal(cfg.auto_save, true);
 }
 
 // ── bootstrapHostConfig + generatePuzzle (worker handoff) ──
@@ -44,6 +51,10 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
     logLevel: 1,
     theme: "dark",
     show_region: false,
+    warn_solvability: false,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
   });
   assert.equal(boot.ok, true, `bootstrapHostConfig failed: ${JSON.stringify(boot)}`);
   const empty = handoff.getState().cells.every((c) => c.value === 0);

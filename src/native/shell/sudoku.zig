@@ -10,6 +10,7 @@ const puzzle_gen = @import("../../puzzle_gen/mod.zig");
 const command = @import("../../command.zig");
 const settings_store = @import("../../settings_store.zig");
 const startup_policy = @import("../../startup_policy.zig");
+const startup_engine = @import("../../startup_engine.zig");
 
 const disambiguate = @import("../ascii/disambiguate.zig");
 const legend = @import("../../renderer/legend.zig");
@@ -56,17 +57,17 @@ pub const Sudoku = struct {
         out: *std.Io.Writer,
         settings_persist: ?SettingsPersist,
     ) Error!@This() {
+        // Startup policy owns if/when puzzle generation occurs.
         var renderer_facade = facade;
         puzzle_gen.PuzzleGen.setPlayProgress(gen_progress.playProgressToFacade, @ptrCast(&renderer_facade));
         defer puzzle_gen.PuzzleGen.setPlayProgress(null, null);
-        const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
         return @This(){
             .cfg = cfg,
             .renderer = facade,
             .transport = transport,
             .out = out,
             .settings_persist = settings_persist,
-            .engine = try game_engine.GameEngine.init(puzzle_str, cfg),
+            .engine = try startup_engine.initEngineFromStartup(cfg),
         };
     }
 
@@ -168,7 +169,15 @@ pub const Sudoku = struct {
             },
             .valid => |cmd| {
                 const persist_after = switch (cmd) {
-                    .set_region, .set_warn_solvability, .set_theme, .set_difficulty, .set_log_level => true,
+                    .set_region,
+                    .set_warn_solvability,
+                    .set_theme,
+                    .set_difficulty,
+                    .set_log_level,
+                    .set_auto_restore,
+                    .set_auto_new,
+                    .set_auto_save,
+                    => true,
                     else => false,
                 };
                 switch (cmd) {
@@ -221,6 +230,9 @@ pub const Sudoku = struct {
             self.engine.cfg.difficulty,
             self.engine.cfg.log_level,
             self.engine.cfg.theme,
+            self.engine.cfg.auto_restore,
+            self.engine.cfg.auto_new,
+            self.engine.cfg.auto_save,
             self.last_cell,
         ) catch return error.System;
         return try self.handleResult(result);
@@ -1169,14 +1181,43 @@ test "startup policy: auto_restore false and auto_new false keeps manual startup
     var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(std.testing.io), host.writer(), null);
     defer app.deinit();
 
+    var expected_idle: [81]u8 = undefined;
+    @memset(&expected_idle, '0');
     const before = export_command.currentPuzzleLine(&app.engine);
     const startup = try app.runStartupPolicy(null);
     const after = export_command.currentPuzzleLine(&app.engine);
 
+    try std.testing.expectEqualSlices(u8, &expected_idle, &before);
     try std.testing.expect(!startup.attempted_restore);
     try std.testing.expect(!startup.restore_failed);
     try std.testing.expect(!startup.rendered);
     try std.testing.expectEqualSlices(u8, &before, &after);
+}
+
+test "manual startup does not print generation progress when both auto flags are false" {
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+        .auto_restore = false,
+        .auto_new = false,
+    };
+    const responses = [_][]const u8{"quit"};
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(std.testing.io), host.writer(), null);
+    defer app.deinit();
+
+    const startup = try app.runStartupPolicy(null);
+    if (!startup.rendered) try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, "Generating:") == null);
 }
 
 test "startup policy: auto_restore true restores from current_file path" {
@@ -1226,7 +1267,7 @@ test "startup policy: restore failure blocks and does not auto-new fallback in s
         .auto_new = true,
     };
 
-    const responses = [_][]const u8{ "\n" };
+    const responses = [_][]const u8{"\n"};
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
     var facade = try host.facade();
