@@ -308,7 +308,6 @@ async function flushDialogPaint() {
     auto_new: false,
     auto_save: false,
     startup_action: "new",
-    startup_warn_restore_unavailable: false,
   };
   const game = {
     bootstrapHostConfig(cfg) {
@@ -353,7 +352,6 @@ async function flushDialogPaint() {
   assert.equal(out.kind, "empty");
   assert.equal(out.config.difficulty, 2);
   assert.equal(out.startup_action, "new");
-  assert.equal(out.startup_warn_restore_unavailable, false);
 }
 
 {
@@ -367,7 +365,6 @@ async function flushDialogPaint() {
     auto_new: false,
     auto_save: false,
     startup_action: "idle",
-    startup_warn_restore_unavailable: true,
   };
   const game = {
     bootstrapHostConfig() {
@@ -389,7 +386,6 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "empty");
   assert.equal(out.startup_action, "idle");
-  assert.equal(out.startup_warn_restore_unavailable, true);
 }
 
 // ── offerInitialNewGame: action=new runs generation; action=idle remains manual ──
@@ -400,7 +396,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "idle",
-      startup_warn_restore_unavailable: true,
       state: {},
       legend: {},
       config: {},
@@ -408,7 +403,73 @@ async function flushDialogPaint() {
     null,
   );
   assert.equal(manual.kind, "empty");
-  assert.match(manual.msg, /auto-restore unavailable/);
+  assert.equal(manual.msg, null);
+}
+
+{
+  const restoredState = { cells: [{ value: 7, given: false, conflict: false }] };
+  const game = {
+    deserialize() {
+      return { ok: true, state: restoredState, msg: "opened: startup-save.sud" };
+    },
+    getLegend() {
+      return { save: true };
+    },
+    getConfig() {
+      return { difficulty: 1, log_level: 1 };
+    },
+    getState() {
+      return { cells: [] };
+    },
+  };
+  const out = await offerInitialNewGame(
+    game,
+    {
+      ok: true,
+      kind: "empty",
+      startup_action: "restore",
+      startup_save_path: "./current-file",
+      state: {},
+      legend: {},
+      config: {},
+    },
+    null,
+    { fetchFn: async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }) },
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, "restore");
+  assert.equal(out.state.cells[0].value, 7);
+}
+
+{
+  const game = {
+    getLegend() {
+      return {};
+    },
+    getConfig() {
+      return {};
+    },
+    getState() {
+      return { cells: [] };
+    },
+  };
+  const out = await offerInitialNewGame(
+    game,
+    {
+      ok: true,
+      kind: "empty",
+      startup_action: "restore",
+      startup_save_path: "./current-file",
+      state: {},
+      legend: {},
+      config: {},
+    },
+    null,
+    { fetchFn: async () => ({ ok: false, status: 404 }) },
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, "empty");
+  assert.match(out.msg ?? "", /startup restore fetch failed/);
 }
 
 {

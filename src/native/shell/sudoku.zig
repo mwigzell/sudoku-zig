@@ -257,7 +257,6 @@ pub const Sudoku = struct {
             .auto_restore = self.cfg.auto_restore,
             .auto_new = self.cfg.auto_new,
             .has_current_file = current_file != null,
-            .restore_supported = true,
         });
 
         if (decision.action == .restore) {

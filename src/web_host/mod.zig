@@ -6,6 +6,7 @@ const log = logger.Logger(.web_host);
 const config = @import("../config.zig");
 const startup_config = @import("../startup_config.zig");
 const settings_store = @import("../settings_store.zig");
+const file_transport = @import("../native/shell/file_transport.zig");
 const router_mod = @import("router.zig");
 const embed = @import("embed.zig");
 
@@ -45,10 +46,11 @@ const Session = struct {
     data_dir: []const u8,
     /// Host-computed startup metadata: web restore depends on capability+path.
     has_current_file: bool,
+    current_file: ?[]const u8,
     host_config_body_buf: [256]u8,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
-        return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, false, &self.host_config_body_buf) catch return ServeError.System;
+        return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, &self.host_config_body_buf) catch return ServeError.System;
     }
 };
 
@@ -210,13 +212,14 @@ pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: 
     shutdown_requested.store(false, .release);
 
     const current_file = settings_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch null;
-    defer if (current_file) |p| std.heap.page_allocator.free(p);
     var session = Session{
         .host_config = host_cfg,
         .data_dir = data_dir,
         .has_current_file = current_file != null,
+        .current_file = current_file,
         .host_config_body_buf = undefined,
     };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
     var gate: ReadyGate = .{};
     var ctx = WorkerCtx{
         .io = io,
@@ -263,6 +266,25 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         const body = requestBody(request) orelse return ServeError.System;
         try applySettingsPost(io, session, body);
         try writeFull(&w.interface, "204 No Content", "application/json", "");
+        return;
+    }
+    if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, "/current-file")) {
+        const current_file = session.current_file orelse {
+            try writeFull(&w.interface, "404 Not Found", "text/plain", "startup save not configured\n");
+            return;
+        };
+        const transport = file_transport.NativeTransport.make(io);
+        const resolved = transport.resolve(transport.context, current_file) catch {
+            try writeFull(&w.interface, "404 Not Found", "text/plain", "startup save not found\n");
+            return;
+        };
+        defer transport.free(transport.context, resolved);
+        const bytes = transport.readAll(transport.context, resolved) catch {
+            try writeFull(&w.interface, "404 Not Found", "text/plain", "startup save not found\n");
+            return;
+        };
+        defer transport.free(transport.context, bytes);
+        try writeFull(&w.interface, "200 OK", "application/octet-stream", bytes);
         return;
     }
 
@@ -497,6 +519,7 @@ test "web_host: host-config body reflects active host Config" {
         },
         .data_dir = ".",
         .has_current_file = false,
+        .current_file = null,
         .host_config_body_buf = undefined,
     };
     const body = try session.hostConfigBody();

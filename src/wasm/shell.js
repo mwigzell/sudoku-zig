@@ -184,6 +184,12 @@ export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
   return res.json();
 }
 
+async function fetchStartupSaveBytes(path, fetchFn = globalThis.fetch) {
+  const res = await fetchFn(path);
+  if (!res.ok) return { ok: false, error: `startup restore fetch failed: ${res.status}` };
+  return { ok: true, bytes: new Uint8Array(await res.arrayBuffer()) };
+}
+
 export function bootstrapEngineFromHostConfig(game, hostCfg) {
   return game.bootstrapHostConfig({
     difficulty: hostCfg.difficulty,
@@ -255,25 +261,67 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     config: game.getConfig(),
     msg: boot.msg ?? null,
     startup_action: hostCfg.startup_action ?? "idle",
-    startup_warn_restore_unavailable: hostCfg.startup_warn_restore_unavailable === true,
+    startup_save_path: hostCfg.startup_save_path ?? null,
   };
 }
 
-/**
- * Applies host startup policy: either auto-New or manual idle with optional warning.
- * Web restore is capability-limited, so host must never route "restore" here.
- */
-export async function offerInitialNewGame(game, boot, generatingModal, { genWorker } = {}) {
+/** Applies host startup policy: restore/new/idle on the host-resolved startup contract. */
+export async function offerInitialNewGame(
+  game,
+  boot,
+  generatingModal,
+  { genWorker, fetchFn } = {},
+) {
   if (!boot.ok) return boot;
   if (boot.kind !== "empty") return boot;
 
   if (boot.startup_action === "restore") {
-    return { ok: false, error: "restore startup action is unsupported on web", kind: "empty" };
+    const restorePath = boot.startup_save_path;
+    if (!restorePath) {
+      return {
+        ok: true,
+        kind: "empty",
+        state: game.getState(),
+        legend: game.getLegend(),
+        config: game.getConfig(),
+        msg: "startup restore path missing; startup remains manual",
+      };
+    }
+    const fetched = await fetchStartupSaveBytes(restorePath, fetchFn);
+    if (!fetched.ok) {
+      return {
+        ok: true,
+        kind: "empty",
+        state: game.getState(),
+        legend: game.getLegend(),
+        config: game.getConfig(),
+        msg: `${fetched.error}; startup remains manual`,
+      };
+    }
+    const restored = open(game, fetched.bytes, { name: restorePath });
+    if (!restored.ok) {
+      return {
+        ok: true,
+        kind: "empty",
+        state: game.getState(),
+        legend: game.getLegend(),
+        config: game.getConfig(),
+        msg: `${restored.error ?? "startup restore failed"}; startup remains manual`,
+      };
+    }
+    return {
+      ok: true,
+      kind: "restore",
+      state: restored.state,
+      legend: game.getLegend(),
+      config: game.getConfig(),
+      msg: restored.msg ?? "restored game",
+    };
   }
   if (boot.startup_action === "idle") {
     return {
       ...boot,
-      msg: boot.startup_warn_restore_unavailable ? "auto-restore unavailable on web; startup remains manual" : boot.msg ?? null,
+      msg: boot.msg ?? null,
     };
   }
 
