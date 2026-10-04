@@ -76,6 +76,64 @@ pub const Sudoku = struct {
         settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, self.cfg) catch {};
     }
 
+    fn tracksCurrentFile(cmd: command.Command) bool {
+        return switch (cmd) {
+            .save, .save_as, .open => true,
+            else => false,
+        };
+    }
+
+    fn currentFilePathForCommand(cmd: command.Command) ?[]const u8 {
+        return switch (cmd) {
+            .save => |d| d.path,
+            .save_as => |d| d.path,
+            .open => |d| d.path,
+            else => null,
+        };
+    }
+
+    fn commandTriggersAutoSave(cmd: command.Command) bool {
+        return switch (cmd) {
+            .fill, .clear, .undo, .redo, .solve_for_me, .new, .open, .import, .paste => true,
+            else => false,
+        };
+    }
+
+    fn loadCurrentFileIfAny(self: *@This()) ?[]u8 {
+        const sp = self.settings_persist orelse return null;
+        return settings_store.loadCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir) catch null;
+    }
+
+    fn persistCurrentFile(self: *@This(), path: ?[]const u8) void {
+        const sp = self.settings_persist orelse return;
+        settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch {};
+    }
+
+    fn persistResolvedCurrentFile(self: *@This(), path: []const u8) void {
+        const resolved = self.transport.resolve(self.transport.context, path) catch return;
+        defer self.transport.free(self.transport.context, resolved);
+        self.persistCurrentFile(resolved);
+    }
+
+    fn applyAutoSavePolicyIfNeeded(self: *@This(), cmd: command.Command, event: game_engine.Event) game_engine.Event {
+        if (!self.cfg.auto_save) return event;
+        if (!commandTriggersAutoSave(cmd)) return event;
+        switch (event) {
+            .error_msg => return event,
+            .ok => {},
+        }
+
+        const loaded = self.loadCurrentFileIfAny();
+        defer if (loaded) |p| std.heap.page_allocator.free(p);
+        const target = if (loaded) |p| p else save_command.DEFAULT_SAVE_FILE;
+        const save_event = save_as_command.execute(&self.engine, self.transport, target);
+        switch (save_event) {
+            .ok => self.persistResolvedCurrentFile(target),
+            .error_msg => {},
+        }
+        return save_event;
+    }
+
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
     /// Status passthrough (same rules as wasm shell.js applyEventStatus): silence when
     /// `.ok.msg` is null; never invent copy. `.error_msg` rides `showError` (interactive ack);
@@ -134,7 +192,14 @@ pub const Sudoku = struct {
                     },
                     else => self.engine.exec(cmd),
                 };
-                const quit = try self.handleEvent(event);
+                if (tracksCurrentFile(cmd)) {
+                    if (currentFilePathForCommand(cmd)) |path| switch (event) {
+                        .ok => self.persistResolvedCurrentFile(path),
+                        .error_msg => {},
+                    };
+                }
+                const final_event = self.applyAutoSavePolicyIfNeeded(cmd, event);
+                const quit = try self.handleEvent(final_event);
                 if (persist_after) self.persistSettingsIfNeeded();
                 return quit;
             },
@@ -1180,4 +1245,96 @@ test "startup policy: restore failure blocks and does not auto-new fallback in s
     try std.testing.expect(!startup.rendered);
     try std.testing.expectEqualSlices(u8, &before, &after);
     try std.testing.expect(std.mem.indexOf(u8, output, "Press Enter to continue...") != null);
+}
+
+test "autosave: fill writes default save and bootstraps current_file when unset" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+
+    const responses = [_][]const u8{ "fill A3 7", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current != null);
+
+    const bytes = app.transport.readAll(app.transport.context, current.?) catch return error.TestFailed;
+    defer app.transport.free(app.transport.context, bytes);
+    try std.testing.expect(bytes.len > 0);
+}
+
+test "autosave: non-state settings command does not bootstrap current_file" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+
+    const responses = [_][]const u8{ "menu\n", "14\n", "4\n", "2\n", "quit\n" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current == null);
+}
+
+test "autosave: successful open updates current_file pointer" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var cfg = config.Config.default();
+    cfg.auto_save = false;
+
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
+    defer original.deinit();
+    const tmp_path = "/tmp/sudoku_autosave_open_pointer.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+    const setup_transport = file_transport.NativeTransport.make(io);
+    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
+    defer std.heap.page_allocator.free(save_buf);
+    try setup_transport.write(setup_transport.context, tmp_path, save_buf);
+
+    const responses = [_][]const u8{ "m", "2", tmp_path, "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current != null);
+    try std.testing.expectEqualStrings(tmp_path, current.?);
 }
