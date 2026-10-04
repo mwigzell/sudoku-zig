@@ -1164,14 +1164,11 @@ test "integrated e2e: menu Settings persists warn_solvability to settings.json" 
 }
 
 test "startup policy: auto_restore false and auto_new false keeps manual startup" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-        .auto_restore = false,
-        .auto_new = false,
-    };
+    const test_defaults = @import("../../test/config_defaults.zig");
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.difficulty = .hard;
+    cfg.auto_restore = false;
+    cfg.auto_new = false;
     var host = host_mod.Host.createForTest(cfg, &[0][]const u8{});
     defer host.deinit();
     var facade = try host.facade();
@@ -1194,14 +1191,11 @@ test "startup policy: auto_restore false and auto_new false keeps manual startup
 }
 
 test "manual startup does not print generation progress when both auto flags are false" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-        .auto_restore = false,
-        .auto_new = false,
-    };
+    const test_defaults = @import("../../test/config_defaults.zig");
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.difficulty = .hard;
+    cfg.auto_restore = false;
+    cfg.auto_new = false;
     const responses = [_][]const u8{"quit"};
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
@@ -1220,19 +1214,16 @@ test "manual startup does not print generation progress when both auto flags are
 }
 
 test "startup policy: auto_restore true restores from current_file path" {
+    const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     const tmp_path = "/tmp/sudoku_startup_restore_ok.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-        .auto_restore = true,
-    };
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.difficulty = .hard;
+    cfg.auto_restore = true;
 
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), test_defaults.testConfigDefaults());
     defer original.deinit();
     const transport = file_transport.NativeTransport.make(io);
     const save_buf = try original.toSaveFormat(std.heap.page_allocator);
@@ -1257,14 +1248,11 @@ test "startup policy: auto_restore true restores from current_file path" {
 }
 
 test "startup policy: restore failure blocks and does not auto-new fallback in same run" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-        .auto_restore = true,
-        .auto_new = true,
-    };
+    const test_defaults = @import("../../test/config_defaults.zig");
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.difficulty = .hard;
+    cfg.auto_restore = true;
+    cfg.auto_new = true;
 
     const responses = [_][]const u8{"\n"};
     var host = host_mod.Host.createForTest(cfg, &responses);
@@ -1288,13 +1276,14 @@ test "startup policy: restore failure blocks and does not auto-new fallback in s
 }
 
 test "autosave: fill writes default save and bootstraps current_file when unset" {
+    const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    var cfg = config.Config.default();
+    var cfg = test_defaults.testConfigDefaults();
     cfg.auto_save = true;
 
     const responses = [_][]const u8{ "fill A3 7", "quit" };
@@ -1318,13 +1307,14 @@ test "autosave: fill writes default save and bootstraps current_file when unset"
 }
 
 test "autosave: non-state settings command does not bootstrap current_file" {
+    const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    var cfg = config.Config.default();
+    var cfg = test_defaults.testConfigDefaults();
     cfg.auto_save = true;
 
     const responses = [_][]const u8{ "menu\n", "14\n", "4\n", "2\n", "quit\n" };
@@ -1344,16 +1334,17 @@ test "autosave: non-state settings command does not bootstrap current_file" {
 }
 
 test "autosave: successful open updates current_file pointer" {
+    const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    var cfg = config.Config.default();
+    var cfg = test_defaults.testConfigDefaults();
     cfg.auto_save = false;
 
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
+    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), test_defaults.testConfigDefaults());
     defer original.deinit();
     const tmp_path = "/tmp/sudoku_autosave_open_pointer.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};

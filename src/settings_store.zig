@@ -225,11 +225,12 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
 }
 
 test "save omits renderer keys; load uses code default for renderer" {
+    const test_defaults = @import("test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    var cfg = config.Config.default();
+    var cfg = test_defaults.testConfigDefaults();
     cfg.preferred_renderer = .web;
     cfg.fallback_renderer = .ascii;
     cfg.theme = .light;
@@ -294,11 +295,12 @@ test "settings round-trip preserves player fields" {
 }
 
 test "settings round-trip preserves warn_solvability" {
+    const test_defaults = @import("test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    var original = config.Config.default();
+    var original = test_defaults.testConfigDefaults();
     original.warn_solvability = true;
     try saveInDir(std.testing.allocator, io, tmp.dir, original);
     const restored = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
@@ -306,18 +308,20 @@ test "settings round-trip preserves warn_solvability" {
 }
 
 test "missing settings file yields Config.default()" {
+    const test_defaults = @import("test/config_defaults.zig");
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const cfg = try loadOrDefaultInDir(std.testing.allocator, std.testing.io, tmp.dir);
-    try std.testing.expectEqual(config.Config.default().difficulty, cfg.difficulty);
+    try std.testing.expectEqual(test_defaults.testConfigDefaults().difficulty, cfg.difficulty);
 }
 
 test "loadOrDefaultInDir reads view prefs from settings.json on disk" {
+    const test_defaults = @import("test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    var on_disk = config.Config.default();
+    var on_disk = test_defaults.testConfigDefaults();
     on_disk.theme = .light;
     on_disk.show_region = true;
     on_disk.warn_solvability = true;
@@ -366,6 +370,7 @@ test "setCurrentFile persists pointer and loadCurrentFile returns it" {
 }
 
 test "save preserves existing current_file pointer" {
+    const test_defaults = @import("test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -374,7 +379,7 @@ test "save preserves existing current_file pointer" {
 
     try setCurrentFile(std.testing.allocator, io, data_path, "/tmp/sudoku_restore_preserve.sud");
 
-    var cfg = config.Config.default();
+    var cfg = test_defaults.testConfigDefaults();
     cfg.theme = .light;
     try save(std.testing.allocator, io, data_path, cfg);
 

@@ -161,11 +161,12 @@ test "CLI overrides persist on top of saved settings" {
 }
 
 test "host startup JSON reflects Config loaded from settings.json on disk" {
+    const test_defaults = @import("test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    var on_disk = config.Config.default();
+    var on_disk = test_defaults.testConfigDefaults();
     on_disk.difficulty = .medium;
     on_disk.log_level = .debug;
     on_disk.theme = .light;
@@ -207,7 +208,8 @@ test "host startup JSON matches Config wire fields" {
 }
 
 test "host startup JSON policy chooses restore when current file exists" {
-    var cfg = config.Config.default();
+    const test_defaults = @import("test/config_defaults.zig");
+    var cfg = test_defaults.testConfigDefaults();
     cfg.auto_restore = true;
     cfg.auto_new = false;
     var buf: [256]u8 = undefined;
