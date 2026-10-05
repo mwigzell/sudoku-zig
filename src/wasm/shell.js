@@ -28,6 +28,24 @@ export function clearEventStatus(statusEl) {
   applyEventStatus(statusEl, { ok: true, msg: null });
 }
 
+export const CURRENT_FILE_DESKTOP_ID = "current-file-desktop";
+export const CURRENT_FILE_FALLBACK = "sudoku.sud";
+
+/** Bound save target label shown in the menu-bar filename slot. */
+export function currentFileLabel(session) {
+  const name = session?.boundFilename ?? session?.default_save_filename;
+  if (typeof name === "string" && name.length > 0) return name;
+  return CURRENT_FILE_FALLBACK;
+}
+
+/** Keeps desktop/mobile filename chrome in sync with session binding state. */
+export function syncCurrentFileLabels(session, root = globalThis.document) {
+  if (!root || typeof root.getElementById !== "function") return;
+  const label = currentFileLabel(session);
+  const desktop = root.getElementById(CURRENT_FILE_DESKTOP_ID);
+  if (desktop) desktop.textContent = label;
+}
+
 /** Show an Event.error_msg in the blocking error modal. */
 export function showErrorModal(modal, message) {
   modal.msgEl.textContent = message;
@@ -257,12 +275,14 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
 }
 
 /** Persist current SUD0 snapshot for startup restore (`/current-file`). */
-export async function persistCurrentFileSnapshot(game, fetchFn = globalThis.fetch) {
+export async function persistCurrentFileSnapshot(game, fetchFn = globalThis.fetch, saveName = null) {
   const saved = game.serialize();
   if (!saved.ok) return saved;
+  const headers = { "Content-Type": "application/octet-stream" };
+  if (typeof saveName === "string" && saveName.length > 0) headers["X-Sudoku-Filename"] = saveName;
   const res = await fetchFn("./current-file", {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
+    headers,
     body: saved.bytes,
   });
   if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}` };
@@ -312,6 +332,7 @@ export async function offerInitialNewGame(
         legend: game.getLegend(),
         config: game.getConfig(),
         msg: "startup restore path missing; startup remains manual",
+        default_save_filename: boot.default_save_filename,
       };
     }
     const fetched = await fetchStartupSaveBytes(restorePath, fetchFn);
@@ -323,6 +344,7 @@ export async function offerInitialNewGame(
         legend: game.getLegend(),
         config: game.getConfig(),
         msg: `${fetched.error}; startup remains manual`,
+        default_save_filename: boot.default_save_filename,
       };
     }
     const restored = open(game, fetched.bytes, { name: restorePath });
@@ -334,6 +356,7 @@ export async function offerInitialNewGame(
         legend: game.getLegend(),
         config: game.getConfig(),
         msg: `${restored.error ?? "startup restore failed"}; startup remains manual`,
+        default_save_filename: boot.default_save_filename,
       };
     }
     return {
@@ -343,6 +366,7 @@ export async function offerInitialNewGame(
       legend: game.getLegend(),
       config: game.getConfig(),
       msg: restored.msg ?? "restored game",
+      default_save_filename: boot.default_save_filename,
     };
   }
   if (boot.startup_action === "idle") {
@@ -373,6 +397,7 @@ export async function offerInitialNewGame(
       config: game.getConfig(),
       msg: null,
       cancelled: true,
+      default_save_filename: boot.default_save_filename,
     };
   }
   return {
@@ -382,6 +407,7 @@ export async function offerInitialNewGame(
     legend: started.legend,
     config: started.config,
     msg: started.msg,
+    default_save_filename: boot.default_save_filename,
   };
 }
 

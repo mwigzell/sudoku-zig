@@ -184,9 +184,95 @@ function makeRenderElement() {
   await pickPromise;
   assert.equal(genEl.hidden, true);
   assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
-  controls.save.click();
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 204 });
+  await controls.save.click();
+  globalThis.fetch = prevFetch;
   assert.deepEqual([...downloaded.bytes], [9, 9, 9]);
   assert.equal(downloaded.name, "host-default.sud");
+  assert.equal(session.boundFilename, "host-default.sud");
+}
+
+{
+  const board = makeBoard();
+  const session = {
+    legend: { save_as: true },
+    state: { cells: [] },
+  };
+  let downloaded = null;
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
+    },
+  };
+  const controls = {
+    saveAs: makeBtn(),
+  };
+  wireFileMenu(
+    controls,
+    game,
+    board,
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      download(bytes, name) {
+        downloaded = { bytes, name };
+      },
+      pick: async () => ({ ok: false, cancelled: true }),
+      createElement: makeRenderElement(),
+    },
+  );
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 204 });
+  await controls.saveAs.click();
+  globalThis.fetch = prevFetch;
+  assert.equal(downloaded.name, "sudoku.sud");
+}
+
+{
+  const board = makeBoard();
+  const session = {
+    legend: { save_as: true },
+    state: { cells: [] },
+    default_save_filename: "host-default.sud",
+  };
+  const controls = { saveAs: makeBtn() };
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([7, 7, 7]) };
+    },
+  };
+  let fetchCalls = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({ url, init });
+    return { ok: true, status: 204 };
+  };
+  wireFileMenu(
+    controls,
+    game,
+    board,
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      createElement: makeRenderElement(),
+      exportText: async () => ({ ok: false }),
+    },
+  );
+  await controls.saveAs.click();
+  globalThis.fetch = prevFetch;
+  const currentFilePost = fetchCalls.find((c) => c.url === "./current-file");
+  assert.equal(currentFilePost?.init?.headers?.["X-Sudoku-Filename"], "host-default.sud");
 }
 
 {

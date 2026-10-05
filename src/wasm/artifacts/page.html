@@ -126,8 +126,24 @@
       border-bottom: var(--chrome-rule);
     }
 
+    #current-file-desktop {
+      margin-left: auto;
+      align-self: center;
+  display: block;
+      flex: 1 1 8ch;
+      min-width: 8ch;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+      padding: 0 0.75rem;
+      font-size: 0.8125rem;
+      opacity: 0.85;
+      white-space: nowrap;
+    }
+
     .menu {
       position: relative;
+  flex: 0 0 auto;
     }
 
     .menu-trigger {
@@ -540,6 +556,61 @@
     .board-play:focus {
       outline: none;
     }
+
+    /* Group-fit trigger: switch when the default menu+board+status stack can no longer
+       fit at minimum board size plus default outer/shell spacing. */
+    @media (max-width: calc(26rem + 2px)) {
+      :root {
+        --page-inset: 0;
+        --game-margin: 0;
+        --board-size: 100dvw;
+      }
+
+      body {
+        padding: 0;
+        justify-content: flex-start;
+      }
+
+      #app {
+        width: 100%;
+        min-height: 100dvh;
+        align-items: stretch;
+        gap: 0.25rem;
+      }
+
+      #game-shell {
+        width: 100%;
+        flex: 1 1 auto;
+        align-items: stretch;
+        justify-content: space-between;
+        gap: 0.25rem;
+        padding: 0;
+      }
+
+      #menu-bar {
+        width: 100%;
+        position: sticky;
+        top: env(safe-area-inset-top, 0px);
+        z-index: 9;
+      }
+
+      .menu-trigger {
+        padding: 0.45rem 0.55rem;
+      }
+
+
+      .board-frame {
+        width: 100dvw;
+      }
+
+      #status-bar {
+        width: 100dvw;
+        border-left: none;
+        border-right: none;
+        border-radius: 0;
+      }
+
+    }
   </style>
 </head>
 <body>
@@ -584,6 +655,7 @@
           <button type="button" role="menuitem" id="help-about">About</button>
         </div>
       </div>
+      <span id="current-file-desktop" aria-live="polite"></span>
     </nav>
     <div id="game-shell">
       <div id="board" class="board-frame"></div>
@@ -709,6 +781,7 @@
     import {
       applyEventStatus,
       canUseGenWorker,
+      syncCurrentFileLabels,
       initializeWebSession,
       offerInitialNewGame,
       persistHostSettings,
@@ -784,6 +857,7 @@
         config: ready.config,
         default_save_filename: ready.default_save_filename,
       };
+      syncCurrentFileLabels(session);
       renderBoard(boardEl, session.state);
       if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {
         applyEventStatus(statusBar, { ok: true, msg: ready.msg });

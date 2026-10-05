@@ -353,4 +353,59 @@ function makeControls() {
   assert.equal(newClicks, 1);
 }
 
+// ── clicking a menu action closes the open dropdown ──
+{
+  const trigger = {
+    attrs: {},
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
+  };
+  const panelListeners = {};
+  const panel = {
+    _hidden: true,
+    addEventListener(type, fn) {
+      panelListeners[type] = fn;
+    },
+  };
+  Object.defineProperty(panel, "hidden", {
+    get() {
+      return this._hidden;
+    },
+    set(v) {
+      this._hidden = v;
+    },
+  });
+  const menu = {
+    dataset: { open: "false" },
+    querySelector(sel) {
+      if (sel === ".menu-panel") return panel;
+      if (sel === ".menu-trigger") return trigger;
+      return null;
+    },
+    addEventListener() {},
+  };
+  trigger.addEventListener = () => {};
+  const root = {
+    querySelectorAll(sel) {
+      return sel === "#menu-bar .menu" ? [menu] : [];
+    },
+    addEventListener() {},
+  };
+  const dropdowns = wireMenuDropdowns(root);
+  dropdowns.openMenu(menu);
+  assert.equal(menu.dataset.open, "true");
+  assert.equal(panel.hidden, false);
+  const action = {
+    disabled: false,
+    closest(sel) {
+      if (typeof sel === "string" && sel.includes("menu-panel button")) return action;
+      return null;
+    },
+  };
+  panelListeners.click({ stopPropagation() {}, target: action });
+  assert.equal(menu.dataset.open, "false");
+  assert.equal(panel.hidden, true);
+}
+
 console.log("menu_bar.test.mjs OK");

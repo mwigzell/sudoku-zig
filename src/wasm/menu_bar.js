@@ -181,6 +181,9 @@ export function wireMenuDropdowns(root = document) {
     const panel = menu.querySelector(".menu-panel");
     panel?.addEventListener?.("click", (event) => {
       event.stopPropagation();
+      // Menu actions should always dismiss the dropdown after activation.
+      const item = event.target?.closest?.(panelItemSelector) ?? null;
+      if (item && !item.disabled) closeAll();
     });
   }
 

@@ -40,7 +40,7 @@ pub fn applyLoggerFromStartup(startup: config.Config) void {
 
 /// JSON body for `/host-config.json` — same shape as wasm `getConfig()`.
 pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
-    return writeHostStartupJsonWithPolicy(w, startup, false);
+    return writeHostStartupJsonWithPolicy(w, startup, false, save_defaults.DEFAULT_SAVE_FILE);
 }
 
 /// Host bootstrap JSON for web clients, including shared startup policy action
@@ -49,6 +49,7 @@ pub fn writeHostStartupJsonWithPolicy(
     w: *std.Io.Writer,
     startup: config.Config,
     has_current_file: bool,
+    default_save_filename: []const u8,
 ) !void {
     const startup_save_path = if (has_current_file) "/current-file" else null;
     const wire_cfg = wire.WireConfig.fromConfig(startup);
@@ -79,7 +80,7 @@ pub fn writeHostStartupJsonWithPolicy(
             startup.auto_restore,
             startup.auto_new,
             startup.auto_save,
-            save_defaults.DEFAULT_SAVE_FILE,
+            default_save_filename,
             startup_action,
             std.json.fmt(startup_status, .{}),
             std.json.fmt(startup_save_path, .{}),
@@ -99,10 +100,11 @@ pub fn formatHostStartupJson(startup: config.Config, buf: []u8) ![]const u8 {
 pub fn formatHostStartupJsonWithPolicy(
     startup: config.Config,
     has_current_file: bool,
+    default_save_filename: []const u8,
     buf: []u8,
 ) ![]const u8 {
     var w = std.Io.Writer.fixed(buf);
-    try writeHostStartupJsonWithPolicy(&w, startup, has_current_file);
+    try writeHostStartupJsonWithPolicy(&w, startup, has_current_file, default_save_filename);
     try std.Io.Writer.flush(&w);
     return w.buffered();
 }
@@ -217,7 +219,7 @@ test "host startup JSON policy chooses restore when current file exists" {
     cfg.auto_restore = true;
     cfg.auto_new = false;
     var buf: [384]u8 = undefined;
-    const json = try formatHostStartupJsonWithPolicy(cfg, true, &buf);
+    const json = try formatHostStartupJsonWithPolicy(cfg, true, save_defaults.DEFAULT_SAVE_FILE, &buf);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_action\":\"restore\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_status\":null") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_save_path\":\"/current-file\"") != null);

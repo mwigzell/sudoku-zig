@@ -3,11 +3,16 @@
 import assert from "node:assert/strict";
 import {
   NEW_GAME_STARTED_MSG,
+  CURRENT_FILE_DESKTOP_ID,
+  CURRENT_FILE_FALLBACK,
+  persistCurrentFileSnapshot,
   hostViewPrefsForPersist,
   initializeWebSession,
   offerInitialNewGame,
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
+  currentFileLabel,
+  syncCurrentFileLabels,
   assertWebBootConfig,
   assertHostStartupConfig,
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
@@ -275,6 +280,45 @@ async function flushDialogPaint() {
 }
 
 {
+  const calls = [];
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2]) };
+    },
+  };
+  const out = await persistCurrentFileSnapshot(
+    game,
+    async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 204 };
+    },
+    "named-save.sud",
+  );
+  assert.equal(out.ok, true);
+  assert.equal(calls[0].url, "./current-file");
+  assert.equal(calls[0].init.headers["X-Sudoku-Filename"], "named-save.sud");
+}
+
+{
+  assert.equal(currentFileLabel({}), CURRENT_FILE_FALLBACK);
+  assert.equal(currentFileLabel({ default_save_filename: "sudoku.sud" }), "sudoku.sud");
+  assert.equal(currentFileLabel({ boundFilename: "game.sud" }), "game.sud");
+}
+
+{
+  const nodes = {
+    [CURRENT_FILE_DESKTOP_ID]: { textContent: "" },
+  };
+  const root = {
+    getElementById(id) {
+      return nodes[id] ?? null;
+    },
+  };
+  syncCurrentFileLabels({ boundFilename: "alpha.sud" }, root);
+  assert.equal(nodes[CURRENT_FILE_DESKTOP_ID].textContent, "alpha.sud");
+}
+
+{
   assert.deepEqual(
     hostViewPrefsForPersist({
       theme: "light",
@@ -437,6 +481,7 @@ async function flushDialogPaint() {
       startup_action: "restore",
       startup_status: null,
       startup_save_path: "./current-file",
+      default_save_filename: "sudoku.sud",
       state: {},
       legend: {},
       config: {},
@@ -447,6 +492,7 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "restore");
   assert.equal(out.state.cells[0].value, 7);
+  assert.equal(out.default_save_filename, "sudoku.sud");
 }
 
 {
@@ -469,6 +515,7 @@ async function flushDialogPaint() {
       startup_action: "restore",
       startup_status: null,
       startup_save_path: "./current-file",
+      default_save_filename: "sudoku.sud",
       state: {},
       legend: {},
       config: {},
@@ -479,6 +526,7 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "empty");
   assert.match(out.msg ?? "", /startup restore fetch failed/);
+  assert.equal(out.default_save_filename, "sudoku.sud");
 }
 
 {
@@ -516,6 +564,7 @@ async function flushDialogPaint() {
       kind: "empty",
       startup_action: "new",
       startup_status: null,
+      default_save_filename: "sudoku.sud",
       config: { difficulty: 2, log_level: 1 },
       state: {},
       legend: {},
@@ -528,6 +577,7 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "new");
   assert.equal(initDifficulty, 2);
+  assert.equal(out.default_save_filename, "sudoku.sud");
 }
 
 {

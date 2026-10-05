@@ -8,6 +8,7 @@ import {
   startCopyPuzzleOnClick,
   readClipboardText,
   importPuzzle,
+  syncCurrentFileLabels,
 } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 import { applySuccessfulExec, readSelection, renderBoard } from "./board.js";
@@ -76,6 +77,7 @@ export async function handlePastePuzzle(
   }
   session.fileHandle = null;
   session.boundFilename = null;
+  syncCurrentFileLabels(session);
   session.state = result.state;
   session.legend = result.legend;
   session.config = result.config;

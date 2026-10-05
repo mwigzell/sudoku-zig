@@ -52,7 +52,8 @@ const Session = struct {
     host_config_body_buf: [384]u8,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
-        return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, &self.host_config_body_buf) catch return ServeError.System;
+        const startup_name = startupFilename(self.current_file);
+        return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, startup_name, &self.host_config_body_buf) catch return ServeError.System;
     }
 };
 
@@ -108,6 +109,37 @@ fn contentLength(request: []const u8) ?usize {
     return null;
 }
 
+fn headerValue(request: []const u8, key: []const u8) ?[]const u8 {
+    const line_end = std.mem.indexOfPos(u8, request, 0, "\r\n") orelse return null;
+    const headers = request[line_end + 2 ..];
+    var lines = std.mem.splitSequence(u8, headers, "\r\n");
+    while (lines.next()) |line| {
+        if (line.len == 0) break;
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+        const name = std.mem.trim(u8, line[0..colon], " \t");
+        if (!std.ascii.eqlIgnoreCase(name, key)) continue;
+        const value = std.mem.trim(u8, line[colon + 1 ..], " \t");
+        if (value.len == 0) return null;
+        return value;
+    }
+    return null;
+}
+
+fn startupFilename(current_file: ?[]const u8) []const u8 {
+    if (current_file) |p| {
+        const base = std.fs.path.basename(p);
+        if (base.len > 0) return base;
+    }
+    return save_defaults.DEFAULT_SAVE_FILE;
+}
+
+fn validSaveName(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (std.mem.indexOfScalar(u8, name, '/')) |_| return false;
+    if (std.mem.indexOfScalar(u8, name, '\\')) |_| return false;
+    return true;
+}
+
 fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError!void {
     const parsed = std.json.parseFromSlice(SettingsPostBody, std.heap.page_allocator, body, .{}) catch return ServeError.System;
     defer parsed.deinit();
@@ -118,15 +150,22 @@ fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError
     settings_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
 }
 
-fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8) ServeError!void {
+fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8) ServeError!void {
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
 
     settings_store.ensureSettingsDir(io, session.data_dir);
-    const resolved = file_path.resolveSavePath(
-        std.heap.page_allocator,
-        session.data_dir,
-        save_defaults.DEFAULT_SAVE_FILE,
-    ) catch return ServeError.System;
+    const target_name = blk: {
+        if (save_name) |n| {
+            const trimmed = std.mem.trim(u8, n, " \t");
+            if (validSaveName(trimmed)) break :blk trimmed;
+        }
+        if (session.current_file) |existing| {
+            const base = std.fs.path.basename(existing);
+            if (validSaveName(base)) break :blk base;
+        }
+        break :blk save_defaults.DEFAULT_SAVE_FILE;
+    };
+    const resolved = file_path.resolveSavePath(std.heap.page_allocator, session.data_dir, target_name) catch return ServeError.System;
     defer std.heap.page_allocator.free(resolved);
 
     const transport = file_transport.NativeTransport.make(io);
@@ -310,7 +349,8 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     }
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/current-file")) {
         const body = requestBody(request) orelse return ServeError.System;
-        try applyCurrentFilePost(io, session, body);
+        const save_name = headerValue(request, "X-Sudoku-Filename");
+        try applyCurrentFilePost(io, session, body, save_name);
         try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
         return;
     }
@@ -436,6 +476,26 @@ test "web_host: page.html wasm fetch path is served" {
 test "web_host: board digit font-size keeps a minimum floor" {
     // Guard the layout invariant: board digits do not shrink below 0.75rem.
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "font-size: clamp(0.75rem, 45cqmin, 2rem);") != null);
+}
+
+test "web_host: compact layout contract uses group-fit trigger and zero outer shell spacing" {
+    // Compact mode is driven by a group-fit threshold and removes
+    // outer/page + inner/shell spacing to reclaim board area.
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "@media (max-width: calc(26rem + 2px))") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "padding: 0;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "justify-content: space-between;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "width: 100dvw;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "position: sticky;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "top: env(safe-area-inset-top, 0px);") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "z-index: 9;") != null);
+}
+
+test "web_host: current file visibility contract exposes menu-bar filename slot" {
+    // Filename-only label lives in menu bar and stays right aligned.
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "id=\"current-file-desktop\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "margin-left: auto;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "min-width: 8ch;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "#current-file-desktop {\n        display: none;") == null);
 }
 
 test "web_host: route map resolves every served path" {
@@ -599,7 +659,7 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
 
     const body = "SUD0 v1 sample";
-    try applyCurrentFilePost(io, &session, body);
+    try applyCurrentFilePost(io, &session, body, null);
     try std.testing.expect(session.has_current_file);
     try std.testing.expect(session.current_file != null);
     const expected = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, save_defaults.DEFAULT_SAVE_FILE });
@@ -620,6 +680,73 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     ) catch return error.TestFailed;
     defer std.testing.allocator.free(bytes);
     try std.testing.expectEqualSlices(u8, body, bytes);
+}
+
+test "current-file POST supports explicit save name" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .has_current_file = false,
+        .current_file = null,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    try applyCurrentFilePost(io, &session, "SUD0 named", "custom-save.sud");
+    try std.testing.expect(session.current_file != null);
+    try std.testing.expect(std.mem.endsWith(u8, session.current_file.?, "/custom-save.sud"));
+}
+
+test "host-config default_save_filename follows persisted current_file basename" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .has_current_file = false,
+        .current_file = null,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    try applyCurrentFilePost(io, &session, "SUD0 named", "my-save.sud");
+    const body = try session.hostConfigBody();
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"default_save_filename\":\"my-save.sud\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"startup_save_path\":\"/current-file\"") != null);
+}
+
+test "current-file POST without explicit name reuses existing current_file basename" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .has_current_file = false,
+        .current_file = null,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    try applyCurrentFilePost(io, &session, "SUD0 first", "chosen-name.sud");
+    const first = try std.heap.page_allocator.dupe(u8, session.current_file.?);
+    defer std.heap.page_allocator.free(first);
+
+    try applyCurrentFilePost(io, &session, "SUD0 second", null);
+    try std.testing.expectEqualStrings(first, session.current_file.?);
 }
 
 test "web_host: host-config body reflects active host Config" {

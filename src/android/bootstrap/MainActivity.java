@@ -3,6 +3,7 @@ package com.wigzell.sudoku_zig;
 import android.app.Activity;
 import android.content.Intent;
 import android.database.Cursor;
+import android.provider.DocumentsContract;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
@@ -225,6 +226,18 @@ public final class MainActivity extends Activity {
         } finally {
             if (cursor != null) cursor.close();
         }
+        try {
+            final String docId = DocumentsContract.getDocumentId(uri);
+            if (docId != null) {
+                final int sep = docId.lastIndexOf(':');
+                final String tail = sep >= 0 ? docId.substring(sep + 1) : docId;
+                if (tail != null && !tail.isEmpty()) return tail;
+            }
+        } catch (RuntimeException ignored) {
+            // Non-document URI or provider does not expose a document ID.
+        }
+        final String segment = uri.getLastPathSegment();
+        if (segment != null && !segment.isEmpty()) return segment;
         return fallback;
     }
 

@@ -10,6 +10,9 @@ import {
   exportPuzzle,
   applyEventStatus,
   clearEventStatus,
+  CURRENT_FILE_FALLBACK,
+  persistCurrentFileSnapshot,
+  syncCurrentFileLabels,
   showErrorModal,
   waitForStatusPaint,
 } from "./shell.js";
@@ -49,7 +52,7 @@ export function filePickerStartIn(session) {
 function suggestedSaveFilename(session) {
   const name = session?.default_save_filename;
   if (typeof name === "string" && name.length > 0) return name;
-  throw new Error("missing default_save_filename in session");
+  return CURRENT_FILE_FALLBACK;
 }
 
 export const sudFilePickerTypes = [
@@ -86,6 +89,7 @@ export function refreshSession(
   session.config = config;
   selection.deselect();
   applyEventStatus(statusEl, { ok: true, msg: eventMsg });
+  syncCurrentFileLabels(session);
   menuBar.sync();
   onViewRefresh?.();
 }
@@ -370,6 +374,13 @@ export function wireFileMenu(
       { download },
     );
     if (saved.ok) {
+      session.boundFilename = saved.filename;
+      const mirrored = await persistCurrentFileSnapshot(game, globalThis.fetch, saved.filename);
+      if (!mirrored.ok) {
+        fail(mirrored);
+        return;
+      }
+      syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
     } else if (!saved.ok && !saved.cancelled) {
       fail(saved);
@@ -385,6 +396,13 @@ export function wireFileMenu(
     }
     const saved = await persistBytes(result.bytes, session, suggestedSaveFilename(session), { saveAs: true, download });
     if (saved.ok) {
+      session.boundFilename = saved.filename;
+      const mirrored = await persistCurrentFileSnapshot(game, globalThis.fetch, saved.filename);
+      if (!mirrored.ok) {
+        fail(mirrored);
+        return;
+      }
+      syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
     } else if (!saved.ok && !saved.cancelled) {
       fail(saved);
@@ -479,4 +497,6 @@ export function wireFileMenu(
       fail(saved);
     }
   });
+
+  syncCurrentFileLabels(session);
 }
