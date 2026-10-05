@@ -8,6 +8,7 @@ const cli = @import("native/cli.zig");
 const settings_store = @import("settings_store.zig");
 const path = @import("native/shell/path.zig");
 const startup_policy = @import("startup_policy.zig");
+const save_defaults = @import("save_defaults.zig");
 
 /// View/theme fields the host wire carries alongside difficulty and log level.
 pub fn configFromHostWire(
@@ -67,7 +68,7 @@ pub fn writeHostStartupJsonWithPolicy(
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"startup_action\":\"{s}\",\"startup_save_path\":{f}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"default_save_filename\":\"{s}\",\"startup_action\":\"{s}\",\"startup_save_path\":{f}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
@@ -77,6 +78,7 @@ pub fn writeHostStartupJsonWithPolicy(
             startup.auto_restore,
             startup.auto_new,
             startup.auto_save,
+            save_defaults.DEFAULT_SAVE_FILE,
             startup_action,
             std.json.fmt(startup_save_path, .{}),
         },
@@ -181,7 +183,7 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
     var buf: [256]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"startup_action\":\"new\",\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"default_save_filename\":\"sudoku_save.sud\",\"startup_action\":\"new\",\"startup_save_path\":null}",
         json,
     );
 }
@@ -202,7 +204,7 @@ test "host startup JSON matches Config wire fields" {
     var buf: [256]u8 = undefined;
     const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"startup_action\":\"idle\",\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"default_save_filename\":\"sudoku_save.sud\",\"startup_action\":\"idle\",\"startup_save_path\":null}",
         json,
     );
 }

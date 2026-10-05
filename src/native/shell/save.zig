@@ -3,8 +3,9 @@ const std = @import("std");
 const game_engine = @import("../../engine/game_engine.zig");
 const save_as_command = @import("save_as.zig");
 const file_transport = @import("file_transport.zig");
+const save_defaults = @import("../../save_defaults.zig");
 
-pub const DEFAULT_SAVE_FILE = "sudoku_save.sud";
+pub const DEFAULT_SAVE_FILE = save_defaults.DEFAULT_SAVE_FILE;
 
 pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: []const u8) game_engine.Event {
     return save_as_command.execute(engine, transport, path);

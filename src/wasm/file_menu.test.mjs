@@ -9,7 +9,6 @@ import {
   wireFileMenu,
   wireDifficultyDialog,
   DIFFICULTIES,
-  DEFAULT_SAVE_FILENAME,
   filePickerStartIn,
 } from "./file_menu.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
@@ -121,6 +120,7 @@ function makeRenderElement() {
   const session = {
     legend: { new: true, open: true, save: true, save_as: true },
     state: { cells: [] },
+    default_save_filename: "host-default.sud",
   };
   let downloaded = null;
   const game = {
@@ -186,7 +186,7 @@ function makeRenderElement() {
   assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
   controls.save.click();
   assert.deepEqual([...downloaded.bytes], [9, 9, 9]);
-  assert.equal(downloaded.name, DEFAULT_SAVE_FILENAME);
+  assert.equal(downloaded.name, "host-default.sud");
 }
 
 {
@@ -466,13 +466,48 @@ function makeRenderElement() {
 {
   let downloaded = null;
   const session = {};
-  const out = await persistBytes(new Uint8Array([4, 5]), session, DEFAULT_SAVE_FILENAME, {
+  const out = await persistBytes(new Uint8Array([4, 5]), session, "sudoku_save.sud", {
     download(bytes, name) {
       downloaded = { bytes, name };
     },
   });
   assert.equal(out.ok, true);
   assert.deepEqual([...downloaded.bytes], [4, 5]);
+}
+
+{
+  let last = null;
+  const out = await persistBytes(new Uint8Array([9, 8, 7]), {}, "android.sud", {
+    bridge: {
+      async saveSudokuFile(base64, suggestedName, saveAs) {
+        last = { base64, suggestedName, saveAs };
+        return { ok: true, name: "picked.sud" };
+      },
+    },
+    win: {},
+    download() {
+      throw new Error("download fallback must not run");
+    },
+  });
+  assert.equal(out.ok, true);
+  assert.equal(out.filename, "picked.sud");
+  assert.equal(last.suggestedName, "android.sud");
+  assert.equal(last.saveAs, false);
+}
+
+{
+  const out = await persistBytes(new Uint8Array([1]), {}, "android.sud", {
+    saveAs: true,
+    bridge: {
+      async saveSudokuFile(_base64, _suggestedName, saveAs) {
+        assert.equal(saveAs, true);
+        return { ok: false, cancelled: true };
+      },
+    },
+    win: {},
+  });
+  assert.equal(out.ok, false);
+  assert.equal(out.cancelled, true);
 }
 
 {
@@ -491,7 +526,8 @@ function makeRenderElement() {
     },
   };
   const bytes = new Uint8Array([7]);
-  const saved = await persistBytes(bytes, session, DEFAULT_SAVE_FILENAME, {
+  const saved = await persistBytes(bytes, session, "sudoku_save.sud", {
+    // Suggested name comes from caller when no host-provided session default is present.
     saveAs: false,
     win: { showSaveFilePicker: async () => { throw new Error("no picker"); } },
     download() { throw new Error("no download"); },
@@ -524,6 +560,42 @@ function makeRenderElement() {
   assert.equal(picked.ok, true);
   assert.equal(picked.name, "picked.sud");
   assert.deepEqual([...picked.bytes], [8, 8]);
+}
+
+{
+  const bytes = new Uint8Array([2, 4, 6, 8]);
+  const base64 = Buffer.from(bytes).toString("base64");
+  const doc = {
+    defaultView: {
+      AndroidFileBridge: {
+        async openSudokuFile() {
+          return { ok: true, name: "bridge.sud", base64 };
+        },
+      },
+    },
+    createElement() {
+      throw new Error("input fallback should not run");
+    },
+  };
+  const picked = await pickBytes(doc, {});
+  assert.equal(picked.ok, true);
+  assert.equal(picked.name, "bridge.sud");
+  assert.deepEqual([...picked.bytes], [...bytes]);
+}
+
+{
+  const doc = {
+    defaultView: {
+      AndroidFileBridge: {
+        async openSudokuFile() {
+          return { ok: false, cancelled: true };
+        },
+      },
+    },
+  };
+  const picked = await pickBytes(doc, {});
+  assert.equal(picked.ok, false);
+  assert.equal(picked.cancelled, true);
 }
 
 

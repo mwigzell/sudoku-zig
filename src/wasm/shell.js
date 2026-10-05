@@ -165,6 +165,7 @@ export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
   "auto_restore",
   "auto_new",
   "auto_save",
+  "default_save_filename",
 ];
 
 export function assertWebBootConfig(config, label = "boot.config") {
@@ -260,6 +261,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     legend: game.getLegend(),
     config: game.getConfig(),
     msg: boot.msg ?? null,
+    default_save_filename: hostCfg.default_save_filename,
     startup_action: hostCfg.startup_action ?? "idle",
     startup_save_path: hostCfg.startup_save_path ?? null,
   };

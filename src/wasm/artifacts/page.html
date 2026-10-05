@@ -782,6 +782,7 @@
         state: ready.state,
         legend: ready.legend,
         config: ready.config,
+        default_save_filename: ready.default_save_filename,
       };
       renderBoard(boardEl, session.state);
       if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {

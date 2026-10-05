@@ -307,6 +307,7 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    default_save_filename: "sudoku_save.sud",
     startup_action: "new",
   };
   const game = {
@@ -339,6 +340,7 @@ async function flushDialogPaint() {
         auto_restore: false,
         auto_new: false,
         auto_save: false,
+        default_save_filename: "sudoku_save.sud",
       };
     },
     deserialize() {
@@ -364,6 +366,7 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    default_save_filename: "sudoku_save.sud",
     startup_action: "idle",
   };
   const game = {
@@ -531,6 +534,7 @@ async function flushDialogPaint() {
       auto_restore: false,
       auto_new: false,
       auto_save: false,
+      default_save_filename: "sudoku_save.sud",
     };
     delete cfg[key];
     assert.throws(() => assertWebBootConfig(cfg), new RegExp(`missing ${key}`));
