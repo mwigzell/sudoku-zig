@@ -116,13 +116,14 @@ fn wasmPlayAbortCheck(_: ?*anyopaque) bool {
 }
 
 /// Generate a puzzle line off the main engine (Web Worker entry).
-export fn generatePuzzle(difficulty: u32, log_level: u32) callconv(.c) u32 {
+export fn generatePuzzle(difficulty: u32, log_level: u32, entropy: u32) callconv(.c) u32 {
     const out = outBuffer();
     const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
         return exportError(out, "invalid wire config");
     };
 
     logger.min_level = wire_cfg.log_level;
+    puzzle_gen.PuzzleGen.addEntropy(@as(u64, entropy));
 
     gen_abort_requested = false;
     if (builtin.cpu.arch == .wasm32) {

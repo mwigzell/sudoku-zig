@@ -1,6 +1,6 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
-import { applyEventStatus, applyExecResult } from "./shell.js";
+import { applyEventStatus, applyExecResult, persistCurrentFileSnapshot } from "./shell.js";
 
 export { applyEventStatus };
 
@@ -361,6 +361,11 @@ export function handlePlayKey(
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
   session.state = result.state;
   session.legend = game.getLegend();
+  if (session.config?.auto_save === true) {
+    void persistCurrentFileSnapshot(game).then((saved) => {
+      if (!saved.ok) applyExecResult(statusEl, errorModal, saved);
+    });
+  }
   return { handled: true, legend: session.legend };
 }
 

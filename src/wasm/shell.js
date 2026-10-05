@@ -256,6 +256,19 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
   if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
 }
 
+/** Persist current SUD0 snapshot for startup restore (`/current-file`). */
+export async function persistCurrentFileSnapshot(game, fetchFn = globalThis.fetch) {
+  const saved = game.serialize();
+  if (!saved.ok) return saved;
+  const res = await fetchFn("./current-file", {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: saved.bytes,
+  });
+  if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}` };
+  return { ok: true };
+}
+
 /**
  * Host config bootstrap + startup policy payload from /host-config.json.
  */

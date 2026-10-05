@@ -18,6 +18,16 @@ fn runtimeSeed() u64 {
     return seed_salt;
 }
 
+fn mix64(x: u64) u64 {
+    var z = x;
+    z ^= z >> 30;
+    z *%= 0xBF58476D1CE4E5B9;
+    z ^= z >> 27;
+    z *%= 0x94D049BB133111EB;
+    z ^= z >> 31;
+    return z;
+}
+
 /// Test binary only — native play and wasm play both call `generateInto` via `generate`.
 fn useGenerateFixtures() bool {
     return builtin.is_test;
@@ -56,6 +66,11 @@ pub const PuzzleGen = struct {
         play_abort_fn = callback;
         play_abort_ctx = ctx;
         play_aborted = false;
+    }
+
+    /// Mix host-provided entropy into the generator seed stream.
+    pub fn addEntropy(entropy: u64) void {
+        seed_salt ^= mix64(entropy +% 0x9E3779B97F4A7C15);
     }
 
     /// Returns whether the last `generate()` pass was aborted; clears the latch.

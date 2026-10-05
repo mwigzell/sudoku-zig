@@ -21,6 +21,22 @@ const writeBytes = (memory, ptr, bytes) => {
 
 let genProgressListener = null;
 
+function randomSeed32() {
+  try {
+    const c = globalThis.crypto;
+    if (c?.getRandomValues) {
+      const a = new Uint32Array(1);
+      c.getRandomValues(a);
+      return a[0] >>> 0;
+    }
+  } catch {
+    // Fall through to time-based fallback if crypto is unavailable.
+  }
+  const t = Date.now() >>> 0;
+  const r = Math.floor(Math.random() * 0x100000000) >>> 0;
+  return (t ^ r) >>> 0;
+}
+
 export async function loadArtifact(wasmBytes) {
   const imports = {
     env: {
@@ -76,8 +92,9 @@ export async function loadArtifact(wasmBytes) {
     },
 
     /** Run `generateForPlay` in this instance; returns `{ ok, line }` JSON for worker handoff. */
-    generatePuzzle({ difficulty = 1, logLevel = 1 } = {}) {
-      return readJson(exports.generatePuzzle(difficulty, logLevel));
+    generatePuzzle({ difficulty = 1, logLevel = 1, seed } = {}) {
+      const entropy = Number.isInteger(seed) ? (seed >>> 0) : randomSeed32();
+      return readJson(exports.generatePuzzle(difficulty, logLevel, entropy));
     },
 
     /** Ask in-flight `generatePuzzle` to stop at the next progress boundary. */

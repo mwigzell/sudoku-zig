@@ -7,6 +7,8 @@ const config = @import("../config.zig");
 const startup_config = @import("../startup_config.zig");
 const settings_store = @import("../settings_store.zig");
 const file_transport = @import("../native/shell/file_transport.zig");
+const file_path = @import("../native/shell/path.zig");
+const save_defaults = @import("../save_defaults.zig");
 const router_mod = @import("router.zig");
 const embed = @import("embed.zig");
 
@@ -92,6 +94,20 @@ fn requestBody(request: []const u8) ?[]const u8 {
     return request[sep + 4 ..];
 }
 
+fn contentLength(request: []const u8) ?usize {
+    const line_end = std.mem.indexOfPos(u8, request, 0, "\r\n") orelse return null;
+    const headers = request[line_end + 2 ..];
+    var lines = std.mem.splitSequence(u8, headers, "\r\n");
+    while (lines.next()) |line| {
+        if (line.len == 0) break;
+        if (std.ascii.startsWithIgnoreCase(line, "Content-Length:")) {
+            const raw = std.mem.trim(u8, line["Content-Length:".len..], " \t");
+            return std.fmt.parseInt(usize, raw, 10) catch null;
+        }
+    }
+    return null;
+}
+
 fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError!void {
     const parsed = std.json.parseFromSlice(SettingsPostBody, std.heap.page_allocator, body, .{}) catch return ServeError.System;
     defer parsed.deinit();
@@ -100,6 +116,27 @@ fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
     settings_store.ensureSettingsDir(io, session.data_dir);
     settings_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
+}
+
+fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8) ServeError!void {
+    if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
+
+    settings_store.ensureSettingsDir(io, session.data_dir);
+    const resolved = file_path.resolveSavePath(
+        std.heap.page_allocator,
+        session.data_dir,
+        save_defaults.DEFAULT_SAVE_FILE,
+    ) catch return ServeError.System;
+    defer std.heap.page_allocator.free(resolved);
+
+    const transport = file_transport.NativeTransport.make(io);
+    transport.write(transport.context, resolved, body) catch return ServeError.System;
+
+    settings_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, resolved) catch return ServeError.System;
+
+    if (session.current_file) |old| std.heap.page_allocator.free(old);
+    session.current_file = std.heap.page_allocator.dupe(u8, resolved) catch return ServeError.System;
+    session.has_current_file = true;
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -245,12 +282,15 @@ pub fn runWithHostConfig(io: std.Io, bind: BindFn, host_cfg: config.Config, data
 fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.Stream) ServeError!void {
     var in_buf: [8192]u8 = undefined;
     var used: usize = 0;
-    outer: while (used < in_buf.len) {
+    while (used < in_buf.len) {
         var data: [1][]u8 = .{in_buf[used..]};
         const n = client.read(io, &data) catch return ServeError.System;
         if (n == 0) break;
         used += n;
-        if (std.mem.indexOfPos(u8, in_buf[0..used], 0, "\r\n\r\n") != null) break :outer;
+        const header_end = std.mem.indexOfPos(u8, in_buf[0..used], 0, "\r\n\r\n") orelse continue;
+        const header_bytes = in_buf[0 .. header_end + 4];
+        const body_len = contentLength(header_bytes) orelse 0;
+        if (used >= header_end + 4 + body_len) break;
     }
 
     const request = in_buf[0..used];
@@ -266,6 +306,12 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         const body = requestBody(request) orelse return ServeError.System;
         try applySettingsPost(io, session, body);
         try writeFull(&w.interface, "204 No Content", "application/json", "");
+        return;
+    }
+    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/current-file")) {
+        const body = requestBody(request) orelse return ServeError.System;
+        try applyCurrentFilePost(io, session, body);
+        try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
         return;
     }
     if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, "/current-file")) {
@@ -463,6 +509,13 @@ test "requestBody returns payload bytes after header separator" {
     try std.testing.expectEqualStrings("{\"theme\":1}", body);
 }
 
+test "contentLength parses header value case-insensitively" {
+    const req =
+        "POST /current-file HTTP/1.1\r\nHost: localhost\r\ncontent-length: 12\r\n\r\nhello world!";
+    const len = contentLength(req).?;
+    try std.testing.expectEqual(@as(usize, 12), len);
+}
+
 test "applySettingsPost returns System on invalid JSON" {
     var session = Session{
         .host_config = config.Config.default(),
@@ -522,6 +575,46 @@ test "settings POST JSON patch is written to settings.json on disk" {
     try std.testing.expect(loaded.auto_restore);
     try std.testing.expect(loaded.auto_new);
     try std.testing.expect(loaded.auto_save);
+}
+
+test "current-file POST writes startup snapshot and updates current_file pointer" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .has_current_file = false,
+        .current_file = null,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    const body = "SUD0 v1 sample";
+    try applyCurrentFilePost(io, &session, body);
+    try std.testing.expect(session.has_current_file);
+    try std.testing.expect(session.current_file != null);
+    const expected = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, save_defaults.DEFAULT_SAVE_FILE });
+    defer std.testing.allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, session.current_file.?);
+
+    const loaded_ptr = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (loaded_ptr) |p| std.testing.allocator.free(p);
+    try std.testing.expect(loaded_ptr != null);
+    try std.testing.expectEqualStrings(expected, loaded_ptr.?);
+
+    const bytes = std.Io.Dir.readFileAlloc(
+        std.Io.Dir.cwd(),
+        io,
+        loaded_ptr.?,
+        std.testing.allocator,
+        std.Io.Limit.unlimited,
+    ) catch return error.TestFailed;
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expectEqualSlices(u8, body, bytes);
 }
 
 test "web_host: host-config body reflects active host Config" {
