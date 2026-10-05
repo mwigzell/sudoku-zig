@@ -7,7 +7,10 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
 import android.util.Base64;
+import android.util.Log;
 import android.widget.Toast;
+import android.webkit.ConsoleMessage;
+import android.webkit.WebChromeClient;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -24,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public final class MainActivity extends Activity {
+    private static final String TAG = "SudokuAndroid";
     private static final int REQUEST_OPEN_DOCUMENT = 2001;
     private static final int REQUEST_CREATE_DOCUMENT = 2002;
     private static final int PICKER_TIMEOUT_SECONDS = 60;
@@ -50,6 +54,17 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 injectBridgeShim();
+            }
+        });
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                if (message == null) return true;
+                Log.d(
+                    TAG,
+                    "JS console: " + message.message() + " @ " + message.sourceId() + ":" + message.lineNumber()
+                );
+                return true;
             }
         });
 
@@ -99,7 +114,14 @@ public final class MainActivity extends Activity {
             "openSudokuFile:function(){" +
             "return JSON.parse(window.__SudokuAndroidBridge.openSudokuFile());" +
             "}" +
-            "};";
+            "};" +
+            "window.addEventListener('error',function(e){" +
+            "window.__SudokuAndroidBridge.logJsError(String((e&&e.message)||'unknown js error'),String((e&&e.filename)||''),Number((e&&e.lineno)||0),Number((e&&e.colno)||0));" +
+            "});" +
+            "window.addEventListener('unhandledrejection',function(e){" +
+            "var reason=(e&&e.reason!=null)?String(e.reason):'unhandled rejection';" +
+            "window.__SudokuAndroidBridge.logJsError(reason,'promise',0,0);" +
+            "});";
         webView.evaluateJavascript(shim, null);
     }
 
@@ -295,6 +317,11 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public String openSudokuFile() {
             return openViaPicker();
+        }
+
+        @JavascriptInterface
+        public void logJsError(String message, String source, int line, int column) {
+            Log.e(TAG, "JS error: " + message + " @ " + source + ":" + line + ":" + column);
         }
     }
 
