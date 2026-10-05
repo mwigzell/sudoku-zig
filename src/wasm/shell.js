@@ -165,7 +165,6 @@ export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
   "auto_restore",
   "auto_new",
   "auto_save",
-  "default_save_filename",
 ];
 
 export function assertWebBootConfig(config, label = "boot.config") {
@@ -176,6 +175,17 @@ export function assertWebBootConfig(config, label = "boot.config") {
     if (config[key] === undefined) {
       throw new Error(`${label}: missing ${key}`);
     }
+  }
+}
+
+/** Required keys from `/host-config.json` before engine bootstrap. */
+export function assertHostStartupConfig(config, label = "host-config") {
+  assertWebBootConfig(config, label);
+  if (config.default_save_filename === undefined) {
+    throw new Error(`${label}: missing default_save_filename`);
+  }
+  if (config.startup_status === undefined) {
+    throw new Error(`${label}: missing startup_status`);
   }
 }
 
@@ -251,6 +261,7 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
  */
 export async function initializeWebSession(game, { fetchFn } = {}) {
   const hostCfg = await fetchHostStartupConfig(fetchFn);
+  assertHostStartupConfig(hostCfg);
   const boot = bootstrapEngineFromHostConfig(game, hostCfg);
   if (!boot.ok) return boot;
 
@@ -263,6 +274,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     msg: boot.msg ?? null,
     default_save_filename: hostCfg.default_save_filename,
     startup_action: hostCfg.startup_action ?? "idle",
+    startup_status: hostCfg.startup_status ?? null,
     startup_save_path: hostCfg.startup_save_path ?? null,
   };
 }
@@ -323,7 +335,7 @@ export async function offerInitialNewGame(
   if (boot.startup_action === "idle") {
     return {
       ...boot,
-      msg: boot.msg ?? null,
+      msg: boot.startup_status ?? null,
     };
   }
 

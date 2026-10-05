@@ -56,7 +56,7 @@ pub fn run(io: std.Io, gpa: std.mem.Allocator, cfg: config.Config, data_dir: []c
         }
     }
 
-    if (!startup.rendered) try game.showGame();
+    if (!startup.rendered) try game.showGameWithStatus(startup.startup_status);
     while (true) if (try game.turn()) break;
 
     log.debug("Ending sudoku game.", .{});

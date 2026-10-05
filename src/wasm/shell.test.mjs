@@ -9,6 +9,7 @@ import {
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
   assertWebBootConfig,
+  assertHostStartupConfig,
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
@@ -309,6 +310,7 @@ async function flushDialogPaint() {
     auto_save: false,
     default_save_filename: "sudoku_save.sud",
     startup_action: "new",
+    startup_status: null,
   };
   const game = {
     bootstrapHostConfig(cfg) {
@@ -340,7 +342,6 @@ async function flushDialogPaint() {
         auto_restore: false,
         auto_new: false,
         auto_save: false,
-        default_save_filename: "sudoku_save.sud",
       };
     },
     deserialize() {
@@ -368,6 +369,7 @@ async function flushDialogPaint() {
     auto_save: false,
     default_save_filename: "sudoku_save.sud",
     startup_action: "idle",
+    startup_status: "Welcome to sudoku-zig! Choose New or Open to play",
   };
   const game = {
     bootstrapHostConfig() {
@@ -389,6 +391,7 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "empty");
   assert.equal(out.startup_action, "idle");
+  assert.equal(out.startup_status, "Welcome to sudoku-zig! Choose New or Open to play");
 }
 
 // ── offerInitialNewGame: action=new runs generation; action=idle remains manual ──
@@ -402,11 +405,12 @@ async function flushDialogPaint() {
       state: {},
       legend: {},
       config: {},
+      startup_status: "Welcome to sudoku-zig! Choose New or Open to play",
     },
     null,
   );
   assert.equal(manual.kind, "empty");
-  assert.equal(manual.msg, null);
+  assert.equal(manual.msg, "Welcome to sudoku-zig! Choose New or Open to play");
 }
 
 {
@@ -431,6 +435,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
+      startup_status: null,
       startup_save_path: "./current-file",
       state: {},
       legend: {},
@@ -462,6 +467,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
+      startup_status: null,
       startup_save_path: "./current-file",
       state: {},
       legend: {},
@@ -509,6 +515,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "new",
+      startup_status: null,
       config: { difficulty: 2, log_level: 1 },
       state: {},
       legend: {},
@@ -539,5 +546,45 @@ async function flushDialogPaint() {
     delete cfg[key];
     assert.throws(() => assertWebBootConfig(cfg), new RegExp(`missing ${key}`));
   }
+}
+
+{
+  const hostCfg = {
+    difficulty: 1,
+    log_level: 1,
+    theme: "dark",
+    show_region: false,
+    warn_solvability: false,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
+    default_save_filename: "sudoku_save.sud",
+    startup_status: null,
+  };
+  delete hostCfg.startup_status;
+  assert.throws(
+    () => assertHostStartupConfig(hostCfg),
+    /missing startup_status/,
+  );
+}
+
+{
+  const hostCfg = {
+    difficulty: 1,
+    log_level: 1,
+    theme: "dark",
+    show_region: false,
+    warn_solvability: false,
+    auto_restore: false,
+    auto_new: false,
+    auto_save: false,
+    default_save_filename: "sudoku_save.sud",
+    startup_status: null,
+  };
+  delete hostCfg.default_save_filename;
+  assert.throws(
+    () => assertHostStartupConfig(hostCfg),
+    /missing default_save_filename/,
+  );
 }
 

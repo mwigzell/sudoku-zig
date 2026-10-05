@@ -13,6 +13,7 @@ const ManifestPath = BootstrapRoot ++ "/AndroidManifest.xml";
 const ResourcePath = BootstrapRoot ++ "/res";
 const JavaSourceMain = BootstrapRoot ++ "/MainActivity.java";
 const JavaSourceJni = BootstrapRoot ++ "/JniHost.java";
+const JniHelpersC = "src/android/jni_helpers.c";
 
 pub fn addAndroidStep(b: *std.Build, deps: struct {
     wasm_emit: *std.Build.Step,
@@ -71,6 +72,9 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         .name = LibName,
         .root_module = lib_mod,
         .linkage = .dynamic,
+    });
+    shared.root_module.addCSourceFile(.{
+        .file = b.path(JniHelpersC),
     });
     shared.setLibCFile(bionicLibCFile(b, sysroot, android_api_level));
     shared.root_module.pic = true;

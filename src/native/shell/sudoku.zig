@@ -46,6 +46,7 @@ pub const Sudoku = struct {
         attempted_restore: bool,
         restore_failed: bool,
         rendered: bool,
+        startup_status: ?[]const u8 = null,
     };
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
@@ -240,7 +241,12 @@ pub const Sudoku = struct {
 
     /// The first screen: the current board + legend.
     pub fn showGame(self: *@This()) Error!void {
-        try self.renderer.render(self.engine.eventBoard(), null, self.regionSelection());
+        return self.showGameWithStatus(null);
+    }
+
+    /// First-screen render variant that allows a startup status line.
+    pub fn showGameWithStatus(self: *@This(), status_msg: ?[]const u8) Error!void {
+        try self.renderer.render(self.engine.eventBoard(), status_msg, self.regionSelection());
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
@@ -264,11 +270,11 @@ pub const Sudoku = struct {
             switch (event) {
                 .ok => {
                     _ = try self.handleEvent(event);
-                    return .{ .attempted_restore = true, .restore_failed = false, .rendered = true };
+                    return .{ .attempted_restore = true, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
                 },
                 .error_msg => |msg| {
                     try self.renderer.showError(msg);
-                    return .{ .attempted_restore = true, .restore_failed = true, .rendered = false };
+                    return .{ .attempted_restore = true, .restore_failed = true, .rendered = false, .startup_status = startup_policy.statusForAction(decision.action) };
                 },
             }
         }
@@ -276,10 +282,10 @@ pub const Sudoku = struct {
         if (decision.action == .new) {
             const event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
             _ = try self.handleEvent(event);
-            return .{ .attempted_restore = false, .restore_failed = false, .rendered = true };
+            return .{ .attempted_restore = false, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
         }
 
-        return .{ .attempted_restore = false, .restore_failed = false, .rendered = false };
+        return .{ .attempted_restore = false, .restore_failed = false, .rendered = false, .startup_status = startup_policy.statusForAction(decision.action) };
     }
 
     /// Release the engine and native transport session state.
@@ -301,14 +307,16 @@ const DeterministicFacade = struct {
     render_calls: usize = 0,
     legend_calls: usize = 0,
     error_calls: usize = 0,
+    last_render_msg: ?[]const u8 = null,
 
     fn asFacade(self: *@This()) facade_mod.Facade {
         return facade_mod.Make(@This()).make(self);
     }
 
     /// Records render calls from Sudoku.handleEvent for deterministic branch tests.
-    pub fn render(self: *@This(), _: board.Board.BoardView, _: ?[]const u8, _: ?facade_mod.Selection) !void {
+    pub fn render(self: *@This(), _: board.Board.BoardView, msg: ?[]const u8, _: ?facade_mod.Selection) !void {
         self.render_calls += 1;
+        self.last_render_msg = msg;
     }
 
     /// Records legend refreshes from successful event handling.
@@ -1383,6 +1391,23 @@ test "startup policy: auto_restore false and auto_new false keeps manual startup
     try std.testing.expect(!startup.restore_failed);
     try std.testing.expect(!startup.rendered);
     try std.testing.expectEqualSlices(u8, &before, &after);
+}
+
+test "showGameWithStatus forwards startup status to renderer" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const cfg = test_defaults.testConfigDefaults();
+    var facade_impl = DeterministicFacade{ .steps = &[_]command.ParseCommandResult{} };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    try app.showGameWithStatus("engine ready");
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.render_calls);
+    try std.testing.expectEqualStrings("engine ready", facade_impl.last_render_msg.?);
 }
 
 test "manual startup does not print generation progress when both auto flags are false" {

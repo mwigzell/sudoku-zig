@@ -62,13 +62,14 @@ pub fn writeHostStartupJsonWithPolicy(
         .new => "new",
         .idle => "idle",
     };
+    const startup_status = startup_policy.statusForAction(decision.action);
     const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
         .light => "light",
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"default_save_filename\":\"{s}\",\"startup_action\":\"{s}\",\"startup_save_path\":{f}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"default_save_filename\":\"{s}\",\"startup_action\":\"{s}\",\"startup_status\":{f},\"startup_save_path\":{f}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
@@ -80,6 +81,7 @@ pub fn writeHostStartupJsonWithPolicy(
             startup.auto_save,
             save_defaults.DEFAULT_SAVE_FILE,
             startup_action,
+            std.json.fmt(startup_status, .{}),
             std.json.fmt(startup_save_path, .{}),
         },
     );
@@ -180,10 +182,10 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
     try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, on_disk);
 
     const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
-    var buf: [256]u8 = undefined;
+    var buf: [384]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"default_save_filename\":\"sudoku_save.sud\",\"startup_action\":\"new\",\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_action\":\"new\",\"startup_status\":null,\"startup_save_path\":null}",
         json,
     );
 }
@@ -201,10 +203,10 @@ test "host startup JSON matches Config wire fields" {
         .auto_save = true,
     };
 
-    var buf: [256]u8 = undefined;
+    var buf: [384]u8 = undefined;
     const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"default_save_filename\":\"sudoku_save.sud\",\"startup_action\":\"idle\",\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_action\":\"idle\",\"startup_status\":\"Welcome to sudoku-zig! Choose New or Open to play\",\"startup_save_path\":null}",
         json,
     );
 }
@@ -214,9 +216,10 @@ test "host startup JSON policy chooses restore when current file exists" {
     var cfg = test_defaults.testConfigDefaults();
     cfg.auto_restore = true;
     cfg.auto_new = false;
-    var buf: [256]u8 = undefined;
+    var buf: [384]u8 = undefined;
     const json = try formatHostStartupJsonWithPolicy(cfg, true, &buf);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_action\":\"restore\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_status\":null") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_save_path\":\"/current-file\"") != null);
 }
 

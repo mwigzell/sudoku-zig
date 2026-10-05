@@ -47,7 +47,7 @@ const Session = struct {
     /// Host-computed startup metadata: web restore depends on capability+path.
     has_current_file: bool,
     current_file: ?[]const u8,
-    host_config_body_buf: [256]u8,
+    host_config_body_buf: [384]u8,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
         return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, &self.host_config_body_buf) catch return ServeError.System;
