@@ -28,7 +28,7 @@ Mutations in session: **`Command` / `exec`** (`set_theme`, `set_region`, `set_wa
 
 ### Startup merge (native and web host)
 
-One pipeline (**`resolveStartupConfig`** / **`startup_config.zig`**):
+One pipeline (**`resolveStartupConfig`** / **`startup/config.zig`**):
 
 1. Load **`settings.json`** from the platform data directory (or defaults if missing/invalid).
 2. Apply **CLI** overrides.
@@ -72,13 +72,13 @@ Single toggle **`warn_solvability`** (default **off**) drives proactive move/loa
 
 - New persisted prefs require: `Config` + `settings.json` schema, engine `exec`/command handler, **both** persistence paths (native save + web POST), and **UI on each supported platform**. Renderer choice is not a persisted pref until product explicitly adds it.
 - **`CONTEXT.md`** WireConfig / glossary should stay aligned with fields JS may read/write; renderer kinds stay off the wasm wire.
-- Contract tests: `settings_store`, `startup_config`, `web_host` POST merge, `host_settings.test.mjs`, glue host bootstrap — extend when adding fields.
+- Contract tests: `settings_store`, `startup/config.zig`, `web_host` POST merge, `host_settings.test.mjs`, glue host bootstrap — extend when adding fields.
 - ADR-0010 wasm boundary remains JSON `init`/`exec`/`getConfig`; this ADR owns **where config comes from at boot** and **how changes return to disk**, not the REPL-shaped shell.
 - ADR-0011 layer table references this ADR for settings ownership rows.
 
 ## References
 
-- `src/config.zig`, `src/settings_store.zig`, `src/startup_config.zig`
+- `src/config.zig`, `src/settings_store.zig`, `src/startup/config.zig`
 - `src/native/shell/sudoku.zig`, `src/native/desktop_web.zig`, `src/web_host/mod.zig`
 - `src/wasm/shell.js` (`initializeWebSession`, `hostSettingsForPersist`, `persistHostSettings`)
 - README — Settings section (data-dir paths)

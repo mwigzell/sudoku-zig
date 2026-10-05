@@ -107,6 +107,10 @@ src/
 ├── command.zig           command vocabulary + Hint/Fill payloads
 ├── event.zig             exec results (.ok / .error_msg)
 ├── solver.zig            backtracking solver (hints, generation, solve-for-me)
+├── startup/              startup config merge + policy + engine bootstrap helpers
+│   ├── config.zig        settings+CLI merge, host startup JSON wiring
+│   ├── policy.zig        shared startup action policy (restore/new/idle)
+│   └── engine.zig        startup GameEngine constructor + logger sync
 ├── puzzle_gen/             live generation + difficulty
 │   ├── mod.zig           PuzzleGen, Difficulty, generate
 │   ├── live.zig          verify-slow property tests

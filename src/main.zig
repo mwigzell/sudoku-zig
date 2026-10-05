@@ -5,7 +5,7 @@ const sudoku = @import("native/shell/sudoku.zig");
 const logger = @import("logger.zig");
 const desktop_web = @import("native/desktop_web.zig");
 const desktop_terminal = @import("native/desktop_terminal.zig");
-const startup_config = @import("startup_config.zig");
+const startup_config = @import("startup/config.zig");
 const shell_path = @import("native/shell/path.zig");
 // Wasm JSON contract tests — not reachable from the native play path (see wasm_entry.zig).
 const wasm_wire = @import("wasm/wire.zig");

@@ -1,9 +1,9 @@
 // Shared startup engine constructor: explicit empty-grid baseline + logger sync.
 const std = @import("std");
-const config = @import("config.zig");
-const logger = @import("logger.zig");
-const game_engine = @import("engine/game_engine.zig");
-const cell = @import("board/cell.zig");
+const config = @import("../config.zig");
+const logger = @import("../logger.zig");
+const game_engine = @import("../engine/game_engine.zig");
+const cell = @import("../board/cell.zig");
 
 fn emptyPuzzleLine() [81]u8 {
     var line: [81]u8 = undefined;

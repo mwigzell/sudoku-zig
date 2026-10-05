@@ -9,7 +9,7 @@ const logger = @import("logger.zig");
 const boundary = @import("wasm/boundary.zig");
 const wire = @import("wasm/wire.zig");
 const config = @import("config.zig");
-const startup_config = @import("startup_config.zig");
+const startup_config = @import("startup/config.zig");
 
 const OutCap = 65536;
 var out_buf: [OutCap]u8 = undefined;

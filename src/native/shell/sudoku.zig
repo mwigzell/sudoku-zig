@@ -9,8 +9,8 @@ const config = @import("../../config.zig");
 const puzzle_gen = @import("../../puzzle_gen/mod.zig");
 const command = @import("../../command.zig");
 const settings_store = @import("../../settings_store.zig");
-const startup_policy = @import("../../startup_policy.zig");
-const startup_engine = @import("../../startup_engine.zig");
+const startup_policy = @import("../../startup/policy.zig");
+const startup_engine = @import("../../startup/engine.zig");
 
 const disambiguate = @import("../ascii/disambiguate.zig");
 const legend = @import("../../renderer/legend.zig");

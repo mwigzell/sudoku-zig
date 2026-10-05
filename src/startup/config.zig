@@ -1,14 +1,14 @@
 // Startup config contract: host-resolved Config (disk + CLI) is what native
 // Sudoku and wasm GameEngine must use — not JS literals or a second default path.
 const std = @import("std");
-const config = @import("config.zig");
-const logger = @import("logger.zig");
-const wire = @import("wasm/wire.zig");
-const cli = @import("native/cli.zig");
-const settings_store = @import("settings_store.zig");
-const path = @import("native/shell/path.zig");
-const startup_policy = @import("startup_policy.zig");
-const save_defaults = @import("save_defaults.zig");
+const config = @import("../config.zig");
+const logger = @import("../logger.zig");
+const wire = @import("../wasm/wire.zig");
+const cli = @import("../native/cli.zig");
+const settings_store = @import("../settings_store.zig");
+const path = @import("../native/shell/path.zig");
+const startup_policy = @import("policy.zig");
+const save_defaults = @import("../save_defaults.zig");
 
 /// View/theme fields the host wire carries alongside difficulty and log level.
 pub fn configFromHostWire(
@@ -167,7 +167,7 @@ test "CLI overrides persist on top of saved settings" {
 }
 
 test "host startup JSON reflects Config loaded from settings.json on disk" {
-    const test_defaults = @import("test/config_defaults.zig");
+    const test_defaults = @import("../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -214,7 +214,7 @@ test "host startup JSON matches Config wire fields" {
 }
 
 test "host startup JSON policy chooses restore when current file exists" {
-    const test_defaults = @import("test/config_defaults.zig");
+    const test_defaults = @import("../test/config_defaults.zig");
     var cfg = test_defaults.testConfigDefaults();
     cfg.auto_restore = true;
     cfg.auto_new = false;
@@ -226,7 +226,7 @@ test "host startup JSON policy chooses restore when current file exists" {
 }
 
 test "CLI-resolved startup config is GameEngine.cfg and logger min_level" {
-    const startup_engine = @import("startup_engine.zig");
+    const startup_engine = @import("engine.zig");
     const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "hard", "-v", "warn" };
     var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
     _ = it.next();
@@ -240,7 +240,7 @@ test "CLI-resolved startup config is GameEngine.cfg and logger min_level" {
 }
 
 test "host wire startup config matches GameEngine.cfg (web host analogue)" {
-    const startup_engine = @import("startup_engine.zig");
+    const startup_engine = @import("engine.zig");
     const startup = try configFromHostWire(
         @backingInt(wire.PlayerDifficulty.hard),
         @backingInt(logger.Severity.warn),
