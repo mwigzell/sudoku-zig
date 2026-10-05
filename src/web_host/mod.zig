@@ -433,6 +433,11 @@ test "web_host: page.html wasm fetch path is served" {
     try std.testing.expect(Router.body(route).len > 0);
 }
 
+test "web_host: board digit font-size keeps a minimum floor" {
+    // Guard the layout invariant: board digits do not shrink below 0.75rem.
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "font-size: clamp(0.75rem, 45cqmin, 2rem);") != null);
+}
+
 test "web_host: route map resolves every served path" {
     const cases = [_]struct { path: []const u8, expected: RouteResult }{
         .{ .path = "/", .expected = .page },
