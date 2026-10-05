@@ -51,12 +51,11 @@ zig-out/bin/sudoku   # interactive game
 zig-out/bin/sudoku --version
 ```
 
-Or run directly: `zig build run` (the 0.17 builder consumes flags after `run`,
-so pass program flags via the built binary).
+Or run directly: `zig build run`.
 
-Web UI: `zig build run -- -r web` or `zig-out/bin/sudoku -r web` (opens or logs a loopback URL).
+Web UI: `zig build web` (or `zig-out/bin/sudoku -r web`) opens/logs a loopback URL.
 
-Android (in progress): no-Gradle APK build with SDK/NDK configured — see [docs/android-ndk.md](docs/android-ndk.md) (`zig build android` → `zig-out/android/sudoku.apk`, `zig build android-lib` → `zig-out/lib/libsudoku_zig.so`).
+Android: no-Gradle APK build with SDK/NDK configured — see [docs/android-ndk.md](docs/android-ndk.md) (`zig build android` → `zig-out/android/sudoku.apk`, `zig build android-lib` → `zig-out/lib/libsudoku_zig.so`).
 
 ## Settings (`settings.json`)
 
@@ -88,11 +87,13 @@ Native **Windows** is tracked in [issue #60](https://github.com/mwigzell/sudoku-
 ## Tests
 
 ```sh
-zig build verify                      # release gate: tests, fmt check, standards, coverage, wasm glue tests
+zig build verify                      # release gate: tests, fmt check, standards, coverage, wasm glue tests (requires kcov)
 zig build test                        # full suite (silent = pass)
 zig build test -Dtest-filter='name'   # single test
 zig build cov                         # kcov coverage report
 ```
+
+`zig build verify` and `zig build cov` require `kcov` on PATH.
 
 Tests use `std.testing.io` for in-process fake I/O — no real terminal
 stdin/stdout is ever touched by the suite.
@@ -118,6 +119,9 @@ src/
 │   ├── mod.zig           bind, accept thread, settings POST
 │   ├── router.zig        path → embedded asset
 │   └── embed.zig         @embedFile wasm/JS/HTML bytes
+├── android/              Android bootstrap + JNI host bridge
+│   ├── jni_host.zig      Android entry bridge into shared web_host runtime
+│   └── bootstrap/        Java activity, manifest, icons, splash resources
 ├── native/
 │   ├── desktop_web.zig   `-r web` entry (web_host + open browser)
 │   ├── desktop_terminal.zig  terminal play entry (Host + Sudoku)
@@ -131,7 +135,7 @@ src/
     ├── boundary.zig      JSON exec + snapshot encoding (ADR-0010)
     ├── wire.zig          shared wire types / cell JSON
     ├── *.js              browser shell (board, menus, file UX, help)
-    └── artifacts/        emitted artifact.wasm, glue.js, page.html
+    └── artifacts/        emitted artifact.wasm, glue.js, page.html, manifest, branding icons
 
 docs/ — ADRs, agent/verify notes. build.zig — native exe, wasm emit, test, verify, cov.
 ```
