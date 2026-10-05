@@ -20,6 +20,14 @@ pub const RouteResult = enum {
     region,
     help,
     settings,
+    site_webmanifest,
+    brand_favicon_16,
+    brand_favicon_32,
+    brand_apple_touch_icon,
+    brand_android_chrome_192,
+    brand_android_chrome_512,
+    brand_splash_mark_256,
+    brand_about_variant_96,
     host_config,
     artifact,
 };
@@ -58,6 +66,14 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/region.js")) return .region;
         if (std.mem.eql(u8, path, "/help.js")) return .help;
         if (std.mem.eql(u8, path, "/settings.js")) return .settings;
+        if (std.mem.eql(u8, path, "/site.webmanifest")) return .site_webmanifest;
+        if (std.mem.eql(u8, path, "/branding/favicon-16x16.png")) return .brand_favicon_16;
+        if (std.mem.eql(u8, path, "/branding/favicon-32x32.png")) return .brand_favicon_32;
+        if (std.mem.eql(u8, path, "/branding/apple-touch-icon.png")) return .brand_apple_touch_icon;
+        if (std.mem.eql(u8, path, "/branding/android-chrome-192x192.png")) return .brand_android_chrome_192;
+        if (std.mem.eql(u8, path, "/branding/android-chrome-512x512.png")) return .brand_android_chrome_512;
+        if (std.mem.eql(u8, path, "/branding/splash-mark-256.png")) return .brand_splash_mark_256;
+        if (std.mem.eql(u8, path, "/branding/about-variant-96.png")) return .brand_about_variant_96;
         if (std.mem.eql(u8, path, "/host-config.json")) return .host_config;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
         return Error.NotFound;
@@ -95,6 +111,14 @@ pub const Router = struct {
             .region => embed.region_js,
             .help => embed.help_js,
             .settings => embed.settings_js,
+            .site_webmanifest => embed.site_webmanifest,
+            .brand_favicon_16 => embed.brand_favicon_16,
+            .brand_favicon_32 => embed.brand_favicon_32,
+            .brand_apple_touch_icon => embed.brand_apple_touch_icon,
+            .brand_android_chrome_192 => embed.brand_android_chrome_192,
+            .brand_android_chrome_512 => embed.brand_android_chrome_512,
+            .brand_splash_mark_256 => embed.brand_splash_mark_256,
+            .brand_about_variant_96 => embed.brand_about_variant_96,
             .host_config => "",
             .artifact => embed.wasm_bytes,
         };
@@ -106,6 +130,8 @@ pub const Router = struct {
             .page => "text/html",
             .artifact => "application/wasm",
             .host_config => "application/json",
+            .site_webmanifest => "application/manifest+json",
+            .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
             .glue, .gen_client, .gen_worker, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
         };
     }

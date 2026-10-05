@@ -473,6 +473,14 @@ test "web_host: page.html wasm fetch path is served" {
     try std.testing.expect(Router.body(route).len > 0);
 }
 
+test "web_host: page.html links branding icons and web manifest routes" {
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "href=\"/branding/favicon-32x32.png\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "href=\"/branding/apple-touch-icon.png\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "href=\"/site.webmanifest\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "id=\"boot-splash\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "id=\"about-artwork\"") != null);
+}
+
 test "web_host: board digit font-size keeps a minimum floor" {
     // Guard the layout invariant: board digits do not shrink below 0.75rem.
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "font-size: clamp(0.75rem, 45cqmin, 2rem);") != null);
@@ -516,6 +524,14 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/region.js", .expected = .region },
         .{ .path = "/help.js", .expected = .help },
         .{ .path = "/settings.js", .expected = .settings },
+        .{ .path = "/site.webmanifest", .expected = .site_webmanifest },
+        .{ .path = "/branding/favicon-16x16.png", .expected = .brand_favicon_16 },
+        .{ .path = "/branding/favicon-32x32.png", .expected = .brand_favicon_32 },
+        .{ .path = "/branding/apple-touch-icon.png", .expected = .brand_apple_touch_icon },
+        .{ .path = "/branding/android-chrome-192x192.png", .expected = .brand_android_chrome_192 },
+        .{ .path = "/branding/android-chrome-512x512.png", .expected = .brand_android_chrome_512 },
+        .{ .path = "/branding/splash-mark-256.png", .expected = .brand_splash_mark_256 },
+        .{ .path = "/branding/about-variant-96.png", .expected = .brand_about_variant_96 },
         .{ .path = "/host-config.json", .expected = .host_config },
         .{ .path = "/artifact.wasm", .expected = .artifact },
     };
@@ -826,6 +842,30 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.settings);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.site_webmanifest);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.brand_favicon_16);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.brand_favicon_32);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.brand_apple_touch_icon);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.brand_android_chrome_192);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.brand_android_chrome_512);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.brand_splash_mark_256);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.brand_about_variant_96);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.host_config);

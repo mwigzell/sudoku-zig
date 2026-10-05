@@ -18,10 +18,8 @@ function makeModal() {
   return {
     el: { hidden: true },
     titleEl: { textContent: "" },
-    logoEl: { textContent: "" },
     summaryEl: { textContent: "" },
     copyrightEl: { textContent: "" },
-    licenceEl: { textContent: "" },
   };
 }
 
@@ -30,10 +28,8 @@ function makeModal() {
   showAboutModal(modal, sampleInfo);
   assert.equal(modal.el.hidden, false);
   assert.equal(modal.titleEl.textContent, sampleInfo.name);
-  assert.equal(modal.logoEl.textContent, sampleInfo.logo.join("\n"));
-  assert.equal(modal.summaryEl.textContent, sampleInfo.summary);
-  assert.equal(modal.copyrightEl.textContent, sampleInfo.copyright);
-  assert.equal(modal.licenceEl.textContent, sampleInfo.licence);
+  assert.equal(modal.summaryEl.textContent, "sudoku-zig 0.1.0 (6737f7)\nbuilt 2026-09-20");
+  assert.equal(modal.copyrightEl.textContent, "© 2026 Mark Wigzell MIT");
 }
 
 {

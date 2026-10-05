@@ -2,11 +2,17 @@
 
 /** Fill and show the About modal from wasm About JSON. */
 export function showAboutModal(modal, info) {
+  const summaryTop =
+    typeof info.name === "string" &&
+    typeof info.version === "string" &&
+    typeof info.commit === "string"
+      ? `${info.name} ${info.version} (${info.commit})`
+      : String(info.summary ?? "");
+  const buildLine =
+    typeof info.build_date === "string" && info.build_date.length > 0 ? `built ${info.build_date}` : "";
   modal.titleEl.textContent = info.name;
-  modal.logoEl.textContent = info.logo.join("\n");
-  modal.summaryEl.textContent = info.summary;
-  modal.copyrightEl.textContent = info.copyright;
-  modal.licenceEl.textContent = info.licence;
+  modal.summaryEl.textContent = buildLine.length > 0 ? `${summaryTop}\n${buildLine}` : summaryTop;
+  modal.copyrightEl.textContent = `${info.copyright} ${info.licence}`;
   modal.el.hidden = false;
 }
 

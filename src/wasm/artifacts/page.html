@@ -5,6 +5,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sudoku</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/branding/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/branding/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/branding/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
   <style>
     :root {
       --page-bg: #16181d;
@@ -246,6 +250,35 @@
       z-index: 10;
     }
 
+    #boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      background: var(--page-bg);
+      color: var(--page-fg);
+    }
+
+    #boot-splash[hidden] {
+      display: none;
+    }
+
+    #boot-splash-logo {
+      width: min(14rem, 62vw);
+      height: auto;
+      image-rendering: auto;
+    }
+
+    #boot-splash-msg {
+      margin: 0;
+      opacity: 0.9;
+      font-size: 0.9375rem;
+    }
+
     #error-modal[hidden],
     #about-modal[hidden],
     #settings-modal[hidden],
@@ -334,7 +367,7 @@
     #generating-modal-actions {
       display: flex;
       gap: 0.5rem;
-      justify-content: center;
+      justify-content: flex-end;
       margin-top: 0.75rem;
     }
 
@@ -385,16 +418,21 @@
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
     }
 
+    .about-dialog {
+      text-align: center;
+    }
+
     #error-modal-msg {
       margin: 0 0 1rem;
       line-height: 1.45;
     }
 
-    #about-logo {
-      margin: 0 0 0.75rem;
-      font-family: ui-monospace, monospace;
-      line-height: 1.2;
-      white-space: pre;
+    #about-artwork {
+      width: 4.5rem;
+      height: 4.5rem;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 0.5rem;
     }
 
     #about-modal-title {
@@ -403,10 +441,13 @@
     }
 
     #about-summary,
-    #about-copyright,
-    #about-licence {
+    #about-copyright {
       margin: 0 0 0.5rem;
       line-height: 1.45;
+    }
+
+    #about-summary {
+      white-space: pre-line;
     }
 
     #settings-modal label {
@@ -435,13 +476,12 @@
       color: var(--status-fg);
     }
 
-    #settings-modal-dismiss {
-      margin-top: 0.5rem;
-    }
-
     #settings-modal-dismiss,
     #about-modal-dismiss,
-    #error-modal-dismiss {
+    #error-modal-dismiss,
+    #new-difficulty-cancel,
+    #generating-modal-cancel,
+    #generating-modal-continue {
       font: inherit;
       padding: 0.375rem 0.875rem;
       border: 1px solid var(--status-border);
@@ -449,6 +489,14 @@
       background: var(--cell-bg);
       color: var(--status-fg);
       cursor: pointer;
+    }
+
+    #settings-modal-dismiss,
+    #about-modal-dismiss,
+    #error-modal-dismiss,
+    #new-difficulty-cancel {
+      display: block;
+      margin: 0.5rem 0 0 auto;
     }
 
     .board-frame {
@@ -614,6 +662,10 @@
   </style>
 </head>
 <body>
+  <div id="boot-splash" role="status" aria-live="polite">
+    <img id="boot-splash-logo" src="/branding/splash-mark-256.png" alt="Sudoku gator mark">
+    <p id="boot-splash-msg">Loading sudoku-zig…</p>
+  </div>
   <main id="app">
     <nav id="menu-bar" role="menubar" aria-label="Application menu">
       <div class="menu" data-menu="file">
@@ -713,11 +765,10 @@
 
   <div id="about-modal" hidden role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
     <div class="about-dialog">
-      <pre id="about-logo"></pre>
+      <img id="about-artwork" src="/branding/about-variant-96.png" alt="Sudoku gator artwork variant">
       <h2 id="about-modal-title"></h2>
       <p id="about-summary"></p>
       <p id="about-copyright"></p>
-      <p id="about-licence"></p>
       <button type="button" id="about-modal-dismiss">OK</button>
     </div>
   </div>
@@ -751,11 +802,32 @@
       const statusBar = document.getElementById("status-bar");
       const errorModal = document.getElementById("error-modal");
       const errorMsg = document.getElementById("error-modal-msg");
+      const bootSplash = document.getElementById("boot-splash");
+      const bootSplashShownAt =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+      const BOOT_SPLASH_MIN_MS = 2000;
+      let bootSplashHidePromise = null;
       const dismiss = document.getElementById("error-modal-dismiss");
       dismiss?.addEventListener("click", () => {
         if (errorModal) errorModal.hidden = true;
       });
+      async function hideBootSplash() {
+        if (bootSplashHidePromise) return bootSplashHidePromise;
+        bootSplashHidePromise = (async () => {
+          const now =
+            typeof performance !== "undefined" && typeof performance.now === "function"
+              ? performance.now()
+              : Date.now();
+          const remaining = Math.max(0, BOOT_SPLASH_MIN_MS - (now - bootSplashShownAt));
+          if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+          if (bootSplash) bootSplash.hidden = true;
+        })();
+        return bootSplashHidePromise;
+      }
       function showBootFailure(message) {
+        void hideBootSplash();
         if (statusBar) {
           statusBar.textContent = message;
           statusBar.className = "error";
@@ -773,6 +845,7 @@
         const msg = r && r.message ? r.message : String(r ?? "load failed");
         showBootFailure(msg);
       });
+      window.__hideSudokuBootSplash = hideBootSplash;
     })();
   </script>
 
@@ -809,10 +882,8 @@
     const aboutModal = {
       el: document.getElementById("about-modal"),
       titleEl: document.getElementById("about-modal-title"),
-      logoEl: document.getElementById("about-logo"),
       summaryEl: document.getElementById("about-summary"),
       copyrightEl: document.getElementById("about-copyright"),
-      licenceEl: document.getElementById("about-licence"),
     };
     wireAboutModal(aboutModal.el, document.getElementById("about-modal-dismiss"));
     const settingsModal = {
@@ -827,6 +898,8 @@
     };
 
     try {
+      // Let the splash paint before kicking off wasm/network work.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
       const res = await fetch("./artifact.wasm");
       if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
       const bytes = new Uint8Array(await res.arrayBuffer());
@@ -938,8 +1011,12 @@
         closeMenus: () => menuBar.closeAll?.(),
         onPersist: persistViewSettings,
       });
+      await globalThis.__hideSudokuBootSplash?.();
+      globalThis.AndroidFileBridge?.notifyWebBootReady?.();
       getPlayGrid(boardEl).focus();
     } catch (err) {
+      await globalThis.__hideSudokuBootSplash?.();
+      globalThis.AndroidFileBridge?.notifyWebBootReady?.();
       const msg = `failed to load wasm: ${err && err.message ? err.message : err}`;
       setStatus(statusBar, msg, { error: true });
       showErrorModal(errorModal, msg);

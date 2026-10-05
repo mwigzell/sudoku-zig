@@ -35,6 +35,16 @@ pub const region_js: []const u8 = @embedFile("../wasm/region.js");
 pub const help_js: []const u8 = @embedFile("../wasm/help.js");
 /// Settings panel (`/settings.js`).
 pub const settings_js: []const u8 = @embedFile("../wasm/settings.js");
+/// Web app manifest (`/site.webmanifest`).
+pub const site_webmanifest: []const u8 = @embedFile("../wasm/artifacts/site.webmanifest");
+/// Web/app icon set and artwork variants (`/branding/*`).
+pub const brand_favicon_16: []const u8 = @embedFile("../wasm/artifacts/branding/favicon-16x16.png");
+pub const brand_favicon_32: []const u8 = @embedFile("../wasm/artifacts/branding/favicon-32x32.png");
+pub const brand_apple_touch_icon: []const u8 = @embedFile("../wasm/artifacts/branding/apple-touch-icon.png");
+pub const brand_android_chrome_192: []const u8 = @embedFile("../wasm/artifacts/branding/android-chrome-192x192.png");
+pub const brand_android_chrome_512: []const u8 = @embedFile("../wasm/artifacts/branding/android-chrome-512x512.png");
+pub const brand_splash_mark_256: []const u8 = @embedFile("../wasm/artifacts/branding/splash-mark-256.png");
+pub const brand_about_variant_96: []const u8 = @embedFile("../wasm/artifacts/branding/about-variant-96.png");
 
 test "embedded wasm artifact is non-empty" {
     try std.testing.expect(wasm_bytes.len > 8);
@@ -102,6 +112,20 @@ test "embedded help.js is non-empty" {
 
 test "embedded settings.js is non-empty" {
     try std.testing.expect(settings_js.len > 0);
+}
+
+test "embedded site.webmanifest is non-empty" {
+    try std.testing.expect(site_webmanifest.len > 0);
+}
+
+test "embedded branding images are non-empty" {
+    try std.testing.expect(brand_favicon_16.len > 0);
+    try std.testing.expect(brand_favicon_32.len > 0);
+    try std.testing.expect(brand_apple_touch_icon.len > 0);
+    try std.testing.expect(brand_android_chrome_192.len > 0);
+    try std.testing.expect(brand_android_chrome_512.len > 0);
+    try std.testing.expect(brand_splash_mark_256.len > 0);
+    try std.testing.expect(brand_about_variant_96.len > 0);
 }
 
 test "embedded wasm artifact starts with the wasm magic header" {

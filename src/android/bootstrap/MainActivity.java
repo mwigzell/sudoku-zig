@@ -4,12 +4,21 @@ import android.app.Activity;
 import android.content.Intent;
 import android.database.Cursor;
 import android.provider.DocumentsContract;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.util.Base64;
 import android.util.Log;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Toast;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
 import android.webkit.JavascriptInterface;
@@ -32,9 +41,12 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_OPEN_DOCUMENT = 2001;
     private static final int REQUEST_CREATE_DOCUMENT = 2002;
     private static final int PICKER_TIMEOUT_SECONDS = 60;
+    private static final long MIN_LAUNCH_SPLASH_MS = 2000L;
     private static final String MIME_ANY = "*/*";
 
     private WebView webView;
+    private View launchSplashView;
+    private long launchSplashShownAtMs;
     private final Object pickerLock = new Object();
     private ActivityResultWaiter openWaiter;
     private ActivityResultWaiter saveWaiter;
@@ -69,8 +81,26 @@ public final class MainActivity extends Activity {
             }
         });
 
+        launchSplashShownAtMs = SystemClock.elapsedRealtime();
+        launchSplashView = makeLaunchSplashView();
+        FrameLayout root = new FrameLayout(this);
+        root.addView(
+            webView,
+            new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        );
+        root.addView(
+            launchSplashView,
+            new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        );
+
         webView.loadUrl("about:blank");
-        setContentView(webView);
+        setContentView(root);
 
         JniHost.startHost(getFilesDir().getAbsolutePath(), new JniHost.ReadyCallback() {
             @Override
@@ -114,6 +144,9 @@ public final class MainActivity extends Activity {
             "}," +
             "openSudokuFile:function(){" +
             "return JSON.parse(window.__SudokuAndroidBridge.openSudokuFile());" +
+            "}," +
+            "notifyWebBootReady:function(){" +
+            "window.__SudokuAndroidBridge.notifyWebBootReady();" +
             "}" +
             "};" +
             "window.addEventListener('error',function(e){" +
@@ -124,6 +157,67 @@ public final class MainActivity extends Activity {
             "window.__SudokuAndroidBridge.logJsError(reason,'promise',0,0);" +
             "});";
         webView.evaluateJavascript(shim, null);
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            dp,
+            getResources().getDisplayMetrics()
+        ));
+    }
+
+    private View makeLaunchSplashView() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(Color.parseColor("#16181d"));
+
+        FrameLayout stack = new FrameLayout(this);
+        FrameLayout.LayoutParams stackParams = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        stackParams.gravity = Gravity.CENTER;
+        overlay.addView(stack, stackParams);
+
+        ImageView mark = new ImageView(this);
+        int splashResId = getResources().getIdentifier("splash_logo", "drawable", getPackageName());
+        if (splashResId != 0) mark.setImageResource(splashResId);
+        FrameLayout.LayoutParams markParams = new FrameLayout.LayoutParams(dpToPx(180), dpToPx(180));
+        markParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        stack.addView(mark, markParams);
+
+        TextView label = new TextView(this);
+        label.setText("Loading sudoku-zig...");
+        label.setTextColor(Color.parseColor("#e6e6e6"));
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        textParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        textParams.topMargin = dpToPx(188);
+        stack.addView(label, textParams);
+        return overlay;
+    }
+
+    private void dismissLaunchSplash() {
+        final View splash = launchSplashView;
+        if (splash == null) return;
+        long elapsed = SystemClock.elapsedRealtime() - launchSplashShownAtMs;
+        long remaining = Math.max(0L, MIN_LAUNCH_SPLASH_MS - elapsed);
+        splash.postDelayed(() -> {
+            final View current = launchSplashView;
+            if (current == null) return;
+            current.animate()
+                .alpha(0f)
+                .setDuration(120)
+                .withEndAction(() -> {
+                    ViewGroup parent = (ViewGroup) current.getParent();
+                    if (parent != null) parent.removeView(current);
+                    launchSplashView = null;
+                })
+                .start();
+        }, remaining);
     }
 
     private static String jsonCancelled() {
@@ -335,6 +429,11 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void logJsError(String message, String source, int line, int column) {
             Log.e(TAG, "JS error: " + message + " @ " + source + ":" + line + ":" + column);
+        }
+
+        @JavascriptInterface
+        public void notifyWebBootReady() {
+            runOnUiThread(() -> dismissLaunchSplash());
         }
     }
 
