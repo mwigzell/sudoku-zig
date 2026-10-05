@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.provider.DocumentsContract;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -179,12 +180,26 @@ public final class MainActivity extends Activity {
         stackParams.gravity = Gravity.CENTER;
         overlay.addView(stack, stackParams);
 
+        View iconPlate = new View(this);
+        GradientDrawable plateBg = new GradientDrawable();
+        plateBg.setShape(GradientDrawable.OVAL);
+        plateBg.setColor(Color.parseColor("#FFFFFF"));
+        iconPlate.setBackground(plateBg);
+        int plateSize = dpToPx(196);
+        FrameLayout.LayoutParams plateParams = new FrameLayout.LayoutParams(plateSize, plateSize);
+        plateParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        stack.addView(iconPlate, plateParams);
+
         ImageView mark = new ImageView(this);
         int splashResId = getResources().getIdentifier("splash_logo", "drawable", getPackageName());
         if (splashResId != 0) mark.setImageResource(splashResId);
+        mark.setScaleX(0.96f);
+        mark.setScaleY(0.96f);
+        mark.setAlpha(0.92f);
         FrameLayout.LayoutParams markParams = new FrameLayout.LayoutParams(dpToPx(180), dpToPx(180));
         markParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         stack.addView(mark, markParams);
+        mark.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(120).start();
 
         TextView label = new TextView(this);
         label.setText("Loading sudoku-zig...");
