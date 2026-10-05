@@ -1,5 +1,6 @@
 // Process entry: resolve startup config, dispatch to the desktop web or terminal entry arm.
 const std = @import("std");
+const config = @import("config.zig");
 const sudoku = @import("native/shell/sudoku.zig");
 const logger = @import("logger.zig");
 const desktop_web = @import("native/desktop_web.zig");
@@ -13,6 +14,12 @@ const settings_store = @import("settings_store.zig");
 const web_host = @import("web_host/mod.zig");
 const open_browser = @import("native/open_browser.zig");
 const android_jni_host = @import("android/jni_host.zig");
+const EntryArm = enum { web, terminal };
+
+fn selectEntryArm(cfg: config.Config) EntryArm {
+    if (cfg.preferred_renderer == .web) return .web;
+    return .terminal;
+}
 
 test {
     _ = .{ sudoku, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, settings_store };
@@ -30,10 +37,22 @@ pub fn main(init: std.process.Init) sudoku.Error!void {
     const data_dir = shell_path.computeDataDir(gpa) catch ".";
     defer if (!std.mem.eql(u8, data_dir, ".")) gpa.free(data_dir);
 
-    if (cfg.preferred_renderer == .web) {
+    if (selectEntryArm(cfg) == .web) {
         desktop_web.run(init.io, cfg, data_dir);
         return;
     }
 
     try desktop_terminal.run(init.io, gpa, cfg, data_dir);
+}
+
+test "selectEntryArm routes web renderer to desktop web entry" {
+    var cfg = config.Config.default();
+    cfg.preferred_renderer = .web;
+    try std.testing.expectEqual(EntryArm.web, selectEntryArm(cfg));
+}
+
+test "selectEntryArm routes non-web renderers to terminal entry" {
+    var cfg = config.Config.default();
+    cfg.preferred_renderer = .ansi;
+    try std.testing.expectEqual(EntryArm.terminal, selectEntryArm(cfg));
 }

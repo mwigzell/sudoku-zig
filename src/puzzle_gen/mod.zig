@@ -386,3 +386,137 @@ test "puzzle_gen: generate uses fixtures in test binary" {
     try std.testing.expectEqualStrings(PuzzleGen.medium(), PuzzleGen.generate(.medium));
     try std.testing.expectEqualStrings(PuzzleGen.hard(), PuzzleGen.generate(.hard));
 }
+
+test "puzzle_gen: encodeProgressWire covers all phases" {
+    const events = [_]GenProgressEvent{
+        .round,
+        .dig_hole,
+        .{ .attempt = .{ .n = 2, .max = 16 } },
+        .{ .strip = .{ .givens = 40, .target = 36 } },
+        .{ .carve = .{ .givens = 35, .target = 30, .step = 7 } },
+        .{ .uniqueness_check = .{ .givens = 28 } },
+    };
+    const expected = [_]struct { phase: u32, a: u32, b: u32 }{
+        .{ .phase = 0, .a = 0, .b = 0 },
+        .{ .phase = 1, .a = 0, .b = 0 },
+        .{ .phase = 2, .a = 2, .b = 16 },
+        .{ .phase = 3, .a = 40, .b = 36 },
+        .{ .phase = 4, .a = 35, .b = 30 },
+        .{ .phase = 5, .a = 28, .b = 0 },
+    };
+    for (events, expected) |ev, want| {
+        const got = encodeProgressWire(ev);
+        try std.testing.expectEqual(want.phase, got.phase);
+        try std.testing.expectEqual(want.a, got.a);
+        try std.testing.expectEqual(want.b, got.b);
+    }
+}
+
+test "puzzle_gen: formatProgressEvent covers all variants" {
+    var buf: [96]u8 = undefined;
+    try std.testing.expectEqualStrings("Generating: new attempt…", formatProgressEvent(.round, &buf).?);
+    try std.testing.expectEqualStrings("Generating: carving clues…", formatProgressEvent(.dig_hole, &buf).?);
+    try std.testing.expectEqualStrings("Generating: try 4/16", formatProgressEvent(.{ .attempt = .{ .n = 4, .max = 16 } }, &buf).?);
+    try std.testing.expectEqualStrings("Generating: 41 givens (target ≤36)", formatProgressEvent(.{ .strip = .{ .givens = 41, .target = 36 } }, &buf).?);
+    try std.testing.expectEqualStrings("Generating: 33 givens → ≤28", formatProgressEvent(.{ .carve = .{ .givens = 33, .target = 28, .step = 9 } }, &buf).?);
+    try std.testing.expectEqualStrings(
+        "Generating: checking uniqueness (27 givens)…",
+        formatProgressEvent(.{ .uniqueness_check = .{ .givens = 27 } }, &buf).?,
+    );
+}
+
+test "puzzle_gen: countGivens counts digits and ignores dot/zero" {
+    try std.testing.expectEqual(@as(usize, 4), countGivens("1.2030004"));
+    try std.testing.expectEqual(@as(usize, 0), countGivens("...000..."));
+}
+
+fn testProgressSink(_: GenProgressEvent, ctx: ?*anyopaque) void {
+    if (ctx) |p| {
+        const n: *usize = @ptrCast(@alignCast(p));
+        n.* += 1;
+    }
+}
+
+fn testRoundEventCounter(event: GenProgressEvent, ctx: ?*anyopaque) void {
+    const n: *usize = @ptrCast(@alignCast(ctx.?));
+    switch (event) {
+        .round => n.* += 1,
+        else => {},
+    }
+}
+
+fn testAbortNow(_: ?*anyopaque) bool {
+    return true;
+}
+
+fn testAbortAfterOne(ctx: ?*anyopaque) bool {
+    const n: *usize = @ptrCast(@alignCast(ctx.?));
+    n.* += 1;
+    return n.* >= 2;
+}
+
+fn testAbortAfterTwo(ctx: ?*anyopaque) bool {
+    const n: *usize = @ptrCast(@alignCast(ctx.?));
+    n.* += 1;
+    return n.* >= 3;
+}
+
+test "puzzle_gen: generateInto default returns legacy fixture line" {
+    var out: [81]u8 = undefined;
+    var prng = std.Random.DefaultPrng.init(12345);
+    try PuzzleGen.generateInto(.default, prng.random(), &out, null, null);
+    try std.testing.expectEqualStrings(default_str, &out);
+}
+
+test "puzzle_gen: generateInto and dig-hole honor cooperative abort quickly" {
+    var out_fast: [81]u8 = undefined;
+    var out_dig: [81]u8 = undefined;
+    var prng_fast = std.Random.DefaultPrng.init(42);
+    var prng_dig = std.Random.DefaultPrng.init(1337);
+
+    PuzzleGen.setPlayAbort(testAbortNow, null);
+    const fast = PuzzleGen.generateInto(.hard, prng_fast.random(), &out_fast, null, null);
+    try std.testing.expectError(error.GenAborted, fast);
+
+    const dig = PuzzleGen.generateIntoDigHole(.hard, prng_dig.random(), &out_dig, null, null);
+    try std.testing.expectError(error.GenAborted, dig);
+    try std.testing.expect(PuzzleGen.takePlayAborted());
+    PuzzleGen.setPlayAbort(null, null);
+}
+
+test "puzzle_gen: reportProgress and play abort paths latch aborted state" {
+    var calls: usize = 0;
+    PuzzleGen.setPlayAbort(testAbortNow, null);
+    try std.testing.expectError(error.GenAborted, reportProgress(testProgressSink, @ptrCast(&calls), .round));
+    try std.testing.expect(PuzzleGen.takePlayAborted());
+
+    calls = 0;
+    var abort_polls: usize = 0;
+    PuzzleGen.setPlayAbort(testAbortAfterOne, @ptrCast(&abort_polls));
+    try std.testing.expectError(
+        error.GenAborted,
+        reportProgress(testProgressSink, @ptrCast(&calls), .{ .attempt = .{ .n = 1, .max = 2 } }),
+    );
+    try std.testing.expectEqual(@as(usize, 1), calls);
+    try std.testing.expect(PuzzleGen.takePlayAborted());
+    try std.testing.expect(!PuzzleGen.takePlayAborted());
+    PuzzleGen.setPlayAbort(null, null);
+}
+
+test "puzzle_gen: reportProgress without callback returns when abort is disabled" {
+    PuzzleGen.setPlayAbort(null, null);
+    try reportProgress(null, null, .dig_hole);
+}
+
+test "puzzle_gen: generateForPlay reports round and exits on cooperative abort" {
+    var out: [81]u8 = undefined;
+    var rounds: usize = 0;
+    var abort_polls: usize = 0;
+    PuzzleGen.setPlayProgress(testRoundEventCounter, @ptrCast(&rounds));
+    PuzzleGen.setPlayAbort(testAbortAfterTwo, @ptrCast(&abort_polls));
+    PuzzleGen.generateForPlay(.hard, &out);
+    try std.testing.expect(rounds >= 1);
+    try std.testing.expect(PuzzleGen.takePlayAborted());
+    PuzzleGen.setPlayProgress(null, null);
+    PuzzleGen.setPlayAbort(null, null);
+}

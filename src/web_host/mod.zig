@@ -387,68 +387,30 @@ test "web_host: page.html wasm fetch path is served" {
     try std.testing.expect(Router.body(route).len > 0);
 }
 
-test "web_host: route \"/\" to the page" {
-    try std.testing.expectEqual(RouteResult.page, try Router.route("/"));
-}
-
-test "web_host: route \"/glue.js\" to the glue" {
-    try std.testing.expectEqual(RouteResult.glue, try Router.route("/glue.js"));
-}
-
-test "web_host: route \"/gen_client.js\" to the gen client module" {
-    try std.testing.expectEqual(RouteResult.gen_client, try Router.route("/gen_client.js"));
-}
-
-test "web_host: route \"/gen_worker.js\" to the gen worker module" {
-    try std.testing.expectEqual(RouteResult.gen_worker, try Router.route("/gen_worker.js"));
-}
-
-test "web_host: route \"/shell.js\" to the shell" {
-    try std.testing.expectEqual(RouteResult.shell, try Router.route("/shell.js"));
-}
-
-test "web_host: route \"/board.js\" to the board module" {
-    try std.testing.expectEqual(RouteResult.board, try Router.route("/board.js"));
-}
-
-test "web_host: route \"/menu.js\" to the menu module" {
-    try std.testing.expectEqual(RouteResult.menu, try Router.route("/menu.js"));
-}
-
-test "web_host: route \"/menu_bar.js\" to the menu bar module" {
-    try std.testing.expectEqual(RouteResult.menu_bar, try Router.route("/menu_bar.js"));
-}
-
-test "web_host: route \"/theme.js\" to the theme module" {
-    try std.testing.expectEqual(RouteResult.theme, try Router.route("/theme.js"));
-}
-
-test "web_host: route \"/file_menu.js\" to the file menu module" {
-    try std.testing.expectEqual(RouteResult.file_menu, try Router.route("/file_menu.js"));
-}
-
-test "web_host: route \"/generating.js\" to the generating modal module" {
-    try std.testing.expectEqual(RouteResult.generating, try Router.route("/generating.js"));
-}
-
-test "web_host: route \"/gen_progress_rows.js\" to the progress row module" {
-    try std.testing.expectEqual(RouteResult.gen_progress_rows, try Router.route("/gen_progress_rows.js"));
-}
-
-test "web_host: route \"/gen_progress_format.js\" to the progress format module" {
-    try std.testing.expectEqual(RouteResult.gen_progress_format, try Router.route("/gen_progress_format.js"));
-}
-
-test "web_host: route \"/region.js\" to the region module" {
-    try std.testing.expectEqual(RouteResult.region, try Router.route("/region.js"));
-}
-
-test "web_host: route \"/help.js\" to the help module" {
-    try std.testing.expectEqual(RouteResult.help, try Router.route("/help.js"));
-}
-
-test "web_host: route \"/settings.js\" to the settings module" {
-    try std.testing.expectEqual(RouteResult.settings, try Router.route("/settings.js"));
+test "web_host: route map resolves every served path" {
+    const cases = [_]struct { path: []const u8, expected: RouteResult }{
+        .{ .path = "/", .expected = .page },
+        .{ .path = "/glue.js", .expected = .glue },
+        .{ .path = "/gen_client.js", .expected = .gen_client },
+        .{ .path = "/gen_worker.js", .expected = .gen_worker },
+        .{ .path = "/shell.js", .expected = .shell },
+        .{ .path = "/board.js", .expected = .board },
+        .{ .path = "/menu.js", .expected = .menu },
+        .{ .path = "/menu_bar.js", .expected = .menu_bar },
+        .{ .path = "/theme.js", .expected = .theme },
+        .{ .path = "/file_menu.js", .expected = .file_menu },
+        .{ .path = "/generating.js", .expected = .generating },
+        .{ .path = "/gen_progress_rows.js", .expected = .gen_progress_rows },
+        .{ .path = "/gen_progress_format.js", .expected = .gen_progress_format },
+        .{ .path = "/region.js", .expected = .region },
+        .{ .path = "/help.js", .expected = .help },
+        .{ .path = "/settings.js", .expected = .settings },
+        .{ .path = "/host-config.json", .expected = .host_config },
+        .{ .path = "/artifact.wasm", .expected = .artifact },
+    };
+    for (cases) |case| {
+        try std.testing.expectEqual(case.expected, try Router.route(case.path));
+    }
 }
 
 test "mergeSettingsPostPatch updates view prefs on Config" {
@@ -471,6 +433,65 @@ test "mergeSettingsPostPatch updates view prefs on Config" {
     try std.testing.expect(cfg.auto_restore);
     try std.testing.expect(cfg.auto_new);
     try std.testing.expect(cfg.auto_save);
+}
+
+test "mergeSettingsPostPatch ignores unknown difficulty/log level and defaults non-light theme to dark" {
+    var cfg = config.Config.default();
+    cfg.difficulty = .medium;
+    cfg.log_level = .warn;
+    cfg.theme = .light;
+
+    mergeSettingsPostPatch(&cfg, .{
+        .difficulty = "legendary",
+        .log_level = "trace",
+        .theme = "sepia",
+    });
+
+    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
+    try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
+    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
+}
+
+test "requestBody returns null when header separator is missing" {
+    try std.testing.expect(requestBody("GET / HTTP/1.1\r\nHost: localhost\r\n") == null);
+}
+
+test "requestBody returns payload bytes after header separator" {
+    const req =
+        "POST /settings.json HTTP/1.1\r\nHost: localhost\r\nContent-Length: 13\r\n\r\n{\"theme\":1}";
+    const body = requestBody(req).?;
+    try std.testing.expectEqualStrings("{\"theme\":1}", body);
+}
+
+test "applySettingsPost returns System on invalid JSON" {
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = ".",
+        .has_current_file = false,
+        .current_file = null,
+        .host_config_body_buf = undefined,
+    };
+    try std.testing.expectError(ServeError.System, applySettingsPost(std.testing.io, &session, "{\"theme\":"));
+}
+
+test "applySettingsPost updates in-memory host config even when disk persistence is disabled" {
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = ".",
+        .has_current_file = false,
+        .current_file = null,
+        .host_config_body_buf = undefined,
+    };
+    const body = "{\"difficulty\":\"hard\",\"log_level\":\"debug\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true}";
+    try applySettingsPost(std.testing.io, &session, body);
+    try std.testing.expectEqual(config.Difficulty.hard, session.host_config.difficulty);
+    try std.testing.expectEqual(logger.Severity.debug, session.host_config.log_level);
+    try std.testing.expectEqual(config.ViewTheme.light, session.host_config.theme);
+    try std.testing.expect(session.host_config.show_region);
+    try std.testing.expect(session.host_config.warn_solvability);
+    try std.testing.expect(session.host_config.auto_restore);
+    try std.testing.expect(session.host_config.auto_new);
+    try std.testing.expect(session.host_config.auto_save);
 }
 
 test "settings POST JSON patch is written to settings.json on disk" {
@@ -503,10 +524,6 @@ test "settings POST JSON patch is written to settings.json on disk" {
     try std.testing.expect(loaded.auto_save);
 }
 
-test "web_host: route \"/host-config.json\" to host startup config" {
-    try std.testing.expectEqual(RouteResult.host_config, try Router.route("/host-config.json"));
-}
-
 test "web_host: host-config body reflects active host Config" {
     var session = Session{
         .host_config = .{
@@ -527,10 +544,6 @@ test "web_host: host-config body reflects active host Config" {
     try std.testing.expect(std.mem.indexOf(u8, body, "\"log_level\":0") != null);
     try std.testing.expect(std.mem.indexOf(u8, body, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, body, "true") != null);
-}
-
-test "web_host: route \"/artifact.wasm\" to the artifact" {
-    try std.testing.expectEqual(RouteResult.artifact, try Router.route("/artifact.wasm"));
 }
 
 test "web_host: unknown path is NotFound" {

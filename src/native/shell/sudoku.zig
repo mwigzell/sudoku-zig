@@ -291,8 +291,134 @@ pub const Sudoku = struct {
 
 const board = @import("../../board/board.zig");
 const cell = @import("../../board/cell.zig");
+const logger = @import("../../logger.zig");
 const styler_t = @import("../ascii/styler.zig");
 const ascii_renderer = @import("../ascii/renderer.zig");
+
+const DeterministicFacade = struct {
+    steps: []const command.ParseCommandResult,
+    idx: usize = 0,
+    render_calls: usize = 0,
+    legend_calls: usize = 0,
+    error_calls: usize = 0,
+
+    fn asFacade(self: *@This()) facade_mod.Facade {
+        return facade_mod.Make(@This()).make(self);
+    }
+
+    /// Records render calls from Sudoku.handleEvent for deterministic branch tests.
+    pub fn render(self: *@This(), _: board.Board.BoardView, _: ?[]const u8, _: ?facade_mod.Selection) !void {
+        self.render_calls += 1;
+    }
+
+    /// Records legend refreshes from successful event handling.
+    pub fn showLegend(self: *@This(), _: legend.Legend) !void {
+        self.legend_calls += 1;
+    }
+
+    /// Records error-message display calls from Sudoku.handleEvent.
+    pub fn showError(self: *@This(), _: []const u8) !void {
+        self.error_calls += 1;
+    }
+
+    /// Feeds pre-scripted command results into Sudoku.turn for deterministic flow tests.
+    pub fn getCommandInput(
+        self: *@This(),
+        _: []const []const u8,
+        _: bool,
+        _: bool,
+        _: config.Difficulty,
+        _: logger.Severity,
+        _: config.ViewTheme,
+        _: bool,
+        _: bool,
+        _: bool,
+        _: ?facade_mod.Selection,
+    ) !command.ParseCommandResult {
+        if (self.idx >= self.steps.len) return .{ .valid = .{ .quit = {} } };
+        const step = self.steps[self.idx];
+        self.idx += 1;
+        return step;
+    }
+
+    /// No-op progress sink for deterministic tests that do not assert gen progress output.
+    pub fn reportGenProgress(_: *@This(), _: puzzle_gen.GenProgressEvent) !void {}
+
+    /// No-op lifecycle hook to satisfy the Facade contract in tests.
+    pub fn deinit(_: *@This()) void {}
+};
+
+const MemoryTransport = struct {
+    gpa: std.mem.Allocator,
+    files: std.StringHashMap([]u8),
+
+    fn init(gpa: std.mem.Allocator) @This() {
+        return .{ .gpa = gpa, .files = std.StringHashMap([]u8).init(gpa) };
+    }
+
+    fn deinit(self: *@This()) void {
+        var it = self.files.iterator();
+        while (it.next()) |entry| {
+            self.gpa.free(entry.key_ptr.*);
+            self.gpa.free(entry.value_ptr.*);
+        }
+        self.files.deinit();
+    }
+
+    fn put(self: *@This(), path: []const u8, bytes: []const u8) !void {
+        const key = try self.gpa.dupe(u8, path);
+        errdefer self.gpa.free(key);
+        const value = try self.gpa.dupe(u8, bytes);
+        errdefer self.gpa.free(value);
+        const found = self.files.getEntry(path);
+        if (found) |existing| {
+            self.gpa.free(existing.key_ptr.*);
+            self.gpa.free(existing.value_ptr.*);
+            existing.key_ptr.* = key;
+            existing.value_ptr.* = value;
+            return;
+        }
+        try self.files.put(key, value);
+    }
+
+    fn asTransport(self: *@This()) file_transport.FileTransport {
+        return .{
+            .context = @ptrCast(@alignCast(self)),
+            .write = write,
+            .readAll = readAll,
+            .resolve = resolve,
+            .free = free,
+        };
+    }
+
+    fn asSelf(ctx: *anyopaque) *@This() {
+        return @ptrCast(@alignCast(ctx));
+    }
+
+    fn write(ctx: *anyopaque, path: []const u8, bytes: []const u8) file_transport.TransportError!void {
+        const self = asSelf(ctx);
+        self.put(path, bytes) catch return file_transport.TransportError.OutOfMemory;
+    }
+
+    fn readAll(ctx: *anyopaque, path: []const u8) file_transport.TransportError![]u8 {
+        const self = asSelf(ctx);
+        const bytes = self.files.get(path) orelse return file_transport.TransportError.FileNotFound;
+        return self.gpa.dupe(u8, bytes) catch return file_transport.TransportError.OutOfMemory;
+    }
+
+    fn resolve(ctx: *anyopaque, name: []const u8) file_transport.TransportError![]u8 {
+        const self = asSelf(ctx);
+        if (std.mem.startsWith(u8, name, "/")) {
+            return self.gpa.dupe(u8, name) catch return file_transport.TransportError.OutOfMemory;
+        }
+        return std.fmt.allocPrint(self.gpa, "/virtual/{s}", .{name}) catch return file_transport.TransportError.OutOfMemory;
+    }
+
+    fn free(ctx: *anyopaque, buf: []u8) void {
+        const self = asSelf(ctx);
+        self.gpa.free(buf);
+    }
+};
 
 test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer
@@ -329,6 +455,78 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     {
         try std.testing.expectEqual(cell.CellValue.four, sudoku.engine.state.board.getCellValue(@as(u4, 2), @as(u4, 0)));
     }
+}
+
+test "deterministic major path: save_as then open restores saved snapshot" {
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .fill = .{ .row = 2, .col = 0, .digit = .seven } } },
+        .{ .valid = .{ .save_as = .{ .path = "/virtual/game.sud" } } },
+        .{ .valid = .{ .fill = .{ .row = 2, .col = 0, .digit = .one } } },
+        .{ .valid = .{ .open = .{ .path = "/virtual/game.sud" } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    var facade_impl = DeterministicFacade{ .steps = &steps };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(config.Config.default(), facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    try std.testing.expectEqual(cell.CellValue.seven, app.engine.state.board.getCellValue(2, 0));
+    try std.testing.expectEqual(@as(usize, 0), facade_impl.error_calls);
+}
+
+test "deterministic major path: import then export round-trips through command loop" {
+    const line = puzzle_gen.PuzzleGen.hard();
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .import = .{ .path = "/virtual/in.txt" } } },
+        .{ .valid = .{ .@"export" = .{ .path = "/virtual/out.txt" } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    var facade_impl = DeterministicFacade{ .steps = &steps };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    try transport_impl.put("/virtual/in.txt", line);
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(config.Config.default(), facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const written = transport_impl.files.get("/virtual/out.txt") orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, line, written);
+    try std.testing.expectEqual(@as(usize, 0), facade_impl.error_calls);
+}
+
+test "deterministic major path: explicit new puzzle replaces board and clears history" {
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .fill = .{ .row = 2, .col = 0, .digit = .seven } } },
+        .{ .valid = .{ .new = .{ .puzzle = null } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    var facade_impl = DeterministicFacade{ .steps = &steps };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(config.Config.default(), facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const expected = try board.fromOneLineString(puzzle_gen.PuzzleGen.medium());
+    try std.testing.expect(board.equal(app.engine.state.board, expected));
+    try std.testing.expectEqual(@as(usize, 0), app.engine.state.history.entries.items.len);
 }
 
 // Full round-trip: save known state → mutate → open the saved file → verify restore
@@ -380,80 +578,6 @@ test "integrated e2e - full seam: open loads saved game" {
 
     // After opening saved file: B2 restored to original saved value (not seven)
     try std.testing.expectEqual(saved_b2, sudoku_instance.engine.eventBoard().get(1, 1));
-}
-
-// Save/Open route through handleEvent() so the user gets feedback + a re-render
-
-test "integrated e2e - save success produces status message, re-render, legend refresh" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-
-    const io = std.testing.io;
-    const tmp_path = "/tmp/sudoku_save_success_test.sud";
-
-    // Canned responses: save -> filename prompt -> quit
-    const responses = [_][]const u8{
-        "m",
-        "1",
-        tmp_path ++ "\n",
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku.deinit();
-
-    try sudoku.showGame();
-    while (true) if (try sudoku.turn()) break;
-
-    // Clean up saved file
-    std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-}
-
-test "integrated e2e - run: open file success produces status message, re-render, and legend refresh" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-
-    // Create a save file to open
-    const io = std.testing.io;
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
-    defer original.deinit();
-    const tmp_path = "/tmp/sudoku_e2e_open_test.sud";
-    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-    const setup_transport = file_transport.NativeTransport.make(io);
-    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
-    defer std.heap.page_allocator.free(save_buf);
-    try setup_transport.write(setup_transport.context, tmp_path, save_buf);
-
-    // Canned responses: open <path> -> quit
-    const responses = [_][]const u8{
-        "m",
-        "2",
-        tmp_path,
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku_instance.deinit();
-
-    // Act: run full loop - open loads file from command arg, re-renders, shows legend
-    try sudoku_instance.showGame();
-    while (true) if (try sudoku_instance.turn()) break;
 }
 
 test "integrated e2e - run: open then save reuses opened path without filename prompt" {
@@ -568,7 +692,7 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     // Canned responses: command → dialog filename → quit
     const responses = [_][]const u8{
         "m",
-        "5",
+        "6",
         "test_save_as.sud",
         "quit",
     };
@@ -581,6 +705,42 @@ test "integrated e2e - run: save_as writes file and re-renders" {
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
+}
+
+test "integrated e2e - run: save_as failure does not persist current_file pointer" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const bad_path = "/tmp/sudoku_missing_parent_dir/deny.sud";
+
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .preferred_renderer = .ansi,
+        .fallback_renderer = .ansi,
+        .log_level = .info,
+    };
+
+    const responses = [_][]const u8{
+        "m",
+        "6",
+        bad_path,
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current == null);
 }
 
 // new starts a fresh board and clears the mutation history
@@ -1163,6 +1323,41 @@ test "integrated e2e: menu Settings persists warn_solvability to settings.json" 
     try std.testing.expect(restored.warn_solvability);
 }
 
+test "integrated e2e: menu Settings persists auto startup/save flags to settings.json" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const cfg = config.Config.default();
+    const responses = [_][]const u8{
+        "menu\n", "14\n", "5\n", // auto_restore on
+        "menu\n", "14\n", "6\n", // auto_new on
+        "menu\n", "14\n", "7\n", // auto_save on
+        "quit\n",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(io);
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    try std.testing.expect(app.engine.cfg.auto_restore);
+    try std.testing.expect(app.engine.cfg.auto_new);
+    try std.testing.expect(app.engine.cfg.auto_save);
+
+    const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    try std.testing.expect(restored.auto_restore);
+    try std.testing.expect(restored.auto_new);
+    try std.testing.expect(restored.auto_save);
+}
+
 test "startup policy: auto_restore false and auto_new false keeps manual startup" {
     const test_defaults = @import("../../test/config_defaults.zig");
     var cfg = test_defaults.testConfigDefaults();
@@ -1211,6 +1406,39 @@ test "manual startup does not print generation progress when both auto flags are
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, output, "Generating:") == null);
+}
+
+test "win state stays manual: no automatic transition after You win" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_new = true;
+
+    const responses = [_][]const u8{
+        "fill E5 6",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(std.testing.io), host.writer(), null);
+    defer app.deinit();
+
+    const almost = "483921657967345821251876493548132976729504138136798245372689514814253769695417382";
+    _ = app.engine.newFromOneLinePuzzle(almost);
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, "You win!") != null);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "You win!"));
+
+    const solved = export_command.currentPuzzleLine(&app.engine);
+    const expected =
+        "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    try std.testing.expectEqualSlices(u8, expected, &solved);
 }
 
 test "startup policy: auto_restore true restores from current_file path" {
@@ -1368,4 +1596,35 @@ test "autosave: successful open updates current_file pointer" {
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expect(current != null);
     try std.testing.expectEqualStrings(tmp_path, current.?);
+}
+
+test "autosave: save failure surfaces error and keeps existing current_file pointer" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const bad_path = "/tmp/sudoku_missing_parent_dir/autosave_fail.sud";
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, bad_path);
+
+    const responses = [_][]const u8{ "fill A3 7", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current != null);
+    try std.testing.expectEqualStrings(bad_path, current.?);
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, "System") != null);
 }

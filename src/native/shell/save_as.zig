@@ -59,3 +59,78 @@ test "command.save_as.execute saves file at given path" {
         },
     }
 }
+
+const FakeTransportCtx = struct {
+    fail_resolve: bool = false,
+    fail_write: bool = false,
+    write_calls: usize = 0,
+};
+
+fn fakeWrite(ctx_ptr: *anyopaque, _: []const u8, _: []const u8) file_transport.TransportError!void {
+    const ctx: *FakeTransportCtx = @ptrCast(@alignCast(ctx_ptr));
+    ctx.write_calls += 1;
+    if (ctx.fail_write) return file_transport.TransportError.System;
+}
+
+fn fakeReadAll(_: *anyopaque, _: []const u8) file_transport.TransportError![]u8 {
+    return file_transport.TransportError.FileNotFound;
+}
+
+fn fakeResolve(ctx_ptr: *anyopaque, name: []const u8) file_transport.TransportError![]u8 {
+    const ctx: *FakeTransportCtx = @ptrCast(@alignCast(ctx_ptr));
+    if (ctx.fail_resolve) return file_transport.TransportError.System;
+    return std.heap.page_allocator.dupe(u8, name) catch file_transport.TransportError.OutOfMemory;
+}
+
+fn fakeFree(_: *anyopaque, buf: []u8) void {
+    std.heap.page_allocator.free(buf);
+}
+
+fn makeFakeTransport(ctx: *FakeTransportCtx) file_transport.FileTransport {
+    return .{
+        .context = @ptrCast(@alignCast(ctx)),
+        .write = fakeWrite,
+        .readAll = fakeReadAll,
+        .resolve = fakeResolve,
+        .free = fakeFree,
+    };
+}
+
+test "command.save_as.execute returns error_msg when resolve fails" {
+    var engine = try game_engine.GameEngine.init(
+        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
+    );
+    defer engine.deinit();
+
+    var ctx = FakeTransportCtx{ .fail_resolve = true };
+    const ev = execute(&engine, makeFakeTransport(&ctx), "ignored.sud");
+    switch (ev) {
+        .error_msg => |msg| {
+            try std.testing.expect(std.mem.indexOf(u8, msg, "resolve:") != null);
+            try std.testing.expectEqual(@as(usize, 0), ctx.write_calls);
+        },
+        .ok => return error.TestUnexpectedResult,
+    }
+}
+
+test "command.save_as.execute returns error_msg when write fails" {
+    var engine = try game_engine.GameEngine.init(
+        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../config.zig").Config.default(),
+    );
+    defer engine.deinit();
+    const before = @import("export.zig").currentPuzzleLine(&engine);
+
+    var ctx = FakeTransportCtx{ .fail_write = true };
+    const ev = execute(&engine, makeFakeTransport(&ctx), "cannot_write.sud");
+    switch (ev) {
+        .error_msg => |msg| {
+            try std.testing.expectEqualStrings("System", msg);
+            try std.testing.expectEqual(@as(usize, 1), ctx.write_calls);
+            const after = @import("export.zig").currentPuzzleLine(&engine);
+            try std.testing.expectEqualSlices(u8, &before, &after);
+        },
+        .ok => return error.TestUnexpectedResult,
+    }
+}
