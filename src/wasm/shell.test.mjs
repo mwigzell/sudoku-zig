@@ -355,7 +355,7 @@ async function flushDialogPaint() {
       return { ok: true, status: 204 };
     },
     askConfirm: (msg) => {
-      assert.equal(msg, "file already exists, replace?");
+      assert.equal(msg, "existing.sud exists, replace?");
       return true;
     },
     saveName: "existing.sud",
@@ -373,7 +373,10 @@ async function flushDialogPaint() {
   };
   const out = await persistCurrentFileSnapshotWithReplacePrompt(game, {
     fetchFn: async () => ({ ok: false, status: 409, text: async () => "file already exists, replace?" }),
-    askConfirm: () => false,
+    askConfirm: (msg) => {
+      assert.equal(msg, "File exists, replace?");
+      return false;
+    },
   });
   assert.equal(out.ok, false);
   assert.equal(out.cancelled, true);

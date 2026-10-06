@@ -621,7 +621,7 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
   assert.equal(fetchCalls.length, 1, "first autosave after detached context hits conflict path");
   assert.equal(fetchCalls[0]?.url, "./current-file");
   assert.equal(confirmPrompts.length, 1, "conflict surfaces replace confirmation");
-  assert.equal(confirmPrompts[0], "file already exists, replace?");
+  assert.equal(confirmPrompts[0], "sudoku.sud exists, replace?");
   assert.equal(errorModal.el.hidden, true, "cancelled replace prompt is not treated as modal error");
 }
 

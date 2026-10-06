@@ -56,6 +56,7 @@ pub fn evaluateOverwritePolicy(input: OverwriteInput) OverwriteDecision {
     return .require_replace_confirm;
 }
 
+/// Maps a lifecycle event to the next overwrite context used by save policy.
 pub fn nextWriteContext(current: WriteContext, event: WriteContextEvent) WriteContext {
     _ = current;
     return switch (event) {
@@ -64,6 +65,7 @@ pub fn nextWriteContext(current: WriteContext, event: WriteContextEvent) WriteCo
     };
 }
 
+/// Parses a text event name from host/web adapters into a write-context event.
 pub fn parseWriteContextEvent(name: []const u8) ?WriteContextEvent {
     if (std.mem.eql(u8, name, "startup_restore")) return .startup_restore;
     if (std.mem.eql(u8, name, "startup_new")) return .startup_new;

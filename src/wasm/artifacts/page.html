@@ -264,7 +264,8 @@
       }
     }
 
-    #error-modal {
+    #error-modal,
+    #replace-confirm-modal {
       position: fixed;
       inset: 0;
       display: flex;
@@ -309,6 +310,7 @@
     }
 
     #error-modal[hidden],
+    #replace-confirm-modal[hidden],
     #about-modal[hidden],
     #settings-modal[hidden],
     #new-difficulty-modal[hidden],
@@ -466,6 +468,15 @@
       margin: 0 0 1rem;
       line-height: 1.45;
     }
+    #replace-confirm-msg {
+      margin: 0 0 1rem;
+      line-height: 1.45;
+    }
+    #replace-confirm-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
 
     #about-artwork {
       width: 4.5rem;
@@ -528,6 +539,8 @@
     #settings-modal-dismiss,
     #about-modal-dismiss,
     #error-modal-dismiss,
+    #replace-confirm-cancel,
+    #replace-confirm-ok,
     #new-difficulty-cancel,
     #generating-modal-cancel,
     #generating-modal-continue {
@@ -543,6 +556,7 @@
     #settings-modal-dismiss,
     #about-modal-dismiss,
     #error-modal-dismiss,
+    #replace-confirm-cancel,
     #new-difficulty-cancel {
       display: block;
       margin: 0.5rem 0 0 auto;
@@ -786,6 +800,15 @@
       <button type="button" id="error-modal-dismiss">OK</button>
     </div>
   </div>
+  <div id="replace-confirm-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="replace-confirm-msg">
+    <div class="error-dialog">
+      <p id="replace-confirm-msg"></p>
+      <div id="replace-confirm-actions">
+        <button type="button" id="replace-confirm-cancel">Cancel</button>
+        <button type="button" id="replace-confirm-ok">Replace</button>
+      </div>
+    </div>
+  </div>
 
   <div id="settings-modal" hidden role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
     <div class="settings-dialog">
@@ -982,6 +1005,33 @@
       document.getElementById("error-modal-msg"),
       document.getElementById("error-modal-dismiss"),
     );
+    const replaceConfirmModal = {
+      el: document.getElementById("replace-confirm-modal"),
+      msgEl: document.getElementById("replace-confirm-msg"),
+      cancelBtn: document.getElementById("replace-confirm-cancel"),
+      okBtn: document.getElementById("replace-confirm-ok"),
+    };
+    globalThis.__sudokuConfirmReplace = (message) =>
+      new Promise((resolve) => {
+        replaceConfirmModal.msgEl.textContent = message;
+        replaceConfirmModal.el.hidden = false;
+        const cleanup = () => {
+          replaceConfirmModal.okBtn.removeEventListener("click", onOk);
+          replaceConfirmModal.cancelBtn.removeEventListener("click", onCancel);
+        };
+        const onOk = () => {
+          cleanup();
+          replaceConfirmModal.el.hidden = true;
+          resolve(true);
+        };
+        const onCancel = () => {
+          cleanup();
+          replaceConfirmModal.el.hidden = true;
+          resolve(false);
+        };
+        replaceConfirmModal.okBtn.addEventListener("click", onOk);
+        replaceConfirmModal.cancelBtn.addEventListener("click", onCancel);
+      });
     const aboutModal = {
       el: document.getElementById("about-modal"),
       titleEl: document.getElementById("about-modal-title"),

@@ -327,15 +327,20 @@ export async function persistCurrentFileSnapshotWithReplacePrompt(
   {
     fetchFn = globalThis.fetch,
     saveName = null,
-    askConfirm = globalThis.confirm,
+    askConfirm = globalThis.__sudokuConfirmReplace ?? globalThis.confirm,
   } = {},
 ) {
   const first = await persistCurrentFileSnapshot(game, fetchFn, saveName, false);
   if (!first.replace_required) return first;
-  const prompt = first.error ?? "save target conflict";
-  if (typeof askConfirm !== "function" || askConfirm(prompt) !== true) {
+  const prompt =
+    typeof saveName === "string" && saveName.length > 0
+      ? `${saveName} exists, replace?`
+      : "File exists, replace?";
+  if (typeof askConfirm !== "function") {
     return { ok: false, cancelled: true };
   }
+  const confirmed = await askConfirm(prompt);
+  if (confirmed !== true) return { ok: false, cancelled: true };
   return persistCurrentFileSnapshot(game, fetchFn, saveName, true);
 }
 
