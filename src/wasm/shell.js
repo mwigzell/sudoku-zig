@@ -194,7 +194,6 @@ export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
   "auto_restore",
   "auto_new",
   "auto_save",
-  "autosave_trigger_commands",
 ];
 
 export function assertWebBootConfig(config, label = "boot.config") {
@@ -213,6 +212,9 @@ export function assertHostStartupConfig(config, label = "host-config") {
   assertWebBootConfig(config, label);
   if (config.default_save_filename === undefined) {
     throw new Error(`${label}: missing default_save_filename`);
+  }
+  if (!Array.isArray(config.autosave_trigger_commands)) {
+    throw new Error(`${label}: missing autosave_trigger_commands`);
   }
   if (config.startup_status === undefined) {
     throw new Error(`${label}: missing startup_status`);
