@@ -120,8 +120,8 @@ export function wireGeneratingModal({
   };
 }
 
-/** Open modal, run gen task, enable Continue on success, close after user continues. */
-export async function runWithGeneratingDialog(modal, task) {
+/** Open modal, run gen task, enable Continue on success, close after continue or auto-continue. */
+export async function runWithGeneratingDialog(modal, task, { autoContinue = false } = {}) {
   modal.open();
   const cancelRef = { fn: null };
   modal.setCancelHandler(() => {
@@ -140,7 +140,7 @@ export async function runWithGeneratingDialog(modal, task) {
     return result;
   }
   modal.setReady(true);
-  await modal.waitForContinue();
+  if (!autoContinue) await modal.waitForContinue();
   modal.close();
   return result;
 }

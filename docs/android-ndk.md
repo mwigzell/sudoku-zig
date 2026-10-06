@@ -29,7 +29,7 @@ zig build android -Dsdk=/path/to/sdk
 
 ## Build artifacts (Step 3 + Step 4)
 
-Default target: **`aarch64-linux-android`** API **29** (arm64-v8a).
+Default native API: **`aarch64-linux-android`** API **29** (arm64-v8a); APK manifest targets Android API **33**.
 
 Library-only build (Step 3):
 

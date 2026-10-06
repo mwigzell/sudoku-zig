@@ -10,8 +10,14 @@ import {
   exportPuzzle,
   applyEventStatus,
   clearEventStatus,
-  CURRENT_FILE_FALLBACK,
-  persistCurrentFileSnapshot,
+  postWriteContextEvent,
+  eventToWriteContext,
+  persistCurrentFileSnapshotWithReplacePrompt,
+  WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
+  WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
+  WRITE_CONTEXT_EVENT_SAVE_SUCCESS,
+  WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS,
+  WRITE_CONTEXT_EVENT_IMPORT_SUCCESS,
   syncCurrentFileLabels,
   showErrorModal,
   waitForStatusPaint,
@@ -32,6 +38,10 @@ function bridgeSupportsOpen(bridge) {
   return bridge != null && typeof bridge.openSudokuFile === "function";
 }
 
+async function noOpWriteContextEvent() {
+  return { ok: true };
+}
+
 function bytesToBase64(bytes) {
   const chars = [];
   for (const b of bytes) chars.push(String.fromCharCode(b));
@@ -50,9 +60,9 @@ export function filePickerStartIn(session) {
 }
 
 function suggestedSaveFilename(session) {
-  const name = session?.default_save_filename;
+  const name = session?.boundFilename ?? session?.default_save_filename;
   if (typeof name === "string" && name.length > 0) return name;
-  return CURRENT_FILE_FALLBACK;
+  return null;
 }
 
 export const sudFilePickerTypes = [
@@ -295,15 +305,22 @@ export function wireFileMenu(
     createElement,
     onViewRefresh,
     onPersist,
+    writeContextEvent = noOpWriteContextEvent,
   } = {},
 ) {
+  const publishWriteContextEvent = session.writeContextEvent ?? writeContextEvent;
   const fail = (result) => {
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
-  const applyNewGame = (result) => {
+  const applyNewGame = async (result) => {
     session.fileHandle = null;
-    session.boundFilename = null;
+    const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, globalThis.fetch).catch((err) => ({
+      ok: false,
+      error: err?.message ?? String(err),
+    }));
+    if (!contextUpdated.ok) fail(contextUpdated);
+    session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, session.write_context);
     refreshSession(
       boardEl,
       selection,
@@ -322,7 +339,7 @@ export function wireFileMenu(
   const runNewGame = async (difficulty) => {
     const result = newGame(game, { difficulty });
     if (!result.ok) return result;
-    applyNewGame(result);
+    await applyNewGame(result);
     return result;
   };
 
@@ -339,7 +356,7 @@ export function wireFileMenu(
           fail(result);
           return;
         }
-        applyNewGame(result);
+        await applyNewGame(result);
         return;
       }
       await waitForStatusPaint();
@@ -367,18 +384,33 @@ export function wireFileMenu(
       fail(result);
       return;
     }
+    const suggested = suggestedSaveFilename(session);
+    if (!suggested) {
+      fail({ ok: false, error: "missing default_save_filename in session" });
+      return;
+    }
     const saved = await persistBytes(
       result.bytes,
       session,
-      session.boundFilename ?? suggestedSaveFilename(session),
+      suggested,
       { download },
     );
     if (saved.ok) {
       session.boundFilename = saved.filename;
-      const mirrored = await persistCurrentFileSnapshot(game, globalThis.fetch, saved.filename);
+      const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
+        fetchFn: globalThis.fetch,
+        saveName: saved.filename,
+      });
       if (!mirrored.ok) {
+        if (mirrored.cancelled) return;
         fail(mirrored);
         return;
+      }
+      const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_SAVE_SUCCESS, globalThis.fetch);
+      if (contextUpdated.ok) {
+        session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_SAVE_SUCCESS, session.write_context);
+      } else {
+        fail(contextUpdated);
       }
       syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
@@ -394,13 +426,28 @@ export function wireFileMenu(
       fail(result);
       return;
     }
-    const saved = await persistBytes(result.bytes, session, suggestedSaveFilename(session), { saveAs: true, download });
+    const suggested = suggestedSaveFilename(session);
+    if (!suggested) {
+      fail({ ok: false, error: "missing default_save_filename in session" });
+      return;
+    }
+    const saved = await persistBytes(result.bytes, session, suggested, { saveAs: true, download });
     if (saved.ok) {
       session.boundFilename = saved.filename;
-      const mirrored = await persistCurrentFileSnapshot(game, globalThis.fetch, saved.filename);
+      const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
+        fetchFn: globalThis.fetch,
+        saveName: saved.filename,
+      });
       if (!mirrored.ok) {
+        if (mirrored.cancelled) return;
         fail(mirrored);
         return;
+      }
+      const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS, globalThis.fetch);
+      if (contextUpdated.ok) {
+        session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS, session.write_context);
+      } else {
+        fail(contextUpdated);
       }
       syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
@@ -440,6 +487,12 @@ export function wireFileMenu(
     }
     session.fileHandle = picked.handle ?? null;
     session.boundFilename = picked.name;
+    const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, globalThis.fetch);
+    if (contextUpdated.ok) {
+      session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, session.write_context);
+    } else {
+      fail(contextUpdated);
+    }
     refreshSession(
       boardEl,
       selection,
@@ -468,6 +521,12 @@ export function wireFileMenu(
     }
     session.fileHandle = null;
     session.boundFilename = null;
+    const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_IMPORT_SUCCESS, globalThis.fetch);
+    if (contextUpdated.ok) {
+      session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_IMPORT_SUCCESS, session.write_context);
+    } else {
+      fail(contextUpdated);
+    }
     refreshSession(
       boardEl,
       selection,

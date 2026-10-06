@@ -95,6 +95,11 @@ fn ctx(S: type) type {
             return self.renderer.showError(msg);
         }
 
+        /// Forward replace-confirm prompts from the facade to the concrete renderer.
+        pub fn confirmReplace(self: *@This(), msg: []const u8) facade.Error!bool {
+            return self.renderer.confirmReplace(msg);
+        }
+
         pub fn getCommandInput(
             self: *@This(),
             names: []const []const u8,

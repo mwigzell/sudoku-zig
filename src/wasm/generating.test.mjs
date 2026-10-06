@@ -117,6 +117,20 @@ function makeContinueBtn() {
 }
 
 {
+  const el = { hidden: true };
+  const continueBtn = makeContinueBtn();
+  const modal = wireGeneratingModal({ el, continueBtn });
+  const out = await runWithGeneratingDialog(
+    modal,
+    async () => ({ ok: true, value: 7 }),
+    { autoContinue: true },
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.value, 7);
+  assert.equal(el.hidden, true, "auto-continue closes without waiting for user click");
+}
+
+{
   function makeRowEl() {
     return {
       className: "",

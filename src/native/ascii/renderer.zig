@@ -17,6 +17,7 @@ const PuzzleGen = puzzle_gen.PuzzleGen;
 const config = @import("../../config.zig");
 const logger = @import("../../logger.zig");
 const Difficulty = @import("../../puzzle_gen/mod.zig").Difficulty;
+const REPLACE_CONFIRM_OK = "ok";
 
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
@@ -186,6 +187,14 @@ pub fn AsciiRenderer(StylerType: type) type {
 
             const line = try self.readLine();
             defer self.allocator.free(line);
+        }
+
+        /// Prompt for overwrite approval; true only when the player confirms.
+        pub fn confirmReplace(self: *@This(), msg: []const u8) facade.Error!bool {
+            self.writer.print("{s} [OK/Cancel]: ", .{msg}) catch return facade.Error.System;
+            const line = self.readLine() catch return false;
+            defer self.allocator.free(line);
+            return std.ascii.eqlIgnoreCase(line, REPLACE_CONFIRM_OK);
         }
 
         /// Internal — prompt for filename with default, return owned string.

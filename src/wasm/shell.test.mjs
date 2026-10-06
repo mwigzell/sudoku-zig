@@ -4,9 +4,14 @@ import assert from "node:assert/strict";
 import {
   NEW_GAME_STARTED_MSG,
   CURRENT_FILE_DESKTOP_ID,
-  CURRENT_FILE_FALLBACK,
   persistCurrentFileSnapshot,
+  postWriteContextEvent,
+  persistCurrentFileSnapshotWithReplacePrompt,
   hostViewPrefsForPersist,
+  startupWriteContextEvent,
+  eventToWriteContext,
+  WRITE_CONTEXT_CONTINUATION,
+  WRITE_CONTEXT_DETACHED,
   initializeWebSession,
   offerInitialNewGame,
   newGameWithGeneratingModal,
@@ -300,7 +305,82 @@ async function flushDialogPaint() {
 }
 
 {
-  assert.equal(currentFileLabel({}), CURRENT_FILE_FALLBACK);
+  const calls = [];
+  const out = await postWriteContextEvent("new_game_success", async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, status: 204 };
+  });
+  assert.equal(out.ok, true);
+  assert.equal(calls[0].url, "./current-file-context");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.body, "new_game_success");
+}
+
+{
+  assert.equal(startupWriteContextEvent("restore"), "startup_restore");
+  assert.equal(startupWriteContextEvent("new"), "startup_new");
+  assert.equal(startupWriteContextEvent("empty"), "startup_idle");
+  assert.equal(eventToWriteContext("startup_restore"), WRITE_CONTEXT_CONTINUATION);
+  assert.equal(eventToWriteContext("new_game_success"), WRITE_CONTEXT_DETACHED);
+}
+
+{
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2]) };
+    },
+  };
+  const calls = [];
+  const out = await persistCurrentFileSnapshot(game, async (url, init) => {
+    calls.push({ url, init });
+    if (calls.length === 1) return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+    return { ok: true, status: 204 };
+  });
+  assert.equal(out.ok, false);
+  assert.equal(out.replace_required, true);
+  assert.equal(out.error, "file already exists, replace?");
+}
+
+{
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2]) };
+    },
+  };
+  const calls = [];
+  const out = await persistCurrentFileSnapshotWithReplacePrompt(game, {
+    fetchFn: async (url, init) => {
+      calls.push({ url, init });
+      if (calls.length === 1) return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+      return { ok: true, status: 204 };
+    },
+    askConfirm: (msg) => {
+      assert.equal(msg, "file already exists, replace?");
+      return true;
+    },
+    saveName: "existing.sud",
+  });
+  assert.equal(out.ok, true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].init.headers["X-Sudoku-Replace"], "true");
+}
+
+{
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2]) };
+    },
+  };
+  const out = await persistCurrentFileSnapshotWithReplacePrompt(game, {
+    fetchFn: async () => ({ ok: false, status: 409, text: async () => "file already exists, replace?" }),
+    askConfirm: () => false,
+  });
+  assert.equal(out.ok, false);
+  assert.equal(out.cancelled, true);
+}
+
+{
+  assert.equal(currentFileLabel({}), "");
   assert.equal(currentFileLabel({ default_save_filename: "sudoku.sud" }), "sudoku.sud");
   assert.equal(currentFileLabel({ boundFilename: "game.sud" }), "game.sud");
 }

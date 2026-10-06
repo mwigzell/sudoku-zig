@@ -21,6 +21,9 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.webkit.ConsoleMessage;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebChromeClient;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
@@ -43,11 +46,19 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_CREATE_DOCUMENT = 2002;
     private static final int PICKER_TIMEOUT_SECONDS = 60;
     private static final long MIN_LAUNCH_SPLASH_MS = 2000L;
+    private static final long SPLASH_BOOT_TIMEOUT_MS = 12000L;
     private static final String MIME_ANY = "*/*";
+    private static final String BOOT_ERROR_HTML_PREFIX =
+        "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
+        "<body style=\"margin:0;padding:16px;font-family:sans-serif;background:#16181d;color:#e6e6e6;\">" +
+        "<h3 style=\"margin:0 0 8px;\">Sudoku startup failed</h3><pre style=\"white-space:pre-wrap;word-break:break-word;\">";
+    private static final String BOOT_ERROR_HTML_SUFFIX = "</pre></body></html>";
 
     private WebView webView;
     private View launchSplashView;
     private long launchSplashShownAtMs;
+    private boolean splashDismissed = false;
+    private boolean bootErrorShown = false;
     private final Object pickerLock = new Object();
     private ActivityResultWaiter openWaiter;
     private ActivityResultWaiter saveWaiter;
@@ -59,6 +70,7 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         webView = new WebView(this);
+        webView.setBackgroundColor(Color.parseColor("#16181d"));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -68,6 +80,25 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 injectBridgeShim();
+                if (url != null && url.startsWith("http://127.0.0.1:")) {
+                    dismissLaunchSplash();
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request == null || !request.isForMainFrame()) return;
+                final String msg = error != null ? String.valueOf(error.getDescription()) : "main frame load failed";
+                showBootError("webview main-frame error: " + msg);
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                super.onReceivedHttpError(view, request, response);
+                if (request == null || !request.isForMainFrame()) return;
+                final int code = response != null ? response.getStatusCode() : -1;
+                showBootError("webview main-frame http error: " + code);
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
@@ -111,9 +142,40 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onError(String message) {
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> showBootError(message));
             }
         });
+
+        webView.postDelayed(() -> {
+            if (splashDismissed) return;
+            Log.w(TAG, "Boot-ready signal not received before timeout; dismissing splash");
+            showBootError("Timed out waiting for web boot-ready signal");
+        }, SPLASH_BOOT_TIMEOUT_MS);
+    }
+
+    private static String escapeHtml(String in) {
+        if (in == null) return "";
+        return in
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;");
+    }
+
+    private void showBootError(String message) {
+        if (bootErrorShown) return;
+        bootErrorShown = true;
+        final String msg = message != null ? message : "unknown startup failure";
+        Log.e(TAG, msg);
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        webView.loadDataWithBaseURL(
+            null,
+            BOOT_ERROR_HTML_PREFIX + escapeHtml(msg) + BOOT_ERROR_HTML_SUFFIX,
+            "text/html",
+            "utf-8",
+            null
+        );
+        dismissLaunchSplash();
     }
 
     @Override
@@ -156,7 +218,8 @@ public final class MainActivity extends Activity {
             "window.addEventListener('unhandledrejection',function(e){" +
             "var reason=(e&&e.reason!=null)?String(e.reason):'unhandled rejection';" +
             "window.__SudokuAndroidBridge.logJsError(reason,'promise',0,0);" +
-            "});";
+            "});" +
+            "if(window.__sudokuBootReady===true){window.__SudokuAndroidBridge.notifyWebBootReady();}";
         webView.evaluateJavascript(shim, null);
     }
 
@@ -169,53 +232,18 @@ public final class MainActivity extends Activity {
     }
 
     private View makeLaunchSplashView() {
-        FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(Color.parseColor("#16181d"));
-
-        FrameLayout stack = new FrameLayout(this);
-        FrameLayout.LayoutParams stackParams = new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        stackParams.gravity = Gravity.CENTER;
-        overlay.addView(stack, stackParams);
-
-        View iconPlate = new View(this);
-        GradientDrawable plateBg = new GradientDrawable();
-        plateBg.setShape(GradientDrawable.OVAL);
-        plateBg.setColor(Color.parseColor("#FFFFFF"));
-        iconPlate.setBackground(plateBg);
-        int plateSize = dpToPx(196);
-        FrameLayout.LayoutParams plateParams = new FrameLayout.LayoutParams(plateSize, plateSize);
-        plateParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        stack.addView(iconPlate, plateParams);
-
-        ImageView mark = new ImageView(this);
-        int splashResId = getResources().getIdentifier("splash_logo", "drawable", getPackageName());
-        if (splashResId != 0) mark.setImageResource(splashResId);
-        mark.setScaleX(0.96f);
-        mark.setScaleY(0.96f);
-        mark.setAlpha(0.92f);
-        FrameLayout.LayoutParams markParams = new FrameLayout.LayoutParams(dpToPx(180), dpToPx(180));
-        markParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        stack.addView(mark, markParams);
-        mark.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(120).start();
-
-        TextView label = new TextView(this);
-        label.setText("Loading sudoku-zig...");
-        label.setTextColor(Color.parseColor("#e6e6e6"));
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        FrameLayout.LayoutParams textParams = new FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        textParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        textParams.topMargin = dpToPx(188);
-        stack.addView(label, textParams);
+        View overlay = new View(this);
+        int splashBgResId = getResources().getIdentifier("splash_background", "drawable", getPackageName());
+        if (splashBgResId != 0) {
+            overlay.setBackgroundResource(splashBgResId);
+        } else {
+            overlay.setBackgroundColor(Color.parseColor("#16181d"));
+        }
         return overlay;
     }
 
     private void dismissLaunchSplash() {
+        splashDismissed = true;
         final View splash = launchSplashView;
         if (splash == null) return;
         long elapsed = SystemClock.elapsedRealtime() - launchSplashShownAtMs;

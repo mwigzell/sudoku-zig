@@ -143,6 +143,54 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
   assert.equal(session.legend.redo, true);
 }
 
+// ── solve with auto-save persists current snapshot ──
+{
+  const board = makeMockBoard();
+  const status = { textContent: "", className: "" };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const selection = { getSelection: () => ({ row: 0, col: 0 }), select() {} };
+  const session = {
+    state: emptyState(),
+    legend: { solve: true, undo: false, redo: false },
+    config: { auto_save: true },
+    default_save_filename: "sudoku.sud",
+  };
+  let posted = null;
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    posted = { url, init };
+    return { ok: true, status: 204 };
+  };
+  const game = {
+    exec(action) {
+      assert.equal(action.action, "solve");
+      return { ok: true, state: session.state, msg: "Solved", is_quit: false };
+    },
+    getLegend() {
+      return { solve: true, undo: true, redo: false };
+    },
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([4, 5, 6]) };
+    },
+  };
+
+  const outcome = handleEditAction(
+    "solve",
+    game,
+    board,
+    selection,
+    status,
+    errorModal,
+    session,
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, true);
+  await Promise.resolve();
+  globalThis.fetch = prevFetch;
+  assert.equal(posted?.url, "./current-file");
+  assert.equal(posted?.init?.method, "POST");
+}
+
 // ── hint exec status: msg on bar; empty ok preserves bar, no modal ──
 {
   const status = { textContent: "keep me", className: "" };
@@ -654,6 +702,63 @@ const GOLDEN_PUZZLE_LINE =
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(session.state, nextState);
   assert.equal(boardEl.children.length, 81, "board re-rendered after paste");
+}
+
+// ── wireEditMenu Paste click persists when auto-save is enabled ──
+{
+  const pasteBtn = makeBtn();
+  const session = {
+    state: emptyState(),
+    legend: { [LEGEND_WIRE_PASTE]: true },
+    config: { show_region: false, auto_save: true },
+    default_save_filename: "sudoku.sud",
+  };
+  const nextState = emptyState();
+  const boardEl = makeMockBoard();
+  let posted = null;
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    posted = { url, init };
+    return { ok: true, status: 204 };
+  };
+  wireEditMenu(
+    makeBtn(),
+    makeBtn(),
+    makeBtn(),
+    {
+      importPuzzle() {
+        return { ok: true };
+      },
+      getState() {
+        return nextState;
+      },
+      getLegend() {
+        return session.legend;
+      },
+      getConfig() {
+        return session.config;
+      },
+      serialize() {
+        return { ok: true, bytes: new Uint8Array([9, 9, 9]) };
+      },
+    },
+    boardEl,
+    { getSelection: () => null, deselect() {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    makeRenderElement(),
+    { querySelectorAll: () => [], addEventListener() {} },
+    {
+      pasteBtn,
+      clipboard: { readText: async () => GOLDEN_PUZZLE_LINE },
+    },
+  );
+  pasteBtn.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  globalThis.fetch = prevFetch;
+  assert.equal(posted?.url, "./current-file");
+  assert.equal(posted?.init?.method, "POST");
 }
 
 console.log("menu.test.mjs OK");

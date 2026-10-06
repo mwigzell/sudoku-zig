@@ -1,8 +1,17 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
-import { applyEventStatus, applyExecResult, persistCurrentFileSnapshot } from "./shell.js";
+import {
+  applyEventStatus,
+  applyExecResult,
+  eventToWriteContext,
+  persistCurrentFileSnapshotWithReplacePrompt,
+  WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
+} from "./shell.js";
 
 export { applyEventStatus };
+async function noOpWriteContextEvent() {
+  return { ok: true };
+}
 
 const GRID_SIZE = 9;
 export const FRAME_SIZE = 11;
@@ -362,8 +371,18 @@ export function handlePlayKey(
   session.state = result.state;
   session.legend = game.getLegend();
   if (session.config?.auto_save === true) {
-    void persistCurrentFileSnapshot(game).then((saved) => {
-      if (!saved.ok) applyExecResult(statusEl, errorModal, saved);
+    const publishWriteContextEvent = session.writeContextEvent ?? noOpWriteContextEvent;
+    void persistCurrentFileSnapshotWithReplacePrompt(game, {
+      saveName: session.boundFilename ?? session.default_save_filename,
+    }).then((saved) => {
+      if (saved.ok) {
+        void publishWriteContextEvent(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS).then((posted) => {
+          if (posted.ok) {
+            session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS, session.write_context);
+          }
+        });
+      }
+      if (!saved.ok && !saved.cancelled) applyExecResult(statusEl, errorModal, saved);
     });
   }
   return { handled: true, legend: session.legend };
@@ -376,29 +395,39 @@ export function wirePlayLoop(
   statusEl,
   errorModal,
   session,
-  { onLegendChange } = {},
+  { onLegendChange, playPadEl = null, createElement } = {},
 ) {
   const playEl = resolvePlayGrid(frameEl);
-  playEl.addEventListener(
-    "keydown",
-    (event) => {
-      const outcome = handlePlayKey(
-        game,
-        frameEl,
-        selection,
-        statusEl,
-        errorModal,
-        event.key,
-        session,
-        undefined,
-        event.code,
-      );
-      if (!outcome.handled) return;
-      event.preventDefault();
-      if (outcome.legend) onLegendChange?.(outcome.legend);
-    },
-    { capture: true },
-  );
+  const runPlayInput = (key, code = "") => {
+    const outcome = handlePlayKey(
+      game,
+      frameEl,
+      selection,
+      statusEl,
+      errorModal,
+      key,
+      session,
+      createElement,
+      code,
+    );
+    if (outcome.handled && outcome.legend) onLegendChange?.(outcome.legend);
+    return outcome;
+  };
+  playEl.addEventListener("keydown", (event) => {
+    const outcome = runPlayInput(event.key, event.code);
+    if (!outcome.handled) return;
+    event.preventDefault();
+  }, { capture: true });
+
+  if (playPadEl?.querySelectorAll) {
+    for (const btn of playPadEl.querySelectorAll("[data-play-key]")) {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset?.playKey ?? "";
+        const code = btn.dataset?.playCode ?? "";
+        runPlayInput(key, code);
+      });
+    }
+  }
 
   return {
     getState() {

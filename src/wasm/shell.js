@@ -29,13 +29,24 @@ export function clearEventStatus(statusEl) {
 }
 
 export const CURRENT_FILE_DESKTOP_ID = "current-file-desktop";
-export const CURRENT_FILE_FALLBACK = "sudoku.sud";
+export const WRITE_CONTEXT_CONTINUATION = "continuation";
+export const WRITE_CONTEXT_DETACHED = "detached";
+export const WRITE_CONTEXT_EVENT_STARTUP_RESTORE = "startup_restore";
+export const WRITE_CONTEXT_EVENT_STARTUP_NEW = "startup_new";
+export const WRITE_CONTEXT_EVENT_STARTUP_IDLE = "startup_idle";
+export const WRITE_CONTEXT_EVENT_OPEN_SUCCESS = "open_success";
+export const WRITE_CONTEXT_EVENT_SAVE_SUCCESS = "save_success";
+export const WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS = "save_as_success";
+export const WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS = "auto_save_success";
+export const WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS = "new_game_success";
+export const WRITE_CONTEXT_EVENT_IMPORT_SUCCESS = "import_success";
+export const WRITE_CONTEXT_EVENT_PASTE_SUCCESS = "paste_success";
 
 /** Bound save target label shown in the menu-bar filename slot. */
 export function currentFileLabel(session) {
   const name = session?.boundFilename ?? session?.default_save_filename;
   if (typeof name === "string" && name.length > 0) return name;
-  return CURRENT_FILE_FALLBACK;
+  return "";
 }
 
 /** Keeps desktop/mobile filename chrome in sync with session binding state. */
@@ -275,18 +286,83 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
 }
 
 /** Persist current SUD0 snapshot for startup restore (`/current-file`). */
-export async function persistCurrentFileSnapshot(game, fetchFn = globalThis.fetch, saveName = null) {
+export async function persistCurrentFileSnapshot(
+  game,
+  fetchFn = globalThis.fetch,
+  saveName = null,
+  replace = false,
+) {
   const saved = game.serialize();
   if (!saved.ok) return saved;
   const headers = { "Content-Type": "application/octet-stream" };
   if (typeof saveName === "string" && saveName.length > 0) headers["X-Sudoku-Filename"] = saveName;
+  if (replace === true) headers["X-Sudoku-Replace"] = "true";
   const res = await fetchFn("./current-file", {
     method: "POST",
     headers,
     body: saved.bytes,
   });
+  if (res.status === 409) {
+    const msg = (await res.text()) || "save target conflict";
+    return { ok: false, replace_required: true, error: msg };
+  }
   if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}` };
   return { ok: true };
+}
+
+/** Publish write-context lifecycle events to the host policy seam. */
+export async function postWriteContextEvent(eventName, fetchFn = globalThis.fetch) {
+  const res = await fetchFn("./current-file-context", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: eventName,
+  });
+  if (!res.ok) return { ok: false, error: `current-file context update failed: ${res.status}` };
+  return { ok: true };
+}
+
+/** Persist startup snapshot with a replace-confirm retry on host conflict. */
+export async function persistCurrentFileSnapshotWithReplacePrompt(
+  game,
+  {
+    fetchFn = globalThis.fetch,
+    saveName = null,
+    askConfirm = globalThis.confirm,
+  } = {},
+) {
+  const first = await persistCurrentFileSnapshot(game, fetchFn, saveName, false);
+  if (!first.replace_required) return first;
+  const prompt = first.error ?? "save target conflict";
+  if (typeof askConfirm !== "function" || askConfirm(prompt) !== true) {
+    return { ok: false, cancelled: true };
+  }
+  return persistCurrentFileSnapshot(game, fetchFn, saveName, true);
+}
+
+/** Startup write lane state for web session persistence policy. */
+export function startupWriteContextEvent(kind) {
+  if (kind === "restore") return WRITE_CONTEXT_EVENT_STARTUP_RESTORE;
+  if (kind === "new") return WRITE_CONTEXT_EVENT_STARTUP_NEW;
+  return WRITE_CONTEXT_EVENT_STARTUP_IDLE;
+}
+
+export function eventToWriteContext(eventName, currentContext = WRITE_CONTEXT_DETACHED) {
+  switch (eventName) {
+    case WRITE_CONTEXT_EVENT_STARTUP_RESTORE:
+    case WRITE_CONTEXT_EVENT_OPEN_SUCCESS:
+    case WRITE_CONTEXT_EVENT_SAVE_SUCCESS:
+    case WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS:
+    case WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS:
+      return WRITE_CONTEXT_CONTINUATION;
+    case WRITE_CONTEXT_EVENT_STARTUP_NEW:
+    case WRITE_CONTEXT_EVENT_STARTUP_IDLE:
+    case WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS:
+    case WRITE_CONTEXT_EVENT_IMPORT_SUCCESS:
+    case WRITE_CONTEXT_EVENT_PASTE_SUCCESS:
+      return WRITE_CONTEXT_DETACHED;
+    default:
+      return currentContext;
+  }
 }
 
 /**
@@ -317,7 +393,7 @@ export async function offerInitialNewGame(
   game,
   boot,
   generatingModal,
-  { genWorker, fetchFn } = {},
+  { genWorker, fetchFn, startupAutoContinue = false } = {},
 ) {
   if (!boot.ok) return boot;
   if (boot.kind !== "empty") return boot;
@@ -384,6 +460,7 @@ export async function offerInitialNewGame(
     difficulty,
     logLevel,
     genWorker,
+    autoContinue: startupAutoContinue,
   });
   if (!started.ok && !started.cancelled) {
     return { ok: false, error: started.error ?? "New game failed", kind: "empty" };
@@ -423,7 +500,7 @@ function genWireFromEngine(game, options) {
 export async function newGameWithWorkerGen(
   game,
   modal,
-  { difficulty, logLevel, genWorker, onGenProgress, onProgressWire } = {},
+  { difficulty, logLevel, genWorker, onGenProgress, onProgressWire, autoContinue = false } = {},
 ) {
   const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
@@ -441,14 +518,14 @@ export async function newGameWithWorkerGen(
     const gen = await promise;
     if (gen.cancelled || !gen.ok) return gen;
     return applyGeneratedLineAsNewGame(game, gen.line, { difficulty: wire.difficulty });
-  });
+  }, { autoContinue });
 }
 
 /** Main-thread `generatePuzzle` + import (modal spinner; blocks main thread). */
 export async function newGameWithSyncGenerate(
   game,
   modal,
-  { difficulty, logLevel, onGenProgress, onProgressWire } = {},
+  { difficulty, logLevel, onGenProgress, onProgressWire, autoContinue = false } = {},
 ) {
   const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
@@ -468,7 +545,7 @@ export async function newGameWithSyncGenerate(
     } finally {
       game.setGenProgressListener?.(null);
     }
-  });
+  }, { autoContinue });
 }
 
 function shouldFallbackFromWorker(result) {
@@ -480,7 +557,7 @@ function shouldFallbackFromWorker(result) {
 
 /** First load / New: prefer worker gen; fall back to main-thread generate or legacy `init`. */
 export async function newGameWithGeneratingModal(game, modal, options = {}) {
-  const { genWorker, onGenProgress } = options;
+  const { genWorker, onGenProgress, autoContinue = false } = options;
   const wire = genWireFromEngine(game, options);
   const rowSink =
     typeof modal?.renderProgressRows === "function" ? createGenProgressModalSink(modal) : null;
@@ -491,12 +568,14 @@ export async function newGameWithGeneratingModal(game, modal, options = {}) {
       difficulty: wire.difficulty,
       logLevel: wire.logLevel,
       genWorker,
+      autoContinue,
       ...genProgress,
     });
     if (!shouldFallbackFromWorker(workerResult)) return workerResult;
     return newGameWithSyncGenerate(game, modal, {
       difficulty: wire.difficulty,
       logLevel: wire.logLevel,
+      autoContinue,
       ...genProgress,
     });
   }
@@ -504,11 +583,14 @@ export async function newGameWithGeneratingModal(game, modal, options = {}) {
     return newGameWithSyncGenerate(game, modal, {
       difficulty: wire.difficulty,
       logLevel: wire.logLevel,
+      autoContinue,
       ...genProgress,
     });
   }
-  return runWithGeneratingDialog(modal, () =>
-    Promise.resolve(newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel })),
+  return runWithGeneratingDialog(
+    modal,
+    () => Promise.resolve(newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel })),
+    { autoContinue },
   );
 }
 

@@ -11,6 +11,8 @@ const command = @import("../../command.zig");
 const settings_store = @import("../../settings_store.zig");
 const startup_policy = @import("../../startup/policy.zig");
 const startup_engine = @import("../../startup/engine.zig");
+const file_policy = @import("../../file_policy.zig");
+const path_mod = @import("path.zig");
 
 const disambiguate = @import("../ascii/disambiguate.zig");
 const legend = @import("../../renderer/legend.zig");
@@ -41,6 +43,8 @@ pub const Sudoku = struct {
     out: *std.Io.Writer,
     settings_persist: ?SettingsPersist = null,
     last_cell: ?facade_mod.Selection = null,
+    write_context: file_policy.WriteContext = .detached,
+    const WRITE_CANCELLED_MSG = "cancelled";
 
     pub const StartupPolicyResult = struct {
         attempted_restore: bool,
@@ -78,27 +82,43 @@ pub const Sudoku = struct {
         settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, self.cfg) catch {};
     }
 
-    fn tracksCurrentFile(cmd: command.Command) bool {
-        return switch (cmd) {
-            .save, .save_as, .open => true,
-            else => false,
-        };
-    }
-
-    fn currentFilePathForCommand(cmd: command.Command) ?[]const u8 {
-        return switch (cmd) {
-            .save => |d| d.path,
-            .save_as => |d| d.path,
-            .open => |d| d.path,
-            else => null,
-        };
-    }
-
     fn commandTriggersAutoSave(cmd: command.Command) bool {
         return switch (cmd) {
-            .fill, .clear, .undo, .redo, .solve_for_me, .new, .open, .import, .paste => true,
+            .fill, .clear, .undo, .redo, .solve_for_me, .open, .import, .paste => true,
             else => false,
         };
+    }
+
+    fn pathExists(self: *@This(), path: []const u8) bool {
+        const resolved = self.transport.resolve(self.transport.context, path) catch return false;
+        defer self.transport.free(self.transport.context, resolved);
+        const bytes = self.transport.readAll(self.transport.context, resolved) catch |err| switch (err) {
+            file_transport.TransportError.FileNotFound => return false,
+            file_transport.TransportError.AccessDenied => return true,
+            else => return false,
+        };
+        self.transport.free(self.transport.context, bytes);
+        return true;
+    }
+
+    fn shouldWriteTarget(self: *@This(), intent: file_policy.WriteIntent, path: []const u8) Error!bool {
+        const decision = file_policy.evaluateOverwritePolicy(.{
+            .intent = intent,
+            .target_exists = self.pathExists(path),
+            .write_context = self.write_context,
+        });
+        return switch (decision) {
+            .write => true,
+            .require_replace_confirm => self.renderer.confirmReplace(file_policy.REPLACE_CONFIRM_MSG) catch return error.System,
+        };
+    }
+
+    fn cancelledWriteEvent(self: *@This()) game_engine.Event {
+        return .{ .ok = .{
+            .board_view = self.engine.eventBoard(),
+            .msg = WRITE_CANCELLED_MSG,
+            .is_quit = false,
+        } };
     }
 
     fn loadCurrentFileIfAny(self: *@This()) ?[]u8 {
@@ -117,6 +137,10 @@ pub const Sudoku = struct {
         self.persistCurrentFile(resolved);
     }
 
+    fn applyWriteContextEvent(self: *@This(), event: file_policy.WriteContextEvent) void {
+        self.write_context = file_policy.nextWriteContext(self.write_context, event);
+    }
+
     fn applyAutoSavePolicyIfNeeded(self: *@This(), cmd: command.Command, event: game_engine.Event) game_engine.Event {
         if (!self.cfg.auto_save) return event;
         if (!commandTriggersAutoSave(cmd)) return event;
@@ -128,9 +152,14 @@ pub const Sudoku = struct {
         const loaded = self.loadCurrentFileIfAny();
         defer if (loaded) |p| std.heap.page_allocator.free(p);
         const target = if (loaded) |p| p else save_command.DEFAULT_SAVE_FILE;
+        const allowed = self.shouldWriteTarget(.auto_save, target) catch return event;
+        if (!allowed) return event;
         const save_event = save_as_command.execute(&self.engine, self.transport, target);
         switch (save_event) {
-            .ok => self.persistResolvedCurrentFile(target),
+            .ok => {
+                self.persistResolvedCurrentFile(target);
+                self.applyWriteContextEvent(.auto_save_success);
+            },
             .error_msg => {},
         }
         return save_event;
@@ -182,12 +211,16 @@ pub const Sudoku = struct {
                     else => false,
                 };
                 switch (cmd) {
-                    .new, .open, .import, .paste => self.last_cell = null,
+                    .new => {
+                        self.last_cell = null;
+                    },
+                    .open, .import, .paste => self.last_cell = null,
                     else => {},
                 }
                 const event = switch (cmd) {
                     .save => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+                        if (!(try self.shouldWriteTarget(.save, path))) break :blk self.cancelledWriteEvent();
                         break :blk save_command.execute(&self.engine, self.transport, path);
                     },
                     .open => |data| open_command.execute(&self.engine, self.transport, data.path),
@@ -198,15 +231,50 @@ pub const Sudoku = struct {
                     .new => |data| new_command.execute(&self.engine, data),
                     .save_as => |data| blk: {
                         const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+                        if (!(try self.shouldWriteTarget(.save_as, path))) break :blk self.cancelledWriteEvent();
                         break :blk save_as_command.execute(&self.engine, self.transport, path);
                     },
                     else => self.engine.exec(cmd),
                 };
-                if (tracksCurrentFile(cmd)) {
-                    if (currentFilePathForCommand(cmd)) |path| switch (event) {
-                        .ok => self.persistResolvedCurrentFile(path),
+                switch (cmd) {
+                    .save => |data| switch (event) {
+                        .ok => {
+                            const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+                            self.persistResolvedCurrentFile(path);
+                            self.applyWriteContextEvent(.save_success);
+                        },
                         .error_msg => {},
-                    };
+                    },
+                    .save_as => |data| switch (event) {
+                        .ok => {
+                            const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
+                            self.persistResolvedCurrentFile(path);
+                            self.applyWriteContextEvent(.save_as_success);
+                        },
+                        .error_msg => {},
+                    },
+                    .open => |data| switch (event) {
+                        .ok => {
+                            if (data.path) |path| {
+                                self.persistResolvedCurrentFile(path);
+                                self.applyWriteContextEvent(.open_success);
+                            }
+                        },
+                        .error_msg => {},
+                    },
+                    .new => switch (event) {
+                        .ok => self.applyWriteContextEvent(.new_game_success),
+                        .error_msg => {},
+                    },
+                    .import => switch (event) {
+                        .ok => self.applyWriteContextEvent(.import_success),
+                        .error_msg => {},
+                    },
+                    .paste => switch (event) {
+                        .ok => self.applyWriteContextEvent(.paste_success),
+                        .error_msg => {},
+                    },
+                    else => {},
                 }
                 const final_event = self.applyAutoSavePolicyIfNeeded(cmd, event);
                 const quit = try self.handleEvent(final_event);
@@ -269,6 +337,7 @@ pub const Sudoku = struct {
             const event = self.restoreFromPath(current_file.?);
             switch (event) {
                 .ok => {
+                    self.applyWriteContextEvent(.startup_restore);
                     _ = try self.handleEvent(event);
                     return .{ .attempted_restore = true, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
                 },
@@ -281,10 +350,12 @@ pub const Sudoku = struct {
 
         if (decision.action == .new) {
             const event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
+            self.applyWriteContextEvent(.startup_new);
             _ = try self.handleEvent(event);
             return .{ .attempted_restore = false, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
         }
 
+        self.applyWriteContextEvent(.startup_idle);
         return .{ .attempted_restore = false, .restore_failed = false, .rendered = false, .startup_status = startup_policy.statusForAction(decision.action) };
     }
 
@@ -307,7 +378,10 @@ const DeterministicFacade = struct {
     render_calls: usize = 0,
     legend_calls: usize = 0,
     error_calls: usize = 0,
+    replace_prompts: usize = 0,
     last_render_msg: ?[]const u8 = null,
+    replace_answers: []const bool = &[_]bool{},
+    replace_idx: usize = 0,
 
     fn asFacade(self: *@This()) facade_mod.Facade {
         return facade_mod.Make(@This()).make(self);
@@ -327,6 +401,15 @@ const DeterministicFacade = struct {
     /// Records error-message display calls from Sudoku.handleEvent.
     pub fn showError(self: *@This(), _: []const u8) !void {
         self.error_calls += 1;
+    }
+
+    /// Records replace prompts and returns scripted OK/Cancel answers.
+    pub fn confirmReplace(self: *@This(), _: []const u8) !bool {
+        self.replace_prompts += 1;
+        if (self.replace_idx >= self.replace_answers.len) return true;
+        const answer = self.replace_answers[self.replace_idx];
+        self.replace_idx += 1;
+        return answer;
     }
 
     /// Feeds pre-scripted command results into Sudoku.turn for deterministic flow tests.
@@ -1535,11 +1618,16 @@ test "autosave: fill writes default save and bootstraps current_file when unset"
     defer tmp.cleanup();
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
+    const default_path = try path_mod.resolveSavePath(std.testing.allocator, data_path, save_command.DEFAULT_SAVE_FILE);
+    defer std.testing.allocator.free(default_path);
+    std.Io.Dir.cwd().deleteFile(io, default_path) catch {};
 
     var cfg = test_defaults.testConfigDefaults();
     cfg.auto_save = true;
 
-    const responses = [_][]const u8{ "fill A3 7", "quit" };
+    // Include a possible replace-confirm response so this test is stable when
+    // a default target already exists in the native transport data dir.
+    const responses = [_][]const u8{ "fill A3 7", "ok", "quit" };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
     var facade = try host.facade();
@@ -1652,4 +1740,240 @@ test "autosave: save failure surfaces error and keeps existing current_file poin
     try std.testing.expectEqualStrings(bad_path, current.?);
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, output, "System") != null);
+}
+
+test "replace confirm: autosave cancel leaves existing target unchanged" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .paste = .{ .line = puzzle_gen.PuzzleGen.easy() } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    const replace_answers = [_]bool{false};
+    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    defer std.testing.allocator.free(default_virtual);
+    try transport_impl.put(default_virtual, "OLD");
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const bytes = transport_impl.files.get(default_virtual) orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, "OLD", bytes);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+test "replace confirm: paste detaches and requires replace confirm before autosave overwrite" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .paste = .{ .line = puzzle_gen.PuzzleGen.easy() } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    const replace_answers = [_]bool{false};
+    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    defer std.testing.allocator.free(default_virtual);
+    try transport_impl.put(default_virtual, "OLD");
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    app.write_context = .continuation;
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const bytes = transport_impl.files.get(default_virtual) orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, "OLD", bytes);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+test "replace confirm: undo autosave in detached context requires prompt before overwrite" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .undo = {} } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    const replace_answers = [_]bool{false};
+    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    defer std.testing.allocator.free(default_virtual);
+    try transport_impl.put(default_virtual, "OLD");
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    const almost = "483921657967345821251876493548132976729504138136798245372689514814253769695417382";
+    _ = app.engine.newFromOneLinePuzzle(almost);
+    _ = app.engine.exec(.{ .fill = .{ .row = 4, .col = 4, .digit = cell.CellValue.six } });
+    app.write_context = .detached;
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const bytes = transport_impl.files.get(default_virtual) orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, "OLD", bytes);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+test "replace confirm: redo autosave in detached context requires prompt before overwrite" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .redo = {} } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    const replace_answers = [_]bool{false};
+    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    defer std.testing.allocator.free(default_virtual);
+    try transport_impl.put(default_virtual, "OLD");
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    const almost = "483921657967345821251876493548132976729504138136798245372689514814253769695417382";
+    _ = app.engine.newFromOneLinePuzzle(almost);
+    _ = app.engine.exec(.{ .fill = .{ .row = 4, .col = 4, .digit = cell.CellValue.six } });
+    _ = app.engine.exec(.{ .undo = {} });
+    app.write_context = .detached;
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const bytes = transport_impl.files.get(default_virtual) orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, "OLD", bytes);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+test "replace confirm: save cancel leaves existing target unchanged" {
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .save = .{ .path = "/virtual/existing.sud" } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    const replace_answers = [_]bool{false};
+    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    try transport_impl.put("/virtual/existing.sud", "OLD");
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(config.Config.default(), facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const bytes = transport_impl.files.get("/virtual/existing.sud") orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, "OLD", bytes);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+test "replace confirm: save_as cancel leaves existing target unchanged" {
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .save_as = .{ .path = "/virtual/existing.sud" } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    const replace_answers = [_]bool{false};
+    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    try transport_impl.put("/virtual/existing.sud", "OLD");
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(config.Config.default(), facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const bytes = transport_impl.files.get("/virtual/existing.sud") orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, "OLD", bytes);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+test "new triggers replace confirm before autosave can overwrite restored file" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .new = .{ .puzzle = null } } },
+        .{ .valid = .{ .paste = .{ .line = puzzle_gen.PuzzleGen.easy() } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    const replace_answers = [_]bool{false};
+    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    try transport_impl.put("/virtual/old.sud", "OLD");
+
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, "/virtual/old.sud");
+
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const old_bytes = transport_impl.files.get("/virtual/old.sud") orelse return error.TestFailed;
+    try std.testing.expectEqualSlices(u8, "OLD", old_bytes);
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    defer std.testing.allocator.free(default_virtual);
+    try std.testing.expect(!transport_impl.files.contains(default_virtual));
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
 }

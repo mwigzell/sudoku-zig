@@ -568,6 +568,105 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
 }
 
 {
+  const board = makeMockBoard();
+  const status = { textContent: "", className: "" };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
+  const session = {
+    state: emptyState(),
+    legend: openLegend,
+    config: { auto_save: true },
+    default_save_filename: "sudoku.sud",
+  };
+  const fetchCalls = [];
+  const confirmPrompts = [];
+  const prevFetch = globalThis.fetch;
+  const prevConfirm = globalThis.confirm;
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({ url, init });
+    return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+  };
+  globalThis.confirm = (msg) => {
+    confirmPrompts.push(msg);
+    return false;
+  };
+  const game = {
+    exec() {
+      session.state = emptyState();
+      session.state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
+      return { ok: true, state: session.state, msg: null, is_quit: false };
+    },
+    getLegend() {
+      return { fill: true, clear: true, undo: true, redo: false };
+    },
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([4, 5, 6]) };
+    },
+  };
+
+  const outcome = handlePlayKey(
+    game,
+    board,
+    selection,
+    status,
+    errorModal,
+    "4",
+    session,
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  globalThis.fetch = prevFetch;
+  globalThis.confirm = prevConfirm;
+  assert.equal(fetchCalls.length, 1, "first autosave after detached context hits conflict path");
+  assert.equal(fetchCalls[0]?.url, "./current-file");
+  assert.equal(confirmPrompts.length, 1, "conflict surfaces replace confirmation");
+  assert.equal(confirmPrompts[0], "file already exists, replace?");
+  assert.equal(errorModal.el.hidden, true, "cancelled replace prompt is not treated as modal error");
+}
+
+{
+  const board = makeMockBoard();
+  const status = { textContent: "", className: "" };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
+  const session = { state: emptyState(), legend: openLegend };
+  const digitBtnHandlers = {};
+  const pad = {
+    querySelectorAll(selector) {
+      if (selector !== "[data-play-key]") return [];
+      return [
+        {
+          dataset: { playKey: "5", playCode: "" },
+          addEventListener(type, fn) {
+            digitBtnHandlers[type] = fn;
+          },
+        },
+      ];
+    },
+  };
+  wirePlayLoop(
+    board,
+    {
+      exec(action) {
+        assert.equal(action.action, "fill");
+        assert.equal(action.digit, 5);
+        return { ok: true, state: session.state, msg: null, is_quit: false };
+      },
+      getLegend() {
+        return openLegend;
+      },
+    },
+    selection,
+    status,
+    errorModal,
+    session,
+    { playPadEl: pad, createElement: makeRenderElement() },
+  );
+  digitBtnHandlers.click?.();
+}
+
+{
   const status = { textContent: "saved to: foo", className: "" };
   applyEventStatus(status, { ok: true, msg: null });
   assert.equal(status.textContent, "");

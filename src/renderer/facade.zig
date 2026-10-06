@@ -38,6 +38,7 @@ pub const Facade = struct {
     showLegend_fn: *const fn (*anyopaque, Legend) Error!void,
 
     showError_fn: *const fn (*anyopaque, []const u8) Error!void,
+    confirmReplace_fn: *const fn (*anyopaque, []const u8) Error!bool,
 
     getCommandInput_fn: *const fn (
         *anyopaque,
@@ -74,6 +75,11 @@ pub const Facade = struct {
     /// status_msg slot.
     pub fn showError(self: *const Facade, msg: []const u8) Error!void {
         return self.showError_fn(self.context, msg);
+    }
+
+    /// Prompt overwrite confirmation and return true only when the user picks OK.
+    pub fn confirmReplace(self: *const Facade, msg: []const u8) Error!bool {
+        return self.confirmReplace_fn(self.context, msg);
     }
 
     /// Show a prompt and get user command input, parsed against the offered
@@ -122,6 +128,12 @@ pub fn Make(comptime CT: type) type {
             self.showError(msg) catch return error.System;
         }
 
+        /// Adapter shim for concrete renderer replace-confirm implementations.
+        pub fn confirmReplace_wrapper(ctx: *anyopaque, msg: []const u8) Error!bool {
+            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
+            return self.confirmReplace(msg) catch return error.System;
+        }
+
         pub fn getCommandInput_wrapper(
             ctx: *anyopaque,
             names: []const []const u8,
@@ -156,6 +168,7 @@ pub fn Make(comptime CT: type) type {
                 .render_fn = render_wrapper,
                 .showLegend_fn = showLegend_wrapper,
                 .showError_fn = showError_wrapper,
+                .confirmReplace_fn = confirmReplace_wrapper,
                 .getCommandInput_fn = getCommandInput_wrapper,
                 .report_gen_progress_fn = reportGenProgress_wrapper,
                 .deinit_fn = deinit_wrapper,

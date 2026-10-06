@@ -11,6 +11,10 @@ import {
   DIFFICULTIES,
   filePickerStartIn,
 } from "./file_menu.js";
+import {
+  WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
+  WRITE_CONTEXT_EVENT_SAVE_SUCCESS,
+} from "./shell.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 import { wireGeneratingModal } from "./generating.js";
 
@@ -152,6 +156,7 @@ function makeRenderElement() {
   const genEl = { hidden: true };
   const genContinue = makeBtn();
   const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
+  const writeContextEvents = [];
   wireFileMenu(
     controls,
     game,
@@ -169,6 +174,10 @@ function makeRenderElement() {
       },
       pick: async () => ({ ok: false, cancelled: true }),
       createElement: renderElement,
+      writeContextEvent: async (eventName) => {
+        writeContextEvents.push(eventName);
+        return { ok: true };
+      },
     },
   );
 
@@ -184,10 +193,12 @@ function makeRenderElement() {
   await pickPromise;
   assert.equal(genEl.hidden, true);
   assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
+  assert.equal(writeContextEvents[0], WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS);
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, status: 204 });
   await controls.save.click();
   globalThis.fetch = prevFetch;
+  assert.equal(writeContextEvents[1], WRITE_CONTEXT_EVENT_SAVE_SUCCESS);
   assert.deepEqual([...downloaded.bytes], [9, 9, 9]);
   assert.equal(downloaded.name, "host-default.sud");
   assert.equal(session.boundFilename, "host-default.sud");
@@ -230,7 +241,7 @@ function makeRenderElement() {
   globalThis.fetch = async () => ({ ok: true, status: 204 });
   await controls.saveAs.click();
   globalThis.fetch = prevFetch;
-  assert.equal(downloaded.name, "sudoku.sud");
+  assert.equal(downloaded, null, "save-as requires host-provided default filename");
 }
 
 {
@@ -468,7 +479,7 @@ function makeRenderElement() {
   );
   await difficultyDialog.buttons[0].el.click();
   assert.equal(session.fileHandle, null, "save target unbound after New");
-  assert.equal(session.boundFilename, null, "bound filename cleared after New");
+  assert.equal(session.boundFilename, "bound.sud", "bound filename stays visible after New");
 }
 
 {
