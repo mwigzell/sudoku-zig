@@ -51,13 +51,24 @@ const Session = struct {
     has_current_file: bool,
     current_file: ?[]const u8,
     write_context: file_policy.WriteContext,
-    host_config_body_buf: [384]u8,
+    host_config_body_buf: [512]u8,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
         const startup_name = startupFilename(self.current_file);
         return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, startup_name, &self.host_config_body_buf) catch return ServeError.System;
     }
 };
+
+fn writeContextName(ctx: file_policy.WriteContext) []const u8 {
+    return switch (ctx) {
+        .continuation => "continuation",
+        .detached => "detached",
+    };
+}
+
+fn contextResponseBody(write_context: file_policy.WriteContext, buf: []u8) ServeError![]const u8 {
+    return std.fmt.bufPrint(buf, "{{\"write_context\":\"{s}\"}}", .{writeContextName(write_context)}) catch return ServeError.System;
+}
 
 const SettingsPostBody = struct {
     difficulty: ?[]const u8 = null,
@@ -392,7 +403,9 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         const event_name = std.mem.trim(u8, body, " \t\r\n");
         if (event_name.len == 0) return ServeError.System;
         try applyCurrentFileContextEvent(io, session, event_name);
-        try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
+        var context_buf: [64]u8 = undefined;
+        const json = try contextResponseBody(session.write_context, &context_buf);
+        try writeFull(&w.interface, "200 OK", "application/json", json);
         return;
     }
     if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, "/current-file")) {

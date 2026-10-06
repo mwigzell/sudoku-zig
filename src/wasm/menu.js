@@ -4,11 +4,9 @@ import {
   applyEventStatus,
   applyHintExecStatus,
   applyExecResult,
-  eventToWriteContext,
-  postWriteContextEvent,
+  postWriteContextEventForSession,
   showErrorModal,
-  persistCurrentFileSnapshotWithReplacePrompt,
-  WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
+  startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_PASTE_SUCCESS,
   startCopyPuzzleOnClick,
   readClipboardText,
@@ -19,10 +17,6 @@ import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 import { applySuccessfulExec, readSelection, renderBoard } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
-
-async function noOpWriteContextEvent() {
-  return { ok: true };
-}
 
 /** Mirror legend flags and deselect enablement (active only when a cell is selected). */
 export function syncEditMenu(legend, controls, selection, boardEl) {
@@ -74,7 +68,6 @@ export async function handlePastePuzzle(
   { clipboard } = {},
 ) {
   if (!session.legend[LEGEND_WIRE_PASTE]) return { handled: false };
-  const publishWriteContextEvent = session.writeContextEvent ?? noOpWriteContextEvent;
   const read = await readClipboardText({ clipboard });
   if (!read.ok) {
     if (read.error) showErrorModal(errorModal, read.error);
@@ -87,10 +80,7 @@ export async function handlePastePuzzle(
   }
   session.fileHandle = null;
   session.boundFilename = null;
-  const posted = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_PASTE_SUCCESS);
-  if (posted.ok) {
-    session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_PASTE_SUCCESS, session.write_context);
-  }
+  await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_PASTE_SUCCESS);
   syncCurrentFileLabels(session);
   session.state = result.state;
   session.legend = result.legend;
@@ -144,21 +134,9 @@ export function handleEditAction(
 
   session.legend = game.getLegend();
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
-  if (session.config?.auto_save === true) {
-    const publishWriteContextEvent = session.writeContextEvent ?? noOpWriteContextEvent;
-    void persistCurrentFileSnapshotWithReplacePrompt(game, {
-      saveName: session.boundFilename ?? session.default_save_filename,
-    }).then((saved) => {
-      if (saved.ok) {
-        void publishWriteContextEvent(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS).then((posted) => {
-          if (posted.ok) {
-            session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS, session.write_context);
-          }
-        });
-      }
-      if (!saved.ok && !saved.cancelled) applyExecResult(statusEl, errorModal, saved);
-    });
-  }
+  startAutoSavePolicy(game, session, action, {
+    onError: (saved) => applyExecResult(statusEl, errorModal, saved),
+  });
   return { handled: true, legend: session.legend };
 }
 
@@ -230,21 +208,9 @@ export function wireEditMenu(
     event?.stopPropagation?.();
     void handlePastePuzzle(game, session, statusEl, errorModal, { clipboard }).then((outcome) => {
       if (!outcome.handled || !outcome.ok) return;
-      if (session.config?.auto_save === true) {
-        const publishWriteContextEvent = session.writeContextEvent ?? noOpWriteContextEvent;
-        void persistCurrentFileSnapshotWithReplacePrompt(game, {
-          saveName: session.boundFilename ?? session.default_save_filename,
-        }).then((saved) => {
-          if (saved.ok) {
-            void publishWriteContextEvent(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS).then((posted) => {
-              if (posted.ok) {
-                session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS, session.write_context);
-              }
-            });
-          }
-          if (!saved.ok && !saved.cancelled) applyExecResult(statusEl, errorModal, saved);
-        });
-      }
+      startAutoSavePolicy(game, session, "paste", {
+        onError: (saved) => applyExecResult(statusEl, errorModal, saved),
+      });
       renderBoard(boardEl, session.state, createElement);
       selection.deselect();
       syncEdit();

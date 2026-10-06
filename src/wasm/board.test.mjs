@@ -26,6 +26,18 @@ import {
 } from "./board.js";
 import { applyEventStatus, applyExecResult, showErrorModal, formatGenProgress } from "./shell.js";
 
+const AUTO_SAVE_TRIGGERS = [
+  "fill",
+  "clear",
+  "undo",
+  "redo",
+  "solve",
+  "solve_for_me",
+  "open",
+  "import",
+  "paste",
+];
+
 assert.equal(formatGenProgress(4, 71, 36), "Generating: 71 givens → ≤36");
 assert.equal(formatGenProgress(0, 0, 0), "Generating: new attempt…");
 
@@ -529,7 +541,12 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
   const status = { textContent: "", className: "" };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  const session = { state: emptyState(), legend: openLegend, config: { auto_save: true } };
+  const session = {
+    state: emptyState(),
+    legend: openLegend,
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+  };
   let posted = null;
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -576,6 +593,7 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
     state: emptyState(),
     legend: openLegend,
     config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku.sud",
   };
   const fetchCalls = [];

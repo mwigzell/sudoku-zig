@@ -10,9 +10,9 @@ import {
   exportPuzzle,
   applyEventStatus,
   clearEventStatus,
-  postWriteContextEvent,
-  eventToWriteContext,
+  postWriteContextEventForSession,
   persistCurrentFileSnapshotWithReplacePrompt,
+  startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
   WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
   WRITE_CONTEXT_EVENT_SAVE_SUCCESS,
@@ -308,19 +308,22 @@ export function wireFileMenu(
     writeContextEvent = noOpWriteContextEvent,
   } = {},
 ) {
-  const publishWriteContextEvent = session.writeContextEvent ?? writeContextEvent;
+  if (!session.writeContextEvent) session.writeContextEvent = writeContextEvent;
   const fail = (result) => {
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
   const applyNewGame = async (result) => {
     session.fileHandle = null;
-    const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, globalThis.fetch).catch((err) => ({
+    const contextUpdated = await postWriteContextEventForSession(
+      session,
+      WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
+      globalThis.fetch,
+    ).catch((err) => ({
       ok: false,
       error: err?.message ?? String(err),
     }));
     if (!contextUpdated.ok) fail(contextUpdated);
-    session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, session.write_context);
     refreshSession(
       boardEl,
       selection,
@@ -406,12 +409,8 @@ export function wireFileMenu(
         fail(mirrored);
         return;
       }
-      const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_SAVE_SUCCESS, globalThis.fetch);
-      if (contextUpdated.ok) {
-        session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_SAVE_SUCCESS, session.write_context);
-      } else {
-        fail(contextUpdated);
-      }
+      const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_SAVE_SUCCESS, globalThis.fetch);
+      if (!contextUpdated.ok) fail(contextUpdated);
       syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
     } else if (!saved.ok && !saved.cancelled) {
@@ -443,12 +442,8 @@ export function wireFileMenu(
         fail(mirrored);
         return;
       }
-      const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS, globalThis.fetch);
-      if (contextUpdated.ok) {
-        session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS, session.write_context);
-      } else {
-        fail(contextUpdated);
-      }
+      const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS, globalThis.fetch);
+      if (!contextUpdated.ok) fail(contextUpdated);
       syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
     } else if (!saved.ok && !saved.cancelled) {
@@ -487,12 +482,8 @@ export function wireFileMenu(
     }
     session.fileHandle = picked.handle ?? null;
     session.boundFilename = picked.name;
-    const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, globalThis.fetch);
-    if (contextUpdated.ok) {
-      session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, session.write_context);
-    } else {
-      fail(contextUpdated);
-    }
+    const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_OPEN_SUCCESS, globalThis.fetch);
+    if (!contextUpdated.ok) fail(contextUpdated);
     refreshSession(
       boardEl,
       selection,
@@ -506,6 +497,7 @@ export function wireFileMenu(
       onViewRefresh,
       result.msg,
     );
+    startAutoSavePolicy(game, session, "open", { onError: fail });
   });
 
   controls.import?.addEventListener("click", async () => {
@@ -521,12 +513,8 @@ export function wireFileMenu(
     }
     session.fileHandle = null;
     session.boundFilename = null;
-    const contextUpdated = await publishWriteContextEvent(WRITE_CONTEXT_EVENT_IMPORT_SUCCESS, globalThis.fetch);
-    if (contextUpdated.ok) {
-      session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_IMPORT_SUCCESS, session.write_context);
-    } else {
-      fail(contextUpdated);
-    }
+    const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_IMPORT_SUCCESS, globalThis.fetch);
+    if (!contextUpdated.ok) fail(contextUpdated);
     refreshSession(
       boardEl,
       selection,
@@ -540,6 +528,7 @@ export function wireFileMenu(
       onViewRefresh,
       result.msg,
     );
+    startAutoSavePolicy(game, session, "import", { onError: fail });
   });
 
   controls.export?.addEventListener("click", async () => {

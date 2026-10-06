@@ -35,6 +35,23 @@ pub const WriteContextEvent = enum {
     paste_success,
 };
 
+/// Canonical command names that trigger auto-save across platform seams.
+pub const AUTO_SAVE_TRIGGER_COMMANDS = [_][]const u8{
+    "fill",
+    "clear",
+    "undo",
+    "redo",
+    "solve",
+    "solve_for_me",
+    "open",
+    "import",
+    "paste",
+};
+
+/// Wire JSON for host startup payload; used by web adapters to avoid local trigger lists.
+pub const AUTO_SAVE_TRIGGER_COMMANDS_JSON: []const u8 =
+    "[\"fill\",\"clear\",\"undo\",\"redo\",\"solve\",\"solve_for_me\",\"open\",\"import\",\"paste\"]";
+
 /// User-facing replace confirmation copy used by all write seams.
 pub const REPLACE_CONFIRM_MSG: []const u8 = "file already exists, replace?";
 
@@ -78,6 +95,14 @@ pub fn parseWriteContextEvent(name: []const u8) ?WriteContextEvent {
     if (std.mem.eql(u8, name, "import_success")) return .import_success;
     if (std.mem.eql(u8, name, "paste_success")) return .paste_success;
     return null;
+}
+
+/// Returns true when the command name should trigger auto-save policy.
+pub fn commandTriggersAutoSaveByName(name: []const u8) bool {
+    for (AUTO_SAVE_TRIGGER_COMMANDS) |trigger| {
+        if (std.mem.eql(u8, name, trigger)) return true;
+    }
+    return false;
 }
 
 test "overwrite policy requires confirm for every intent when target exists" {
@@ -137,4 +162,13 @@ test "nextWriteContext maps new/import/paste/idle events to detached" {
     for (detached_events) |event| {
         try std.testing.expectEqual(WriteContext.detached, nextWriteContext(.continuation, event));
     }
+}
+
+test "commandTriggersAutoSaveByName follows shared trigger set" {
+    const should_trigger = [_][]const u8{ "fill", "undo", "solve", "open", "paste" };
+    for (should_trigger) |name| {
+        try std.testing.expect(commandTriggersAutoSaveByName(name));
+    }
+    try std.testing.expect(!commandTriggersAutoSaveByName("hint"));
+    try std.testing.expect(!commandTriggersAutoSaveByName("save_as"));
 }

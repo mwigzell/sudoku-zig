@@ -83,10 +83,7 @@ pub const Sudoku = struct {
     }
 
     fn commandTriggersAutoSave(cmd: command.Command) bool {
-        return switch (cmd) {
-            .fill, .clear, .undo, .redo, .solve_for_me, .open, .import, .paste => true,
-            else => false,
-        };
+        return file_policy.commandTriggersAutoSaveByName(@tagName(cmd));
     }
 
     fn pathExists(self: *@This(), path: []const u8) bool {
@@ -159,10 +156,13 @@ pub const Sudoku = struct {
             .ok => {
                 self.persistResolvedCurrentFile(target);
                 self.applyWriteContextEvent(.auto_save_success);
+                // Preserve the originating command status (e.g. "You win!") on
+                // successful autosave; autosave is a background persistence side effect.
+                return event;
             },
-            .error_msg => {},
+            .error_msg => return save_event,
         }
-        return save_event;
+        return event;
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
@@ -863,6 +863,35 @@ test "integrated e2e - run: new command resets board and history" {
 
     // history should be empty after new command clears it
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
+}
+
+test "new command with auto_save enabled does not print saved-to status" {
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    cfg.difficulty = .hard;
+    cfg.preferred_renderer = .ansi;
+    cfg.fallback_renderer = .ansi;
+    cfg.log_level = .info;
+
+    const responses = [_][]const u8{
+        "m",
+        "5",
+        "2",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, "saved to:") == null);
 }
 // import via menu: puzzle file loaded into the engine, history reset
 test "integrated e2e - run: import via menu loads puzzle and clears history" {

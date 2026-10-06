@@ -3,15 +3,10 @@
 import {
   applyEventStatus,
   applyExecResult,
-  eventToWriteContext,
-  persistCurrentFileSnapshotWithReplacePrompt,
-  WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
+  startAutoSavePolicy,
 } from "./shell.js";
 
 export { applyEventStatus };
-async function noOpWriteContextEvent() {
-  return { ok: true };
-}
 
 const GRID_SIZE = 9;
 export const FRAME_SIZE = 11;
@@ -370,21 +365,9 @@ export function handlePlayKey(
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
   session.state = result.state;
   session.legend = game.getLegend();
-  if (session.config?.auto_save === true) {
-    const publishWriteContextEvent = session.writeContextEvent ?? noOpWriteContextEvent;
-    void persistCurrentFileSnapshotWithReplacePrompt(game, {
-      saveName: session.boundFilename ?? session.default_save_filename,
-    }).then((saved) => {
-      if (saved.ok) {
-        void publishWriteContextEvent(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS).then((posted) => {
-          if (posted.ok) {
-            session.write_context = eventToWriteContext(WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS, session.write_context);
-          }
-        });
-      }
-      if (!saved.ok && !saved.cancelled) applyExecResult(statusEl, errorModal, saved);
-    });
-  }
+  startAutoSavePolicy(game, session, play.type, {
+    onError: (saved) => applyExecResult(statusEl, errorModal, saved),
+  });
   return { handled: true, legend: session.legend };
 }
 

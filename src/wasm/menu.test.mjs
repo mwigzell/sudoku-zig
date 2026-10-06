@@ -15,6 +15,18 @@ import {
 import { applyHintExecStatus } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 
+const AUTO_SAVE_TRIGGERS = [
+  "fill",
+  "clear",
+  "undo",
+  "redo",
+  "solve",
+  "solve_for_me",
+  "open",
+  "import",
+  "paste",
+];
+
 function makeBtn() {
   const handlers = {};
   return {
@@ -153,6 +165,7 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     state: emptyState(),
     legend: { solve: true, undo: false, redo: false },
     config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku.sud",
   };
   let posted = null;
@@ -711,6 +724,7 @@ const GOLDEN_PUZZLE_LINE =
     state: emptyState(),
     legend: { [LEGEND_WIRE_PASTE]: true },
     config: { show_region: false, auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku.sud",
   };
   const nextState = emptyState();

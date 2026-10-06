@@ -981,8 +981,9 @@
       offerInitialNewGame,
       persistHostSettings,
       startupWriteContextEvent,
-      eventToWriteContext,
       postWriteContextEvent,
+      postWriteContextEventForSession,
+      WRITE_CONTEXT_DETACHED,
       showErrorModal,
       wireErrorModal,
     } from "../shell.js";
@@ -1092,10 +1093,11 @@
         legend: ready.legend,
         config: ready.config,
         default_save_filename: ready.default_save_filename,
-        write_context: eventToWriteContext(startupWriteContextEvent(ready.kind)),
+        autosave_trigger_commands: ready.autosave_trigger_commands,
+        write_context: WRITE_CONTEXT_DETACHED,
         writeContextEvent: postWriteContextEvent,
       };
-      void postWriteContextEvent(startupWriteContextEvent(ready.kind));
+      void postWriteContextEventForSession(session, startupWriteContextEvent(ready.kind));
       syncCurrentFileLabels(session);
       renderBoard(boardEl, session.state);
       if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {

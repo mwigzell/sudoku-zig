@@ -9,7 +9,7 @@ import {
   persistCurrentFileSnapshotWithReplacePrompt,
   hostViewPrefsForPersist,
   startupWriteContextEvent,
-  eventToWriteContext,
+  postWriteContextEventForSession,
   WRITE_CONTEXT_CONTINUATION,
   WRITE_CONTEXT_DETACHED,
   initializeWebSession,
@@ -23,6 +23,18 @@ import {
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
+
+const AUTO_SAVE_TRIGGERS = [
+  "fill",
+  "clear",
+  "undo",
+  "redo",
+  "solve",
+  "solve_for_me",
+  "open",
+  "import",
+  "paste",
+];
 
 function makeContinueBtn() {
   return {
@@ -320,8 +332,17 @@ async function flushDialogPaint() {
   assert.equal(startupWriteContextEvent("restore"), "startup_restore");
   assert.equal(startupWriteContextEvent("new"), "startup_new");
   assert.equal(startupWriteContextEvent("empty"), "startup_idle");
-  assert.equal(eventToWriteContext("startup_restore"), WRITE_CONTEXT_CONTINUATION);
-  assert.equal(eventToWriteContext("new_game_success"), WRITE_CONTEXT_DETACHED);
+}
+
+{
+  const session = { write_context: WRITE_CONTEXT_DETACHED, writeContextEvent: postWriteContextEvent };
+  const out = await postWriteContextEventForSession(
+    session,
+    "startup_restore",
+    async () => ({ ok: true, status: 200, json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }) }),
+  );
+  assert.equal(out.ok, true);
+  assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
 }
 
 {
@@ -435,6 +456,7 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "new",
     startup_status: null,
@@ -494,6 +516,7 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "idle",
     startup_status: "Welcome to sudoku-zig! Choose New or Open to play",
@@ -674,6 +697,7 @@ async function flushDialogPaint() {
       auto_restore: false,
       auto_new: false,
       auto_save: false,
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       default_save_filename: "sudoku_save.sud",
     };
     delete cfg[key];
@@ -691,6 +715,7 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
     startup_status: null,
   };
@@ -711,6 +736,7 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
     startup_status: null,
   };

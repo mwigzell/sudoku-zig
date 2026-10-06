@@ -194,6 +194,7 @@ export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
   "auto_restore",
   "auto_new",
   "auto_save",
+  "autosave_trigger_commands",
 ];
 
 export function assertWebBootConfig(config, label = "boot.config") {
@@ -318,7 +319,32 @@ export async function postWriteContextEvent(eventName, fetchFn = globalThis.fetc
     body: eventName,
   });
   if (!res.ok) return { ok: false, error: `current-file context update failed: ${res.status}` };
-  return { ok: true };
+  let writeContext;
+  try {
+    const payload = await res.json();
+    if (payload && typeof payload.write_context === "string") {
+      writeContext = payload.write_context;
+    }
+  } catch {
+    // Keep compatibility with plain/empty responses.
+  }
+  return { ok: true, write_context: writeContext };
+}
+
+/** Publish one write-context event, then update local session context on success. */
+export async function postWriteContextEventForSession(
+  session,
+  eventName,
+  fetchFn = globalThis.fetch,
+) {
+  const publish =
+    session?.writeContextEvent ??
+    (async () => ({ ok: true }));
+  const posted = await publish(eventName, fetchFn);
+  if (posted.ok && typeof posted.write_context === "string") {
+    session.write_context = posted.write_context;
+  }
+  return posted;
 }
 
 /** Persist startup snapshot with a replace-confirm retry on host conflict. */
@@ -344,30 +370,39 @@ export async function persistCurrentFileSnapshotWithReplacePrompt(
   return persistCurrentFileSnapshot(game, fetchFn, saveName, true);
 }
 
+/** Shared post-command autosave policy for web handlers. */
+export function startAutoSavePolicy(
+  game,
+  session,
+  commandName,
+  { fetchFn = globalThis.fetch, askConfirm, onError } = {},
+) {
+  if (session?.config?.auto_save !== true) return;
+  const triggerNames = session?.autosave_trigger_commands;
+  if (!Array.isArray(triggerNames) || !triggerNames.includes(commandName)) return;
+  void persistCurrentFileSnapshotWithReplacePrompt(game, {
+    fetchFn,
+    saveName: session.boundFilename ?? session.default_save_filename,
+    askConfirm,
+  }).then(async (saved) => {
+    if (!saved.ok) {
+      if (!saved.cancelled) onError?.(saved);
+      return;
+    }
+    const posted = await postWriteContextEventForSession(
+      session,
+      WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
+      fetchFn,
+    );
+    if (!posted.ok) onError?.(posted);
+  });
+}
+
 /** Startup write lane state for web session persistence policy. */
 export function startupWriteContextEvent(kind) {
   if (kind === "restore") return WRITE_CONTEXT_EVENT_STARTUP_RESTORE;
   if (kind === "new") return WRITE_CONTEXT_EVENT_STARTUP_NEW;
   return WRITE_CONTEXT_EVENT_STARTUP_IDLE;
-}
-
-export function eventToWriteContext(eventName, currentContext = WRITE_CONTEXT_DETACHED) {
-  switch (eventName) {
-    case WRITE_CONTEXT_EVENT_STARTUP_RESTORE:
-    case WRITE_CONTEXT_EVENT_OPEN_SUCCESS:
-    case WRITE_CONTEXT_EVENT_SAVE_SUCCESS:
-    case WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS:
-    case WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS:
-      return WRITE_CONTEXT_CONTINUATION;
-    case WRITE_CONTEXT_EVENT_STARTUP_NEW:
-    case WRITE_CONTEXT_EVENT_STARTUP_IDLE:
-    case WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS:
-    case WRITE_CONTEXT_EVENT_IMPORT_SUCCESS:
-    case WRITE_CONTEXT_EVENT_PASTE_SUCCESS:
-      return WRITE_CONTEXT_DETACHED;
-    default:
-      return currentContext;
-  }
 }
 
 /**
@@ -387,6 +422,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     config: game.getConfig(),
     msg: boot.msg ?? null,
     default_save_filename: hostCfg.default_save_filename,
+    autosave_trigger_commands: hostCfg.autosave_trigger_commands,
     startup_action: hostCfg.startup_action ?? "idle",
     startup_status: hostCfg.startup_status ?? null,
     startup_save_path: hostCfg.startup_save_path ?? null,
