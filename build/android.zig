@@ -50,7 +50,8 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         host_prebuilt,
         "sysroot",
     });
-    const merged_crt_dir = b.pathResolve(&.{
+    const merged_crt_dir = b.pathJoin(&.{
+        buildCwd(b),
         OutDir,
         "crt",
         "aarch64-linux-android",
@@ -143,6 +144,10 @@ fn lookupEnvBuild(b: *std.Build, name: []const u8) ?[]const u8 {
     const value = b.graph.environ_map.get(name) orelse return null;
     if (value.len == 0) return null;
     return value;
+}
+
+fn buildCwd(b: *std.Build) []const u8 {
+    return lookupEnvBuild(b, "PWD") orelse ".";
 }
 
 fn bionicLibCFile(b: *std.Build, sysroot: []const u8, crt_dir: []const u8) std.Build.LazyPath {
