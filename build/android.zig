@@ -20,7 +20,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     gen_build_info: *std.Build.Step,
 }) *std.Build.Step {
     const ndk_opt = b.option([]const u8, "ndk", "Android NDK root (default: $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT)");
-    const ndk_root = resolveNdkRoot(ndk_opt) orelse {
+    const ndk_root = resolveNdkRoot(b, ndk_opt) orelse {
         const fail = b.addSystemCommand(&.{
             "sh",
             "-c",
@@ -87,7 +87,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     android_lib_step.dependOn(&install.step);
 
     const sdk_opt = b.option([]const u8, "sdk", "Android SDK root (default: $ANDROID_HOME or $ANDROID_SDK_ROOT)");
-    const sdk_root = resolveSdkRoot(sdk_opt) orelse {
+    const sdk_root = resolveSdkRoot(b, sdk_opt) orelse {
         const fail = b.addSystemCommand(&.{
             "sh",
             "-c",
@@ -119,23 +119,22 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     return android_step;
 }
 
-fn resolveNdkRoot(override: ?[]const u8) ?[]const u8 {
+fn resolveNdkRoot(b: *std.Build, override: ?[]const u8) ?[]const u8 {
     if (override) |p| return p;
-    if (lookupEnvLiteral("ANDROID_NDK_HOME")) |p| return p;
-    return lookupEnvLiteral("ANDROID_NDK_ROOT");
+    if (lookupEnvBuild(b, "ANDROID_NDK_HOME")) |p| return p;
+    return lookupEnvBuild(b, "ANDROID_NDK_ROOT");
 }
 
-fn resolveSdkRoot(override: ?[]const u8) ?[]const u8 {
+fn resolveSdkRoot(b: *std.Build, override: ?[]const u8) ?[]const u8 {
     if (override) |p| return p;
-    if (lookupEnvLiteral("ANDROID_HOME")) |p| return p;
-    return lookupEnvLiteral("ANDROID_SDK_ROOT");
+    if (lookupEnvBuild(b, "ANDROID_HOME")) |p| return p;
+    return lookupEnvBuild(b, "ANDROID_SDK_ROOT");
 }
 
-fn lookupEnvLiteral(name: [*:0]const u8) ?[]const u8 {
-    const value = std.c.getenv(name) orelse return null;
-    const slice = std.mem.sliceTo(value, 0);
-    if (slice.len == 0) return null;
-    return slice;
+fn lookupEnvBuild(b: *std.Build, name: []const u8) ?[]const u8 {
+    const value = b.graph.environ_map.get(name) orelse return null;
+    if (value.len == 0) return null;
+    return value;
 }
 
 fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.LazyPath {
