@@ -41,12 +41,13 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
+    const host_prebuilt = resolveHostPrebuiltTag(b, ndk_root);
     const sysroot = b.pathJoin(&.{
         ndk_root,
         "toolchains",
         "llvm",
         "prebuilt",
-        hostPrebuiltTag(),
+        host_prebuilt,
         "sysroot",
     });
 
@@ -138,25 +139,65 @@ fn lookupEnvLiteral(name: [*:0]const u8) ?[]const u8 {
 }
 
 fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.LazyPath {
+    const crt_dir = detectCrtDir(b, sysroot, api_level);
     const wf = b.addWriteFiles();
     const contents = b.fmt(
         \\include_dir={s}/usr/include
         \\sys_include_dir={s}/usr/include/aarch64-linux-android
-        \\crt_dir={s}/usr/lib/aarch64-linux-android/{d}
+        \\crt_dir={s}
         \\msvc_lib_dir=
         \\kernel32_lib_dir=
         \\gcc_dir=
         \\
-    , .{ sysroot, sysroot, sysroot, api_level });
+    , .{ sysroot, sysroot, crt_dir });
     return wf.add("android-bionic-libc.txt", contents);
 }
 
-fn hostPrebuiltTag() []const u8 {
+fn hostPrebuiltCandidates() []const []const u8 {
     const builtin = @import("builtin");
     return switch (builtin.os.tag) {
-        .macos => "darwin-x86_64",
-        .linux => "linux-x86_64",
-        .windows => "windows-x86_64",
+        .macos => switch (builtin.cpu.arch) {
+            .aarch64 => &.{ "darwin-arm64", "darwin-x86_64" },
+            .x86_64 => &.{ "darwin-x86_64", "darwin-arm64" },
+            else => @panic("unsupported macOS CPU arch for Android NDK cross-compile"),
+        },
+        .linux => switch (builtin.cpu.arch) {
+            .aarch64 => &.{ "linux-aarch64", "linux-x86_64" },
+            .x86_64 => &.{ "linux-x86_64", "linux-aarch64" },
+            else => @panic("unsupported Linux CPU arch for Android NDK cross-compile"),
+        },
+        .windows => switch (builtin.cpu.arch) {
+            .aarch64 => &.{ "windows-arm64", "windows-x86_64" },
+            .x86_64 => &.{ "windows-x86_64", "windows-arm64" },
+            else => @panic("unsupported Windows CPU arch for Android NDK cross-compile"),
+        },
         else => @panic("unsupported host OS for Android NDK cross-compile"),
     };
+}
+
+fn detectCrtDir(b: *std.Build, sysroot: []const u8, api_level: u32) []const u8 {
+    const io = b.graph.io;
+    const api_dir = b.pathJoin(&.{ sysroot, "usr", "lib", "aarch64-linux-android", b.fmt("{d}", .{api_level}) });
+    if (std.Io.Dir.cwd().access(io, api_dir, .{})) |_| return api_dir else |_| {}
+
+    const abi_dir = b.pathJoin(&.{ sysroot, "usr", "lib", "aarch64-linux-android" });
+    if (std.Io.Dir.cwd().access(io, abi_dir, .{})) |_| return abi_dir else |_| {}
+
+    const lib64_dir = b.pathJoin(&.{ sysroot, "usr", "lib64" });
+    if (std.Io.Dir.cwd().access(io, lib64_dir, .{})) |_| return lib64_dir else |_| {}
+
+    const lib_dir = b.pathJoin(&.{ sysroot, "usr", "lib" });
+    if (std.Io.Dir.cwd().access(io, lib_dir, .{})) |_| return lib_dir else |_| {}
+
+    @panic("could not find Android NDK crt dir; checked common NDK layouts");
+}
+
+fn resolveHostPrebuiltTag(b: *std.Build, ndk_root: []const u8) []const u8 {
+    const io = b.graph.io;
+    for (hostPrebuiltCandidates()) |tag| {
+        const path = b.pathJoin(&.{ ndk_root, "toolchains", "llvm", "prebuilt", tag });
+        std.Io.Dir.cwd().access(io, path, .{}) catch continue;
+        return tag;
+    }
+    @panic("could not find Android NDK host prebuilt dir for this host");
 }
