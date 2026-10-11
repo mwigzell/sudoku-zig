@@ -50,6 +50,13 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         host_prebuilt,
         "sysroot",
     });
+    const merged_crt_dir = b.pathJoin(&.{
+        OutDir,
+        "crt",
+        "aarch64-linux-android",
+        b.fmt("{d}", .{android_api_level}),
+    });
+    const prepare_crt = addPrepareMergedCrtStep(b, sysroot, android_api_level, merged_crt_dir);
 
     const lib_mod = b.createModule(.{
         .root_source_file = b.path("src/android_shared.zig"),
@@ -77,10 +84,11 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     shared.root_module.addCSourceFile(.{
         .file = b.path(JniHelpersC),
     });
-    shared.setLibCFile(bionicLibCFile(b, sysroot, android_api_level));
+    shared.setLibCFile(bionicLibCFile(b, sysroot, merged_crt_dir));
     shared.root_module.pic = true;
     shared.step.dependOn(deps.wasm_emit);
     shared.step.dependOn(deps.gen_build_info);
+    shared.step.dependOn(&prepare_crt.step);
 
     const install = b.addInstallArtifact(shared, .{});
     const android_lib_step = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
@@ -137,8 +145,7 @@ fn lookupEnvBuild(b: *std.Build, name: []const u8) ?[]const u8 {
     return value;
 }
 
-fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.LazyPath {
-    const crt_dir = detectCrtDir(b, sysroot, api_level);
+fn bionicLibCFile(b: *std.Build, sysroot: []const u8, crt_dir: []const u8) std.Build.LazyPath {
     const wf = b.addWriteFiles();
     const contents = b.fmt(
         \\include_dir={s}/usr/include
@@ -174,23 +181,6 @@ fn hostPrebuiltCandidates() []const []const u8 {
     };
 }
 
-fn detectCrtDir(b: *std.Build, sysroot: []const u8, api_level: u32) []const u8 {
-    const io = b.graph.io;
-    const api_dir = b.pathJoin(&.{ sysroot, "usr", "lib", "aarch64-linux-android", b.fmt("{d}", .{api_level}) });
-    if (std.Io.Dir.cwd().access(io, api_dir, .{})) |_| return api_dir else |_| {}
-
-    const abi_dir = b.pathJoin(&.{ sysroot, "usr", "lib", "aarch64-linux-android" });
-    if (std.Io.Dir.cwd().access(io, abi_dir, .{})) |_| return abi_dir else |_| {}
-
-    const lib64_dir = b.pathJoin(&.{ sysroot, "usr", "lib64" });
-    if (std.Io.Dir.cwd().access(io, lib64_dir, .{})) |_| return lib64_dir else |_| {}
-
-    const lib_dir = b.pathJoin(&.{ sysroot, "usr", "lib" });
-    if (std.Io.Dir.cwd().access(io, lib_dir, .{})) |_| return lib_dir else |_| {}
-
-    @panic("could not find Android NDK crt dir; checked common NDK layouts");
-}
-
 fn resolveHostPrebuiltTag(b: *std.Build, ndk_root: []const u8) []const u8 {
     const io = b.graph.io;
     for (hostPrebuiltCandidates()) |tag| {
@@ -199,4 +189,45 @@ fn resolveHostPrebuiltTag(b: *std.Build, ndk_root: []const u8) []const u8 {
         return tag;
     }
     @panic("could not find Android NDK host prebuilt dir for this host");
+}
+
+fn addPrepareMergedCrtStep(b: *std.Build, sysroot: []const u8, api_level: u32, out_dir: []const u8) *std.Build.Step.Run {
+    const prep = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        \\set -eu
+        \\sysroot="$1"
+        \\api="$2"
+        \\out="$3"
+        \\abi_dir="$sysroot/usr/lib/aarch64-linux-android"
+        \\api_dir="$abi_dir/$api"
+        \\
+        \\rm -rf "$out"
+        \\mkdir -p "$out"
+        \\
+        \\copy_files() {
+        \\  d="$1"
+        \\  [ -d "$d" ] || return 0
+        \\  for f in "$d"/*; do
+        \\    [ -f "$f" ] || continue
+        \\    [ -e "$f" ] || continue
+        \\    cp -f "$f" "$out/"
+        \\  done
+        \\}
+        \\
+        \\copy_files "$abi_dir"
+        \\copy_files "$api_dir"
+        \\
+        \\set -- "$out"/*.o
+        \\if [ ! -e "$1" ]; then
+        \\  echo "error: no crt objects found in $abi_dir or $api_dir" >&2
+        \\  exit 1
+        \\fi
+        ,
+        "--",
+        sysroot,
+        b.fmt("{d}", .{api_level}),
+        out_dir,
+    });
+    return prep;
 }
