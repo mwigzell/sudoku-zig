@@ -50,7 +50,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         host_prebuilt,
         "sysroot",
     });
-    const merged_crt_dir = b.pathJoin(&.{
+    const merged_crt_dir = b.pathResolve(&.{
         OutDir,
         "crt",
         "aarch64-linux-android",
