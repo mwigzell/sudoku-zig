@@ -21,6 +21,7 @@ import {
   assertWebBootConfig,
   assertHostStartupConfig,
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
+  REQUIRED_WRITE_CONTEXT_EVENT_KEYS,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
 
@@ -35,18 +36,9 @@ const AUTO_SAVE_TRIGGERS = [
   "import",
   "paste",
 ];
-const WRITE_CONTEXT_EVENTS = {
-  startup_restore: "startup_restore",
-  startup_new: "startup_new",
-  startup_idle: "startup_idle",
-  open_success: "open_success",
-  save_success: "save_success",
-  save_as_success: "save_as_success",
-  auto_save_success: "auto_save_success",
-  new_game_success: "new_game_success",
-  import_success: "import_success",
-  paste_success: "paste_success",
-};
+const WRITE_CONTEXT_EVENTS = Object.fromEntries(
+  REQUIRED_WRITE_CONTEXT_EVENT_KEYS.map((name) => [name, name]),
+);
 
 function makeContinueBtn() {
   return {

@@ -248,10 +248,17 @@ for f in "${CHANGED[@]}"; do
     "duplicated write-context event literals (define in file_policy; avoid cross-layer copies)"
 done
 
+# --- 12. DRY: no local write-context event map fixtures in wasm tests ---
+for f in "${CHANGED[@]}"; do
+  [[ "$f" =~ ^src/wasm/.*\.mjs$ ]] || continue
+  check_added_pattern "$f" 'const[[:space:]]+WRITE_CONTEXT_EVENTS[[:space:]]*=[[:space:]]*\{' \
+    "local write-context event map fixture (import REQUIRED_WRITE_CONTEXT_EVENT_KEYS from shell.js)"
+done
+
 # --- report ---
 if [[ $FAIL -eq 0 ]]; then
   pass_line "mechanical standards clean (${#CHANGED[@]} file(s))"
-  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority\n' "${C_DIM}"
+  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY\n' "${C_DIM}"
   printf '%b judgement calls (SOLID/spec) still need two-axis review\n' "${C_DIM}"
   exit 0
 fi

@@ -40,7 +40,7 @@ export const WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS = "new_game_success";
 export const WRITE_CONTEXT_EVENT_IMPORT_SUCCESS = "import_success";
 export const WRITE_CONTEXT_EVENT_PASTE_SUCCESS = "paste_success";
 
-const REQUIRED_WRITE_CONTEXT_EVENT_KEYS = [
+export const REQUIRED_WRITE_CONTEXT_EVENT_KEYS = [
   "startup_restore",
   "startup_new",
   "startup_idle",
