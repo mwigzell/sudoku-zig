@@ -138,6 +138,20 @@ _Avoid_: folding `serve` / loopback into `Host`; "session" (that's the terminal 
 Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, settings POST. Desktop `-r web` and Android WebView both use this layer; desktop browser open stays in **`native/desktop_web.zig`** (`open_browser`), not inside `web_host`.
 _Avoid_: duplicating menubar/DOM in native or Java; calling it `native/host`
 
+### Platform thinness contract (all front-end entries)
+
+Front-end layers are adapters. They do I/O, lifecycle, and presentation; shared seams own behavior.
+
+| Concern | Authority | Front-end role | Never in front-end |
+|---|---|---|---|
+| Domain rules and state semantics | `src/engine/`, `src/board/`, shared codecs | submit commands, render returned state | reimplementing game behavior |
+| Session semantics (save/open/restore/new, conflict rules) | shared policy modules + host/domain seams | issue intent requests, present user prompts/results | local policy forks in JS/Java/renderer |
+| Startup behavior contract | `src/startup/` + host startup payload | execute instructed startup action | per-platform startup decision trees |
+| Configuration meaning and persistence schema | `config.zig` + `settings_store` + host persistence seam | edit/view settings through exposed interfaces | parallel config schemas or defaults that override host contract |
+| Cross-platform command availability semantics | engine/legend + shared contracts | wire controls to existing contracts | feature-specific rule variants per platform |
+
+Rule: every supported front-end entry must remain transport-thin and behavior-consistent by consuming shared contracts, not redefining them.
+
 **Desktop web entry** (`native/desktop_web.zig`):
 Wires **`web_host.runWithHostConfig`**, fatal bind errors, and **`whenHostReady`** → **`open_browser`**. Called from `main` when `-r web`.
 _Avoid_: loopback or embed logic here; folding terminal `Host` into this module
