@@ -976,13 +976,12 @@
     import {
       applyEventStatus,
       canUseGenWorker,
+      createWebSessionFromStartup,
       syncCurrentFileLabels,
       initializeWebSession,
       offerInitialNewGame,
       persistHostSettings,
-      postWriteContextEvent,
-      postWriteContextEventForSession,
-      WRITE_CONTEXT_DETACHED,
+      startStartupContextPublish,
       showErrorModal,
       wireErrorModal,
     } from "../shell.js";
@@ -1087,21 +1086,8 @@
       console.log("boot: startup action complete", ready.kind);
       if (!ready.ok) throw new Error(ready.error ?? "New game failed");
 
-      const session = {
-        state: ready.state,
-        legend: ready.legend,
-        config: ready.config,
-        default_save_filename: ready.default_save_filename,
-        autosave_trigger_commands: ready.autosave_trigger_commands,
-        write_context_events: ready.write_context_events,
-        write_context: WRITE_CONTEXT_DETACHED,
-        writeContextEvent: postWriteContextEvent,
-        startup_context_ready: null,
-      };
-      session.startup_context_ready = postWriteContextEventForSession(
-        session,
-        ready.startup_context_event,
-      );
+      const session = createWebSessionFromStartup(ready);
+      startStartupContextPublish(session, ready.startup_context_event);
       syncCurrentFileLabels(session);
       renderBoard(boardEl, session.state);
       if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {

@@ -53,6 +53,8 @@ export const REQUIRED_WRITE_CONTEXT_EVENT_KEYS = [
   "paste_success",
 ];
 
+const DEFAULT_WRITE_CONTEXT_PUBLISHER = postWriteContextEvent;
+
 /** Bound save target label shown in the menu-bar filename slot. */
 export function currentFileLabel(session) {
   const name = session?.boundFilename ?? session?.default_save_filename;
@@ -369,6 +371,32 @@ export async function postWriteContextEventForSession(
     session.write_context = posted.write_context;
   }
   return posted;
+}
+
+/** Normalize boot outcome into the canonical web session shape. */
+export function createWebSessionFromStartup(ready, writeContextEvent = DEFAULT_WRITE_CONTEXT_PUBLISHER) {
+  return {
+    state: ready.state,
+    legend: ready.legend,
+    config: ready.config,
+    default_save_filename: ready.default_save_filename,
+    autosave_trigger_commands: ready.autosave_trigger_commands,
+    write_context_events: ready.write_context_events,
+    write_context: WRITE_CONTEXT_DETACHED,
+    writeContextEvent,
+    startup_context_ready: null,
+  };
+}
+
+/** Publish startup write-context on the session lane and cache the in-flight promise. */
+export function startStartupContextPublish(
+  session,
+  startupContextEvent,
+  fetchFn = globalThis.fetch,
+) {
+  const pending = postWriteContextEventForSession(session, startupContextEvent, fetchFn);
+  session.startup_context_ready = pending;
+  return pending;
 }
 
 /** Resolve an event value against the host-provided write-context event map. */

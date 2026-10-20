@@ -18,6 +18,8 @@ import {
   newGameWithWorkerGen,
   currentFileLabel,
   syncCurrentFileLabels,
+  createWebSessionFromStartup,
+  startStartupContextPublish,
   assertWebBootConfig,
   assertHostStartupConfig,
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
@@ -330,6 +332,42 @@ async function flushDialogPaint() {
   assert.equal(calls[0].url, "./current-file-context");
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[0].init.body, "new_game_success");
+}
+
+{
+  const ready = {
+    state: { cells: [] },
+    legend: { new: true },
+    config: { auto_save: true },
+    default_save_filename: "sudoku.sud",
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    write_context_events: WRITE_CONTEXT_EVENTS,
+  };
+  const session = createWebSessionFromStartup(ready);
+  assert.equal(session.write_context, WRITE_CONTEXT_DETACHED);
+  assert.equal(typeof session.writeContextEvent, "function");
+  assert.equal(session.startup_context_ready, null);
+  assert.equal(session.default_save_filename, "sudoku.sud");
+}
+
+{
+  const session = {
+    write_context: WRITE_CONTEXT_DETACHED,
+    writeContextEvent: postWriteContextEvent,
+  };
+  const pending = startStartupContextPublish(
+    session,
+    "startup_restore",
+    async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
+    }),
+  );
+  assert.equal(session.startup_context_ready, pending);
+  const out = await pending;
+  assert.equal(out.ok, true);
+  assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
 }
 
 {

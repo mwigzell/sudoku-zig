@@ -230,7 +230,7 @@ for f in "${CHANGED[@]}"; do
   [[ "$f" =~ ^src/wasm/.*\.(js|mjs|html)$ ]] || continue
   # Temporary debt allowlist: existing ownership debt still lives here.
   case "$f" in
-    src/wasm/shell.js|src/wasm/shell.test.mjs|src/wasm/artifacts/page.html) continue ;;
+    src/wasm/shell.js|src/wasm/shell.test.mjs) continue ;;
   esac
   check_added_pattern "$f" "$WASM_POLICY_PAT" \
     "wasm policy leak (keep web adapter transport-thin; policy belongs to file_policy/web_host seam)"
