@@ -4,6 +4,7 @@
 import { runWithGeneratingDialog } from "./generating.js";
 import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
+import { applyWebStartupAction } from "../startup/web_startup.js";
 
 /** Apply `.ok.msg` to the status bar. */
 export function applyOkStatus(statusEl, result) {
@@ -449,97 +450,22 @@ export async function offerInitialNewGame(
   generatingModal,
   { genWorker, fetchFn, startupAutoContinue = false } = {},
 ) {
-  if (!boot.ok) return boot;
-  if (boot.kind !== "empty") return boot;
-
-  if (boot.startup_action === "restore") {
-    const restorePath = boot.startup_save_path;
-    if (!restorePath) {
-      return {
-        ok: true,
-        kind: "empty",
-        state: game.getState(),
-        legend: game.getLegend(),
-        config: game.getConfig(),
-        msg: "startup restore path missing; startup remains manual",
-        default_save_filename: boot.default_save_filename,
-      };
-    }
-    const fetched = await fetchStartupSaveBytes(restorePath, fetchFn);
-    if (!fetched.ok) {
-      return {
-        ok: true,
-        kind: "empty",
-        state: game.getState(),
-        legend: game.getLegend(),
-        config: game.getConfig(),
-        msg: `${fetched.error}; startup remains manual`,
-        default_save_filename: boot.default_save_filename,
-      };
-    }
-    const restored = open(game, fetched.bytes, { name: restorePath });
-    if (!restored.ok) {
-      return {
-        ok: true,
-        kind: "empty",
-        state: game.getState(),
-        legend: game.getLegend(),
-        config: game.getConfig(),
-        msg: `${restored.error ?? "startup restore failed"}; startup remains manual`,
-        default_save_filename: boot.default_save_filename,
-      };
-    }
-    return {
-      ok: true,
-      kind: "restore",
-      state: restored.state,
-      legend: game.getLegend(),
-      config: game.getConfig(),
-      msg: restored.msg ?? "restored game",
-      default_save_filename: boot.default_save_filename,
-    };
-  }
-  if (boot.startup_action === "idle") {
-    return {
-      ...boot,
-      msg: boot.startup_status ?? null,
-    };
-  }
-
-  const { difficulty, log_level: logLevel } = boot.config ?? {};
-  if (difficulty == null || logLevel == null) {
-    return { ok: false, error: "missing engine config after host bootstrap", kind: "empty" };
-  }
-  const started = await newGameWithGeneratingModal(game, generatingModal, {
-    difficulty,
-    logLevel,
-    genWorker,
-    autoContinue: startupAutoContinue,
+  return applyWebStartupAction(game, boot, {
+    fetchStartupSaveBytes: (restorePath) => fetchStartupSaveBytes(restorePath, fetchFn),
+    openFromSaveBytes: (bytes, restorePath) => open(game, bytes, { name: restorePath }),
+    startNewGame: async (cfg) => {
+      const { difficulty, log_level: logLevel } = cfg;
+      if (difficulty == null || logLevel == null) {
+        return { ok: false, error: "missing engine config after host bootstrap", kind: "empty" };
+      }
+      return newGameWithGeneratingModal(game, generatingModal, {
+        difficulty,
+        logLevel,
+        genWorker,
+        autoContinue: startupAutoContinue,
+      });
+    },
   });
-  if (!started.ok && !started.cancelled) {
-    return { ok: false, error: started.error ?? "New game failed", kind: "empty" };
-  }
-  if (started.cancelled) {
-    return {
-      ok: true,
-      kind: "empty",
-      state: game.getState(),
-      legend: game.getLegend(),
-      config: game.getConfig(),
-      msg: null,
-      cancelled: true,
-      default_save_filename: boot.default_save_filename,
-    };
-  }
-  return {
-    ok: true,
-    kind: "new",
-    state: started.state,
-    legend: started.legend,
-    config: started.config,
-    msg: started.msg,
-    default_save_filename: boot.default_save_filename,
-  };
 }
 
 function genWireFromEngine(game, options) {

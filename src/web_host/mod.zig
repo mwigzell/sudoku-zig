@@ -568,6 +568,7 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/gen_client.js", .expected = .gen_client },
         .{ .path = "/gen_worker.js", .expected = .gen_worker },
         .{ .path = "/shell.js", .expected = .shell },
+        .{ .path = "/startup/web_startup.js", .expected = .startup_web },
         .{ .path = "/board.js", .expected = .board },
         .{ .path = "/menu.js", .expected = .menu },
         .{ .path = "/menu_bar.js", .expected = .menu_bar },
@@ -1000,6 +1001,9 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.shell);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.startup_web);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.board);
