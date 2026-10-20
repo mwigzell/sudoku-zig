@@ -361,7 +361,8 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     var used: usize = 0;
     while (used < in_buf.len) {
         var data: [1][]u8 = .{in_buf[used..]};
-        const n = client.read(io, &data) catch return ServeError.System;
+        const read_result = client.readWithControl(io, &data, &.{}) catch return ServeError.System;
+        const n = read_result.data_len;
         if (n == 0) break;
         used += n;
         const header_end = std.mem.indexOfPos(u8, in_buf[0..used], 0, "\r\n\r\n") orelse continue;

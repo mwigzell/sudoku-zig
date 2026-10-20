@@ -146,9 +146,11 @@ fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.
         \\crt_dir={s}
         \\msvc_lib_dir=
         \\kernel32_lib_dir=
-        \\gcc_dir=
+        \\cc_dir={s}
+        \\gcc_dir={s}
+        \\darwin_sdk_dir=
         \\
-    , .{ sysroot, sysroot, crt_dir });
+    , .{ sysroot, sysroot, crt_dir, crt_dir, crt_dir });
     return wf.add("android-bionic-libc.txt", contents);
 }
 
