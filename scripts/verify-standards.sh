@@ -223,10 +223,35 @@ for f in "${CHANGED[@]}"; do
   done < <(added_public_symbol_lines "$f")
 done
 
+# --- 10. Ownership gate: keep wasm adapters policy-thin ---
+# Block host write-policy/state-machine leakage into new wasm modules.
+WASM_POLICY_PAT='(write_context|startup_(restore|new|idle)|auto_save_success|new_game_success|import_success|paste_success|/current-file-context|X-Sudoku-Replace|replace_required)'
+for f in "${CHANGED[@]}"; do
+  [[ "$f" =~ ^src/wasm/.*\.(js|mjs|html)$ ]] || continue
+  # Temporary debt allowlist: existing ownership debt still lives here.
+  case "$f" in
+    src/wasm/shell.js|src/wasm/shell.test.mjs|src/wasm/artifacts/page.html) continue ;;
+  esac
+  check_added_pattern "$f" "$WASM_POLICY_PAT" \
+    "wasm policy leak (keep web adapter transport-thin; policy belongs to file_policy/web_host seam)"
+done
+
+# --- 11. Policy authority gate: transition literals defined once ---
+WRITE_EVENT_LITS='("startup_restore"|"startup_new"|"startup_idle"|"open_success"|"save_success"|"save_as_success"|"auto_save_success"|"new_game_success"|"import_success"|"paste_success")'
+for f in "${CHANGED[@]}"; do
+  [[ "$f" =~ ^src/.*\.(zig|js|mjs|html)$ ]] || continue
+  # Single source of truth in file_policy; shell.js constants are legacy debt.
+  case "$f" in
+    src/file_policy.zig|src/wasm/shell.js|src/wasm/shell.test.mjs) continue ;;
+  esac
+  check_added_pattern "$f" "$WRITE_EVENT_LITS" \
+    "duplicated write-context event literals (define in file_policy; avoid cross-layer copies)"
+done
+
 # --- report ---
 if [[ $FAIL -eq 0 ]]; then
   pass_line "mechanical standards clean (${#CHANGED[@]} file(s))"
-  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs\n' "${C_DIM}"
+  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority\n' "${C_DIM}"
   printf '%b judgement calls (SOLID/spec) still need two-axis review\n' "${C_DIM}"
   exit 0
 fi

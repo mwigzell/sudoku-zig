@@ -39,6 +39,8 @@ Rules from `AGENTS.md`, `CONTEXT.md`, and `.coding-standards.md` that grep can c
 | Wire DRY | No parallel `JsonCell` + `CellSnapshot` structs |
 | Test side effects | No live `openBrowser()` in unit tests |
 | Public API docs | Added Zig `pub` symbols must have a preceding comment line |
+| Wasm ownership | No new write-policy/state-machine literals outside legacy wasm entry points |
+| Policy authority | No duplicated write-context event string literals outside `file_policy` authority |
 
 ## What it does not enforce
 
