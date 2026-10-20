@@ -97,6 +97,22 @@ pub fn parseWriteContextEvent(name: []const u8) ?WriteContextEvent {
     return null;
 }
 
+/// Formats a write-context event name for wire payloads.
+pub fn writeContextEventName(event: WriteContextEvent) []const u8 {
+    return switch (event) {
+        .startup_restore => "startup_restore",
+        .startup_new => "startup_new",
+        .startup_idle => "startup_idle",
+        .open_success => "open_success",
+        .save_success => "save_success",
+        .save_as_success => "save_as_success",
+        .auto_save_success => "auto_save_success",
+        .new_game_success => "new_game_success",
+        .import_success => "import_success",
+        .paste_success => "paste_success",
+    };
+}
+
 /// Returns true when the command name should trigger auto-save policy.
 pub fn commandTriggersAutoSaveByName(name: []const u8) bool {
     for (AUTO_SAVE_TRIGGER_COMMANDS) |trigger| {
@@ -171,4 +187,11 @@ test "commandTriggersAutoSaveByName follows shared trigger set" {
     }
     try std.testing.expect(!commandTriggersAutoSaveByName("hint"));
     try std.testing.expect(!commandTriggersAutoSaveByName("save_as"));
+}
+
+test "writeContextEventName formats startup and mutation events" {
+    try std.testing.expectEqualStrings("startup_restore", writeContextEventName(.startup_restore));
+    try std.testing.expectEqualStrings("startup_new", writeContextEventName(.startup_new));
+    try std.testing.expectEqualStrings("startup_idle", writeContextEventName(.startup_idle));
+    try std.testing.expectEqualStrings("auto_save_success", writeContextEventName(.auto_save_success));
 }

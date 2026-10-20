@@ -31,9 +31,6 @@ export function clearEventStatus(statusEl) {
 export const CURRENT_FILE_DESKTOP_ID = "current-file-desktop";
 export const WRITE_CONTEXT_CONTINUATION = "continuation";
 export const WRITE_CONTEXT_DETACHED = "detached";
-export const WRITE_CONTEXT_EVENT_STARTUP_RESTORE = "startup_restore";
-export const WRITE_CONTEXT_EVENT_STARTUP_NEW = "startup_new";
-export const WRITE_CONTEXT_EVENT_STARTUP_IDLE = "startup_idle";
 export const WRITE_CONTEXT_EVENT_OPEN_SUCCESS = "open_success";
 export const WRITE_CONTEXT_EVENT_SAVE_SUCCESS = "save_success";
 export const WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS = "save_as_success";
@@ -215,6 +212,9 @@ export function assertHostStartupConfig(config, label = "host-config") {
   }
   if (!Array.isArray(config.autosave_trigger_commands)) {
     throw new Error(`${label}: missing autosave_trigger_commands`);
+  }
+  if (typeof config.startup_context_event !== "string" || config.startup_context_event.length === 0) {
+    throw new Error(`${label}: missing startup_context_event`);
   }
   if (config.startup_status === undefined) {
     throw new Error(`${label}: missing startup_status`);
@@ -417,13 +417,6 @@ export function startAutoSavePolicy(
   void lane.__autosave_lane;
 }
 
-/** Startup write lane state for web session persistence policy. */
-export function startupWriteContextEvent(kind) {
-  if (kind === "restore") return WRITE_CONTEXT_EVENT_STARTUP_RESTORE;
-  if (kind === "new") return WRITE_CONTEXT_EVENT_STARTUP_NEW;
-  return WRITE_CONTEXT_EVENT_STARTUP_IDLE;
-}
-
 /**
  * Host config bootstrap + startup policy payload from /host-config.json.
  */
@@ -443,6 +436,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     default_save_filename: hostCfg.default_save_filename,
     autosave_trigger_commands: hostCfg.autosave_trigger_commands,
     startup_action: hostCfg.startup_action ?? "idle",
+    startup_context_event: hostCfg.startup_context_event,
     startup_status: hostCfg.startup_status ?? null,
     startup_save_path: hostCfg.startup_save_path ?? null,
   };

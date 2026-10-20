@@ -980,7 +980,6 @@
       initializeWebSession,
       offerInitialNewGame,
       persistHostSettings,
-      startupWriteContextEvent,
       postWriteContextEvent,
       postWriteContextEventForSession,
       WRITE_CONTEXT_DETACHED,
@@ -1100,7 +1099,7 @@
       };
       session.startup_context_ready = postWriteContextEventForSession(
         session,
-        startupWriteContextEvent(ready.kind),
+        ready.startup_context_event,
       );
       syncCurrentFileLabels(session);
       renderBoard(boardEl, session.state);

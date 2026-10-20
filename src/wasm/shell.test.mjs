@@ -9,7 +9,6 @@ import {
   postWriteContextEvent,
   persistCurrentFileSnapshotWithReplacePrompt,
   hostViewPrefsForPersist,
-  startupWriteContextEvent,
   postWriteContextEventForSession,
   WRITE_CONTEXT_CONTINUATION,
   WRITE_CONTEXT_DETACHED,
@@ -330,12 +329,6 @@ async function flushDialogPaint() {
 }
 
 {
-  assert.equal(startupWriteContextEvent("restore"), "startup_restore");
-  assert.equal(startupWriteContextEvent("new"), "startup_new");
-  assert.equal(startupWriteContextEvent("empty"), "startup_idle");
-}
-
-{
   const session = { write_context: WRITE_CONTEXT_DETACHED, writeContextEvent: postWriteContextEvent };
   const out = await postWriteContextEventForSession(
     session,
@@ -460,6 +453,7 @@ async function flushDialogPaint() {
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "new",
+    startup_context_event: "startup_new",
     startup_status: null,
   };
   const game = {
@@ -505,6 +499,7 @@ async function flushDialogPaint() {
   assert.equal(out.kind, "empty");
   assert.equal(out.config.difficulty, 2);
   assert.equal(out.startup_action, "new");
+  assert.equal(out.startup_context_event, "startup_new");
 }
 
 {
@@ -520,6 +515,7 @@ async function flushDialogPaint() {
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "idle",
+    startup_context_event: "startup_idle",
     startup_status: "Welcome to sudoku-zig! Choose New or Open to play",
   };
   const game = {
@@ -542,6 +538,7 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "empty");
   assert.equal(out.startup_action, "idle");
+  assert.equal(out.startup_context_event, "startup_idle");
   assert.equal(out.startup_status, "Welcome to sudoku-zig! Choose New or Open to play");
 }
 
@@ -553,6 +550,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "idle",
+      startup_context_event: "startup_idle",
       state: {},
       legend: {},
       config: {},
@@ -593,6 +591,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
+      startup_context_event: "startup_restore",
       startup_status: null,
       startup_save_path: "./current-file",
       default_save_filename: "sudoku.sud",
@@ -656,7 +655,7 @@ async function flushDialogPaint() {
   // Matches page boot behavior: startup context publish starts before user edits.
   session.startup_context_ready = postWriteContextEventForSession(
     session,
-    startupWriteContextEvent("restore"),
+    "startup_restore",
     fetchFn,
   );
   startAutoSavePolicy(game, session, "fill", { fetchFn });
@@ -755,6 +754,7 @@ async function flushDialogPaint() {
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku.sud",
     startup_action: savedBytes ? "restore" : "idle",
+    startup_context_event: savedBytes ? "startup_restore" : "startup_idle",
     startup_status: savedBytes ? null : "manual startup",
     startup_save_path: savedBytes ? "./current-file" : null,
   });
@@ -841,7 +841,7 @@ async function flushDialogPaint() {
   };
   sessionA.startup_context_ready = postWriteContextEventForSession(
     sessionA,
-    startupWriteContextEvent(readyA.kind),
+    readyA.startup_context_event,
     fetchFn,
   );
 
@@ -891,6 +891,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
+      startup_context_event: "startup_restore",
       startup_status: null,
       startup_save_path: "./current-file",
       default_save_filename: "sudoku.sud",
@@ -910,7 +911,7 @@ async function flushDialogPaint() {
 {
   const missing = await offerInitialNewGame(
     {},
-    { ok: true, kind: "empty", startup_action: "new", state: {}, legend: {}, config: {} },
+    { ok: true, kind: "empty", startup_action: "new", startup_context_event: "startup_new", state: {}, legend: {}, config: {} },
     null,
   );
   assert.equal(missing.ok, false);
@@ -941,6 +942,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "new",
+      startup_context_event: "startup_new",
       startup_status: null,
       default_save_filename: "sudoku.sud",
       config: { difficulty: 2, log_level: 1 },
@@ -989,6 +991,7 @@ async function flushDialogPaint() {
     auto_save: false,
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
+    startup_context_event: "startup_idle",
     startup_status: null,
   };
   delete hostCfg.startup_status;
@@ -1010,6 +1013,7 @@ async function flushDialogPaint() {
     auto_save: false,
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku_save.sud",
+    startup_context_event: "startup_idle",
     startup_status: null,
   };
   delete hostCfg.default_save_filename;
