@@ -11,6 +11,7 @@ import {
   applyEventStatus,
   clearEventStatus,
   postWriteContextEventForSession,
+  writeContextEventValue,
   persistCurrentFileSnapshotWithReplacePrompt,
   startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
@@ -317,7 +318,7 @@ export function wireFileMenu(
     session.fileHandle = null;
     const contextUpdated = await postWriteContextEventForSession(
       session,
-      WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
+      writeContextEventValue(session, WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS),
       globalThis.fetch,
     ).catch((err) => ({
       ok: false,
@@ -409,7 +410,11 @@ export function wireFileMenu(
         fail(mirrored);
         return;
       }
-      const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_SAVE_SUCCESS, globalThis.fetch);
+      const contextUpdated = await postWriteContextEventForSession(
+        session,
+        writeContextEventValue(session, WRITE_CONTEXT_EVENT_SAVE_SUCCESS),
+        globalThis.fetch,
+      );
       if (!contextUpdated.ok) fail(contextUpdated);
       syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
@@ -442,7 +447,11 @@ export function wireFileMenu(
         fail(mirrored);
         return;
       }
-      const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS, globalThis.fetch);
+      const contextUpdated = await postWriteContextEventForSession(
+        session,
+        writeContextEventValue(session, WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS),
+        globalThis.fetch,
+      );
       if (!contextUpdated.ok) fail(contextUpdated);
       syncCurrentFileLabels(session);
       applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
@@ -482,7 +491,11 @@ export function wireFileMenu(
     }
     session.fileHandle = picked.handle ?? null;
     session.boundFilename = picked.name;
-    const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_OPEN_SUCCESS, globalThis.fetch);
+    const contextUpdated = await postWriteContextEventForSession(
+      session,
+      writeContextEventValue(session, WRITE_CONTEXT_EVENT_OPEN_SUCCESS),
+      globalThis.fetch,
+    );
     if (!contextUpdated.ok) fail(contextUpdated);
     refreshSession(
       boardEl,
@@ -513,7 +526,11 @@ export function wireFileMenu(
     }
     session.fileHandle = null;
     session.boundFilename = null;
-    const contextUpdated = await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_IMPORT_SUCCESS, globalThis.fetch);
+    const contextUpdated = await postWriteContextEventForSession(
+      session,
+      writeContextEventValue(session, WRITE_CONTEXT_EVENT_IMPORT_SUCCESS),
+      globalThis.fetch,
+    );
     if (!contextUpdated.ok) fail(contextUpdated);
     refreshSession(
       boardEl,

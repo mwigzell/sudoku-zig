@@ -35,6 +35,18 @@ const AUTO_SAVE_TRIGGERS = [
   "import",
   "paste",
 ];
+const WRITE_CONTEXT_EVENTS = {
+  startup_restore: "startup_restore",
+  startup_new: "startup_new",
+  startup_idle: "startup_idle",
+  open_success: "open_success",
+  save_success: "save_success",
+  save_as_success: "save_as_success",
+  auto_save_success: "auto_save_success",
+  new_game_success: "new_game_success",
+  import_success: "import_success",
+  paste_success: "paste_success",
+};
 
 function makeContinueBtn() {
   return {
@@ -451,6 +463,7 @@ async function flushDialogPaint() {
     auto_new: false,
     auto_save: false,
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "new",
     startup_context_event: "startup_new",
@@ -513,6 +526,7 @@ async function flushDialogPaint() {
     auto_new: false,
     auto_save: false,
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "idle",
     startup_context_event: "startup_idle",
@@ -752,6 +766,7 @@ async function flushDialogPaint() {
     auto_new: false,
     auto_save: true,
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku.sud",
     startup_action: savedBytes ? "restore" : "idle",
     startup_context_event: savedBytes ? "startup_restore" : "startup_idle",
@@ -990,6 +1005,7 @@ async function flushDialogPaint() {
     auto_new: false,
     auto_save: false,
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_context_event: "startup_idle",
     startup_status: null,
@@ -1012,6 +1028,7 @@ async function flushDialogPaint() {
     auto_new: false,
     auto_save: false,
     autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_context_event: "startup_idle",
     startup_status: null,

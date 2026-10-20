@@ -51,7 +51,7 @@ const Session = struct {
     has_current_file: bool,
     current_file: ?[]const u8,
     write_context: file_policy.WriteContext,
-    host_config_body_buf: [512]u8,
+    host_config_body_buf: [1024]u8,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
         const startup_name = startupFilename(self.current_file);

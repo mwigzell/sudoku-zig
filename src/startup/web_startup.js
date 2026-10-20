@@ -14,6 +14,7 @@ function emptyOutcome(game, boot, msg, extras = {}) {
     msg,
     default_save_filename: boot.default_save_filename,
     startup_context_event: boot.startup_context_event,
+    write_context_events: boot.write_context_events,
     ...extras,
   };
 }
@@ -56,6 +57,7 @@ export async function applyWebStartupAction(
       msg: restored.msg ?? "restored game",
       default_save_filename: boot.default_save_filename,
       startup_context_event: boot.startup_context_event,
+      write_context_events: boot.write_context_events,
     };
   }
 
@@ -82,5 +84,6 @@ export async function applyWebStartupAction(
     msg: started.msg,
     default_save_filename: boot.default_save_filename,
     startup_context_event: boot.startup_context_event,
+    write_context_events: boot.write_context_events,
   };
 }

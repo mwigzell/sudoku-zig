@@ -40,6 +40,19 @@ export const WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS = "new_game_success";
 export const WRITE_CONTEXT_EVENT_IMPORT_SUCCESS = "import_success";
 export const WRITE_CONTEXT_EVENT_PASTE_SUCCESS = "paste_success";
 
+const REQUIRED_WRITE_CONTEXT_EVENT_KEYS = [
+  "startup_restore",
+  "startup_new",
+  "startup_idle",
+  "open_success",
+  "save_success",
+  "save_as_success",
+  "auto_save_success",
+  "new_game_success",
+  "import_success",
+  "paste_success",
+];
+
 /** Bound save target label shown in the menu-bar filename slot. */
 export function currentFileLabel(session) {
   const name = session?.boundFilename ?? session?.default_save_filename;
@@ -214,6 +227,14 @@ export function assertHostStartupConfig(config, label = "host-config") {
   if (!Array.isArray(config.autosave_trigger_commands)) {
     throw new Error(`${label}: missing autosave_trigger_commands`);
   }
+  if (!config.write_context_events || typeof config.write_context_events !== "object") {
+    throw new Error(`${label}: missing write_context_events`);
+  }
+  for (const key of REQUIRED_WRITE_CONTEXT_EVENT_KEYS) {
+    if (typeof config.write_context_events[key] !== "string" || config.write_context_events[key].length === 0) {
+      throw new Error(`${label}: missing write_context_events.${key}`);
+    }
+  }
   if (typeof config.startup_context_event !== "string" || config.startup_context_event.length === 0) {
     throw new Error(`${label}: missing startup_context_event`);
   }
@@ -350,6 +371,14 @@ export async function postWriteContextEventForSession(
   return posted;
 }
 
+/** Resolve an event value against the host-provided write-context event map. */
+export function writeContextEventValue(session, fallbackEventName) {
+  const map = session?.write_context_events;
+  const value = map?.[fallbackEventName];
+  if (typeof value === "string" && value.length > 0) return value;
+  return fallbackEventName;
+}
+
 /** Persist startup snapshot with a replace-confirm retry on host conflict. */
 export async function persistCurrentFileSnapshotWithReplacePrompt(
   game,
@@ -406,7 +435,7 @@ export function startAutoSavePolicy(
     }
     const posted = await postWriteContextEventForSession(
       lane,
-      WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
+      writeContextEventValue(lane, WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS),
       fetchFn,
     );
     if (!posted.ok) onError?.(posted);
@@ -436,6 +465,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     msg: boot.msg ?? null,
     default_save_filename: hostCfg.default_save_filename,
     autosave_trigger_commands: hostCfg.autosave_trigger_commands,
+    write_context_events: hostCfg.write_context_events,
     startup_action: hostCfg.startup_action ?? "idle",
     startup_context_event: hostCfg.startup_context_event,
     startup_status: hostCfg.startup_status ?? null,

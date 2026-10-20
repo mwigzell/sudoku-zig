@@ -51,6 +51,9 @@ pub const AUTO_SAVE_TRIGGER_COMMANDS = [_][]const u8{
 /// Wire JSON for host startup payload; used by web adapters to avoid local trigger lists.
 pub const AUTO_SAVE_TRIGGER_COMMANDS_JSON: []const u8 =
     "[\"fill\",\"clear\",\"undo\",\"redo\",\"solve\",\"solve_for_me\",\"open\",\"import\",\"paste\"]";
+/// Wire JSON mapping of write-context event names for web adapters.
+pub const WRITE_CONTEXT_EVENTS_JSON: []const u8 =
+    "{\"startup_restore\":\"startup_restore\",\"startup_new\":\"startup_new\",\"startup_idle\":\"startup_idle\",\"open_success\":\"open_success\",\"save_success\":\"save_success\",\"save_as_success\":\"save_as_success\",\"auto_save_success\":\"auto_save_success\",\"new_game_success\":\"new_game_success\",\"import_success\":\"import_success\",\"paste_success\":\"paste_success\"}";
 
 /// User-facing replace confirmation copy used by all write seams.
 pub const REPLACE_CONFIRM_MSG: []const u8 = "file already exists, replace?";

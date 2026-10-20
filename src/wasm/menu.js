@@ -5,6 +5,7 @@ import {
   applyHintExecStatus,
   applyExecResult,
   postWriteContextEventForSession,
+  writeContextEventValue,
   showErrorModal,
   startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_PASTE_SUCCESS,
@@ -80,7 +81,10 @@ export async function handlePastePuzzle(
   }
   session.fileHandle = null;
   session.boundFilename = null;
-  await postWriteContextEventForSession(session, WRITE_CONTEXT_EVENT_PASTE_SUCCESS);
+  await postWriteContextEventForSession(
+    session,
+    writeContextEventValue(session, WRITE_CONTEXT_EVENT_PASTE_SUCCESS),
+  );
   syncCurrentFileLabels(session);
   session.state = result.state;
   session.legend = result.legend;
