@@ -5,6 +5,7 @@ import {
   NEW_GAME_STARTED_MSG,
   CURRENT_FILE_DESKTOP_ID,
   persistCurrentFileSnapshot,
+  startAutoSavePolicy,
   postWriteContextEvent,
   persistCurrentFileSnapshotWithReplacePrompt,
   hostViewPrefsForPersist,
@@ -565,9 +566,16 @@ async function flushDialogPaint() {
 
 {
   const restoredState = { cells: [{ value: 7, given: false, conflict: false }] };
+  let deserializeCalls = 0;
+  let importCalls = 0;
   const game = {
     deserialize() {
+      deserializeCalls += 1;
       return { ok: true, state: restoredState, msg: "opened: startup-save.sud" };
+    },
+    importPuzzle() {
+      importCalls += 1;
+      return { ok: true, state: { cells: [{ value: 1, given: true, conflict: false }] } };
     },
     getLegend() {
       return { save: true };
@@ -598,7 +606,271 @@ async function flushDialogPaint() {
   assert.equal(out.ok, true);
   assert.equal(out.kind, "restore");
   assert.equal(out.state.cells[0].value, 7);
+  assert.equal(out.state.cells[0].given, false);
+  assert.equal(deserializeCalls, 1, "restore startup path must use deserialize");
+  assert.equal(importCalls, 0, "restore startup path must not use one-line import path");
   assert.equal(out.default_save_filename, "sudoku.sud");
+}
+
+{
+  // Slow-user lifecycle seam: startup context publish is fire-and-forget, so the
+  // first autosave after restore can race and be dropped (no retry).
+  const writes = [];
+  let contextReady = false;
+  let releaseContext = null;
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([9]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    boundFilename: "autosave.sud",
+    write_context: WRITE_CONTEXT_DETACHED,
+    writeContextEvent: postWriteContextEvent,
+  };
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file-context") {
+      return await new Promise((resolve) => {
+        releaseContext = () => {
+          contextReady = true;
+          resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
+          });
+        };
+      });
+    }
+    if (url === "./current-file") {
+      if (!contextReady) {
+        return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+      }
+      writes.push(new Uint8Array(init.body));
+      return { ok: true, status: 204 };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+
+  // Matches page boot behavior: startup context publish starts before user edits.
+  session.startup_context_ready = postWriteContextEventForSession(
+    session,
+    startupWriteContextEvent("restore"),
+    fetchFn,
+  );
+  startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseContext?.();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(
+    writes.length,
+    1,
+    "first autosave after restore should not be dropped when startup context publish is in-flight",
+  );
+}
+
+{
+  // Autosave ordering contract: overlapping saves must persist latest state.
+  const writes = [];
+  let firstWriteResolve = null;
+  let currentSnapshot = new Uint8Array([1]);
+  const game = {
+    serialize() {
+      return { ok: true, bytes: currentSnapshot };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    boundFilename: "autosave.sud",
+    write_context: WRITE_CONTEXT_DETACHED,
+    writeContextEvent: postWriteContextEvent,
+  };
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file") {
+      const bodyBytes = new Uint8Array(init.body);
+      if (firstWriteResolve == null) {
+        return await new Promise((resolve) => {
+          firstWriteResolve = () => {
+            writes.push(bodyBytes);
+            resolve({ ok: true, status: 204 });
+          };
+        });
+      }
+      writes.push(bodyBytes);
+      return { ok: true, status: 204 };
+    }
+    if (url === "./current-file-context") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
+      };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+
+  // First autosave captures snapshot [1], but is delayed.
+  startAutoSavePolicy(game, session, "fill", { fetchFn });
+  // Second autosave captures newer snapshot [2], and completes immediately.
+  currentSnapshot = new Uint8Array([2]);
+  startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // Release the delayed first save last (stale completion ordering hazard).
+  firstWriteResolve?.();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(writes.length, 2);
+  assert.deepEqual(
+    [...writes[writes.length - 1]],
+    [2],
+    "latest autosave snapshot must win even if earlier save completes later",
+  );
+}
+
+{
+  // Full-cycle regression guard: autosave snapshot must survive restart with
+  // player-entered cells still marked as non-givens.
+  const idx = (row, col) => row * 9 + col;
+  const makeCells = () =>
+    Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false }));
+  const baseCells = makeCells();
+  baseCells[idx(0, 0)] = { value: 5, given: true, conflict: false };
+  baseCells[idx(1, 1)] = { value: 3, given: true, conflict: false };
+
+  let savedBytes = null;
+  let writeContext = WRITE_CONTEXT_DETACHED;
+  const hostCfg = () => ({
+    difficulty: 1,
+    log_level: 1,
+    theme: "dark",
+    show_region: false,
+    warn_solvability: false,
+    auto_restore: true,
+    auto_new: false,
+    auto_save: true,
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    default_save_filename: "sudoku.sud",
+    startup_action: savedBytes ? "restore" : "idle",
+    startup_status: savedBytes ? null : "manual startup",
+    startup_save_path: savedBytes ? "./current-file" : null,
+  });
+  const fetchFn = async (url, init) => {
+    if (url === "./host-config.json") return { ok: true, json: async () => hostCfg() };
+    if (url === "./current-file" && !init) {
+      if (!savedBytes) return { ok: false, status: 404 };
+      return { ok: true, arrayBuffer: async () => savedBytes.buffer.slice(0) };
+    }
+    if (url === "./current-file" && init?.method === "POST") {
+      savedBytes = new Uint8Array(init.body);
+      return { ok: true, status: 204 };
+    }
+    if (url === "./current-file-context" && init?.method === "POST") {
+      const event = String(init.body ?? "");
+      if (event === "startup_restore" || event === "auto_save_success") writeContext = WRITE_CONTEXT_CONTINUATION;
+      if (event === "startup_new" || event === "startup_idle" || event === "new_game_success" || event === "import_success" || event === "paste_success") {
+        writeContext = WRITE_CONTEXT_DETACHED;
+      }
+      return { ok: true, status: 200, json: async () => ({ write_context: writeContext }) };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+
+  const makeGame = () => {
+    let state = { cells: baseCells.map((c) => ({ ...c })) };
+    let config = {};
+    return {
+      bootstrapHostConfig(next) {
+        config = { ...next };
+        return { ok: true, msg: "engine ready" };
+      },
+      getState() {
+        return { cells: state.cells.map((c) => ({ ...c })) };
+      },
+      getLegend() {
+        return { fill: true, clear: true, undo: true, redo: true, save: true };
+      },
+      getConfig() {
+        return {
+          difficulty: config.difficulty ?? 1,
+          log_level: config.logLevel ?? 1,
+          theme: config.theme ?? "dark",
+          show_region: config.show_region ?? false,
+          warn_solvability: config.warn_solvability ?? false,
+          auto_restore: config.auto_restore ?? true,
+          auto_new: config.auto_new ?? false,
+          auto_save: config.auto_save ?? true,
+        };
+      },
+      exec(action) {
+        if (action?.action === "fill") {
+          const i = idx(action.row, action.col);
+          state.cells[i] = { value: action.digit, given: false, conflict: false };
+          return { ok: true, state: this.getState(), msg: null, is_quit: false };
+        }
+        return { ok: false, error: "unsupported action" };
+      },
+      serialize() {
+        return { ok: true, bytes: new TextEncoder().encode(JSON.stringify(state)) };
+      },
+      deserialize(bytes) {
+        state = JSON.parse(new TextDecoder().decode(bytes));
+        return { ok: true, state: this.getState(), msg: "opened: ./current-file" };
+      },
+      importPuzzle() {
+        return { ok: false, error: "must not import in restore path" };
+      },
+    };
+  };
+
+  const launchA = makeGame();
+  const bootA = await initializeWebSession(launchA, { fetchFn });
+  const readyA = await offerInitialNewGame(launchA, bootA, null, { fetchFn });
+  assert.equal(readyA.ok, true);
+  assert.equal(readyA.kind, "empty");
+  const sessionA = {
+    config: readyA.config,
+    autosave_trigger_commands: readyA.autosave_trigger_commands,
+    default_save_filename: readyA.default_save_filename,
+    boundFilename: null,
+    write_context: WRITE_CONTEXT_DETACHED,
+    writeContextEvent: postWriteContextEvent,
+  };
+  sessionA.startup_context_ready = postWriteContextEventForSession(
+    sessionA,
+    startupWriteContextEvent(readyA.kind),
+    fetchFn,
+  );
+
+  launchA.exec({ action: "fill", row: 0, col: 2, digit: 7 });
+  startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
+  launchA.exec({ action: "fill", row: 0, col: 3, digit: 8 });
+  startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
+  launchA.exec({ action: "fill", row: 8, col: 8, digit: 9 });
+  startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
+  await sessionA.__autosave_lane;
+  assert.ok(savedBytes && savedBytes.length > 0, "autosave should persist a startup snapshot");
+
+  const launchB = makeGame();
+  const bootB = await initializeWebSession(launchB, { fetchFn });
+  const readyB = await offerInitialNewGame(launchB, bootB, null, { fetchFn });
+  assert.equal(readyB.ok, true);
+  assert.equal(readyB.kind, "restore");
+
+  const restored = readyB.state.cells;
+  assert.equal(restored[idx(0, 0)].value, 5);
+  assert.equal(restored[idx(0, 0)].given, true);
+  assert.equal(restored[idx(1, 1)].value, 3);
+  assert.equal(restored[idx(1, 1)].given, true);
+  assert.equal(restored[idx(0, 2)].value, 7);
+  assert.equal(restored[idx(0, 2)].given, false);
+  assert.equal(restored[idx(0, 3)].value, 8);
+  assert.equal(restored[idx(0, 3)].given, false);
+  assert.equal(restored[idx(8, 8)].value, 9);
+  assert.equal(restored[idx(8, 8)].given, false);
 }
 
 {

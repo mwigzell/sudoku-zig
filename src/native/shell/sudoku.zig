@@ -1612,6 +1612,78 @@ test "startup policy: auto_restore true restores from current_file path" {
     try std.testing.expectEqual(saved_b2, app.engine.eventBoard().get(1, 1));
 }
 
+test "startup policy: relaunch restores latest autosave without rewriting givens" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path_rel);
+    const data_path_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_path_rel, std.testing.allocator);
+    defer std.testing.allocator.free(data_path_abs_z);
+    const data_path = data_path_abs_z[0 .. data_path_abs_z.len - 1];
+
+    const seed_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/autosave-relaunch.sud", .{data_path});
+    defer std.testing.allocator.free(seed_path);
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, seed_path);
+    const one_hole =
+        "483921657967345821251876493548132976729564138136798245372689514814253769695417380";
+
+    var first_cfg = test_defaults.testConfigDefaults();
+    first_cfg.auto_save = true;
+    const first_responses = [_][]const u8{
+        "m",
+        "13",
+        one_hole,
+        "fill I9 2",
+        "quit",
+    };
+    var first_host = host_mod.Host.createForTest(first_cfg, &first_responses);
+    defer first_host.deinit();
+    var first_facade = try first_host.facade();
+    defer first_facade.deinit();
+
+    var first_app = try Sudoku.init(first_cfg, first_facade, file_transport.NativeTransport.make(io), first_host.writer(), .{ .io = io, .data_dir = data_path });
+    defer first_app.deinit();
+    try first_app.showGame();
+    while (true) if (try first_app.turn()) break;
+
+    const expected_board = first_app.engine.state.board;
+    const expected_history_pointer = first_app.engine.state.history.pointer;
+    const expected_history_len = first_app.engine.state.history.entries.items.len;
+    const expected_save = try first_app.engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(expected_save);
+
+    var second_cfg = test_defaults.testConfigDefaults();
+    second_cfg.auto_restore = true;
+    const second_responses = [_][]const u8{};
+    var second_host = host_mod.Host.createForTest(second_cfg, &second_responses);
+    defer second_host.deinit();
+    var second_facade = try second_host.facade();
+    defer second_facade.deinit();
+
+    var second_app = try Sudoku.init(second_cfg, second_facade, file_transport.NativeTransport.make(io), second_host.writer(), .{ .io = io, .data_dir = data_path });
+    defer second_app.deinit();
+
+    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current != null);
+
+    const startup = try second_app.runStartupPolicy(current.?);
+    try std.testing.expect(startup.attempted_restore);
+    try std.testing.expect(!startup.restore_failed);
+    try std.testing.expect(startup.rendered);
+
+    try std.testing.expect(board.equal(expected_board, second_app.engine.state.board));
+    try std.testing.expectEqual(expected_history_pointer, second_app.engine.state.history.pointer);
+    try std.testing.expectEqual(expected_history_len, second_app.engine.state.history.entries.items.len);
+    try std.testing.expectEqual(cell.CellValue.two, second_app.engine.state.board.getCellValue(8, 8));
+    try std.testing.expect(!second_app.engine.state.board.isGiven(8, 8));
+    const restored_save = try second_app.engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(restored_save);
+    try std.testing.expectEqualSlices(u8, expected_save, restored_save);
+}
+
 test "startup policy: restore failure blocks and does not auto-new fallback in same run" {
     const test_defaults = @import("../../test/config_defaults.zig");
     var cfg = test_defaults.testConfigDefaults();
@@ -1671,9 +1743,63 @@ test "autosave: fill writes default save and bootstraps current_file when unset"
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expect(current != null);
 
-    const bytes = app.transport.readAll(app.transport.context, current.?) catch return error.TestFailed;
+    const resolved_current = app.transport.resolve(app.transport.context, current.?) catch return error.TestFailed;
+    defer app.transport.free(app.transport.context, resolved_current);
+    const bytes = app.transport.readAll(app.transport.context, resolved_current) catch return error.TestFailed;
     defer app.transport.free(app.transport.context, bytes);
     try std.testing.expect(bytes.len > 0);
+}
+
+test "autosave: persisted SUD0 restores exact board given_bits and history pointer" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path_rel);
+    const data_path_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_path_rel, std.testing.allocator);
+    defer std.testing.allocator.free(data_path_abs_z);
+    const data_path = data_path_abs_z[0 .. data_path_abs_z.len - 1];
+
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_save = true;
+    const seed_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/autosave-roundtrip.sud", .{data_path});
+    defer std.testing.allocator.free(seed_path);
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, seed_path);
+
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "fill A4 8",
+        "undo",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    defer app.deinit();
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (current) |p| std.testing.allocator.free(p);
+    try std.testing.expect(current != null);
+
+    const resolved_current = app.transport.resolve(app.transport.context, current.?) catch return error.TestFailed;
+    defer app.transport.free(app.transport.context, resolved_current);
+
+    const bytes = app.transport.readAll(app.transport.context, resolved_current) catch return error.TestFailed;
+    defer app.transport.free(app.transport.context, bytes);
+
+    var restored = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+    defer restored.deinit();
+    try restored.loadSaveFormat(bytes);
+
+    try std.testing.expect(board.equal(app.engine.state.board, restored.state.board));
+    try std.testing.expectEqual(app.engine.state.history.pointer, restored.state.history.pointer);
+    try std.testing.expectEqual(app.engine.state.history.entries.items.len, restored.state.history.entries.items.len);
 }
 
 test "autosave: non-state settings command does not bootstrap current_file" {

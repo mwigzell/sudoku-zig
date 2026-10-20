@@ -198,7 +198,7 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     makeRenderElement(),
   );
   assert.equal(outcome.handled, true);
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   globalThis.fetch = prevFetch;
   assert.equal(posted?.url, "./current-file");
   assert.equal(posted?.init?.method, "POST");

@@ -1096,8 +1096,12 @@
         autosave_trigger_commands: ready.autosave_trigger_commands,
         write_context: WRITE_CONTEXT_DETACHED,
         writeContextEvent: postWriteContextEvent,
+        startup_context_ready: null,
       };
-      void postWriteContextEventForSession(session, startupWriteContextEvent(ready.kind));
+      session.startup_context_ready = postWriteContextEventForSession(
+        session,
+        startupWriteContextEvent(ready.kind),
+      );
       syncCurrentFileLabels(session);
       renderBoard(boardEl, session.state);
       if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {

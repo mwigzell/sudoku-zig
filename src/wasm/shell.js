@@ -382,22 +382,39 @@ export function startAutoSavePolicy(
   if (session?.config?.auto_save !== true) return;
   const triggerNames = session?.autosave_trigger_commands;
   if (!Array.isArray(triggerNames) || !triggerNames.includes(commandName)) return;
-  void persistCurrentFileSnapshotWithReplacePrompt(game, {
-    fetchFn,
-    saveName: session.boundFilename ?? session.default_save_filename,
-    askConfirm,
-  }).then(async (saved) => {
+  const lane = session;
+  const run = async () => {
+    // Startup write-context publish can be in-flight at boot; wait once so the
+    // first user-triggered autosave follows the settled lane contract.
+    if (lane?.startup_context_ready) {
+      try {
+        await lane.startup_context_ready;
+      } catch {
+        // Keep autosave best-effort when context publish fails.
+      }
+      lane.startup_context_ready = null;
+    }
+    const saved = await persistCurrentFileSnapshotWithReplacePrompt(game, {
+      fetchFn,
+      saveName: lane.boundFilename ?? lane.default_save_filename,
+      askConfirm,
+    });
     if (!saved.ok) {
       if (!saved.cancelled) onError?.(saved);
       return;
     }
     const posted = await postWriteContextEventForSession(
-      session,
+      lane,
       WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
       fetchFn,
     );
     if (!posted.ok) onError?.(posted);
-  });
+  };
+  const previous = lane.__autosave_lane ?? Promise.resolve();
+  lane.__autosave_lane = previous
+    .catch(() => {})
+    .then(run);
+  void lane.__autosave_lane;
 }
 
 /** Startup write lane state for web session persistence policy. */
