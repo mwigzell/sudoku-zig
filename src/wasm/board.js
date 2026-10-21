@@ -1,6 +1,7 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
 import {
+  applySessionOutcome,
   applyEventStatus,
   applyExecResult,
   startAutoSavePolicy,
@@ -363,8 +364,10 @@ export function handlePlayKey(
   }
 
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
-  session.state = result.state;
-  session.legend = game.getLegend();
+  applySessionOutcome(session, {
+    state: result.state,
+    legend: game.getLegend(),
+  });
   startAutoSavePolicy(game, session, play.type, {
     onError: (saved) => applyExecResult(statusEl, errorModal, saved),
   });

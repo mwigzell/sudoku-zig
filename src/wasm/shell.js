@@ -70,6 +70,27 @@ export function syncCurrentFileLabels(session, root = globalThis.document) {
   if (desktop) desktop.textContent = label;
 }
 
+/** Apply a result snapshot to session state without inventing local adapter policy. */
+export function applySessionOutcome(
+  session,
+  { state, legend, config } = {},
+) {
+  if (state !== undefined) session.state = state;
+  if (legend !== undefined) session.legend = legend;
+  if (config !== undefined) session.config = config;
+}
+
+/** Canonical session+status update path for successful command outcomes. */
+export function applySessionOutcomeStatus(
+  session,
+  statusEl,
+  { state, legend, config, msg } = {},
+) {
+  applySessionOutcome(session, { state, legend, config });
+  applyEventStatus(statusEl, { ok: true, msg: msg ?? null });
+  syncCurrentFileLabels(session);
+}
+
 /** Show an Event.error_msg in the blocking error modal. */
 export function showErrorModal(modal, message) {
   modal.msgEl.textContent = message;

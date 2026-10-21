@@ -2,6 +2,8 @@
 
 import {
   applyEventStatus,
+  applySessionOutcome,
+  applySessionOutcomeStatus,
   applyHintExecStatus,
   applyExecResult,
   postSessionWriteContextEvent,
@@ -11,7 +13,6 @@ import {
   startCopyPuzzleOnClick,
   readClipboardText,
   importPuzzle,
-  syncCurrentFileLabels,
 } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 import { applySuccessfulExec, readSelection, renderBoard } from "./board.js";
@@ -81,11 +82,12 @@ export async function handlePastePuzzle(
   session.fileHandle = null;
   session.boundFilename = null;
   await postSessionWriteContextEvent(session, WRITE_CONTEXT_EVENT_PASTE_SUCCESS);
-  syncCurrentFileLabels(session);
-  session.state = result.state;
-  session.legend = result.legend;
-  session.config = result.config;
-  applyEventStatus(statusEl, { ok: true, msg: result.msg ?? "pasted puzzle from clipboard" });
+  applySessionOutcomeStatus(session, statusEl, {
+    state: result.state,
+    legend: result.legend,
+    config: result.config,
+    msg: result.msg ?? "pasted puzzle from clipboard",
+  });
   return { handled: true, ok: true };
 }
 
@@ -125,14 +127,17 @@ export function handleEditAction(
   // Hint is display-only — skip re-render (board unchanged).
   if (action === "hint") {
     applyHintExecStatus(statusEl, errorModal, result);
-    session.state = result.state;
-    session.legend = game.getLegend();
+    applySessionOutcome(session, {
+      state: result.state,
+      legend: game.getLegend(),
+    });
     return { handled: true, legend: session.legend };
   }
 
-  session.state = result.state;
-
-  session.legend = game.getLegend();
+  applySessionOutcome(session, {
+    state: result.state,
+    legend: game.getLegend(),
+  });
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
   startAutoSavePolicy(game, session, action, {
     onError: (saved) => applyExecResult(statusEl, errorModal, saved),

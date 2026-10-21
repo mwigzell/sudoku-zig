@@ -7,6 +7,8 @@ import {
   persistCurrentFileSnapshot,
   startAutoSavePolicy,
   postWriteContextEvent,
+  applySessionOutcome,
+  applySessionOutcomeStatus,
   persistCurrentFileSnapshotWithReplacePrompt,
   hostViewPrefsForPersist,
   postWriteContextEventForSession,
@@ -469,6 +471,42 @@ async function flushDialogPaint() {
   assert.equal(currentFileLabel({}), "");
   assert.equal(currentFileLabel({ default_save_filename: "sudoku.sud" }), "sudoku.sud");
   assert.equal(currentFileLabel({ boundFilename: "game.sud" }), "game.sud");
+}
+
+{
+  const session = {
+    state: { cells: [] },
+    legend: { save: false },
+    config: { theme: "dark" },
+  };
+  const nextState = { cells: [{ value: 2, given: false, conflict: false }] };
+  const nextLegend = { save: true };
+  applySessionOutcome(session, { state: nextState, legend: nextLegend });
+  assert.equal(session.state, nextState);
+  assert.equal(session.legend, nextLegend);
+  assert.equal(session.config.theme, "dark");
+}
+
+{
+  const status = { textContent: "old", className: "" };
+  const labels = { [CURRENT_FILE_DESKTOP_ID]: { textContent: "" } };
+  const root = {
+    getElementById(id) {
+      return labels[id] ?? null;
+    },
+  };
+  const session = {
+    default_save_filename: "save.sud",
+    state: { cells: [] },
+    legend: {},
+    config: {},
+  };
+  const nextState = { cells: [{ value: 7, given: false, conflict: false }] };
+  applySessionOutcomeStatus(session, status, { state: nextState, msg: "updated" });
+  syncCurrentFileLabels(session, root);
+  assert.equal(session.state, nextState);
+  assert.equal(status.textContent, "updated");
+  assert.equal(labels[CURRENT_FILE_DESKTOP_ID].textContent, "save.sud");
 }
 
 {

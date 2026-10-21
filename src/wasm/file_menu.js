@@ -9,6 +9,7 @@ import {
   importPuzzle,
   exportPuzzle,
   applyEventStatus,
+  applySessionOutcomeStatus,
   clearEventStatus,
   postSessionWriteContextEvent,
   persistCurrentFileSnapshotWithReplacePrompt,
@@ -94,12 +95,13 @@ export function refreshSession(
   eventMsg = null,
 ) {
   renderBoard(boardEl, state, createElement);
-  session.state = state;
-  session.legend = legend;
-  session.config = config;
   selection.deselect();
-  applyEventStatus(statusEl, { ok: true, msg: eventMsg });
-  syncCurrentFileLabels(session);
+  applySessionOutcomeStatus(session, statusEl, {
+    state,
+    legend,
+    config,
+    msg: eventMsg,
+  });
   menuBar.sync();
   onViewRefresh?.();
 }
