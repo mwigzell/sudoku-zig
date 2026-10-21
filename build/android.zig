@@ -132,9 +132,19 @@ fn resolveSdkRoot(b: *std.Build, override: ?[]const u8) ?[]const u8 {
 }
 
 fn lookupEnvBuild(b: *std.Build, name: []const u8) ?[]const u8 {
-    const value = b.graph.environ_map.get(name) orelse return null;
-    if (value.len == 0) return null;
-    return value;
+    if (b.graph.environ_map.get(name)) |value| {
+        if (value.len != 0) return value;
+    }
+
+    // Defensive fallback: walk the map directly in case hash lookup misses.
+    // This keeps env resolution resilient across toolchain/runtime quirks.
+    var it = b.graph.environ_map.iterator();
+    while (it.next()) |entry| {
+        if (!std.mem.eql(u8, entry.key_ptr.*, name)) continue;
+        if (entry.value_ptr.*.len == 0) return null;
+        return entry.value_ptr.*;
+    }
+    return null;
 }
 
 fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.LazyPath {
