@@ -28,7 +28,7 @@ pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Confi
 
     while (iterator.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            std.debug.print(usage_fmt, .{});
+            std.debug.print("{s}\n", .{usage_fmt});
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-V") or std.mem.eql(u8, arg, "--version")) {
             std.debug.print("sudoku {s}\n", .{version.string});

@@ -69,11 +69,11 @@ function autosaveHostLoggingEnabled() {
   return globalThis.__SUDOKU_AUTOSAVE_LOG_POST === true;
 }
 
-function emitAutosaveHostLog(stage, details) {
+function emitAutosaveHostLog(level, stage, details) {
   if (!autosaveHostLoggingEnabled()) return;
   const fetchFn = globalThis.fetch;
   if (typeof fetchFn !== "function") return;
-  const payload = { lane: "autosave", stage, details };
+  const payload = { level, lane: "autosave", stage, details };
   void fetchFn(CLIENT_LOG_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -82,11 +82,21 @@ function emitAutosaveHostLog(stage, details) {
   }).catch(() => {});
 }
 
+function autosaveLevelForStage(stage, details = {}) {
+  if (stage === "persist_failed" || stage === "startup_context_failed") return "warn";
+  if (stage === "context_publish_result" && details.ok === false) return "warn";
+  if (stage === "pagehide_flush_result" && details.ok === false && details.cancelled !== true) return "warn";
+  if (stage === "persist_ok" || stage === "pagehide_flush_result") return "info";
+  return "debug";
+}
+
 function logAutosave(stage, details = {}) {
+  const level = autosaveLevelForStage(stage, details);
   if (!autosaveLoggingEnabled()) return;
   // Keep diagnostics concise and structured for DevTools filtering.
-  console.info(AUTOSAVE_LOG_PREFIX, stage, details);
-  emitAutosaveHostLog(stage, details);
+  const fn = level === "warn" ? console.warn : level === "err" ? console.error : console.info;
+  fn(AUTOSAVE_LOG_PREFIX, stage, details);
+  emitAutosaveHostLog(level, stage, details);
 }
 
 /** Bound save target label shown in the menu-bar filename slot. */

@@ -120,6 +120,16 @@ fn clientLogBody(body: []const u8) []const u8 {
     return if (trimmed.len == 0) "<empty>" else trimmed;
 }
 
+const ClientLogSeverity = enum { debug, info, warn, err };
+
+fn clientLogSeverity(body: []const u8) ClientLogSeverity {
+    const trimmed = std.mem.trim(u8, body, " \t\r\n");
+    if (std.mem.indexOf(u8, trimmed, "\"level\":\"warn\"") != null) return .warn;
+    if (std.mem.indexOf(u8, trimmed, "\"level\":\"err\"") != null) return .err;
+    if (std.mem.indexOf(u8, trimmed, "\"level\":\"debug\"") != null) return .debug;
+    return .info;
+}
+
 fn contentLength(request: []const u8) ?usize {
     const line_end = std.mem.indexOfPos(u8, request, 0, "\r\n") orelse return null;
     const headers = request[line_end + 2 ..];
@@ -450,7 +460,13 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     }
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/client-log")) {
         const body = requestBody(request) orelse return ServeError.System;
-        log.info("client-log {s}", .{clientLogBody(body)});
+        const trimmed = clientLogBody(body);
+        switch (clientLogSeverity(trimmed)) {
+            .debug => log.debug("client-log {s}", .{trimmed}),
+            .info => log.info("client-log {s}", .{trimmed}),
+            .warn => log.warn("client-log {s}", .{trimmed}),
+            .err => log.err("client-log {s}", .{trimmed}),
+        }
         try writeFull(&w.interface, "204 No Content", "application/json", "");
         return;
     }
