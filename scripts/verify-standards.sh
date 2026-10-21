@@ -228,10 +228,6 @@ done
 WASM_POLICY_PAT='(write_context|startup_(restore|new|idle)|auto_save_success|new_game_success|import_success|paste_success|/current-file-context|X-Sudoku-Replace|replace_required)'
 for f in "${CHANGED[@]}"; do
   [[ "$f" =~ ^src/wasm/.*\.(js|mjs|html)$ ]] || continue
-  # Temporary debt allowlist: existing ownership debt still lives here.
-  case "$f" in
-    src/wasm/shell.js) continue ;;
-  esac
   check_added_pattern "$f" "$WASM_POLICY_PAT" \
     "wasm policy leak (keep web adapter transport-thin; policy belongs to file_policy/web_host seam)"
 done
