@@ -1,0 +1,17 @@
+{
+  "seed_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+  "prefill": { "row": 0, "col": 0, "digit": 4 },
+  "valid_import_line": "483921657967345821251876493548132976729564138136798245372689514814253769695417380",
+  "refill": { "row": 8, "col": 8, "digit": 2 },
+  "invalid_import_line": "48392165796734582125187649354813297672956413x136798245372689514814253769695417380",
+  "prefill_probe": { "row": 0, "col": 0, "value": 4, "given": false },
+  "success_probes": [
+    { "row": 0, "col": 0, "value": 4, "given": true },
+    { "row": 8, "col": 8, "value": 0, "given": false }
+  ],
+  "invalid_preserve_probe": { "row": 8, "col": 8, "value": 2, "given": false },
+  "history_after_prefill": 1,
+  "history_after_success_import": 0,
+  "history_after_refill": 1,
+  "history_after_invalid_import": 1
+}

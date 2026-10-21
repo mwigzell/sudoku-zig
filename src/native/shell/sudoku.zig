@@ -1831,6 +1831,122 @@ test "history branch parity fixture: redo does not resurrect discarded branch" {
     try std.testing.expectEqual(fixture.history_length, app.engine.state.history.entries.items.len);
 }
 
+test "paste flow parity fixture: successful paste resets history and invalid paste preserves state" {
+    const io = std.testing.io;
+    const FixtureMove = struct {
+        row: u8,
+        col: u8,
+        digit: u8,
+    };
+    const FixtureProbe = struct {
+        row: u8,
+        col: u8,
+        value: u8,
+        given: bool,
+    };
+    const PasteFlowParityFixture = struct {
+        seed_line: []const u8,
+        prefill: FixtureMove,
+        valid_import_line: []const u8,
+        refill: FixtureMove,
+        invalid_import_line: []const u8,
+        prefill_probe: FixtureProbe,
+        success_probes: []const FixtureProbe,
+        invalid_preserve_probe: FixtureProbe,
+        history_after_prefill: usize,
+        history_after_success_import: usize,
+        history_after_refill: usize,
+        history_after_invalid_import: usize,
+    };
+
+    const fixture_path = "src/test/fixtures/paste_flow_parity.json";
+    const fixture_bytes = try std.Io.Dir.readFileAlloc(
+        std.Io.Dir.cwd(),
+        io,
+        fixture_path,
+        std.testing.allocator,
+        std.Io.Limit.unlimited,
+    );
+    defer std.testing.allocator.free(fixture_bytes);
+    const fixture_json = try std.json.parseFromSlice(
+        PasteFlowParityFixture,
+        std.testing.allocator,
+        fixture_bytes,
+        .{},
+    );
+    defer fixture_json.deinit();
+    const fixture = fixture_json.value;
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    _ = engine.newFromOneLinePuzzle(fixture.seed_line);
+    _ = engine.exec(.{
+        .fill = .{
+            .row = @intCast(fixture.prefill.row),
+            .col = @intCast(fixture.prefill.col),
+            .digit = cell.rawToCellValue(fixture.prefill.digit),
+        },
+    });
+    try std.testing.expectEqual(fixture.history_after_prefill, engine.state.history.entries.items.len);
+    try std.testing.expectEqual(
+        cell.rawToCellValue(fixture.prefill_probe.value),
+        engine.state.board.getCellValue(@intCast(fixture.prefill_probe.row), @intCast(fixture.prefill_probe.col)),
+    );
+    try std.testing.expectEqual(
+        fixture.prefill_probe.given,
+        engine.state.board.isGiven(@intCast(fixture.prefill_probe.row), @intCast(fixture.prefill_probe.col)),
+    );
+
+    const imported = paste_command.execute(&engine, fixture.valid_import_line);
+    switch (imported) {
+        .ok => {},
+        .error_msg => return error.TestFailed,
+    }
+    for (fixture.success_probes) |probe| {
+        try std.testing.expectEqual(
+            cell.rawToCellValue(probe.value),
+            engine.state.board.getCellValue(@intCast(probe.row), @intCast(probe.col)),
+        );
+        try std.testing.expectEqual(probe.given, engine.state.board.isGiven(@intCast(probe.row), @intCast(probe.col)));
+    }
+    try std.testing.expectEqual(fixture.history_after_success_import, engine.state.history.entries.items.len);
+
+    _ = engine.exec(.{
+        .fill = .{
+            .row = @intCast(fixture.refill.row),
+            .col = @intCast(fixture.refill.col),
+            .digit = cell.rawToCellValue(fixture.refill.digit),
+        },
+    });
+    try std.testing.expectEqual(fixture.history_after_refill, engine.state.history.entries.items.len);
+    const before_invalid = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(before_invalid);
+
+    const invalid = paste_command.execute(&engine, fixture.invalid_import_line);
+    switch (invalid) {
+        .error_msg => {},
+        .ok => return error.TestFailed,
+    }
+    const after_invalid = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(after_invalid);
+    try std.testing.expectEqualSlices(u8, before_invalid, after_invalid);
+    try std.testing.expectEqual(fixture.history_after_invalid_import, engine.state.history.entries.items.len);
+    try std.testing.expectEqual(
+        cell.rawToCellValue(fixture.invalid_preserve_probe.value),
+        engine.state.board.getCellValue(
+            @intCast(fixture.invalid_preserve_probe.row),
+            @intCast(fixture.invalid_preserve_probe.col),
+        ),
+    );
+    try std.testing.expectEqual(
+        fixture.invalid_preserve_probe.given,
+        engine.state.board.isGiven(
+            @intCast(fixture.invalid_preserve_probe.row),
+            @intCast(fixture.invalid_preserve_probe.col),
+        ),
+    );
+}
+
 test "startup policy: restore failure blocks and does not auto-new fallback in same run" {
     const test_defaults = @import("../../test/config_defaults.zig");
     var cfg = test_defaults.testConfigDefaults();
