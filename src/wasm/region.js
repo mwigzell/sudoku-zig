@@ -1,7 +1,7 @@
 // region.js — View menu region highlight via engine config.
 
 import { applyRegionHighlight } from "./board.js";
-import { applyEventStatus } from "./shell.js";
+import { applyConfigOutcomeStatus } from "./shell.js";
 
 export function syncRegionMenu(controls, config) {
   if (!controls.viewRegion) return;
@@ -32,10 +32,8 @@ export function wireRegionMenu(
     void (async () => {
       const next = !session.config.show_region;
       const result = game.exec({ action: "set_region", enabled: next });
-      if (!result.ok) return;
-      session.config = game.getConfig();
+      if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
       syncBoard();
-      if (statusEl) applyEventStatus(statusEl, result);
       onChange?.();
       if (onPersist) await onPersist(session.config);
     })();

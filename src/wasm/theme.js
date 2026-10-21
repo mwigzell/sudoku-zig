@@ -1,6 +1,6 @@
 // theme.js — View menu light/dark theme via engine config.
 
-import { applyEventStatus, assertWebBootConfig } from "./shell.js";
+import { applyConfigOutcomeStatus, assertWebBootConfig } from "./shell.js";
 
 export function themeFromConfig(config) {
   return config?.theme === "light" ? "light" : "dark";
@@ -57,10 +57,8 @@ export function wireThemeMenu(
     void (async () => {
       if (session.config.theme === "light") return;
       const result = game.exec({ action: "set_theme", theme: "light" });
-      if (!result.ok) return;
-      session.config = game.getConfig();
+      if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
       sync();
-      if (statusEl) applyEventStatus(statusEl, result);
       onChange?.();
       if (onPersist) await onPersist(session.config);
     })();
@@ -70,10 +68,8 @@ export function wireThemeMenu(
     void (async () => {
       if (session.config.theme === "dark") return;
       const result = game.exec({ action: "set_theme", theme: "dark" });
-      if (!result.ok) return;
-      session.config = game.getConfig();
+      if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
       sync();
-      if (statusEl) applyEventStatus(statusEl, result);
       onChange?.();
       if (onPersist) await onPersist(session.config);
     })();

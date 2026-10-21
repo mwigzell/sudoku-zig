@@ -87,8 +87,23 @@ export function applySessionOutcomeStatus(
   { state, legend, config, msg } = {},
 ) {
   applySessionOutcome(session, { state, legend, config });
-  applyEventStatus(statusEl, { ok: true, msg: msg ?? null });
+  if (statusEl) applyEventStatus(statusEl, { ok: true, msg: msg ?? null });
   syncCurrentFileLabels(session);
+}
+
+/** Canonical config/status update path for successful settings-style outcomes. */
+export function applyConfigOutcomeStatus(
+  session,
+  game,
+  statusEl,
+  result,
+) {
+  if (!result?.ok) return false;
+  applySessionOutcomeStatus(session, statusEl, {
+    config: game.getConfig(),
+    msg: result.msg ?? null,
+  });
+  return true;
 }
 
 /** Show an Event.error_msg in the blocking error modal. */

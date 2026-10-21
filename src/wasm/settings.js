@@ -1,6 +1,6 @@
 // settings.js — File → Settings: warn, default difficulty, log level.
 
-import { difficultyName, logLevelName } from "./shell.js";
+import { applyConfigOutcomeStatus, difficultyName, logLevelName } from "./shell.js";
 
 /** Sync controls from wasm getConfig(). */
 export function syncSettingsModal(modal, config) {
@@ -20,11 +20,10 @@ export function showSettingsModal(modal, config) {
 
 async function applySettingChange(game, session, modal, onPersist, execFn) {
   const result = execFn();
-  if (!result.ok) {
+  if (!applyConfigOutcomeStatus(session, game, null, result)) {
     syncSettingsModal(modal, session.config ?? game.getConfig());
     return;
   }
-  session.config = game.getConfig();
   if (onPersist) await onPersist(session.config);
 }
 
