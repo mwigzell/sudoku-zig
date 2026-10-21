@@ -30,6 +30,7 @@ import {
   assertHostStartupConfig,
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
   REQUIRED_WRITE_CONTEXT_EVENT_KEYS,
+  REQUIRED_STARTUP_READY_KEYS,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
 
@@ -363,6 +364,37 @@ async function flushDialogPaint() {
   assert.equal(typeof session.writeContextEvent, "function");
   assert.equal(session.startup_context_ready, null);
   assert.equal(session.default_save_filename, "sudoku.sud");
+}
+
+{
+  const ready = {
+    state: { cells: [] },
+    legend: {},
+    config: {},
+    default_save_filename: "sudoku.sud",
+    autosave_trigger_commands: [],
+  };
+  assert.throws(
+    () => createWebSessionFromStartup(ready),
+    /autosave_trigger_commands must be a non-empty array/,
+  );
+}
+
+{
+  for (const key of REQUIRED_STARTUP_READY_KEYS) {
+    const ready = {
+      state: { cells: [] },
+      legend: {},
+      config: {},
+      default_save_filename: "sudoku.sud",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    };
+    delete ready[key];
+    assert.throws(
+      () => createWebSessionFromStartup(ready),
+      new RegExp(`missing ${key}`),
+    );
+  }
 }
 
 {
@@ -734,6 +766,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "idle",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_idle",
       state: {},
       legend: {},
@@ -744,6 +777,7 @@ async function flushDialogPaint() {
   );
   assert.equal(manual.kind, "empty");
   assert.equal(manual.msg, "Welcome to sudoku-zig! Choose New or Open to play");
+  assert.deepEqual(manual.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {
@@ -775,6 +809,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_restore",
       startup_status: null,
       startup_save_path: "./current-file",
@@ -793,6 +828,7 @@ async function flushDialogPaint() {
   assert.equal(deserializeCalls, 1, "restore startup path must use deserialize");
   assert.equal(importCalls, 0, "restore startup path must not use one-line import path");
   assert.equal(out.default_save_filename, "sudoku.sud");
+  assert.deepEqual(out.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {
@@ -1238,6 +1274,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_restore",
       startup_status: null,
       startup_save_path: "./current-file",
@@ -1253,6 +1290,7 @@ async function flushDialogPaint() {
   assert.equal(out.kind, "empty");
   assert.match(out.msg ?? "", /startup restore fetch failed/);
   assert.equal(out.default_save_filename, "sudoku.sud");
+  assert.deepEqual(out.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {
@@ -1289,6 +1327,7 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "new",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_new",
       startup_status: null,
       default_save_filename: "sudoku.sud",
@@ -1305,6 +1344,7 @@ async function flushDialogPaint() {
   assert.equal(out.kind, "new");
   assert.equal(initDifficulty, 2);
   assert.equal(out.default_save_filename, "sudoku.sud");
+  assert.deepEqual(out.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {

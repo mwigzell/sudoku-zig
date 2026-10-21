@@ -52,8 +52,42 @@ export const REQUIRED_WRITE_CONTEXT_EVENT_KEYS = [
   "import_success",
   "paste_success",
 ];
+export const REQUIRED_STARTUP_READY_KEYS = [
+  "default_save_filename",
+  "autosave_trigger_commands",
+];
 
 const DEFAULT_WRITE_CONTEXT_PUBLISHER = postWriteContextEvent;
+const AUTOSAVE_LOG_PREFIX = "[autosave]";
+const CLIENT_LOG_PATH = "./client-log";
+
+function autosaveLoggingEnabled() {
+  return globalThis.__SUDOKU_AUTOSAVE_LOG === true;
+}
+
+function autosaveHostLoggingEnabled() {
+  return globalThis.__SUDOKU_AUTOSAVE_LOG_POST === true;
+}
+
+function emitAutosaveHostLog(stage, details) {
+  if (!autosaveHostLoggingEnabled()) return;
+  const fetchFn = globalThis.fetch;
+  if (typeof fetchFn !== "function") return;
+  const payload = { lane: "autosave", stage, details };
+  void fetchFn(CLIENT_LOG_PATH, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+function logAutosave(stage, details = {}) {
+  if (!autosaveLoggingEnabled()) return;
+  // Keep diagnostics concise and structured for DevTools filtering.
+  console.info(AUTOSAVE_LOG_PREFIX, stage, details);
+  emitAutosaveHostLog(stage, details);
+}
 
 /** Bound save target label shown in the menu-bar filename slot. */
 export function currentFileLabel(session) {
@@ -408,8 +442,17 @@ export function wireFinalSnapshotOnPageHide(
     if (session?.config?.auto_save !== true) return;
     const saveName = session?.boundFilename ?? session?.default_save_filename ?? null;
     if (typeof saveName !== "string" || saveName.length === 0) return;
+    logAutosave("pagehide_flush_start", {
+      save_name: saveName,
+    });
     const keepaliveFetch = (url, init = {}) => fetchFn(url, { ...init, keepalive: true });
-    void persistCurrentFileSnapshot(game, keepaliveFetch, saveName, false);
+    void persistCurrentFileSnapshot(game, keepaliveFetch, saveName, false).then((saved) => {
+      logAutosave("pagehide_flush_result", {
+        ok: saved?.ok === true,
+        cancelled: saved?.cancelled === true,
+        error: saved?.error ?? null,
+      });
+    });
   };
   win.addEventListener("pagehide", onPageHide);
   return () => win.removeEventListener?.("pagehide", onPageHide);
@@ -453,6 +496,14 @@ export async function postWriteContextEventForSession(
 
 /** Normalize boot outcome into the canonical web session shape. */
 export function createWebSessionFromStartup(ready, writeContextEvent = DEFAULT_WRITE_CONTEXT_PUBLISHER) {
+  for (const key of REQUIRED_STARTUP_READY_KEYS) {
+    if (ready?.[key] === undefined) {
+      throw new Error(`startup ready payload: missing ${key}`);
+    }
+  }
+  if (!Array.isArray(ready.autosave_trigger_commands) || ready.autosave_trigger_commands.length === 0) {
+    throw new Error("startup ready payload: autosave_trigger_commands must be a non-empty array");
+  }
   return {
     state: ready.state,
     legend: ready.legend,
@@ -555,22 +606,42 @@ export function startAutoSavePolicy(
   game,
   session,
   commandName,
-  { fetchFn = globalThis.fetch, askConfirm, onError } = {},
+  { fetchFn = globalThis.fetch, askConfirm, onError, commandMeta = null } = {},
 ) {
+  const commandText =
+    typeof commandMeta?.command_text === "string" && commandMeta.command_text.length > 0
+      ? commandMeta.command_text
+      : commandName;
   // Phase 0: gate by config + trigger command list so non-state commands skip autosave.
-  if (session?.config?.auto_save !== true) return;
+  if (session?.config?.auto_save !== true) {
+    logAutosave("skip_disabled", { command: commandName, command_text: commandText });
+    return;
+  }
   const triggerNames = session?.autosave_trigger_commands;
-  if (!Array.isArray(triggerNames) || !triggerNames.includes(commandName)) return;
+  if (!Array.isArray(triggerNames) || !triggerNames.includes(commandName)) {
+    logAutosave("skip_not_trigger", { command: commandName, command_text: commandText });
+    return;
+  }
   const lane = session;
   const run = async () => {
+    logAutosave("run_start", {
+      command: commandName,
+      command_text: commandText,
+      row: commandMeta?.row ?? null,
+      col: commandMeta?.col ?? null,
+      digit: commandMeta?.digit ?? null,
+      save_name: lane?.boundFilename ?? lane?.default_save_filename ?? null,
+    });
     // Phase 1: wait for startup context publish once so first autosave runs on settled lane policy.
     // Startup write-context publish can be in-flight at boot; wait once so the
     // first user-triggered autosave follows the settled lane contract.
     if (lane?.startup_context_ready) {
       try {
         await lane.startup_context_ready;
+        logAutosave("startup_context_ready", { command: commandName, command_text: commandText });
       } catch {
         // Keep autosave best-effort when context publish fails.
+        logAutosave("startup_context_failed", { command: commandName, command_text: commandText });
       }
       lane.startup_context_ready = null;
     }
@@ -581,15 +652,28 @@ export function startAutoSavePolicy(
       askConfirm,
     });
     if (!saved.ok) {
+      logAutosave("persist_failed", {
+        command: commandName,
+        command_text: commandText,
+        cancelled: saved?.cancelled === true,
+        error: saved?.error ?? null,
+      });
       if (!saved.cancelled) onError?.(saved);
       return;
     }
+    logAutosave("persist_ok", { command: commandName, command_text: commandText });
     // Phase 3: publish autosave-success context transition for host policy seam.
     const posted = await postSessionWriteContextEvent(
       lane,
       WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
       fetchFn,
     );
+    logAutosave("context_publish_result", {
+      command: commandName,
+      command_text: commandText,
+      ok: posted?.ok === true,
+      error: posted?.error ?? null,
+    });
     if (!posted.ok) onError?.(posted);
   };
   const previous = lane.__autosave_lane ?? Promise.resolve();

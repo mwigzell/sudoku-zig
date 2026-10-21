@@ -391,7 +391,15 @@ export function handlePlayKey(
     session,
     legend: game.getLegend(),
   });
+  const coord = `${COLUMN_LETTERS[col]}${row + 1}`;
+  const commandText = play.type === "fill" ? `fill ${coord} ${play.digit}` : `clear ${coord}`;
   startAutoSavePolicy(game, session, play.type, {
+    commandMeta: {
+      command_text: commandText,
+      row,
+      col,
+      digit: play.type === "fill" ? play.digit : null,
+    },
     onError: (saved) => applyExecResult(statusEl, errorModal, saved),
   });
   return { handled: true, legend: session.legend };

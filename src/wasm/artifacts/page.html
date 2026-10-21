@@ -996,6 +996,10 @@
     import { wireFileMenu } from "../file_menu.js";
     import { wireRegionMenu } from "../region.js";
 
+    // Enable browser-side autosave tracing for diagnosis runs.
+    globalThis.__SUDOKU_AUTOSAVE_LOG = true;
+    globalThis.__SUDOKU_AUTOSAVE_LOG_POST = true;
+
     const statusBar = document.getElementById("status-bar");
     const boardEl = document.getElementById("board");
     const playPadEl = document.getElementById("play-pad");

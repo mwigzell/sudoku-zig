@@ -1,22 +1,28 @@
 // Shared web startup orchestrator: applies host startup action contract and
 // returns a normalized startup outcome for thin adapters to render.
 
-/**
- * Normalize current game snapshot for startup fallback responses.
- */
-function emptyOutcome(game, boot, msg, extras = {}) {
+/** Required boot fields every startup outcome must preserve for later session wiring. */
+function withBootFields(boot, payload) {
   return {
+    ...payload,
+    default_save_filename: boot.default_save_filename,
+    autosave_trigger_commands: boot.autosave_trigger_commands,
+    startup_context_event: boot.startup_context_event,
+    write_context_events: boot.write_context_events,
+  };
+}
+
+/** Normalize current game snapshot for startup fallback responses. */
+function emptyOutcome(game, boot, msg, extras = {}) {
+  return withBootFields(boot, {
     ok: true,
     kind: "empty",
     state: game.getState(),
     legend: game.getLegend(),
     config: game.getConfig(),
     msg,
-    default_save_filename: boot.default_save_filename,
-    startup_context_event: boot.startup_context_event,
-    write_context_events: boot.write_context_events,
     ...extras,
-  };
+  });
 }
 
 /**
@@ -52,26 +58,23 @@ export async function applyWebStartupAction(
     if (!restored.ok) {
       return emptyOutcome(game, boot, `${restored.error ?? "startup restore failed"}; startup remains manual`);
     }
-    return {
+    return withBootFields(boot, {
       ok: true,
       kind: "restore",
       state: restored.state,
       legend: game.getLegend(),
       config: game.getConfig(),
       msg: restored.msg ?? "restored game",
-      default_save_filename: boot.default_save_filename,
-      startup_context_event: boot.startup_context_event,
-      write_context_events: boot.write_context_events,
-    };
+    });
   }
 
   if (boot.startup_action === "idle") {
     // Idle flow: keep existing board snapshot from bootstrap and surface host
     // startup status message (if any).
-    return {
+    return withBootFields(boot, {
       ...boot,
       msg: boot.startup_status ?? null,
-    };
+    });
   }
 
   // New flow: host requested a startup new-game action. Adapter provides the
@@ -83,15 +86,12 @@ export async function applyWebStartupAction(
   if (started.cancelled) {
     return emptyOutcome(game, boot, null, { cancelled: true });
   }
-  return {
+  return withBootFields(boot, {
     ok: true,
     kind: "new",
     state: started.state,
     legend: started.legend,
     config: started.config,
     msg: started.msg,
-    default_save_filename: boot.default_save_filename,
-    startup_context_event: boot.startup_context_event,
-    write_context_events: boot.write_context_events,
-  };
+  });
 }

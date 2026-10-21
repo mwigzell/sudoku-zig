@@ -66,6 +66,13 @@ fn writeContextName(ctx: file_policy.WriteContext) []const u8 {
     };
 }
 
+fn overwriteDecisionName(decision: file_policy.OverwriteDecision) []const u8 {
+    return switch (decision) {
+        .write => "write",
+        .require_replace_confirm => "require_replace_confirm",
+    };
+}
+
 fn contextResponseBody(write_context: file_policy.WriteContext, buf: []u8) ServeError![]const u8 {
     return std.fmt.bufPrint(buf, "{{\"write_context\":\"{s}\"}}", .{writeContextName(write_context)}) catch return ServeError.System;
 }
@@ -106,6 +113,11 @@ pub fn mergeSettingsPostPatch(cfg: *config.Config, patch: SettingsPostBody) void
 fn requestBody(request: []const u8) ?[]const u8 {
     const sep = std.mem.indexOf(u8, request, "\r\n\r\n") orelse return null;
     return request[sep + 4 ..];
+}
+
+fn clientLogBody(body: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, body, " \t\r\n");
+    return if (trimmed.len == 0) "<empty>" else trimmed;
 }
 
 fn contentLength(request: []const u8) ?usize {
@@ -196,6 +208,16 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
         .target_exists = stat != null,
         .write_context = session.write_context,
     });
+    log.info(
+        "current-file write decision: context={s} target={s} exists={any} allow_replace={any} decision={s}",
+        .{
+            writeContextName(session.write_context),
+            resolved,
+            stat != null,
+            allow_replace,
+            overwriteDecisionName(decision),
+        },
+    );
     if (decision == .require_replace_confirm and !allow_replace) return ServeError.Conflict;
 
     const transport = file_transport.NativeTransport.make(io);
@@ -207,12 +229,21 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
     session.current_file = std.heap.page_allocator.dupe(u8, resolved) catch return ServeError.System;
     session.has_current_file = true;
     session.write_context = file_policy.nextWriteContext(session.write_context, .auto_save_success);
+    log.info(
+        "current-file write success: bytes={d} target={s} next_context={s}",
+        .{ body.len, resolved, writeContextName(session.write_context) },
+    );
 }
 
 fn applyCurrentFileContextEvent(io: std.Io, session: *Session, event_name: []const u8) ServeError!void {
     _ = io;
     const event = file_policy.parseWriteContextEvent(event_name) orelse return ServeError.System;
+    const prev = session.write_context;
     session.write_context = file_policy.nextWriteContext(session.write_context, event);
+    log.info(
+        "current-file context event: event={s} {s}->{s}",
+        .{ event_name, writeContextName(prev), writeContextName(session.write_context) },
+    );
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -325,6 +356,12 @@ pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: 
     shutdown_requested.store(false, .release);
 
     const current_file = settings_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch null;
+    const startup_name = startupFilename(current_file);
+    if (current_file) |path| {
+        log.info("startup current file: path={s} name={s}", .{ path, startup_name });
+    } else {
+        log.info("startup current file: path=<none> name={s}", .{startup_name});
+    }
     var session = Session{
         .host_config = host_cfg,
         .data_dir = data_dir,
@@ -376,6 +413,7 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     var fields = std.mem.splitScalar(u8, request[0..line_end], ' ');
     const method = fields.next() orelse return ServeError.System;
     const req_path = fields.next() orelse return ServeError.System;
+    log.debug("request {s} {s}", .{ method, req_path });
 
     var w_buf: [4096]u8 = undefined;
     var w = client.writer(io, w_buf[0..]);
@@ -391,6 +429,7 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         const save_name = headerValue(request, "X-Sudoku-Filename");
         applyCurrentFilePost(io, session, body, save_name, allowsReplace(request)) catch |err| switch (err) {
             ServeError.Conflict => {
+                log.warn("current-file write blocked by replace policy", .{});
                 try writeFull(&w.interface, "409 Conflict", "text/plain", file_policy.REPLACE_CONFIRM_MSG);
                 return;
             },
@@ -407,6 +446,12 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         var context_buf: [64]u8 = undefined;
         const json = try contextResponseBody(session.write_context, &context_buf);
         try writeFull(&w.interface, "200 OK", "application/json", json);
+        return;
+    }
+    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/client-log")) {
+        const body = requestBody(request) orelse return ServeError.System;
+        log.info("client-log {s}", .{clientLogBody(body)});
+        try writeFull(&w.interface, "204 No Content", "application/json", "");
         return;
     }
     if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, "/current-file")) {

@@ -2,7 +2,11 @@
 // read a named path into a caller-freed buffer, and resolve a bare name
 // against the arm's own file store. Native std.Io byte ops for session handlers.
 const std = @import("std");
+const builtin = @import("builtin");
 const mypath = @import("path.zig");
+const logger = @import("../../logger.zig");
+const log = logger.Logger(.sudoku);
+const TEST_DATA_DIR = "/tmp/sudoku-zig-test-data";
 
 pub const TransportError = error{ OutOfMemory, FileNotFound, AccessDenied, System };
 
@@ -52,8 +56,13 @@ test "FileTransport native: resolve joins a bare name against the data dir" {
     const resolved = transport.resolve(transport.context, "game.sud") catch |err| return err;
     defer transport.free(transport.context, resolved);
 
-    const data_dir = @import("path.zig").computeDataDir(std.heap.page_allocator) catch |err| return err;
-    defer std.heap.page_allocator.free(data_dir);
+    const data_dir = if (builtin.is_test)
+        TEST_DATA_DIR
+    else blk: {
+        const computed = @import("path.zig").computeDataDir(std.heap.page_allocator) catch |err| return err;
+        break :blk computed;
+    };
+    defer if (!builtin.is_test) std.heap.page_allocator.free(data_dir);
     const expected = std.fmt.allocPrint(std.heap.page_allocator, "{s}/game.sud", .{data_dir}) catch |err| return err;
     defer std.heap.page_allocator.free(expected);
     try std.testing.expectEqualStrings(expected, resolved);
@@ -123,6 +132,12 @@ pub const NativeTransport = struct {
 
     fn ensureDataDir(ctx: *Context) TransportError![]const u8 {
         if (ctx.data_dir) |dir| return dir;
+        if (builtin.is_test) {
+            const dir = gpa.dupe(u8, TEST_DATA_DIR) catch return TransportError.OutOfMemory;
+            std.Io.Dir.cwd().createDirPath(ctx.io, dir) catch return TransportError.System;
+            ctx.data_dir = dir;
+            return dir;
+        }
         const dir = mypath.computeDataDir(gpa) catch |err| switch (err) {
             error.OutOfMemory => return TransportError.OutOfMemory,
             else => return TransportError.System,
@@ -153,6 +168,7 @@ pub const NativeTransport = struct {
         defer file.close(ctx.io);
 
         std.Io.File.writeStreamingAll(file, ctx.io, bytes) catch return TransportError.System;
+        log.info("SAVE wrote {d} bytes -> {s}", .{ bytes.len, path });
     }
 
     fn readAll(c: *anyopaque, path: []const u8) TransportError![]u8 {
