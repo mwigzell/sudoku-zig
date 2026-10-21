@@ -1737,6 +1737,100 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
     try std.testing.expectEqualSlices(u8, expected_save, restored_save);
 }
 
+test "history branch parity fixture: redo does not resurrect discarded branch" {
+    const io = std.testing.io;
+    const FixtureStep = struct {
+        action: []const u8,
+        row: ?u8 = null,
+        col: ?u8 = null,
+        digit: ?u8 = null,
+    };
+    const FixtureProbe = struct {
+        row: u8,
+        col: u8,
+        value: u8,
+        given: bool,
+    };
+    const HistoryBranchParityFixture = struct {
+        puzzle_line: []const u8,
+        steps: []const FixtureStep,
+        given_probe: struct {
+            row: u8,
+            col: u8,
+            value: u8,
+        },
+        probes: []const FixtureProbe,
+        history_pointer: usize,
+        history_length: usize,
+    };
+
+    const fixture_path = "src/test/fixtures/history_branch_parity.json";
+    const fixture_bytes = try std.Io.Dir.readFileAlloc(
+        std.Io.Dir.cwd(),
+        io,
+        fixture_path,
+        std.testing.allocator,
+        std.Io.Limit.unlimited,
+    );
+    defer std.testing.allocator.free(fixture_bytes);
+    const fixture_json = try std.json.parseFromSlice(
+        HistoryBranchParityFixture,
+        std.testing.allocator,
+        fixture_bytes,
+        .{},
+    );
+    defer fixture_json.deinit();
+    const fixture = fixture_json.value;
+
+    const responses = [_][]const u8{};
+    var host = host_mod.Host.createForTest(config.Config.default(), &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+
+    var app = try Sudoku.init(config.Config.default(), facade, file_transport.NativeTransport.make(io), host.writer(), null);
+    defer app.deinit();
+
+    _ = app.engine.newFromOneLinePuzzle(fixture.puzzle_line);
+    for (fixture.steps) |step| {
+        if (std.mem.eql(u8, step.action, "fill")) {
+            const row: u4 = @intCast(step.row orelse unreachable);
+            const col: u4 = @intCast(step.col orelse unreachable);
+            const digit = cell.rawToCellValue(step.digit orelse unreachable);
+            _ = app.engine.exec(.{ .fill = .{ .row = row, .col = col, .digit = digit } });
+            continue;
+        }
+        if (std.mem.eql(u8, step.action, "undo")) {
+            _ = app.engine.exec(.{ .undo = {} });
+            continue;
+        }
+        if (std.mem.eql(u8, step.action, "redo")) {
+            _ = app.engine.exec(.{ .redo = {} });
+            continue;
+        }
+        unreachable;
+    }
+
+    const given_row: u4 = @intCast(fixture.given_probe.row);
+    const given_col: u4 = @intCast(fixture.given_probe.col);
+    try std.testing.expectEqual(
+        cell.rawToCellValue(fixture.given_probe.value),
+        app.engine.state.board.getCellValue(given_row, given_col),
+    );
+    try std.testing.expect(app.engine.state.board.isGiven(given_row, given_col));
+    for (fixture.probes) |probe| {
+        const probe_row: u4 = @intCast(probe.row);
+        const probe_col: u4 = @intCast(probe.col);
+        try std.testing.expectEqual(
+            cell.rawToCellValue(probe.value),
+            app.engine.state.board.getCellValue(probe_row, probe_col),
+        );
+        try std.testing.expectEqual(probe.given, app.engine.state.board.isGiven(probe_row, probe_col));
+    }
+    try std.testing.expectEqual(fixture.history_pointer, app.engine.state.history.pointer);
+    try std.testing.expectEqual(fixture.history_length, app.engine.state.history.entries.items.len);
+}
+
 test "startup policy: restore failure blocks and does not auto-new fallback in same run" {
     const test_defaults = @import("../../test/config_defaults.zig");
     var cfg = test_defaults.testConfigDefaults();
