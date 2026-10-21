@@ -177,6 +177,7 @@ export function open(game, bytes, { name } = {}) {
 export { formatGenProgress } from "./gen_progress_format.js";
 import { formatGenProgress } from "./gen_progress_format.js";
 
+/** Merge raw wire progress sink + formatted UI sink for generator updates. */
 function mergeGenProgressHandlers(onProgressWire, onGenProgress) {
   if (!onProgressWire && !onGenProgress) return undefined;
   return (phase, a, b) => {
@@ -303,12 +304,14 @@ export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
   return res.json();
 }
 
+/** Startup restore fetch adapter: host path -> bytes or normalized restore error. */
 async function fetchStartupSaveBytes(path, fetchFn = globalThis.fetch) {
   const res = await fetchFn(path);
   if (!res.ok) return { ok: false, error: `startup restore fetch failed: ${res.status}` };
   return { ok: true, bytes: new Uint8Array(await res.arrayBuffer()) };
 }
 
+/** Bridge host config JSON to wasm bootstrap wire names and booleans. */
 export function bootstrapEngineFromHostConfig(game, hostCfg) {
   return game.bootstrapHostConfig({
     difficulty: hostCfg.difficulty,
@@ -325,11 +328,13 @@ export function bootstrapEngineFromHostConfig(game, hostCfg) {
 const DIFFICULTY_WIRE = { 1: "easy", 2: "medium", 3: "hard" };
 const LOG_WIRE = ["debug", "info", "warn", "err", "fatal"];
 
+/** Normalize config difficulty enum/wire value to persisted settings string. */
 export function difficultyName(config) {
   if (typeof config.difficulty === "string") return config.difficulty;
   return DIFFICULTY_WIRE[config.difficulty] ?? "easy";
 }
 
+/** Normalize config log level enum/wire value to persisted settings string. */
 export function logLevelName(config) {
   if (typeof config.log_level === "string") return config.log_level;
   return LOG_WIRE[config.log_level] ?? "info";
@@ -531,11 +536,13 @@ export function startAutoSavePolicy(
   commandName,
   { fetchFn = globalThis.fetch, askConfirm, onError } = {},
 ) {
+  // Phase 0: gate by config + trigger command list so non-state commands skip autosave.
   if (session?.config?.auto_save !== true) return;
   const triggerNames = session?.autosave_trigger_commands;
   if (!Array.isArray(triggerNames) || !triggerNames.includes(commandName)) return;
   const lane = session;
   const run = async () => {
+    // Phase 1: wait for startup context publish once so first autosave runs on settled lane policy.
     // Startup write-context publish can be in-flight at boot; wait once so the
     // first user-triggered autosave follows the settled lane contract.
     if (lane?.startup_context_ready) {
@@ -546,6 +553,7 @@ export function startAutoSavePolicy(
       }
       lane.startup_context_ready = null;
     }
+    // Phase 2: persist snapshot with replace-confirm retry semantics.
     const saved = await persistCurrentFileSnapshotWithReplacePrompt(game, {
       fetchFn,
       saveName: lane.boundFilename ?? lane.default_save_filename,
@@ -555,6 +563,7 @@ export function startAutoSavePolicy(
       if (!saved.cancelled) onError?.(saved);
       return;
     }
+    // Phase 3: publish autosave-success context transition for host policy seam.
     const posted = await postSessionWriteContextEvent(
       lane,
       WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
@@ -573,11 +582,14 @@ export function startAutoSavePolicy(
  * Host config bootstrap + startup policy payload from /host-config.json.
  */
 export async function initializeWebSession(game, { fetchFn } = {}) {
+  // Phase 1: fetch host startup contract payload and validate required keys.
   const hostCfg = await fetchHostStartupConfig(fetchFn);
   assertHostStartupConfig(hostCfg);
+  // Phase 2: bootstrap engine config from host contract (difficulty/theme/flags).
   const boot = bootstrapEngineFromHostConfig(game, hostCfg);
   if (!boot.ok) return boot;
 
+  // Phase 3: return canonical boot/session shape for page entry wiring.
   return {
     ok: true,
     kind: "empty",
@@ -602,6 +614,7 @@ export async function offerInitialNewGame(
   generatingModal,
   { genWorker, fetchFn, startupAutoContinue = false } = {},
 ) {
+  // Phase 4: apply startup action contract (`restore`/`new`/`idle`) and return normalized outcome.
   return applyWebStartupAction(game, boot, {
     fetchStartupSaveBytes: (restorePath) => fetchStartupSaveBytes(restorePath, fetchFn),
     openFromSaveBytes: (bytes, restorePath) => open(game, bytes, { name: restorePath }),
@@ -620,6 +633,7 @@ export async function offerInitialNewGame(
   });
 }
 
+/** Resolve effective difficulty/log level for generation from call options or live engine config. */
 function genWireFromEngine(game, options) {
   const cfg = game.getConfig();
   return {

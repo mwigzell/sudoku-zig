@@ -74,6 +74,7 @@ function resolvePlayGrid(boardEl) {
   return boardEl;
 }
 
+/** Flat cell index used by region/highlight and state probe helpers. */
 export function cellIndex(row, col) {
   return row * GRID_SIZE + col;
 }
@@ -154,6 +155,7 @@ export function setStatus(statusEl, message, { error = false, busy = false } = {
   statusEl.className = error ? "error" : busy ? "generating" : "";
 }
 
+/** Arrow-key cursor movement constrained inside the 9x9 play grid. */
 export function moveSelection(row, col, key) {
   switch (key) {
     case "ArrowUp":
@@ -169,6 +171,7 @@ export function moveSelection(row, col, key) {
   }
 }
 
+/** Locate one rendered cell node by logical row/col coordinates. */
 export function findCellElement(boardEl, row, col) {
   const playEl = resolvePlayGrid(boardEl);
   for (const cell of playEl.children) {
@@ -177,6 +180,7 @@ export function findCellElement(boardEl, row, col) {
   return null;
 }
 
+/** Remove visual selection marker from every play cell. */
 export function clearSelection(boardEl) {
   const playEl = resolvePlayGrid(boardEl);
   for (const cell of playEl.children) {
@@ -184,6 +188,7 @@ export function clearSelection(boardEl) {
   }
 }
 
+/** Apply visual selection marker and return normalized selection payload. */
 export function applySelection(boardEl, row, col) {
   const playEl = resolvePlayGrid(boardEl);
   clearSelection(playEl);
@@ -219,6 +224,7 @@ export function readSelection(boardEl, selection) {
 
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
+/** Selection controller wiring for mouse/touch/arrow-key navigation. */
 export function wireSelection(frameEl, { row, col, onSelect, regionEnabled } = {}) {
   const playEl = resolvePlayGrid(frameEl);
   /** @type {{ row: number, col: number } | null} */
@@ -308,6 +314,7 @@ export function wireSelection(frameEl, { row, col, onSelect, regionEnabled } = {
   };
 }
 
+/** Keyboard/pad input parser for gameplay edits (`fill`/`clear`). */
 export function parsePlayKey(key, code = "") {
   if (key.length === 1 && key >= "1" && key <= "9") {
     return { type: "fill", digit: Number(key) };
@@ -329,6 +336,7 @@ export function parsePlayKey(key, code = "") {
   return null;
 }
 
+/** Canonical successful play/edit render path; optionally updates session via shared shell helper. */
 export function applySuccessfulExec(
   boardEl,
   selection,
@@ -347,6 +355,7 @@ export function applySuccessfulExec(
   applyEventStatus(statusEl, result);
 }
 
+/** Execute one play input against current selection and apply success/error side effects. */
 export function handlePlayKey(
   game,
   boardEl,
@@ -358,9 +367,11 @@ export function handlePlayKey(
   createElement,
   code = "",
 ) {
+  // Play phase 1: parse input -> determine fill/clear intent.
   const play = parsePlayKey(key, code);
   if (!play) return { handled: false };
 
+  // Play phase 2: require a selected target cell for grid edits.
   const sel = selection.getSelection();
   if (!sel) return { handled: false };
   const { row, col } = sel;
@@ -369,11 +380,13 @@ export function handlePlayKey(
       ? game.exec({ action: "fill", row, col, digit: play.digit })
       : game.exec({ action: "clear", row, col });
 
+  // Play phase 3: on failure, surface error and stop.
   if (!result.ok) {
     applyExecResult(statusEl, errorModal, result);
     return { handled: true };
   }
 
+  // Play phase 4: on success, apply canonical outcome + autosave side-effect.
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement, {
     session,
     legend: game.getLegend(),
@@ -384,6 +397,7 @@ export function handlePlayKey(
   return { handled: true, legend: session.legend };
 }
 
+/** Board key + play-pad event loop that feeds `handlePlayKey` and syncs legend hooks. */
 export function wirePlayLoop(
   frameEl,
   game,

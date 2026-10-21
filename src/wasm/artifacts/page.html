@@ -1051,9 +1051,11 @@
 
     try {
       console.log("boot: module start");
+      // Boot phase 1: ensure first paint/splash is visible before wasm/network work.
       // Let the splash paint before kicking off wasm/network work.
       await new Promise((resolve) => requestAnimationFrame(resolve));
       console.log("boot: after first paint");
+      // Boot phase 2: fetch + instantiate wasm artifact.
       const res = await fetch("./artifact.wasm");
       console.log("boot: artifact fetch response", res.status);
       if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
@@ -1062,6 +1064,7 @@
 
       const game = await loadArtifact(bytes);
       console.log("boot: wasm loaded");
+      // Boot phase 3: wire generation modal and optional worker generation context.
       const generatingModal = wireGeneratingModal({
         el: document.getElementById("generating-modal"),
         continueBtn: document.getElementById("generating-modal-continue"),
@@ -1074,11 +1077,13 @@
         ? { workerUrl: new URL("./gen_worker.js", import.meta.url).href, wasmBytes: bytes }
         : undefined;
 
+      // Boot phase 4: fetch host startup contract + bootstrap engine config.
       const boot = await initializeWebSession(game);
       console.log("boot: host config loaded");
       if (!boot.ok) throw new Error(boot.error ?? "session init failed");
       primeWebBootChrome(boot, document);
 
+      // Boot phase 5: apply startup action contract (`restore`/`new`/`idle`).
       const ready = await offerInitialNewGame(game, boot, generatingModal, {
         genWorker,
         startupAutoContinue: true,
@@ -1086,6 +1091,7 @@
       console.log("boot: startup action complete", ready.kind);
       if (!ready.ok) throw new Error(ready.error ?? "New game failed");
 
+      // Boot phase 6: build canonical session object + publish startup context lane.
       const session = createWebSessionFromStartup(ready);
       startStartupContextPublish(session, ready.startup_context_event);
       syncCurrentFileLabels(session);
@@ -1095,6 +1101,7 @@
       } else {
         setStatus(statusBar, "");
       }
+      // Boot phase 7: wire UI modules around shared session object.
       const menuBar = wireMenuBar(menuControls, session, document);
       const syncPlayPadVisibility = (sel) => {
         if (!playPadEl) return;

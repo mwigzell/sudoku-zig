@@ -33,24 +33,29 @@ export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 export const FILE_PICKER_START_IN = "documents";
 const BRIDGE_CANCELLED = "cancelled";
 
+/** Android bridge capability check for Save/Save As path selection. */
 function bridgeSupportsSave(bridge) {
   return bridge != null && typeof bridge.saveSudokuFile === "function";
 }
 
+/** Android bridge capability check for Open/Import picker path selection. */
 function bridgeSupportsOpen(bridge) {
   return bridge != null && typeof bridge.openSudokuFile === "function";
 }
 
+/** Default no-op publisher used when tests or hosts do not inject write-context wiring. */
 async function noOpWriteContextEvent() {
   return { ok: true };
 }
 
+/** Android bridge transport helper: binary SUD0 bytes -> base64 text payload. */
 function bytesToBase64(bytes) {
   const chars = [];
   for (const b of bytes) chars.push(String.fromCharCode(b));
   return btoa(chars.join(""));
 }
 
+/** Android bridge transport helper: base64 text payload -> binary SUD0 bytes. */
 function base64ToBytes(base64) {
   const text = atob(base64);
   const out = new Uint8Array(text.length);
@@ -58,10 +63,12 @@ function base64ToBytes(base64) {
   return out;
 }
 
+/** Picker start location follows the bound file handle when available. */
 export function filePickerStartIn(session) {
   return session?.fileHandle ?? FILE_PICKER_START_IN;
 }
 
+/** Save target label priority: bound runtime name first, host default as fallback. */
 function suggestedSaveFilename(session) {
   const name = session?.boundFilename ?? session?.default_save_filename;
   if (typeof name === "string" && name.length > 0) return name;
@@ -83,6 +90,7 @@ export const puzzleTextPickerTypes = [
 ];
 export const PUZZLE_TEXT_ACCEPT = ".txt,text/plain";
 
+/** Canonical render+session update path after commands that replace board/config snapshots. */
 export function refreshSession(
   boardEl,
   selection,
@@ -112,6 +120,7 @@ export function refreshSession(
   });
 }
 
+/** View-only refresh used after session has already been updated through shell helpers. */
 export function refreshSessionView(
   boardEl,
   selection,
@@ -126,6 +135,7 @@ export function refreshSessionView(
   onViewRefresh?.();
 }
 
+/** Browser fallback download when no native picker/bridge save path is available. */
 export function downloadBytes(bytes, filename, doc = document) {
   const url = doc.defaultView.URL.createObjectURL(
     new Blob([bytes], { type: "application/octet-stream" }),
@@ -138,12 +148,14 @@ export function downloadBytes(bytes, filename, doc = document) {
   return { ok: true, filename };
 }
 
+/** Shared file-handle writer used by both SUD0 save and text export picker paths. */
 async function writeHandle(handle, bytes) {
   const writable = await handle.createWritable();
   await writable.write(bytes);
   await writable.close();
 }
 
+/** Persist SUD0 bytes through current handle, Android bridge, picker, or download fallback. */
 export async function persistBytes(
   bytes,
   session,
@@ -337,6 +349,7 @@ export function wireFileMenu(
 
   const MISSING_DEFAULT_SAVE_FILENAME = "missing default_save_filename in session";
 
+  /** Shared tail for successful manual Save/Save As actions. */
   const completeManualSave = async (saved, writeContextEventName) => {
     session.boundFilename = saved.filename;
     const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
@@ -359,6 +372,7 @@ export function wireFileMenu(
     return true;
   };
 
+  /** Shared tail for successful board-replacing loads (new/open/import) before autosave kick. */
   const finalizeLoadedSession = async (
     result,
     {
@@ -398,6 +412,7 @@ export function wireFileMenu(
     if (commandName) startAutoSavePolicy(game, session, commandName, { onError: fail });
   };
 
+  /** New-game completion follows same loaded-session helper path as other board swaps. */
   const applyNewGame = async (result) => {
     await finalizeLoadedSession(result, {
       fileHandle: null,
@@ -408,6 +423,7 @@ export function wireFileMenu(
     });
   };
 
+  /** Legacy non-modal new-game path (kept for environments without generating modal). */
   const runNewGame = async (difficulty) => {
     const result = newGame(game, { difficulty });
     if (!result.ok) return result;
@@ -415,6 +431,7 @@ export function wireFileMenu(
     return result;
   };
 
+  /** File -> New orchestration (status clear, modal/new path, canonical completion). */
   const startNewGame = async (difficulty) => {
     clearEventStatus(statusEl);
     try {
@@ -440,6 +457,7 @@ export function wireFileMenu(
   };
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
 
+  // Phase B: open New difficulty chooser (generation starts only after a pick).
   controls.new?.addEventListener("click", () => {
     if (!session.legend.new) return;
     menuBar.closeAll?.();
@@ -447,6 +465,7 @@ export function wireFileMenu(
     newDialog.open();
   });
 
+  // Phase C: manual Save path -> persist SUD0 bytes -> mirror host pointer -> publish context.
   controls.save?.addEventListener("click", async () => {
     if (!session.legend.save) return;
     // Auto-save mode keeps manual Save inert; explicit state lives in File menu.
@@ -474,6 +493,7 @@ export function wireFileMenu(
     }
   });
 
+  // Phase D: Save As path -> explicit target selection -> same completion tail as Save.
   controls.saveAs?.addEventListener("click", async () => {
     if (!session.legend.save_as) return;
     const result = saveAs(game);
@@ -494,6 +514,7 @@ export function wireFileMenu(
     }
   });
 
+  // Phase E: settings-only path (toggle autosave), no board replacement.
   controls.autoSave?.addEventListener("click", async () => {
     const enabled = session.config?.auto_save !== true;
     const result = game.exec({ action: "set_auto_save", enabled });
@@ -512,6 +533,7 @@ export function wireFileMenu(
     }
   });
 
+  // Phase F: Open path (SUD0 bytes) -> canonical loaded-session completion -> autosave kick.
   controls.open?.addEventListener("click", async () => {
     if (!session.legend.open) return;
     clearEventStatus(statusEl);
@@ -532,6 +554,7 @@ export function wireFileMenu(
     });
   });
 
+  // Phase G: Import path (one-line text) -> canonical loaded-session completion -> autosave kick.
   controls.import?.addEventListener("click", async () => {
     if (!session.legend.import) return;
     clearEventStatus(statusEl);
@@ -553,6 +576,7 @@ export function wireFileMenu(
     });
   });
 
+  // Phase H: Export path writes one-line text only and leaves current save binding untouched.
   controls.export?.addEventListener("click", async () => {
     if (!session.legend[LEGEND_WIRE_EXPORT]) return;
     const result = exportPuzzle(game);

@@ -36,6 +36,7 @@ export function parseEditShortcut(event) {
   return null;
 }
 
+/** Used by Escape handling to avoid deselect while a menubar popup is active. */
 export function anyMenuOpen(root) {
   if (typeof root.querySelectorAll !== "function") return false;
   return [...root.querySelectorAll("#menu-bar .menu")].some((menu) => menu.dataset.open === "true");
@@ -97,6 +98,7 @@ export function handleDeselect(selection) {
   return { handled: true };
 }
 
+/** Hint optionally includes selected cell; all other edit actions are command-only payloads. */
 function execPayloadForEditAction(action, boardEl, selection) {
   if (action !== "hint") return { action };
   const sel = readSelection(boardEl, selection);
@@ -104,6 +106,7 @@ function execPayloadForEditAction(action, boardEl, selection) {
   return { action: "hint", row: sel.row, col: sel.col };
 }
 
+/** Core edit dispatcher: gate by legend, execute command, update session/render, trigger autosave. */
 export function handleEditAction(
   action,
   game,
@@ -118,14 +121,17 @@ export function handleEditAction(
   if (action === "redo" && !session.legend.redo) return { handled: false };
   if (action === "solve" && !session.legend.solve) return { handled: false };
 
+  // Edit phase 1: execute action payload against engine.
   const result = game.exec(execPayloadForEditAction(action, boardEl, selection));
   if (!result.ok) {
+    // Edit phase 2a: failure path uses common exec error routing.
     applyExecResult(statusEl, errorModal, result);
     return { handled: true };
   }
 
   // Hint is display-only — skip re-render (board unchanged).
   if (action === "hint") {
+    // Edit phase 2b: hint success updates status/legend only.
     applyHintExecStatus(statusEl, errorModal, result);
     applySessionOutcome(session, {
       state: result.state,
@@ -134,6 +140,7 @@ export function handleEditAction(
     return { handled: true, legend: session.legend };
   }
 
+  // Edit phase 3: board-mutating success path (render + session outcome + autosave).
   applySuccessfulExec(boardEl, selection, statusEl, result, createElement, {
     session,
     legend: game.getLegend(),
@@ -144,6 +151,7 @@ export function handleEditAction(
   return { handled: true, legend: session.legend };
 }
 
+/** Wires edit controls + keyboard shortcuts onto one shared edit action dispatcher. */
 export function wireEditMenu(
   undoBtn,
   redoBtn,

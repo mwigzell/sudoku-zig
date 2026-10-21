@@ -32,10 +32,14 @@ export async function applyWebStartupAction(
     startNewGame,
   },
 ) {
+  // Non-empty outcomes are already resolved upstream (e.g., tests injecting
+  // precomputed startup responses); pass through unchanged.
   if (!boot.ok) return boot;
   if (boot.kind !== "empty") return boot;
 
   if (boot.startup_action === "restore") {
+    // Restore flow: fetch bytes from host-selected startup path, then hydrate
+    // engine through the same open codec used by File -> Open.
     const restorePath = boot.startup_save_path;
     if (!restorePath) {
       return emptyOutcome(game, boot, "startup restore path missing; startup remains manual");
@@ -62,12 +66,16 @@ export async function applyWebStartupAction(
   }
 
   if (boot.startup_action === "idle") {
+    // Idle flow: keep existing board snapshot from bootstrap and surface host
+    // startup status message (if any).
     return {
       ...boot,
       msg: boot.startup_status ?? null,
     };
   }
 
+  // New flow: host requested a startup new-game action. Adapter provides the
+  // generation runner, while this function owns startup decision semantics.
   const started = await startNewGame(boot.config ?? {});
   if (!started.ok && !started.cancelled) {
     return { ok: false, error: started.error ?? "New game failed", kind: "empty" };

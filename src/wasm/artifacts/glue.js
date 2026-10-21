@@ -6,6 +6,7 @@
 const SCRATCH = 4096;
 const NAME_SCRATCH = 65536;
 
+// Read NUL-terminated JSON/error payloads emitted by wasm exports.
 const readCString = (memory, ptr) => {
   const view = new Uint8Array(memory.buffer);
   let end = ptr;
@@ -13,6 +14,7 @@ const readCString = (memory, ptr) => {
   return new TextDecoder().decode(view.subarray(ptr, end));
 };
 
+// Write request payloads into wasm linear memory scratch space.
 const writeBytes = (memory, ptr, bytes) => {
   const view = new Uint8Array(memory.buffer);
   while (memory.buffer.byteLength < ptr + bytes.length) memory.grow(1);
@@ -49,13 +51,16 @@ export async function loadArtifact(wasmBytes) {
   const { exports } = instance;
   const memory = exports.memory;
 
+  // Most wasm exports return an out-pointer to a JSON string response.
   const readJson = (ptr) => JSON.parse(readCString(memory, ptr));
 
   return {
+    // Worker and main-thread generators share one progress callback contract.
     setGenProgressListener(fn) {
       genProgressListener = fn ?? null;
     },
 
+    // Engine startup entry (same semantics as native new-game init).
     init({ difficulty = 1, logLevel = 1 } = {}) {
       return readJson(exports.init(difficulty, logLevel));
     },
@@ -102,6 +107,7 @@ export async function loadArtifact(wasmBytes) {
       exports.requestGenAbort?.();
     },
 
+    // Generic command bridge: JSON action in, JSON event out.
     exec(action) {
       const json = JSON.stringify(action);
       writeBytes(memory, SCRATCH, new TextEncoder().encode(json));
@@ -124,6 +130,7 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.getState());
     },
 
+    // SUD0 snapshot path: either JSON error (pointer unchanged) or raw bytes.
     serialize() {
       const ret = exports.serialize();
       const base = exports.outPtr();
@@ -131,6 +138,7 @@ export async function loadArtifact(wasmBytes) {
       return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };
     },
 
+    // Startup/open restore path: optional name feeds host-visible status copy.
     deserialize(bytes, { name } = {}) {
       writeBytes(memory, SCRATCH, bytes);
       if (name) {
@@ -141,18 +149,21 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
     },
 
+    // One-line import path used by Paste and File -> Import.
     importPuzzle(text) {
       const bytes = new TextEncoder().encode(text);
       writeBytes(memory, SCRATCH, bytes);
       return readJson(exports.importPuzzle(SCRATCH, bytes.length));
     },
 
+    // New-game import variant used by worker/sync generation handoff.
     importPuzzleNewGame(text, difficulty) {
       const bytes = new TextEncoder().encode(text);
       writeBytes(memory, SCRATCH, bytes);
       return readJson(exports.importPuzzleNewGame(SCRATCH, bytes.length, difficulty));
     },
 
+    // One-line export path used by copy/export UI actions.
     exportPuzzle() {
       const ret = exports.exportPuzzle();
       const base = exports.outPtr();
