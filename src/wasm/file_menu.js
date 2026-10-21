@@ -96,14 +96,32 @@ export function refreshSession(
   onViewRefresh,
   eventMsg = null,
 ) {
-  renderBoard(boardEl, state, createElement);
-  selection.deselect();
+  refreshSessionView(
+    boardEl,
+    selection,
+    menuBar,
+    state,
+    createElement,
+    onViewRefresh,
+  );
   applySessionOutcomeStatus(session, statusEl, {
     state,
     legend,
     config,
     msg: eventMsg,
   });
+}
+
+export function refreshSessionView(
+  boardEl,
+  selection,
+  menuBar,
+  state,
+  createElement,
+  onViewRefresh,
+) {
+  renderBoard(boardEl, state, createElement);
+  selection.deselect();
   menuBar.sync();
   onViewRefresh?.();
 }
@@ -391,10 +409,14 @@ export function wireFileMenu(
       },
     );
     if (!finalized.ok) fail(finalized);
-    renderBoard(boardEl, session.state, createElement);
-    selection.deselect();
-    menuBar.sync();
-    onViewRefresh?.();
+    refreshSessionView(
+      boardEl,
+      selection,
+      menuBar,
+      session.state,
+      createElement,
+      onViewRefresh,
+    );
     startAutoSavePolicy(game, session, commandName, { onError: fail });
   };
 
