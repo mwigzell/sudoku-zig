@@ -10,6 +10,7 @@ import {
   persistCurrentFileSnapshotWithReplacePrompt,
   hostViewPrefsForPersist,
   postWriteContextEventForSession,
+  postSessionWriteContextEvent,
   WRITE_CONTEXT_CONTINUATION,
   WRITE_CONTEXT_DETACHED,
   initializeWebSession,
@@ -378,6 +379,31 @@ async function flushDialogPaint() {
     async () => ({ ok: true, status: 200, json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }) }),
   );
   assert.equal(out.ok, true);
+  assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
+}
+
+{
+  const session = {
+    write_context: WRITE_CONTEXT_DETACHED,
+    write_context_events: { auto_save_success: "auto_save_success_custom" },
+    writeContextEvent: postWriteContextEvent,
+  };
+  const calls = [];
+  const out = await postSessionWriteContextEvent(
+    session,
+    "auto_save_success",
+    async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
+      };
+    },
+  );
+  assert.equal(out.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.body, "auto_save_success_custom");
   assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
 }
 

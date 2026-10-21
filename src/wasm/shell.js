@@ -407,6 +407,16 @@ export function writeContextEventValue(session, fallbackEventName) {
   return fallbackEventName;
 }
 
+/** Resolve + publish one write-context transition key from the host contract map. */
+export async function postSessionWriteContextEvent(
+  session,
+  eventKey,
+  fetchFn = globalThis.fetch,
+) {
+  const eventName = writeContextEventValue(session, eventKey);
+  return postWriteContextEventForSession(session, eventName, fetchFn);
+}
+
 /** Persist startup snapshot with a replace-confirm retry on host conflict. */
 export async function persistCurrentFileSnapshotWithReplacePrompt(
   game,
@@ -461,9 +471,9 @@ export function startAutoSavePolicy(
       if (!saved.cancelled) onError?.(saved);
       return;
     }
-    const posted = await postWriteContextEventForSession(
+    const posted = await postSessionWriteContextEvent(
       lane,
-      writeContextEventValue(lane, WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS),
+      WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
       fetchFn,
     );
     if (!posted.ok) onError?.(posted);
