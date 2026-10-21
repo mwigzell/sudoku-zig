@@ -394,6 +394,27 @@ export async function persistCurrentFileSnapshot(
   return { ok: true };
 }
 
+/** Install one best-effort final snapshot flush for tab hide/close in autosave mode. */
+export function wireFinalSnapshotOnPageHide(
+  game,
+  session,
+  { win = globalThis, fetchFn = globalThis.fetch } = {},
+) {
+  if (!win || typeof win.addEventListener !== "function") return () => {};
+  let fired = false;
+  const onPageHide = () => {
+    if (fired) return;
+    fired = true;
+    if (session?.config?.auto_save !== true) return;
+    const saveName = session?.boundFilename ?? session?.default_save_filename ?? null;
+    if (typeof saveName !== "string" || saveName.length === 0) return;
+    const keepaliveFetch = (url, init = {}) => fetchFn(url, { ...init, keepalive: true });
+    void persistCurrentFileSnapshot(game, keepaliveFetch, saveName, false);
+  };
+  win.addEventListener("pagehide", onPageHide);
+  return () => win.removeEventListener?.("pagehide", onPageHide);
+}
+
 /** Publish write-context lifecycle events to the host policy seam. */
 export async function postWriteContextEvent(eventName, fetchFn = globalThis.fetch) {
   const res = await fetchFn("./current-file-context", {

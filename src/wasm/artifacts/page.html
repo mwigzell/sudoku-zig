@@ -982,6 +982,7 @@
       offerInitialNewGame,
       persistHostSettings,
       startStartupContextPublish,
+      wireFinalSnapshotOnPageHide,
       showErrorModal,
       wireErrorModal,
     } from "../shell.js";
@@ -1094,6 +1095,7 @@
       // Boot phase 6: build canonical session object + publish startup context lane.
       const session = createWebSessionFromStartup(ready);
       startStartupContextPublish(session, ready.startup_context_event);
+      wireFinalSnapshotOnPageHide(game, session);
       syncCurrentFileLabels(session);
       renderBoard(boardEl, session.state);
       if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {

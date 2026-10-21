@@ -25,6 +25,7 @@ import {
   syncCurrentFileLabels,
   createWebSessionFromStartup,
   startStartupContextPublish,
+  wireFinalSnapshotOnPageHide,
   assertWebBootConfig,
   assertHostStartupConfig,
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
@@ -382,6 +383,70 @@ async function flushDialogPaint() {
   const out = await pending;
   assert.equal(out.ok, true);
   assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
+}
+
+{
+  const listeners = new Map();
+  const win = {
+    addEventListener(name, fn) {
+      listeners.set(name, fn);
+    },
+    removeEventListener(name, fn) {
+      if (listeners.get(name) === fn) listeners.delete(name);
+    },
+  };
+  const calls = [];
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([5, 6, 7]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    boundFilename: "autosave.sud",
+  };
+  wireFinalSnapshotOnPageHide(game, session, {
+    win,
+    fetchFn: async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 204 };
+    },
+  });
+  listeners.get("pagehide")?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "./current-file");
+  assert.equal(calls[0].init.keepalive, true);
+}
+
+{
+  const listeners = new Map();
+  const win = {
+    addEventListener(name, fn) {
+      listeners.set(name, fn);
+    },
+    removeEventListener(name, fn) {
+      if (listeners.get(name) === fn) listeners.delete(name);
+    },
+  };
+  let called = false;
+  const game = {
+    serialize() {
+      called = true;
+      return { ok: true, bytes: new Uint8Array([1]) };
+    },
+  };
+  const session = {
+    config: { auto_save: false },
+    boundFilename: "autosave.sud",
+  };
+  wireFinalSnapshotOnPageHide(game, session, {
+    win,
+    fetchFn: async () => ({ ok: true, status: 204 }),
+  });
+  listeners.get("pagehide")?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(called, false);
 }
 
 {
