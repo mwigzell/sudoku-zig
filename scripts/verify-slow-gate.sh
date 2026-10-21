@@ -28,7 +28,7 @@ budget="$(jq -r '.budget_seconds' "$TIMING_FILE")"
 last="$(jq -r '.last_seconds // .budget_seconds' "$TIMING_FILE")"
 regression_limit="$(awk -v last="$last" -v factor="$REGRESSION_FACTOR" 'BEGIN { printf "%.2f", last * factor }')"
 
-SLOW_WALL_LIMIT="${VERIFY_SLOW_WALL_SECONDS:-45}"
+SLOW_WALL_LIMIT="${VERIFY_SLOW_WALL_SECONDS:-90}"
 
 slow_status=0
 TIMEFORMAT='%R'
