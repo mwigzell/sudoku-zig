@@ -1,6 +1,7 @@
 // shell.test.mjs — worker gen handoff: import on success, no import on cancel.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   NEW_GAME_STARTED_MSG,
   CURRENT_FILE_DESKTOP_ID,
@@ -43,6 +44,9 @@ const AUTO_SAVE_TRIGGERS = [
 ];
 const WRITE_CONTEXT_EVENTS = Object.fromEntries(
   REQUIRED_WRITE_CONTEXT_EVENT_KEYS.map((name) => [name, name]),
+);
+const AUTOSAVE_RESTORE_PARITY_FIXTURE = JSON.parse(
+  readFileSync(new URL("../test/fixtures/autosave_restore_parity.json", import.meta.url), "utf8"),
 );
 
 function makeContinueBtn() {
@@ -842,11 +846,13 @@ async function flushDialogPaint() {
   // Full-cycle regression guard: autosave snapshot must survive restart with
   // player-entered cells still marked as non-givens.
   const idx = (row, col) => row * 9 + col;
-  const makeCells = () =>
-    Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false }));
-  const baseCells = makeCells();
-  baseCells[idx(0, 0)] = { value: 5, given: true, conflict: false };
-  baseCells[idx(1, 1)] = { value: 3, given: true, conflict: false };
+  const lineToCells = (line) =>
+    Array.from(line, (ch) => {
+      const value = Number(ch);
+      return { value, given: value !== 0, conflict: false };
+    });
+  const fixture = AUTOSAVE_RESTORE_PARITY_FIXTURE;
+  const baseCells = lineToCells(fixture.puzzle_line);
 
   let savedBytes = null;
   let writeContext = WRITE_CONTEXT_DETACHED;
@@ -954,12 +960,10 @@ async function flushDialogPaint() {
     fetchFn,
   );
 
-  launchA.exec({ action: "fill", row: 0, col: 2, digit: 7 });
-  startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
-  launchA.exec({ action: "fill", row: 0, col: 3, digit: 8 });
-  startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
-  launchA.exec({ action: "fill", row: 8, col: 8, digit: 9 });
-  startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
+  for (const move of fixture.moves) {
+    launchA.exec({ action: "fill", row: move.row, col: move.col, digit: move.digit });
+    startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
+  }
   await sessionA.__autosave_lane;
   assert.ok(savedBytes && savedBytes.length > 0, "autosave should persist a startup snapshot");
 
@@ -970,16 +974,12 @@ async function flushDialogPaint() {
   assert.equal(readyB.kind, "restore");
 
   const restored = readyB.state.cells;
-  assert.equal(restored[idx(0, 0)].value, 5);
-  assert.equal(restored[idx(0, 0)].given, true);
-  assert.equal(restored[idx(1, 1)].value, 3);
-  assert.equal(restored[idx(1, 1)].given, true);
-  assert.equal(restored[idx(0, 2)].value, 7);
-  assert.equal(restored[idx(0, 2)].given, false);
-  assert.equal(restored[idx(0, 3)].value, 8);
-  assert.equal(restored[idx(0, 3)].given, false);
-  assert.equal(restored[idx(8, 8)].value, 9);
-  assert.equal(restored[idx(8, 8)].given, false);
+  assert.equal(restored[idx(fixture.given_probe.row, fixture.given_probe.col)].value, fixture.given_probe.value);
+  assert.equal(restored[idx(fixture.given_probe.row, fixture.given_probe.col)].given, true);
+  for (const probe of fixture.move_probes) {
+    assert.equal(restored[idx(probe.row, probe.col)].value, probe.value);
+    assert.equal(restored[idx(probe.row, probe.col)].given, false);
+  }
 }
 
 {

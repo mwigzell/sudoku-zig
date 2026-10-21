@@ -1615,6 +1615,41 @@ test "startup policy: auto_restore true restores from current_file path" {
 test "startup policy: relaunch restores latest autosave without rewriting givens" {
     const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
+    const FixtureMove = struct {
+        row: u8,
+        col: u8,
+        digit: u8,
+    };
+    const FixtureProbe = struct {
+        row: u8,
+        col: u8,
+        value: u8,
+    };
+    const AutosaveRestoreParityFixture = struct {
+        puzzle_line: []const u8,
+        moves: []const FixtureMove,
+        given_probe: FixtureProbe,
+        move_probes: []const FixtureProbe,
+    };
+
+    const fixture_path = "src/test/fixtures/autosave_restore_parity.json";
+    const fixture_bytes = try std.Io.Dir.readFileAlloc(
+        std.Io.Dir.cwd(),
+        io,
+        fixture_path,
+        std.testing.allocator,
+        std.Io.Limit.unlimited,
+    );
+    defer std.testing.allocator.free(fixture_bytes);
+    const fixture_json = try std.json.parseFromSlice(
+        AutosaveRestoreParityFixture,
+        std.testing.allocator,
+        fixture_bytes,
+        .{},
+    );
+    defer fixture_json.deinit();
+    const fixture = fixture_json.value;
+
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const data_path_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
@@ -1626,18 +1661,10 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
     const seed_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/autosave-relaunch.sud", .{data_path});
     defer std.testing.allocator.free(seed_path);
     try settings_store.setCurrentFile(std.testing.allocator, io, data_path, seed_path);
-    const one_hole =
-        "483921657967345821251876493548132976729564138136798245372689514814253769695417380";
 
     var first_cfg = test_defaults.testConfigDefaults();
     first_cfg.auto_save = true;
-    const first_responses = [_][]const u8{
-        "m",
-        "13",
-        one_hole,
-        "fill I9 2",
-        "quit",
-    };
+    const first_responses = [_][]const u8{};
     var first_host = host_mod.Host.createForTest(first_cfg, &first_responses);
     defer first_host.deinit();
     var first_facade = try first_host.facade();
@@ -1645,8 +1672,20 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
 
     var first_app = try Sudoku.init(first_cfg, first_facade, file_transport.NativeTransport.make(io), first_host.writer(), .{ .io = io, .data_dir = data_path });
     defer first_app.deinit();
-    try first_app.showGame();
-    while (true) if (try first_app.turn()) break;
+    _ = first_app.engine.newFromOneLinePuzzle(fixture.puzzle_line);
+    for (fixture.moves) |move| {
+        const row: u4 = @intCast(move.row);
+        const col: u4 = @intCast(move.col);
+        const fill_cmd: command.Command = .{
+            .fill = .{
+                .row = row,
+                .col = col,
+                .digit = cell.rawToCellValue(move.digit),
+            },
+        };
+        const fill_event = first_app.engine.exec(fill_cmd);
+        _ = first_app.applyAutoSavePolicyIfNeeded(fill_cmd, fill_event);
+    }
 
     const expected_board = first_app.engine.state.board;
     const expected_history_pointer = first_app.engine.state.history.pointer;
@@ -1677,8 +1716,22 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
     try std.testing.expect(board.equal(expected_board, second_app.engine.state.board));
     try std.testing.expectEqual(expected_history_pointer, second_app.engine.state.history.pointer);
     try std.testing.expectEqual(expected_history_len, second_app.engine.state.history.entries.items.len);
-    try std.testing.expectEqual(cell.CellValue.two, second_app.engine.state.board.getCellValue(8, 8));
-    try std.testing.expect(!second_app.engine.state.board.isGiven(8, 8));
+    const given_row: u4 = @intCast(fixture.given_probe.row);
+    const given_col: u4 = @intCast(fixture.given_probe.col);
+    try std.testing.expectEqual(
+        cell.rawToCellValue(fixture.given_probe.value),
+        second_app.engine.state.board.getCellValue(given_row, given_col),
+    );
+    try std.testing.expect(second_app.engine.state.board.isGiven(given_row, given_col));
+    for (fixture.move_probes) |probe| {
+        const probe_row: u4 = @intCast(probe.row);
+        const probe_col: u4 = @intCast(probe.col);
+        try std.testing.expectEqual(
+            cell.rawToCellValue(probe.value),
+            second_app.engine.state.board.getCellValue(probe_row, probe_col),
+        );
+        try std.testing.expect(!second_app.engine.state.board.isGiven(probe_row, probe_col));
+    }
     const restored_save = try second_app.engine.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(restored_save);
     try std.testing.expectEqualSlices(u8, expected_save, restored_save);

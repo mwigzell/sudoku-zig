@@ -1,0 +1,14 @@
+{
+  "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+  "moves": [
+    { "row": 0, "col": 0, "digit": 4 },
+    { "row": 0, "col": 1, "digit": 8 },
+    { "row": 8, "col": 8, "digit": 2 }
+  ],
+  "given_probe": { "row": 0, "col": 2, "value": 3 },
+  "move_probes": [
+    { "row": 0, "col": 0, "value": 4 },
+    { "row": 0, "col": 1, "value": 8 },
+    { "row": 8, "col": 8, "value": 2 }
+  ]
+}
