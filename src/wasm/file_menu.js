@@ -341,6 +341,29 @@ export function wireFileMenu(
       result.msg,
     );
   };
+  const MISSING_DEFAULT_SAVE_FILENAME = "missing default_save_filename in session";
+
+  const completeManualSave = async (saved, writeContextEventName) => {
+    session.boundFilename = saved.filename;
+    const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
+      fetchFn: globalThis.fetch,
+      saveName: saved.filename,
+    });
+    if (!mirrored.ok) {
+      if (mirrored.cancelled) return false;
+      fail(mirrored);
+      return false;
+    }
+    const contextUpdated = await postSessionWriteContextEvent(
+      session,
+      writeContextEventName,
+      globalThis.fetch,
+    );
+    if (!contextUpdated.ok) fail(contextUpdated);
+    syncCurrentFileLabels(session);
+    applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
+    return true;
+  };
 
   const runNewGame = async (difficulty) => {
     const result = newGame(game, { difficulty });
@@ -392,7 +415,7 @@ export function wireFileMenu(
     }
     const suggested = suggestedSaveFilename(session);
     if (!suggested) {
-      fail({ ok: false, error: "missing default_save_filename in session" });
+      fail({ ok: false, error: MISSING_DEFAULT_SAVE_FILENAME });
       return;
     }
     const saved = await persistBytes(
@@ -402,24 +425,7 @@ export function wireFileMenu(
       { download },
     );
     if (saved.ok) {
-      session.boundFilename = saved.filename;
-      const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
-        fetchFn: globalThis.fetch,
-        saveName: saved.filename,
-      });
-      if (!mirrored.ok) {
-        if (mirrored.cancelled) return;
-        fail(mirrored);
-        return;
-      }
-      const contextUpdated = await postSessionWriteContextEvent(
-        session,
-        WRITE_CONTEXT_EVENT_SAVE_SUCCESS,
-        globalThis.fetch,
-      );
-      if (!contextUpdated.ok) fail(contextUpdated);
-      syncCurrentFileLabels(session);
-      applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
+      await completeManualSave(saved, WRITE_CONTEXT_EVENT_SAVE_SUCCESS);
     } else if (!saved.ok && !saved.cancelled) {
       fail(saved);
     }
@@ -434,29 +440,12 @@ export function wireFileMenu(
     }
     const suggested = suggestedSaveFilename(session);
     if (!suggested) {
-      fail({ ok: false, error: "missing default_save_filename in session" });
+      fail({ ok: false, error: MISSING_DEFAULT_SAVE_FILENAME });
       return;
     }
     const saved = await persistBytes(result.bytes, session, suggested, { saveAs: true, download });
     if (saved.ok) {
-      session.boundFilename = saved.filename;
-      const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
-        fetchFn: globalThis.fetch,
-        saveName: saved.filename,
-      });
-      if (!mirrored.ok) {
-        if (mirrored.cancelled) return;
-        fail(mirrored);
-        return;
-      }
-      const contextUpdated = await postSessionWriteContextEvent(
-        session,
-        WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS,
-        globalThis.fetch,
-      );
-      if (!contextUpdated.ok) fail(contextUpdated);
-      syncCurrentFileLabels(session);
-      applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
+      await completeManualSave(saved, WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS);
     } else if (!saved.ok && !saved.cancelled) {
       fail(saved);
     }
