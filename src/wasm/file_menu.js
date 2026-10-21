@@ -365,6 +365,41 @@ export function wireFileMenu(
     return true;
   };
 
+  const finalizeLoadedSession = async (
+    result,
+    {
+      fileHandle,
+      boundFilename,
+      writeContextEventName,
+      legend,
+      config,
+      commandName,
+    },
+  ) => {
+    session.fileHandle = fileHandle;
+    session.boundFilename = boundFilename;
+    const contextUpdated = await postSessionWriteContextEvent(
+      session,
+      writeContextEventName,
+      globalThis.fetch,
+    );
+    if (!contextUpdated.ok) fail(contextUpdated);
+    refreshSession(
+      boardEl,
+      selection,
+      statusEl,
+      session,
+      menuBar,
+      result.state,
+      legend,
+      config,
+      createElement,
+      onViewRefresh,
+      result.msg,
+    );
+    startAutoSavePolicy(game, session, commandName, { onError: fail });
+  };
+
   const runNewGame = async (difficulty) => {
     const result = newGame(game, { difficulty });
     if (!result.ok) return result;
@@ -479,28 +514,14 @@ export function wireFileMenu(
       fail(result);
       return;
     }
-    session.fileHandle = picked.handle ?? null;
-    session.boundFilename = picked.name;
-    const contextUpdated = await postSessionWriteContextEvent(
-      session,
-      WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
-      globalThis.fetch,
-    );
-    if (!contextUpdated.ok) fail(contextUpdated);
-    refreshSession(
-      boardEl,
-      selection,
-      statusEl,
-      session,
-      menuBar,
-      result.state,
-      game.getLegend(),
-      game.getConfig(),
-      createElement,
-      onViewRefresh,
-      result.msg,
-    );
-    startAutoSavePolicy(game, session, "open", { onError: fail });
+    await finalizeLoadedSession(result, {
+      fileHandle: picked.handle ?? null,
+      boundFilename: picked.name,
+      writeContextEventName: WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
+      legend: game.getLegend(),
+      config: game.getConfig(),
+      commandName: "open",
+    });
   });
 
   controls.import?.addEventListener("click", async () => {
@@ -514,28 +535,14 @@ export function wireFileMenu(
       fail(result);
       return;
     }
-    session.fileHandle = null;
-    session.boundFilename = null;
-    const contextUpdated = await postSessionWriteContextEvent(
-      session,
-      WRITE_CONTEXT_EVENT_IMPORT_SUCCESS,
-      globalThis.fetch,
-    );
-    if (!contextUpdated.ok) fail(contextUpdated);
-    refreshSession(
-      boardEl,
-      selection,
-      statusEl,
-      session,
-      menuBar,
-      result.state,
-      result.legend,
-      result.config,
-      createElement,
-      onViewRefresh,
-      result.msg,
-    );
-    startAutoSavePolicy(game, session, "import", { onError: fail });
+    await finalizeLoadedSession(result, {
+      fileHandle: null,
+      boundFilename: null,
+      writeContextEventName: WRITE_CONTEXT_EVENT_IMPORT_SUCCESS,
+      legend: result.legend,
+      config: result.config,
+      commandName: "import",
+    });
   });
 
   controls.export?.addEventListener("click", async () => {
