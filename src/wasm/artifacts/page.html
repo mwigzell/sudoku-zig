@@ -23,6 +23,7 @@
       --frame-border: #5a6270;
       --cell-bg: #16181d;
       --cell-fg: #e6e6e6;
+      --given-bg: rgb(16 19 23);
       --given-fg: #a8b0c0;
       --player-fg: #f2f4f8;
       --conflict-fg: #ff8a8a;
@@ -68,6 +69,7 @@
       --frame-border: rgb(102, 112, 133);
       --cell-bg: #f8f9fb;
       --cell-fg: #1a1d24;
+      --given-bg: rgb(233 237 243);
       --given-fg: #4a5568;
       --player-fg: #111827;
       --conflict-fg: #b42318;
@@ -641,6 +643,7 @@
     }
 
     .cell.given {
+      background: var(--given-bg);
       color: var(--given-fg);
       font-weight: 600;
     }
