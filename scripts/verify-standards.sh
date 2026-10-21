@@ -240,9 +240,9 @@ done
 WRITE_EVENT_LITS='("startup_restore"|"startup_new"|"startup_idle"|"open_success"|"save_success"|"save_as_success"|"auto_save_success"|"new_game_success"|"import_success"|"paste_success")'
 for f in "${CHANGED[@]}"; do
   [[ "$f" =~ ^src/.*\.(zig|js|mjs|html)$ ]] || continue
-  # Single source of truth in file_policy; shell.js constants are legacy debt.
+  # Single source of truth in file_policy.
   case "$f" in
-    src/file_policy.zig|src/wasm/shell.js) continue ;;
+    src/file_policy.zig) continue ;;
   esac
   check_added_pattern "$f" "$WRITE_EVENT_LITS" \
     "duplicated write-context event literals (define in file_policy; avoid cross-layer copies)"
