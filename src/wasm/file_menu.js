@@ -335,31 +335,6 @@ export function wireFileMenu(
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
-  const applyNewGame = async (result) => {
-    session.fileHandle = null;
-    const contextUpdated = await postSessionWriteContextEvent(
-      session,
-      WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
-      globalThis.fetch,
-    ).catch((err) => ({
-      ok: false,
-      error: err?.message ?? String(err),
-    }));
-    if (!contextUpdated.ok) fail(contextUpdated);
-    refreshSession(
-      boardEl,
-      selection,
-      statusEl,
-      session,
-      menuBar,
-      result.state,
-      result.legend,
-      result.config,
-      createElement,
-      onViewRefresh,
-      result.msg,
-    );
-  };
   const MISSING_DEFAULT_SAVE_FILENAME = "missing default_save_filename in session";
 
   const completeManualSave = async (saved, writeContextEventName) => {
@@ -392,7 +367,7 @@ export function wireFileMenu(
       writeContextEventName,
       legend,
       config,
-      commandName,
+      commandName = null,
     },
   ) => {
     const finalized = await applyLoadedSessionOutcome(
@@ -407,7 +382,10 @@ export function wireFileMenu(
         legend,
         config,
       },
-    );
+    ).catch((err) => ({
+      ok: false,
+      error: err?.message ?? String(err),
+    }));
     if (!finalized.ok) fail(finalized);
     refreshSessionView(
       boardEl,
@@ -417,7 +395,17 @@ export function wireFileMenu(
       createElement,
       onViewRefresh,
     );
-    startAutoSavePolicy(game, session, commandName, { onError: fail });
+    if (commandName) startAutoSavePolicy(game, session, commandName, { onError: fail });
+  };
+
+  const applyNewGame = async (result) => {
+    await finalizeLoadedSession(result, {
+      fileHandle: null,
+      boundFilename: session.boundFilename ?? null,
+      writeContextEventName: WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
+      legend: result.legend,
+      config: result.config,
+    });
   };
 
   const runNewGame = async (difficulty) => {
