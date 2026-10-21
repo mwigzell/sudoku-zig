@@ -134,11 +134,10 @@ export function handleEditAction(
     return { handled: true, legend: session.legend };
   }
 
-  applySessionOutcome(session, {
-    state: result.state,
+  applySuccessfulExec(boardEl, selection, statusEl, result, createElement, {
+    session,
     legend: game.getLegend(),
   });
-  applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
   startAutoSavePolicy(game, session, action, {
     onError: (saved) => applyExecResult(statusEl, errorModal, saved),
   });

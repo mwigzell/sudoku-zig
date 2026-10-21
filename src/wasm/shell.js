@@ -106,6 +106,22 @@ export function applyConfigOutcomeStatus(
   return true;
 }
 
+/** Canonical state/legend command outcome path for successful play/edit commands. */
+export function applyCommandOutcomeStatus(
+  session,
+  statusEl,
+  result,
+  { legend } = {},
+) {
+  if (!result?.ok) return false;
+  applySessionOutcome(session, {
+    state: result.state,
+    legend,
+  });
+  applyEventStatus(statusEl, result);
+  return true;
+}
+
 /** Show an Event.error_msg in the blocking error modal. */
 export function showErrorModal(modal, message) {
   modal.msgEl.textContent = message;

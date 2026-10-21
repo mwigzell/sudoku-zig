@@ -1,7 +1,7 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
 import {
-  applySessionOutcome,
+  applyCommandOutcomeStatus,
   applyEventStatus,
   applyExecResult,
   startAutoSavePolicy,
@@ -329,10 +329,21 @@ export function parsePlayKey(key, code = "") {
   return null;
 }
 
-export function applySuccessfulExec(boardEl, selection, statusEl, result, createElement) {
+export function applySuccessfulExec(
+  boardEl,
+  selection,
+  statusEl,
+  result,
+  createElement,
+  { session, legend } = {},
+) {
   renderBoard(boardEl, result.state, createElement);
   const sel = selection.getSelection();
   if (sel) selection.select(sel.row, sel.col);
+  if (session) {
+    applyCommandOutcomeStatus(session, statusEl, result, { legend });
+    return;
+  }
   applyEventStatus(statusEl, result);
 }
 
@@ -363,9 +374,8 @@ export function handlePlayKey(
     return { handled: true };
   }
 
-  applySuccessfulExec(boardEl, selection, statusEl, result, createElement);
-  applySessionOutcome(session, {
-    state: result.state,
+  applySuccessfulExec(boardEl, selection, statusEl, result, createElement, {
+    session,
     legend: game.getLegend(),
   });
   startAutoSavePolicy(game, session, play.type, {
