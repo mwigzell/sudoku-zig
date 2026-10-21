@@ -790,6 +790,37 @@ async function flushDialogPaint() {
 }
 
 {
+  // Reliability seam: failed startup-context publish must not block autosave.
+  const writes = [];
+  const startupContextFailed = Promise.reject(new Error("context publish failed"));
+  startupContextFailed.catch(() => {});
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([7]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    boundFilename: "autosave.sud",
+    writeContextEvent: async () => ({ ok: true }),
+    startup_context_ready: startupContextFailed,
+  };
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file") {
+      writes.push(new Uint8Array(init.body));
+      return { ok: true, status: 204 };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+
+  startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await session.__autosave_lane;
+  assert.equal(writes.length, 1, "autosave should proceed even when startup context publish fails");
+  assert.equal(session.startup_context_ready, null, "failed startup context promise should be cleared");
+}
+
+{
   // Autosave ordering contract: overlapping saves must persist latest state.
   const writes = [];
   let firstWriteResolve = null;
