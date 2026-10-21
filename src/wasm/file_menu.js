@@ -9,6 +9,7 @@ import {
   importPuzzle,
   exportPuzzle,
   applyEventStatus,
+  applyConfigOutcomeStatus,
   applySessionOutcomeStatus,
   clearEventStatus,
   postSessionWriteContextEvent,
@@ -464,11 +465,10 @@ export function wireFileMenu(
   controls.autoSave?.addEventListener("click", async () => {
     const enabled = session.config?.auto_save !== true;
     const result = game.exec({ action: "set_auto_save", enabled });
-    if (!result.ok) {
+    if (!applyConfigOutcomeStatus(session, game, null, result)) {
       fail(result);
       return;
     }
-    session.config = game.getConfig();
     menuBar.sync();
     onViewRefresh?.();
     if (onPersist) {
