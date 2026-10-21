@@ -974,7 +974,7 @@
   <script type="module">
     import { loadArtifact } from "./glue.js";
     import {
-      applyEventStatus,
+      applySessionOutcomeStatus,
       canUseGenWorker,
       createWebSessionFromStartup,
       syncCurrentFileLabels,
@@ -1091,7 +1091,7 @@
       syncCurrentFileLabels(session);
       renderBoard(boardEl, session.state);
       if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {
-        applyEventStatus(statusBar, { ok: true, msg: ready.msg });
+        applySessionOutcomeStatus(session, statusBar, { msg: ready.msg });
       } else {
         setStatus(statusBar, "");
       }
