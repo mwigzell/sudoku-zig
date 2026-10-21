@@ -113,8 +113,8 @@ src/
 │   └── engine.zig        startup GameEngine constructor + logger sync
 ├── puzzle_gen/             live generation + difficulty
 │   ├── mod.zig           PuzzleGen, Difficulty, generate
-│   ├── live.zig          verify-slow property tests
 │   └── bench.zig         ad-hoc bench (scripts/bench-puzzle-gen.sh)
+├── puzzle_gen_live.zig     verify-slow property tests
 ├── about.zig             Help/About metadata (native + wasm)
 ├── board/                cells, validation, conflicts, SUD0 serial codec
 ├── engine/               GameEngine.exec — fill, clear, undo/redo, hint, save format
