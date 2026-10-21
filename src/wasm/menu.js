@@ -3,10 +3,9 @@
 import {
   applyEventStatus,
   applySessionOutcome,
-  applySessionOutcomeStatus,
   applyHintExecStatus,
   applyExecResult,
-  postSessionWriteContextEvent,
+  applyLoadedSessionOutcome,
   showErrorModal,
   startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_PASTE_SUCCESS,
@@ -79,15 +78,16 @@ export async function handlePastePuzzle(
     if (result.error) showErrorModal(errorModal, result.error);
     return { handled: true, ok: false };
   }
-  session.fileHandle = null;
-  session.boundFilename = null;
-  await postSessionWriteContextEvent(session, WRITE_CONTEXT_EVENT_PASTE_SUCCESS);
-  applySessionOutcomeStatus(session, statusEl, {
-    state: result.state,
-    legend: result.legend,
-    config: result.config,
+  const finalized = await applyLoadedSessionOutcome(session, statusEl, result, {
+    writeContextEventName: WRITE_CONTEXT_EVENT_PASTE_SUCCESS,
+    fileHandle: null,
+    boundFilename: null,
     msg: result.msg ?? "pasted puzzle from clipboard",
   });
+  if (!finalized.ok) {
+    if (finalized.error) showErrorModal(errorModal, finalized.error);
+    return { handled: true, ok: false };
+  }
   return { handled: true, ok: true };
 }
 

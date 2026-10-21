@@ -9,6 +9,7 @@ import {
   importPuzzle,
   exportPuzzle,
   applyEventStatus,
+  applyLoadedSessionOutcome,
   applyConfigOutcomeStatus,
   applySessionOutcomeStatus,
   clearEventStatus,
@@ -376,27 +377,24 @@ export function wireFileMenu(
       commandName,
     },
   ) => {
-    session.fileHandle = fileHandle;
-    session.boundFilename = boundFilename;
-    const contextUpdated = await postSessionWriteContextEvent(
+    const finalized = await applyLoadedSessionOutcome(
       session,
-      writeContextEventName,
-      globalThis.fetch,
-    );
-    if (!contextUpdated.ok) fail(contextUpdated);
-    refreshSession(
-      boardEl,
-      selection,
       statusEl,
-      session,
-      menuBar,
-      result.state,
-      legend,
-      config,
-      createElement,
-      onViewRefresh,
-      result.msg,
+      result,
+      {
+        writeContextEventName,
+        fetchFn: globalThis.fetch,
+        fileHandle,
+        boundFilename,
+        legend,
+        config,
+      },
     );
+    if (!finalized.ok) fail(finalized);
+    renderBoard(boardEl, session.state, createElement);
+    selection.deselect();
+    menuBar.sync();
+    onViewRefresh?.();
     startAutoSavePolicy(game, session, commandName, { onError: fail });
   };
 

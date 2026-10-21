@@ -453,6 +453,38 @@ export async function postSessionWriteContextEvent(
   return postWriteContextEventForSession(session, eventName, fetchFn);
 }
 
+/** Canonical load/import/paste outcome path: bind session, publish context, apply outcome+status. */
+export async function applyLoadedSessionOutcome(
+  session,
+  statusEl,
+  result,
+  {
+    writeContextEventName,
+    fetchFn = globalThis.fetch,
+    fileHandle = null,
+    boundFilename = null,
+    legend = result?.legend,
+    config = result?.config,
+    msg = result?.msg ?? null,
+  } = {},
+) {
+  session.fileHandle = fileHandle;
+  session.boundFilename = boundFilename;
+  const contextUpdated = await postSessionWriteContextEvent(
+    session,
+    writeContextEventName,
+    fetchFn,
+  );
+  if (!contextUpdated.ok) return contextUpdated;
+  applySessionOutcomeStatus(session, statusEl, {
+    state: result?.state,
+    legend,
+    config,
+    msg,
+  });
+  return { ok: true };
+}
+
 /** Persist startup snapshot with a replace-confirm retry on host conflict. */
 export async function persistCurrentFileSnapshotWithReplacePrompt(
   game,
