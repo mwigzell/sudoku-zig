@@ -8,6 +8,8 @@ pub const RouteResult = enum {
     glue,
     gen_client,
     gen_worker,
+    app_boot,
+    app_wire,
     shell,
     startup_web,
     board,
@@ -55,6 +57,8 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/glue.js")) return .glue;
         if (std.mem.eql(u8, path, "/gen_client.js")) return .gen_client;
         if (std.mem.eql(u8, path, "/gen_worker.js")) return .gen_worker;
+        if (std.mem.eql(u8, path, "/app_boot.js")) return .app_boot;
+        if (std.mem.eql(u8, path, "/app_wire.js")) return .app_wire;
         if (std.mem.eql(u8, path, "/shell.js")) return .shell;
         if (std.mem.eql(u8, path, "/startup/web_startup.js")) return .startup_web;
         if (std.mem.eql(u8, path, "/board.js")) return .board;
@@ -101,6 +105,8 @@ pub const Router = struct {
             .glue => embed.glue_js,
             .gen_client => embed.gen_client_js,
             .gen_worker => embed.gen_worker_js,
+            .app_boot => embed.app_boot_js,
+            .app_wire => embed.app_wire_js,
             .shell => embed.shell_js,
             .startup_web => embed.startup_web_js,
             .board => embed.board_js,
@@ -135,7 +141,7 @@ pub const Router = struct {
             .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
-            .glue, .gen_client, .gen_worker, .shell, .startup_web, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
+            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .shell, .startup_web, .board, .menu, .menu_bar, .theme, .file_menu, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
         };
     }
 };

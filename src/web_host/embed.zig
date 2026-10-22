@@ -11,6 +11,10 @@ pub const glue_js: []const u8 = @embedFile("../wasm/artifacts/glue.js");
 pub const gen_worker_js: []const u8 = @embedFile("../wasm/artifacts/gen_worker.js");
 /// Main-thread client for the gen worker.
 pub const gen_client_js: []const u8 = @embedFile("../wasm/gen_client.js");
+/// Web startup phase orchestration entry point.
+pub const app_boot_js: []const u8 = @embedFile("../wasm/app_boot.js");
+/// Web UI wiring after startup/session are ready.
+pub const app_wire_js: []const u8 = @embedFile("../wasm/app_wire.js");
 /// Web app shell bootstrap.
 pub const shell_js: []const u8 = @embedFile("../wasm/shell.js");
 /// Shared startup orchestrator consumed by the web shell.
@@ -66,6 +70,14 @@ test "embedded gen_worker.js is non-empty" {
 
 test "embedded gen_client.js is non-empty" {
     try std.testing.expect(gen_client_js.len > 0);
+}
+
+test "embedded app_boot.js is non-empty" {
+    try std.testing.expect(app_boot_js.len > 0);
+}
+
+test "embedded app_wire.js is non-empty" {
+    try std.testing.expect(app_wire_js.len > 0);
 }
 
 test "embedded shell.js is non-empty" {

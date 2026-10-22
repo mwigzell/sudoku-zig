@@ -30,6 +30,14 @@ Repo size or slice size **does not** relax structure. **Do not** tell the user t
 
 Placement rules: ADR-0011 (N thin entries), `CONTEXT.md` (shell vs `web_host` vs platform entry).
 
+## Multi-front-end policy invariant (enforce)
+
+For this repo's shared-core architecture, **policy centralization is mandatory**.
+
+- Front ends (native shell, web JS, Android host/WebView) are adapters: input/output, lifecycle, presentation.
+- Shared seams (engine/startup/host contracts) own policy: rule semantics, save/restore/autosave semantics, startup decisions, and log filtering policy.
+- Do **not** duplicate or fork policy in a front end "for convenience". If a front end appears to need custom behavior, extract or extend a shared seam instead.
+
 ## Zig version & stdlib notes
 
 We are on **Zig 0.17** (dev snapshot). Consult `docs/zig-testing.md` for the stdlib API surface

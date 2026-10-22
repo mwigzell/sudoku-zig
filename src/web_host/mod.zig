@@ -130,6 +130,26 @@ fn clientLogSeverity(body: []const u8) ClientLogSeverity {
     return .info;
 }
 
+fn jsonStringField(body: []const u8, key: []const u8) ?[]const u8 {
+    const trimmed = std.mem.trim(u8, body, " \t\r\n");
+    var needle_buf: [64]u8 = undefined;
+    const needle = std.fmt.bufPrint(&needle_buf, "\"{s}\":\"", .{key}) catch return null;
+    const start = std.mem.indexOf(u8, trimmed, needle) orelse return null;
+    const value_start = start + needle.len;
+    const rest = trimmed[value_start..];
+    const end = std.mem.indexOfScalar(u8, rest, '"') orelse return null;
+    if (end == 0) return null;
+    return rest[0..end];
+}
+
+fn clientLogScope(body: []const u8) []const u8 {
+    return jsonStringField(body, "scope") orelse jsonStringField(body, "lane") orelse "client";
+}
+
+fn clientLogEvent(body: []const u8) []const u8 {
+    return jsonStringField(body, "event") orelse jsonStringField(body, "stage") orelse "message";
+}
+
 fn contentLength(request: []const u8) ?usize {
     const line_end = std.mem.indexOfPos(u8, request, 0, "\r\n") orelse return null;
     const headers = request[line_end + 2 ..];
@@ -461,11 +481,13 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/client-log")) {
         const body = requestBody(request) orelse return ServeError.System;
         const trimmed = clientLogBody(body);
+        const scope = clientLogScope(trimmed);
+        const event = clientLogEvent(trimmed);
         switch (clientLogSeverity(trimmed)) {
-            .debug => log.debug("client-log {s}", .{trimmed}),
-            .info => log.info("client-log {s}", .{trimmed}),
-            .warn => log.warn("client-log {s}", .{trimmed}),
-            .err => log.err("client-log {s}", .{trimmed}),
+            .debug => log.debug("client-log [{s}] {s} {s}", .{ scope, event, trimmed }),
+            .info => log.info("client-log [{s}] {s} {s}", .{ scope, event, trimmed }),
+            .warn => log.warn("client-log [{s}] {s} {s}", .{ scope, event, trimmed }),
+            .err => log.err("client-log [{s}] {s} {s}", .{ scope, event, trimmed }),
         }
         try writeFull(&w.interface, "204 No Content", "application/json", "");
         return;
@@ -569,6 +591,8 @@ test "web_host: page.html module imports resolve to embedded routes" {
 
 test "web_host: embedded JS transitive imports resolve to embedded routes" {
     const modules = [_]struct { name: []const u8, body: []const u8 }{
+        .{ .name = "app_boot.js", .body = embed.app_boot_js },
+        .{ .name = "app_wire.js", .body = embed.app_wire_js },
         .{ .name = "shell.js", .body = embed.shell_js },
         .{ .name = "board.js", .body = embed.board_js },
         .{ .name = "menu.js", .body = embed.menu_js },
@@ -584,7 +608,7 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
 }
 
 test "web_host: page.html wasm fetch path is served" {
-    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "fetch(\"./artifact.wasm\")") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.app_boot_js, "fetch(\"./artifact.wasm\")") != null);
     const route = try Router.route("/artifact.wasm");
     try std.testing.expect(Router.body(route).len > 0);
 }
@@ -628,6 +652,8 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/glue.js", .expected = .glue },
         .{ .path = "/gen_client.js", .expected = .gen_client },
         .{ .path = "/gen_worker.js", .expected = .gen_worker },
+        .{ .path = "/app_boot.js", .expected = .app_boot },
+        .{ .path = "/app_wire.js", .expected = .app_wire },
         .{ .path = "/shell.js", .expected = .shell },
         .{ .path = "/startup/web_startup.js", .expected = .startup_web },
         .{ .path = "/board.js", .expected = .board },
@@ -705,6 +731,22 @@ test "requestBody returns payload bytes after header separator" {
         "POST /settings.json HTTP/1.1\r\nHost: localhost\r\nContent-Length: 13\r\n\r\n{\"theme\":1}";
     const body = requestBody(req).?;
     try std.testing.expectEqualStrings("{\"theme\":1}", body);
+}
+
+test "client-log extracts scope/event from modern keys with legacy fallback" {
+    const modern = "{\"scope\":\"autosave\",\"event\":\"persist_ok\",\"level\":\"info\"}";
+    try std.testing.expectEqualStrings("autosave", clientLogScope(modern));
+    try std.testing.expectEqualStrings("persist_ok", clientLogEvent(modern));
+
+    const legacy = "{\"lane\":\"autosave\",\"stage\":\"persist_ok\",\"level\":\"info\"}";
+    try std.testing.expectEqualStrings("autosave", clientLogScope(legacy));
+    try std.testing.expectEqualStrings("persist_ok", clientLogEvent(legacy));
+}
+
+test "client-log scope/event defaults when payload omits fields" {
+    const body = "{\"level\":\"info\"}";
+    try std.testing.expectEqualStrings("client", clientLogScope(body));
+    try std.testing.expectEqualStrings("message", clientLogEvent(body));
 }
 
 test "contentLength parses header value case-insensitively" {
@@ -1059,6 +1101,12 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.gen_worker);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.app_boot);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.app_wire);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.shell);

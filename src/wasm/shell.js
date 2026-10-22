@@ -58,22 +58,54 @@ export const REQUIRED_STARTUP_READY_KEYS = [
 ];
 
 const DEFAULT_WRITE_CONTEXT_PUBLISHER = postWriteContextEvent;
-const AUTOSAVE_LOG_PREFIX = "[autosave]";
 const CLIENT_LOG_PATH = "./client-log";
 
-function autosaveLoggingEnabled() {
-  return globalThis.__SUDOKU_AUTOSAVE_LOG === true;
+function clientLogConsoleEnabled() {
+  return globalThis.__SUDOKU_LOG === true;
 }
 
-function autosaveHostLoggingEnabled() {
-  return globalThis.__SUDOKU_AUTOSAVE_LOG_POST === true;
+function clientLogPostEnabled() {
+  return globalThis.__SUDOKU_LOG_POST === true;
 }
 
-function emitAutosaveHostLog(level, stage, details) {
-  if (!autosaveHostLoggingEnabled()) return;
+function consoleWriterForLevel(level) {
+  if (level === "warn") return console.warn;
+  if (level === "err") return console.error;
+  if (level === "debug") return console.debug ?? console.info;
+  return console.info;
+}
+
+function normalizedClientLogLevel(level) {
+  if (level === "debug" || level === "info" || level === "warn" || level === "err") return level;
+  return "info";
+}
+
+/**
+ * Structured client-side diagnostics transport.
+ * Console output and host posting are independently toggled via globals:
+ * - __SUDOKU_LOG (console)
+ * - __SUDOKU_LOG_POST (/client-log)
+ */
+export function clientLog(scope, level, event, details = {}) {
+  const scopeName = typeof scope === "string" && scope.length > 0 ? scope : "client";
+  const eventName = typeof event === "string" && event.length > 0 ? event : "event";
+  const resolvedLevel = normalizedClientLogLevel(level);
+  if (clientLogConsoleEnabled()) {
+    const writer = consoleWriterForLevel(resolvedLevel);
+    writer(`[${scopeName}]`, eventName, details);
+  }
+  if (!clientLogPostEnabled()) return;
   const fetchFn = globalThis.fetch;
   if (typeof fetchFn !== "function") return;
-  const payload = { level, lane: "autosave", stage, details };
+  // Keep lane/stage aliases for compatibility with historical diagnostics.
+  const payload = {
+    level: resolvedLevel,
+    scope: scopeName,
+    event: eventName,
+    lane: scopeName,
+    stage: eventName,
+    details,
+  };
   void fetchFn(CLIENT_LOG_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -92,11 +124,7 @@ function autosaveLevelForStage(stage, details = {}) {
 
 function logAutosave(stage, details = {}) {
   const level = autosaveLevelForStage(stage, details);
-  if (!autosaveLoggingEnabled()) return;
-  // Keep diagnostics concise and structured for DevTools filtering.
-  const fn = level === "warn" ? console.warn : level === "err" ? console.error : console.info;
-  fn(AUTOSAVE_LOG_PREFIX, stage, details);
-  emitAutosaveHostLog(level, stage, details);
+  clientLog("autosave", level, stage, details);
 }
 
 /** Bound save target label shown in the menu-bar filename slot. */
