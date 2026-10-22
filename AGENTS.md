@@ -103,6 +103,15 @@ Comments are **signposts, not citations**.
 - If a comment describes *intended* behaviour ("will move to…", "chunk 4 adds…") it is stale the moment it is written — describe what the code *is*, not what once changed it.
 - Code is the source of truth; **closed** issues are historical and must not need maintaining.
 
+## JS typing/readability rule
+
+When editing web-shell JavaScript (`src/wasm/**/*.js`), maintain JSDoc typing for navigation and reviewability.
+
+- Prefer shared typedef aliases (for example via `src/wasm/types.d.ts`) over repeated ad-hoc object shapes.
+- Public seam functions should have `@param`/`@returns` annotations when type intent is not obvious.
+- Replace broad `any` placeholders in option objects with named typedefs when feasible.
+- Keep types aligned with the real boundary contracts (`glue.js`, wasm action/config payloads); do not invent parallel schemas.
+
 ## Test-suite discipline
 
 Test discovery uses **`src/main.zig`** as the entry point (there is no `src/root.zig` — it was removed in commit 02f55d8). Zig's test runner follows the **transitive import graph**: every `test {}` block in any module reachable from `main.zig`'s imports is discovered and linked — no manual tuple or central registration file is needed.

@@ -18,6 +18,14 @@ For web-shell JS modules, comments should orient by **runtime flow and seam role
 - Keep comments local and concise; avoid narrating obvious statements.
 - Do not encode historical/process metadata in code comments (issue numbers, session/chunk references, dates).
 
+### JS typedef convention
+
+For web-shell JS modules, prefer explicit JSDoc typing to improve hover/help and cross-file navigation:
+
+- Use shared aliases from `src/wasm/types.d.ts` for core seams (`GameApi`, session/startup/modal shapes).
+- Annotate exported seam functions with `@param`/`@returns` when type intent is non-trivial.
+- Avoid leaving broad `any` option fields when a concrete typedef exists or can be introduced cheaply.
+
 ## Language
 
 ### Board Layer
