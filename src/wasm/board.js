@@ -42,10 +42,10 @@ export function ensureBoardFrame(frameEl, createElement = (tag) => document.crea
       el.style.gridRow = String(r + 1);
       el.style.gridColumn = String(c + 1);
 
-      if (r === 0 && c >= PLAY_OFFSET && c < playEnd) {
+      if ((r === 0 || r === playEnd) && c >= PLAY_OFFSET && c < playEnd) {
         el.classList.add("label-cell", "col-label");
         el.textContent = COLUMN_LETTERS[c - PLAY_OFFSET];
-      } else if (c === 0 && r >= PLAY_OFFSET && r < playEnd) {
+      } else if ((c === 0 || c === playEnd) && r >= PLAY_OFFSET && r < playEnd) {
         el.classList.add("label-cell", "row-label");
         el.textContent = String(r - PLAY_OFFSET + 1);
       } else {

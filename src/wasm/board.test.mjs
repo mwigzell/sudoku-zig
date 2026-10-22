@@ -173,14 +173,17 @@ function makeRenderElement() {
   assert.equal(getPlayGrid(frameEl), playEl);
 
   const colLabels = frameEl._children.filter((c) => c.classList.contains("col-label"));
-  assert.equal(colLabels.length, 9);
-  assert.deepEqual(colLabels.map((c) => c.textContent), [...COLUMN_LETTERS]);
+  assert.equal(colLabels.length, 18);
+  assert.deepEqual(
+    colLabels.map((c) => c.textContent),
+    [...COLUMN_LETTERS, ...COLUMN_LETTERS],
+  );
 
   const rowLabels = frameEl._children.filter((c) => c.classList.contains("row-label"));
-  assert.equal(rowLabels.length, 9);
+  assert.equal(rowLabels.length, 18);
   assert.deepEqual(
     rowLabels.map((c) => c.textContent),
-    ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+    ["1", "1", "2", "2", "3", "3", "4", "4", "5", "5", "6", "6", "7", "7", "8", "8", "9", "9"],
   );
 
   for (const cell of frameEl._children) {
@@ -194,8 +197,10 @@ function makeRenderElement() {
   }
 
   const gutter = frameEl._children.filter((c) => c.classList.contains("gutter-cell"));
-  assert.ok(colLabels.every((c) => c.style.gridRow === "1"), "column labels in top gutter");
-  assert.ok(rowLabels.every((c) => c.style.gridColumn === "1"), "row labels in left gutter");
+  assert.ok(colLabels.some((c) => c.style.gridRow === "1"), "column labels in top gutter");
+  assert.ok(colLabels.some((c) => c.style.gridRow === "11"), "column labels in bottom gutter");
+  assert.ok(rowLabels.some((c) => c.style.gridColumn === "1"), "row labels in left gutter");
+  assert.ok(rowLabels.some((c) => c.style.gridColumn === "11"), "row labels in right gutter");
   assert.ok(gutter.some((c) => c.style.gridRow === "11"), "bottom gutter band");
   assert.ok(
     gutter.some((c) => c.style.gridColumn === "11" && c.style.gridRow !== "11"),

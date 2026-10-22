@@ -28,6 +28,9 @@
       --player-fg: #f2f4f8;
       --conflict-fg: #ff8a8a;
       --conflict-bg: #3a1f24;
+      --overlay-bg: rgb(27 32 40);
+      --overlay-border: rgb(86 97 113);
+      --overlay-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
       --line-cell: #333844;
       --line-box: #5a6270;
       --selection-ring: #6ea8fe;
@@ -74,6 +77,9 @@
       --player-fg: #111827;
       --conflict-fg: #b42318;
       --conflict-bg: #fef2f2;
+      --overlay-bg: rgb(244 247 252);
+      --overlay-border: rgb(141 155 176);
+      --overlay-shadow: 0 14px 40px rgba(17, 24, 39, 0.2);
       --line-cell: #d0d5dd;
       --line-box: #667085;
       --selection-ring: #2563eb;
@@ -177,10 +183,10 @@
       min-width: 10rem;
       margin: 0;
       padding: 0.25rem 0;
-      border: 1px solid var(--status-border);
+      border: 1px solid var(--overlay-border);
       border-radius: 6px;
-      background: var(--status-bg);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      background: var(--overlay-bg);
+      box-shadow: var(--overlay-shadow);
     }
 
     .menu-panel[hidden] {
@@ -334,11 +340,11 @@
     .generating-dialog {
       width: min(100%, 24rem);
       padding: 1rem 1.25rem;
-      border: 1px solid var(--status-border);
+      border: 1px solid var(--overlay-border);
       border-radius: 8px;
-      background: var(--status-bg);
+      background: var(--overlay-bg);
       color: var(--status-fg);
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--overlay-shadow);
       text-align: center;
     }
 
@@ -444,11 +450,11 @@
     .about-dialog {
       width: min(100%, 24rem);
       padding: 1rem 1.25rem;
-      border: 1px solid var(--status-border);
+      border: 1px solid var(--overlay-border);
       border-radius: 8px;
-      background: var(--status-bg);
+      background: var(--overlay-bg);
       color: var(--status-fg);
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--overlay-shadow);
     }
 
     .about-dialog {
@@ -458,11 +464,11 @@
     .settings-dialog {
       width: min(100%, 28rem);
       padding: 1rem 1.25rem;
-      border: 1px solid var(--status-border);
+      border: 1px solid var(--overlay-border);
       border-radius: 8px;
-      background: var(--status-bg);
+      background: var(--overlay-bg);
       color: var(--status-fg);
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--overlay-shadow);
       text-align: left;
     }
 
