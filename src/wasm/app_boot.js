@@ -16,7 +16,11 @@ import { renderBoard, setStatus } from "./board.js";
 import { primeWebBootChrome } from "./theme.js";
 import { createErrorModal, wireSudokuApp } from "./app_wire.js";
 
-/** Entry point used by page.html module script. */
+/**
+ * Entry point used by `page.html` module script.
+ * @param {Document} root
+ * @returns {Promise<void>}
+ */
 export async function bootSudokuWebApp(root = document) {
   // Enable structured client diagnostics (console + host bridge).
   globalThis.__SUDOKU_LOG = true;

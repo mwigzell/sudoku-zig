@@ -15,6 +15,15 @@ import { wireRegionMenu } from "./region.js";
 import { wireHelpAbout, wireAboutModal } from "./help.js";
 import { wireSettingsMenu } from "./settings.js";
 
+/**
+ * @typedef {import("./types").GameApi} GameApi
+ * @typedef {import("./types").WebSession} WebSession
+ * @typedef {import("./types").StartupReady} StartupReady
+ * @typedef {import("./types").GeneratingModal} GeneratingModal
+ * @typedef {import("./types").GenWorker} GenWorker
+ * @typedef {import("./types").ErrorModal} ErrorModal
+ */
+
 function isTouchPlayPadPlatform(win = globalThis) {
   if (!win || !win.navigator) return false;
   return (
@@ -68,6 +77,23 @@ function settingsModalFromDom(root = document) {
   };
 }
 
+/**
+ * @typedef {Object} WireSudokuAppOptions
+ * @property {GameApi} game
+ * @property {WebSession} session
+ * @property {StartupReady} ready
+ * @property {GeneratingModal} generatingModal
+ * @property {GenWorker} genWorker
+ * @property {ErrorModal} errorModal
+ * @property {Document} [root]
+ * @property {Window & typeof globalThis} [win]
+ */
+
+/**
+ * Wire all DOM-facing web shell modules around one shared session object.
+ * @param {WireSudokuAppOptions} options
+ * @returns {void}
+ */
 export function wireSudokuApp({
   game,
   session,
@@ -200,6 +226,11 @@ export function wireSudokuApp({
   }
 }
 
+/**
+ * Resolve and wire the shared blocking error modal controls from DOM.
+ * @param {Document} root
+ * @returns {ErrorModal}
+ */
 export function createErrorModal(root = document) {
   return wireErrorModal(
     root.getElementById("error-modal"),

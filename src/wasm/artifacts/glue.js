@@ -107,7 +107,10 @@ export async function loadArtifact(wasmBytes) {
       exports.requestGenAbort?.();
     },
 
-    // Generic command bridge: JSON action in, JSON event out.
+    /**
+     * Generic command bridge: JSON action in, JSON event out.
+     * @param {import("../types").ExecAction} action
+     */
     exec(action) {
       const json = JSON.stringify(action);
       writeBytes(memory, SCRATCH, new TextEncoder().encode(json));

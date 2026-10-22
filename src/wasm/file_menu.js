@@ -28,6 +28,8 @@ import {
 import { renderBoard, setStatus } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
+/** @typedef {import("./types").GameApi} GameApi */
+
 export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
@@ -320,6 +322,7 @@ export function wireDifficultyDialog(dialog, onChoose) {
   };
 }
 
+/** @param {GameApi} game */
 export function wireFileMenu(
   controls,
   game,

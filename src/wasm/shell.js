@@ -6,6 +6,8 @@ import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
 import { applyWebStartupAction } from "../startup/web_startup.js";
 
+/** @typedef {import("./types").GameApi} GameApi */
+
 /** Apply `.ok.msg` to the status bar. */
 export function applyOkStatus(statusEl, result) {
   if (!result.ok) return;
@@ -85,6 +87,11 @@ function normalizedClientLogLevel(level) {
  * Console output and host posting are independently toggled via globals:
  * - __SUDOKU_LOG (console)
  * - __SUDOKU_LOG_POST (/client-log)
+ * @param {string} scope
+ * @param {"debug"|"info"|"warn"|"err"|string} level
+ * @param {string} event
+ * @param {Record<string, unknown>} [details]
+ * @returns {void}
  */
 export function clientLog(scope, level, event, details = {}) {
   const scopeName = typeof scope === "string" && scope.length > 0 ? scope : "client";
@@ -230,16 +237,19 @@ export function applyHintExecStatus(statusEl, errorModal, result) {
 }
 
 /** Save current game — returns opaque SUD0 bytes or `{ ok: false, error }`. */
+/** @param {GameApi} game */
 export function save(game) {
   return game.serialize();
 }
 
 /** Save-as is the same bytes path until a picker supplies a target name. */
+/** @param {GameApi} game */
 export function saveAs(game) {
   return game.serialize();
 }
 
 /** Restore game state from opaque SUD0 bytes. */
+/** @param {GameApi} game */
 export function open(game, bytes, { name } = {}) {
   const result = name ? game.deserialize(bytes, { name }) : game.deserialize(bytes);
   if (!result.ok) return result;
@@ -267,6 +277,7 @@ export function waitForStatusPaint() {
 }
 
 /** Start a fresh game at the given difficulty (PlayerDifficulty wire values). */
+/** @param {GameApi} game */
 export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = {}) {
   game.setGenProgressListener?.(
     onGenProgress ? (phase, a, b) => onGenProgress(formatGenProgress(phase, a, b)) : null,
@@ -290,6 +301,7 @@ export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = 
 export const NEW_GAME_STARTED_MSG = "new game started";
 
 /** Load a one-line puzzle via `importPuzzle` (paste, file import, export round-trip). */
+/** @param {GameApi} game */
 export function applyImportedLine(game, line) {
   const result = game.importPuzzle(line);
   if (!result.ok) return result;
@@ -303,6 +315,7 @@ export function applyImportedLine(game, line) {
 }
 
 /** Worker/sync gen handoff: same codec as import; status reflects New, not Import. */
+/** @param {GameApi} game */
 export function applyGeneratedLineAsNewGame(game, line, { difficulty } = {}) {
   const result =
     difficulty != null && typeof game.importPuzzleNewGame === "function"
@@ -384,6 +397,7 @@ async function fetchStartupSaveBytes(path, fetchFn = globalThis.fetch) {
 }
 
 /** Bridge host config JSON to wasm bootstrap wire names and booleans. */
+/** @param {GameApi} game */
 export function bootstrapEngineFromHostConfig(game, hostCfg) {
   return game.bootstrapHostConfig({
     difficulty: hostCfg.difficulty,
@@ -442,6 +456,7 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
 }
 
 /** Persist current SUD0 snapshot for startup restore (`/current-file`). */
+/** @param {GameApi} game */
 export async function persistCurrentFileSnapshot(
   game,
   fetchFn = globalThis.fetch,
@@ -467,6 +482,7 @@ export async function persistCurrentFileSnapshot(
 }
 
 /** Install one best-effort final snapshot flush for tab hide/close in autosave mode. */
+/** @param {GameApi} game */
 export function wireFinalSnapshotOnPageHide(
   game,
   session,
@@ -617,6 +633,7 @@ export async function applyLoadedSessionOutcome(
 }
 
 /** Persist startup snapshot with a replace-confirm retry on host conflict. */
+/** @param {GameApi} game */
 export async function persistCurrentFileSnapshotWithReplacePrompt(
   game,
   {
@@ -640,6 +657,7 @@ export async function persistCurrentFileSnapshotWithReplacePrompt(
 }
 
 /** Shared post-command autosave policy for web handlers. */
+/** @param {GameApi} game */
 export function startAutoSavePolicy(
   game,
   session,
@@ -724,6 +742,7 @@ export function startAutoSavePolicy(
 /**
  * Host config bootstrap + startup policy payload from /host-config.json.
  */
+/** @param {GameApi} game */
 export async function initializeWebSession(game, { fetchFn } = {}) {
   // Phase 1: fetch host startup contract payload and validate required keys.
   const hostCfg = await fetchHostStartupConfig(fetchFn);
@@ -751,6 +770,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
 }
 
 /** Applies host startup policy: restore/new/idle on the host-resolved startup contract. */
+/** @param {GameApi} game */
 export async function offerInitialNewGame(
   game,
   boot,
@@ -786,6 +806,7 @@ function genWireFromEngine(game, options) {
 }
 
 /** Worker gen → import on main; modal + optional Cancel. */
+/** @param {GameApi} game */
 export async function newGameWithWorkerGen(
   game,
   modal,
@@ -811,6 +832,7 @@ export async function newGameWithWorkerGen(
 }
 
 /** Main-thread `generatePuzzle` + import (modal spinner; blocks main thread). */
+/** @param {GameApi} game */
 export async function newGameWithSyncGenerate(
   game,
   modal,
@@ -845,6 +867,7 @@ function shouldFallbackFromWorker(result) {
 }
 
 /** First load / New: prefer worker gen; fall back to main-thread generate or legacy `init`. */
+/** @param {GameApi} game */
 export async function newGameWithGeneratingModal(game, modal, options = {}) {
   const { genWorker, onGenProgress, autoContinue = false } = options;
   const wire = genWireFromEngine(game, options);
@@ -886,6 +909,7 @@ export async function newGameWithGeneratingModal(game, modal, options = {}) {
 export { canUseGenWorker };
 
 /** Export the current grid as an 81-byte one-line puzzle string. */
+/** @param {GameApi} game */
 export function exportPuzzle(game) {
   return game.exportPuzzle();
 }
@@ -935,6 +959,7 @@ export async function writeClipboardText(text, { clipboard = globalThis.navigato
 }
 
 /** One-line puzzle string from wasm, or an error result. */
+/** @param {GameApi} game */
 export function puzzleLineForCopy(game) {
   const exported = exportPuzzle(game);
   if (!exported.ok) return exported;
@@ -945,6 +970,7 @@ export function puzzleLineForCopy(game) {
  * Copy current grid via `exportPuzzle`. Prefer `startCopyPuzzleOnClick` in UI handlers
  * so `writeText` runs in the same turn as the user click (activation).
  */
+/** @param {GameApi} game */
 export async function copyPuzzleToClipboard(game, options = {}) {
   const line = puzzleLineForCopy(game);
   if (!line.ok) return line;
@@ -952,6 +978,7 @@ export async function copyPuzzleToClipboard(game, options = {}) {
 }
 
 /** Start clipboard write in the click turn; returns a Promise for tests. */
+/** @param {GameApi} game */
 export function startCopyPuzzleOnClick(game, { clipboard = globalThis.navigator?.clipboard, doc } = {}) {
   const document = doc ?? globalThis.document;
   const line = puzzleLineForCopy(game);
@@ -966,6 +993,7 @@ export function startCopyPuzzleOnClick(game, { clipboard = globalThis.navigator?
 }
 
 /** Import a one-line puzzle from page-read file text; engine owns the codec. */
+/** @param {GameApi} game */
 export function importPuzzle(game, text) {
   const result = game.importPuzzle(text);
   if (!result.ok) return result;

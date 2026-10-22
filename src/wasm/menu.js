@@ -18,6 +18,8 @@ import { applySuccessfulExec, readSelection, renderBoard } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
 
+/** @typedef {import("./types").GameApi} GameApi */
+
 /** Mirror legend flags and deselect enablement (active only when a cell is selected). */
 export function syncEditMenu(legend, controls, selection, boardEl) {
   syncMenuBar(legend, controls);
@@ -43,6 +45,7 @@ export function anyMenuOpen(root) {
 }
 
 /** Edit → Copy: wasm `exportPuzzle` bytes only; clipboard denied leaves board intact. */
+/** @param {GameApi} game */
 export async function handleCopyPuzzle(
   game,
   session,
@@ -61,6 +64,7 @@ export async function handleCopyPuzzle(
 }
 
 /** Edit → Paste: clipboard `readText` → wasm `importPuzzle` only; fail closed on read/import errors. */
+/** @param {GameApi} game */
 export async function handlePastePuzzle(
   game,
   session,
@@ -107,6 +111,7 @@ function execPayloadForEditAction(action, boardEl, selection) {
 }
 
 /** Core edit dispatcher: gate by legend, execute command, update session/render, trigger autosave. */
+/** @param {GameApi} game */
 export function handleEditAction(
   action,
   game,
@@ -152,6 +157,7 @@ export function handleEditAction(
 }
 
 /** Wires edit controls + keyboard shortcuts onto one shared edit action dispatcher. */
+/** @param {GameApi} game */
 export function wireEditMenu(
   undoBtn,
   redoBtn,

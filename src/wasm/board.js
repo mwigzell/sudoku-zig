@@ -7,6 +7,8 @@ import {
   startAutoSavePolicy,
 } from "./shell.js";
 
+/** @typedef {import("./types").GameApi} GameApi */
+
 export { applyEventStatus };
 
 const GRID_SIZE = 9;
@@ -356,6 +358,7 @@ export function applySuccessfulExec(
 }
 
 /** Execute one play input against current selection and apply success/error side effects. */
+/** @param {GameApi} game */
 export function handlePlayKey(
   game,
   boardEl,
@@ -406,6 +409,7 @@ export function handlePlayKey(
 }
 
 /** Board key + play-pad event loop that feeds `handlePlayKey` and syncs legend hooks. */
+/** @param {GameApi} game */
 export function wirePlayLoop(
   frameEl,
   game,
