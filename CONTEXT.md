@@ -9,6 +9,15 @@ See `.scratch/sudoku/prd.md` for full PRD and user stories.
 ## Coding Standards
 See `.coding-standards.md` for all coding, testing, TDD methodology, and project architecture guidelines.
 
+### JS flow-comment convention
+
+For web-shell JS modules, comments should orient by **runtime flow and seam role**:
+
+- Prefer short phase/signpost comments (e.g. startup phase boundaries, command lifecycle phases).
+- Describe what the code is doing in the current architecture ("who owns what seam"), not commit history.
+- Keep comments local and concise; avoid narrating obvious statements.
+- Do not encode historical/process metadata in code comments (issue numbers, session/chunk references, dates).
+
 ## Language
 
 ### Board Layer
