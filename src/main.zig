@@ -1,7 +1,7 @@
 // Process entry: resolve startup config, dispatch to the desktop web or terminal entry arm.
 const std = @import("std");
 const config = @import("config.zig");
-const sudoku = @import("native/shell/sudoku.zig");
+const sudoku = @import("native/shell/shell.zig");
 const logger = @import("logger.zig");
 const desktop_web = @import("native/desktop_web.zig");
 const desktop_terminal = @import("native/desktop_terminal.zig");

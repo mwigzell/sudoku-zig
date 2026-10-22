@@ -253,7 +253,7 @@ pub const GameEngine = struct {
     }
 
     /// Route a gameplay command through Board mutation + render update.
-    /// Session commands (save/open/new/save_as) are handled in native/shell/sudoku.zig.
+    /// Session commands (save/open/new/save_as) are handled in native/shell/shell.zig.
     pub fn exec(self: *@This(), cmd: command.Command) Event {
         self.beginEventMsg();
         switch (cmd) {

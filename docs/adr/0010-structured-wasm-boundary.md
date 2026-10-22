@@ -39,7 +39,7 @@ Wire format for slice B: **length-prefixed or NUL-terminated JSON strings** in w
 
 ### Testing
 
-- **Native:** existing `sudoku.zig` integrated e2e through `Sudoku` + blocking AsciiRenderer (unchanged for this slice).
+- **Native:** existing `native/shell/shell.zig` integrated e2e through `Sudoku` + blocking AsciiRenderer (unchanged for this slice).
 - **Wasm:** rewrite `glue.test.mjs` to drive real `artifact.wasm` in node against JSON exports (no ASCII grid parsing). Browser DOM e2e remains optional (ADR-0002).
 
 ## Consequences

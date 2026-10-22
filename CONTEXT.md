@@ -127,7 +127,7 @@ There is **no** separate Android app shell beside native and wasm. Informal “A
 | Desktop web | `desktop_web` → `web_host` + browser |
 | Android host | `src/android/` → `web_host` + WebView (ADR-0013) |
 
-**Sudoku** (`native/shell/sudoku.zig`, native app shell):
+**Sudoku** (`native/shell/shell.zig`, native app shell):
 Owns the command loop, renderer facade, `FileTransport`, and session command routing (`save`, `open`, `save_as`, `new`) in `handleResult` before delegating gameplay to `GameEngine.exec`. This is the native integrated e2e seam.
 _Avoid_: folding session I/O into GameEngine
 
@@ -161,6 +161,20 @@ Front-end layers are adapters. They do I/O, lifecycle, and presentation; shared 
 
 Rule: every supported front-end entry must remain transport-thin and behavior-consistent by consuming shared contracts, not redefining them.
 Policy centralization is mandatory: in this shared-core multi-front-end architecture, front ends transport/render only; they do not fork rule decisions (persistence/autosave semantics, startup policy, or log filtering policy).
+
+### Policy authority map (core vs platform call sites)
+
+Use this as a quick audit table when reviewing changes. Core owns policy; platform entries call into it.
+
+| Policy | Core authority | Platform call sites |
+|---|---|---|
+| Command semantics + `Event` meaning | `src/command.zig`, `src/engine/game_engine.zig` | Native: `src/native/shell/shell.zig` (`engine.exec`). Web/Android: wasm API in `src/wasm_entry.zig`, called by `src/wasm/{board,menu,file_menu}.js`. |
+| Startup decision (`restore/new/idle`) | `src/startup/policy.zig`, `src/startup/config.zig` | Native: `src/native/shell/shell.zig` (`runStartupPolicy`). Web/Android: `src/wasm/shell.js` (`initializeWebSession`, `offerInitialNewGame`) + `src/startup/web_startup.js`. |
+| Autosave trigger set (which commands autosave) | `src/file_policy.zig` + startup contract emission in `src/startup/config.zig` | Native: `src/native/shell/shell.zig` (`applyAutoSavePolicyIfNeeded`). Web/Android: `src/wasm/shell.js` (`startAutoSavePolicy`, `session.autosave_trigger_commands`). |
+| Overwrite/replace lane policy (`detached` vs `continuation`) | `src/file_policy.zig` | Native: `src/native/shell/shell.zig` (`shouldWriteTarget`, `applyWriteContextEvent`). Web/Android host seam: `src/web_host/mod.zig` (`/current-file`, `/current-file-context`). |
+| Settings schema + persistence semantics | `src/config.zig`, `src/settings_store.zig` | Native: `src/native/shell/shell.zig` settings/current-file persistence. Web/Android: `src/wasm/shell.js` posts; `src/web_host/mod.zig` merges/saves. |
+| Save format (SUD0 codec) | `src/engine/game_engine.zig` (+ wasm export surface in `src/wasm_entry.zig`) | Native: `src/native/shell/{save,save_as,open}.zig` via `FileTransport`. Web/Android: `src/wasm/shell.js` via wasm `serialize`/`deserialize`. |
+| Log-level filtering policy | `src/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
 
 **Desktop web entry** (`native/desktop_web.zig`):
 Wires **`web_host.runWithHostConfig`**, fatal bind errors, and **`whenHostReady`** → **`open_browser`**. Called from `main` when `-r web`.

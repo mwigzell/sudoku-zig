@@ -24,10 +24,10 @@ Scope: `src/wasm/`, Android bootstrap/bridge, and native UI-session layers.
 | Android URI I/O bridge | `src/android/bootstrap/MainActivity.java` (`saveSudokuFile`, `openSudokuFile`) | Marshals bytes to/from Android document providers | `KEEP` | Android adapter |
 | Android host lifecycle | `src/android/jni_host.zig` (`startHost`, `readyPort`, `stopHost`) | Starts/stops loopback host thread and reports bound port | `KEEP` | Android adapter entry |
 | Native renderer lifecycle | `src/native/host.zig` (`facade`, `writer`, session init) | Constructs terminal substrate and renderer facade | `KEEP` | native adapter |
-| Native command/session loop | `src/native/shell/sudoku.zig` (`turn`, renderer dispatch) | Reads command input and presents output | `KEEP` | native adapter |
+| Native command/session loop | `src/native/shell/shell.zig` (`turn`, renderer dispatch) | Reads command input and presents output | `KEEP` | native adapter |
 | Startup payload parsing in web adapter | `src/wasm/shell.js` (`assertHostStartupConfig`, `initializeWebSession`, `offerInitialNewGame`) | Adapter validates/branches on startup semantics | `EXTRACT` | shared startup seam + host payload contract |
 | Session policy branching in web adapter | `src/wasm/shell.js` (session orchestration helpers) | Adapter encodes semantic session decisions | `EXTRACT` | shared policy seam |
-| Session policy branching in native adapter | `src/native/shell/sudoku.zig` (session-side behavior decisions) | Native entry carries behavior semantics not shared | `EXTRACT` | shared policy seam consumed by entries |
+| Session policy branching in native adapter | `src/native/shell/shell.zig` (session-side behavior decisions) | Native entry carries behavior semantics not shared | `EXTRACT` | shared policy seam consumed by entries |
 | Semantic event-name mapping in adapters | `src/wasm/shell.js` + UI callers | Adapter defines behavior transition vocabulary | `EXTRACT` | shared contract module |
 | Duplicate decision paths across adapters | `src/wasm/*` + `src/native/shell/*` + host wiring | Same behavior class decided in multiple entry layers | `EXTRACT` | single authority module + thin adapter calls |
 | Contract-shape literals in page wiring | `src/wasm/artifacts/page.html` (boot flow + session orchestration) | Entry page carries behavior sequencing details | `EXTRACT` | wasm adapter should call thin helper API only |

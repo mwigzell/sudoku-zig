@@ -107,7 +107,7 @@ Comments are **signposts, not citations**.
 
 Test discovery uses **`src/main.zig`** as the entry point (there is no `src/root.zig` — it was removed in commit 02f55d8). Zig's test runner follows the **transitive import graph**: every `test {}` block in any module reachable from `main.zig`'s imports is discovered and linked — no manual tuple or central registration file is needed.
 
-Caveat: a new source file with tests is only visible if it is **imported by something in main.zig's graph**. If you add `src/foo.zig` with tests and it isn't imported by an existing module, its tests are silently skipped. Make sure it is reachable from the domain (e.g. imported by `sudoku.zig` or another module), and verify with `zig build test` that the new tests actually run.
+Caveat: a new source file with tests is only visible if it is **imported by something in main.zig's graph**. If you add `src/foo.zig` with tests and it isn't imported by an existing module, its tests are silently skipped. Make sure it is reachable from the domain (e.g. imported by `native/shell/shell.zig` or another module), and verify with `zig build test` that the new tests actually run.
 
 ## clean "nuke" build cache 
 zig build clean
