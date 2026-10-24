@@ -104,10 +104,10 @@ pub fn stopHost() void {
     setDataDirDefault();
 }
 
-/// JNI surface: expose Android logcat tag owned by native transport adapter.
-pub fn logTag(env: ?*anyopaque) ?*anyopaque {
+/// JNI surface: expose native-owned log identity for platform log transport.
+pub fn logIdentity(env: ?*anyopaque) ?*anyopaque {
     const env_raw = env orelse return null;
-    return sudoku_new_jstring_utf(env_raw, logcat.tag());
+    return sudoku_new_jstring_utf(env_raw, logcat.logIdentity());
 }
 
 test {

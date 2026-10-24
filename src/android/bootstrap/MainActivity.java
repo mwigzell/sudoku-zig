@@ -41,7 +41,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public final class MainActivity extends Activity {
-    private static final String TAG = JniHost.logTag();
+    private static final String LOG_IDENTITY = JniHost.logIdentity();
     private static final int REQUEST_OPEN_DOCUMENT = 2001;
     private static final int REQUEST_CREATE_DOCUMENT = 2002;
     private static final int PICKER_TIMEOUT_SECONDS = 60;
@@ -109,16 +109,16 @@ public final class MainActivity extends Activity {
                     "JS console: " + message.message() + " @ " + message.sourceId() + ":" + message.lineNumber();
                 switch (message.messageLevel()) {
                     case ERROR:
-                        Log.e(TAG, rendered);
+                        Log.e(LOG_IDENTITY, rendered);
                         break;
                     case WARNING:
-                        Log.w(TAG, rendered);
+                        Log.w(LOG_IDENTITY, rendered);
                         break;
                     case LOG:
                     case TIP:
                     case DEBUG:
                     default:
-                        Log.d(TAG, rendered);
+                        Log.d(LOG_IDENTITY, rendered);
                         break;
                 }
                 return true;
@@ -160,7 +160,7 @@ public final class MainActivity extends Activity {
 
         webView.postDelayed(() -> {
             if (splashDismissed) return;
-            Log.w(TAG, "Boot-ready signal not received before timeout; dismissing splash");
+            Log.w(LOG_IDENTITY, "Boot-ready signal not received before timeout; dismissing splash");
             showBootError("Timed out waiting for web boot-ready signal");
         }, SPLASH_BOOT_TIMEOUT_MS);
     }
@@ -178,7 +178,7 @@ public final class MainActivity extends Activity {
         if (bootErrorShown) return;
         bootErrorShown = true;
         final String msg = message != null ? message : "unknown startup failure";
-        Log.e(TAG, msg);
+        Log.e(LOG_IDENTITY, msg);
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
         webView.loadDataWithBaseURL(
             null,
@@ -483,7 +483,7 @@ public final class MainActivity extends Activity {
 
         @JavascriptInterface
         public void logJsError(String message, String source, int line, int column) {
-            Log.e(TAG, "JS error: " + message + " @ " + source + ":" + line + ":" + column);
+            Log.e(LOG_IDENTITY, "JS error: " + message + " @ " + source + ":" + line + ":" + column);
         }
 
         @JavascriptInterface

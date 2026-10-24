@@ -24,9 +24,9 @@ export fn Java_com_wigzell_sudoku_1zig_JniHost_stopHost(
     jni_host.stopHost();
 }
 
-export fn Java_com_wigzell_sudoku_1zig_JniHost_logTagNative(
+export fn Java_com_wigzell_sudoku_1zig_JniHost_logIdentityNative(
     env: *anyopaque,
     _: *anyopaque,
 ) callconv(.c) ?*anyopaque {
-    return jni_host.logTag(env);
+    return jni_host.logIdentity(env);
 }

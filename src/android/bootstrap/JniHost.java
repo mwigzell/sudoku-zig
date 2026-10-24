@@ -47,10 +47,10 @@ public final class JniHost {
 
     public static native void stopHost();
 
-    private static native String logTagNative();
+    private static native String logIdentityNative();
 
-    public static String logTag() {
-        final String value = logTagNative();
+    public static String logIdentity() {
+        final String value = logIdentityNative();
         if (value == null || value.isEmpty()) return "sudoku-zig";
         return value;
     }
