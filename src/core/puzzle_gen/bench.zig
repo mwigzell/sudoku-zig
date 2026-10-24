@@ -1,4 +1,4 @@
-// Ad-hoc generator bench — not in main.zig graph. Run: scripts/bench-puzzle-gen.sh
+// Ad-hoc generator bench — not in entry_native.zig graph. Run: scripts/bench-puzzle-gen.sh
 const std = @import("std");
 const puzzle_gen = @import("mod.zig");
 const board = @import("../board/board.zig");

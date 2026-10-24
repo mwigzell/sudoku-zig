@@ -32,7 +32,7 @@ pub const Config = struct {
     /// Save policy: write successful state-changing commands automatically.
     auto_save: bool = false,
 
-    /// Hard-coded defaults — main.zig supplies this to the Sudoku layer at init time.
+    /// Hard-coded defaults — entry_native.zig supplies this to the Sudoku layer at init time.
     pub fn default() Config {
         return .{
             .difficulty = .easy,

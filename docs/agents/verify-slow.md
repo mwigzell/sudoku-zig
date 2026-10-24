@@ -15,13 +15,13 @@ Timing uses `docs/verify-slow-timing.json` and `scripts/verify-slow-gate.sh` (sa
 
 ## Adding slow tests
 
-- Root file **not** imported from `src/main.zig` (same rule as other opt-in suites).
-- Canonical test entry: `src/test/entry/puzzle_gen_live.zig` (with temporary root shim `src/puzzle_gen_live.zig` for `zig test` module-path compatibility during migration) — generator uniqueness, givens band, consecutive outputs differ.
+- Root file **not** imported from `src/entry_native.zig` (same rule as other opt-in suites).
+- Canonical test entry: `src/entry_verify_slow.zig` (currently imports `src/test/slow/puzzle_gen_live.zig`) — generator uniqueness, givens band, consecutive outputs differ.
 
 Manual equivalent:
 
 ```bash
-zig test src/puzzle_gen_live.zig -lc --test-filter 'puzzle_gen live'
+zig test src/entry_verify_slow.zig -lc --test-filter 'puzzle_gen live'
 ```
 
 Override regression sensitivity:

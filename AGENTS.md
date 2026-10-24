@@ -18,9 +18,9 @@ When proposing work or building features, prioritise end-to-end completeness ove
 
 ## Entry shape — always long-term, not “small app” shortcuts
 
-Repo size or slice size **does not** relax structure. **Do not** tell the user that inline wiring in `main.zig` is “acceptable for a small Zig app” or defer extraction to a follow-up unless they explicitly asked to defer.
+Repo size or slice size **does not** relax structure. **Do not** tell the user that inline wiring in `entry_native.zig` is “acceptable for a small Zig app” or defer extraction to a follow-up unless they explicitly asked to defer.
 
-**`src/main.zig` is a switchboard only:** resolve startup config (and shared inputs like `data_dir` once), then dispatch to a **thin entry arm** — e.g. `native/desktop_web.zig`, `native/desktop_terminal.zig`, future `android/` JNI. No browser open, no Sudoku loop, no HTTP serve loop, no fat error policy in `main`.
+**`src/entry_native.zig` is a switchboard only:** resolve startup config (and shared inputs like `data_dir` once), then dispatch to a **thin entry arm** — e.g. `native/desktop_web.zig`, `native/desktop_terminal.zig`, future `android/` JNI. No browser open, no Sudoku loop, no HTTP serve loop, no fat error policy in entry wiring.
 
 **Shared modules stay deployment-agnostic:** `web_host` serves loopback; desktop browser open stays in the entry arm (`open_browser` + ready callback). Callbacks and comments must match reality — if a fn-pointer is passed, document **who calls it on which platform**; never imply it is unused on desktop.
 
@@ -114,9 +114,9 @@ When editing web-shell JavaScript (`src/wasm/**/*.js`), maintain JSDoc typing fo
 
 ## Test-suite discipline
 
-Test discovery uses **`src/main.zig`** as the entry point (there is no `src/root.zig` — it was removed in commit 02f55d8). Zig's test runner follows the **transitive import graph**: every `test {}` block in any module reachable from `main.zig`'s imports is discovered and linked — no manual tuple or central registration file is needed.
+Test discovery uses **`src/entry_native.zig`** as the entry point (there is no `src/root.zig` — it was removed in commit 02f55d8). Zig's test runner follows the **transitive import graph**: every `test {}` block in any module reachable from `entry_native.zig`'s imports is discovered and linked — no manual tuple or central registration file is needed.
 
-Caveat: a new source file with tests is only visible if it is **imported by something in main.zig's graph**. If you add `src/foo.zig` with tests and it isn't imported by an existing module, its tests are silently skipped. Make sure it is reachable from the domain (e.g. imported by `native/shell/shell.zig` or another module), and verify with `zig build test` that the new tests actually run.
+Caveat: a new source file with tests is only visible if it is **imported by something in entry_native.zig's graph**. If you add `src/foo.zig` with tests and it isn't imported by an existing module, its tests are silently skipped. Make sure it is reachable from the domain (e.g. imported by `native/shell/shell.zig` or another module), and verify with `zig build test` that the new tests actually run.
 
 ## clean "nuke" build cache 
 zig build clean
@@ -127,7 +127,7 @@ Every cycle gate lives in the build as a single command so task-local checklists
 ```bash
 zig build verify
 ```
-at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + **standards** (`scripts/verify-standards.sh` on the branch diff vs `origin/main`) + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. See `docs/agents/verify-standards.md`. **Timing:** `scripts/verify-gate.sh` times the run against `docs/verify-timing.json` — fails on budget overrun or >1.5× last recorded time; updates `last_seconds` on success (commit when it changes). See `docs/agents/verify-timing.md`. **Slow (delivery):** `zig build verify-slow` — live generator property tests (`src/puzzle_gen_live.zig`); timed via `docs/verify-slow-timing.json`. See `docs/agents/verify-slow.md`. Not part of `verify`. Verify stays report-only; `zig build cov` regenerates the report and opens it in the browser; `zig build cov-report` is the report-only target (no browser).
+at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + **standards** (`scripts/verify-standards.sh` on the branch diff vs `origin/main`) + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. See `docs/agents/verify-standards.md`. **Timing:** `scripts/verify-gate.sh` times the run against `docs/verify-timing.json` — fails on budget overrun or >1.5× last recorded time; updates `last_seconds` on success (commit when it changes). See `docs/agents/verify-timing.md`. **Slow (delivery):** `zig build verify-slow` — costly suites via `src/entry_verify_slow.zig` (currently includes live generator properties in `src/test/slow/puzzle_gen_live.zig`); timed via `docs/verify-slow-timing.json`. See `docs/agents/verify-slow.md`. Not part of `verify`. Verify stays report-only; `zig build cov` regenerates the report and opens it in the browser; `zig build cov-report` is the report-only target (no browser).
 ## run build
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.
@@ -144,7 +144,7 @@ Classic menubar: **mousedown** menu title → drag → **mouseup** on item. Impl
 ## run test
 zig build test
 or
-zig test src/main.zig -lc
+zig test src/entry_native.zig -lc
 - don't pass --summary it does nothing
 - for full console output (not server-mode) use the `zig test` form above
 - to filter a single test: `zig build test -Dtest-filter='exact test name'` (hyphen, not underscore)

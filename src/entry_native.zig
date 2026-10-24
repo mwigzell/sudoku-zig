@@ -7,7 +7,7 @@ const desktop_web = @import("native/desktop_web.zig");
 const desktop_terminal = @import("native/desktop_terminal.zig");
 const startup_config = @import("core/startup/config.zig");
 const shell_path = @import("native/shell/path.zig");
-// Wasm JSON contract tests — not reachable from the native play path (see wasm_entry.zig).
+// Wasm JSON contract tests — not reachable from the native play path (see entry_wasm.zig).
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
 const settings_store = @import("core/settings_store.zig");
@@ -25,6 +25,7 @@ test {
     _ = .{ sudoku, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, settings_store };
 }
 
+/// Resolve startup config and dispatch to web or terminal desktop entry.
 pub fn main(init: std.process.Init) sudoku.Error!void {
     var arg_it = std.process.Args.iterate(init.minimal.args);
     const gpa = std.heap.page_allocator;

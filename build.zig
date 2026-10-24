@@ -6,10 +6,9 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const gen_build_info = b.addSystemCommand(&.{ "bash", "scripts/gen-build-info.sh" });
-
     // --- Executable ---
     const exe_mod = b.addModule("sudoku", .{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/entry_native.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -28,7 +27,7 @@ pub fn build(b: *std.Build) void {
     // --export forces the step symbol into the wasm export table (wasm-ld);
     // `export fn` alone is a no-op on this toolchain snapshot.
     const wasm_emit = b.addSystemCommand(&.{
-        "zig",                          "build-exe",               "src/wasm_entry.zig",
+        "zig",                          "build-exe",               "src/entry_wasm.zig",
         "-target",                      "wasm32-freestanding",     "-femit-bin=" ++ WASM_OUT,
         "--export=init",                "--export=exec",           "--export=getLegend",
         "--export=getConfig",           "--export=getState",       "--export=serialize",
@@ -64,10 +63,10 @@ pub fn build(b: *std.Build) void {
     glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit
 
     // --- Tests ---
-    // main.zig transitively imports the domain modules; addTest discovers every co-located `test {}`
+    // entry_native.zig transitively imports the domain modules; addTest discovers every co-located `test {}`
     // block via Zig's import-graph discovery.
     const test_mod = b.addModule("sudoku_test", .{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/entry_native.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -173,7 +172,7 @@ pub fn build(b: *std.Build) void {
 
     // Slow tests (generator properties, etc.) — delivery phase; not part of verify.
     const run_slow_tests = b.addSystemCommand(&.{
-        "zig", "test", "src/puzzle_gen_live.zig", "-lc", "--test-filter", "puzzle_gen live",
+        "zig", "test", "src/entry_verify_slow.zig", "-lc", "--test-filter", "puzzle_gen live",
     });
     const verify_slow_run_step = b.step("verify-slow-run", "Internal: costly tests (puzzle_gen live, …)");
     verify_slow_run_step.dependOn(&run_slow_tests.step);

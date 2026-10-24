@@ -102,9 +102,10 @@ stdin/stdout is ever touched by the suite.
 
 ```
 src/
-├── main.zig              process entry (CLI → desktop_web | desktop_terminal)
-├── wasm_entry.zig        wasm export table (browser build)
-├── puzzle_gen_live.zig   verify-slow temporary root shim (`src/test/entry/puzzle_gen_live.zig`)
+├── entry_native.zig      process entry (CLI → desktop_web | desktop_terminal)
+├── entry_wasm.zig        wasm export table (browser build)
+├── entry_android.zig     Android JNI export surface
+├── entry_verify_slow.zig verify-slow entry aggregator (slow suites only)
 ├── core/
 │   ├── command.zig       command vocabulary + Hint/Fill payloads
 │   ├── event.zig         exec results (.ok / .error_msg)
@@ -138,7 +139,7 @@ src/
     └── artifacts/        emitted artifact.wasm, glue.js, page.html, manifest, branding icons
 
 src/test/
-├── entry/                opt-in test entry modules (`puzzle_gen_live.zig`)
+├── slow/                 costly suites reached only by entry_verify_slow.zig
 └── fixtures/             shared fixture assets
 
 docs/ — ADRs, agent/verify notes. build.zig — native exe, wasm emit, test, verify, cov.

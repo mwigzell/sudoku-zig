@@ -5,9 +5,8 @@ This map records the role-based source relocation for issue #73.
 ## Final role layout
 
 - `src/core/` — domain and policy modules
-- `src/test/entry/` — opt-in test entry modules
 - `src/test/fixtures/` — fixture assets
-- `src/` root — temporary compatibility entry files during migration (`main.zig`, `wasm_entry.zig`, `android_shared.zig`, `puzzle_gen_live.zig`); target state is role-based entry placement via build wiring
+- `src/` root — process/platform entry files (`entry_native.zig`, `entry_wasm.zig`, `entry_android.zig`) and slow test entry (`entry_verify_slow.zig`)
 
 ## Migration table (old -> new)
 
@@ -26,4 +25,4 @@ This map records the role-based source relocation for issue #73.
 - `src/puzzle_gen/*` -> `src/core/puzzle_gen/*`
 - `src/renderer/*` -> `src/core/renderer/*`
 - `src/startup/*` -> `src/core/startup/*`
-- `src/puzzle_gen_live.zig` -> `src/test/entry/puzzle_gen_live.zig` (temporary root shim re-added at `src/puzzle_gen_live.zig` for module-path compatibility during migration)
+- `src/entry_verify_slow.zig` is the canonical `verify-slow` entry module; slow suites live under `src/test/slow/`

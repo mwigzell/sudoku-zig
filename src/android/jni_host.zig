@@ -1,4 +1,4 @@
-//! Android host logic — JNI name mangling lives in `android_shared.zig` at the `src/` module root.
+//! Android host logic — JNI name mangling lives in `entry_android.zig` at the `src/` module root.
 const std = @import("std");
 const builtin = @import("builtin");
 const web_host = @import("../web_host/mod.zig");

@@ -337,4 +337,5 @@ const wasm_gen_progress_host = if (builtin.cpu.arch == .wasm32) struct {
 
 const wasmGenProgress = wasm_gen_progress_host.callback;
 
+/// Zig entrypoint placeholder for wasm builds; exports are the real public API.
 pub fn main() void {}

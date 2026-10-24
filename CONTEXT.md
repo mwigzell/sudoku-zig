@@ -176,12 +176,12 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 
 | Policy | Core authority | Platform call sites |
 |---|---|---|
-| Command semantics + `Event` meaning | `src/core/command.zig`, `src/core/engine/game_engine.zig` | Native: `src/native/shell/shell.zig` (`engine.exec`). Web/Android: wasm API in `src/wasm_entry.zig`, called by `src/wasm/{board,menu,file_menu}.js`. |
+| Command semantics + `Event` meaning | `src/core/command.zig`, `src/core/engine/game_engine.zig` | Native: `src/native/shell/shell.zig` (`engine.exec`). Web/Android: wasm API in `src/entry_wasm.zig`, called by `src/wasm/{board,menu,file_menu}.js`. |
 | Startup decision (`restore/new/idle`) | `src/core/startup/policy.zig`, `src/core/startup/config.zig` | Native: `src/native/shell/shell.zig` (`runStartupPolicy`). Web/Android: `src/wasm/shell.js` (`initializeWebSession`, `offerInitialNewGame`) + `src/core/startup/web_startup.js`. |
 | Autosave trigger set (which commands autosave) | `src/core/file_policy.zig` + startup contract emission in `src/core/startup/config.zig` | Native: `src/native/shell/shell.zig` (`applyAutoSavePolicyIfNeeded`). Web/Android: `src/wasm/shell.js` (`startAutoSavePolicy`, `session.autosave_trigger_commands`). |
 | Overwrite/replace lane policy (`detached` vs `continuation`) | `src/core/file_policy.zig` | Native: `src/native/shell/shell.zig` (`shouldWriteTarget`, `applyWriteContextEvent`). Web/Android host seam: `src/web_host/mod.zig` (`/current-file`, `/current-file-context`). |
 | Settings schema + persistence semantics | `src/core/config.zig`, `src/core/settings_store.zig` | Native: `src/native/shell/shell.zig` settings/current-file persistence. Web/Android: `src/wasm/shell.js` posts; `src/web_host/mod.zig` merges/saves. |
-| Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/wasm_entry.zig`) | Native: `src/native/shell/{save,save_as,open}.zig` via `FileTransport`. Web/Android: `src/wasm/shell.js` via wasm `serialize`/`deserialize`. |
+| Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/entry_wasm.zig`) | Native: `src/native/shell/{save,save_as,open}.zig` via `FileTransport`. Web/Android: `src/wasm/shell.js` via wasm `serialize`/`deserialize`. |
 | Log-level filtering policy | `src/core/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
 
 **Desktop web entry** (`native/desktop_web.zig`):
@@ -208,7 +208,7 @@ _Avoid_: folding prefs into Legend or save files; JS boot defaults that override
 Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State` and nominal `Config`.
 _Avoid_: Engine (engine is a runtime object)
 
-### WASM Wire (`wasm/wire.zig`, `wasm/boundary.zig`, `wasm_entry.zig`)
+### WASM Wire (`wasm/wire.zig`, `wasm/boundary.zig`, `entry_wasm.zig`)
 
 **WireConfig**:
 Wasm wire twin of the `Config` fields JS reads/writes — `PlayerDifficulty` (1/2/3), log level, `theme`, `show_region`. Maps to `config.Config` at `init`; `getConfig()` returns the same JSON shape. Native-only renderer fields stay off the wire.
@@ -218,8 +218,8 @@ _Avoid_: passing puzzle bytes across the boundary; ad-hoc config JSON shapes
 JSON-serializable display twin of `BoardView` — per-cell `value`, `given`, `conflict`. Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
 _Avoid_: duplicating SaveFormat fields in JS
 
-**wasm_entry**:
-Second entry point (not `main.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `serialize`, `deserialize`. JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
+**entry_wasm**:
+Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `serialize`, `deserialize`. JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
 _Avoid_: `step(line)`, `page_bytes_out`, or other REPL imports (removed — see ADR-0010)
 
 **glue.js**:

@@ -52,7 +52,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     });
 
     const lib_mod = b.createModule(.{
-        .root_source_file = b.path("src/android_shared.zig"),
+        .root_source_file = b.path("src/entry_android.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,

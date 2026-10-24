@@ -1,5 +1,4 @@
-// Live puzzle generation — run via `zig build verify-slow` (not `verify`).
-// Wall-clock bound: scripts/verify-slow-gate.sh (45s suite budget).
+// Live puzzle generation properties — included by entry_verify_slow.zig only.
 const std = @import("std");
 const board = @import("../../core/board/board.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
