@@ -41,7 +41,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public final class MainActivity extends Activity {
-    private static final String TAG = "SudokuAndroid";
+    private static final String TAG = "sudoku-zig";
     private static final int REQUEST_OPEN_DOCUMENT = 2001;
     private static final int REQUEST_CREATE_DOCUMENT = 2002;
     private static final int PICKER_TIMEOUT_SECONDS = 60;
@@ -105,10 +105,22 @@ public final class MainActivity extends Activity {
             @Override
             public boolean onConsoleMessage(ConsoleMessage message) {
                 if (message == null) return true;
-                Log.d(
-                    TAG,
-                    "JS console: " + message.message() + " @ " + message.sourceId() + ":" + message.lineNumber()
-                );
+                final String rendered =
+                    "JS console: " + message.message() + " @ " + message.sourceId() + ":" + message.lineNumber();
+                switch (message.messageLevel()) {
+                    case ERROR:
+                        Log.e(TAG, rendered);
+                        break;
+                    case WARNING:
+                        Log.w(TAG, rendered);
+                        break;
+                    case LOG:
+                    case TIP:
+                    case DEBUG:
+                    default:
+                        Log.d(TAG, rendered);
+                        break;
+                }
                 return true;
             }
         });

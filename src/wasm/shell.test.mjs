@@ -31,6 +31,8 @@ import {
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
   REQUIRED_WRITE_CONTEXT_EVENT_KEYS,
   REQUIRED_STARTUP_READY_KEYS,
+  clientLog,
+  setClientLogLevel,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
 
@@ -654,6 +656,46 @@ async function flushDialogPaint() {
 }
 
 // ── initializeWebSession: host config boot + host startup policy payload ──
+{
+  const originalDebug = console.debug;
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const originalFetch = globalThis.fetch;
+
+  const calls = [];
+  console.debug = (...args) => calls.push({ level: "debug", args });
+  console.info = (...args) => calls.push({ level: "info", args });
+  console.warn = (...args) => calls.push({ level: "warn", args });
+  console.error = (...args) => calls.push({ level: "err", args });
+  globalThis.fetch = async () => ({ ok: true, status: 204 });
+  globalThis.__SUDOKU_LOG = true;
+  globalThis.__SUDOKU_LOG_POST = false;
+
+  try {
+    setClientLogLevel(2);
+    clientLog("startup", "debug", "suppressed_debug");
+    clientLog("startup", "info", "suppressed_info");
+    clientLog("startup", "warn", "allowed_warn");
+    clientLog("startup", "err", "allowed_err");
+
+    const hasText = (needle) => calls.some((c) => String(c.args[0] ?? "").includes(needle));
+    assert.equal(hasText("suppressed_debug"), false);
+    assert.equal(hasText("suppressed_info"), false);
+    assert.equal(hasText("allowed_warn"), true);
+    assert.equal(hasText("allowed_err"), true);
+  } finally {
+    setClientLogLevel("info");
+    delete globalThis.__SUDOKU_LOG;
+    delete globalThis.__SUDOKU_LOG_POST;
+    console.debug = originalDebug;
+    console.info = originalInfo;
+    console.warn = originalWarn;
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+  }
+}
+
 {
   const hostCfg = {
     difficulty: 2,

@@ -10,6 +10,7 @@ import {
   startStartupContextPublish,
   syncCurrentFileLabels,
   wireFinalSnapshotOnPageHide,
+  clientLog,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
 import { renderBoard, setStatus } from "./board.js";
@@ -31,20 +32,20 @@ export async function bootSudokuWebApp(root = document) {
   const errorModal = createErrorModal(root);
 
   try {
-    console.log("boot: module start");
+    clientLog("startup", "debug", "module_start");
     // Boot phase 1: ensure first paint/splash is visible before wasm/network work.
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    console.log("boot: after first paint");
+    clientLog("startup", "debug", "after_first_paint");
 
     // Boot phase 2: fetch + instantiate wasm artifact.
     const res = await fetch("./artifact.wasm");
-    console.log("boot: artifact fetch response", res.status);
+    clientLog("startup", "debug", "artifact_fetch_response", { status: res.status });
     if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
     const bytes = new Uint8Array(await res.arrayBuffer());
-    console.log("boot: artifact bytes", bytes.length);
+    clientLog("startup", "debug", "artifact_bytes", { bytes: bytes.length });
 
     const game = await loadArtifact(bytes);
-    console.log("boot: wasm loaded");
+    clientLog("startup", "debug", "wasm_loaded");
 
     // Boot phase 3: wire generation modal and optional worker generation context.
     const generatingModal = wireGeneratingModal({
@@ -61,7 +62,7 @@ export async function bootSudokuWebApp(root = document) {
 
     // Boot phase 4: fetch host startup contract + bootstrap engine config.
     const boot = await initializeWebSession(game);
-    console.log("boot: host config loaded");
+    clientLog("startup", "info", "host_config_loaded", { log_level: boot?.config?.log_level ?? null });
     if (!boot.ok) throw new Error(boot.error ?? "session init failed");
     primeWebBootChrome(boot, root);
 
@@ -70,7 +71,7 @@ export async function bootSudokuWebApp(root = document) {
       genWorker,
       startupAutoContinue: true,
     });
-    console.log("boot: startup action complete", ready.kind);
+    clientLog("startup", "info", "startup_action_complete", { kind: ready.kind });
     if (!ready.ok) throw new Error(ready.error ?? "New game failed");
 
     // Boot phase 6: build canonical session object + publish startup context lane.
@@ -93,9 +94,10 @@ export async function bootSudokuWebApp(root = document) {
 
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
-    console.log("boot: ready");
+    clientLog("startup", "info", "ready");
   } catch (err) {
-    console.error("boot: failed", err);
+    const errorText = err && err.message ? err.message : String(err);
+    clientLog("startup", "err", "boot_failed", { error: errorText });
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
     const msg = `failed to load wasm: ${err && err.message ? err.message : err}`;

@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const android_logcat = @import("../android/logcat.zig");
 
 /// Severity ranks for runtime filtering; enum order IS the rank, so with the
 /// .info default, debug is suppressed and info..fatal are emitted.
@@ -18,34 +20,89 @@ pub fn shouldEmit(sev: Severity) bool {
 /// severity methods: `.debug()`, `.info()`, `.warn()`, `.err()`, and `.fatal()`.
 pub fn Logger(comptime scope: @EnumLiteral()) type {
     const log = std.log.scoped(scope);
+    const scope_name = @tagName(scope);
     return struct {
         /// Emit debug-level message if runtime filter allows it.
         pub fn debug(comptime fmt: []const u8, args: anytype) void {
-            if (shouldEmit(.debug)) log.debug(fmt, args);
+            if (!shouldEmit(.debug)) return;
+            emit(.debug, scope_name, log, fmt, args);
         }
 
         /// Emit error-level message if runtime filter allows it.
         pub fn err(comptime fmt: []const u8, args: anytype) void {
-            if (shouldEmit(.err)) log.err(fmt, args);
+            if (!shouldEmit(.err)) return;
+            emit(.err, scope_name, log, fmt, args);
         }
 
         /// Emit warn-level message if runtime filter allows it.
         pub fn warn(comptime fmt: []const u8, args: anytype) void {
-            if (shouldEmit(.warn)) log.warn(fmt, args);
+            if (!shouldEmit(.warn)) return;
+            emit(.warn, scope_name, log, fmt, args);
         }
 
         /// Emit info-level message if runtime filter allows it.
         pub fn info(comptime fmt: []const u8, args: anytype) void {
-            if (shouldEmit(.info)) log.info(fmt, args);
+            if (!shouldEmit(.info)) return;
+            emit(.info, scope_name, log, fmt, args);
         }
 
         /// Emit fatal message, then abort the process.
         pub fn fatal(comptime fmt: []const u8, args: anytype) noreturn {
-            log.err("FATAL: " ++ fmt, args);
+            emit(.fatal, scope_name, log, "FATAL: " ++ fmt, args);
             std.debug.dumpCurrentStackTrace(.{});
             std.process.abort();
         }
     };
+}
+
+const android_line_cap = 1024;
+
+fn androidPriority(sev: Severity) c_int {
+    return switch (sev) {
+        .debug => 3,
+        .info => 4,
+        .warn => 5,
+        .err => 6,
+        .fatal => 7,
+    };
+}
+
+fn formatAndroidLine(
+    comptime scope_name: []const u8,
+    comptime fmt: []const u8,
+    args: anytype,
+    buf: *[android_line_cap]u8,
+) ?[:0]const u8 {
+    const max = buf.len - 1;
+    var idx: usize = 0;
+    const head = std.fmt.bufPrint(buf[idx..max], "[{s}] ", .{scope_name}) catch return null;
+    idx += head.len;
+    const body = std.fmt.bufPrint(buf[idx..max], fmt, args) catch return null;
+    idx += body.len;
+    buf[idx] = 0;
+    return buf[0..idx :0];
+}
+
+fn emit(
+    sev: Severity,
+    comptime scope_name: []const u8,
+    log: anytype,
+    comptime fmt: []const u8,
+    args: anytype,
+) void {
+    if (comptime builtin.abi == .android) {
+        var line_buf: [android_line_cap]u8 = undefined;
+        const line = formatAndroidLine(scope_name, fmt, args, &line_buf) orelse return;
+        android_logcat.write(androidPriority(sev), line);
+        return;
+    }
+
+    switch (sev) {
+        .debug => log.debug(fmt, args),
+        .info => log.info(fmt, args),
+        .warn => log.warn(fmt, args),
+        .err, .fatal => log.err(fmt, args),
+    }
 }
 
 // Temporarily commented out — the log.warn() call prints to stderr and
@@ -87,4 +144,19 @@ test "shouldEmit always allows fatal" {
     min_level = .err;
     try std.testing.expect(shouldEmit(.fatal));
     min_level = .info;
+}
+
+test "androidPriority maps severities to logcat priorities" {
+    try std.testing.expectEqual(@as(c_int, 3), androidPriority(.debug));
+    try std.testing.expectEqual(@as(c_int, 4), androidPriority(.info));
+    try std.testing.expectEqual(@as(c_int, 5), androidPriority(.warn));
+    try std.testing.expectEqual(@as(c_int, 6), androidPriority(.err));
+    try std.testing.expectEqual(@as(c_int, 7), androidPriority(.fatal));
+}
+
+test "formatAndroidLine includes scope prefix and payload" {
+    var buf: [android_line_cap]u8 = undefined;
+    const line = formatAndroidLine("web_host", "current-file write success: bytes={d}", .{117}, &buf) orelse
+        return error.TestFailed;
+    try std.testing.expectEqualStrings("[web_host] current-file write success: bytes=117", line);
 }
