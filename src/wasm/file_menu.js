@@ -461,12 +461,13 @@ export function wireFileMenu(
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
 
   // Phase B: open New difficulty chooser (generation starts only after a pick).
-  controls.new?.addEventListener("click", () => {
+  const openNewGameDialog = ({ preserveStatus = false } = {}) => {
     if (!session.legend.new) return;
     menuBar.closeAll?.();
-    clearEventStatus(statusEl);
+    if (!preserveStatus) clearEventStatus(statusEl);
     newDialog.open();
-  });
+  };
+  controls.new?.addEventListener("click", openNewGameDialog);
 
   // Phase C: manual Save path -> persist SUD0 bytes -> mirror host pointer -> publish context.
   controls.save?.addEventListener("click", async () => {
@@ -596,4 +597,7 @@ export function wireFileMenu(
   });
 
   syncCurrentFileLabels(session);
+  return {
+    openNewGameDialog,
+  };
 }

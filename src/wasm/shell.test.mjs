@@ -911,14 +911,15 @@ async function flushDialogPaint() {
       openFromSaveBytes: () => ({ ok: true, state: { cells: solvedCells }, msg: "You win!" }),
       startNewGame: async () => {
         startNewCalls += 1;
-        return { ok: false, cancelled: true };
+        return { ok: true };
       },
     },
   );
   assert.equal(out.ok, true);
   assert.equal(out.kind, "restore");
   assert.equal(out.msg, "You win!");
-  assert.equal(startNewCalls, 1, "solved restore should offer startup new prompt");
+  assert.equal(out.startup_prompt_new_game, true);
+  assert.equal(startNewCalls, 0, "startup restore path should not start new before UI prompt");
 }
 
 {
@@ -962,7 +963,8 @@ async function flushDialogPaint() {
     },
   );
   assert.equal(out.ok, true);
-  assert.equal(out.kind, "new");
+  assert.equal(out.kind, "restore");
+  assert.equal(out.startup_prompt_new_game, true);
 }
 
 {

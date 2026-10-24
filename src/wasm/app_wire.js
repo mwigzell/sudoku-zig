@@ -181,7 +181,7 @@ export function wireSudokuApp({
     cancelBtn: root.getElementById("new-difficulty-cancel"),
   };
 
-  wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
+  const fileMenu = wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
     difficultyDialog,
     generatingModal,
     genWorker,
@@ -191,6 +191,13 @@ export function wireSudokuApp({
     },
     onPersist: persistViewSettings,
   });
+  if (ready.startup_prompt_new_game === true) {
+    const schedule =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (fn) => queueMicrotask(fn);
+    schedule(() => fileMenu.openNewGameDialog({ preserveStatus: true }));
+  }
 
   editMenu = wireEditMenu(
     menuControls.undo,

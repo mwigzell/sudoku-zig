@@ -78,19 +78,9 @@ export async function applyWebStartupAction(
     if (boot.on_restore_solved !== "prompt" || !isSolvedState(restored.state)) {
       return restoreOutcome;
     }
-    const started = await startNewGame(restoreOutcome.config ?? {}, { autoContinue: false });
-    if (!started.ok && !started.cancelled) {
-      return { ok: false, error: started.error ?? "New game failed", kind: "empty" };
-    }
-    if (started.cancelled) return restoreOutcome;
     return withBootFields(boot, {
-      ok: true,
-      kind: "new",
-      state: started.state,
-      legend: started.legend,
-      config: started.config,
-      msg: started.msg,
-      startup_context_event: boot.write_context_events?.startup_new,
+      ...restoreOutcome,
+      startup_prompt_new_game: true,
     });
   }
 
