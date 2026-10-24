@@ -1,11 +1,11 @@
 /// Desktop terminal play: Host substrate, renderer facade, native `Sudoku` command loop.
 const std = @import("std");
-const config = @import("../config.zig");
-const logger = @import("../logger.zig");
+const config = @import("../core/config.zig");
+const logger = @import("../core/logger.zig");
 const host_mod = @import("host.zig");
 const sudoku = @import("shell/shell.zig");
 const file_transport = @import("shell/file_transport.zig");
-const settings_store = @import("../settings_store.zig");
+const settings_store = @import("../core/settings_store.zig");
 const input_source = @import("input_source.zig");
 
 const log = logger.Logger(.sudoku);

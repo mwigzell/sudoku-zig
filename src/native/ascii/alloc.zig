@@ -4,14 +4,14 @@ const std = @import("std");
 const ascii_renderer = @import("renderer.zig");
 const styler = @import("styler.zig");
 const input_source = @import("../../native/input_source.zig");
-const facade = @import("../../renderer/facade.zig");
-const board = @import("../../board/board.zig");
-const legend = @import("../../renderer/legend.zig");
-const command = @import("../../command.zig");
-const config = @import("../../config.zig");
-const logger = @import("../../logger.zig");
+const facade = @import("../../core/renderer/facade.zig");
+const board = @import("../../core/board/board.zig");
+const legend = @import("../../core/renderer/legend.zig");
+const command = @import("../../core/command.zig");
+const config = @import("../../core/config.zig");
+const logger = @import("../../core/logger.zig");
 const io_session = @import("../../native/io_session.zig");
-const puzzle_gen = @import("../../puzzle_gen/mod.zig");
+const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 
 pub const Alloc = struct {
     /// Static factory — resolve the reader branch, allocate styler/renderer/context,

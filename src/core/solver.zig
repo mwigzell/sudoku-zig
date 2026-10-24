@@ -11,6 +11,7 @@ pub const SolveResult = union(enum) {
 
 pub const SolveError = error{Conflict};
 
+/// Solve one board; returns one completed grid or `.none` if unsatisfiable.
 pub fn solve(b: board.Board) SolveError!SolveResult {
     var work = b;
     work.validate();

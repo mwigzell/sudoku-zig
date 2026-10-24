@@ -18,7 +18,7 @@ pub const app_wire_js: []const u8 = @embedFile("../wasm/app_wire.js");
 /// Web app shell bootstrap.
 pub const shell_js: []const u8 = @embedFile("../wasm/shell.js");
 /// Shared startup orchestrator consumed by the web shell.
-pub const startup_web_js: []const u8 = @embedFile("../startup/web_startup.js");
+pub const startup_web_js: []const u8 = @embedFile("../core/startup/web_startup.js");
 /// Board DOM and input (`/board.js`).
 pub const board_js: []const u8 = @embedFile("../wasm/board.js");
 /// Edit menu actions (`/menu.js`).

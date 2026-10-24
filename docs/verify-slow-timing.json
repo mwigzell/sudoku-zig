@@ -1,6 +1,6 @@
 {
   "budget_seconds": 80.0,
-  "last_seconds": 62.18,
-  "recorded_at": "2026-10-21T18:26:54Z",
+  "last_seconds": 44.09,
+  "recorded_at": "2026-10-24T04:09:05Z",
   "notes": "Wall time for zig build verify-slow-run (costly generator property tests). Not part of zig build verify."
 }

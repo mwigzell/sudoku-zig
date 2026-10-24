@@ -1,11 +1,11 @@
 // Edit → Copy (native): emit the current grid as one 81-char line on stdout.
 const std = @import("std");
-const cell = @import("../../board/cell.zig");
-const board = @import("../../board/board.zig");
-const config = @import("../../config.zig");
-const game_engine = @import("../../engine/game_engine.zig");
+const cell = @import("../../core/board/cell.zig");
+const board = @import("../../core/board/board.zig");
+const config = @import("../../core/config.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
 const export_command = @import("export.zig");
-const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
+const PuzzleGen = @import("../../core/puzzle_gen/mod.zig").PuzzleGen;
 
 pub fn execute(engine: *game_engine.GameEngine, out: *std.Io.Writer) game_engine.Event {
     const line = export_command.currentPuzzleLine(engine);

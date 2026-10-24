@@ -1,6 +1,6 @@
 /// SaveAs command handler — serializes state and writes bytes through transport.
 const std = @import("std");
-const game_engine = @import("../../engine/game_engine.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
 
 pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTransport, path: []const u8) game_engine.Event {
@@ -34,8 +34,8 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
 
 test "command.save_as.execute saves file at given path" {
     var engine = try game_engine.GameEngine.init(
-        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -98,8 +98,8 @@ fn makeFakeTransport(ctx: *FakeTransportCtx) file_transport.FileTransport {
 
 test "command.save_as.execute returns error_msg when resolve fails" {
     var engine = try game_engine.GameEngine.init(
-        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -116,8 +116,8 @@ test "command.save_as.execute returns error_msg when resolve fails" {
 
 test "command.save_as.execute returns error_msg when write fails" {
     var engine = try game_engine.GameEngine.init(
-        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
     const before = @import("export.zig").currentPuzzleLine(&engine);

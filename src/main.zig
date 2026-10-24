@@ -1,16 +1,16 @@
 // Process entry: resolve startup config, dispatch to the desktop web or terminal entry arm.
 const std = @import("std");
-const config = @import("config.zig");
+const config = @import("core/config.zig");
 const sudoku = @import("native/shell/shell.zig");
-const logger = @import("logger.zig");
+const logger = @import("core/logger.zig");
 const desktop_web = @import("native/desktop_web.zig");
 const desktop_terminal = @import("native/desktop_terminal.zig");
-const startup_config = @import("startup/config.zig");
+const startup_config = @import("core/startup/config.zig");
 const shell_path = @import("native/shell/path.zig");
 // Wasm JSON contract tests — not reachable from the native play path (see wasm_entry.zig).
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
-const settings_store = @import("settings_store.zig");
+const settings_store = @import("core/settings_store.zig");
 const web_host = @import("web_host/mod.zig");
 const open_browser = @import("native/open_browser.zig");
 const android_jni_host = @import("android/jni_host.zig");

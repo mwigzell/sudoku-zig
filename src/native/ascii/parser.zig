@@ -2,8 +2,8 @@
 //! Renderer-specific: prefix matching, case-insensitive disambiguation, coordinate parsing.
 
 const std = @import("std");
-const cm = @import("../../command.zig");
-const cell_module = @import("../../board/cell.zig");
+const cm = @import("../../core/command.zig");
+const cell_module = @import("../../core/board/cell.zig");
 
 // Re-export domain types so callers need only this import
 pub const FillData = cm.FillData;

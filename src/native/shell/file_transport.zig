@@ -4,7 +4,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const mypath = @import("path.zig");
-const logger = @import("../../logger.zig");
+const logger = @import("../../core/logger.zig");
 const log = logger.Logger(.sudoku);
 const TEST_DATA_DIR = "/tmp/sudoku-zig-test-data";
 

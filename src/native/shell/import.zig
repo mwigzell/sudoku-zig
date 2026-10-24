@@ -3,8 +3,8 @@
 ///
 /// Failures (missing file, wrong length, invalid characters) surface as an
 /// error message and leave board and history untouched.
-const game_engine = @import("../../engine/game_engine.zig");
-const board = @import("../../board/board.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
+const board = @import("../../core/board/board.zig");
 const file_transport = @import("file_transport.zig");
 const read_path = @import("read_path.zig");
 const std = @import("std");
@@ -47,10 +47,10 @@ test "import: valid puzzle file loads board and clears history" {
     const puzzle_line = PuzzleGen.default();
     try transport.write(transport.context, tmp_path, puzzle_line);
 
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../core/config.zig").Config.default());
     defer engine.deinit();
-    _ = engine.exec(@import("../../command.zig").Command{
-        .fill = @import("../../command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../board/cell.zig").CellValue.seven },
+    _ = engine.exec(@import("../../core/command.zig").Command{
+        .fill = @import("../../core/command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../core/board/cell.zig").CellValue.seven },
     });
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.count());
 
@@ -76,10 +76,10 @@ test "import: 80 char file rejected, board and history unchanged" {
     const puzzle_line = PuzzleGen.default();
     try transport.write(transport.context, tmp_path, puzzle_line[0..80]);
 
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../core/config.zig").Config.default());
     defer engine.deinit();
-    _ = engine.exec(@import("../../command.zig").Command{
-        .fill = @import("../../command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../board/cell.zig").CellValue.seven },
+    _ = engine.exec(@import("../../core/command.zig").Command{
+        .fill = @import("../../core/command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../core/board/cell.zig").CellValue.seven },
     });
 
     const pre = try engine.toSaveFormat(std.testing.allocator);
@@ -111,10 +111,10 @@ test "import: file with an invalid character rejected, state unchanged" {
     bad_line[40] = 'X';
     try transport.write(transport.context, tmp_path, &bad_line);
 
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../core/config.zig").Config.default());
     defer engine.deinit();
-    _ = engine.exec(@import("../../command.zig").Command{
-        .fill = @import("../../command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../board/cell.zig").CellValue.seven },
+    _ = engine.exec(@import("../../core/command.zig").Command{
+        .fill = @import("../../core/command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../core/board/cell.zig").CellValue.seven },
     });
 
     const pre = try engine.toSaveFormat(std.testing.allocator);
@@ -138,10 +138,10 @@ test "import: missing file rejected, board and history unchanged" {
     const transport = file_transport.NativeTransport.make(std.testing.io);
     std.Io.Dir.deleteFileAbsolute(std.testing.io, "/tmp/sudoku_import_missing_test.txt") catch {};
 
-    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(PuzzleGen.default(), @import("../../core/config.zig").Config.default());
     defer engine.deinit();
-    _ = engine.exec(@import("../../command.zig").Command{
-        .fill = @import("../../command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../board/cell.zig").CellValue.seven },
+    _ = engine.exec(@import("../../core/command.zig").Command{
+        .fill = @import("../../core/command.zig").FillData{ .row = 0, .col = 2, .digit = @import("../../core/board/cell.zig").CellValue.seven },
     });
 
     const pre = try engine.toSaveFormat(std.testing.allocator);
@@ -159,4 +159,4 @@ test "import: missing file rejected, board and history unchanged" {
     try std.testing.expect(std.mem.eql(u8, pre, post));
 }
 
-const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
+const PuzzleGen = @import("../../core/puzzle_gen/mod.zig").PuzzleGen;

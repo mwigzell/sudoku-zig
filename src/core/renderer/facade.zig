@@ -115,14 +115,17 @@ pub const Facade = struct {
 /// Auto-wraps any concrete renderer type into a Facade.
 pub fn Make(comptime CT: type) type {
     return struct {
+        /// Forward `render` through erased context to the concrete renderer.
         pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             self.render(view, status_msg, selection) catch return error.System;
         }
+        /// Forward `showLegend` through erased context to the concrete renderer.
         pub fn showLegend_wrapper(ctx: *anyopaque, commands: Legend) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             self.showLegend(commands) catch return error.System;
         }
+        /// Forward `showError` through erased context to the concrete renderer.
         pub fn showError_wrapper(ctx: *anyopaque, msg: []const u8) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             self.showError(msg) catch return error.System;
@@ -134,6 +137,7 @@ pub fn Make(comptime CT: type) type {
             return self.confirmReplace(msg) catch return error.System;
         }
 
+        /// Forward `getCommandInput` through erased context with live prefs args.
         pub fn getCommandInput_wrapper(
             ctx: *anyopaque,
             names: []const []const u8,
@@ -151,11 +155,13 @@ pub fn Make(comptime CT: type) type {
             return self.getCommandInput(names, show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target) catch error.System;
         }
 
+        /// Forward generator progress events through the facade seam.
         pub fn reportGenProgress_wrapper(ctx: *anyopaque, gen_event: puzzle_gen.GenProgressEvent) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             return self.reportGenProgress(gen_event);
         }
 
+        /// Forward teardown through erased context to the concrete renderer.
         pub fn deinit_wrapper(ctx: *anyopaque) void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             self.deinit();

@@ -1,5 +1,5 @@
-const cell = @import("../../board/cell.zig");
-const board = @import("../../board/board.zig");
+const cell = @import("../../core/board/cell.zig");
+const board = @import("../../core/board/board.zig");
 const std = @import("std");
 
 pub const CellSelection = struct {

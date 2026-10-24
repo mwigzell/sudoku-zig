@@ -1,9 +1,9 @@
 /// New-game command handler — starts a fresh board from the generated puzzle string (medium fallback) and clears the undo history.
 const std = @import("std");
-const game_engine = @import("../../engine/game_engine.zig");
-const cell = @import("../../board/cell.zig");
-const command = @import("../../command.zig");
-const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
+const game_engine = @import("../../core/engine/game_engine.zig");
+const cell = @import("../../core/board/cell.zig");
+const command = @import("../../core/command.zig");
+const PuzzleGen = @import("../../core/puzzle_gen/mod.zig").PuzzleGen;
 
 pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engine.Event {
     const puzzle_str = if (data.puzzle) |p| p else PuzzleGen.medium()[0..81];
@@ -19,7 +19,7 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.NewData) game_engi
 test "command.new.execute loads the chosen puzzle and clears history" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -39,7 +39,7 @@ test "command.new.execute loads the chosen puzzle and clears history" {
 test "command.new.execute falls back to medium when puzzle is null" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -53,12 +53,12 @@ test "command.new.execute falls back to medium when puzzle is null" {
 test "command.new.execute rejects invalid puzzle without mutating state" {
     var engine = try game_engine.GameEngine.init(
         PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 
     _ = engine.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = cell.CellValue.seven } });
-    const before = @import("../../board/board.zig").toFlat(engine.state.board);
+    const before = @import("../../core/board/board.zig").toFlat(engine.state.board);
 
     const bad = std.heap.page_allocator.dupe(u8, "too short") catch return error.TestFailed;
     const event = execute(&engine, command.NewData{ .puzzle = bad });
@@ -66,6 +66,6 @@ test "command.new.execute rejects invalid puzzle without mutating state" {
         .error_msg => {},
         .ok => return error.TestFailed,
     }
-    try std.testing.expectEqual(before, @import("../../board/board.zig").toFlat(engine.state.board));
+    try std.testing.expectEqual(before, @import("../../core/board/board.zig").toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.count());
 }

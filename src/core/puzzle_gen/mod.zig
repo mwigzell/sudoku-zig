@@ -95,14 +95,17 @@ pub const PuzzleGen = struct {
         return default_str;
     }
 
+    /// Fixed easy fixture used only in test mode.
     pub fn easy() []const u8 {
         return easy_str;
     }
 
+    /// Fixed medium fixture used only in test mode.
     pub fn medium() []const u8 {
         return medium_str;
     }
 
+    /// Fixed hard fixture used only in test mode.
     pub fn hard() []const u8 {
         return hard_str;
     }
@@ -297,6 +300,7 @@ pub fn encodeProgressWire(event: GenProgressEvent) struct { phase: u32, a: u32, 
     };
 }
 
+/// Human-readable progress text for native renderer and diagnostics.
 pub fn formatProgressEvent(event: GenProgressEvent, buf: []u8) ?[]const u8 {
     return switch (event) {
         .round => std.fmt.bufPrint(buf, "Generating: new attempt…", .{}) catch null,

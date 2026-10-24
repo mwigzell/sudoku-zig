@@ -1,4 +1,4 @@
-//! Shared-library root at `src/` — exports JNI symbols and delegates to `android/jni_host.zig`.
+//! Android entry export surface — delegates JNI callbacks to `android/jni_host.zig`.
 const jni_host = @import("android/jni_host.zig");
 
 export fn Java_com_wigzell_sudoku_1zig_JniHost_startHostNative(

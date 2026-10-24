@@ -1,6 +1,6 @@
 // Native About acknowledgement text — equal-width lines via `display_width`.
 const std = @import("std");
-const about = @import("../../about.zig");
+const about = @import("../../core/about.zig");
 const display_width = @import("display_width.zig");
 
 fn nativeLines(info: about.Info) [6][]const u8 {

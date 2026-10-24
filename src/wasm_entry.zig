@@ -2,14 +2,14 @@
 // Boundary failures propagate to JS only via out_buf JSON, never stderr.
 const builtin = @import("builtin");
 const std = @import("std");
-const board = @import("board/board.zig");
-const game_engine = @import("engine/game_engine.zig");
-const puzzle_gen = @import("puzzle_gen/mod.zig");
-const logger = @import("logger.zig");
+const board = @import("core/board/board.zig");
+const game_engine = @import("core/engine/game_engine.zig");
+const puzzle_gen = @import("core/puzzle_gen/mod.zig");
+const logger = @import("core/logger.zig");
 const boundary = @import("wasm/boundary.zig");
 const wire = @import("wasm/wire.zig");
-const config = @import("config.zig");
-const startup_config = @import("startup/config.zig");
+const config = @import("core/config.zig");
+const startup_config = @import("core/startup/config.zig");
 
 const OutCap = 65536;
 var out_buf: [OutCap]u8 = undefined;

@@ -3,7 +3,7 @@
 ## Key project locations
 
 - Issues: GitHub (`mwigzell/sudoku-zig`) — open work, triage labels, acceptance criteria
-- Source modules: `src/{board,engine,command,renderer}/` — domain packages with co-located tests
+- Source modules: `src/core/{board,engine,renderer}/` + `src/core/command.zig` — domain packages with co-located tests
 - Docs: `docs/adr/` (architectural decisions), other reference docs live under `docs/`
 
 ## Development Approach — Vertical Slicing First
@@ -87,7 +87,7 @@ Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 
 ### Native renderer facade seam
 
-The terminal `Facade` vtable (`src/renderer/facade.zig`, ADR-0009) is **settled**. Web play does not use it (wasm JSON + JS menubar).
+The terminal `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is **settled**. Web play does not use it (wasm JSON + JS menubar).
 
 - **Change the vtable only** when a new *kind* of Sudoku→renderer interaction is needed (a new method), not to model config or menu state more neatly.
 - **Menu and Settings UI** need live prefs (region, warn, difficulty, theme, log level, …). Pass them as **extra scalar parameters on the existing `getCommandInput` call** — `Sudoku.turn()` copies from `engine.getConfig()` each turn. Ugly parameter lists are fine; they keep the seam explicit.

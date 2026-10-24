@@ -7,10 +7,12 @@ pub const EventMsg = struct {
     buf: [256]u8 = undefined,
     len: usize = 0,
 
+    /// Clear the message buffer for the next exec step.
     pub fn reset(self: *EventMsg) void {
         self.len = 0;
     }
 
+    /// Append one message fragment, joining multiple parts with `; `.
     pub fn append(self: *EventMsg, part: []const u8) void {
         if (part.len == 0) return;
         if (self.len > 0) {
@@ -26,17 +28,20 @@ pub const EventMsg = struct {
         self.len += take;
     }
 
+    /// Format and append one message fragment.
     pub fn appendFmt(self: *EventMsg, comptime fmt: []const u8, args: anytype) void {
         var stack: [128]u8 = undefined;
         const part = std.fmt.bufPrint(&stack, fmt, args) catch return;
         self.append(part);
     }
 
+    /// Return null when empty; otherwise return the assembled message slice.
     pub fn optional(self: *const EventMsg) ?[]const u8 {
         if (self.len == 0) return null;
         return self.buf[0..self.len];
     }
 
+    /// Return the raw message slice (possibly empty).
     pub fn slice(self: *const EventMsg) []const u8 {
         return self.buf[0..self.len];
     }

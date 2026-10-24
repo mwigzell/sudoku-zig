@@ -2,18 +2,18 @@
 // materializes the Facade for the configured renderer preference.
 // Prod supplies real (io, alloc); the test entry provides std.testing internally (see createForTest). No renderer knowledge lives in Sudoku.
 const std = @import("std");
-const config = @import("../config.zig");
-const facade_mod = @import("../renderer/facade.zig");
+const config = @import("../core/config.zig");
+const facade_mod = @import("../core/renderer/facade.zig");
 const io_session = @import("io_session.zig");
 const input_source = @import("input_source.zig");
-const command = @import("../command.zig");
-const cell = @import("../board/cell.zig");
+const command = @import("../core/command.zig");
+const cell = @import("../core/board/cell.zig");
 const Alloc = @import("../native/ascii/alloc.zig").Alloc;
-const game_engine = @import("../engine/game_engine.zig");
+const game_engine = @import("../core/engine/game_engine.zig");
 const file_transport = @import("shell/file_transport.zig");
-const puzzle_gen = @import("../puzzle_gen/mod.zig");
+const puzzle_gen = @import("../core/puzzle_gen/mod.zig");
 const mypath = @import("shell/path.zig");
-const logger = @import("../logger.zig");
+const logger = @import("../core/logger.zig");
 
 // ────────────────────── co-located tests ──────────────────────
 pub const Host = struct {

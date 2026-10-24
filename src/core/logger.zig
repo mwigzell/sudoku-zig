@@ -19,22 +19,27 @@ pub fn shouldEmit(sev: Severity) bool {
 pub fn Logger(comptime scope: @EnumLiteral()) type {
     const log = std.log.scoped(scope);
     return struct {
+        /// Emit debug-level message if runtime filter allows it.
         pub fn debug(comptime fmt: []const u8, args: anytype) void {
             if (shouldEmit(.debug)) log.debug(fmt, args);
         }
 
+        /// Emit error-level message if runtime filter allows it.
         pub fn err(comptime fmt: []const u8, args: anytype) void {
             if (shouldEmit(.err)) log.err(fmt, args);
         }
 
+        /// Emit warn-level message if runtime filter allows it.
         pub fn warn(comptime fmt: []const u8, args: anytype) void {
             if (shouldEmit(.warn)) log.warn(fmt, args);
         }
 
+        /// Emit info-level message if runtime filter allows it.
         pub fn info(comptime fmt: []const u8, args: anytype) void {
             if (shouldEmit(.info)) log.info(fmt, args);
         }
 
+        /// Emit fatal message, then abort the process.
         pub fn fatal(comptime fmt: []const u8, args: anytype) noreturn {
             log.err("FATAL: " ++ fmt, args);
             std.debug.dumpCurrentStackTrace(.{});

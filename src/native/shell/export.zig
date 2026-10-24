@@ -2,12 +2,12 @@
 // Serializes the current board's cell values to one 81-char line and writes
 // it through the transport seam; a failed write leaves the running game intact.
 const std = @import("std");
-const cell = @import("../../board/cell.zig");
-const board = @import("../../board/board.zig");
-const config = @import("../../config.zig");
-const game_engine = @import("../../engine/game_engine.zig");
+const cell = @import("../../core/board/cell.zig");
+const board = @import("../../core/board/board.zig");
+const config = @import("../../core/config.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
-const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
+const PuzzleGen = @import("../../core/puzzle_gen/mod.zig").PuzzleGen;
 
 /// Shared encoder for File → Export and Edit → Copy (native/web wasm uses the same codec in-engine).
 pub fn currentPuzzleLine(engine: *const game_engine.GameEngine) [81]u8 {

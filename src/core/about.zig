@@ -1,6 +1,6 @@
 // Product metadata for Help/About on native and wasm hosts.
 const std = @import("std");
-const build_info = @import("build_info.zig");
+const build_info = @import("../build_info.zig");
 const version = @import("version.zig");
 
 pub const name = "sudoku-zig";
@@ -24,6 +24,7 @@ pub const Info = struct {
     summary: []const u8,
 };
 
+/// Build the About payload consumed by native and wasm hosts.
 pub fn get() Info {
     return .{
         .name = name,
@@ -37,6 +38,7 @@ pub fn get() Info {
     };
 }
 
+/// One-line version/build summary for About screens and diagnostics.
 pub fn summaryLine() []const u8 {
     return std.fmt.comptimePrint("{s} {s} ({s}) — built {s} — {s}", .{
         name,

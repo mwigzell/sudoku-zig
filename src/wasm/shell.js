@@ -4,7 +4,7 @@
 import { runWithGeneratingDialog } from "./generating.js";
 import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
-import { applyWebStartupAction } from "../startup/web_startup.js";
+import { applyWebStartupAction } from "../core/startup/web_startup.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 

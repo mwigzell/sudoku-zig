@@ -1,14 +1,14 @@
 // Wasm JSON boundary — parse action payloads and serialize engine responses.
 const std = @import("std");
-const board = @import("../board/board.zig");
-const cell = @import("../board/cell.zig");
-const command = @import("../command.zig");
-const config = @import("../config.zig");
-const logger = @import("../logger.zig");
-const event_mod = @import("../event.zig");
-const game_engine = @import("../engine/game_engine.zig");
-const about = @import("../about.zig");
-const legend_mod = @import("../renderer/legend.zig");
+const board = @import("../core/board/board.zig");
+const cell = @import("../core/board/cell.zig");
+const command = @import("../core/command.zig");
+const config = @import("../core/config.zig");
+const logger = @import("../core/logger.zig");
+const event_mod = @import("../core/event.zig");
+const game_engine = @import("../core/engine/game_engine.zig");
+const about = @import("../core/about.zig");
+const legend_mod = @import("../core/renderer/legend.zig");
 const wire = @import("wire.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
@@ -379,7 +379,7 @@ test "parseAction solve maps to solve_for_me" {
 }
 
 test "writeEventJson ok embeds state snapshot" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../core/puzzle_gen/mod.zig").PuzzleGen.default(), @import("../core/config.zig").Config.default());
     defer engine.deinit();
     _ = engine.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = .seven } });
 
@@ -547,7 +547,7 @@ test "writeEventJson error_msg escapes special characters" {
 }
 
 test "writeEventJson ok msg escapes special characters" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.default(), @import("../config.zig").Config.default());
+    var engine = try game_engine.GameEngine.init(@import("../core/puzzle_gen/mod.zig").PuzzleGen.default(), @import("../core/config.zig").Config.default());
     defer engine.deinit();
 
     var buf: [8192]u8 = undefined;

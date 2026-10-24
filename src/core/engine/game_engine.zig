@@ -10,7 +10,7 @@ const command = @import("../command.zig");
 const config = @import("../config.zig");
 const logger = @import("../logger.zig");
 
-// Moved to src/event.zig, re-exported for backward compat
+// Moved to src/core/event.zig, re-exported for backward compat
 const event = @import("../event.zig");
 pub const Event = event.Event;
 
@@ -25,7 +25,7 @@ pub const SaveEntry = save_format.SaveEntry;
 const SAVE_HEADER_SIZE = save_format.SAVE_HEADER_SIZE;
 const SAVE_TRAILER_SIZE = save_format.SAVE_TRAILER_SIZE;
 
-// Moved to src/command/mutation_history.zig, re-exported for backward compat
+// Moved to src/core/engine/mutation_history.zig, re-exported for backward compat
 const mutation_history = @import("mutation_history.zig");
 const fill_command = @import("fill.zig");
 const clear_command = @import("clear.zig");
@@ -182,6 +182,7 @@ pub const GameEngine = struct {
         self.event_msg.append(part);
     }
 
+    /// Append formatted text to the current `.ok.msg` scratch buffer.
     pub fn appendEventMsgFmt(self: *@This(), comptime fmt: []const u8, args: anytype) void {
         self.event_msg.appendFmt(fmt, args);
     }
@@ -225,12 +226,14 @@ pub const GameEngine = struct {
         return .{ .error_msg = self.event_msg.slice() };
     }
 
+    /// Build `.error_msg` from a formatted string in engine scratch memory.
     pub fn errorEventFmt(self: *@This(), comptime fmt: []const u8, args: anytype) Event {
         self.event_msg.reset();
         self.event_msg.appendFmt(fmt, args);
         return .{ .error_msg = self.event_msg.slice() };
     }
 
+    /// Map low-level set-cell errors into user-facing command errors.
     pub fn eventFromSetCellError(self: *@This(), row: u4, col: u4, err: anyerror) Event {
         return switch (err) {
             error.IsGiven => self.errorEvent("cannot modify a puzzle cell"),
@@ -238,6 +241,7 @@ pub const GameEngine = struct {
         };
     }
 
+    /// Finalize `.ok` after one cell edit, including conflict/solvability/win messages.
     pub fn finishOkAfterCellEdit(self: *@This(), row: u4, col: u4, was_solved: bool) Event {
         self.state.board.refreshConflictsForCell(row, col);
         const view = self.state.board.asView();
@@ -366,8 +370,8 @@ pub const GameEngine = struct {
 
 // ────────────────────── co-located tests ──────────────────────
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
-const file_transport = @import("../native/shell/file_transport.zig");
-const open_command = @import("../native/shell/open.zig");
+const file_transport = @import("../../native/shell/file_transport.zig");
+const open_command = @import("../../native/shell/open.zig");
 
 fn expectOk(e: Event) !board.Board.BoardView {
     return switch (e) {

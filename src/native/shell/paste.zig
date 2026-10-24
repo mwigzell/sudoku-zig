@@ -1,10 +1,10 @@
 // Edit → Paste (native): prompt-supplied one-line string → engine `importFromLine`.
-const game_engine = @import("../../engine/game_engine.zig");
-const board = @import("../../board/board.zig");
-const config = @import("../../config.zig");
-const cell = @import("../../board/cell.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
+const board = @import("../../core/board/board.zig");
+const config = @import("../../core/config.zig");
+const cell = @import("../../core/board/cell.zig");
 const std = @import("std");
-const PuzzleGen = @import("../../puzzle_gen/mod.zig").PuzzleGen;
+const PuzzleGen = @import("../../core/puzzle_gen/mod.zig").PuzzleGen;
 
 pub fn execute(engine: *game_engine.GameEngine, line: ?[]const u8) game_engine.Event {
     if (line == null) return .{ .error_msg = "paste: no puzzle line specified" };

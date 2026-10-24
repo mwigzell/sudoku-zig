@@ -16,7 +16,7 @@ Timing uses `docs/verify-slow-timing.json` and `scripts/verify-slow-gate.sh` (sa
 ## Adding slow tests
 
 - Root file **not** imported from `src/main.zig` (same rule as other opt-in suites).
-- Entry today: `src/puzzle_gen_live.zig` — generator uniqueness, givens band, consecutive outputs differ.
+- Canonical test entry: `src/test/entry/puzzle_gen_live.zig` (with temporary root shim `src/puzzle_gen_live.zig` for `zig test` module-path compatibility during migration) — generator uniqueness, givens band, consecutive outputs differ.
 
 Manual equivalent:
 

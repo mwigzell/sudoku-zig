@@ -104,21 +104,17 @@ stdin/stdout is ever touched by the suite.
 src/
 ├── main.zig              process entry (CLI → desktop_web | desktop_terminal)
 ├── wasm_entry.zig        wasm export table (browser build)
-├── command.zig           command vocabulary + Hint/Fill payloads
-├── event.zig             exec results (.ok / .error_msg)
-├── solver.zig            backtracking solver (hints, generation, solve-for-me)
-├── startup/              startup config merge + policy + engine bootstrap helpers
-│   ├── config.zig        settings+CLI merge, host startup JSON wiring
-│   ├── policy.zig        shared startup action policy (restore/new/idle)
-│   └── engine.zig        startup GameEngine constructor + logger sync
-├── puzzle_gen/             live generation + difficulty
-│   ├── mod.zig           PuzzleGen, Difficulty, generate
-│   └── bench.zig         ad-hoc bench (scripts/bench-puzzle-gen.sh)
-├── puzzle_gen_live.zig     verify-slow property tests
-├── about.zig             Help/About metadata (native + wasm)
-├── board/                cells, validation, conflicts, SUD0 serial codec
-├── engine/               GameEngine.exec — fill, clear, undo/redo, hint, save format
-├── renderer/             Facade vtable + legend (native presentation seam)
+├── puzzle_gen_live.zig   verify-slow temporary root shim (`src/test/entry/puzzle_gen_live.zig`)
+├── core/
+│   ├── command.zig       command vocabulary + Hint/Fill payloads
+│   ├── event.zig         exec results (.ok / .error_msg)
+│   ├── solver.zig        backtracking solver (hints, generation, solve-for-me)
+│   ├── startup/          startup config merge + policy + engine bootstrap helpers
+│   ├── puzzle_gen/       live generation + difficulty (+ bench)
+│   ├── about.zig         Help/About metadata (native + wasm)
+│   ├── board/            cells, validation, conflicts, SUD0 serial codec
+│   ├── engine/           GameEngine.exec — fill, clear, undo/redo, hint, save format
+│   └── renderer/         Facade vtable + legend (native presentation seam)
 ├── web_host/             loopback static host (desktop `-r web` + Android)
 │   ├── mod.zig           bind, accept thread, settings POST
 │   ├── router.zig        path → embedded asset
@@ -140,6 +136,10 @@ src/
     ├── wire.zig          shared wire types / cell JSON
     ├── *.js              browser shell (board, menus, file UX, help)
     └── artifacts/        emitted artifact.wasm, glue.js, page.html, manifest, branding icons
+
+src/test/
+├── entry/                opt-in test entry modules (`puzzle_gen_live.zig`)
+└── fixtures/             shared fixture assets
 
 docs/ — ADRs, agent/verify notes. build.zig — native exe, wasm emit, test, verify, cov.
 ```

@@ -1,6 +1,6 @@
 /// Open command handler — reads bytes via transport, loads state through engine codec.
 const std = @import("std");
-const game_engine = @import("../../engine/game_engine.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
 const read_path = @import("read_path.zig");
 
@@ -40,8 +40,8 @@ fn doOpen(engine: *game_engine.GameEngine, transport: file_transport.FileTranspo
 
 test "command.open.execute opens file and returns ok with message" {
     var engine = try game_engine.GameEngine.init(
-        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -72,8 +72,8 @@ test "command.open.execute opens file and returns ok with message" {
 
 test "command.open.execute warns when the loaded puzzle has no solution" {
     var engine = try game_engine.GameEngine.init(
-        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 
@@ -85,7 +85,7 @@ test "command.open.execute warns when the loaded puzzle has no solution" {
     var dead: [81]u8 = @splat('0');
     for (0..8) |c| dead[c] = '1' + @as(u8, @intCast(c));
     dead[1 * 9 + 8] = '9';
-    var dead_engine = try game_engine.GameEngine.init(&dead, @import("../../config.zig").Config.default());
+    var dead_engine = try game_engine.GameEngine.init(&dead, @import("../../core/config.zig").Config.default());
     defer dead_engine.deinit();
 
     const resolved = try transport.resolve(transport.context, tmp_path);
@@ -111,8 +111,8 @@ test "command.open.execute warns when the loaded puzzle has no solution" {
 
 test "command.open.execute returns fallback message when path is null" {
     var engine = try game_engine.GameEngine.init(
-        @import("../../puzzle_gen/mod.zig").PuzzleGen.default(),
-        @import("../../config.zig").Config.default(),
+        @import("../../core/puzzle_gen/mod.zig").PuzzleGen.default(),
+        @import("../../core/config.zig").Config.default(),
     );
     defer engine.deinit();
 

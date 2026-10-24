@@ -1,22 +1,22 @@
-const about = @import("../../about.zig");
+const about = @import("../../core/about.zig");
 const display_width = @import("display_width.zig");
 const about_format = @import("about_format.zig");
-const board = @import("../../board/board.zig");
-const cell = @import("../../board/cell.zig");
+const board = @import("../../core/board/board.zig");
+const cell = @import("../../core/board/cell.zig");
 const parser = @import("parser.zig");
-const _command = @import("../../command.zig");
+const _command = @import("../../core/command.zig");
 const save = @import("../shell/save.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;
-const facade = @import("../../renderer/facade.zig");
+const facade = @import("../../core/renderer/facade.zig");
 const input_source = @import("../../native/input_source.zig");
-const puzzle_gen = @import("../../puzzle_gen/mod.zig");
+const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 const PuzzleGen = puzzle_gen.PuzzleGen;
 
-const config = @import("../../config.zig");
-const logger = @import("../../logger.zig");
-const Difficulty = @import("../../puzzle_gen/mod.zig").Difficulty;
+const config = @import("../../core/config.zig");
+const logger = @import("../../core/logger.zig");
+const Difficulty = @import("../../core/puzzle_gen/mod.zig").Difficulty;
 const REPLACE_CONFIRM_OK = "ok";
 
 /// Terminal renderer for the 9x9 Sudoku board.
@@ -586,9 +586,9 @@ pub fn AsciiRenderer(StylerType: type) type {
 // Tests - real renderer path, no mocks. Use Io.Writer.Allocating to
 // capture output for assertions instead of hitting stdout.
 
-const game_engine = @import("../../engine/game_engine.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
 const disambiguate = @import("disambiguate.zig");
-const legend = @import("../../renderer/legend.zig");
+const legend = @import("../../core/renderer/legend.zig");
 
 test "showLegend: writes Command: with Fill Clear Quit" {
     const io = std.testing.io;

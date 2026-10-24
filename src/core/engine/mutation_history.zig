@@ -28,6 +28,7 @@ pub const MutationHistory = struct {
     pointer: usize,
     gpa: std.mem.Allocator,
 
+    /// Create an empty history with pointer at 0.
     pub fn init(gpa: std.mem.Allocator) @This() {
         return .{
             .entries = .empty,
@@ -36,6 +37,7 @@ pub const MutationHistory = struct {
         };
     }
 
+    /// Free history entry storage.
     pub fn deinit(self: *@This()) void {
         self.entries.deinit(self.gpa);
     }

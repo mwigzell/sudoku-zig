@@ -235,6 +235,7 @@ pub const Board = struct {
         self.updateDigitBits(row, col, old_val, .zero);
     }
 
+    /// Full-board conflict recompute after broad state changes.
     pub fn validate(self: *Board) void {
         conflict.validate(self);
     }

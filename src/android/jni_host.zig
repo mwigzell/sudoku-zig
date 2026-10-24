@@ -2,8 +2,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const web_host = @import("../web_host/mod.zig");
-const config = @import("../config.zig");
-const settings_store = @import("../settings_store.zig");
+const config = @import("../core/config.zig");
+const settings_store = @import("../core/settings_store.zig");
 extern fn sudoku_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque) ?[*:0]const u8;
 extern fn sudoku_release_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque, chars: ?[*:0]const u8) void;
 

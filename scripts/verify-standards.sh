@@ -238,7 +238,7 @@ for f in "${CHANGED[@]}"; do
   [[ "$f" =~ ^src/.*\.(zig|js|mjs|html)$ ]] || continue
   # Single source of truth in file_policy.
   case "$f" in
-    src/file_policy.zig) continue ;;
+    src/core/file_policy.zig) continue ;;
   esac
   check_added_pattern "$f" "$WRITE_EVENT_LITS" \
     "duplicated write-context event literals (define in file_policy; avoid cross-layer copies)"

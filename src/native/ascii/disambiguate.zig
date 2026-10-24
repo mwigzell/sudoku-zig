@@ -5,7 +5,7 @@
 const std = @import("std");
 const mem = std.mem;
 const ascii = std.ascii;
-const cm = @import("../../command.zig");
+const cm = @import("../../core/command.zig");
 
 /// Maximum number of capital letters in any command string.
 const MAX_HUMPS: usize = 32;

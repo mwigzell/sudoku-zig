@@ -1,21 +1,21 @@
 // Sudoku facade: owns the command loop — prompt, parse, dispatch to the
 // game engine, and render each resulting event back through the renderer.
 const std = @import("std");
-const facade_mod = @import("../../renderer/facade.zig");
+const facade_mod = @import("../../core/renderer/facade.zig");
 const styler = @import("../ascii/styler.zig");
-const game_engine = @import("../../engine/game_engine.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
-const config = @import("../../config.zig");
-const puzzle_gen = @import("../../puzzle_gen/mod.zig");
-const command = @import("../../command.zig");
-const settings_store = @import("../../settings_store.zig");
-const startup_policy = @import("../../startup/policy.zig");
-const startup_engine = @import("../../startup/engine.zig");
-const file_policy = @import("../../file_policy.zig");
+const config = @import("../../core/config.zig");
+const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
+const command = @import("../../core/command.zig");
+const settings_store = @import("../../core/settings_store.zig");
+const startup_policy = @import("../../core/startup/policy.zig");
+const startup_engine = @import("../../core/startup/engine.zig");
+const file_policy = @import("../../core/file_policy.zig");
 const path_mod = @import("path.zig");
 
 const disambiguate = @import("../ascii/disambiguate.zig");
-const legend = @import("../../renderer/legend.zig");
+const legend = @import("../../core/renderer/legend.zig");
 
 const host_mod = @import("../host.zig");
 const save_command = @import("save.zig");
@@ -366,9 +366,9 @@ pub const Sudoku = struct {
     }
 };
 
-const board = @import("../../board/board.zig");
-const cell = @import("../../board/cell.zig");
-const logger = @import("../../logger.zig");
+const board = @import("../../core/board/board.zig");
+const cell = @import("../../core/board/cell.zig");
+const logger = @import("../../core/logger.zig");
 const styler_t = @import("../ascii/styler.zig");
 const ascii_renderer = @import("../ascii/renderer.zig");
 
@@ -902,7 +902,7 @@ test "integrated e2e - run: import via menu loads puzzle and clears history" {
         .log_level = .info,
     };
 
-    const board_mod = @import("../../board/board.zig");
+    const board_mod = @import("../../core/board/board.zig");
     const io = std.testing.io;
     const tmp_path = "/tmp/sudoku_e2e_import_ok_test.txt";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
@@ -975,7 +975,7 @@ test "integrated e2e - run: export via menu writes one-line file" {
         .log_level = .info,
     };
 
-    const board_mod = @import("../../board/board.zig");
+    const board_mod = @import("../../core/board/board.zig");
     const io = std.testing.io;
     const tmp_path = "/tmp/sudoku_e2e_export_ok_test.txt";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
@@ -1044,7 +1044,7 @@ test "integrated e2e - run: paste via menu loads puzzle and clears history" {
         .log_level = .info,
     };
 
-    const board_mod = @import("../../board/board.zig");
+    const board_mod = @import("../../core/board/board.zig");
     const puzzle_line = puzzle_gen.PuzzleGen.hard();
     const responses = [_][]const u8{
         "fill A3 7",

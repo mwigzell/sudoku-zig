@@ -3,10 +3,10 @@
 const std = @import("std");
 const config = @import("../config.zig");
 const logger = @import("../logger.zig");
-const wire = @import("../wasm/wire.zig");
-const cli = @import("../native/cli.zig");
+const wire = @import("../../wasm/wire.zig");
+const cli = @import("../../native/cli.zig");
 const settings_store = @import("../settings_store.zig");
-const path = @import("../native/shell/path.zig");
+const path = @import("../../native/shell/path.zig");
 const startup_policy = @import("policy.zig");
 const save_defaults = @import("../save_defaults.zig");
 const file_policy = @import("../file_policy.zig");
@@ -35,6 +35,7 @@ pub fn configFromHostWire(
     return cfg;
 }
 
+/// Sync global logger severity from resolved startup config.
 pub fn applyLoggerFromStartup(startup: config.Config) void {
     logger.min_level = startup.log_level;
 }
@@ -97,6 +98,7 @@ pub fn writeHostStartupJsonWithPolicy(
     );
 }
 
+/// Serialize startup config into a fixed buffer for host-config responses.
 pub fn formatHostStartupJson(startup: config.Config, buf: []u8) ![]const u8 {
     var w = std.Io.Writer.fixed(buf);
     try writeHostStartupJson(&w, startup);
@@ -176,7 +178,7 @@ test "CLI overrides persist on top of saved settings" {
 }
 
 test "host startup JSON reflects Config loaded from settings.json on disk" {
-    const test_defaults = @import("../test/config_defaults.zig");
+    const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -223,7 +225,7 @@ test "host startup JSON matches Config wire fields" {
 }
 
 test "host startup JSON policy chooses restore when current file exists" {
-    const test_defaults = @import("../test/config_defaults.zig");
+    const test_defaults = @import("../../test/config_defaults.zig");
     var cfg = test_defaults.testConfigDefaults();
     cfg.auto_restore = true;
     cfg.auto_new = false;

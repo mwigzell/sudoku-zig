@@ -2,7 +2,7 @@
 const std = @import("std");
 const config = @import("config.zig");
 const logger = @import("logger.zig");
-const path = @import("native/shell/path.zig");
+const path = @import("../native/shell/path.zig");
 
 const log = logger.Logger(.sudoku);
 
@@ -225,7 +225,7 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
 }
 
 test "save omits renderer keys; load uses code default for renderer" {
-    const test_defaults = @import("test/config_defaults.zig");
+    const test_defaults = @import("../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -295,7 +295,7 @@ test "settings round-trip preserves player fields" {
 }
 
 test "settings round-trip preserves warn_solvability" {
-    const test_defaults = @import("test/config_defaults.zig");
+    const test_defaults = @import("../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -308,7 +308,7 @@ test "settings round-trip preserves warn_solvability" {
 }
 
 test "missing settings file yields Config.default()" {
-    const test_defaults = @import("test/config_defaults.zig");
+    const test_defaults = @import("../test/config_defaults.zig");
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const cfg = try loadOrDefaultInDir(std.testing.allocator, std.testing.io, tmp.dir);
@@ -316,7 +316,7 @@ test "missing settings file yields Config.default()" {
 }
 
 test "loadOrDefaultInDir reads view prefs from settings.json on disk" {
-    const test_defaults = @import("test/config_defaults.zig");
+    const test_defaults = @import("../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -370,7 +370,7 @@ test "setCurrentFile persists pointer and loadCurrentFile returns it" {
 }
 
 test "save preserves existing current_file pointer" {
-    const test_defaults = @import("test/config_defaults.zig");
+    const test_defaults = @import("../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

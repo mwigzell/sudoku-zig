@@ -1,9 +1,9 @@
 // JSON wire types for the wasm export boundary — WireConfig and board snapshot.
 const std = @import("std");
-const board = @import("../board/board.zig");
-const puzzle_gen = @import("../puzzle_gen/mod.zig");
-const logger = @import("../logger.zig");
-const config = @import("../config.zig");
+const board = @import("../core/board/board.zig");
+const puzzle_gen = @import("../core/puzzle_gen/mod.zig");
+const logger = @import("../core/logger.zig");
+const config = @import("../core/config.zig");
 
 /// Player-facing difficulty on the wasm boundary — explicit u8 wire values, no `.default`.
 pub const PlayerDifficulty = enum(u8) {

@@ -1,15 +1,15 @@
 /// Loopback static host for the web app shell (desktop `-r web` and future Android WebView).
 const std = @import("std");
 const net = std.Io.net;
-const logger = @import("../logger.zig");
+const logger = @import("../core/logger.zig");
 const log = logger.Logger(.web_host);
-const config = @import("../config.zig");
-const startup_config = @import("../startup/config.zig");
-const settings_store = @import("../settings_store.zig");
+const config = @import("../core/config.zig");
+const startup_config = @import("../core/startup/config.zig");
+const settings_store = @import("../core/settings_store.zig");
 const file_transport = @import("../native/shell/file_transport.zig");
 const file_path = @import("../native/shell/path.zig");
-const save_defaults = @import("../save_defaults.zig");
-const file_policy = @import("../file_policy.zig");
+const save_defaults = @import("../core/save_defaults.zig");
+const file_policy = @import("../core/file_policy.zig");
 const router_mod = @import("router.zig");
 const embed = @import("embed.zig");
 
@@ -656,6 +656,7 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/app_wire.js", .expected = .app_wire },
         .{ .path = "/shell.js", .expected = .shell },
         .{ .path = "/startup/web_startup.js", .expected = .startup_web },
+        .{ .path = "/core/startup/web_startup.js", .expected = .startup_web },
         .{ .path = "/board.js", .expected = .board },
         .{ .path = "/menu.js", .expected = .menu },
         .{ .path = "/menu_bar.js", .expected = .menu_bar },

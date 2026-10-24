@@ -1,13 +1,13 @@
 // Shell adapter: puzzle_gen progress events → Facade (session writer).
 const std = @import("std");
-const facade_mod = @import("../../renderer/facade.zig");
-const board = @import("../../board/board.zig");
-const command = @import("../../command.zig");
-const config = @import("../../config.zig");
-const event_mod = @import("../../event.zig");
-const legend_mod = @import("../../renderer/legend.zig");
-const logger = @import("../../logger.zig");
-const puzzle_gen = @import("../../puzzle_gen/mod.zig");
+const facade_mod = @import("../../core/renderer/facade.zig");
+const board = @import("../../core/board/board.zig");
+const command = @import("../../core/command.zig");
+const config = @import("../../core/config.zig");
+const event_mod = @import("../../core/event.zig");
+const legend_mod = @import("../../core/renderer/legend.zig");
+const logger = @import("../../core/logger.zig");
+const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 
 /// Forwards generator progress from puzzle-gen to the active native Facade.
 pub fn playProgressToFacade(gen_event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {

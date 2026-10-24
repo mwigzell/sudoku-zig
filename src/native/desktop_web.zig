@@ -1,7 +1,7 @@
 /// Desktop `-r web`: loopback host + browser open (entry-layer wiring, not `web_host` internals).
 const std = @import("std");
-const config = @import("../config.zig");
-const logger = @import("../logger.zig");
+const config = @import("../core/config.zig");
+const logger = @import("../core/logger.zig");
 const web_host = @import("../web_host/mod.zig");
 const open_browser = @import("open_browser.zig");
 

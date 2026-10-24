@@ -161,10 +161,10 @@ Front-end layers are adapters. They do I/O, lifecycle, and presentation; shared 
 
 | Concern | Authority | Front-end role | Never in front-end |
 |---|---|---|---|
-| Domain rules and state semantics | `src/engine/`, `src/board/`, shared codecs | submit commands, render returned state | reimplementing game behavior |
+| Domain rules and state semantics | `src/core/engine/`, `src/core/board/`, shared codecs | submit commands, render returned state | reimplementing game behavior |
 | Session semantics (save/open/restore/new, conflict rules) | shared policy modules + host/domain seams | issue intent requests, present user prompts/results | local policy forks in JS/Java/renderer |
-| Startup behavior contract | `src/startup/` + host startup payload | execute instructed startup action | per-platform startup decision trees |
-| Configuration meaning and persistence schema | `config.zig` + `settings_store` + host persistence seam | edit/view settings through exposed interfaces | parallel config schemas or defaults that override host contract |
+| Startup behavior contract | `src/core/startup/` + host startup payload | execute instructed startup action | per-platform startup decision trees |
+| Configuration meaning and persistence schema | `src/core/config.zig` + `src/core/settings_store.zig` + host persistence seam | edit/view settings through exposed interfaces | parallel config schemas or defaults that override host contract |
 | Cross-platform command availability semantics | engine/legend + shared contracts | wire controls to existing contracts | feature-specific rule variants per platform |
 
 Rule: every supported front-end entry must remain transport-thin and behavior-consistent by consuming shared contracts, not redefining them.
@@ -176,13 +176,13 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 
 | Policy | Core authority | Platform call sites |
 |---|---|---|
-| Command semantics + `Event` meaning | `src/command.zig`, `src/engine/game_engine.zig` | Native: `src/native/shell/shell.zig` (`engine.exec`). Web/Android: wasm API in `src/wasm_entry.zig`, called by `src/wasm/{board,menu,file_menu}.js`. |
-| Startup decision (`restore/new/idle`) | `src/startup/policy.zig`, `src/startup/config.zig` | Native: `src/native/shell/shell.zig` (`runStartupPolicy`). Web/Android: `src/wasm/shell.js` (`initializeWebSession`, `offerInitialNewGame`) + `src/startup/web_startup.js`. |
-| Autosave trigger set (which commands autosave) | `src/file_policy.zig` + startup contract emission in `src/startup/config.zig` | Native: `src/native/shell/shell.zig` (`applyAutoSavePolicyIfNeeded`). Web/Android: `src/wasm/shell.js` (`startAutoSavePolicy`, `session.autosave_trigger_commands`). |
-| Overwrite/replace lane policy (`detached` vs `continuation`) | `src/file_policy.zig` | Native: `src/native/shell/shell.zig` (`shouldWriteTarget`, `applyWriteContextEvent`). Web/Android host seam: `src/web_host/mod.zig` (`/current-file`, `/current-file-context`). |
-| Settings schema + persistence semantics | `src/config.zig`, `src/settings_store.zig` | Native: `src/native/shell/shell.zig` settings/current-file persistence. Web/Android: `src/wasm/shell.js` posts; `src/web_host/mod.zig` merges/saves. |
-| Save format (SUD0 codec) | `src/engine/game_engine.zig` (+ wasm export surface in `src/wasm_entry.zig`) | Native: `src/native/shell/{save,save_as,open}.zig` via `FileTransport`. Web/Android: `src/wasm/shell.js` via wasm `serialize`/`deserialize`. |
-| Log-level filtering policy | `src/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
+| Command semantics + `Event` meaning | `src/core/command.zig`, `src/core/engine/game_engine.zig` | Native: `src/native/shell/shell.zig` (`engine.exec`). Web/Android: wasm API in `src/wasm_entry.zig`, called by `src/wasm/{board,menu,file_menu}.js`. |
+| Startup decision (`restore/new/idle`) | `src/core/startup/policy.zig`, `src/core/startup/config.zig` | Native: `src/native/shell/shell.zig` (`runStartupPolicy`). Web/Android: `src/wasm/shell.js` (`initializeWebSession`, `offerInitialNewGame`) + `src/core/startup/web_startup.js`. |
+| Autosave trigger set (which commands autosave) | `src/core/file_policy.zig` + startup contract emission in `src/core/startup/config.zig` | Native: `src/native/shell/shell.zig` (`applyAutoSavePolicyIfNeeded`). Web/Android: `src/wasm/shell.js` (`startAutoSavePolicy`, `session.autosave_trigger_commands`). |
+| Overwrite/replace lane policy (`detached` vs `continuation`) | `src/core/file_policy.zig` | Native: `src/native/shell/shell.zig` (`shouldWriteTarget`, `applyWriteContextEvent`). Web/Android host seam: `src/web_host/mod.zig` (`/current-file`, `/current-file-context`). |
+| Settings schema + persistence semantics | `src/core/config.zig`, `src/core/settings_store.zig` | Native: `src/native/shell/shell.zig` settings/current-file persistence. Web/Android: `src/wasm/shell.js` posts; `src/web_host/mod.zig` merges/saves. |
+| Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/wasm_entry.zig`) | Native: `src/native/shell/{save,save_as,open}.zig` via `FileTransport`. Web/Android: `src/wasm/shell.js` via wasm `serialize`/`deserialize`. |
+| Log-level filtering policy | `src/core/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
 
 **Desktop web entry** (`native/desktop_web.zig`):
 Wires **`web_host.runWithHostConfig`**, fatal bind errors, and **`whenHostReady`** → **`open_browser`**. Called from `main` when `-r web`.
