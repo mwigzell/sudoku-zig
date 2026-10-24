@@ -116,7 +116,7 @@ pub fn execute(engine: *game_engine.GameEngine, hint: command.HintData) game_eng
                 appendNoSolutionMsg(engine);
             }
             if (engine.event_msg.optional() == null) appendNoSolutionMsg(engine);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
     };
     switch (solved) {
@@ -129,7 +129,7 @@ pub fn execute(engine: *game_engine.GameEngine, hint: command.HintData) game_eng
                 appendNoSolutionMsg(engine);
             }
             if (engine.event_msg.optional() == null) appendNoSolutionMsg(engine);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
         .solution => |solution| {
             if (hint.row != null and hint.col != null) {
@@ -138,7 +138,7 @@ pub fn execute(engine: *game_engine.GameEngine, hint: command.HintData) game_eng
                 appendEnginePickMsg(engine, solution);
             }
             if (engine.event_msg.optional() == null) appendNoSolutionMsg(engine);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
     }
 }

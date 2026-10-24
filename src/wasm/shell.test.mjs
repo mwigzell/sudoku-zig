@@ -3,7 +3,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  NEW_GAME_STARTED_MSG,
   CURRENT_FILE_DESKTOP_ID,
   persistCurrentFileSnapshot,
   startAutoSavePolicy,
@@ -41,6 +40,7 @@ const AUTO_SAVE_TRIGGERS = [
   "clear",
   "undo",
   "redo",
+  "hint",
   "solve",
   "solve_for_me",
   "open",
@@ -199,7 +199,7 @@ async function flushDialogPaint() {
     },
     importPuzzleNewGame(text, difficulty) {
       importCalls.push(text);
-      return { ok: true, msg: "import: puzzle loaded" };
+      return { ok: true, msg: "new game started" };
     },
   };
   const modal = makeModal();
@@ -214,7 +214,7 @@ async function flushDialogPaint() {
   modal.continueBtn.click();
   const out = await running;
   assert.equal(out.ok, true);
-  assert.equal(out.msg, NEW_GAME_STARTED_MSG);
+  assert.equal(out.msg, "new game started");
   assert.equal(importCalls.length, 1);
   assert.equal(importCalls[0], line);
 }
@@ -291,7 +291,7 @@ async function flushDialogPaint() {
     importPuzzleNewGame(text, difficulty) {
       assert.equal(text, line);
       assert.equal(difficulty, 2);
-      return { ok: true, msg: "import: puzzle loaded" };
+      return { ok: true, msg: "new game started" };
     },
     getState() {
       return { cells: [] };
@@ -317,7 +317,7 @@ async function flushDialogPaint() {
   modal.continueBtn.click();
   const out = await running;
   assert.equal(out.ok, true);
-  assert.equal(out.msg, NEW_GAME_STARTED_MSG);
+  assert.equal(out.msg, "new game started");
 }
 
 {
@@ -1353,7 +1353,7 @@ async function flushDialogPaint() {
     },
     init({ difficulty }) {
       initDifficulty = difficulty;
-      return { ok: true, msg: NEW_GAME_STARTED_MSG };
+      return { ok: true, msg: "new game started" };
     },
     getState() {
       return { cells: [] };

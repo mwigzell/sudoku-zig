@@ -121,7 +121,7 @@ export function wireSudokuApp({
   wireAboutModal(aboutModal.el, root.getElementById("about-modal-dismiss"));
   const settingsModal = settingsModalFromDom(root);
 
-  if ((ready.kind === "new" || ready.kind === "empty") && ready.msg) {
+  if (ready.msg) {
     applySessionOutcomeStatus(session, statusBar, { msg: ready.msg });
   } else {
     setStatus(statusBar, "");

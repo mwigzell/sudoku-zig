@@ -21,6 +21,9 @@
    - **HARD RULE (MANDATORY):** Platform adapters (`src/native/**`, `src/wasm/**`, `src/android/**`) may adapt capabilities only (I/O APIs, picker/clipboard/bridge plumbing, rendering mechanics); they must not define independent policy semantics.
    - **HARD RULE (MANDATORY):** If behavior must match across platforms, define it once in core and pass it through shared contracts; never duplicate policy constants/messages per platform.
    - **HARD RULE (MANDATORY):** Any exception must be documented inline with a one-line rationale proving it is transport/UI capability only, not business policy.
+   - **HARD RULE (MANDATORY):** Status message authorship is core-owned. Adapters must not invent fallback status copy for core flows (startup/new/open/save/import/autosave).
+   - **HARD RULE (MANDATORY):** Durable status lifecycle (`set|preserve|clear`) is decided in core seams only; adapters render/pass through only.
+   - **HARD RULE (MANDATORY):** Startup restore must use the core restore lane (persisted status continuity), not generic open-with-label behavior.
 
 ## Test / SUT colocated (Ziglings 105 style)
 - Test blocks are colocated with the code being tested.

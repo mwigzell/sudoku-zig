@@ -142,6 +142,9 @@ export function handleEditAction(
       state: result.state,
       legend: game.getLegend(),
     });
+    startAutoSavePolicy(game, session, action, {
+      onError: (saved) => applyExecResult(statusEl, errorModal, saved),
+    });
     return { handled: true, legend: session.legend };
   }
 

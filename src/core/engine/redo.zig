@@ -12,12 +12,11 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
         .cell => |c| {
-            const was_solved = engine.state.board.isSolved();
             engine.state.board.setCell(c.row, c.col, c.new_value) catch |err| {
                 return engine.eventFromSetCellError(c.row, c.col, err);
             };
             engine.state.history.pointer += 1;
-            return engine.finishOkAfterCellEdit(c.row, c.col, was_solved);
+            return engine.finishOkAfterCellEdit(c.row, c.col);
         },
         .solve_batch => |snap| {
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
@@ -41,7 +40,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             }
             engine.state.history.pointer += 1;
             engine.state.board.validate();
-            return engine.finishOkEvent(engine.state.board.asView(), false, null);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
     }
 }

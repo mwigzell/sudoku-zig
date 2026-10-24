@@ -12,6 +12,9 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
     };
     defer transport.free(transport.context, resolved);
 
+    // Core owns status authorship; set durable save status before snapshotting so
+    // autosave/relaunch restores the same status bar continuity.
+    const save_event = engine.savedToPathEvent(resolved);
     const save_buf = engine.toSaveFormat(gpa) catch |err| {
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
@@ -21,15 +24,7 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
         return game_engine.Event{ .error_msg = @errorName(err) };
     };
 
-    const msg = std.fmt.allocPrint(gpa, "saved to: {s}", .{resolved}) catch |err| {
-        return game_engine.Event{ .error_msg = @errorName(err) };
-    };
-
-    return game_engine.Event{ .ok = .{
-        .board_view = engine.state.board.asView(),
-        .msg = msg,
-        .is_quit = false,
-    } };
+    return save_event;
 }
 
 test "command.save_as.execute saves file at given path" {

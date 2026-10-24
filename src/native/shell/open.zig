@@ -8,13 +8,7 @@ pub fn execute(engine: *game_engine.GameEngine, transport: file_transport.FileTr
     if (path) |file_path| {
         return doOpen(engine, transport, file_path);
     } else {
-        return .{
-            .ok = .{
-                .board_view = engine.state.board.asView(),
-                .msg = "open: no file specified",
-                .is_quit = false,
-            },
-        };
+        return engine.openNoFileEvent();
     }
 }
 

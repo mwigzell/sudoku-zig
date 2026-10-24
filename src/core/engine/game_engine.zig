@@ -37,9 +37,15 @@ const solver = @import("../solver.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
+pub const NEW_GAME_STARTED_MSG = "new game started";
+pub const OPEN_NO_FILE_MSG = "open: no file specified";
 
 /// Owns portable game state. No file transport or I/O here.
 const SolvabilityProbe = enum { move, load };
+const LoadStatusMode = enum {
+    open,
+    startup_restore,
+};
 
 pub const GameEngine = struct {
     state: state_mod.State,
@@ -120,6 +126,11 @@ pub const GameEngine = struct {
         return save_format.toSaveFormat(&self.state, gpa);
     }
 
+    /// Current durable status (restored from save and updated by command policy).
+    pub fn durableStatus(self: *const @This()) ?[]const u8 {
+        return self.state.status.optional();
+    }
+
     /// Replace board and history from a SUD0 blob produced by `toSaveFormat`.
     pub fn loadSaveFormat(self: *@This(), buf: []const u8) !void {
         const gpa = std.heap.page_allocator;
@@ -127,13 +138,20 @@ pub const GameEngine = struct {
         self.state.history.deinit();
         self.state.board = loaded.board;
         self.state.history = loaded.history;
+        self.state.status = loaded.status;
         self.state.board.validate();
     }
 
     /// Open from SUD0 bytes — native shell and wasm deserialize both call this.
     pub fn openFromSave(self: *@This(), buf: []const u8, opened_label: ?[]const u8) Event {
         self.loadSaveFormat(buf) catch |err| return self.errorEvent(@errorName(err));
-        return self.finishLoadEvent(opened_label);
+        return self.finishLoadEvent(opened_label, .open);
+    }
+
+    /// Startup restore path: rehydrate state and surface only persisted status.
+    pub fn restoreFromSave(self: *@This(), buf: []const u8) Event {
+        self.loadSaveFormat(buf) catch |err| return self.errorEvent(@errorName(err));
+        return self.finishLoadEvent(null, .startup_restore);
     }
 
     /// Replace board and clear history from a trimmed one-line puzzle string.
@@ -155,7 +173,7 @@ pub const GameEngine = struct {
         };
         self.beginEventMsg();
         self.appendEventMsg("import: puzzle loaded");
-        return self.finishOkEvent(self.state.board.asView(), false, null);
+        return self.finishOkEvent(self.state.board.asView(), false, null, false);
     }
 
     /// New game from a one-line puzzle string (generate dialog or fallback fixture).
@@ -163,10 +181,12 @@ pub const GameEngine = struct {
         self.applyOneLinePuzzle(line) catch {
             return .{ .error_msg = "could not create new game" };
         };
+        self.state.status.reset();
+        self.state.status.append(NEW_GAME_STARTED_MSG);
         return .{
             .ok = .{
                 .board_view = self.state.board.asView(),
-                .msg = "new game started",
+                .msg = self.state.status.optional(),
                 .is_quit = false,
             },
         };
@@ -202,21 +222,55 @@ pub const GameEngine = struct {
         if (solved == .none) hint_command.appendLoadNoSolutionMsg(self);
     }
 
-    fn finishLoadEvent(self: *@This(), opened_label: ?[]const u8) Event {
+    fn finishLoadEvent(self: *@This(), opened_label: ?[]const u8, mode: LoadStatusMode) Event {
         self.beginEventMsg();
-        if (opened_label) |label| self.appendEventMsgFmt("opened: {s}", .{label});
-        self.appendUnsolvableLoadWarningIfNeeded();
-        return self.finishOkEvent(self.state.board.asView(), false, null);
+        switch (mode) {
+            .open => {
+                if (opened_label) |label| self.appendEventMsgFmt("opened: {s}", .{label});
+                self.appendUnsolvableLoadWarningIfNeeded();
+                return self.finishOkEvent(self.state.board.asView(), false, null, true);
+            },
+            .startup_restore => {
+                if (self.state.status.optional()) |persisted| self.appendEventMsg(persisted);
+                return self.finishOkEvent(self.state.board.asView(), false, null, true);
+            },
+        }
     }
 
     /// Build `.ok` using accumulated msg (null when nothing was appended).
-    pub fn finishOkEvent(self: *@This(), view: board.Board.BoardView, is_quit: bool, edited_cell: ?event.CellCoord) Event {
+    pub fn finishOkEvent(
+        self: *@This(),
+        view: board.Board.BoardView,
+        is_quit: bool,
+        edited_cell: ?event.CellCoord,
+        clear_when_empty: bool,
+    ) Event {
+        if (self.event_msg.optional()) |msg| {
+            self.state.status.reset();
+            self.state.status.append(msg);
+        } else if (clear_when_empty) {
+            self.state.status.reset();
+        }
         return .{ .ok = .{
             .board_view = view,
-            .msg = self.event_msg.optional(),
+            .msg = self.state.status.optional(),
             .is_quit = is_quit,
             .cell = edited_cell,
         } };
+    }
+
+    /// Shared adapter-facing event for "Open" with no selected file.
+    pub fn openNoFileEvent(self: *@This()) Event {
+        self.beginEventMsg();
+        self.appendEventMsg(OPEN_NO_FILE_MSG);
+        return self.finishOkEvent(self.state.board.asView(), false, null, false);
+    }
+
+    /// Shared adapter-facing event for successful save target writes.
+    pub fn savedToPathEvent(self: *@This(), path: []const u8) Event {
+        self.beginEventMsg();
+        self.appendEventMsgFmt("saved to: {s}", .{path});
+        return self.finishOkEvent(self.state.board.asView(), false, null, false);
     }
 
     /// One error string in engine scratch — safe for wasm JSON after exec returns.
@@ -242,7 +296,7 @@ pub const GameEngine = struct {
     }
 
     /// Finalize `.ok` after one cell edit, including conflict/solvability/win messages.
-    pub fn finishOkAfterCellEdit(self: *@This(), row: u4, col: u4, was_solved: bool) Event {
+    pub fn finishOkAfterCellEdit(self: *@This(), row: u4, col: u4) Event {
         self.state.board.refreshConflictsForCell(row, col);
         const view = self.state.board.asView();
         if (view.isConflictingRowCol(row, col)) {
@@ -250,10 +304,10 @@ pub const GameEngine = struct {
         } else if (self.probeSolvability(.move)) |solved| {
             if (solved == .none) hint_command.appendNoSolutionMsg(self);
         }
-        if (!was_solved and self.state.board.isSolved()) {
+        if (self.state.board.isSolved()) {
             self.appendEventMsg("You win!");
         }
-        return self.finishOkEvent(view, false, .{ .row = row, .col = col });
+        return self.finishOkEvent(view, false, .{ .row = row, .col = col }, true);
     }
 
     /// Route a gameplay command through Board mutation + render update.
@@ -284,37 +338,37 @@ pub const GameEngine = struct {
             },
             .set_theme => |theme| {
                 self.cfg.theme = theme;
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_region => |enabled| {
                 self.cfg.show_region = enabled;
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_warn_solvability => |enabled| {
                 self.cfg.warn_solvability = enabled;
                 self.applySolvabilityWarningsFromConfig();
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_auto_restore => |enabled| {
                 self.cfg.auto_restore = enabled;
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_auto_new => |enabled| {
                 self.cfg.auto_new = enabled;
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_auto_save => |enabled| {
                 self.cfg.auto_save = enabled;
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_difficulty => |diff| {
                 self.cfg.difficulty = diff;
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_log_level => |level| {
                 self.cfg.log_level = level;
                 logger.min_level = level;
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .settings => @panic("settings routed in Sudoku"),
             .menu => @panic("menu routed in renderer"),
@@ -324,7 +378,6 @@ pub const GameEngine = struct {
 
     /// Attempt to fill a cell with a digit. Records mutation in history.
     pub fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) Event {
-        const was_solved = self.state.board.isSolved();
         // Snapshot old value before mutation (only recorded on success)
         const old_value = self.state.board.asView().get(row, col);
         self.state.board.setCell(row, col, digit) catch |err| {
@@ -336,7 +389,7 @@ pub const GameEngine = struct {
         self.state.history.push(row, col, old_value, digit) catch |err| {
             return self.errorEventFmt("history push failed: {s}", .{@errorName(err)});
         };
-        return self.finishOkAfterCellEdit(row, col, was_solved);
+        return self.finishOkAfterCellEdit(row, col);
     }
 
     /// Fill every empty cell from one solver pass. One history step, not N fills.
@@ -347,7 +400,7 @@ pub const GameEngine = struct {
             error.Conflict => return self.errorEvent("board has a conflict"),
         };
         switch (solved) {
-            .none => return self.finishOkEvent(self.state.board.asView(), false, null),
+            .none => return self.finishOkEvent(self.state.board.asView(), false, null, false),
             .solution => |grid| {
                 for (grid, 0..) |digit, i| {
                     const row: u4 = @intCast(i / 9);
@@ -362,7 +415,7 @@ pub const GameEngine = struct {
                     return self.errorEventFmt("history push failed: {s}", .{@errorName(push_err)});
                 };
                 self.state.board.validate();
-                return self.finishOkEvent(self.state.board.asView(), false, null);
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
         }
     }
@@ -1229,7 +1282,7 @@ test "exec fill that does not complete the board has no win message" {
     }
 }
 
-test "exec win is not re-announced on an already-solved board" {
+test "exec win is re-announced when a solved board is edited again" {
     const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
     var line: [81]u8 = undefined;
     @memcpy(&line, full);
@@ -1252,9 +1305,42 @@ test "exec win is not re-announced on an already-solved board" {
         .fill = command.FillData{ .row = row, .col = col, .digit = digit },
     });
     try std.testing.expect(again == .ok);
-    if (again.ok.msg) |msg| {
-        try std.testing.expect(std.mem.indexOf(u8, msg, "You win!") == null);
-    }
+    try std.testing.expect(again.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, again.ok.msg.?, "You win!") != null);
+}
+
+test "durable status clears on solved-to-unsolved cell edit and re-announces on re-solve" {
+    const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var line: [81]u8 = undefined;
+    @memcpy(&line, full);
+    const target_idx: usize = 40;
+    const target_digit = line[target_idx];
+    line[target_idx] = '0';
+    var engine = try GameEngine.init(&line, config.Config.default());
+    defer engine.deinit();
+    const row: u4 = @intCast(@divTrunc(target_idx, 9));
+    const col: u4 = @intCast(@mod(target_idx, 9));
+    const digit = cell.rawToCellValue(target_digit - '0');
+
+    const win = execTest(&engine, command.Command{
+        .fill = .{ .row = row, .col = col, .digit = digit },
+    });
+    try std.testing.expect(win == .ok);
+    try std.testing.expect(win.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, win.ok.msg.?, "You win!") != null);
+
+    const unsolve = execTest(&engine, command.Command{
+        .clear = .{ .row = row, .col = col },
+    });
+    try std.testing.expect(unsolve == .ok);
+    try std.testing.expect(unsolve.ok.msg == null);
+
+    const win_again = execTest(&engine, command.Command{
+        .fill = .{ .row = row, .col = col, .digit = digit },
+    });
+    try std.testing.expect(win_again == .ok);
+    try std.testing.expect(win_again.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, win_again.ok.msg.?, "You win!") != null);
 }
 
 test "finishOkAfterCellEdit sets event cell to mutated coordinates" {

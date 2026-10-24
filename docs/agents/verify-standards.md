@@ -42,6 +42,9 @@ Rules from `AGENTS.md`, `CONTEXT.md`, and `docs/coding-standards.md` that grep c
 | Wasm ownership | No new write-policy/state-machine literals outside legacy wasm entry points |
 | Policy authority | No duplicated write-context event string literals outside `file_policy` authority |
 | Test fixture DRY | No local `WRITE_CONTEXT_EVENTS` map literals in wasm tests; build from shell contract keys |
+| Status ownership (web) | No adapter-authored `msg: x ?? "literal"` fallback copy in `src/wasm/shell.js` |
+| Status ownership (native) | No `.ok.msg` string literals minted in `src/native/shell/*` adapters (except core-owned engine helpers) |
+| Restore lane contract | No startup restore routing through named-open copy (`name: restorePath`) in wasm shell |
 
 ## What it does not enforce
 

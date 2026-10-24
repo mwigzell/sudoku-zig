@@ -1,10 +1,13 @@
 // Portable game state: the board plus mutation history — no deployments, no I/O.
 const board_mod = @import("../board/board.zig");
 const mutation_history = @import("mutation_history.zig");
+const event = @import("../event.zig");
 
 pub const State = struct {
     board: board_mod.Board,
     history: mutation_history.MutationHistory,
+    /// Durable status message persisted with save state (status bar continuity seam).
+    status: event.EventMsg = .{},
 };
 
 // Io-free codec round-trip over State (seam: save_format takes/returns State)

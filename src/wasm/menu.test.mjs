@@ -20,6 +20,7 @@ const AUTO_SAVE_TRIGGERS = [
   "clear",
   "undo",
   "redo",
+  "hint",
   "solve",
   "solve_for_me",
   "open",
@@ -265,6 +266,55 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     makeRenderElement(),
   );
   assert.equal(outcome.handled, true);
+}
+
+// ── hint triggers autosave when auto_save is enabled ──
+{
+  const prevFetch = globalThis.fetch;
+  let postedCurrent = false;
+  globalThis.fetch = async (url, init = {}) => {
+    if (url === "./current-file") {
+      postedCurrent = true;
+      return { ok: true, status: 204 };
+    }
+    return { ok: false, status: 500, text: async () => `unexpected ${url} ${init.method ?? "GET"}` };
+  };
+
+  const session = {
+    state: emptyState(),
+    legend: { undo: false, redo: false },
+    config: { auto_save: true },
+    default_save_filename: "sudoku.sud",
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+  };
+  const game = {
+    exec(action) {
+      assert.deepEqual(action, { action: "hint" });
+      return { ok: true, state: session.state, msg: "A1 takes 5 (placement)", is_quit: false };
+    },
+    getLegend() {
+      return session.legend;
+    },
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
+    },
+  };
+  const status = { textContent: "", className: "" };
+  const outcome = handleEditAction(
+    "hint",
+    game,
+    makeMockBoard(),
+    { getSelection: () => null, select() {} },
+    status,
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    makeRenderElement(),
+  );
+  assert.equal(outcome.handled, true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  globalThis.fetch = prevFetch;
+  assert.equal(postedCurrent, true);
 }
 
 // ── wireEditMenu Hint menuitem click shows status ──

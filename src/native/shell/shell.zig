@@ -26,6 +26,7 @@ const copy_command = @import("copy.zig");
 const paste_command = @import("paste.zig");
 const new_command = @import("new.zig");
 const save_as_command = @import("save_as.zig");
+const read_path = @import("read_path.zig");
 const gen_progress = @import("gen_progress.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
@@ -318,10 +319,21 @@ pub const Sudoku = struct {
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
-    /// Runs restore through the existing open-command seam using transport
-    /// resolution and engine codec behavior.
+    /// Startup restore path: load bytes through transport, then hydrate engine
+    /// without an "opened:" status prefix so persisted durable status remains authoritative.
     pub fn restoreFromPath(self: *@This(), file_path: []const u8) game_engine.Event {
-        return open_command.execute(&self.engine, self.transport, file_path);
+        var stage: read_path.Stage = .resolve;
+        const read = read_path.readFileBytes(self.transport, file_path, &stage) catch |err| {
+            var buf: [80]u8 = undefined;
+            const label: []const u8 = switch (stage) {
+                .resolve => "resolve",
+                .read => "readAll",
+            };
+            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "{s}: {s}", .{ label, @errorName(err) }) catch "system error" };
+        };
+        defer self.transport.free(self.transport.context, read.resolved);
+        defer self.transport.free(self.transport.context, read.bytes);
+        return self.engine.restoreFromSave(read.bytes);
     }
 
     /// Startup action executor for native play; action selection is centralized

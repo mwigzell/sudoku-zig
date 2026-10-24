@@ -152,6 +152,15 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
     },
 
+    // Startup auto-restore path: surface persisted durable status only.
+    restore(bytes) {
+      writeBytes(memory, SCRATCH, bytes);
+      if (typeof exports.restore === "function") {
+        return readJson(exports.restore(SCRATCH, bytes.length));
+      }
+      return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
+    },
+
     // One-line import path used by Paste and File -> Import.
     importPuzzle(text) {
       const bytes = new TextEncoder().encode(text);

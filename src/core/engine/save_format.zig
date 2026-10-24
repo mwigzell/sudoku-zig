@@ -24,12 +24,32 @@ test "fromSaveFormat uses mutation_history not game_engine" {
     try std.testing.expectEqual(@as(usize, 1), loaded.history.pointer);
 }
 
+test "save codec round-trip preserves durable status text" {
+    const board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.default());
+    var hist = mutation_history.MutationHistory.init(std.testing.allocator);
+    defer hist.deinit();
+
+    var st = state_mod.State{
+        .board = board_state,
+        .history = hist,
+    };
+    st.status.append("You win!");
+
+    const buf = try toSaveFormat(&st, std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    var loaded = try fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.history.deinit();
+    try std.testing.expectEqualStrings("You win!", loaded.status.optional().?);
+}
+
 // ---------------------------------------------------------------------------
 // Save file wire format types
 // ---------------------------------------------------------------------------
 
 pub const SaveFileMagic = [_]u8{ 'S', 'U', 'D', '0' };
-pub const SaveFileVersion: u8 = 2;
+pub const SaveFileVersion: u8 = 3;
+pub const MAX_STATUS_BYTES: usize = 256;
 
 pub const SaveFileHeader = struct {
     magic: [4]u8, // "SUD0"
@@ -43,10 +63,13 @@ pub const SaveFileHeader = struct {
 pub const SaveFileTrailer = struct {
     given_bits: u128,
     flat_board: [81]u8,
+    status_len: u16,
+    status_text: [MAX_STATUS_BYTES]u8,
 };
 
 pub const SAVE_HEADER_SIZE: usize = 11; // magic(4) + ver_major(1) + ver_minor(1) + ver_patch(1) + pointer(2) + entry_count(2)
-pub const SAVE_TRAILER_SIZE: usize = 97; // given_bits(16) + flat_board(81)
+pub const SAVE_TRAILER_SIZE_V2: usize = 97; // given_bits(16) + flat_board(81)
+pub const SAVE_TRAILER_SIZE: usize = SAVE_TRAILER_SIZE_V2 + 2 + MAX_STATUS_BYTES; // + status_len(u16) + status bytes
 
 /// Write a SaveFileHeader as exactly 11 bytes into buf.
 pub fn writeSaveHeader(buf: []u8, header: *const SaveFileHeader) void {
@@ -72,20 +95,29 @@ pub fn readSaveHeader(buf: []const u8) SaveFileHeader {
     };
 }
 
-/// Write a SaveFileTrailer as exactly 97 bytes into buf.
+/// Write a SaveFileTrailer as exactly SAVE_TRAILER_SIZE bytes into buf.
 pub fn writeSaveTrailer(buf: []u8, trailer: *const SaveFileTrailer) void {
     const bytes = std.mem.toBytes(trailer.given_bits);
     @memcpy(buf[0..16], &bytes);
     @memcpy(buf[16..97], &trailer.flat_board);
+    buf[97] = @truncate(trailer.status_len);
+    buf[98] = @truncate(trailer.status_len >> 8);
+    @memcpy(buf[99 .. 99 + MAX_STATUS_BYTES], &trailer.status_text);
 }
 
-/// Read a SaveFileTrailer from exactly 97 bytes.
+/// Read a SaveFileTrailer from SAVE_TRAILER_SIZE bytes.
 pub fn readSaveTrailer(buf: []const u8) SaveFileTrailer {
     var given_bits: u128 = undefined;
     given_bits = std.mem.bytesToValue(u128, buf[0..16]);
+    const status_len_wire: u16 = @as(u16, buf[97]) | (@as(u16, buf[98]) << 8);
+    const status_len: u16 = @min(status_len_wire, @as(u16, MAX_STATUS_BYTES));
+    var status_text: [MAX_STATUS_BYTES]u8 = @splat(0);
+    @memcpy(status_text[0..MAX_STATUS_BYTES], buf[99 .. 99 + MAX_STATUS_BYTES]);
     return SaveFileTrailer{
         .given_bits = given_bits,
         .flat_board = buf[16..97].*,
+        .status_len = status_len,
+        .status_text = status_text,
     };
 }
 
@@ -123,9 +155,15 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
     for (self.history.entries.items) |entry| {
         offset += writeEntry(buf[offset..], entry);
     }
+    const status_slice = self.status.slice();
+    const status_take = @min(status_slice.len, MAX_STATUS_BYTES);
+    var status_text: [MAX_STATUS_BYTES]u8 = @splat(0);
+    if (status_take > 0) @memcpy(status_text[0..status_take], status_slice[0..status_take]);
     const trailer = SaveFileTrailer{
         .given_bits = self.board.given_bits,
         .flat_board = board.toFlat(self.board),
+        .status_len = @intCast(status_take),
+        .status_text = status_text,
     };
     writeSaveTrailer(buf[offset..][0..SAVE_TRAILER_SIZE], &trailer);
 
@@ -172,7 +210,7 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !state_mod.State 
     if (!std.mem.eql(u8, &header.magic, "SUD0")) {
         return error.InvalidSaveFile;
     }
-    if (header.version_patch != 1 and header.version_patch != SaveFileVersion) {
+    if (header.version_patch != 1 and header.version_patch != 2 and header.version_patch != SaveFileVersion) {
         return error.IncompatibleVersion;
     }
 
@@ -208,11 +246,25 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !state_mod.State 
         }
         entries_end = cursor;
     }
-    const trailer = readSaveTrailer(buf[entries_end..][0..SAVE_TRAILER_SIZE]);
+    const trailer = if (header.version_patch >= SaveFileVersion)
+        readSaveTrailer(buf[entries_end..][0..SAVE_TRAILER_SIZE])
+    else blk: {
+        const legacy_status: [MAX_STATUS_BYTES]u8 = @splat(0);
+        break :blk SaveFileTrailer{
+            .given_bits = std.mem.bytesToValue(u128, buf[entries_end..][0..16]),
+            .flat_board = buf[entries_end + 16 ..][0..81].*,
+            .status_len = 0,
+            .status_text = legacy_status,
+        };
+    };
     var state = state_mod.State{
         .board = try board.fromFlat(trailer.flat_board, .{ .given_bits = trailer.given_bits }),
         .history = history,
     };
+    state.status.reset();
+    if (trailer.status_len > 0) {
+        state.status.append(trailer.status_text[0..trailer.status_len]);
+    }
 
     state.history.pointer = header.pointer;
 
@@ -302,8 +354,8 @@ test "SaveFileHeader: round-trip write/read" {
     try std.testing.expectEqual(original.entry_count, loaded.entry_count);
 }
 
-test "SaveFileTrailer: wire format is 97 bytes" {
-    try std.testing.expectEqual(@as(usize, 97), SAVE_TRAILER_SIZE);
+test "SaveFileTrailer: wire format includes durable status tail" {
+    try std.testing.expectEqual(@as(usize, SAVE_TRAILER_SIZE_V2 + 2 + MAX_STATUS_BYTES), SAVE_TRAILER_SIZE);
 }
 
 test "SaveFileTrailer: fields can be set and read back" {
@@ -315,6 +367,8 @@ test "SaveFileTrailer: fields can be set and read back" {
     const trailer = SaveFileTrailer{
         .given_bits = 0xFFFF_FFFF_FFFF_FFFF,
         .flat_board = board_vals,
+        .status_len = 0,
+        .status_text = @splat(0),
     };
 
     try std.testing.expectEqual(@as(u128, 0xFFFF_FFFF_FFFF_FFFF), trailer.given_bits);
@@ -330,6 +384,12 @@ test "SaveFileTrailer: round-trip write/read" {
     const original = SaveFileTrailer{
         .given_bits = 0xCAFE_BABE_DEAD_BEEF_1234_5678_9ABC_DEF0,
         .flat_board = board_vals,
+        .status_len = 8,
+        .status_text = blk: {
+            var tmp: [MAX_STATUS_BYTES]u8 = @splat(0);
+            @memcpy(tmp[0..8], "You win!");
+            break :blk tmp;
+        },
     };
 
     var buf: [SAVE_TRAILER_SIZE]u8 = undefined;
@@ -338,6 +398,8 @@ test "SaveFileTrailer: round-trip write/read" {
     const loaded = readSaveTrailer(&buf);
     try std.testing.expectEqual(original.given_bits, loaded.given_bits);
     try std.testing.expectEqual(original.flat_board, loaded.flat_board);
+    try std.testing.expectEqual(original.status_len, loaded.status_len);
+    try std.testing.expectEqualSlices(u8, original.status_text[0..original.status_len], loaded.status_text[0..loaded.status_len]);
 }
 
 // toSaveFormat / fromSaveFormat (in-memory blob serialization)
@@ -351,7 +413,7 @@ test "toSaveFormat empty history produces buffer of correct size" {
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    // header(11) + 0 entries + trailer(97) = 108
+    // header + 0 entries + trailer
     try std.testing.expectEqual(@as(usize, SAVE_HEADER_SIZE + SAVE_TRAILER_SIZE), buf.len);
 }
 
@@ -389,7 +451,7 @@ test "toSaveFormat includes history entries and correct trailer" {
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    // Size check: header(11) + 3 tagged cell entries(9) + trailer(97) = 117
+    // Size check: header + 3 tagged cell entries + trailer
     try std.testing.expectEqual(@as(usize, SAVE_HEADER_SIZE + (3 * 3) + SAVE_TRAILER_SIZE), buf.len);
 
     // Verify entry count from header
@@ -476,7 +538,7 @@ test "save v2 round-trips a cell entry and one solve snapshot" {
     defer std.testing.allocator.free(buf);
 
     const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
-    try std.testing.expectEqual(@as(u8, 2), header.version_patch);
+    try std.testing.expectEqual(SaveFileVersion, header.version_patch);
 
     var loaded = try fromSaveFormat(std.testing.allocator, buf);
     defer loaded.history.deinit();
@@ -520,6 +582,8 @@ test "save v1 fixture still loads as a cell entry" {
     const trailer = SaveFileTrailer{
         .given_bits = board_state.given_bits,
         .flat_board = board.toFlat(board_state),
+        .status_len = 0,
+        .status_text = @splat(0),
     };
     writeSaveTrailer(buf[SAVE_HEADER_SIZE + @sizeOf(SaveEntry) ..][0..SAVE_TRAILER_SIZE], &trailer);
 

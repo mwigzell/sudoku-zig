@@ -64,7 +64,7 @@ export async function applyWebStartupAction(
       state: restored.state,
       legend: game.getLegend(),
       config: game.getConfig(),
-      msg: restored.msg ?? "restored game",
+      msg: restored.msg ?? null,
     });
   }
 

@@ -346,15 +346,12 @@ export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = 
       state: game.getState(),
       legend: game.getLegend(),
       config: game.getConfig(),
-      msg: result.msg ?? NEW_GAME_STARTED_MSG,
+      msg: result.msg ?? null,
     };
   } finally {
     game.setGenProgressListener?.(null);
   }
 }
-
-/** Status copy for wasm `init` / File → New (matches engine `Event.ok.msg`). */
-export const NEW_GAME_STARTED_MSG = "new game started";
 
 /** Load a one-line puzzle via `importPuzzle` (paste, file import, export round-trip). */
 /** @param {GameApi} game */
@@ -366,7 +363,7 @@ export function applyImportedLine(game, line) {
     state: game.getState(),
     legend: game.getLegend(),
     config: game.getConfig(),
-    msg: result.msg ?? "import: puzzle loaded",
+    msg: result.msg ?? null,
   };
 }
 
@@ -383,12 +380,12 @@ export function applyGeneratedLineAsNewGame(game, line, { difficulty } = {}) {
             state: game.getState(),
             legend: game.getLegend(),
             config: game.getConfig(),
-            msg: importResult.msg ?? "import: puzzle loaded",
+            msg: importResult.msg ?? null,
           };
         })()
       : applyImportedLine(game, line);
   if (!result.ok) return result;
-  return { ...result, msg: NEW_GAME_STARTED_MSG };
+  return { ...result, msg: result.msg ?? null };
 }
 
 /** Keys the web shell requires on `boot.config` after `initializeWebSession`. */
@@ -837,7 +834,8 @@ export async function offerInitialNewGame(
   // Phase 4: apply startup action contract (`restore`/`new`/`idle`) and return normalized outcome.
   return applyWebStartupAction(game, boot, {
     fetchStartupSaveBytes: (restorePath) => fetchStartupSaveBytes(restorePath, fetchFn),
-    openFromSaveBytes: (bytes, restorePath) => open(game, bytes, { name: restorePath }),
+    openFromSaveBytes: (bytes, _restorePath) =>
+      typeof game.restore === "function" ? game.restore(bytes) : open(game, bytes),
     startNewGame: async (cfg) => {
       const { difficulty, log_level: logLevel } = cfg;
       if (difficulty == null || logLevel == null) {

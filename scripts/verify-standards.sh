@@ -251,10 +251,32 @@ for f in "${CHANGED[@]}"; do
     "local write-context event map fixture (import REQUIRED_WRITE_CONTEXT_EVENT_KEYS from shell.js)"
 done
 
+# --- 13. Status authorship: wasm shell must not invent fallback status copy ---
+for f in "${CHANGED[@]}"; do
+  [[ "$f" == "src/wasm/shell.js" ]] || continue
+  check_added_pattern "$f" 'msg[[:space:]]*:[^,]*\?\?[[:space:]]*["'\'']' \
+    "adapter-authored status fallback literal in wasm shell (status text belongs to core)"
+done
+
+# --- 14. Status authorship: native shell adapters must not mint .ok.msg literals ---
+for f in "${CHANGED[@]}"; do
+  [[ "$f" =~ ^src/native/shell/.*\.zig$ ]] || continue
+  [[ "$f" == "src/native/shell/shell.zig" ]] && continue
+  check_added_pattern "$f" '\.msg[[:space:]]*=[[:space:]]*["'\'']' \
+    "native shell adapter minted .ok.msg literal (route status authorship through core)"
+done
+
+# --- 15. Startup restore policy: do not route restore through named open copy ---
+for f in "${CHANGED[@]}"; do
+  [[ "$f" == "src/wasm/shell.js" ]] || continue
+  check_added_pattern "$f" 'name:[[:space:]]*restorePath' \
+    "startup restore routed via open(name=restorePath) copy (use restore lane for persisted status)"
+done
+
 # --- report ---
 if [[ $FAIL -eq 0 ]]; then
   pass_line "mechanical standards clean (${#CHANGED[@]} file(s))"
-  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY\n' "${C_DIM}"
+  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY, status ownership, restore lane\n' "${C_DIM}"
   printf '%b judgement calls (SOLID/spec) still need two-axis review\n' "${C_DIM}"
   exit 0
 fi
