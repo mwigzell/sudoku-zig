@@ -33,7 +33,7 @@
 - Builds that produce any warnings are considered broken.
 
 ## TDD methodology (issue role: ready-for-human HITL — Human In The Loop)
-- TDD is either as the role ready-for-agent (AFK) or ready-for-human (HITL) 
+- TDD is either as the role ready-for-agent (AFK) or ready-for-human (HITL)
 - AFK: Away from keyboard - agent works autononmously till done.
 - HITL: Human in the loop
 *The user is the architect; the agent is the junior coder. This project's goal is learning Zig.*

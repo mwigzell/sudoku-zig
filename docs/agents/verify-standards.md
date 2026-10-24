@@ -25,7 +25,7 @@ Disable color: `NO_COLOR=1 zig build standards`.
 
 ## What it enforces (mechanical)
 
-Rules from `AGENTS.md`, `CONTEXT.md`, and `.coding-standards.md` that grep can check without judgement:
+Rules from `AGENTS.md`, `CONTEXT.md`, and `docs/coding-standards.md` that grep can check without judgement:
 
 | Check | Rule |
 |-------|------|

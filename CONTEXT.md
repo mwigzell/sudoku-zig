@@ -7,7 +7,7 @@ A playable Sudoku game as a WASM module compiled from Zig, running in the browse
 See `.scratch/sudoku/prd.md` for full PRD and user stories.
 
 ## Coding Standards
-See `.coding-standards.md` for all coding, testing, TDD methodology, and project architecture guidelines.
+See `docs/coding-standards.md` for all coding, testing, TDD methodology, and project architecture guidelines.
 
 ### JS flow-comment convention
 

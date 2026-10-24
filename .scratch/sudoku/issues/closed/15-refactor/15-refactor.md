@@ -20,7 +20,7 @@ Triage notes:
 
 
 ## Working mode
-HITL (Human In The Loop). One TDD cycle per sub-issue. Agent enumerates plan with code diffs, human reviews on paper before coding. See `.coding-standards.md` → "TDD methodology (HITL)".
+HITL (Human In The Loop). One TDD cycle per sub-issue. Agent enumerates plan with code diffs, human reviews on paper before coding. See `docs/coding-standards.md` → "TDD methodology (HITL)".
 
 ## Parent
 
@@ -70,4 +70,4 @@ ADR-0006 (`docs/adr/0006-flat-storage.md`) records this decision. Supersedes ADR
 - Issue 01 (Board domain): `.scratch/sudoku/issues/01-board-domain.md`
 - ADR-0005: `docs/adr/0005-grid-topology.md`
 - CONTEXT.md: `CONTEXT.md`
-- Coding standards: `.coding-standards.md`
+- Coding standards: `docs/coding-standards.md`

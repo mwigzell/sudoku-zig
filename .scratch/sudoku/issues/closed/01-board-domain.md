@@ -1,7 +1,7 @@
 Status: closed
 
 ## Working mode
-HITL (Human In The Loop). One TDD cycle per session. Agent enumerates its plan, does one iteration, pauses for explicit direction before proceeding. See `.coding-standards.md` → "TDD methodology (HITL)".
+HITL (Human In The Loop). One TDD cycle per session. Agent enumerates its plan, does one iteration, pauses for explicit direction before proceeding. See `docs/coding-standards.md` → "TDD methodology (HITL)".
 
 ## Parent
 
@@ -81,7 +81,7 @@ The **current codebase still uses flat `[81]Cell`** (`board.zig: cells: [DIMENSI
 ### Risks
 
 1. **Renderer work is separate (issue 09).** Existing `render.zig` accesses flat-index `b.cells[flat_index]` and will break when Board switches to Grid/Box topology. Issue 09 covers the rewrite.
-2. **Zig 0.17 test discovery quirks** — tests.zig already has workarounds for co-located test blocks. Resolved by issue 08 (test infrastructure cleanup). The TDD cycles should account for `addTest` mechanics documented in `.coding-standards.md`.
+2. **Zig 0.17 test discovery quirks** — tests.zig already has workarounds for co-located test blocks. Resolved by issue 08 (test infrastructure cleanup). The TDD cycles should account for `addTest` mechanics documented in `docs/coding-standards.md`.
 3. **Tests force-fail flag** — `tests.zig` line `try std.testing.expect(false)` is a deliberate debug trap from prior session and will be removed by issue 08.
 
 ### Verdict

@@ -1,7 +1,7 @@
 # Full Code Review — Sudoku Zig (2025-01)
 
 Two-axis review of the entire codebase against:
-- **Coding Standards** → `.coding-standards.md`
+- **Coding Standards** → `docs/coding-standards.md`
 - **Spec** → `.scratch/sudoku/prd.md` + `CONTEXT.md`
 - **Smell baseline** → Fowler _Refactoring_ ch.3 (from pi code-review skill)
 

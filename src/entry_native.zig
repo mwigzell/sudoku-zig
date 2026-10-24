@@ -1,7 +1,7 @@
 // Process entry: resolve startup config, dispatch to the desktop web or terminal entry arm.
 const std = @import("std");
 const config = @import("core/config.zig");
-const sudoku = @import("native/shell/shell.zig");
+const shell = @import("native/shell/shell.zig");
 const logger = @import("core/logger.zig");
 const desktop_web = @import("native/desktop_web.zig");
 const desktop_terminal = @import("native/desktop_terminal.zig");
@@ -22,11 +22,11 @@ fn selectEntryArm(cfg: config.Config) EntryArm {
 }
 
 test {
-    _ = .{ sudoku, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, settings_store };
+    _ = .{ shell, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, settings_store };
 }
 
 /// Resolve startup config and dispatch to web or terminal desktop entry.
-pub fn main(init: std.process.Init) sudoku.Error!void {
+pub fn main(init: std.process.Init) shell.Error!void {
     var arg_it = std.process.Args.iterate(init.minimal.args);
     const gpa = std.heap.page_allocator;
     const cfg = startup_config.resolveStartupConfig(gpa, init.io, &arg_it) catch unreachable;
