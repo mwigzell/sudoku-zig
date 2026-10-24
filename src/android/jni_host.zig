@@ -5,8 +5,10 @@ const web_host = @import("../web_host/mod.zig");
 const config = @import("../core/config.zig");
 const settings_store = @import("../core/settings_store.zig");
 const startup_config = @import("../core/startup/config.zig");
+const logcat = @import("logcat.zig");
 extern fn sudoku_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque) ?[*:0]const u8;
 extern fn sudoku_release_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque, chars: ?[*:0]const u8) void;
+extern fn sudoku_new_jstring_utf(env: ?*anyopaque, chars: ?[*:0]const u8) ?*anyopaque;
 
 const HostState = struct {
     thread: ?std.Thread = null,
@@ -100,6 +102,12 @@ pub fn stopHost() void {
     }
     host_state.ready_port.store(0, .release);
     setDataDirDefault();
+}
+
+/// JNI surface: expose Android logcat tag owned by native transport adapter.
+pub fn logTag(env: ?*anyopaque) ?*anyopaque {
+    const env_raw = env orelse return null;
+    return sudoku_new_jstring_utf(env_raw, logcat.tag());
 }
 
 test {

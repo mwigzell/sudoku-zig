@@ -23,3 +23,10 @@ export fn Java_com_wigzell_sudoku_1zig_JniHost_stopHost(
 ) callconv(.c) void {
     jni_host.stopHost();
 }
+
+export fn Java_com_wigzell_sudoku_1zig_JniHost_logTagNative(
+    env: *anyopaque,
+    _: *anyopaque,
+) callconv(.c) ?*anyopaque {
+    return jni_host.logTag(env);
+}

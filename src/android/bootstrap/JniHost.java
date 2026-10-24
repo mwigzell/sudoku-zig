@@ -46,4 +46,12 @@ public final class JniHost {
     private static native int readyPort();
 
     public static native void stopHost();
+
+    private static native String logTagNative();
+
+    public static String logTag() {
+        final String value = logTagNative();
+        if (value == null || value.isEmpty()) return "sudoku-zig";
+        return value;
+    }
 }

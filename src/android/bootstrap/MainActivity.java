@@ -41,7 +41,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public final class MainActivity extends Activity {
-    private static final String TAG = "sudoku-zig";
+    private static final String TAG = JniHost.logTag();
     private static final int REQUEST_OPEN_DOCUMENT = 2001;
     private static final int REQUEST_CREATE_DOCUMENT = 2002;
     private static final int PICKER_TIMEOUT_SECONDS = 60;

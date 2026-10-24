@@ -1,6 +1,6 @@
 {
   "budget_seconds": 15.0,
-  "last_seconds": 7.75,
-  "recorded_at": "2026-10-24T06:40:52Z",
+  "last_seconds": 5.74,
+  "recorded_at": "2026-10-24T06:48:32Z",
   "notes": "Wall time for zig build verify-run (tests, fmt, standards, glue, kcov). Raise budget_seconds when the suite legitimately grows."
 }

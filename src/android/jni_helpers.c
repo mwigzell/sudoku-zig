@@ -13,3 +13,9 @@ void sudoku_release_jstring_utf_chars(void *env_ptr, void *jstr_ptr, const char 
   jstring jstr = (jstring)jstr_ptr;
   (*env)->ReleaseStringUTFChars(env, jstr, chars);
 }
+
+void *sudoku_new_jstring_utf(void *env_ptr, const char *chars) {
+  if (env_ptr == 0 || chars == 0) return 0;
+  JNIEnv *env = (JNIEnv *)env_ptr;
+  return (void *)(*env)->NewStringUTF(env, chars);
+}
