@@ -4,12 +4,21 @@
 /** Required boot fields every startup outcome must preserve for later session wiring. */
 function withBootFields(boot, payload) {
   return {
-    ...payload,
     default_save_filename: boot.default_save_filename,
     autosave_trigger_commands: boot.autosave_trigger_commands,
     startup_context_event: boot.startup_context_event,
     write_context_events: boot.write_context_events,
+    ...payload,
   };
+}
+
+function isSolvedState(state) {
+  const cells = state?.cells;
+  if (!Array.isArray(cells) || cells.length !== 81) return false;
+  return cells.every((cell) => {
+    const value = Number(cell?.value);
+    return Number.isInteger(value) && value >= 1 && value <= 9 && cell?.conflict !== true;
+  });
 }
 
 /** Normalize current game snapshot for startup fallback responses. */
@@ -58,13 +67,30 @@ export async function applyWebStartupAction(
     if (!restored.ok) {
       return emptyOutcome(game, boot, `${restored.error ?? "startup restore failed"}; startup remains manual`);
     }
-    return withBootFields(boot, {
+    const restoreOutcome = withBootFields(boot, {
       ok: true,
       kind: "restore",
       state: restored.state,
       legend: game.getLegend(),
       config: game.getConfig(),
       msg: restored.msg ?? null,
+    });
+    if (boot.on_restore_solved !== "prompt" || !isSolvedState(restored.state)) {
+      return restoreOutcome;
+    }
+    const started = await startNewGame(restoreOutcome.config ?? {}, { autoContinue: false });
+    if (!started.ok && !started.cancelled) {
+      return { ok: false, error: started.error ?? "New game failed", kind: "empty" };
+    }
+    if (started.cancelled) return restoreOutcome;
+    return withBootFields(boot, {
+      ok: true,
+      kind: "new",
+      state: started.state,
+      legend: started.legend,
+      config: started.config,
+      msg: started.msg,
+      startup_context_event: boot.write_context_events?.startup_new,
     });
   }
 
@@ -79,7 +105,7 @@ export async function applyWebStartupAction(
 
   // New flow: host requested a startup new-game action. Adapter provides the
   // generation runner, while this function owns startup decision semantics.
-  const started = await startNewGame(boot.config ?? {});
+  const started = await startNewGame(boot.config ?? {}, { autoContinue: true });
   if (!started.ok && !started.cancelled) {
     return { ok: false, error: started.error ?? "New game failed", kind: "empty" };
   }

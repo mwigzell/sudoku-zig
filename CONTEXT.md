@@ -178,11 +178,14 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 |---|---|---|
 | Command semantics + `Event` meaning | `src/core/command.zig`, `src/core/engine/game_engine.zig` | Native: `src/native/shell/shell.zig` (`engine.exec`). Web/Android: wasm API in `src/entry_wasm.zig`, called by `src/wasm/{board,menu,file_menu}.js`. |
 | Startup decision (`restore/new/idle`) | `src/core/startup/policy.zig`, `src/core/startup/config.zig` | Native: `src/native/shell/shell.zig` (`runStartupPolicy`). Web/Android: `src/wasm/shell.js` (`initializeWebSession`, `offerInitialNewGame`) + `src/core/startup/web_startup.js`. |
+| Restore-solved branch (`on_restore_solved`) | core startup policy/contract seam (`src/core/startup/*`) | Native + web/android execute instructed branch only (`prompt`: launch New dialog; cancel stays on restored solved board). |
 | Autosave trigger set (which commands autosave) | `src/core/file_policy.zig` + startup contract emission in `src/core/startup/config.zig` | Native: `src/native/shell/shell.zig` (`applyAutoSavePolicyIfNeeded`). Web/Android: `src/wasm/shell.js` (`startAutoSavePolicy`, `session.autosave_trigger_commands`). |
 | Overwrite/replace lane policy (`detached` vs `continuation`) | `src/core/file_policy.zig` | Native: `src/native/shell/shell.zig` (`shouldWriteTarget`, `applyWriteContextEvent`). Web/Android host seam: `src/web_host/mod.zig` (`/current-file`, `/current-file-context`). |
 | Settings schema + persistence semantics | `src/core/config.zig`, `src/core/settings_store.zig` | Native: `src/native/shell/shell.zig` settings/current-file persistence. Web/Android: `src/wasm/shell.js` posts; `src/web_host/mod.zig` merges/saves. |
 | Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/entry_wasm.zig`) | Native: `src/native/shell/{save,save_as,open}.zig` via `FileTransport`. Web/Android: `src/wasm/shell.js` via wasm `serialize`/`deserialize`. |
 | Log-level filtering policy | `src/core/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
+
+Planned policy extension (issue #77): when startup action is `restore` and restored board is solved, use `on_restore_solved = prompt` (run New dialog, cancel keeps restored solved state/status).
 
 **Desktop web entry** (`native/desktop_web.zig`):
 Wires **`web_host.runWithHostConfig`**, fatal bind errors, and **`whenHostReady`** → **`open_browser`**. Called from `main` when `-r web`.

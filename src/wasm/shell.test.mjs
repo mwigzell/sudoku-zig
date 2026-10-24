@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { applyWebStartupAction } from "../core/startup/web_startup.js";
 import {
   CURRENT_FILE_DESKTOP_ID,
   persistCurrentFileSnapshot,
@@ -711,6 +712,7 @@ async function flushDialogPaint() {
     default_save_filename: "sudoku_save.sud",
     startup_action: "new",
     startup_context_event: "startup_new",
+    on_restore_solved: "prompt",
     startup_status: null,
   };
   const game = {
@@ -774,6 +776,7 @@ async function flushDialogPaint() {
     default_save_filename: "sudoku_save.sud",
     startup_action: "idle",
     startup_context_event: "startup_idle",
+    on_restore_solved: "prompt",
     startup_status: "Welcome to sudoku-zig! Choose New or Open to play",
   };
   const game = {
@@ -853,6 +856,7 @@ async function flushDialogPaint() {
       startup_action: "restore",
       autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_restore",
+      on_restore_solved: "prompt",
       startup_status: null,
       startup_save_path: "./current-file",
       default_save_filename: "sudoku.sud",
@@ -871,6 +875,94 @@ async function flushDialogPaint() {
   assert.equal(importCalls, 0, "restore startup path must not use one-line import path");
   assert.equal(out.default_save_filename, "sudoku.sud");
   assert.deepEqual(out.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
+}
+
+{
+  const solvedCells = Array.from({ length: 81 }, () => ({ value: 1, given: true, conflict: false }));
+  let startNewCalls = 0;
+  const game = {
+    getLegend() {
+      return { save: true };
+    },
+    getConfig() {
+      return { difficulty: 2, log_level: 1 };
+    },
+    getState() {
+      return { cells: [] };
+    },
+  };
+  const out = await applyWebStartupAction(
+    game,
+    {
+      ok: true,
+      kind: "empty",
+      startup_action: "restore",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+      on_restore_solved: "prompt",
+      startup_status: null,
+      startup_save_path: "./current-file",
+      default_save_filename: "sudoku.sud",
+      state: {},
+      legend: {},
+      config: { difficulty: 2, log_level: 1 },
+    },
+    {
+      fetchStartupSaveBytes: async () => ({ ok: true, bytes: new Uint8Array([1]) }),
+      openFromSaveBytes: () => ({ ok: true, state: { cells: solvedCells }, msg: "You win!" }),
+      startNewGame: async () => {
+        startNewCalls += 1;
+        return { ok: false, cancelled: true };
+      },
+    },
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, "restore");
+  assert.equal(out.msg, "You win!");
+  assert.equal(startNewCalls, 1, "solved restore should offer startup new prompt");
+}
+
+{
+  const solvedCells = Array.from({ length: 81 }, () => ({ value: 1, given: true, conflict: false }));
+  const game = {
+    getLegend() {
+      return { save: true };
+    },
+    getConfig() {
+      return { difficulty: 2, log_level: 1 };
+    },
+    getState() {
+      return { cells: [] };
+    },
+  };
+  const out = await applyWebStartupAction(
+    game,
+    {
+      ok: true,
+      kind: "empty",
+      startup_action: "restore",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+      on_restore_solved: "prompt",
+      startup_status: null,
+      startup_save_path: "./current-file",
+      default_save_filename: "sudoku.sud",
+      state: {},
+      legend: {},
+      config: { difficulty: 2, log_level: 1 },
+    },
+    {
+      fetchStartupSaveBytes: async () => ({ ok: true, bytes: new Uint8Array([1]) }),
+      openFromSaveBytes: () => ({ ok: true, state: { cells: solvedCells }, msg: "You win!" }),
+      startNewGame: async () => ({
+        ok: true,
+        state: { cells: [{ value: 0, given: false, conflict: false }] },
+        legend: { new: true },
+        config: { difficulty: 2, log_level: 1 },
+        msg: "new game started",
+      }),
+    },
+  );
+  assert.equal(out.ok, true);
+  assert.equal(out.kind, "new");
 }
 
 {
@@ -1051,6 +1143,7 @@ async function flushDialogPaint() {
     default_save_filename: "sudoku.sud",
     startup_action: savedBytes ? "restore" : "idle",
     startup_context_event: savedBytes ? "startup_restore" : "startup_idle",
+    on_restore_solved: "prompt",
     startup_status: savedBytes ? null : "manual startup",
     startup_save_path: savedBytes ? "./current-file" : null,
   });
@@ -1422,6 +1515,7 @@ async function flushDialogPaint() {
     write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_context_event: "startup_idle",
+    on_restore_solved: "prompt",
     startup_status: null,
   };
   delete hostCfg.startup_status;
@@ -1445,6 +1539,7 @@ async function flushDialogPaint() {
     write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_context_event: "startup_idle",
+    on_restore_solved: "prompt",
     startup_status: null,
   };
   delete hostCfg.default_save_filename;

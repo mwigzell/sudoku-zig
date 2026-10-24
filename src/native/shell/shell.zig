@@ -351,6 +351,14 @@ pub const Sudoku = struct {
                 .ok => {
                     self.applyWriteContextEvent(.startup_restore);
                     _ = try self.handleEvent(event);
+                    if (decision.restore_solved == .prompt and self.engine.state.board.isSolved()) {
+                        const start_new = try self.renderer.confirmReplace(startup_policy.RESTORE_SOLVED_PROMPT);
+                        if (start_new) {
+                            const new_event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
+                            self.applyWriteContextEvent(.startup_new);
+                            _ = try self.handleEvent(new_event);
+                        }
+                    }
                     return .{ .attempted_restore = true, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
                 },
                 .error_msg => |msg| {
@@ -1622,6 +1630,77 @@ test "startup policy: auto_restore true restores from current_file path" {
     try std.testing.expect(!startup.restore_failed);
     try std.testing.expect(startup.rendered);
     try std.testing.expectEqual(saved_b2, app.engine.eventBoard().get(1, 1));
+}
+
+test "startup policy: solved restore prompt cancel keeps restored solved board" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_restore = true;
+    cfg.auto_new = true;
+
+    const solved = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var saved_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+    defer saved_engine.deinit();
+    _ = saved_engine.newFromOneLinePuzzle(solved);
+    const save_buf = try saved_engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(save_buf);
+
+    var facade_impl = DeterministicFacade{
+        .steps = &[_]command.ParseCommandResult{},
+        .replace_answers = &[_]bool{false},
+    };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    try transport_impl.put("/startup.sud", save_buf);
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    const startup = try app.runStartupPolicy("/startup.sud");
+    try std.testing.expect(startup.attempted_restore);
+    try std.testing.expect(!startup.restore_failed);
+    try std.testing.expect(startup.rendered);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+    try std.testing.expect(app.engine.state.board.isSolved());
+    try std.testing.expectEqual(file_policy.WriteContext.continuation, app.write_context);
+}
+
+test "startup policy: solved restore prompt confirm starts fresh game" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_restore = true;
+    cfg.auto_new = true;
+    cfg.difficulty = .easy;
+
+    const solved = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var saved_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+    defer saved_engine.deinit();
+    _ = saved_engine.newFromOneLinePuzzle(solved);
+    const save_buf = try saved_engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(save_buf);
+
+    var facade_impl = DeterministicFacade{
+        .steps = &[_]command.ParseCommandResult{},
+        .replace_answers = &[_]bool{true},
+    };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    try transport_impl.put("/startup.sud", save_buf);
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    const startup = try app.runStartupPolicy("/startup.sud");
+    try std.testing.expect(startup.attempted_restore);
+    try std.testing.expect(!startup.restore_failed);
+    try std.testing.expect(startup.rendered);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+    try std.testing.expect(!app.engine.state.board.isSolved());
+    try std.testing.expectEqual(file_policy.WriteContext.detached, app.write_context);
 }
 
 test "startup policy: relaunch restores latest autosave without rewriting givens" {

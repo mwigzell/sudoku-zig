@@ -818,6 +818,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     write_context_events: hostCfg.write_context_events,
     startup_action: hostCfg.startup_action ?? "idle",
     startup_context_event: hostCfg.startup_context_event,
+    on_restore_solved: hostCfg.on_restore_solved ?? "prompt",
     startup_status: hostCfg.startup_status ?? null,
     startup_save_path: hostCfg.startup_save_path ?? null,
   };
@@ -836,7 +837,7 @@ export async function offerInitialNewGame(
     fetchStartupSaveBytes: (restorePath) => fetchStartupSaveBytes(restorePath, fetchFn),
     openFromSaveBytes: (bytes, _restorePath) =>
       typeof game.restore === "function" ? game.restore(bytes) : open(game, bytes),
-    startNewGame: async (cfg) => {
+    startNewGame: async (cfg, { autoContinue = startupAutoContinue } = {}) => {
       const { difficulty, log_level: logLevel } = cfg;
       if (difficulty == null || logLevel == null) {
         return { ok: false, error: "missing engine config after host bootstrap", kind: "empty" };
@@ -845,7 +846,7 @@ export async function offerInitialNewGame(
         difficulty,
         logLevel,
         genWorker,
-        autoContinue: startupAutoContinue,
+        autoContinue,
       });
     },
   });
