@@ -559,6 +559,33 @@ test "openFromSave warns when SUD0 bytes encode an unsolvable grid" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
 }
 
+test "openFromSave joins competing status producers with '; '" {
+    const flat: [81]u8 = .{
+        0, 0, 3, 4, 2, 1, 6, 0, 0, 9, 0, 0, 3, 7, 5, 0, 0, 1, 0, 0, 1, 8, 9, 6, 4, 0, 0,
+        0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
+        0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
+    };
+    const given_bits: u128 = 0x54949b0d901361b25254;
+
+    var dead = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer dead.deinit();
+    dead.state.board = try board.fromFlat(flat, .{ .given_bits = given_bits });
+    dead.state.board.validate();
+
+    const buf = try dead.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    const ev = openFromSaveProbeTest(&engine, buf, "dead.sud");
+    try std.testing.expect(ev == .ok);
+    const msg = ev.ok.msg.?;
+    try std.testing.expect(std.mem.indexOf(u8, msg, "opened: dead.sud") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, hint_command.load_no_solution_msg) != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "; ") != null);
+}
+
 test "loadSaveFormat replaces board and history from SUD0 bytes" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();

@@ -896,6 +896,56 @@ async function flushDialogPaint() {
 }
 
 {
+  // End-to-end startup-restore status pass-through: core-concatenated message
+  // must survive shell startup + status rendering unchanged.
+  const concatMsg = "opened: dead.sud; this puzzle has no solution (no-solution)";
+  const game = {
+    deserialize() {
+      return {
+        ok: true,
+        state: { cells: [{ value: 7, given: false, conflict: false }] },
+        msg: concatMsg,
+      };
+    },
+    getLegend() {
+      return { save: true };
+    },
+    getConfig() {
+      return { difficulty: 1, log_level: 1 };
+    },
+    getState() {
+      return { cells: [] };
+    },
+  };
+  const ready = await offerInitialNewGame(
+    game,
+    {
+      ok: true,
+      kind: "empty",
+      startup_action: "restore",
+      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+      on_restore_solved: "prompt",
+      startup_status: null,
+      startup_save_path: "./current-file",
+      default_save_filename: "sudoku.sud",
+      state: {},
+      legend: {},
+      config: {},
+    },
+    null,
+    { fetchFn: async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }) },
+  );
+  assert.equal(ready.ok, true);
+  assert.equal(ready.kind, "restore");
+  assert.equal(ready.msg, concatMsg);
+
+  const status = { textContent: "old", className: "" };
+  const session = createWebSessionFromStartup(ready);
+  applySessionOutcomeStatus(session, status, { msg: ready.msg });
+  assert.equal(status.textContent, concatMsg);
+}
+
+{
   const solvedCells = Array.from({ length: 81 }, () => ({ value: 1, given: true, conflict: false }));
   let startNewCalls = 0;
   const game = {

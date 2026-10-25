@@ -528,7 +528,8 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
 fn writeFull(w: *std.Io.Writer, status: []const u8, content_type: []const u8, body: []const u8) ServeError!void {
     std.Io.Writer.print(
         w,
-        "HTTP/1.1 {s}\r\nContent-Type: {s}\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n",
+        // Local loopback host must always reflect live policy/state and fresh JS.
+        "HTTP/1.1 {s}\r\nContent-Type: {s}\r\nCache-Control: no-store\r\nPragma: no-cache\r\nExpires: 0\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n",
         .{ status, content_type, body.len },
     ) catch return ServeError.System;
     std.Io.Writer.writeAll(w, body) catch return ServeError.System;
@@ -1231,7 +1232,7 @@ test "web_host: writeFull flushes what the buffer still holds (short response mu
     };
     try writeFull(&w, "200 OK", "text/plain", "hello world");
     try std.testing.expectEqualStrings(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\nConnection: close\r\n\r\nhello world",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nCache-Control: no-store\r\nPragma: no-cache\r\nExpires: 0\r\nContent-Length: 11\r\nConnection: close\r\n\r\nhello world",
         capture_sink[0..capture_len],
     );
 }
