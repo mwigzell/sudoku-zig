@@ -23,9 +23,9 @@ import { createErrorModal, wireSudokuApp } from "./app_wire.js";
  * @returns {Promise<void>}
  */
 export async function bootSudokuWebApp(root = document) {
-  // Enable structured client diagnostics (console + host bridge).
-  globalThis.__SUDOKU_LOG = true;
-  globalThis.__SUDOKU_LOG_POST = true;
+  // Leave client diagnostics opt-in; release paths should not force debug telemetry.
+  if (globalThis.__SUDOKU_LOG !== true) globalThis.__SUDOKU_LOG = false;
+  if (globalThis.__SUDOKU_LOG_POST !== true) globalThis.__SUDOKU_LOG_POST = false;
 
   const statusBar = root.getElementById("status-bar");
   const boardEl = root.getElementById("board");

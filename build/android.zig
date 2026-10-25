@@ -8,7 +8,8 @@ pub const LibName = "sudoku_zig";
 pub const ApkName = "sudoku.apk";
 pub const ReleaseApkName = "sudoku-release.apk";
 const OutDir = "zig-out/android";
-const SoPath = "zig-out/lib/libsudoku_zig.so";
+const SoPathDebug = "zig-out/lib/libsudoku_zig.so";
+const SoPathRelease = "zig-out/lib/libsudoku_zig.so";
 const BootstrapRoot = "src/android/bootstrap";
 const ManifestPath = BootstrapRoot ++ "/AndroidManifest.xml";
 const ResourcePath = BootstrapRoot ++ "/res";
@@ -19,6 +20,8 @@ const JniHelpersC = "src/android/jni_helpers.c";
 pub fn addAndroidStep(b: *std.Build, deps: struct {
     wasm_emit: *std.Build.Step,
     gen_build_info: *std.Build.Step,
+    version_name: []const u8,
+    version_code: u32,
 }) *std.Build.Step {
     const ndk_opt = b.option([]const u8, "ndk", "Android NDK root (default: $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT)");
     const ndk_root = resolveNdkRoot(b, ndk_opt) orelse {
@@ -40,7 +43,10 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         .abi = .android,
         .android_api_level = android_api_level,
     });
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
+    // Keep debug APK debug-friendly by default; callers can still override with -Doptimize.
+    const optimize_debug = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
+    // Release APK native library is always built with release optimization.
+    const optimize_release: std.builtin.OptimizeMode = .ReleaseSmall;
 
     const host_prebuilt = resolveHostPrebuiltTag(b, ndk_root);
     const sysroot = b.pathJoin(&.{
@@ -52,13 +58,13 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         "sysroot",
     });
 
-    const lib_mod = b.createModule(.{
+    const lib_mod_debug = b.createModule(.{
         .root_source_file = b.path("src/entry_android.zig"),
         .target = target,
-        .optimize = optimize,
+        .optimize = optimize_debug,
         .link_libc = true,
     });
-    lib_mod.addLibraryPath(.{
+    lib_mod_debug.addLibraryPath(.{
         .cwd_relative = b.pathJoin(&.{
             sysroot,
             "usr",
@@ -67,25 +73,60 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
             b.fmt("{d}", .{android_api_level}),
         }),
     });
-    lib_mod.linkSystemLibrary("dl", .{});
-    lib_mod.linkSystemLibrary("log", .{});
+    lib_mod_debug.linkSystemLibrary("dl", .{});
+    lib_mod_debug.linkSystemLibrary("log", .{});
 
-    const shared = b.addLibrary(.{
+    const shared_debug = b.addLibrary(.{
         .name = LibName,
-        .root_module = lib_mod,
+        .root_module = lib_mod_debug,
         .linkage = .dynamic,
     });
-    shared.root_module.addCSourceFile(.{
+    shared_debug.root_module.addCSourceFile(.{
         .file = b.path(JniHelpersC),
     });
-    shared.setLibCFile(bionicLibCFile(b, sysroot, android_api_level));
-    shared.root_module.pic = true;
-    shared.step.dependOn(deps.wasm_emit);
-    shared.step.dependOn(deps.gen_build_info);
+    shared_debug.setLibCFile(bionicLibCFile(b, sysroot, android_api_level));
+    shared_debug.root_module.pic = true;
+    shared_debug.step.dependOn(deps.wasm_emit);
+    shared_debug.step.dependOn(deps.gen_build_info);
 
-    const install = b.addInstallArtifact(shared, .{});
+    const install_debug = b.addInstallArtifact(shared_debug, .{
+        .dest_sub_path = "lib/libsudoku_zig.so",
+    });
     const android_lib_step = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
-    android_lib_step.dependOn(&install.step);
+    android_lib_step.dependOn(&install_debug.step);
+
+    const lib_mod_release = b.createModule(.{
+        .root_source_file = b.path("src/entry_android.zig"),
+        .target = target,
+        .optimize = optimize_release,
+        .link_libc = true,
+    });
+    lib_mod_release.addLibraryPath(.{
+        .cwd_relative = b.pathJoin(&.{
+            sysroot,
+            "usr",
+            "lib",
+            "aarch64-linux-android",
+            b.fmt("{d}", .{android_api_level}),
+        }),
+    });
+    lib_mod_release.linkSystemLibrary("dl", .{});
+    lib_mod_release.linkSystemLibrary("log", .{});
+
+    const shared_release = b.addLibrary(.{
+        .name = LibName,
+        .root_module = lib_mod_release,
+        .linkage = .dynamic,
+    });
+    shared_release.root_module.addCSourceFile(.{
+        .file = b.path(JniHelpersC),
+    });
+    shared_release.setLibCFile(bionicLibCFile(b, sysroot, android_api_level));
+    shared_release.root_module.pic = true;
+    shared_release.step.dependOn(deps.wasm_emit);
+    shared_release.step.dependOn(deps.gen_build_info);
+
+    const install_release = b.addInstallArtifact(shared_release, .{});
 
     const sdk_opt = b.option([]const u8, "sdk", "Android SDK root (default: $ANDROID_HOME or $ANDROID_SDK_ROOT)");
     const sdk_root = resolveSdkRoot(b, sdk_opt) orelse {
@@ -94,7 +135,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
             "-c",
             "echo 'error: Android SDK not found. Set ANDROID_HOME or ANDROID_SDK_ROOT.' >&2; exit 1",
         });
-        fail.step.dependOn(&install.step);
+        fail.step.dependOn(&install_debug.step);
         const step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
         step.dependOn(&fail.step);
         return step;
@@ -110,11 +151,13 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         JavaSourceJni,
         ManifestPath,
         ResourcePath,
-        SoPath,
+        SoPathDebug,
         ApkName,
+        b.fmt("{d}", .{deps.version_code}),
+        deps.version_name,
         "debug",
     });
-    package_apk.step.dependOn(&install.step);
+    package_apk.step.dependOn(&install_debug.step);
 
     const android_step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
     android_step.dependOn(&package_apk.step);
@@ -129,11 +172,13 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         JavaSourceJni,
         ManifestPath,
         ResourcePath,
-        SoPath,
+        SoPathRelease,
         ReleaseApkName,
+        b.fmt("{d}", .{deps.version_code}),
+        deps.version_name,
         "release",
     });
-    package_release_apk.step.dependOn(&install.step);
+    package_release_apk.step.dependOn(&install_release.step);
 
     const android_release_step = b.step("android-release", "Build a release-signed Android APK (arm64-v8a, no Gradle)");
     android_release_step.dependOn(&package_release_apk.step);

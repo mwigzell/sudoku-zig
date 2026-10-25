@@ -2,6 +2,8 @@ package com.wigzell.sudoku_zig;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.provider.DocumentsContract;
 import android.graphics.Color;
@@ -183,15 +185,27 @@ public final class MainActivity extends Activity {
         final int userId = uid / ANDROID_UID_PER_USER_RANGE;
         final File filesDir = getFilesDir();
         final File saveFile = new File(filesDir, DEFAULT_SAVE_FILENAME);
+        final String version = appVersionString();
         Log.i(
             LOG_IDENTITY,
             "android identity: package=" + getPackageName() +
+                " version=" + version +
                 " userId=" + userId +
                 " uid=" + uid +
                 " filesDir=" + filesDir.getAbsolutePath() +
                 " save=" + saveFile.getAbsolutePath() +
                 " exists=" + saveFile.exists()
         );
+    }
+
+    private String appVersionString() {
+        try {
+            final PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            final String name = info.versionName != null && !info.versionName.isEmpty() ? info.versionName : "0";
+            return name + "(" + info.getLongVersionCode() + ")";
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return "unknown";
+        }
     }
 
     private void showBootError(String message) {

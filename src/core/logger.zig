@@ -5,12 +5,14 @@ const android_logcat = @import("../android/logcat.zig");
 /// Severity ranks for runtime filtering; enum order IS the rank, so with the
 /// .info default, debug is suppressed and info..fatal are emitted.
 pub const Severity = enum { debug, info, warn, err, fatal };
+pub const build_allows_debug_logs = builtin.mode == .debug;
 
 /// Minimum severity emitted at runtime; set from parsed CLI flags before the game starts.
 pub var min_level: Severity = .info;
 
 /// .fatal always emits; everything else is gated against min_level.
 pub fn shouldEmit(sev: Severity) bool {
+    if (sev == .debug and !build_allows_debug_logs) return false;
     if (sev == .fatal) return true;
     return @backingInt(sev) >= @backingInt(min_level);
 }
@@ -24,6 +26,7 @@ pub fn Logger(comptime scope: @EnumLiteral()) type {
     return struct {
         /// Emit debug-level message if runtime filter allows it.
         pub fn debug(comptime fmt: []const u8, args: anytype) void {
+            if (comptime !build_allows_debug_logs) return;
             if (!shouldEmit(.debug)) return;
             emit(.debug, scope_name, log, fmt, args);
         }

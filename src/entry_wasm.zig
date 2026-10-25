@@ -300,7 +300,7 @@ export fn importPuzzleNewGame(in_ptr: u32, in_len: u32, difficulty: u32) callcon
         return exportError(out, "invalid difficulty");
     };
     const line = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const ev = eng.importFromLine(line);
+    const ev = eng.newFromOneLinePuzzle(line);
     switch (ev) {
         .error_msg => |msg| return exportError(out, msg),
         .ok => {},

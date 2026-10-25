@@ -1,7 +1,9 @@
 const std = @import("std");
 const android_build = @import("build/android.zig");
+const version = @import("src/core/version.zig");
 
 pub fn build(b: *std.Build) void {
+    const android_version_code: u32 = @as(u32, version.major) * 10_000 + @as(u32, version.minor) * 100 + @as(u32, version.patch);
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -185,5 +187,7 @@ pub fn build(b: *std.Build) void {
     _ = android_build.addAndroidStep(b, .{
         .wasm_emit = &wasm_emit.step,
         .gen_build_info = &gen_build_info.step,
+        .version_name = version.string,
+        .version_code = android_version_code,
     });
 }
