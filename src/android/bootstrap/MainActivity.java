@@ -192,7 +192,9 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        JniHost.stopHost();
+        if (!isChangingConfigurations()) {
+            JniHost.stopHost();
+        }
         super.onDestroy();
     }
 

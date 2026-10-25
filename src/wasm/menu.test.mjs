@@ -321,6 +321,7 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
 {
   const hintBtn = makeBtn();
   hintBtn.id = "edit-hint";
+  let closedMenus = 0;
   const root = {
     querySelector(sel) {
       if (sel === "#edit-hint") return hintBtn;
@@ -354,9 +355,11 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     session,
     makeRenderElement(),
     root,
+    { closeMenus: () => { closedMenus += 1; } },
   );
   hintBtn.click();
   assert.match(status.textContent, /D4 takes 7 \(placement\)/);
+  assert.equal(closedMenus, 1);
 }
 
 // ── disabled when legend false ──

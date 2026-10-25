@@ -139,6 +139,31 @@ pub const Sudoku = struct {
         self.write_context = file_policy.nextWriteContext(self.write_context, event);
     }
 
+    fn autoSaveSnapshot(self: *@This(), path: []const u8) game_engine.Event {
+        const resolved = self.transport.resolve(self.transport.context, path) catch |err| {
+            var buf: [80]u8 = undefined;
+            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
+        };
+        defer self.transport.free(self.transport.context, resolved);
+
+        const save_buf = self.engine.toSaveFormat(std.heap.page_allocator) catch |err| {
+            return game_engine.Event{ .error_msg = @errorName(err) };
+        };
+        defer std.heap.page_allocator.free(save_buf);
+
+        self.transport.write(self.transport.context, resolved, save_buf) catch |err| {
+            return game_engine.Event{ .error_msg = @errorName(err) };
+        };
+
+        self.persistCurrentFile(resolved);
+        return .{ .ok = .{
+            .board_view = self.engine.eventBoard(),
+            .msg = null,
+            .is_quit = false,
+            .cell = null,
+        } };
+    }
+
     fn applyAutoSavePolicyIfNeeded(self: *@This(), cmd: command.Command, event: game_engine.Event) game_engine.Event {
         if (!self.cfg.auto_save) return event;
         if (!commandTriggersAutoSave(cmd)) return event;
@@ -152,10 +177,9 @@ pub const Sudoku = struct {
         const target = if (loaded) |p| p else save_command.DEFAULT_SAVE_FILE;
         const allowed = self.shouldWriteTarget(.auto_save, target) catch return event;
         if (!allowed) return event;
-        const save_event = save_as_command.execute(&self.engine, self.transport, target);
+        const save_event = self.autoSaveSnapshot(target);
         switch (save_event) {
             .ok => {
-                self.persistResolvedCurrentFile(target);
                 self.applyWriteContextEvent(.auto_save_success);
                 // Preserve the originating command status (e.g. "You win!") on
                 // successful autosave; autosave is a background persistence side effect.
@@ -911,6 +935,39 @@ test "new command with auto_save enabled does not print saved-to status" {
     while (true) if (try app.turn()) break;
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, "saved to:") == null);
+}
+
+test "autosave does not clobber undo win status with saved-to message" {
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    cfg.difficulty = .hard;
+    cfg.preferred_renderer = .ansi;
+    cfg.fallback_renderer = .ansi;
+    cfg.log_level = .info;
+
+    const responses = [_][]const u8{
+        "fill E5 6",
+        "clear E5",
+        "undo",
+        "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer app.deinit();
+
+    const almost = "483921657967345821251876493548132976729504138136798245372689514814253769695417382";
+    _ = app.engine.newFromOneLinePuzzle(almost);
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, "You win!") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "saved to:") == null);
 }
 // import via menu: puzzle file loaded into the engine, history reset

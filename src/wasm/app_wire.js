@@ -215,6 +215,7 @@ export function wireSudokuApp({
       syncLegend: () => menuBar.sync(),
       copyBtn: menuControls.copy,
       pasteBtn: menuControls.paste,
+      closeMenus: () => menuBar.closeAll?.(),
     },
   );
 

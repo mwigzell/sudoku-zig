@@ -415,6 +415,8 @@ pub const GameEngine = struct {
                     return self.errorEventFmt("history push failed: {s}", .{@errorName(push_err)});
                 };
                 self.state.board.validate();
+                self.beginEventMsg();
+                self.appendEventMsg("You win!");
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
         }
@@ -475,7 +477,10 @@ test "exec solve_for_me fills a known partial as one solve batch" {
         .solve_batch => {},
         .cell => return error.TestFailed,
     }
-    try std.testing.expect(ev.ok.msg == null);
+    try std.testing.expect(ev.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, ev.ok.msg.?, "You win!") != null);
+    try std.testing.expect(engine.durableStatus() != null);
+    try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
     try std.testing.expect(!engine.getLegend().solve);
 }
 
@@ -490,6 +495,7 @@ test "exec solve_for_me returns ok and leaves an unsolvable board unchanged" {
     const ev = execTest(&engine, .{ .solve_for_me = {} });
     _ = try expectOk(ev);
     try std.testing.expect(ev.ok.msg == null);
+    try std.testing.expect(engine.durableStatus() == null);
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.count());
 }

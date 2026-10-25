@@ -177,6 +177,7 @@ export function wireEditMenu(
     syncLegend,
     copyBtn,
     pasteBtn,
+    closeMenus,
     clipboard = globalThis.navigator?.clipboard,
   } = {},
 ) {
@@ -215,10 +216,20 @@ export function wireEditMenu(
     return outcome;
   };
 
-  undoBtn.addEventListener("click", () => run("undo"));
-  redoBtn.addEventListener("click", () => run("redo"));
-  deselectBtn?.addEventListener("click", () => runDeselect());
+  undoBtn.addEventListener("click", () => {
+    closeMenus?.();
+    run("undo");
+  });
+  redoBtn.addEventListener("click", () => {
+    closeMenus?.();
+    run("redo");
+  });
+  deselectBtn?.addEventListener("click", () => {
+    closeMenus?.();
+    runDeselect();
+  });
   copyBtn?.addEventListener("click", (event) => {
+    closeMenus?.();
     event?.stopPropagation?.();
     void handleCopyPuzzle(game, session, statusEl, errorModal, {
       clipboard,
@@ -226,6 +237,7 @@ export function wireEditMenu(
     });
   });
   pasteBtn?.addEventListener("click", (event) => {
+    closeMenus?.();
     event?.stopPropagation?.();
     void handlePastePuzzle(game, session, statusEl, errorModal, { clipboard }).then((outcome) => {
       if (!outcome.handled || !outcome.ok) return;
@@ -239,9 +251,15 @@ export function wireEditMenu(
   });
   if (typeof root.querySelector === "function") {
     const solveBtn = root.querySelector("#edit-solve");
-    if (solveBtn) solveBtn.addEventListener("click", () => run("solve"));
+    if (solveBtn) solveBtn.addEventListener("click", () => {
+      closeMenus?.();
+      run("solve");
+    });
     const hintBtn = root.querySelector("#edit-hint");
-    if (hintBtn) hintBtn.addEventListener("click", () => run("hint"));
+    if (hintBtn) hintBtn.addEventListener("click", () => {
+      closeMenus?.();
+      run("hint");
+    });
   }
 
   root.addEventListener("keydown", (event) => {
