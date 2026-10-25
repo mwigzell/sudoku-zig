@@ -32,6 +32,7 @@ export function clearEventStatus(statusEl) {
 }
 
 export const CURRENT_FILE_DESKTOP_ID = "current-file-desktop";
+export const CURRENT_FILE_UNSAVED_LABEL = "unsaved";
 export const WRITE_CONTEXT_CONTINUATION = "continuation";
 export const WRITE_CONTEXT_DETACHED = "detached";
 export const WRITE_CONTEXT_EVENT_OPEN_SUCCESS = "open_success";
@@ -192,9 +193,9 @@ function logAutosave(stage, details = {}) {
 
 /** Bound save target label shown in the menu-bar filename slot. */
 export function currentFileLabel(session) {
-  const name = session?.boundFilename ?? session?.default_save_filename;
+  const name = session?.boundFilename;
   if (typeof name === "string" && name.length > 0) return name;
-  return "";
+  return CURRENT_FILE_UNSAVED_LABEL;
 }
 
 /** Keeps desktop/mobile filename chrome in sync with session binding state. */
@@ -616,6 +617,7 @@ export function createWebSessionFromStartup(ready, writeContextEvent = DEFAULT_W
     legend: ready.legend,
     config: ready.config,
     default_save_filename: ready.default_save_filename,
+    boundFilename: ready.kind === "restore" ? ready.default_save_filename : null,
     autosave_trigger_commands: ready.autosave_trigger_commands,
     write_context_events: ready.write_context_events,
     write_context: WRITE_CONTEXT_DETACHED,

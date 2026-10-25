@@ -33,6 +33,7 @@ import {
   REQUIRED_STARTUP_READY_KEYS,
   clientLog,
   setClientLogLevel,
+  CURRENT_FILE_UNSAVED_LABEL,
 } from "./shell.js";
 import { wireGeneratingModal } from "./generating.js";
 
@@ -355,6 +356,7 @@ async function flushDialogPaint() {
 
 {
   const ready = {
+    kind: "empty",
     state: { cells: [] },
     legend: { new: true },
     config: { auto_save: true },
@@ -367,10 +369,25 @@ async function flushDialogPaint() {
   assert.equal(typeof session.writeContextEvent, "function");
   assert.equal(session.startup_context_ready, null);
   assert.equal(session.default_save_filename, "sudoku.sud");
+  assert.equal(session.boundFilename, null);
 }
 
 {
   const ready = {
+    kind: "restore",
+    state: { cells: [] },
+    legend: {},
+    config: {},
+    default_save_filename: "sudoku.sud",
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+  };
+  const session = createWebSessionFromStartup(ready);
+  assert.equal(session.boundFilename, "sudoku.sud");
+}
+
+{
+  const ready = {
+    kind: "empty",
     state: { cells: [] },
     legend: {},
     config: {},
@@ -386,6 +403,7 @@ async function flushDialogPaint() {
 {
   for (const key of REQUIRED_STARTUP_READY_KEYS) {
     const ready = {
+      kind: "empty",
       state: { cells: [] },
       legend: {},
       config: {},
@@ -579,8 +597,8 @@ async function flushDialogPaint() {
 }
 
 {
-  assert.equal(currentFileLabel({}), "");
-  assert.equal(currentFileLabel({ default_save_filename: "sudoku.sud" }), "sudoku.sud");
+  assert.equal(currentFileLabel({}), CURRENT_FILE_UNSAVED_LABEL);
+  assert.equal(currentFileLabel({ default_save_filename: "sudoku.sud" }), CURRENT_FILE_UNSAVED_LABEL);
   assert.equal(currentFileLabel({ boundFilename: "game.sud" }), "game.sud");
 }
 
@@ -617,7 +635,7 @@ async function flushDialogPaint() {
   syncCurrentFileLabels(session, root);
   assert.equal(session.state, nextState);
   assert.equal(status.textContent, "updated");
-  assert.equal(labels[CURRENT_FILE_DESKTOP_ID].textContent, "save.sud");
+  assert.equal(labels[CURRENT_FILE_DESKTOP_ID].textContent, CURRENT_FILE_UNSAVED_LABEL);
 }
 
 {

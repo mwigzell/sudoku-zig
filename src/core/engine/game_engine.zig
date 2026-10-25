@@ -39,6 +39,7 @@ pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
 pub const NEW_GAME_STARTED_MSG = "new game started";
 pub const OPEN_NO_FILE_MSG = "open: no file specified";
+pub const WIN_STATUS_MSG = "You win!";
 
 /// Owns portable game state. No file transport or I/O here.
 const SolvabilityProbe = enum { move, load };
@@ -141,6 +142,13 @@ pub const GameEngine = struct {
         self.state.history = loaded.history;
         self.state.status = loaded.status;
         self.state.board.validate();
+        // Backward-compat migration: legacy saves could persist "You win!" on an
+        // unsolved board; heal that stale status at load.
+        if (!self.state.board.isSolved()) {
+            if (self.state.status.optional()) |msg| {
+                if (std.mem.eql(u8, msg, WIN_STATUS_MSG)) self.state.status.reset();
+            }
+        }
     }
 
     /// Open from SUD0 bytes — native shell and wasm deserialize both call this.
@@ -306,7 +314,7 @@ pub const GameEngine = struct {
             if (solved == .none) hint_command.appendNoSolutionMsg(self);
         }
         if (self.state.board.isSolved()) {
-            self.appendEventMsg("You win!");
+            self.appendEventMsg(WIN_STATUS_MSG);
         }
         return self.finishOkEvent(view, false, .{ .row = row, .col = col }, true);
     }
@@ -417,7 +425,7 @@ pub const GameEngine = struct {
                 };
                 self.state.board.validate();
                 self.beginEventMsg();
-                self.appendEventMsg("You win!");
+                self.appendEventMsg(WIN_STATUS_MSG);
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
         }

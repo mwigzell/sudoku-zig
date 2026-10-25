@@ -21,6 +21,12 @@ SO_PATH="$8"
 APK_NAME="$9"
 SIGNING_MODE="${10}"
 
+AAPT_ARGS=()
+if [[ "$SIGNING_MODE" == "debug" ]]; then
+  # Debug APKs must be manifest-debuggable for adb run-as and app-private inspection.
+  AAPT_ARGS+=(--debug-mode)
+fi
+
 pick_latest_dir() {
   ls -1 "$1" 2>/dev/null | sort -V | awk 'NF {v=$0} END {print v}'
 }
@@ -104,7 +110,7 @@ if [[ "${#CLASS_FILES[@]}" -eq 0 ]]; then
 fi
 
 "$D8" --min-api "$MIN_API" --output "$OUT" "${CLASS_FILES[@]}"
-"$AAPT" package -f -M "$MANIFEST_PATH" -S "$RESOURCE_PATH" -I "$ANDROID_JAR" -F "$OUT/unsigned.apk"
+"$AAPT" package -f "${AAPT_ARGS[@]}" -M "$MANIFEST_PATH" -S "$RESOURCE_PATH" -I "$ANDROID_JAR" -F "$OUT/unsigned.apk"
 cp "$OUT/classes.dex" "$APK_ROOT/classes.dex"
 cp "$SO_PATH" "$APK_ROOT/lib/arm64-v8a/libsudoku_zig.so"
 cp "$OUT/unsigned.apk" "$OUT/unaligned.apk"

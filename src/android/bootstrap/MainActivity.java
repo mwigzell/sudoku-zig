@@ -34,6 +34,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -48,6 +49,8 @@ public final class MainActivity extends Activity {
     private static final long MIN_LAUNCH_SPLASH_MS = 2000L;
     private static final long SPLASH_BOOT_TIMEOUT_MS = 12000L;
     private static final String MIME_ANY = "*/*";
+    private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
+    private static final int ANDROID_UID_PER_USER_RANGE = 100000;
     private static final String BOOT_ERROR_HTML_PREFIX =
         "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
         "<body style=\"margin:0;padding:16px;font-family:sans-serif;background:#16181d;color:#e6e6e6;\">" +
@@ -68,6 +71,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        logStartupIdentity();
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.parseColor("#16181d"));
@@ -172,6 +176,22 @@ public final class MainActivity extends Activity {
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace("\"", "&quot;");
+    }
+
+    private void logStartupIdentity() {
+        final int uid = getApplicationInfo().uid;
+        final int userId = uid / ANDROID_UID_PER_USER_RANGE;
+        final File filesDir = getFilesDir();
+        final File saveFile = new File(filesDir, DEFAULT_SAVE_FILENAME);
+        Log.i(
+            LOG_IDENTITY,
+            "android identity: package=" + getPackageName() +
+                " userId=" + userId +
+                " uid=" + uid +
+                " filesDir=" + filesDir.getAbsolutePath() +
+                " save=" + saveFile.getAbsolutePath() +
+                " exists=" + saveFile.exists()
+        );
     }
 
     private void showBootError(String message) {
