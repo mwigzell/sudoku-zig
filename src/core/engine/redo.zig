@@ -40,6 +40,8 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             }
             engine.state.history.pointer += 1;
             engine.state.board.validate();
+            engine.beginEventMsg();
+            engine.appendEventMsg("You win!");
             return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
     }
@@ -118,4 +120,8 @@ test "command.redo.execute re-solves a solve batch to the captured grid" {
     for (solution, 0..) |ch, i| expected[i] = ch - '0';
     try std.testing.expectEqual(expected, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
+    try std.testing.expect(event.ok.msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, event.ok.msg.?, "You win!") != null);
+    try std.testing.expect(engine.durableStatus() != null);
+    try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
 }

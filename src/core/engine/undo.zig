@@ -22,7 +22,8 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
                 return engine.errorEvent("could not restore board");
             };
             engine.state.board.validate();
-            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+            engine.beginEventMsg();
+            return engine.finishOkEvent(engine.state.board.asView(), false, null, true);
         },
     }
 }
@@ -83,4 +84,22 @@ test "command.undo.execute restores the before snapshot of one solve" {
     try std.testing.expectEqual(before_given, engine.state.board.given_bits);
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.pointer);
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.entries.items.len);
+}
+
+test "command.undo.execute clears stale win status when solve-batch undo unsolves board" {
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
+    const command = @import("../command.zig");
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+
+    _ = engine.exec(command.Command{ .solve_for_me = {} });
+    try std.testing.expect(engine.durableStatus() != null);
+    try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
+
+    const event = execute(&engine);
+    try std.testing.expect(event == .ok);
+    try std.testing.expect(event.ok.msg == null);
+    try std.testing.expect(engine.durableStatus() == null);
+    try std.testing.expect(!engine.state.board.isSolved());
 }
