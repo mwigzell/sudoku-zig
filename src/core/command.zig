@@ -99,6 +99,7 @@ pub const CommandTableEntry = struct {
 pub const Commands = &[_]CommandTableEntry{
     .{ .tag = .fill, .name = "Fill" },
     .{ .tag = .clear, .name = "Clear" },
+    .{ .tag = .hint, .name = "Hint" },
     .{ .tag = .quit, .name = "Quit" },
     .{ .tag = .undo, .name = "Undo" },
     .{ .tag = .redo, .name = "Redo" },
@@ -116,7 +117,6 @@ pub const SessionCommands = &[_]CommandTableEntry{
     .{ .tag = .new, .name = "New" },
     .{ .tag = .save_as, .name = "SaveAs" },
     .{ .tag = .solve_for_me, .name = "Solve" },
-    .{ .tag = .hint, .name = "Hint" },
 };
 
 /// Look up the display name for a command tag from the comptime tables.

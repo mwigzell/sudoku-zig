@@ -15,6 +15,7 @@ pub const wire_export_json_key = "export";
 pub const Legend = struct {
     fill: bool,
     clear: bool,
+    hint: bool = false,
     quit: bool,
     undo: bool,
     redo: bool,
@@ -35,7 +36,7 @@ pub const Legend = struct {
     solve: bool = false,
 
     /// Fill `names` with main-line terminal commands (play loop + menu entry).
-    pub fn getNames(self: Legend, names: *[6][]const u8) usize {
+    pub fn getNames(self: Legend, names: *[7][]const u8) usize {
         var count: usize = 0;
         if (self.fill) {
             names[count] = command.getName(.fill);
@@ -43,6 +44,10 @@ pub const Legend = struct {
         }
         if (self.clear) {
             names[count] = command.getName(.clear);
+            count += 1;
+        }
+        if (self.hint) {
+            names[count] = command.getName(.hint);
             count += 1;
         }
         if (self.quit) {
@@ -102,10 +107,11 @@ pub fn formatLegend(allocator: mem.Allocator, entries: []const disambiguate.Disa
 // ---------------------------------------------------------------------------
 
 test "getNames: main line offers menu not session commands" {
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = (Legend{
         .fill = true,
         .clear = true,
+        .hint = true,
         .quit = true,
         .undo = false,
         .redo = false,
@@ -115,8 +121,9 @@ test "getNames: main line offers menu not session commands" {
         .new = true,
         .save_as = true,
     }).getNames(&names);
-    try std.testing.expectEqual(@as(usize, 4), count);
-    try std.testing.expectEqualStrings("Menu", names[3]);
+    try std.testing.expectEqual(@as(usize, 5), count);
+    try std.testing.expectEqualStrings("Hint", names[2]);
+    try std.testing.expectEqualStrings("Menu", names[4]);
 }
 
 test "formatLegend: five non-colliding commands → each prefix is 1 char" {
@@ -125,6 +132,7 @@ test "formatLegend: five non-colliding commands → each prefix is 1 char" {
     const entries: []const disambiguate.DisambigEntry = &[_]disambiguate.DisambigEntry{
         .{ .command = command.getName(.fill), .prefix_len = 1 },
         .{ .command = command.getName(.clear), .prefix_len = 1 },
+        .{ .command = command.getName(.hint), .prefix_len = 1 },
         .{ .command = command.getName(.undo), .prefix_len = 1 },
         .{ .command = command.getName(.redo), .prefix_len = 1 },
         .{ .command = command.getName(.quit), .prefix_len = 1 },
@@ -134,7 +142,7 @@ test "formatLegend: five non-colliding commands → each prefix is 1 char" {
     defer allocator.free(result);
 
     try std.testing.expectEqualStrings(
-        "(F)ill (C)lear (U)ndo (R)edo (Q)uit",
+        "(F)ill (C)lear (H)int (U)ndo (R)edo (Q)uit",
         result,
     );
 }

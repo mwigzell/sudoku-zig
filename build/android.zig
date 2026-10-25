@@ -6,6 +6,7 @@ pub const android_api_level: u32 = 29;
 
 pub const LibName = "sudoku_zig";
 pub const ApkName = "sudoku.apk";
+pub const ReleaseApkName = "sudoku-release.apk";
 const OutDir = "zig-out/android";
 const SoPath = "zig-out/lib/libsudoku_zig.so";
 const BootstrapRoot = "src/android/bootstrap";
@@ -111,11 +112,31 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         ResourcePath,
         SoPath,
         ApkName,
+        "debug",
     });
     package_apk.step.dependOn(&install.step);
 
     const android_step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
     android_step.dependOn(&package_apk.step);
+
+    const package_release_apk = b.addSystemCommand(&.{
+        "bash",
+        "scripts/android-package.sh",
+        sdk_root,
+        b.fmt("{d}", .{android_api_level}),
+        OutDir,
+        JavaSourceMain,
+        JavaSourceJni,
+        ManifestPath,
+        ResourcePath,
+        SoPath,
+        ReleaseApkName,
+        "release",
+    });
+    package_release_apk.step.dependOn(&install.step);
+
+    const android_release_step = b.step("android-release", "Build a release-signed Android APK (arm64-v8a, no Gradle)");
+    android_release_step.dependOn(&package_release_apk.step);
     return android_step;
 }
 

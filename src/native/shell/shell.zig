@@ -315,7 +315,7 @@ pub const Sudoku = struct {
     /// folded to error.System one level down) or dispatch/render failed.
     pub fn turn(self: *@This()) Error!bool {
         const avail = self.engine.getLegend();
-        var names: [6][]const u8 = undefined;
+        var names: [7][]const u8 = undefined;
         const count = avail.getNames(&names);
         const result = self.renderer.getCommandInput(
             names[0..count],

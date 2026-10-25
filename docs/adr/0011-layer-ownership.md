@@ -51,6 +51,21 @@ Rules:
 6. **Front-end feature parity is mandatory** — shipped user-visible gameplay/session capabilities are expected on every supported front-end entry. A temporary gap must be explicit in the owning issue as a scoped exception with follow-up ownership; "platform-specific shell" is not a standing waiver.
 7. **Front ends stay dumb** — entry/UI layers orchestrate input/output and lifecycle only. They do not own business rules, persistence policy, or feature semantics that belong in shared seams (`engine`, shared codecs, shared host interfaces). If a capability appears to require front-end-specific logic, first extract a shared seam instead of re-implementing behavior per front end.
 8. **Policy centralization is mandatory** — for a shared-core multi-front-end game, policy cannot be duplicated in adapters. JS/native/android front ends may annotate and transport intent/events, but rule decisions (including persistence/autosave semantics and log filtering policy) live in shared core/host seams.
+9. **Semantic parity over call-shape parity** — enforce shared behavior contracts, not identical frontend function signatures. Different front ends may require different control flow/forms (`Facade` vtable in native, JSON/action orchestration in web/android). What must match is policy outcome, state transitions, and status semantics — not method shape.
+
+### Amendment — semantic parity guardrails
+
+This project does **not** require native and web UI layers to mirror the same API surface. It requires them to execute the same policy and emit compatible outcomes.
+
+Anti-patterns (do not repeat):
+
+- **Mirror-by-shape pressure**: adding or stretching frontend seams only to look symmetric across native and web, without a new cross-layer behavior need.
+- **Policy in adapter glue**: implementing startup/autosave/status decisions in frontend code because it feels easier than extending a shared seam.
+
+Concrete repo examples:
+
+- Native uses `renderer.confirmReplace(...)` for solved-restore prompt copy, while web/android route through JS new-game UI flow. This is acceptable because both execute the same core `on_restore_solved` policy branch and preserve cancel/confirm semantics.
+- Web does not use the native renderer facade. This is acceptable because wasm boundary + shared startup/file-policy seams carry policy parity without forcing a fake `WasmRenderer` call shape.
 
 ## Consequences
 

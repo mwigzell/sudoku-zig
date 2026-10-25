@@ -5,8 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ "$#" -ne 9 ]]; then
-  echo "usage: $0 <sdk_root> <min_api> <out_dir> <main_java> <jni_java> <manifest> <res_dir> <so_path> <apk_name>" >&2
+if [[ "$#" -ne 10 ]]; then
+  echo "usage: $0 <sdk_root> <min_api> <out_dir> <main_java> <jni_java> <manifest> <res_dir> <so_path> <apk_name> <signing_mode>" >&2
   exit 1
 fi
 
@@ -19,6 +19,7 @@ MANIFEST_PATH="$6"
 RESOURCE_PATH="$7"
 SO_PATH="$8"
 APK_NAME="$9"
+SIGNING_MODE="${10}"
 
 pick_latest_dir() {
   ls -1 "$1" 2>/dev/null | sort -V | awk 'NF {v=$0} END {print v}'
@@ -110,26 +111,74 @@ cp "$OUT/unsigned.apk" "$OUT/unaligned.apk"
 (cd "$APK_ROOT" && zip -qr "$OUT/unaligned.apk" classes.dex lib)
 "$ZIPALIGN" -f 4 "$OUT/unaligned.apk" "$OUT/aligned.apk"
 
-DEBUG_KEYSTORE="${ANDROID_DEBUG_KEYSTORE:-$HOME/.android/debug.keystore}"
-if [[ ! -f "$DEBUG_KEYSTORE" ]]; then
-  mkdir -p "$(dirname "$DEBUG_KEYSTORE")"
-  "$KEYTOOL" -genkeypair -v \
-    -keystore "$DEBUG_KEYSTORE" \
-    -storepass android \
-    -alias androiddebugkey \
-    -keypass android \
-    -keyalg RSA \
-    -keysize 2048 \
-    -validity 10000 \
-    -dname "CN=Android Debug,O=Android,C=US"
-fi
+if [[ "$SIGNING_MODE" == "debug" ]]; then
+  DEBUG_KEYSTORE="${ANDROID_DEBUG_KEYSTORE:-$HOME/.android/debug.keystore}"
+  if [[ ! -f "$DEBUG_KEYSTORE" ]]; then
+    mkdir -p "$(dirname "$DEBUG_KEYSTORE")"
+    "$KEYTOOL" -genkeypair -v \
+      -keystore "$DEBUG_KEYSTORE" \
+      -storepass android \
+      -alias androiddebugkey \
+      -keypass android \
+      -keyalg RSA \
+      -keysize 2048 \
+      -validity 10000 \
+      -dname "CN=Android Debug,O=Android,C=US"
+  fi
 
-"$APKSIGNER" sign \
-  --ks "$DEBUG_KEYSTORE" \
-  --ks-pass pass:android \
-  --key-pass pass:android \
-  --ks-key-alias androiddebugkey \
-  --out "$OUT/$APK_NAME" \
-  "$OUT/aligned.apk"
+  "$APKSIGNER" sign \
+    --ks "$DEBUG_KEYSTORE" \
+    --ks-pass pass:android \
+    --key-pass pass:android \
+    --ks-key-alias androiddebugkey \
+    --out "$OUT/$APK_NAME" \
+    "$OUT/aligned.apk"
+elif [[ "$SIGNING_MODE" == "release" ]]; then
+  RELEASE_KEYSTORE="${ANDROID_RELEASE_KEYSTORE:-}"
+  RELEASE_STORE_PASS="${ANDROID_RELEASE_STORE_PASS:-}"
+  RELEASE_KEY_ALIAS="${ANDROID_RELEASE_KEY_ALIAS:-}"
+  RELEASE_KEY_PASS="${ANDROID_RELEASE_KEY_PASS:-$RELEASE_STORE_PASS}"
+  if [[ -z "$RELEASE_KEYSTORE" ]]; then
+    echo "error: ANDROID_RELEASE_KEYSTORE is required for release signing" >&2
+    exit 1
+  fi
+  if [[ -z "$RELEASE_STORE_PASS" ]]; then
+    echo "error: ANDROID_RELEASE_STORE_PASS is required for release signing" >&2
+    exit 1
+  fi
+  if [[ -z "$RELEASE_KEY_ALIAS" ]]; then
+    echo "error: ANDROID_RELEASE_KEY_ALIAS is required for release signing" >&2
+    exit 1
+  fi
+  if [[ -z "$RELEASE_KEY_PASS" ]]; then
+    echo "error: ANDROID_RELEASE_KEY_PASS is required for release signing" >&2
+    exit 1
+  fi
+  if [[ ! -f "$RELEASE_KEYSTORE" ]]; then
+    echo "error: release keystore does not exist: $RELEASE_KEYSTORE" >&2
+    exit 1
+  fi
+
+  # Preflight keystore access using keytool so failures are clearer than apksigner stack traces.
+  if ! "$KEYTOOL" -list -keystore "$RELEASE_KEYSTORE" -storepass "$RELEASE_STORE_PASS" >/dev/null 2>&1; then
+    echo "error: release keystore/password check failed (ANDROID_RELEASE_KEYSTORE / ANDROID_RELEASE_STORE_PASS)" >&2
+    exit 1
+  fi
+
+  # apksigner env: mode avoids parser edge-cases in pass: mode for special characters.
+  export ANDROID_RELEASE_STORE_PASS="$RELEASE_STORE_PASS"
+  export ANDROID_RELEASE_KEY_PASS="$RELEASE_KEY_PASS"
+
+  "$APKSIGNER" sign \
+    --ks "$RELEASE_KEYSTORE" \
+    --ks-pass "env:ANDROID_RELEASE_STORE_PASS" \
+    --key-pass "env:ANDROID_RELEASE_KEY_PASS" \
+    --ks-key-alias "$RELEASE_KEY_ALIAS" \
+    --out "$OUT/$APK_NAME" \
+    "$OUT/aligned.apk"
+else
+  echo "error: signing_mode must be 'debug' or 'release' (got '$SIGNING_MODE')" >&2
+  exit 1
+fi
 
 echo "APK ready: $OUT/$APK_NAME"

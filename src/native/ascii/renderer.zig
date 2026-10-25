@@ -154,7 +154,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Implement Facade showLegend_fn. Build command legend from Legend,
         /// disambiguate prefixes, print "Command: ...". Arena allocates temp strings.
         pub fn showLegend(self: *@This(), commands: legend.Legend) anyerror!void {
-            var names: [6][]const u8 = undefined;
+            var names: [7][]const u8 = undefined;
             const count = commands.getNames(&names);
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -916,7 +916,7 @@ test "getCommandInput: New opens difficulty dialog; pick easy loads easy puzzle"
         .new = true,
         .save_as = false,
     };
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
     const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
@@ -969,7 +969,7 @@ test "getCommandInput: New dialog rejects retired pick slots beyond the three di
         .new = true,
         .save_as = false,
     };
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
     const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
@@ -1009,7 +1009,7 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
         .save_as = true,
     };
 
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
     const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
 
@@ -1055,7 +1055,7 @@ test "getCommandInput: EOF returns Quit" {
         .save_as = false,
     };
 
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
     const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
 
@@ -1119,7 +1119,7 @@ test "getCommandInput: save with last_filename set uses cached path" {
         .save_as = true,
     };
 
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
     const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
 
@@ -1166,7 +1166,7 @@ test "getCommandInput: save with last_filename null prompts and caches" {
         .save_as = true,
     };
 
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
     const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
 
@@ -1216,7 +1216,7 @@ test "getCommandInput: save then save reuses cached filename without prompting" 
         .save_as = true,
     };
 
-    var names: [6][]const u8 = undefined;
+    var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
 
     // First save — should prompt and cache

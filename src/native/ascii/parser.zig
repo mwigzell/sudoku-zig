@@ -444,14 +444,16 @@ test "Commands table: tag-name mapping" {
     try std.testing.expect(entries[0].tag == .fill);
     try std.testing.expectEqualStrings("Clear", entries[1].name);
     try std.testing.expect(entries[1].tag == .clear);
-    try std.testing.expectEqualStrings("Quit", entries[2].name);
-    try std.testing.expect(entries[2].tag == .quit);
-    try std.testing.expectEqualStrings("Undo", entries[3].name);
-    try std.testing.expect(entries[3].tag == .undo);
-    try std.testing.expectEqualStrings("Redo", entries[4].name);
-    try std.testing.expect(entries[4].tag == .redo);
-    try std.testing.expectEqualStrings("Menu", entries[5].name);
-    try std.testing.expect(entries[5].tag == .menu);
+    try std.testing.expectEqualStrings("Hint", entries[2].name);
+    try std.testing.expect(entries[2].tag == .hint);
+    try std.testing.expectEqualStrings("Quit", entries[3].name);
+    try std.testing.expect(entries[3].tag == .quit);
+    try std.testing.expectEqualStrings("Undo", entries[4].name);
+    try std.testing.expect(entries[4].tag == .undo);
+    try std.testing.expectEqualStrings("Redo", entries[5].name);
+    try std.testing.expect(entries[5].tag == .redo);
+    try std.testing.expectEqualStrings("Menu", entries[6].name);
+    try std.testing.expect(entries[6].tag == .menu);
 }
 
 test "getName returns correct display name for each tag" {

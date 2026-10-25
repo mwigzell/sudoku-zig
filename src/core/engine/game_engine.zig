@@ -91,6 +91,7 @@ pub const GameEngine = struct {
         return Legend{
             .fill = true,
             .clear = true,
+            .hint = true,
             .quit = true,
             .undo = self.state.history.pointer > 0,
             .redo = self.state.history.pointer < self.state.history.entries.items.len,
