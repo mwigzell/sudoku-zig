@@ -8,8 +8,8 @@ pub const LibName = "sudoku_zig";
 pub const ApkName = "sudoku.apk";
 pub const ReleaseApkName = "sudoku-release.apk";
 const OutDir = "zig-out/android";
-const SoPathDebug = "zig-out/lib/lib/libsudoku_zig.so";
-const SoPathRelease = "zig-out/lib/lib/libsudoku_zig.so";
+const SoPathDebug = "zig-out/lib/libsudoku_zig.so";
+const SoPathRelease = "zig-out/lib/libsudoku_zig.so";
 const BootstrapRoot = "src/android/bootstrap";
 const ManifestPath = BootstrapRoot ++ "/AndroidManifest.xml";
 const ResourcePath = BootstrapRoot ++ "/res";
@@ -90,7 +90,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     shared_debug.step.dependOn(deps.gen_build_info);
 
     const install_debug = b.addInstallArtifact(shared_debug, .{
-        .dest_sub_path = "lib/libsudoku_zig.so",
+        .dest_sub_path = "libsudoku_zig.so",
     });
     const android_lib_step = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
     android_lib_step.dependOn(&install_debug.step);
@@ -126,7 +126,9 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     shared_release.step.dependOn(deps.wasm_emit);
     shared_release.step.dependOn(deps.gen_build_info);
 
-    const install_release = b.addInstallArtifact(shared_release, .{});
+    const install_release = b.addInstallArtifact(shared_release, .{
+        .dest_sub_path = "libsudoku_zig.so",
+    });
 
     const sdk_opt = b.option([]const u8, "sdk", "Android SDK root (default: $ANDROID_HOME or $ANDROID_SDK_ROOT)");
     const sdk_root = resolveSdkRoot(b, sdk_opt) orelse {
