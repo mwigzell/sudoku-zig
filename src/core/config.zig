@@ -20,7 +20,7 @@ pub const Config = struct {
     /// Runtime minimum log severity emitted by the Logger; defaults to .info.
     log_level: logger.Severity,
     /// Current UI theme preference.
-    theme: ViewTheme = .dark,
+    theme: ViewTheme = .system,
     /// Region-highlight toggle around the active selection.
     show_region: bool = false,
     /// Proactive solvability warnings after moves and on load (single player toggle).
@@ -48,7 +48,7 @@ test "config.default produces valid config" {
     if (cfg.difficulty != .easy) return error.TestFailed;
     if (cfg.preferred_renderer != .ansi) return error.TestFailed;
     if (cfg.fallback_renderer != .ansi) return error.TestFailed;
-    if (cfg.theme != .dark) return error.TestFailed;
+    if (cfg.theme != .system) return error.TestFailed;
     if (cfg.show_region) return error.TestFailed;
     if (cfg.warn_solvability) return error.TestFailed;
     if (cfg.auto_restore) return error.TestFailed;

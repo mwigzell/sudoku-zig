@@ -8,7 +8,7 @@ pub fn testConfigDefaults() config.Config {
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
         .log_level = .info,
-        .theme = .dark,
+        .theme = .system,
         .show_region = false,
         .warn_solvability = false,
         .auto_restore = false,

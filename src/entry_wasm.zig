@@ -58,7 +58,7 @@ const empty_puzzle_line: [81]u8 = blk: {
 };
 
 fn preservedViewPrefs() struct { theme: config.ViewTheme, show_region: bool } {
-    if (!have_engine) return .{ .theme = .dark, .show_region = false };
+    if (!have_engine) return .{ .theme = .system, .show_region = false };
     return .{ .theme = engine.cfg.theme, .show_region = engine.cfg.show_region };
 }
 

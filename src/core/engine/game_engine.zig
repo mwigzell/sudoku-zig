@@ -1487,12 +1487,12 @@ test "getLegend: Save and Open always available" {
     try std.testing.expect(cmds.open);
 }
 
-test "getConfig: default view prefs are dark theme and region off" {
+test "getConfig: default view prefs are system theme and region off" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const cfg = engine.getConfig();
-    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
+    try std.testing.expectEqual(config.ViewTheme.system, cfg.theme);
     try std.testing.expect(!cfg.show_region);
 }
 

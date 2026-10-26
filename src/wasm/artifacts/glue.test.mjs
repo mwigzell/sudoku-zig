@@ -138,7 +138,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const config = game.getConfig();
   assert.equal(config.difficulty, 1);
   assert.equal(config.log_level, 1);
-  assert.equal(config.theme, "dark");
+  assert.equal(config.theme, "system");
   assert.equal(config.show_region, false);
 }
 
@@ -210,7 +210,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 // ── view prefs via config ──
 {
   let config = game.getConfig();
-  assert.equal(config.theme, "dark");
+  assert.equal(config.theme, "system");
   assert.equal(config.show_region, false);
   assert.equal(config.warn_solvability, false);
 
@@ -321,12 +321,12 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const fresh = await loadArtifact(wasmBytes);
   const started = newGame(fresh, { difficulty: 2 });
   assert.equal(started.ok, true);
-  assert.equal(started.config.theme, "dark");
+  assert.equal(started.config.theme, "system");
   assert.equal(started.config.difficulty, 2);
   const freshOpen = open(fresh, saved.bytes);
   assert.equal(freshOpen.ok, true);
   assert.deepEqual(fresh.getState(), before);
-  assert.equal(fresh.getConfig().theme, "dark", "SUD0 does not carry view config");
+  assert.equal(fresh.getConfig().theme, "system", "SUD0 does not carry view config");
 }
 
 // ── quit ──
