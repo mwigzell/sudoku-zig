@@ -35,6 +35,7 @@ export const MENU_BAR_MENUS = [
     {
       label: "View",
       items: [
+        { id: "viewSystem", label: "System" },
         { id: "viewLight", label: "Light" },
         { id: "viewDark", label: "Dark" },
         { id: "viewRegion", label: "Show Region" },
@@ -55,6 +56,7 @@ export function syncMenuBar(legend, controls, config = {}) {
       if (control) control.disabled = !legend[item.legendKey];
     }
   }
+  if (controls.viewSystem) controls.viewSystem.disabled = false;
   if (controls.viewLight) controls.viewLight.disabled = false;
   if (controls.viewDark) controls.viewDark.disabled = false;
   if (controls.viewRegion) controls.viewRegion.disabled = false;
@@ -87,6 +89,7 @@ export function collectMenuBarControls(root) {
     solve: root.querySelector("#edit-solve"),
     hint: root.querySelector("#edit-hint"),
     deselect: root.querySelector("#edit-deselect"),
+    viewSystem: root.querySelector("#view-system"),
     viewLight: root.querySelector("#view-light"),
     viewDark: root.querySelector("#view-dark"),
     viewRegion: root.querySelector("#view-region"),

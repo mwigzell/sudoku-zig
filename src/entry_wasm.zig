@@ -70,7 +70,7 @@ fn deinitEngineIfAny() void {
 }
 
 /// Empty-grid engine from host-resolved startup config (disk + CLI via serve — same contract as native).
-/// theme: 0 = dark, 1 = light; show_region: 0 = false, 1 = true.
+/// theme: 0 = dark, 1 = light, 2 = system; show_region: 0 = false, 1 = true.
 export fn bootstrapHostConfig(
     difficulty: u32,
     log_level: u32,
@@ -82,7 +82,11 @@ export fn bootstrapHostConfig(
     auto_save: u32,
 ) callconv(.c) u32 {
     const out = outBuffer();
-    const theme_enum: config.ViewTheme = if (theme == 1) .light else .dark;
+    const theme_enum: config.ViewTheme = switch (theme) {
+        1 => .light,
+        2 => .system,
+        else => .dark,
+    };
     const game_cfg = startup_config.configFromHostWire(
         @intCast(difficulty),
         @intCast(log_level),

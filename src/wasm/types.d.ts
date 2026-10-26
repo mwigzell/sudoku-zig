@@ -8,7 +8,7 @@ export type ExecAction =
   | { action: "quit" }
   | { action: "solve" }
   | { action: "hint"; row?: number; col?: number }
-  | { action: "set_theme"; theme: "light" | "dark" }
+  | { action: "set_theme"; theme: "light" | "dark" | "system" }
   | { action: "set_region"; enabled: boolean }
   | { action: "set_warn_solvability"; enabled: boolean }
   | { action: "set_auto_restore"; enabled: boolean }

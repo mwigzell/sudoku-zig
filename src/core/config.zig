@@ -6,8 +6,8 @@ pub const Difficulty = puzzle_gen.Difficulty;
 /// Renderer back-ends available to the native entry layer.
 pub const RendererKind = enum { ansi, ascii, tui, web };
 
-/// Light/dark presentation preference for the web shell.
-pub const ViewTheme = enum { dark, light };
+/// Presentation preference for UI shells.
+pub const ViewTheme = enum { dark, light, system };
 
 /// Nominal game configuration — preference + escape hatch.
 pub const Config = struct {

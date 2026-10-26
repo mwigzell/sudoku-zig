@@ -482,10 +482,11 @@ export function logLevelName(config) {
 
 /** User-editable settings.json fields (excludes renderer choice). */
 export function hostSettingsForPersist(config) {
+  const theme = config.theme === "light" || config.theme === "system" ? config.theme : "dark";
   return {
     difficulty: difficultyName(config),
     log_level: logLevelName(config),
-    theme: config.theme === "light" ? "light" : "dark",
+    theme,
     show_region: config.show_region === true,
     warn_solvability: config.warn_solvability === true,
     auto_restore: config.auto_restore === true,

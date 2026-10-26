@@ -311,12 +311,6 @@
       object-fit: contain;
     }
 
-    #boot-splash-msg {
-      margin: 0;
-      opacity: 0.9;
-      font-size: 0.9375rem;
-    }
-
     #error-modal[hidden],
     #replace-confirm-modal[hidden],
     #about-modal[hidden],
@@ -740,7 +734,6 @@
 <body>
   <div id="boot-splash" role="status" aria-live="polite">
     <img id="boot-splash-logo" src="/branding/splash-mark-256.png" alt="Sudoku gator mark">
-    <p id="boot-splash-msg">Loading sudoku-zig…</p>
   </div>
   <main id="app">
     <nav id="menu-bar" role="menubar" aria-label="Application menu">
@@ -772,6 +765,7 @@
       <div class="menu" data-menu="view">
         <button type="button" class="menu-trigger" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-view-panel">View</button>
         <div class="menu-panel" id="menu-view-panel" role="menu" hidden>
+          <button type="button" role="menuitemradio" id="view-system" aria-checked="false">System</button>
           <button type="button" role="menuitemradio" id="view-light" aria-checked="false">Light</button>
           <button type="button" role="menuitemradio" id="view-dark" aria-checked="true">Dark</button>
           <button type="button" role="menuitemcheckbox" id="view-region" aria-checked="false">Show Region</button>
@@ -970,6 +964,8 @@
           }
         } catch (_) {}
       };
+      // Android already shows a native launch splash; suppress the HTML splash
+      // there to avoid stacked overlays.
       if (isAndroidWebView && bootSplash) bootSplash.hidden = true;
       setTimeout(() => {
         if (window.__sudokuBootReady === true) return;

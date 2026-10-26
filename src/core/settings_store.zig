@@ -71,6 +71,7 @@ fn parseLogLevel(name: []const u8) Error!logger.Severity {
 fn parseTheme(name: []const u8) Error!config.ViewTheme {
     if (std.mem.eql(u8, name, "dark")) return .dark;
     if (std.mem.eql(u8, name, "light")) return .light;
+    if (std.mem.eql(u8, name, "system")) return .system;
     return Error.UnsupportedValue;
 }
 

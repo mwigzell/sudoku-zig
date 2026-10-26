@@ -44,17 +44,23 @@ function makeThemeBtn() {
 
 {
   const html = { dataset: {} };
-  applyTheme("light", html);
+  applyTheme("light", html, {});
   assert.equal(html.dataset.theme, "light");
-  applyThemeFromConfig({ theme: "light", show_region: false }, { documentElement: html });
+  applyThemeFromConfig({ theme: "light", show_region: false }, { documentElement: html, defaultView: {} });
   assert.equal(html.dataset.theme, "light");
-  applyThemeFromConfig({ theme: "dark", show_region: false }, { documentElement: html });
+  applyThemeFromConfig({ theme: "dark", show_region: false }, { documentElement: html, defaultView: {} });
   assert.equal(html.dataset.theme, undefined);
+  applyThemeFromConfig(
+    { theme: "system", show_region: false },
+    { documentElement: html, defaultView: { matchMedia: () => ({ matches: false }) } },
+  );
+  assert.equal(html.dataset.theme, "light");
 }
 
 {
-  const controls = { viewLight: makeThemeBtn(), viewDark: makeThemeBtn() };
+  const controls = { viewSystem: makeThemeBtn(), viewLight: makeThemeBtn(), viewDark: makeThemeBtn() };
   syncThemeMenu(controls, { theme: "light", show_region: false });
+  assert.equal(controls.viewSystem.attrs["aria-checked"], "false");
   assert.equal(controls.viewLight.attrs["aria-checked"], "true");
   assert.equal(controls.viewDark.attrs["aria-checked"], "false");
 }
@@ -77,12 +83,16 @@ function makeThemeBtn() {
     },
   };
   const controls = {
+    viewSystem: { ...makeThemeBtn(), addEventListener() {} },
     viewLight: { ...makeThemeBtn(), addEventListener(_, fn) { this.click = fn; } },
     viewDark: { ...makeThemeBtn(), addEventListener() {} },
   };
   const persistCalls = [];
   wireThemeMenu(controls, game, session, {
-    root: { documentElement: html },
+    root: {
+      documentElement: html,
+      defaultView: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
+    },
     onPersist: async (cfg) => {
       persistCalls.push(cfg);
     },

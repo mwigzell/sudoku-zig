@@ -96,13 +96,15 @@ fn mergeLogLevelPatch(cfg: *config.Config, name: []const u8) void {
     if (std.mem.eql(u8, name, "debug")) cfg.log_level = .debug else if (std.mem.eql(u8, name, "info")) cfg.log_level = .info else if (std.mem.eql(u8, name, "warn")) cfg.log_level = .warn else if (std.mem.eql(u8, name, "err")) cfg.log_level = .err else if (std.mem.eql(u8, name, "fatal")) cfg.log_level = .fatal;
 }
 
+fn mergeThemePatch(cfg: *config.Config, name: []const u8) void {
+    if (std.mem.eql(u8, name, "light")) cfg.theme = .light else if (std.mem.eql(u8, name, "dark")) cfg.theme = .dark else if (std.mem.eql(u8, name, "system")) cfg.theme = .system;
+}
+
 /// Applies partial fields from a `POST /settings.json` body onto host `Config` (shared with the HTTP handler).
 pub fn mergeSettingsPostPatch(cfg: *config.Config, patch: SettingsPostBody) void {
     if (patch.difficulty) |name| mergeDifficultyPatch(cfg, name);
     if (patch.log_level) |name| mergeLogLevelPatch(cfg, name);
-    if (patch.theme) |name| {
-        cfg.theme = if (std.mem.eql(u8, name, "light")) .light else .dark;
-    }
+    if (patch.theme) |name| mergeThemePatch(cfg, name);
     if (patch.show_region) |enabled| cfg.show_region = enabled;
     if (patch.warn_solvability) |enabled| cfg.warn_solvability = enabled;
     if (patch.auto_restore) |enabled| cfg.auto_restore = enabled;
@@ -707,7 +709,7 @@ test "mergeSettingsPostPatch updates view prefs on Config" {
     try std.testing.expect(cfg.auto_save);
 }
 
-test "mergeSettingsPostPatch ignores unknown difficulty/log level and defaults non-light theme to dark" {
+test "mergeSettingsPostPatch ignores unknown difficulty/log level/theme" {
     var cfg = config.Config.default();
     cfg.difficulty = .medium;
     cfg.log_level = .warn;
@@ -721,7 +723,7 @@ test "mergeSettingsPostPatch ignores unknown difficulty/log level and defaults n
 
     try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
     try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
-    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
 }
 
 test "requestBody returns null when header separator is missing" {

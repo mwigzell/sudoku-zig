@@ -76,7 +76,7 @@ export async function loadArtifact(wasmBytes) {
       auto_new,
       auto_save,
     }) {
-      const themeWire = theme === "light" ? 1 : 0;
+      const themeWire = theme === "light" ? 1 : (theme === "system" ? 2 : 0);
       const regionWire = show_region ? 1 : 0;
       const warnWire = warn_solvability ? 1 : 0;
       const autoRestoreWire = auto_restore ? 1 : 0;

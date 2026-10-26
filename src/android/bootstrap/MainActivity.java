@@ -10,6 +10,7 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.util.Base64;
@@ -18,6 +19,8 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsetsController;
 import android.widget.Toast;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -52,6 +55,10 @@ public final class MainActivity extends Activity {
     private static final long SPLASH_BOOT_TIMEOUT_MS = 12000L;
     private static final String MIME_ANY = "*/*";
     private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
+    private static final String THEME_LIGHT = "light";
+    private static final String THEME_DARK = "dark";
+    private static final int CHROME_LIGHT = Color.parseColor("#eef0f4");
+    private static final int CHROME_DARK = Color.parseColor("#16181d");
     private static final int ANDROID_UID_PER_USER_RANGE = 100000;
     private static final String BOOT_ERROR_HTML_PREFIX =
         "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
@@ -151,6 +158,7 @@ public final class MainActivity extends Activity {
 
         webView.loadUrl("about:blank");
         setContentView(root);
+        applySystemBarsTheme(THEME_DARK);
 
         JniHost.startHost(getFilesDir().getAbsolutePath(), new JniHost.ReadyCallback() {
             @Override
@@ -256,6 +264,9 @@ public final class MainActivity extends Activity {
             "openSudokuFile:function(){" +
             "return JSON.parse(window.__SudokuAndroidBridge.openSudokuFile());" +
             "}," +
+            "setSystemBars:function(themeName){" +
+            "window.__SudokuAndroidBridge.setSystemBars(String(themeName||\"dark\"));" +
+            "}," +
             "notifyWebBootReady:function(){" +
             "window.__SudokuAndroidBridge.notifyWebBootReady();" +
             "}" +
@@ -277,6 +288,30 @@ public final class MainActivity extends Activity {
             dp,
             getResources().getDisplayMetrics()
         ));
+    }
+
+    private void applySystemBarsTheme(String themeName) {
+        final boolean lightTheme = THEME_LIGHT.equals(themeName);
+        final Window window = getWindow();
+        if (window == null) return;
+        final int chromeColor = lightTheme ? CHROME_LIGHT : CHROME_DARK;
+        window.setStatusBarColor(chromeColor);
+        window.setNavigationBarColor(chromeColor);
+        final View decor = window.getDecorView();
+        if (decor == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            final WindowInsetsController controller = window.getInsetsController();
+            if (controller == null) return;
+            final int lightMask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            controller.setSystemBarsAppearance(lightTheme ? lightMask : 0, lightMask);
+            return;
+        }
+        int flags = decor.getSystemUiVisibility();
+        final int legacyMask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        if (lightTheme) flags |= legacyMask;
+        else flags &= ~legacyMask;
+        decor.setSystemUiVisibility(flags);
     }
 
     private View makeLaunchSplashView() {
@@ -525,6 +560,12 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void notifyWebBootReady() {
             runOnUiThread(() -> dismissLaunchSplash());
+        }
+
+        @JavascriptInterface
+        public void setSystemBars(String themeName) {
+            final String resolved = THEME_LIGHT.equals(themeName) ? THEME_LIGHT : THEME_DARK;
+            runOnUiThread(() -> applySystemBarsTheme(resolved));
         }
     }
 

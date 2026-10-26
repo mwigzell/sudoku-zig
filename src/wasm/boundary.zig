@@ -133,6 +133,7 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         const theme_name = parsed.value.theme orelse return error.MissingField;
         if (std.ascii.eqlIgnoreCase(theme_name, "light")) return .{ .set_theme = .light };
         if (std.ascii.eqlIgnoreCase(theme_name, "dark")) return .{ .set_theme = .dark };
+        if (std.ascii.eqlIgnoreCase(theme_name, "system")) return .{ .set_theme = .system };
         return error.InvalidTheme;
     }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_region")) {
@@ -314,6 +315,7 @@ pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
     const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
         .light => "light",
+        .system => "system",
     };
     var mutable = out;
     try writeJson(
@@ -397,6 +399,11 @@ test "parseAction set_theme and set_region" {
     const theme_cmd = try parseAction("{\"action\":\"set_theme\",\"theme\":\"light\"}");
     switch (theme_cmd) {
         .set_theme => |theme| try std.testing.expectEqual(config.ViewTheme.light, theme),
+        else => return error.TestFailed,
+    }
+    const system_theme_cmd = try parseAction("{\"action\":\"set_theme\",\"theme\":\"system\"}");
+    switch (system_theme_cmd) {
+        .set_theme => |theme| try std.testing.expectEqual(config.ViewTheme.system, theme),
         else => return error.TestFailed,
     }
 

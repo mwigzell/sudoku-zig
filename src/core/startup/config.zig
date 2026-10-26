@@ -75,6 +75,7 @@ pub fn writeHostStartupJsonWithPolicy(
     const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
         .light => "light",
+        .system => "system",
     };
     try std.Io.Writer.print(
         w,

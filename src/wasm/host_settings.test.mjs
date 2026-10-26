@@ -34,11 +34,11 @@ import { wireRegionMenu } from "./region.js";
     auto_save: true,
   });
   assert.deepEqual(
-    hostViewPrefsForPersist({ theme: "dark", show_region: false, warn_solvability: true, auto_restore: false, auto_new: false, auto_save: false }),
+    hostViewPrefsForPersist({ theme: "system", show_region: false, warn_solvability: true, auto_restore: false, auto_new: false, auto_save: false }),
     {
       difficulty: "easy",
       log_level: "info",
-      theme: "dark",
+      theme: "system",
       show_region: false,
       warn_solvability: true,
       auto_restore: false,
