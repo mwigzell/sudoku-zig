@@ -1,6 +1,4 @@
 {
   "budget_seconds": 15.0,
-  "last_seconds": 3.07,
-  "recorded_at": "2026-10-26T14:24:14Z",
-  "notes": "Wall time for zig build verify-run (tests, fmt, standards, glue, kcov). Raise budget_seconds when the suite legitimately grows."
+  "notes": "Timing policy for zig build verify-run. last_seconds/recorded_at are stored locally in .zig-cache/verify-timing-local.json."
 }

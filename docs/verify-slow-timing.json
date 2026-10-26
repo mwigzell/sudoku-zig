@@ -1,6 +1,4 @@
 {
   "budget_seconds": 80.0,
-  "last_seconds": 45.20,
-  "recorded_at": "2026-10-24T05:13:10Z",
-  "notes": "Wall time for zig build verify-slow-run (costly generator property tests). Not part of zig build verify."
+  "notes": "Timing policy for zig build verify-slow-run. last_seconds/recorded_at are stored locally in .zig-cache/verify-slow-timing-local.json."
 }

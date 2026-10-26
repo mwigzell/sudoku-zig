@@ -10,6 +10,7 @@ zig build verify-slow-run  # run slow tests only — no timing check
 ```
 
 Timing uses `docs/verify-slow-timing.json` and `scripts/verify-slow-gate.sh` (same rules as `docs/agents/verify-timing.md`).
+Last successful run timing is local-only in `/.zig-cache/verify-slow-timing-local.json` (untracked).
 
 **Wall bound:** the gate wraps the suite in `run-with-timeout.sh` — default **90s** total (`VERIFY_SLOW_WALL_SECONDS` to override). Healthy runs are machine-dependent (a few seconds to the high tens of seconds); the `budget_seconds` ceiling in `docs/verify-slow-timing.json` is the pass/fail line, and the 90s wall just catches runaway carve loops without hanging the agent.
 

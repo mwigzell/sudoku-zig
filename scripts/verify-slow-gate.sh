@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Time zig build verify-slow-run, compare to docs/verify-slow-timing.json, update last run.
+# Time zig build verify-slow-run and enforce timing policy from docs/verify-slow-timing.json.
+# Persist last successful timing to local state (untracked), not to policy file.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 TIMING_FILE="$ROOT/docs/verify-slow-timing.json"
+STATE_FILE="${VERIFY_SLOW_TIMING_STATE_FILE:-$ROOT/.zig-cache/verify-slow-timing-local.json}"
 REGRESSION_FACTOR="${VERIFY_SLOW_REGRESSION_FACTOR:-1.5}"
 TIME_LOG="$(mktemp)"
 
@@ -26,6 +28,12 @@ fi
 
 budget="$(jq -r '.budget_seconds' "$TIMING_FILE")"
 last="$(jq -r '.last_seconds // .budget_seconds' "$TIMING_FILE")"
+if [[ -f "$STATE_FILE" ]]; then
+  last="$(jq -r '.last_seconds // empty' "$STATE_FILE")"
+  if [[ -z "$last" || "$last" == "null" ]]; then
+    last="$(jq -r '.last_seconds // .budget_seconds' "$TIMING_FILE")"
+  fi
+fi
 regression_limit="$(awk -v last="$last" -v factor="$REGRESSION_FACTOR" 'BEGIN { printf "%.2f", last * factor }')"
 
 SLOW_WALL_LIMIT="${VERIFY_SLOW_WALL_SECONDS:-90}"
@@ -69,7 +77,7 @@ if [[ "$failed" -ne 0 ]]; then
 fi
 
 recorded_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-jq --argjson elapsed "$elapsed" --arg ts "$recorded_at" \
-  '.last_seconds = $elapsed | .recorded_at = $ts' \
-  "$TIMING_FILE" > "${TIMING_FILE}.tmp"
-mv "${TIMING_FILE}.tmp" "$TIMING_FILE"
+mkdir -p "$(dirname "$STATE_FILE")"
+jq -n --argjson elapsed "$elapsed" --arg ts "$recorded_at" \
+  '{last_seconds: $elapsed, recorded_at: $ts}' \
+  > "$STATE_FILE"
