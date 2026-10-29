@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.database.Cursor;
 import android.provider.DocumentsContract;
 import android.graphics.Color;
@@ -85,6 +86,8 @@ public final class MainActivity extends Activity {
     private ActivityResultWaiter saveWaiter;
     private Uri currentFileUri;
     private String currentFileName;
+    private String pendingSystemBarsTheme;
+    private boolean webBootReady;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -335,6 +338,18 @@ public final class MainActivity extends Activity {
         decor.setSystemUiVisibility(flags);
     }
 
+    private String resolveSystemBarsThemeFromSystem() {
+        final int mask = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        return mask == Configuration.UI_MODE_NIGHT_YES ? THEME_DARK : THEME_LIGHT;
+    }
+
+    private void applyDeferredSystemBarsTheme() {
+        final String theme =
+            pendingSystemBarsTheme != null ? pendingSystemBarsTheme : resolveSystemBarsThemeFromSystem();
+        pendingSystemBarsTheme = null;
+        applySystemBarsTheme(theme);
+    }
+
     private View makeLaunchSplashView() {
         View overlay = new View(this);
         int splashBgResId = getResources().getIdentifier("splash_background", "drawable", getPackageName());
@@ -362,6 +377,7 @@ public final class MainActivity extends Activity {
                     ViewGroup parent = (ViewGroup) current.getParent();
                     if (parent != null) parent.removeView(current);
                     launchSplashView = null;
+                    if (webBootReady) applyDeferredSystemBarsTheme();
                 })
                 .start();
         }, remaining);
@@ -656,13 +672,23 @@ public final class MainActivity extends Activity {
 
         @JavascriptInterface
         public void notifyWebBootReady() {
-            runOnUiThread(() -> dismissLaunchSplash());
+            runOnUiThread(() -> {
+                webBootReady = true;
+                if (launchSplashView == null) applyDeferredSystemBarsTheme();
+                dismissLaunchSplash();
+            });
         }
 
         @JavascriptInterface
         public void setSystemBars(String themeName) {
             final String resolved = THEME_LIGHT.equals(themeName) ? THEME_LIGHT : THEME_DARK;
-            runOnUiThread(() -> applySystemBarsTheme(resolved));
+            runOnUiThread(() -> {
+                if (!webBootReady) {
+                    pendingSystemBarsTheme = resolved;
+                    return;
+                }
+                applySystemBarsTheme(resolved);
+            });
         }
     }
 
