@@ -34,6 +34,9 @@ export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
 const BRIDGE_CANCELLED = "cancelled";
+const BINDING_KIND_FILE_HANDLE = "file_handle";
+const BINDING_KIND_ANDROID_BRIDGE = "android_bridge";
+const AUTOSAVE_EXTERNAL_PROMPT_DONE = "__autosaveExternalPromptDone";
 
 /** Android bridge capability check for Save/Save As path selection. */
 function bridgeSupportsSave(bridge) {
@@ -157,6 +160,93 @@ async function writeHandle(handle, bytes) {
   await writable.close();
 }
 
+function bindingForFileHandle(handle) {
+  return { kind: BINDING_KIND_FILE_HANDLE, handle };
+}
+
+function bindingForAndroidBridge() {
+  return { kind: BINDING_KIND_ANDROID_BRIDGE };
+}
+
+function clearBoundSnapshotWriter(session) {
+  session.boundSnapshotWriter = null;
+  session.boundSnapshotWriterKind = null;
+}
+
+async function saveToAndroidBoundTarget(bridge, bytes, suggestedName) {
+  if (!bridge) return { ok: false, error: "no Android bridge" };
+  const saveCurrent = bridge.saveCurrentSudokuFile;
+  if (typeof saveCurrent === "function") {
+    const out = await saveCurrent(bytesToBase64(bytes), suggestedName);
+    if (!out || out.ok !== true) {
+      if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
+      return { ok: false, error: out?.error ?? "save failed" };
+    }
+    return { ok: true };
+  }
+  const saveLegacy = bridge.saveSudokuFile;
+  if (typeof saveLegacy !== "function") return { ok: false, error: "save bridge unavailable" };
+  const out = await saveLegacy(bytesToBase64(bytes), suggestedName, false);
+  if (!out || out.ok !== true) {
+    if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
+    return { ok: false, error: out?.error ?? "save failed" };
+  }
+  return { ok: true };
+}
+
+function bindSnapshotWriter(session, binding, win = globalThis) {
+  if (!binding) return;
+  if (binding.kind === BINDING_KIND_FILE_HANDLE && binding.handle) {
+    session.fileHandle = binding.handle;
+    session.boundSnapshotWriterKind = BINDING_KIND_FILE_HANDLE;
+    session.boundSnapshotWriter = async (bytes) => {
+      try {
+        await writeHandle(binding.handle, bytes);
+        return { ok: true };
+      } catch (err) {
+        session.fileHandle = null;
+        clearBoundSnapshotWriter(session);
+        return { ok: false, error: err?.message ?? "save failed" };
+      }
+    };
+    return;
+  }
+  if (binding.kind === BINDING_KIND_ANDROID_BRIDGE) {
+    const bridge = win?.AndroidFileBridge;
+    session.boundSnapshotWriterKind = BINDING_KIND_ANDROID_BRIDGE;
+    session.boundSnapshotWriter = async (bytes, suggestedName) => {
+      try {
+        return await saveToAndroidBoundTarget(bridge, bytes, suggestedName);
+      } catch (err) {
+        return { ok: false, error: err?.message ?? "save failed" };
+      }
+    };
+  }
+}
+
+function hasAndroidCurrentTarget(win = globalThis) {
+  const bridge = win?.AndroidFileBridge;
+  if (typeof bridge?.hasCurrentSudokuFile !== "function") return null;
+  return bridge.hasCurrentSudokuFile() === true;
+}
+
+function androidCurrentTargetName(win = globalThis) {
+  const bridge = win?.AndroidFileBridge;
+  if (typeof bridge?.currentSudokuFileName !== "function") return null;
+  const name = bridge.currentSudokuFileName();
+  if (typeof name !== "string" || name.length === 0) return null;
+  return name;
+}
+
+function primeAndroidBoundTarget(session, win = globalThis) {
+  const bridge = win?.AndroidFileBridge;
+  if (!bridge || typeof bridge.saveCurrentSudokuFile !== "function") return;
+  bindSnapshotWriter(session, bindingForAndroidBridge(), win);
+  if (typeof session.boundFilename === "string" && session.boundFilename.length > 0) return;
+  const name = androidCurrentTargetName(win);
+  if (name) session.boundFilename = name;
+}
+
 /** Persist SUD0 bytes through current handle, Android bridge, picker, or download fallback. */
 export async function persistBytes(
   bytes,
@@ -167,7 +257,7 @@ export async function persistBytes(
   if (!saveAs && session.fileHandle) {
     try {
       await writeHandle(session.fileHandle, bytes);
-      return { ok: true, filename: session.fileHandle.name };
+      return { ok: true, filename: session.fileHandle.name, binding: bindingForFileHandle(session.fileHandle) };
     } catch {
       session.fileHandle = null;
     }
@@ -180,7 +270,7 @@ export async function persistBytes(
         if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
         return { ok: false, error: out?.error ?? "save failed" };
       }
-      return { ok: true, filename: out.name ?? suggestedName };
+      return { ok: true, filename: out.name ?? suggestedName, binding: bindingForAndroidBridge() };
     } catch (err) {
       return { ok: false, error: err?.message ?? "save failed" };
     }
@@ -195,7 +285,7 @@ export async function persistBytes(
       });
       await writeHandle(handle, bytes);
       session.fileHandle = handle;
-      return { ok: true, filename: handle.name };
+      return { ok: true, filename: handle.name, binding: bindingForFileHandle(handle) };
     } catch (err) {
       if (err?.name === "AbortError") return { ok: false, cancelled: true };
       throw err;
@@ -245,7 +335,7 @@ export async function pickBytes(doc = document, session = {}, { types = sudFileP
       if (typeof out.base64 !== "string" || typeof out.name !== "string") {
         return { ok: false, error: "invalid Android file payload" };
       }
-      return { ok: true, bytes: base64ToBytes(out.base64), name: out.name };
+      return { ok: true, bytes: base64ToBytes(out.base64), name: out.name, binding: bindingForAndroidBridge() };
     } catch (err) {
       return { ok: false, error: err?.message ?? "open failed" };
     }
@@ -264,6 +354,7 @@ export async function pickBytes(doc = document, session = {}, { types = sudFileP
         bytes: new Uint8Array(await file.arrayBuffer()),
         name: file.name,
         handle,
+        binding: bindingForFileHandle(handle),
       };
     } catch (err) {
       if (err?.name === "AbortError") return { ok: false, cancelled: true };
@@ -355,6 +446,7 @@ export function wireFileMenu(
   /** Shared tail for successful manual Save/Save As actions. */
   const completeManualSave = async (saved, writeContextEventName) => {
     session.boundFilename = saved.filename;
+    bindSnapshotWriter(session, saved.binding, globalThis);
     const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
       fetchFn: globalThis.fetch,
       saveName: saved.filename,
@@ -375,12 +467,40 @@ export function wireFileMenu(
     return true;
   };
 
+  const ensureAutosaveExternalTarget = async () => {
+    if (session[AUTOSAVE_EXTERNAL_PROMPT_DONE] === true) return { ok: true };
+    if (typeof session.boundSnapshotWriter === "function") {
+      const androidWriter = session.boundSnapshotWriterKind === BINDING_KIND_ANDROID_BRIDGE;
+      if (!androidWriter) return { ok: true };
+      const hasTarget = hasAndroidCurrentTarget(globalThis);
+      if (hasTarget === true || hasTarget === null) return { ok: true };
+    }
+    session[AUTOSAVE_EXTERNAL_PROMPT_DONE] = true;
+    const result = saveAs(game);
+    if (!result.ok) return result;
+    const suggested = suggestedSaveFilename(session);
+    if (!suggested) return { ok: false, error: MISSING_DEFAULT_SAVE_FILENAME };
+    const saved = await persistBytes(result.bytes, session, suggested, {
+      saveAs: true,
+      download,
+    });
+    if (!saved.ok) return saved;
+    if (!saved.binding) return { ok: true };
+    session.boundFilename = saved.filename;
+    bindSnapshotWriter(session, saved.binding, globalThis);
+    syncCurrentFileLabels(session);
+    return { ok: true };
+  };
+  session.ensureAutosaveExternalTarget = ensureAutosaveExternalTarget;
+  if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, globalThis);
+
   /** Shared tail for successful board-replacing loads (new/open/import) before autosave kick. */
   const finalizeLoadedSession = async (
     result,
     {
       fileHandle,
       boundFilename,
+      binding = null,
       writeContextEventName,
       legend,
       config,
@@ -404,6 +524,11 @@ export function wireFileMenu(
       error: err?.message ?? String(err),
     }));
     if (!finalized.ok) fail(finalized);
+    if (binding) {
+      bindSnapshotWriter(session, binding, globalThis);
+    } else if (fileHandle == null && boundFilename == null) {
+      clearBoundSnapshotWriter(session);
+    }
     refreshSessionView(
       boardEl,
       selection,
@@ -551,6 +676,7 @@ export function wireFileMenu(
     await finalizeLoadedSession(result, {
       fileHandle: picked.handle ?? null,
       boundFilename: picked.name,
+      binding: picked.binding ?? null,
       writeContextEventName: WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
       legend: game.getLegend(),
       config: game.getConfig(),

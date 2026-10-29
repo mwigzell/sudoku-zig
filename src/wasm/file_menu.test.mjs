@@ -588,6 +588,7 @@ function makeRenderElement() {
   });
   assert.equal(out.ok, true);
   assert.equal(out.filename, "picked.sud");
+  assert.equal(out.binding?.kind, "android_bridge");
   assert.equal(last.suggestedName, "android.sud");
   assert.equal(last.saveAs, false);
 }
@@ -630,6 +631,7 @@ function makeRenderElement() {
     download() { throw new Error("no download"); },
   });
   assert.equal(saved.ok, true);
+  assert.equal(saved.binding?.kind, "file_handle");
   assert.deepEqual([...written], [7]);
 }
 
@@ -656,6 +658,7 @@ function makeRenderElement() {
   const picked = await pickBytes(doc, { fileHandle: { name: "prior.sud" } });
   assert.equal(picked.ok, true);
   assert.equal(picked.name, "picked.sud");
+  assert.equal(picked.binding?.kind, "file_handle");
   assert.deepEqual([...picked.bytes], [8, 8]);
 }
 
@@ -677,6 +680,7 @@ function makeRenderElement() {
   const picked = await pickBytes(doc, {});
   assert.equal(picked.ok, true);
   assert.equal(picked.name, "bridge.sud");
+  assert.equal(picked.binding?.kind, "android_bridge");
   assert.deepEqual([...picked.bytes], [...bytes]);
 }
 

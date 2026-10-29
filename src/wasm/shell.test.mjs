@@ -1036,6 +1036,160 @@ async function flushDialogPaint() {
 }
 
 {
+  // First successful autosave from detached/unsaved state binds default filename.
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    default_save_filename: "sudoku.sud",
+    boundFilename: null,
+    writeContextEvent: async () => ({ ok: true }),
+  };
+  const fetchFn = async (url) => {
+    if (url === "./current-file") return { ok: true, status: 204 };
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+  startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await session.__autosave_lane;
+  assert.equal(session.boundFilename, "sudoku.sud");
+}
+
+{
+  // Autosave can require an external target before persisting.
+  const writes = [];
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([5, 5]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    default_save_filename: "sudoku.sud",
+    boundFilename: "picked.sud",
+    writeContextEvent: async () => ({ ok: true }),
+  };
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file") {
+      writes.push({ lane: "host", bytes: [...new Uint8Array(init.body)] });
+      return { ok: true, status: 204 };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+  startAutoSavePolicy(game, session, "fill", {
+    fetchFn,
+    ensureExternalTarget: async ({ session: lane }) => {
+      lane.boundSnapshotWriter = async (bytes) => {
+        writes.push({ lane: "bound", bytes: [...bytes] });
+        return { ok: true };
+      };
+      return { ok: true };
+    },
+  });
+  await session.__autosave_lane;
+  assert.deepEqual(writes, [
+    { lane: "bound", bytes: [5, 5] },
+    { lane: "host", bytes: [5, 5] },
+  ]);
+}
+
+{
+  // If target binding setup fails, autosave aborts before any write lanes.
+  let surfaced = null;
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([9, 9]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+  };
+  const fetchFn = async () => ({ ok: true, status: 204 });
+  startAutoSavePolicy(game, session, "fill", {
+    fetchFn,
+    ensureExternalTarget: async () => ({ ok: false, error: "bind required" }),
+    onError: (err) => {
+      surfaced = err;
+    },
+  });
+  await session.__autosave_lane;
+  assert.equal(surfaced?.error, "bind required");
+}
+
+{
+  // Bound working-target autosave writes target first, then mirrors startup lane.
+  const writes = [];
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([4, 2]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    boundFilename: "bound.sud",
+    writeContextEvent: async () => ({ ok: true }),
+    boundSnapshotWriter: async (bytes) => {
+      writes.push({ lane: "bound", bytes: [...bytes] });
+      return { ok: true };
+    },
+  };
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file") {
+      writes.push({ lane: "host", bytes: [...new Uint8Array(init.body)] });
+      return { ok: true, status: 204 };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+
+  startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await session.__autosave_lane;
+  assert.deepEqual(writes, [
+    { lane: "bound", bytes: [4, 2] },
+    { lane: "host", bytes: [4, 2] },
+  ]);
+}
+
+{
+  // If bound working-target save fails, autosave must not silently mirror host lane.
+  const writes = [];
+  const game = {
+    serialize() {
+      return { ok: true, bytes: new Uint8Array([3]) };
+    },
+  };
+  const session = {
+    config: { auto_save: true },
+    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
+    boundFilename: "bound.sud",
+    writeContextEvent: async () => ({ ok: true }),
+    boundSnapshotWriter: async () => ({ ok: false, error: "bound write failed" }),
+  };
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file") {
+      writes.push(new Uint8Array(init.body));
+      return { ok: true, status: 204 };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+  let surfaced = null;
+  startAutoSavePolicy(game, session, "fill", {
+    fetchFn,
+    onError: (err) => {
+      surfaced = err;
+    },
+  });
+  await session.__autosave_lane;
+  assert.equal(writes.length, 0, "host mirror must not run when bound autosave fails");
+  assert.equal(surfaced?.error, "bound write failed");
+}
+
+{
   // Slow-user lifecycle seam: startup context publish is fire-and-forget, so the
   // first autosave after restore can race and be dropped (no retry).
   const writes = [];

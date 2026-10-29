@@ -2,6 +2,7 @@ package com.wigzell.sudoku_zig;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -53,8 +54,16 @@ public final class MainActivity extends Activity {
     private static final int PICKER_TIMEOUT_SECONDS = 60;
     private static final long MIN_LAUNCH_SPLASH_MS = 2000L;
     private static final long SPLASH_BOOT_TIMEOUT_MS = 12000L;
-    private static final String MIME_ANY = "*/*";
+    private static final String MIME_OCTET_STREAM = "application/octet-stream";
+    private static final String MIME_TEXT_PLAIN = "text/plain";
+    private static final String[] OPEN_MIME_TYPES = new String[] {
+        MIME_OCTET_STREAM,
+        MIME_TEXT_PLAIN,
+    };
     private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
+    private static final String FILE_BIND_PREFS = "sudoku_file_binding";
+    private static final String FILE_BIND_URI_KEY = "current_uri";
+    private static final String FILE_BIND_NAME_KEY = "current_name";
     private static final String THEME_LIGHT = "light";
     private static final String THEME_DARK = "dark";
     private static final int CHROME_LIGHT = Color.parseColor("#eef0f4");
@@ -80,6 +89,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        restoreCurrentFileBinding();
         logStartupIdentity();
 
         webView = new WebView(this);
@@ -263,6 +273,15 @@ public final class MainActivity extends Activity {
             "saveSudokuFile:function(base64,suggestedName,saveAs){" +
             "return JSON.parse(window.__SudokuAndroidBridge.saveSudokuFile(String(base64||\"\"),String(suggestedName||\"\"),!!saveAs));" +
             "}," +
+            "saveCurrentSudokuFile:function(base64,suggestedName){" +
+            "return JSON.parse(window.__SudokuAndroidBridge.saveCurrentSudokuFile(String(base64||\"\"),String(suggestedName||\"\")));" +
+            "}," +
+            "hasCurrentSudokuFile:function(){" +
+            "return !!window.__SudokuAndroidBridge.hasCurrentSudokuFile();" +
+            "}," +
+            "currentSudokuFileName:function(){" +
+            "return String(window.__SudokuAndroidBridge.currentSudokuFileName()||\"\");" +
+            "}," +
             "openSudokuFile:function(){" +
             "return JSON.parse(window.__SudokuAndroidBridge.openSudokuFile());" +
             "}," +
@@ -381,9 +400,36 @@ public final class MainActivity extends Activity {
     }
 
     private void rememberCurrentFile(Uri uri, String fallbackName) {
+        if (uri == null) return;
+        final String resolvedName = displayNameOf(uri, fallbackName);
         synchronized (pickerLock) {
             currentFileUri = uri;
-            currentFileName = displayNameOf(uri, fallbackName);
+            currentFileName = resolvedName;
+        }
+        persistCurrentFileBinding(uri, resolvedName);
+    }
+
+    private SharedPreferences fileBindingPrefs() {
+        return getSharedPreferences(FILE_BIND_PREFS, MODE_PRIVATE);
+    }
+
+    private void persistCurrentFileBinding(Uri uri, String name) {
+        if (uri == null) return;
+        fileBindingPrefs()
+            .edit()
+            .putString(FILE_BIND_URI_KEY, uri.toString())
+            .putString(FILE_BIND_NAME_KEY, name)
+            .apply();
+    }
+
+    private void restoreCurrentFileBinding() {
+        final String uriText = fileBindingPrefs().getString(FILE_BIND_URI_KEY, null);
+        if (uriText == null || uriText.isEmpty()) return;
+        final Uri uri = Uri.parse(uriText);
+        final String name = fileBindingPrefs().getString(FILE_BIND_NAME_KEY, DEFAULT_SAVE_FILENAME);
+        synchronized (pickerLock) {
+            currentFileUri = uri;
+            currentFileName = name;
         }
     }
 
@@ -466,7 +512,8 @@ public final class MainActivity extends Activity {
     private String openViaPicker() {
         final Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
-        pick.setType(MIME_ANY);
+        pick.setType(MIME_OCTET_STREAM);
+        pick.putExtra(Intent.EXTRA_MIME_TYPES, OPEN_MIME_TYPES);
         pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -512,7 +559,7 @@ public final class MainActivity extends Activity {
     private String saveViaCreateDocument(byte[] bytes, String suggestedName) {
         final Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         create.addCategory(Intent.CATEGORY_OPENABLE);
-        create.setType("application/octet-stream");
+        create.setType(MIME_OCTET_STREAM);
         create.putExtra(Intent.EXTRA_TITLE, suggestedName);
         create.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         create.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
@@ -521,6 +568,29 @@ public final class MainActivity extends Activity {
         final Intent result;
         try {
             result = awaitResultIntent(REQUEST_CREATE_DOCUMENT, create);
+        } catch (InterruptedException err) {
+            Thread.currentThread().interrupt();
+            return jsonError("save interrupted");
+        }
+        if (result == null || result.getData() == null) return jsonCancelled();
+        rememberPersistedPermission(result);
+        final Uri uri = result.getData();
+        final String name = displayNameOf(uri, suggestedName);
+        return saveBytesTo(uri, bytes, name);
+    }
+
+    private String saveViaOpenDocument(byte[] bytes, String suggestedName) {
+        final Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        pick.setType(MIME_OCTET_STREAM);
+        pick.putExtra(Intent.EXTRA_MIME_TYPES, OPEN_MIME_TYPES);
+        pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+
+        final Intent result;
+        try {
+            result = awaitResultIntent(REQUEST_OPEN_DOCUMENT, pick);
         } catch (InterruptedException err) {
             Thread.currentThread().interrupt();
             return jsonError("save interrupted");
@@ -545,6 +615,7 @@ public final class MainActivity extends Activity {
             if (!saveAs) {
                 final Uri uri = currentUri();
                 if (uri != null) return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
+                return saveViaOpenDocument(bytes, suggestedName);
             }
             return saveViaCreateDocument(bytes, suggestedName);
         }
@@ -552,6 +623,30 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public String openSudokuFile() {
             return openViaPicker();
+        }
+
+        @JavascriptInterface
+        public String saveCurrentSudokuFile(String base64, String suggestedName) {
+            final byte[] bytes;
+            try {
+                bytes = Base64.decode(base64, Base64.DEFAULT);
+            } catch (IllegalArgumentException err) {
+                return jsonError("invalid save payload");
+            }
+            final Uri uri = currentUri();
+            if (uri == null) return jsonError("no bound save target");
+            return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
+        }
+
+        @JavascriptInterface
+        public boolean hasCurrentSudokuFile() {
+            return currentUri() != null;
+        }
+
+        @JavascriptInterface
+        public String currentSudokuFileName() {
+            if (currentUri() == null) return "";
+            return currentNameOr("");
         }
 
         @JavascriptInterface

@@ -520,13 +520,23 @@ export async function persistCurrentFileSnapshot(
 ) {
   const saved = game.serialize();
   if (!saved.ok) return saved;
+  return persistCurrentFileBytes(saved.bytes, fetchFn, saveName, replace);
+}
+
+/** Persist pre-serialized SUD0 snapshot bytes to startup restore lane (`/current-file`). */
+export async function persistCurrentFileBytes(
+  bytes,
+  fetchFn = globalThis.fetch,
+  saveName = null,
+  replace = false,
+) {
   const headers = { "Content-Type": "application/octet-stream" };
   if (typeof saveName === "string" && saveName.length > 0) headers["X-Sudoku-Filename"] = saveName;
   if (replace === true) headers["X-Sudoku-Replace"] = "true";
   const res = await fetchFn("./current-file", {
     method: "POST",
     headers,
-    body: saved.bytes,
+    body: bytes,
   });
   if (res.status === 409) {
     const msg = (await res.text()) || "save target conflict";
@@ -623,6 +633,7 @@ export function createWebSessionFromStartup(ready, writeContextEvent = DEFAULT_W
     write_context_events: ready.write_context_events,
     write_context: WRITE_CONTEXT_DETACHED,
     writeContextEvent,
+    boundSnapshotWriter: null,
     startup_context_ready: null,
   };
 }
@@ -698,7 +709,25 @@ export async function persistCurrentFileSnapshotWithReplacePrompt(
     askConfirm = globalThis.__sudokuConfirmReplace ?? globalThis.confirm,
   } = {},
 ) {
-  const first = await persistCurrentFileSnapshot(game, fetchFn, saveName, false);
+  const saved = game.serialize();
+  if (!saved.ok) return saved;
+  return persistCurrentFileBytesWithReplacePrompt(saved.bytes, {
+    fetchFn,
+    saveName,
+    askConfirm,
+  });
+}
+
+/** Persist pre-serialized snapshot bytes with a replace-confirm retry on host conflict. */
+export async function persistCurrentFileBytesWithReplacePrompt(
+  bytes,
+  {
+    fetchFn = globalThis.fetch,
+    saveName = null,
+    askConfirm = globalThis.__sudokuConfirmReplace ?? globalThis.confirm,
+  } = {},
+) {
+  const first = await persistCurrentFileBytes(bytes, fetchFn, saveName, false);
   if (!first.replace_required) return first;
   const prompt =
     typeof saveName === "string" && saveName.length > 0
@@ -709,7 +738,7 @@ export async function persistCurrentFileSnapshotWithReplacePrompt(
   }
   const confirmed = await askConfirm(prompt);
   if (confirmed !== true) return { ok: false, cancelled: true };
-  return persistCurrentFileSnapshot(game, fetchFn, saveName, true);
+  return persistCurrentFileBytes(bytes, fetchFn, saveName, true);
 }
 
 /** Shared post-command autosave policy for web handlers. */
@@ -718,7 +747,13 @@ export function startAutoSavePolicy(
   game,
   session,
   commandName,
-  { fetchFn = globalThis.fetch, askConfirm, onError, commandMeta = null } = {},
+  {
+    fetchFn = globalThis.fetch,
+    askConfirm,
+    onError,
+    commandMeta = null,
+    ensureExternalTarget,
+  } = {},
 ) {
   const commandText =
     typeof commandMeta?.command_text === "string" && commandMeta.command_text.length > 0
@@ -735,6 +770,10 @@ export function startAutoSavePolicy(
     return;
   }
   const lane = session;
+  const ensureTarget =
+    typeof ensureExternalTarget === "function"
+      ? ensureExternalTarget
+      : lane?.ensureAutosaveExternalTarget;
   const run = async () => {
     logAutosave("run_start", {
       command: commandName,
@@ -757,8 +796,57 @@ export function startAutoSavePolicy(
       }
       lane.startup_context_ready = null;
     }
+    if (typeof ensureTarget === "function") {
+      const ensured = await ensureTarget({
+        game,
+        session: lane,
+        command: commandName,
+        command_text: commandText,
+      }).catch((err) => ({
+        ok: false,
+        error: err?.message ?? String(err),
+      }));
+      if (!ensured?.ok) {
+        logAutosave("ensure_target_failed", {
+          command: commandName,
+          command_text: commandText,
+          cancelled: ensured?.cancelled === true,
+          error: ensured?.error ?? null,
+        });
+        if (!ensured?.cancelled) onError?.(ensured);
+        return;
+      }
+    }
     // Phase 2: persist snapshot with replace-confirm retry semantics.
-    const saved = await persistCurrentFileSnapshotWithReplacePrompt(game, {
+    const serialized = game.serialize();
+    if (!serialized.ok) {
+      logAutosave("persist_failed", {
+        command: commandName,
+        command_text: commandText,
+        cancelled: false,
+        error: serialized?.error ?? null,
+      });
+      onError?.(serialized);
+      return;
+    }
+    if (typeof lane.boundSnapshotWriter === "function") {
+      const boundSaved = await lane.boundSnapshotWriter(
+        serialized.bytes,
+        lane.boundFilename ?? lane.default_save_filename,
+      );
+      if (!boundSaved?.ok) {
+        logAutosave("bound_persist_failed", {
+          command: commandName,
+          command_text: commandText,
+          cancelled: boundSaved?.cancelled === true,
+          error: boundSaved?.error ?? null,
+        });
+        if (!boundSaved?.cancelled) onError?.(boundSaved);
+        return;
+      }
+      logAutosave("bound_persist_ok", { command: commandName, command_text: commandText });
+    }
+    const saved = await persistCurrentFileBytesWithReplacePrompt(serialized.bytes, {
       fetchFn,
       saveName: lane.boundFilename ?? lane.default_save_filename,
       askConfirm,
@@ -772,6 +860,13 @@ export function startAutoSavePolicy(
       });
       if (!saved.cancelled) onError?.(saved);
       return;
+    }
+    if (typeof lane.boundFilename !== "string" || lane.boundFilename.length === 0) {
+      const seededName = lane.default_save_filename;
+      if (typeof seededName === "string" && seededName.length > 0) {
+        lane.boundFilename = seededName;
+        syncCurrentFileLabels(lane);
+      }
     }
     logAutosave("persist_ok", { command: commandName, command_text: commandText });
     // Phase 3: publish autosave-success context transition for host policy seam.
