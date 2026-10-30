@@ -69,7 +69,6 @@ export async function bootSudokuWebApp(root = document) {
     // Boot phase 5: apply startup action contract (`restore`/`new`/`idle`).
     const ready = await offerInitialNewGame(game, boot, generatingModal, {
       genWorker,
-      startupAutoContinue: true,
     });
     clientLog("startup", "info", "startup_action_complete", { kind: ready.kind });
     if (!ready.ok) throw new Error(ready.error ?? "New game failed");

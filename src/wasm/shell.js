@@ -4,7 +4,7 @@
 import { runWithGeneratingDialog } from "./generating.js";
 import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
-import { applyWebStartupAction } from "../core/startup/web_startup.js";
+import { applyWebStartupAction } from "./startup_contract.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 
@@ -928,14 +928,14 @@ export async function offerInitialNewGame(
   game,
   boot,
   generatingModal,
-  { genWorker, fetchFn, startupAutoContinue = false } = {},
+  { genWorker, fetchFn } = {},
 ) {
   // Phase 4: apply startup action contract (`restore`/`new`/`idle`) and return normalized outcome.
   return applyWebStartupAction(game, boot, {
     fetchStartupSaveBytes: (restorePath) => fetchStartupSaveBytes(restorePath, fetchFn),
     openFromSaveBytes: (bytes, _restorePath) =>
       typeof game.restore === "function" ? game.restore(bytes) : open(game, bytes),
-    startNewGame: async (cfg, { autoContinue = startupAutoContinue } = {}) => {
+    startNewGame: async (cfg, startupOptions = {}) => {
       const { difficulty, log_level: logLevel } = cfg;
       if (difficulty == null || logLevel == null) {
         return { ok: false, error: "missing engine config after host bootstrap", kind: "empty" };
@@ -944,7 +944,7 @@ export async function offerInitialNewGame(
         difficulty,
         logLevel,
         genWorker,
-        autoContinue,
+        ...(startupOptions ?? {}),
       });
     },
   });

@@ -60,7 +60,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/app_boot.js")) return .app_boot;
         if (std.mem.eql(u8, path, "/app_wire.js")) return .app_wire;
         if (std.mem.eql(u8, path, "/shell.js")) return .shell;
-        if (std.mem.eql(u8, path, "/startup/web_startup.js") or std.mem.eql(u8, path, "/core/startup/web_startup.js")) return .startup_web;
+        if (std.mem.eql(u8, path, "/startup_contract.js")) return .startup_web;
         if (std.mem.eql(u8, path, "/board.js")) return .board;
         if (std.mem.eql(u8, path, "/menu.js")) return .menu;
         if (std.mem.eql(u8, path, "/menu_bar.js")) return .menu_bar;

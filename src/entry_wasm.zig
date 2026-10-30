@@ -278,7 +278,9 @@ export fn restore(in_ptr: u32, in_len: u32) callconv(.c) u32 {
         .error_msg => |msg| return exportError(out, msg),
         .ok => {},
     }
-    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
+    boundary.writeEventJsonWithOptions(out, ev, .{
+        .startup_prompt_new_game = eng.state.board.isSolved(),
+    }) catch return exportWriteFailed(out);
     return returnJson(out);
 }
 /// Import a one-line puzzle from a page-read file; codec is the engine's job.

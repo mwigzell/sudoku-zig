@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { applyWebStartupAction } from "../core/startup/web_startup.js";
+import { applyWebStartupAction } from "./startup_contract.js";
 import {
   CURRENT_FILE_DESKTOP_ID,
   persistCurrentFileSnapshot,
@@ -976,7 +976,12 @@ async function flushDialogPaint() {
     },
     {
       fetchStartupSaveBytes: async () => ({ ok: true, bytes: new Uint8Array([1]) }),
-      openFromSaveBytes: () => ({ ok: true, state: { cells: solvedCells }, msg: "You win!" }),
+      openFromSaveBytes: () => ({
+        ok: true,
+        state: { cells: solvedCells },
+        msg: "You win!",
+        startup_prompt_new_game: true,
+      }),
       startNewGame: async () => {
         startNewCalls += 1;
         return { ok: true };
@@ -1020,7 +1025,12 @@ async function flushDialogPaint() {
     },
     {
       fetchStartupSaveBytes: async () => ({ ok: true, bytes: new Uint8Array([1]) }),
-      openFromSaveBytes: () => ({ ok: true, state: { cells: solvedCells }, msg: "You win!" }),
+      openFromSaveBytes: () => ({
+        ok: true,
+        state: { cells: solvedCells },
+        msg: "You win!",
+        startup_prompt_new_game: true,
+      }),
       startNewGame: async () => ({
         ok: true,
         state: { cells: [{ value: 0, given: false, conflict: false }] },
@@ -1697,6 +1707,13 @@ async function flushDialogPaint() {
     modal,
   );
   await flushDialogPaint();
+  let resolved = false;
+  void running.then(() => {
+    resolved = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(modal.el.hidden, false, "startup auto-new keeps generating modal open until Continue");
+  assert.equal(resolved, false, "startup auto-new must not auto-continue");
   modal.continueBtn.click();
   const out = await running;
   assert.equal(out.ok, true);

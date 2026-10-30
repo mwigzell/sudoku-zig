@@ -1,5 +1,5 @@
-// Shared web startup orchestrator: applies host startup action contract and
-// returns a normalized startup outcome for thin adapters to render.
+// Web startup contract executor: applies host-resolved startup action and
+// orchestrates adapter capabilities without redefining host policy authority.
 
 /** Required boot fields every startup outcome must preserve for later session wiring. */
 function withBootFields(boot, payload) {
@@ -10,15 +10,6 @@ function withBootFields(boot, payload) {
     write_context_events: boot.write_context_events,
     ...payload,
   };
-}
-
-function isSolvedState(state) {
-  const cells = state?.cells;
-  if (!Array.isArray(cells) || cells.length !== 81) return false;
-  return cells.every((cell) => {
-    const value = Number(cell?.value);
-    return Number.isInteger(value) && value >= 1 && value <= 9 && cell?.conflict !== true;
-  });
 }
 
 /** Normalize current game snapshot for startup fallback responses. */
@@ -35,8 +26,8 @@ function emptyOutcome(game, boot, msg, extras = {}) {
 }
 
 /**
- * Apply host startup contract (`restore`/`new`/`idle`) using adapter-provided
- * operations. Keeps decision semantics centralized outside page wiring.
+ * Execute host startup contract (`restore`/`new`/`idle`) using adapter-provided
+ * capabilities. Contract values come from shared startup seams.
  */
 export async function applyWebStartupAction(
   game,
@@ -47,14 +38,10 @@ export async function applyWebStartupAction(
     startNewGame,
   },
 ) {
-  // Non-empty outcomes are already resolved upstream (e.g., tests injecting
-  // precomputed startup responses); pass through unchanged.
   if (!boot.ok) return boot;
   if (boot.kind !== "empty") return boot;
 
   if (boot.startup_action === "restore") {
-    // Restore flow: fetch bytes from host-selected startup path, then hydrate
-    // engine through the same open codec used by File -> Open.
     const restorePath = boot.startup_save_path;
     if (!restorePath) {
       return emptyOutcome(game, boot, "startup restore path missing; startup remains manual");
@@ -74,28 +61,19 @@ export async function applyWebStartupAction(
       legend: game.getLegend(),
       config: game.getConfig(),
       msg: restored.msg ?? null,
+      startup_prompt_new_game: restored.startup_prompt_new_game === true,
     });
-    if (boot.on_restore_solved !== "prompt" || !isSolvedState(restored.state)) {
-      return restoreOutcome;
-    }
-    return withBootFields(boot, {
-      ...restoreOutcome,
-      startup_prompt_new_game: true,
-    });
+    return restoreOutcome;
   }
 
   if (boot.startup_action === "idle") {
-    // Idle flow: keep existing board snapshot from bootstrap and surface host
-    // startup status message (if any).
     return withBootFields(boot, {
       ...boot,
       msg: boot.startup_status ?? null,
     });
   }
 
-  // New flow: host requested a startup new-game action. Adapter provides the
-  // generation runner, while this function owns startup decision semantics.
-  const started = await startNewGame(boot.config ?? {}, { autoContinue: true });
+  const started = await startNewGame(boot.config ?? {}, { autoContinue: false });
   if (!started.ok && !started.cancelled) {
     return { ok: false, error: started.error ?? "New game failed", kind: "empty" };
   }

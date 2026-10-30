@@ -631,7 +631,7 @@ public final class MainActivity extends Activity {
             if (!saveAs) {
                 final Uri uri = currentUri();
                 if (uri != null) return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
-                return saveViaOpenDocument(bytes, suggestedName);
+                return saveViaCreateDocument(bytes, suggestedName);
             }
             return saveViaCreateDocument(bytes, suggestedName);
         }

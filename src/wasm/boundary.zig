@@ -233,7 +233,16 @@ pub fn writeSystemErrorJson(out: OutBuffer) void {
     if (n < out.buf.len) out.buf[n] = 0;
 }
 
+pub const EventJsonOptions = struct {
+    startup_prompt_new_game: bool = false,
+};
+
 pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
+    return writeEventJsonWithOptions(out, ev, .{});
+}
+
+/// Writes Event JSON with optional startup metadata flags for host-driven flows.
+pub fn writeEventJsonWithOptions(out: OutBuffer, ev: event_mod.Event, options: EventJsonOptions) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
@@ -252,6 +261,11 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
             }
             try std.Io.Writer.writeAll(&jw.writer, "\"state\":");
             try wire.writeGameSnapshotJson(&jw.writer, snap);
+            try std.Io.Writer.print(
+                &jw.writer,
+                ",\"startup_prompt_new_game\":{any}",
+                .{options.startup_prompt_new_game},
+            );
             try std.Io.Writer.writeAll(&jw.writer, "}");
         },
     }

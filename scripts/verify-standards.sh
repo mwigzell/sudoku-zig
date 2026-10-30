@@ -273,10 +273,19 @@ for f in "${CHANGED[@]}"; do
     "startup restore routed via open(name=restorePath) copy (use restore lane for persisted status)"
 done
 
+# --- 16. Core placement invariant: no JS/HTML under src/core ---
+# Shared core owns portable policy/domain seams; adapter scripting belongs in
+# frontend/platform layers.
+while IFS= read -r core_asset; do
+  [[ -z "$core_asset" ]] && continue
+  [[ -f "$core_asset" ]] || continue
+  note_violation "core placement violation: non-Zig source under src/core (${core_asset})" ""
+done < <(git ls-files 'src/core/**/*.js' 'src/core/**/*.mjs' 'src/core/**/*.html')
+
 # --- report ---
 if [[ $FAIL -eq 0 ]]; then
   pass_line "mechanical standards clean (${#CHANGED[@]} file(s))"
-  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY, status ownership, restore lane\n' "${C_DIM}"
+  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY, status ownership, restore lane, core placement\n' "${C_DIM}"
   printf '%b judgement calls (SOLID/spec) still need two-axis review\n' "${C_DIM}"
   exit 0
 fi
