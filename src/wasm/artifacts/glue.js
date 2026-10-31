@@ -53,6 +53,12 @@ export async function loadArtifact(wasmBytes) {
 
   // Most wasm exports return an out-pointer to a JSON string response.
   const readJson = (ptr) => JSON.parse(readCString(memory, ptr));
+  // JSON payload in at SCRATCH, JSON out.
+  const callJsonPayload = (fn, payload) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    writeBytes(memory, SCRATCH, bytes);
+    return readJson(fn(SCRATCH, bytes.length));
+  };
 
   return {
     // Worker and main-thread generators share one progress callback contract.
@@ -181,6 +187,21 @@ export async function loadArtifact(wasmBytes) {
       const base = exports.outPtr();
       if (ret === base) return readJson(base);
       return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };
+    },
+
+    /** Start a core flow; returns its first step. */
+    flowStart(start) {
+      return callJsonPayload(exports.flowStart, start);
+    },
+
+    /** Report one step result to the running flow; returns the next step. */
+    flowNext(input) {
+      return callJsonPayload(exports.flowNext, input);
+    },
+
+    /** Record an open/new/import/paste/startup event in the web FileSession. */
+    fileSessionEvent(event, name = null) {
+      return callJsonPayload(exports.fileSessionEvent, name ? { event, name } : { event });
     },
 
     get exports() {

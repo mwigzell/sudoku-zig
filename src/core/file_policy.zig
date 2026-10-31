@@ -49,15 +49,16 @@ pub const AUTO_SAVE_TRIGGER_COMMANDS = [_][]const u8{
     "paste",
 };
 
-/// Wire JSON for host startup payload; used by web adapters to avoid local trigger lists.
-pub const AUTO_SAVE_TRIGGER_COMMANDS_JSON: []const u8 =
-    "[\"fill\",\"clear\",\"undo\",\"redo\",\"hint\",\"solve\",\"solve_for_me\",\"open\",\"import\",\"paste\"]";
-/// Wire JSON mapping of write-context event names for web adapters.
-pub const WRITE_CONTEXT_EVENTS_JSON: []const u8 =
-    "{\"startup_restore\":\"startup_restore\",\"startup_new\":\"startup_new\",\"startup_idle\":\"startup_idle\",\"open_success\":\"open_success\",\"save_success\":\"save_success\",\"save_as_success\":\"save_as_success\",\"auto_save_success\":\"auto_save_success\",\"new_game_success\":\"new_game_success\",\"import_success\":\"import_success\",\"paste_success\":\"paste_success\"}";
+/// Replace question asked before overwriting an existing file; `{s}` is the file name.
+pub const REPLACE_CONFIRM_TITLE: []const u8 = "Replace file?";
+pub const REPLACE_CONFIRM_FMT = "{s} already exists. Do you want to replace it?";
+pub const REPLACE_CONFIRM_OK_LABEL: []const u8 = "Replace";
+pub const REPLACE_CONFIRM_CANCEL_LABEL: []const u8 = "Cancel";
 
-/// User-facing replace confirmation copy used by all write seams.
-pub const REPLACE_CONFIRM_MSG: []const u8 = "This file already exists. Do you want to replace it?";
+/// Status after the user declines to replace a file on Save / Save As.
+pub const WRITE_CANCELLED_MSG: []const u8 = "cancelled";
+/// Status after a successful Save / Save As; `{s}` is the written target.
+pub const SAVED_TO_FMT = "saved to: {s}";
 
 /// Shared overwrite-policy inputs:
 pub const OverwriteInput = struct {

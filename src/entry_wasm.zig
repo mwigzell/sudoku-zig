@@ -10,6 +10,7 @@ const boundary = @import("wasm/boundary.zig");
 const wire = @import("wasm/wire.zig");
 const config = @import("core/config.zig");
 const startup_config = @import("core/startup/config.zig");
+const flow = @import("core/flow/mod.zig");
 
 const OutCap = 65536;
 var out_buf: [OutCap]u8 = undefined;
@@ -18,6 +19,12 @@ var out_len: u32 = 0;
 var engine: game_engine.GameEngine = undefined;
 var have_engine: bool = false;
 var gen_abort_requested: bool = false;
+
+/// Web write context and working file; resets on page reload.
+var file_session: flow.FileSession = .{};
+/// The one flow in progress; the JS step runner never overlaps flows.
+var active_flow: flow.Flow = undefined;
+var have_flow: bool = false;
 
 fn outBuffer() boundary.OutBuffer {
     return .{ .buf = &out_buf, .len = &out_len };
@@ -327,6 +334,54 @@ export fn exportPuzzle() callconv(.c) u32 {
     @memcpy(out.buf[0..line.len], &line);
     out.len.* = @intCast(line.len);
     return @intCast(line.len);
+}
+
+fn returnStep(out: boundary.OutBuffer, step: flow.Step) u32 {
+    if (flow.isTerminal(step)) have_flow = false;
+    boundary.writeStepJson(out, step) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
+/// Start a core flow from `{flow, name?, command?}`; returns the first step JSON.
+export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    const eng = engineOrError(out) orelse return returnJson(out);
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const start = boundary.parseFlowStart(arena.allocator(), json) catch return exportError(out, "invalid flow start");
+    active_flow = switch (start) {
+        .save => |name| .{ .save = flow.SaveFlow.init(&file_session, .save, name) },
+        .save_as => |name| .{ .save = flow.SaveFlow.init(&file_session, .save_as, name) },
+        .autosave => |command_name| .{ .autosave = flow.AutosaveFlow.afterCommand(&file_session, eng.cfg.auto_save, command_name) },
+        .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, eng.cfg.auto_save) },
+    };
+    have_flow = true;
+    return returnStep(out, active_flow.next(.start));
+}
+
+/// Feed one step result `{input, ...}` to the running flow; returns the next step JSON.
+export fn flowNext(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const input = boundary.parseFlowInput(arena.allocator(), json) catch return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+    return returnStep(out, active_flow.next(input));
+}
+
+/// Record a lifecycle event `{event, name?}` (open, new, import, paste, startup) in the web FileSession.
+export fn fileSessionEvent(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const ev = boundary.parseFileSessionEvent(arena.allocator(), json) catch return exportError(out, "invalid file session event");
+    file_session.apply(ev.event);
+    if (ev.name) |name| file_session.setWorkingFile(name);
+    boundary.writeOkJson(out) catch return exportWriteFailed(out);
+    return returnJson(out);
 }
 
 /// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from serialize).

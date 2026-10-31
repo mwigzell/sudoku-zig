@@ -7,7 +7,7 @@ import {
   initializeWebSession,
   offerInitialNewGame,
   showErrorModal,
-  startStartupContextPublish,
+  recordStartupFileSession,
   syncCurrentFileLabels,
   wireFinalSnapshotOnPageHide,
   clientLog,
@@ -73,9 +73,9 @@ export async function bootSudokuWebApp(root = document) {
     clientLog("startup", "info", "startup_action_complete", { kind: ready.kind });
     if (!ready.ok) throw new Error(ready.error ?? "New game failed");
 
-    // Boot phase 6: build canonical session object + publish startup context lane.
+    // Boot phase 6: build canonical session object + record the startup event in core.
     const session = createWebSessionFromStartup(ready);
-    startStartupContextPublish(session, ready.startup_context_event);
+    recordStartupFileSession(game, ready);
     wireFinalSnapshotOnPageHide(game, session);
     syncCurrentFileLabels(session, root);
     renderBoard(boardEl, session.state);

@@ -17,7 +17,7 @@ const PuzzleGen = puzzle_gen.PuzzleGen;
 const config = @import("../../core/config.zig");
 const logger = @import("../../core/logger.zig");
 const Difficulty = @import("../../core/puzzle_gen/mod.zig").Difficulty;
-const REPLACE_CONFIRM_OK = "ok";
+const flow_step = @import("../../core/flow/step.zig");
 
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
@@ -189,12 +189,12 @@ pub fn AsciiRenderer(StylerType: type) type {
             defer self.allocator.free(line);
         }
 
-        /// Prompt for overwrite approval; true only when the player confirms.
-        pub fn confirmReplace(self: *@This(), msg: []const u8) facade.Error!bool {
-            self.writer.print("{s} [OK/Cancel]: ", .{msg}) catch return facade.Error.System;
+        /// Two-button question: title line, then text with both labels; true only when the player types `ok_label`.
+        pub fn ask(self: *@This(), question: flow_step.Ask) facade.Error!bool {
+            self.writer.print("{s}\n{s} [{s}/{s}]: ", .{ question.title, question.text, question.ok_label, question.cancel_label }) catch return facade.Error.System;
             const line = self.readLine() catch return false;
             defer self.allocator.free(line);
-            return std.ascii.eqlIgnoreCase(line, REPLACE_CONFIRM_OK);
+            return std.ascii.eqlIgnoreCase(line, question.ok_label);
         }
 
         /// Internal — prompt for filename with default, return owned string.

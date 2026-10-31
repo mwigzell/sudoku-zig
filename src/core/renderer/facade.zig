@@ -4,6 +4,7 @@ const logger = @import("../logger.zig");
 const board = @import("../board/board.zig");
 const event = @import("../event.zig");
 const legend = @import("legend.zig");
+const flow_step = @import("../flow/step.zig");
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const Legend = legend.Legend;
 
@@ -38,7 +39,7 @@ pub const Facade = struct {
     showLegend_fn: *const fn (*anyopaque, Legend) Error!void,
 
     showError_fn: *const fn (*anyopaque, []const u8) Error!void,
-    confirmReplace_fn: *const fn (*anyopaque, []const u8) Error!bool,
+    ask_fn: *const fn (*anyopaque, flow_step.Ask) Error!bool,
 
     getCommandInput_fn: *const fn (
         *anyopaque,
@@ -77,9 +78,9 @@ pub const Facade = struct {
         return self.showError_fn(self.context, msg);
     }
 
-    /// Prompt overwrite confirmation and return true only when the user picks OK.
-    pub fn confirmReplace(self: *const Facade, msg: []const u8) Error!bool {
-        return self.confirmReplace_fn(self.context, msg);
+    /// Ask a two-button question (title, text, button labels); true only when the user picks `ok_label`.
+    pub fn ask(self: *const Facade, question: flow_step.Ask) Error!bool {
+        return self.ask_fn(self.context, question);
     }
 
     /// Show a prompt and get user command input, parsed against the offered
@@ -131,10 +132,10 @@ pub fn Make(comptime CT: type) type {
             self.showError(msg) catch return error.System;
         }
 
-        /// Adapter shim for concrete renderer replace-confirm implementations.
-        pub fn confirmReplace_wrapper(ctx: *anyopaque, msg: []const u8) Error!bool {
+        /// Forward `ask` through erased context to the concrete renderer.
+        pub fn ask_wrapper(ctx: *anyopaque, question: flow_step.Ask) Error!bool {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.confirmReplace(msg) catch return error.System;
+            return self.ask(question) catch return error.System;
         }
 
         /// Forward `getCommandInput` through erased context with live prefs args.
@@ -174,7 +175,7 @@ pub fn Make(comptime CT: type) type {
                 .render_fn = render_wrapper,
                 .showLegend_fn = showLegend_wrapper,
                 .showError_fn = showError_wrapper,
-                .confirmReplace_fn = confirmReplace_wrapper,
+                .ask_fn = ask_wrapper,
                 .getCommandInput_fn = getCommandInput_wrapper,
                 .report_gen_progress_fn = reportGenProgress_wrapper,
                 .deinit_fn = deinit_wrapper,

@@ -83,7 +83,7 @@ export async function handlePastePuzzle(
     if (result.error) showErrorModal(errorModal, result.error);
     return { handled: true, ok: false };
   }
-  const finalized = await applyLoadedSessionOutcome(session, statusEl, result, {
+  const finalized = applyLoadedSessionOutcome(game, session, statusEl, result, {
     writeContextEventName: WRITE_CONTEXT_EVENT_PASTE_SUCCESS,
     fileHandle: null,
     boundFilename: null,

@@ -8,6 +8,7 @@ const event_mod = @import("../../core/event.zig");
 const legend_mod = @import("../../core/renderer/legend.zig");
 const logger = @import("../../core/logger.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
+const flow_step = @import("../../core/flow/step.zig");
 
 /// Forwards generator progress from puzzle-gen to the active native Facade.
 pub fn playProgressToFacade(gen_event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {
@@ -22,7 +23,7 @@ const ProgressRecorder = struct {
     fn render(_: *anyopaque, _: board.Board.BoardView, _: ?[]const u8, _: ?event_mod.CellCoord) facade_mod.Error!void {}
     fn showLegend(_: *anyopaque, _: legend_mod.Legend) facade_mod.Error!void {}
     fn showError(_: *anyopaque, _: []const u8) facade_mod.Error!void {}
-    fn confirmReplace(_: *anyopaque, _: []const u8) facade_mod.Error!bool {
+    fn ask(_: *anyopaque, _: flow_step.Ask) facade_mod.Error!bool {
         return true;
     }
     fn getCommandInput(
@@ -54,7 +55,7 @@ fn makeFacade(rec: *ProgressRecorder) facade_mod.Facade {
         .render_fn = ProgressRecorder.render,
         .showLegend_fn = ProgressRecorder.showLegend,
         .showError_fn = ProgressRecorder.showError,
-        .confirmReplace_fn = ProgressRecorder.confirmReplace,
+        .ask_fn = ProgressRecorder.ask,
         .getCommandInput_fn = ProgressRecorder.getCommandInput,
         .report_gen_progress_fn = ProgressRecorder.reportGenProgress,
         .deinit_fn = ProgressRecorder.deinit,

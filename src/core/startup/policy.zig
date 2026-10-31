@@ -49,8 +49,11 @@ pub fn restoreSolvedName(policy: RestoreSolved) []const u8 {
     };
 }
 
-/// Native prompt copy when restore lands on a solved board.
-pub const RESTORE_SOLVED_PROMPT: []const u8 = "Restored puzzle is solved. Start a new game?";
+/// Native question when restore lands on a solved board.
+pub const RESTORE_SOLVED_TITLE: []const u8 = "Puzzle solved";
+pub const RESTORE_SOLVED_PROMPT: []const u8 = "The restored puzzle is already solved. Do you want to start a new game?";
+pub const RESTORE_SOLVED_OK_LABEL: []const u8 = "New game";
+pub const RESTORE_SOLVED_CANCEL_LABEL: []const u8 = "Keep";
 
 /// Shared startup-status message for the selected action.
 /// Restore/new are surfaced by command events; idle gets an explicit startup line.

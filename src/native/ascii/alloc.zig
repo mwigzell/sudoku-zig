@@ -12,6 +12,7 @@ const config = @import("../../core/config.zig");
 const logger = @import("../../core/logger.zig");
 const io_session = @import("../../native/io_session.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
+const flow_step = @import("../../core/flow/step.zig");
 
 pub const Alloc = struct {
     /// Static factory — resolve the reader branch, allocate styler/renderer/context,
@@ -95,9 +96,9 @@ fn ctx(S: type) type {
             return self.renderer.showError(msg);
         }
 
-        /// Forward replace-confirm prompts from the facade to the concrete renderer.
-        pub fn confirmReplace(self: *@This(), msg: []const u8) facade.Error!bool {
-            return self.renderer.confirmReplace(msg);
+        /// Forward two-button questions from the facade to the concrete renderer.
+        pub fn ask(self: *@This(), question: flow_step.Ask) facade.Error!bool {
+            return self.renderer.ask(question);
         }
 
         pub fn getCommandInput(

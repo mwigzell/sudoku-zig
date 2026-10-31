@@ -25,18 +25,8 @@ import {
   PLAY_FR,
 } from "./board.js";
 import { applyEventStatus, applyExecResult, showErrorModal, formatGenProgress } from "./shell.js";
+import { hostFetch, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
 
-const AUTO_SAVE_TRIGGERS = [
-  "fill",
-  "clear",
-  "undo",
-  "redo",
-  "solve",
-  "solve_for_me",
-  "open",
-  "import",
-  "paste",
-];
 
 assert.equal(formatGenProgress(4, 71, 36), "Generating: 71 givens → ≤36");
 assert.equal(formatGenProgress(0, 0, 0), "Generating: new attempt…");
@@ -541,24 +531,8 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
   assert.equal(outcome.handled, false);
 }
 
-{
-  const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  const session = {
-    state: emptyState(),
-    legend: openLegend,
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-  };
-  let posted = null;
-  const prevFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    posted = { url, init };
-    return { ok: true, status: 204 };
-  };
-  const game = {
+function makeAutosaveGame(session, bytes) {
+  return {
     exec() {
       session.state = emptyState();
       session.state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
@@ -568,25 +542,9 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
       return { fill: true, clear: true, undo: true, redo: false };
     },
     serialize() {
-      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
+      return { ok: true, bytes };
     },
   };
-
-  const outcome = handlePlayKey(
-    game,
-    board,
-    selection,
-    status,
-    errorModal,
-    "4",
-    session,
-    makeRenderElement(),
-  );
-  assert.equal(outcome.handled, true);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  globalThis.fetch = prevFetch;
-  assert.equal(posted?.url, "./current-file");
-  assert.equal(posted?.init?.method, "POST");
 }
 
 {
@@ -598,54 +556,53 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
     state: emptyState(),
     legend: openLegend,
     config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku.sud",
   };
-  const fetchCalls = [];
-  const confirmPrompts = [];
+  const host = hostFetch({ exists: false });
   const prevFetch = globalThis.fetch;
-  const prevConfirm = globalThis.confirm;
-  globalThis.fetch = async (url, init) => {
-    fetchCalls.push({ url, init });
-    return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
+  globalThis.fetch = host.fetchFn;
+  const game = await withCoreFlow(makeAutosaveGame(session, new Uint8Array([1, 2, 3])), { autoSave: true });
+
+  const outcome = handlePlayKey(game, board, selection, status, errorModal, "4", session, makeRenderElement());
+  assert.equal(outcome.handled, true);
+  await settleFlow();
+  globalThis.fetch = prevFetch;
+  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST", "first autosave with nothing on disk writes the host file");
+  assert.equal(session.boundFilename, "sudoku.sud");
+}
+
+{
+  const board = makeMockBoard();
+  const status = { textContent: "", className: "" };
+  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
+  const session = {
+    state: emptyState(),
+    legend: openLegend,
+    config: { auto_save: true },
+    default_save_filename: "sudoku.sud",
   };
-  globalThis.confirm = (msg) => {
-    confirmPrompts.push(msg);
+  const host = hostFetch({ exists: true });
+  const questions = [];
+  const prevFetch = globalThis.fetch;
+  const prevChoose = globalThis.__sudokuChoose;
+  globalThis.fetch = host.fetchFn;
+  globalThis.__sudokuChoose = async (message, labels) => {
+    questions.push({ message, labels });
     return false;
   };
-  const game = {
-    exec() {
-      session.state = emptyState();
-      session.state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
-      return { ok: true, state: session.state, msg: null, is_quit: false };
-    },
-    getLegend() {
-      return { fill: true, clear: true, undo: true, redo: false };
-    },
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([4, 5, 6]) };
-    },
-  };
+  const game = await withCoreFlow(makeAutosaveGame(session, new Uint8Array([4, 5, 6])), { autoSave: true });
 
-  const outcome = handlePlayKey(
-    game,
-    board,
-    selection,
-    status,
-    errorModal,
-    "4",
-    session,
-    makeRenderElement(),
-  );
+  const outcome = handlePlayKey(game, board, selection, status, errorModal, "4", session, makeRenderElement());
   assert.equal(outcome.handled, true);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settleFlow();
   globalThis.fetch = prevFetch;
-  globalThis.confirm = prevConfirm;
-  assert.equal(fetchCalls.length, 1, "first autosave after detached context hits conflict path");
-  assert.equal(fetchCalls[0]?.url, "./current-file");
-  assert.equal(confirmPrompts.length, 1, "conflict surfaces replace confirmation");
-  assert.equal(confirmPrompts[0], "sudoku.sud already exists. Do you want to replace it?");
-  assert.equal(errorModal.el.hidden, true, "cancelled replace prompt is not treated as modal error");
+  globalThis.__sudokuChoose = prevChoose;
+  assert.equal(questions.length, 1, "detached autosave onto an existing file asks once");
+  assert.equal(questions[0].message, "sudoku.sud already exists. Do you want to replace it?");
+  assert.deepEqual(questions[0].labels, { title: "Replace file?", okLabel: "Replace", cancelLabel: "Cancel" });
+  assert.equal(postedCurrentFile(host.calls), undefined, "declined question writes nothing");
+  assert.equal(errorModal.el.hidden, true, "declining is not an error");
 }
 
 {

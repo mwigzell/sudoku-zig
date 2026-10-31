@@ -11,11 +11,8 @@ import {
   DIFFICULTIES,
   filePickerStartIn,
 } from "./file_menu.js";
-import {
-  WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
-  WRITE_CONTEXT_EVENT_SAVE_SUCCESS,
-  startAutoSavePolicy,
-} from "./shell.js";
+import { WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, startAutoSavePolicy } from "./shell.js";
+import { hostFetch, postedCurrentFile, withCoreFlow } from "./test_support.mjs";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 import { wireGeneratingModal } from "./generating.js";
 
@@ -128,7 +125,7 @@ function makeRenderElement() {
     default_save_filename: "host-default.sud",
   };
   let downloaded = null;
-  const game = {
+  const game = await withCoreFlow({
     init() {
       return { ok: true };
     },
@@ -144,7 +141,14 @@ function makeRenderElement() {
     serialize() {
       return { ok: true, bytes: new Uint8Array([9, 9, 9]) };
     },
+  });
+  const fileSessionEvents = [];
+  const recordEvent = game.fileSessionEvent;
+  game.fileSessionEvent = (event, name) => {
+    fileSessionEvents.push(event);
+    return recordEvent(event, name);
   };
+  const status = { textContent: "", className: "" };
   const controls = {
     new: makeBtn(),
     open: makeBtn(),
@@ -157,13 +161,13 @@ function makeRenderElement() {
   const genEl = { hidden: true };
   const genContinue = makeBtn();
   const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
-  const writeContextEvents = [];
+  await withCoreFlow(game);
   wireFileMenu(
     controls,
     game,
     board,
     { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
+    status,
     { el: { hidden: true }, msgEl: { textContent: "" } },
     session,
     { sync() {} },
@@ -175,10 +179,6 @@ function makeRenderElement() {
       },
       pick: async () => ({ ok: false, cancelled: true }),
       createElement: renderElement,
-      writeContextEvent: async (eventName) => {
-        writeContextEvents.push(eventName);
-        return { ok: true };
-      },
     },
   );
 
@@ -194,15 +194,18 @@ function makeRenderElement() {
   await pickPromise;
   assert.equal(genEl.hidden, true);
   assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
-  assert.equal(writeContextEvents[0], WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS);
+  assert.deepEqual(fileSessionEvents, [WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS]);
+  const host = hostFetch();
   const prevFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, status: 204 });
+  globalThis.fetch = host.fetchFn;
   await controls.save.click();
   globalThis.fetch = prevFetch;
-  assert.equal(writeContextEvents[1], WRITE_CONTEXT_EVENT_SAVE_SUCCESS);
   assert.deepEqual([...downloaded.bytes], [9, 9, 9]);
   assert.equal(downloaded.name, "host-default.sud");
   assert.equal(session.boundFilename, "host-default.sud");
+  assert.equal(status.textContent, "saved to: host-default.sud", "core composes the save status");
+  const hosted = postedCurrentFile(host.calls);
+  assert.equal(hosted?.init?.headers?.["X-Sudoku-Restore-Copy"], "true", "downloaded save keeps a hidden host copy");
 }
 
 {
@@ -220,6 +223,7 @@ function makeRenderElement() {
   const controls = {
     saveAs: makeBtn(),
   };
+  await withCoreFlow(game);
   wireFileMenu(
     controls,
     game,
@@ -253,17 +257,18 @@ function makeRenderElement() {
     default_save_filename: "host-default.sud",
   };
   const controls = { saveAs: makeBtn() };
-  const game = {
+  const game = await withCoreFlow({
     serialize() {
       return { ok: true, bytes: new Uint8Array([7, 7, 7]) };
     },
-  };
+  });
   let fetchCalls = [];
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     fetchCalls.push({ url, init });
     return { ok: true, status: 204 };
   };
+  await withCoreFlow(game);
   wireFileMenu(
     controls,
     game,
@@ -320,6 +325,10 @@ function makeRenderElement() {
   const genContinue = makeBtn();
   const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
 
+  await withCoreFlow(game);
+
+  await withCoreFlow(game);
+
   wireFileMenu(
     controls,
     game,
@@ -367,14 +376,14 @@ function makeRenderElement() {
   };
   wireFileMenu(
     { new: makeBtn() },
-    {
+    await withCoreFlow({
       init() {
         return { ok: false, error: "gen failed" };
       },
       getConfig() {
         return { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
       },
-    },
+    }),
     makeBoard(),
     { select: () => {}, deselect: () => {} },
     { textContent: "", className: "" },
@@ -407,7 +416,7 @@ function makeRenderElement() {
   };
   wireFileMenu(
     { new: makeBtn() },
-    {
+    await withCoreFlow({
       init() {
         return { ok: true, msg: "new game started" };
       },
@@ -420,7 +429,7 @@ function makeRenderElement() {
       getConfig() {
         return { show_region: false };
       },
-    },
+    }),
     makeBoard(),
     { select: () => {}, deselect: () => {} },
     status,
@@ -451,7 +460,7 @@ function makeRenderElement() {
   };
   wireFileMenu(
     { new: makeBtn() },
-    {
+    await withCoreFlow({
       init() {
         return { ok: true };
       },
@@ -464,7 +473,7 @@ function makeRenderElement() {
       getConfig() {
         return { show_region: false };
       },
-    },
+    }),
     makeBoard(),
     { select: () => {}, deselect: () => {} },
     { textContent: "", className: "" },
@@ -493,7 +502,7 @@ function makeRenderElement() {
   };
   wireFileMenu(
     { new: newBtn },
-    {
+    await withCoreFlow({
       init() {
         initCalled = true;
         return { ok: true };
@@ -507,7 +516,7 @@ function makeRenderElement() {
       getConfig() {
         return {};
       },
-    },
+    }),
     makeBoard(),
     { select: () => {}, deselect: () => {} },
     { textContent: "", className: "" },
@@ -728,6 +737,7 @@ function makeRenderElement() {
   };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "old" } };
   const importBtn = makeBtn();
+  await withCoreFlow(game);
   wireFileMenu(
     { import: importBtn },
     game,
@@ -773,6 +783,7 @@ function makeRenderElement() {
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "old" } };
   const before = JSON.stringify(session.state);
   const importBtn = makeBtn();
+  await withCoreFlow(game);
   wireFileMenu(
     { import: importBtn },
     game,
@@ -839,6 +850,7 @@ function makeRenderElement() {
     },
   };
   const exportBtn = makeBtn();
+  await withCoreFlow(game);
   wireFileMenu(
     { export: exportBtn },
     game,
@@ -883,6 +895,7 @@ function makeRenderElement() {
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "old" } };
   const before = JSON.stringify(session.state);
   const exportBtn = makeBtn();
+  await withCoreFlow(game);
   wireFileMenu(
     { export: exportBtn },
     game,
@@ -941,10 +954,10 @@ function makeRenderElement() {
     legend: {},
     state: { cells: [] },
     config: { auto_save: true },
-    autosave_trigger_commands: ["fill"],
     default_save_filename: "sudoku.sud",
   };
   const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
+  await withCoreFlow(game, { autoSave: true });
   wireFileMenu(
     {},
     game,
@@ -966,12 +979,12 @@ function makeRenderElement() {
       createElement: makeRenderElement(),
     },
   );
+  const host = hostFetch();
   const fetchFn = async (url, init) => {
     if (url === "./current-file") hostWrites.push([...new Uint8Array(init.body)]);
-    return { ok: true, status: 204 };
+    return host.fetchFn(url, init);
   };
-  startAutoSavePolicy(game, session, "fill", { fetchFn });
-  await session.__autosave_lane;
+  await startAutoSavePolicy(game, session, "fill", { fetchFn });
   assert.equal(downloads, 0, "autosave must not download");
   assert.equal(picks, 0, "autosave must not open a picker");
   assert.deepEqual(hostWrites, [[4, 2]]);
@@ -994,7 +1007,6 @@ function makeRenderElement() {
     legend: { new: true },
     state: { cells: [] },
     config: { auto_save: true },
-    autosave_trigger_commands: ["fill"],
     default_save_filename: "sudoku.sud",
   };
   const game = {
@@ -1012,6 +1024,7 @@ function makeRenderElement() {
   const genContinue = makeBtn();
   const generatingModal = wireGeneratingModal({ el: { hidden: true }, continueBtn: genContinue });
   try {
+    await withCoreFlow(game, { autoSave: true });
     wireFileMenu(
       controls,
       game,
@@ -1035,10 +1048,8 @@ function makeRenderElement() {
     await flushDialogPaint();
     genContinue.click();
     await picked;
-    await session.__autosave_lane;
     bridgeWrites.length = 0;
-    startAutoSavePolicy(game, session, "fill", { fetchFn: globalThis.fetch });
-    await session.__autosave_lane;
+    await startAutoSavePolicy(game, session, "fill", { fetchFn: globalThis.fetch });
     assert.deepEqual(bridgeWrites, ["sudoku.sud"]);
   } finally {
     globalThis.AndroidFileBridge = prevBridge;
@@ -1058,11 +1069,11 @@ function makeRenderElement() {
     legend: {},
     state: { cells: [] },
     config: { auto_save: true },
-    autosave_trigger_commands: ["fill"],
     default_save_filename: "sudoku.sud",
   };
   const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
   try {
+    await withCoreFlow(game, { autoSave: true });
     wireFileMenu(
       {},
       game,
@@ -1083,8 +1094,7 @@ function makeRenderElement() {
       if (url === "./current-file") hostNames.push(init.headers?.["X-Sudoku-Filename"]);
       return { ok: true, status: 204 };
     };
-    startAutoSavePolicy(game, session, "fill", { fetchFn });
-    await session.__autosave_lane;
+    await startAutoSavePolicy(game, session, "fill", { fetchFn });
     assert.equal(session.boundFilename, "game2.sud");
     assert.deepEqual(hostNames, ["game2.sud"]);
   } finally {
@@ -1123,11 +1133,11 @@ function makeRenderElement() {
     legend: {},
     state: { cells: [] },
     config: { auto_save: true },
-    autosave_trigger_commands: ["fill"],
     default_save_filename: "sudoku.sud",
   };
   const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
   try {
+    await withCoreFlow(game, { autoSave: true });
     wireFileMenu(
       {},
       game,
@@ -1145,11 +1155,10 @@ function makeRenderElement() {
       },
     );
     let errors = 0;
-    startAutoSavePolicy(game, session, "fill", {
+    await startAutoSavePolicy(game, session, "fill", {
       fetchFn: async () => ({ ok: true, status: 204 }),
       onError: () => { errors += 1; },
     });
-    await session.__autosave_lane;
     assert.deepEqual(calls, [
       ["current"],
       ["ask", "Pick it", "New name"],

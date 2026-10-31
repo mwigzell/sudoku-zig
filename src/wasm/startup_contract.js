@@ -5,9 +5,7 @@
 function withBootFields(boot, payload) {
   return {
     default_save_filename: boot.default_save_filename,
-    autosave_trigger_commands: boot.autosave_trigger_commands,
     startup_context_event: boot.startup_context_event,
-    write_context_events: boot.write_context_events,
     ...payload,
   };
 }

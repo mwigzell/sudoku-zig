@@ -5,6 +5,7 @@ import { runWithGeneratingDialog } from "./generating.js";
 import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
 import { applyWebStartupAction } from "./startup_contract.js";
+import { askWithDialog, FLOW_AUTOSAVE, FLOW_AUTOSAVE_FLUSH, runFlow, SAVE_FAILED_MSG, STEP_DONE } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 
@@ -33,34 +34,17 @@ export function clearEventStatus(statusEl) {
 
 export const CURRENT_FILE_DESKTOP_ID = "current-file-desktop";
 export const CURRENT_FILE_UNSAVED_LABEL = "unsaved";
-export const WRITE_CONTEXT_CONTINUATION = "continuation";
-export const WRITE_CONTEXT_DETACHED = "detached";
 export const WRITE_CONTEXT_EVENT_OPEN_SUCCESS = "open_success";
-export const WRITE_CONTEXT_EVENT_SAVE_SUCCESS = "save_success";
-export const WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS = "save_as_success";
-export const WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS = "auto_save_success";
 export const WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS = "new_game_success";
 export const WRITE_CONTEXT_EVENT_IMPORT_SUCCESS = "import_success";
 export const WRITE_CONTEXT_EVENT_PASTE_SUCCESS = "paste_success";
 
-export const REQUIRED_WRITE_CONTEXT_EVENT_KEYS = [
-  "startup_restore",
-  "startup_new",
-  "startup_idle",
-  "open_success",
-  "save_success",
-  "save_as_success",
-  "auto_save_success",
-  "new_game_success",
-  "import_success",
-  "paste_success",
-];
-export const REQUIRED_STARTUP_READY_KEYS = [
-  "default_save_filename",
-  "autosave_trigger_commands",
-];
+export const REQUIRED_STARTUP_READY_KEYS = ["default_save_filename"];
 
-const DEFAULT_WRITE_CONTEXT_PUBLISHER = postWriteContextEvent;
+const CURRENT_FILE_PATH = "./current-file";
+const CURRENT_FILE_EXISTS_PATH = "./current-file-exists";
+const FILENAME_HEADER = "X-Sudoku-Filename";
+const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const CLIENT_LOG_PATH = "./client-log";
 const DEFAULT_CLIENT_LOG_LEVEL = "info";
 const CLIENT_LOG_LEVEL_STATE = "__SUDOKU_CLIENT_LOG_LEVEL";
@@ -179,9 +163,8 @@ export function clientLog(scope, level, event, details = {}) {
 }
 
 function autosaveLevelForStage(stage, details = {}) {
-  if (stage === "persist_failed" || stage === "startup_context_failed") return "warn";
-  if (stage === "context_publish_result" && details.ok === false) return "warn";
-  if (stage === "pagehide_flush_result" && details.ok === false && details.cancelled !== true) return "warn";
+  if (stage === "persist_failed") return "warn";
+  if (stage === "pagehide_flush_result" && details.kind === "show_error") return "warn";
   if (stage === "persist_ok" || stage === "pagehide_flush_result") return "info";
   return "debug";
 }
@@ -418,17 +401,6 @@ export function assertHostStartupConfig(config, label = "host-config") {
   if (config.default_save_filename === undefined) {
     throw new Error(`${label}: missing default_save_filename`);
   }
-  if (!Array.isArray(config.autosave_trigger_commands)) {
-    throw new Error(`${label}: missing autosave_trigger_commands`);
-  }
-  if (!config.write_context_events || typeof config.write_context_events !== "object") {
-    throw new Error(`${label}: missing write_context_events`);
-  }
-  for (const key of REQUIRED_WRITE_CONTEXT_EVENT_KEYS) {
-    if (typeof config.write_context_events[key] !== "string" || config.write_context_events[key].length === 0) {
-      throw new Error(`${label}: missing write_context_events.${key}`);
-    }
-  }
   if (typeof config.startup_context_event !== "string" || config.startup_context_event.length === 0) {
     throw new Error(`${label}: missing startup_context_event`);
   }
@@ -510,40 +482,76 @@ export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
   if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
 }
 
-/** Persist current SUD0 snapshot for startup restore (`/current-file`). */
-/** @param {GameApi} game */
-export async function persistCurrentFileSnapshot(
-  game,
-  fetchFn = globalThis.fetch,
-  saveName = null,
-  replace = false,
-) {
-  const saved = game.serialize();
-  if (!saved.ok) return saved;
-  return persistCurrentFileBytes(saved.bytes, fetchFn, saveName, replace);
-}
-
-/** Persist pre-serialized SUD0 snapshot bytes to startup restore lane (`/current-file`). */
+/** Write SUD0 bytes as the host copy (`/current-file`); `restoreCopy` keeps it out of the visible folder. */
 export async function persistCurrentFileBytes(
   bytes,
   fetchFn = globalThis.fetch,
   saveName = null,
-  replace = false,
+  { restoreCopy = false } = {},
 ) {
   const headers = { "Content-Type": "application/octet-stream" };
-  if (typeof saveName === "string" && saveName.length > 0) headers["X-Sudoku-Filename"] = saveName;
-  if (replace === true) headers["X-Sudoku-Replace"] = "true";
-  const res = await fetchFn("./current-file", {
+  if (typeof saveName === "string" && saveName.length > 0) headers[FILENAME_HEADER] = saveName;
+  if (restoreCopy === true) headers[RESTORE_COPY_HEADER] = "true";
+  const res = await fetchFn(CURRENT_FILE_PATH, {
     method: "POST",
     headers,
     body: bytes,
   });
-  if (res.status === 409) {
-    const msg = (await res.text()) || "save target conflict";
-    return { ok: false, replace_required: true, error: msg };
-  }
   if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}` };
   return { ok: true };
+}
+
+/** Whether the host's write of `saveName` would land on an existing file the user can see. */
+export async function hostCurrentFileExists(saveName, fetchFn = globalThis.fetch) {
+  const headers = {};
+  if (typeof saveName === "string" && saveName.length > 0) headers[FILENAME_HEADER] = saveName;
+  const res = await fetchFn(CURRENT_FILE_EXISTS_PATH, { headers });
+  if (!res.ok) throw new Error(`current-file check failed: ${res.status}`);
+  const payload = await res.json();
+  return payload?.exists === true;
+}
+
+/** Record a lifecycle event (open/new/import/paste/startup) in the core FileSession. */
+/** @param {GameApi} game */
+export function recordFileSessionEvent(game, eventName, name = null) {
+  return game.fileSessionEvent(eventName, name);
+}
+
+/**
+ * Platform work for the core autosave flow: a bound file (handle or Android bridge) is the
+ * user's file and the host keeps a restore copy; otherwise the host copy is the user's file.
+ * @param {GameApi} game
+ */
+export function autosaveHandlers(
+  game,
+  session,
+  { fetchFn = globalThis.fetch, win = globalThis, onError, hostOnly = false } = {},
+) {
+  const bound = () => typeof session.boundSnapshotWriter === "function";
+  return {
+    resolveDefaultTarget: () => session.default_save_filename,
+    checkTarget: (name) => {
+      if (bound()) return session.boundTargetExists?.() === true;
+      return hostCurrentFileExists(name, fetchFn);
+    },
+    ask: (step) => askWithDialog(step, win),
+    write: async (name) => {
+      const serialized = game.serialize();
+      if (!serialized.ok) return serialized;
+      let written = name;
+      if (bound() && !hostOnly) {
+        const boundSaved = await session.boundSnapshotWriter(serialized.bytes, name);
+        if (!boundSaved?.ok) return boundSaved ?? { ok: false, error: SAVE_FAILED_MSG };
+        if (typeof boundSaved.name === "string" && boundSaved.name.length > 0) written = boundSaved.name;
+      }
+      const hosted = await persistCurrentFileBytes(serialized.bytes, fetchFn, written, { restoreCopy: bound() });
+      if (!hosted.ok) return hosted;
+      session.boundFilename = written;
+      syncCurrentFileLabels(session);
+      return { ok: true, name: written };
+    },
+    showError: (text) => onError?.({ ok: false, error: text }),
+  };
 }
 
 /** Install one best-effort final snapshot flush for tab hide/close in autosave mode. */
@@ -558,70 +566,23 @@ export function wireFinalSnapshotOnPageHide(
   const onPageHide = () => {
     if (fired) return;
     fired = true;
-    if (session?.config?.auto_save !== true) return;
-    const saveName = session?.boundFilename ?? session?.default_save_filename ?? null;
-    if (typeof saveName !== "string" || saveName.length === 0) return;
-    logAutosave("pagehide_flush_start", {
-      save_name: saveName,
-    });
     const keepaliveFetch = (url, init = {}) => fetchFn(url, { ...init, keepalive: true });
-    void persistCurrentFileSnapshot(game, keepaliveFetch, saveName, false).then((saved) => {
-      logAutosave("pagehide_flush_result", {
-        ok: saved?.ok === true,
-        cancelled: saved?.cancelled === true,
-        error: saved?.error ?? null,
-      });
-    });
+    void runFlow(
+      game,
+      { flow: FLOW_AUTOSAVE_FLUSH },
+      autosaveHandlers(game, session, { fetchFn: keepaliveFetch, win, hostOnly: true }),
+    ).then((outcome) => logAutosave("pagehide_flush_result", { kind: outcome.kind }));
   };
   win.addEventListener("pagehide", onPageHide);
   return () => win.removeEventListener?.("pagehide", onPageHide);
 }
 
-/** Publish write-context lifecycle events to the host policy seam. */
-export async function postWriteContextEvent(eventName, fetchFn = globalThis.fetch) {
-  const res = await fetchFn("./current-file-context", {
-    method: "POST",
-    headers: { "Content-Type": "text/plain" },
-    body: eventName,
-  });
-  if (!res.ok) return { ok: false, error: `current-file context update failed: ${res.status}` };
-  let writeContext;
-  try {
-    const payload = await res.json();
-    if (payload && typeof payload.write_context === "string") {
-      writeContext = payload.write_context;
-    }
-  } catch {
-    // Keep compatibility with plain/empty responses.
-  }
-  return { ok: true, write_context: writeContext };
-}
-
-/** Publish one write-context event, then update local session context on success. */
-export async function postWriteContextEventForSession(
-  session,
-  eventName,
-  fetchFn = globalThis.fetch,
-) {
-  const publish =
-    session?.writeContextEvent ??
-    (async () => ({ ok: true }));
-  const posted = await publish(eventName, fetchFn);
-  if (posted.ok && typeof posted.write_context === "string") {
-    session.write_context = posted.write_context;
-  }
-  return posted;
-}
-
 /** Normalize boot outcome into the canonical web session shape. */
-export function createWebSessionFromStartup(ready, writeContextEvent = DEFAULT_WRITE_CONTEXT_PUBLISHER) {
+export function createWebSessionFromStartup(ready) {
   for (const key of REQUIRED_STARTUP_READY_KEYS) {
     if (ready?.[key] === undefined) {
       throw new Error(`startup ready payload: missing ${key}`);
     }
-  }
-  if (!Array.isArray(ready.autosave_trigger_commands) || ready.autosave_trigger_commands.length === 0) {
-    throw new Error("startup ready payload: autosave_trigger_commands must be a non-empty array");
   }
   return {
     state: ready.state,
@@ -629,54 +590,30 @@ export function createWebSessionFromStartup(ready, writeContextEvent = DEFAULT_W
     config: ready.config,
     default_save_filename: ready.default_save_filename,
     boundFilename: ready.kind === "restore" ? ready.default_save_filename : null,
-    autosave_trigger_commands: ready.autosave_trigger_commands,
-    write_context_events: ready.write_context_events,
-    write_context: WRITE_CONTEXT_DETACHED,
-    writeContextEvent,
     boundSnapshotWriter: null,
-    startup_context_ready: null,
+    boundTargetExists: null,
   };
 }
 
-/** Publish startup write-context on the session lane and cache the in-flight promise. */
-export function startStartupContextPublish(
-  session,
-  startupContextEvent,
-  fetchFn = globalThis.fetch,
-) {
-  const pending = postWriteContextEventForSession(session, startupContextEvent, fetchFn);
-  session.startup_context_ready = pending;
-  return pending;
+/** Record the startup write-context event; a restored game continues its file. */
+/** @param {GameApi} game */
+export function recordStartupFileSession(game, ready) {
+  const name = ready.kind === "restore" ? ready.default_save_filename : null;
+  return recordFileSessionEvent(game, ready.startup_context_event, name);
 }
 
-/** Resolve an event value against the host-provided write-context event map. */
-export function writeContextEventValue(session, fallbackEventName) {
-  const map = session?.write_context_events;
-  const value = map?.[fallbackEventName];
-  if (typeof value === "string" && value.length > 0) return value;
-  return fallbackEventName;
-}
-
-/** Resolve + publish one write-context transition key from the host contract map. */
-export async function postSessionWriteContextEvent(
-  session,
-  eventKey,
-  fetchFn = globalThis.fetch,
-) {
-  const eventName = writeContextEventValue(session, eventKey);
-  return postWriteContextEventForSession(session, eventName, fetchFn);
-}
-
-/** Canonical load/import/paste outcome path: bind session, publish context, apply outcome+status. */
-export async function applyLoadedSessionOutcome(
+/** Canonical load/import/paste outcome path: bind session, record the event in core, apply outcome+status. */
+/** @param {GameApi} game */
+export function applyLoadedSessionOutcome(
+  game,
   session,
   statusEl,
   result,
   {
     writeContextEventName,
-    fetchFn = globalThis.fetch,
     fileHandle = null,
     boundFilename = null,
+    workingFile = null,
     legend = result?.legend,
     config = result?.config,
     msg = result?.msg ?? null,
@@ -684,12 +621,8 @@ export async function applyLoadedSessionOutcome(
 ) {
   session.fileHandle = fileHandle;
   session.boundFilename = boundFilename;
-  const contextUpdated = await postSessionWriteContextEvent(
-    session,
-    writeContextEventName,
-    fetchFn,
-  );
-  if (!contextUpdated.ok) return contextUpdated;
+  const recorded = recordFileSessionEvent(game, writeContextEventName, workingFile);
+  if (!recorded.ok) return recorded;
   applySessionOutcomeStatus(session, statusEl, {
     state: result?.state,
     legend,
@@ -699,49 +632,7 @@ export async function applyLoadedSessionOutcome(
   return { ok: true };
 }
 
-/** Persist startup snapshot with a replace-confirm retry on host conflict. */
-/** @param {GameApi} game */
-export async function persistCurrentFileSnapshotWithReplacePrompt(
-  game,
-  {
-    fetchFn = globalThis.fetch,
-    saveName = null,
-    askConfirm = globalThis.__sudokuConfirmReplace ?? globalThis.confirm,
-  } = {},
-) {
-  const saved = game.serialize();
-  if (!saved.ok) return saved;
-  return persistCurrentFileBytesWithReplacePrompt(saved.bytes, {
-    fetchFn,
-    saveName,
-    askConfirm,
-  });
-}
-
-/** Persist pre-serialized snapshot bytes with a replace-confirm retry on host conflict. */
-export async function persistCurrentFileBytesWithReplacePrompt(
-  bytes,
-  {
-    fetchFn = globalThis.fetch,
-    saveName = null,
-    askConfirm = globalThis.__sudokuConfirmReplace ?? globalThis.confirm,
-  } = {},
-) {
-  const first = await persistCurrentFileBytes(bytes, fetchFn, saveName, false);
-  if (!first.replace_required) return first;
-  const prompt =
-    typeof saveName === "string" && saveName.length > 0
-      ? `${saveName} already exists. Do you want to replace it?`
-      : "This file already exists. Do you want to replace it?";
-  if (typeof askConfirm !== "function") {
-    return { ok: false, cancelled: true };
-  }
-  const confirmed = await askConfirm(prompt);
-  if (confirmed !== true) return { ok: false, cancelled: true };
-  return persistCurrentFileBytes(bytes, fetchFn, saveName, true);
-}
-
-/** Shared post-command autosave policy for web handlers. */
+/** Run the core autosave flow after `commandName`; core decides whether anything is written. */
 /** @param {GameApi} game */
 export function startAutoSavePolicy(
   game,
@@ -749,7 +640,7 @@ export function startAutoSavePolicy(
   commandName,
   {
     fetchFn = globalThis.fetch,
-    askConfirm,
+    win = globalThis,
     onError,
     commandMeta = null,
   } = {},
@@ -758,114 +649,18 @@ export function startAutoSavePolicy(
     typeof commandMeta?.command_text === "string" && commandMeta.command_text.length > 0
       ? commandMeta.command_text
       : commandName;
-  // Phase 0: gate by config + trigger command list so non-state commands skip autosave.
-  if (session?.config?.auto_save !== true) {
-    logAutosave("skip_disabled", { command: commandName, command_text: commandText });
-    return;
-  }
-  const triggerNames = session?.autosave_trigger_commands;
-  if (!Array.isArray(triggerNames) || !triggerNames.includes(commandName)) {
-    logAutosave("skip_not_trigger", { command: commandName, command_text: commandText });
-    return;
-  }
-  const lane = session;
-  const run = async () => {
-    logAutosave("run_start", {
-      command: commandName,
-      command_text: commandText,
-      row: commandMeta?.row ?? null,
-      col: commandMeta?.col ?? null,
-      digit: commandMeta?.digit ?? null,
-      save_name: lane?.boundFilename ?? lane?.default_save_filename ?? null,
-    });
-    // Phase 1: wait for startup context publish once so first autosave runs on settled lane policy.
-    // Startup write-context publish can be in-flight at boot; wait once so the
-    // first user-triggered autosave follows the settled lane contract.
-    if (lane?.startup_context_ready) {
-      try {
-        await lane.startup_context_ready;
-        logAutosave("startup_context_ready", { command: commandName, command_text: commandText });
-      } catch {
-        // Keep autosave best-effort when context publish fails.
-        logAutosave("startup_context_failed", { command: commandName, command_text: commandText });
-      }
-      lane.startup_context_ready = null;
-    }
-    // Phase 2: persist snapshot with replace-confirm retry semantics.
-    const serialized = game.serialize();
-    if (!serialized.ok) {
-      logAutosave("persist_failed", {
-        command: commandName,
-        command_text: commandText,
-        cancelled: false,
-        error: serialized?.error ?? null,
-      });
-      onError?.(serialized);
-      return;
-    }
-    if (typeof lane.boundSnapshotWriter === "function") {
-      const boundSaved = await lane.boundSnapshotWriter(
-        serialized.bytes,
-        lane.boundFilename ?? lane.default_save_filename,
-      );
-      if (!boundSaved?.ok) {
-        logAutosave("bound_persist_failed", {
-          command: commandName,
-          command_text: commandText,
-          cancelled: boundSaved?.cancelled === true,
-          error: boundSaved?.error ?? null,
-        });
-        if (!boundSaved?.cancelled) onError?.(boundSaved);
-        return;
-      }
-      logAutosave("bound_persist_ok", { command: commandName, command_text: commandText });
-      if (typeof boundSaved.name === "string" && boundSaved.name.length > 0) {
-        lane.boundFilename = boundSaved.name;
-        syncCurrentFileLabels(lane);
-      }
-    }
-    const saved = await persistCurrentFileBytesWithReplacePrompt(serialized.bytes, {
-      fetchFn,
-      saveName: lane.boundFilename ?? lane.default_save_filename,
-      askConfirm,
-    });
-    if (!saved.ok) {
-      logAutosave("persist_failed", {
-        command: commandName,
-        command_text: commandText,
-        cancelled: saved?.cancelled === true,
-        error: saved?.error ?? null,
-      });
-      if (!saved.cancelled) onError?.(saved);
-      return;
-    }
-    if (typeof lane.boundFilename !== "string" || lane.boundFilename.length === 0) {
-      const seededName = lane.default_save_filename;
-      if (typeof seededName === "string" && seededName.length > 0) {
-        lane.boundFilename = seededName;
-        syncCurrentFileLabels(lane);
-      }
-    }
-    logAutosave("persist_ok", { command: commandName, command_text: commandText });
-    // Phase 3: publish autosave-success context transition for host policy seam.
-    const posted = await postSessionWriteContextEvent(
-      lane,
-      WRITE_CONTEXT_EVENT_AUTO_SAVE_SUCCESS,
-      fetchFn,
-    );
-    logAutosave("context_publish_result", {
-      command: commandName,
-      command_text: commandText,
-      ok: posted?.ok === true,
-      error: posted?.error ?? null,
-    });
-    if (!posted.ok) onError?.(posted);
-  };
-  const previous = lane.__autosave_lane ?? Promise.resolve();
-  lane.__autosave_lane = previous
-    .catch(() => {})
-    .then(run);
-  void lane.__autosave_lane;
+  const handlers = autosaveHandlers(game, session, {
+    fetchFn,
+    win,
+    onError: (failed) => {
+      logAutosave("persist_failed", { command: commandName, command_text: commandText, error: failed?.error ?? null });
+      onError?.(failed);
+    },
+  });
+  return runFlow(game, { flow: FLOW_AUTOSAVE, command: commandName }, handlers).then((outcome) => {
+    if (outcome.kind === STEP_DONE) logAutosave("persist_ok", { command: commandName, command_text: commandText });
+    return outcome;
+  });
 }
 
 /**
@@ -890,8 +685,6 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     config: game.getConfig(),
     msg: boot.msg ?? null,
     default_save_filename: hostCfg.default_save_filename,
-    autosave_trigger_commands: hostCfg.autosave_trigger_commands,
-    write_context_events: hostCfg.write_context_events,
     startup_action: hostCfg.startup_action ?? "idle",
     startup_context_event: hostCfg.startup_context_event,
     on_restore_solved: hostCfg.on_restore_solved ?? "prompt",

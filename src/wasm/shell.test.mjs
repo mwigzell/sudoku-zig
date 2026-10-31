@@ -5,17 +5,15 @@ import { readFileSync } from "node:fs";
 import { applyWebStartupAction } from "./startup_contract.js";
 import {
   CURRENT_FILE_DESKTOP_ID,
-  persistCurrentFileSnapshot,
+  persistCurrentFileBytes,
+  hostCurrentFileExists,
+  recordStartupFileSession,
   startAutoSavePolicy,
-  postWriteContextEvent,
+  WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
+  WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
   applySessionOutcome,
   applySessionOutcomeStatus,
-  persistCurrentFileSnapshotWithReplacePrompt,
   hostViewPrefsForPersist,
-  postWriteContextEventForSession,
-  postSessionWriteContextEvent,
-  WRITE_CONTEXT_CONTINUATION,
-  WRITE_CONTEXT_DETACHED,
   initializeWebSession,
   offerInitialNewGame,
   newGameWithGeneratingModal,
@@ -24,34 +22,18 @@ import {
   currentFileLabel,
   syncCurrentFileLabels,
   createWebSessionFromStartup,
-  startStartupContextPublish,
   wireFinalSnapshotOnPageHide,
   assertWebBootConfig,
   assertHostStartupConfig,
   REQUIRED_WEB_BOOT_CONFIG_KEYS,
-  REQUIRED_WRITE_CONTEXT_EVENT_KEYS,
   REQUIRED_STARTUP_READY_KEYS,
   clientLog,
   setClientLogLevel,
   CURRENT_FILE_UNSAVED_LABEL,
 } from "./shell.js";
+import { hostFetch, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
 import { wireGeneratingModal } from "./generating.js";
 
-const AUTO_SAVE_TRIGGERS = [
-  "fill",
-  "clear",
-  "undo",
-  "redo",
-  "hint",
-  "solve",
-  "solve_for_me",
-  "open",
-  "import",
-  "paste",
-];
-const WRITE_CONTEXT_EVENTS = Object.fromEntries(
-  REQUIRED_WRITE_CONTEXT_EVENT_KEYS.map((name) => [name, name]),
-);
 const AUTOSAVE_RESTORE_PARITY_FIXTURE = JSON.parse(
   readFileSync(new URL("../test/fixtures/autosave_restore_parity.json", import.meta.url), "utf8"),
 );
@@ -329,8 +311,8 @@ async function flushDialogPaint() {
       return { ok: true, bytes: new Uint8Array([1, 2]) };
     },
   };
-  const out = await persistCurrentFileSnapshot(
-    game,
+  const out = await persistCurrentFileBytes(
+    game.serialize().bytes,
     async (url, init) => {
       calls.push({ url, init });
       return { ok: true, status: 204 };
@@ -344,14 +326,28 @@ async function flushDialogPaint() {
 
 {
   const calls = [];
-  const out = await postWriteContextEvent("new_game_success", async (url, init) => {
-    calls.push({ url, init });
-    return { ok: true, status: 204 };
-  });
+  const out = await persistCurrentFileBytes(
+    new Uint8Array([3]),
+    async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 204 };
+    },
+    "picked.sud",
+    { restoreCopy: true },
+  );
   assert.equal(out.ok, true);
-  assert.equal(calls[0].url, "./current-file-context");
-  assert.equal(calls[0].init.method, "POST");
-  assert.equal(calls[0].init.body, "new_game_success");
+  assert.equal(calls[0].init.headers["X-Sudoku-Restore-Copy"], "true", "restore copy stays out of the visible folder");
+}
+
+{
+  const host = hostFetch({ exists: true });
+  assert.equal(await hostCurrentFileExists("sudoku.sud", host.fetchFn), true);
+  assert.equal(host.calls[0].url, "./current-file-exists");
+  assert.equal(host.calls[0].init.headers["X-Sudoku-Filename"], "sudoku.sud");
+  await assert.rejects(
+    hostCurrentFileExists("sudoku.sud", async () => ({ ok: false, status: 500 })),
+    /current-file check failed: 500/,
+  );
 }
 
 {
@@ -361,15 +357,11 @@ async function flushDialogPaint() {
     legend: { new: true },
     config: { auto_save: true },
     default_save_filename: "sudoku.sud",
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    write_context_events: WRITE_CONTEXT_EVENTS,
   };
   const session = createWebSessionFromStartup(ready);
-  assert.equal(session.write_context, WRITE_CONTEXT_DETACHED);
-  assert.equal(typeof session.writeContextEvent, "function");
-  assert.equal(session.startup_context_ready, null);
   assert.equal(session.default_save_filename, "sudoku.sud");
   assert.equal(session.boundFilename, null);
+  assert.equal(session.boundTargetExists, null);
 }
 
 {
@@ -379,25 +371,9 @@ async function flushDialogPaint() {
     legend: {},
     config: {},
     default_save_filename: "sudoku.sud",
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
   };
   const session = createWebSessionFromStartup(ready);
   assert.equal(session.boundFilename, "sudoku.sud");
-}
-
-{
-  const ready = {
-    kind: "empty",
-    state: { cells: [] },
-    legend: {},
-    config: {},
-    default_save_filename: "sudoku.sud",
-    autosave_trigger_commands: [],
-  };
-  assert.throws(
-    () => createWebSessionFromStartup(ready),
-    /autosave_trigger_commands must be a non-empty array/,
-  );
 }
 
 {
@@ -408,7 +384,6 @@ async function flushDialogPaint() {
       legend: {},
       config: {},
       default_save_filename: "sudoku.sud",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     };
     delete ready[key];
     assert.throws(
@@ -418,29 +393,10 @@ async function flushDialogPaint() {
   }
 }
 
-{
-  const session = {
-    write_context: WRITE_CONTEXT_DETACHED,
-    writeContextEvent: postWriteContextEvent,
-  };
-  const pending = startStartupContextPublish(
-    session,
-    "startup_restore",
-    async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
-    }),
-  );
-  assert.equal(session.startup_context_ready, pending);
-  const out = await pending;
-  assert.equal(out.ok, true);
-  assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
-}
-
-{
+function makePageHideWin() {
   const listeners = new Map();
-  const win = {
+  return {
+    listeners,
     addEventListener(name, fn) {
       listeners.set(name, fn);
     },
@@ -448,152 +404,70 @@ async function flushDialogPaint() {
       if (listeners.get(name) === fn) listeners.delete(name);
     },
   };
-  const calls = [];
+}
+
+// Startup forwards the host's event to core; a restored game continues the default file.
+{
+  const recorded = [];
   const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([5, 6, 7]) };
+    fileSessionEvent(event, name) {
+      recorded.push([event, name]);
+      return { ok: true };
     },
   };
-  const session = {
-    config: { auto_save: true },
-    boundFilename: "autosave.sud",
-  };
-  wireFinalSnapshotOnPageHide(game, session, {
-    win,
-    fetchFn: async (url, init) => {
-      calls.push({ url, init });
-      return { ok: true, status: 204 };
-    },
-  });
-  listeners.get("pagehide")?.();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "./current-file");
-  assert.equal(calls[0].init.keepalive, true);
+  const restoreEvent = Symbol("restore event");
+  const idleEvent = Symbol("idle event");
+  recordStartupFileSession(game, { kind: "restore", startup_context_event: restoreEvent, default_save_filename: "autosave.sud" });
+  recordStartupFileSession(game, { kind: "empty", startup_context_event: idleEvent, default_save_filename: "sudoku.sud" });
+  assert.deepEqual(recorded, [[restoreEvent, "autosave.sud"], [idleEvent, null]]);
 }
 
+// Pagehide while continuing a file: one keepalive host write.
 {
-  const listeners = new Map();
-  const win = {
-    addEventListener(name, fn) {
-      listeners.set(name, fn);
-    },
-    removeEventListener(name, fn) {
-      if (listeners.get(name) === fn) listeners.delete(name);
-    },
-  };
+  const win = makePageHideWin();
+  const host = hostFetch();
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([5, 6, 7]) }) }, { autoSave: true });
+  assert.equal(game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud").ok, true);
+  const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
+  wireFinalSnapshotOnPageHide(game, session, { win, fetchFn: host.fetchFn });
+  win.listeners.get("pagehide")?.();
+  await settleFlow();
+  assert.equal(host.calls.length, 1);
+  assert.equal(host.calls[0].url, "./current-file");
+  assert.equal(host.calls[0].init.keepalive, true);
+  assert.equal(host.calls[0].init.headers["X-Sudoku-Filename"], "autosave.sud");
+}
+
+// Pagehide on a detached game writes nothing: nobody is left to answer a replace question.
+{
+  const win = makePageHideWin();
+  const host = hostFetch();
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true });
+  assert.equal(game.fileSessionEvent(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS).ok, true);
+  wireFinalSnapshotOnPageHide(game, { config: { auto_save: true } }, { win, fetchFn: host.fetchFn });
+  win.listeners.get("pagehide")?.();
+  await settleFlow();
+  assert.equal(host.calls.length, 0);
+}
+
+// Pagehide with auto-save off writes nothing even when continuing a file.
+{
+  const win = makePageHideWin();
   let called = false;
-  const game = {
+  const game = await withCoreFlow({
     serialize() {
       called = true;
       return { ok: true, bytes: new Uint8Array([1]) };
     },
-  };
-  const session = {
-    config: { auto_save: false },
-    boundFilename: "autosave.sud",
-  };
-  wireFinalSnapshotOnPageHide(game, session, {
+  });
+  game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud");
+  wireFinalSnapshotOnPageHide(game, { config: { auto_save: false }, boundFilename: "autosave.sud" }, {
     win,
     fetchFn: async () => ({ ok: true, status: 204 }),
   });
-  listeners.get("pagehide")?.();
-  await new Promise((resolve) => setImmediate(resolve));
+  win.listeners.get("pagehide")?.();
+  await settleFlow();
   assert.equal(called, false);
-}
-
-{
-  const session = { write_context: WRITE_CONTEXT_DETACHED, writeContextEvent: postWriteContextEvent };
-  const out = await postWriteContextEventForSession(
-    session,
-    "startup_restore",
-    async () => ({ ok: true, status: 200, json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }) }),
-  );
-  assert.equal(out.ok, true);
-  assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
-}
-
-{
-  const session = {
-    write_context: WRITE_CONTEXT_DETACHED,
-    write_context_events: { auto_save_success: "auto_save_success_custom" },
-    writeContextEvent: postWriteContextEvent,
-  };
-  const calls = [];
-  const out = await postSessionWriteContextEvent(
-    session,
-    "auto_save_success",
-    async (url, init) => {
-      calls.push({ url, init });
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
-      };
-    },
-  );
-  assert.equal(out.ok, true);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].init.body, "auto_save_success_custom");
-  assert.equal(session.write_context, WRITE_CONTEXT_CONTINUATION);
-}
-
-{
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([1, 2]) };
-    },
-  };
-  const calls = [];
-  const out = await persistCurrentFileSnapshot(game, async (url, init) => {
-    calls.push({ url, init });
-    if (calls.length === 1) return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
-    return { ok: true, status: 204 };
-  });
-  assert.equal(out.ok, false);
-  assert.equal(out.replace_required, true);
-  assert.equal(out.error, "This file already exists. Do you want to replace it?");
-}
-
-{
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([1, 2]) };
-    },
-  };
-  const calls = [];
-  const out = await persistCurrentFileSnapshotWithReplacePrompt(game, {
-    fetchFn: async (url, init) => {
-      calls.push({ url, init });
-      if (calls.length === 1) return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
-      return { ok: true, status: 204 };
-    },
-    askConfirm: (msg) => {
-      assert.equal(msg, "existing.sud already exists. Do you want to replace it?");
-      return true;
-    },
-    saveName: "existing.sud",
-  });
-  assert.equal(out.ok, true);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].init.headers["X-Sudoku-Replace"], "true");
-}
-
-{
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([1, 2]) };
-    },
-  };
-  const out = await persistCurrentFileSnapshotWithReplacePrompt(game, {
-    fetchFn: async () => ({ ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" }),
-    askConfirm: (msg) => {
-      assert.equal(msg, "This file already exists. Do you want to replace it?");
-      return false;
-    },
-  });
-  assert.equal(out.ok, false);
-  assert.equal(out.cancelled, true);
 }
 
 {
@@ -725,8 +599,6 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "new",
     startup_context_event: "startup_new",
@@ -789,8 +661,6 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_action: "idle",
     startup_context_event: "startup_idle",
@@ -829,7 +699,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "idle",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_idle",
       state: {},
       legend: {},
@@ -840,7 +709,6 @@ async function flushDialogPaint() {
   );
   assert.equal(manual.kind, "empty");
   assert.equal(manual.msg, "Welcome to sudoku-zig! Choose New or Open to play");
-  assert.deepEqual(manual.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {
@@ -872,7 +740,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_restore",
       on_restore_solved: "prompt",
       startup_status: null,
@@ -892,7 +759,6 @@ async function flushDialogPaint() {
   assert.equal(deserializeCalls, 1, "restore startup path must use deserialize");
   assert.equal(importCalls, 0, "restore startup path must not use one-line import path");
   assert.equal(out.default_save_filename, "sudoku.sud");
-  assert.deepEqual(out.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {
@@ -923,7 +789,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       on_restore_solved: "prompt",
       startup_status: null,
       startup_save_path: "./current-file",
@@ -965,7 +830,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       on_restore_solved: "prompt",
       startup_status: null,
       startup_save_path: "./current-file",
@@ -1014,7 +878,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       on_restore_solved: "prompt",
       startup_status: null,
       startup_save_path: "./current-file",
@@ -1046,204 +909,100 @@ async function flushDialogPaint() {
 }
 
 {
-  // First successful autosave from detached/unsaved state binds default filename.
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
-    },
-  };
-  const session = {
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    default_save_filename: "sudoku.sud",
-    boundFilename: null,
-    writeContextEvent: async () => ({ ok: true }),
-  };
-  const fetchFn = async (url) => {
-    if (url === "./current-file") return { ok: true, status: 204 };
-    throw new Error(`unexpected fetch url: ${url}`);
-  };
-  startAutoSavePolicy(game, session, "fill", { fetchFn });
-  await session.__autosave_lane;
+  // First autosave with nothing on disk writes the host default file and binds its name.
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1, 2, 3]) }) }, { autoSave: true });
+  const session = { config: { auto_save: true }, default_save_filename: "sudoku.sud", boundFilename: null };
+  const host = hostFetch({ exists: false });
+  const outcome = await startAutoSavePolicy(game, session, "fill", { fetchFn: host.fetchFn });
+  assert.equal(outcome.kind, "done");
   assert.equal(session.boundFilename, "sudoku.sud");
+  assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Restore-Copy"], undefined, "host file is the user's file");
 }
 
 {
-  // Bound working-target autosave writes target first, then mirrors startup lane.
-  const writes = [];
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([4, 2]) };
-    },
-  };
+  // Commands outside the core trigger list write nothing.
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true });
+  const host = hostFetch();
+  const outcome = await startAutoSavePolicy(game, { default_save_filename: "sudoku.sud" }, "new", { fetchFn: host.fetchFn });
+  assert.equal(outcome.kind, "done");
+  assert.equal(host.calls.length, 0);
+}
+
+/** Session continuing `bound.sud` through a bound writer that records into `writes`. */
+async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true });
+  assert.equal(game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "bound.sud").ok, true);
   const session = {
     config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     boundFilename: "bound.sud",
-    writeContextEvent: async () => ({ ok: true }),
+    boundTargetExists: () => true,
     boundSnapshotWriter: async (bytes) => {
       writes.push({ lane: "bound", bytes: [...bytes] });
-      return { ok: true };
+      return boundResult;
     },
   };
   const fetchFn = async (url, init) => {
     if (url === "./current-file") {
-      writes.push({ lane: "host", bytes: [...new Uint8Array(init.body)] });
+      writes.push({ lane: "host", bytes: [...new Uint8Array(init.body)], restoreCopy: init.headers["X-Sudoku-Restore-Copy"] });
       return { ok: true, status: 204 };
     }
     throw new Error(`unexpected fetch url: ${url}`);
   };
+  return { game, session, fetchFn };
+}
 
-  startAutoSavePolicy(game, session, "fill", { fetchFn });
-  await session.__autosave_lane;
+{
+  // Continuing a bound file: write it first, then the host restore copy; nobody is asked.
+  const writes = [];
+  const { game, session, fetchFn } = await boundAutosaveSetup(writes);
+  const prevChoose = globalThis.__sudokuChoose;
+  globalThis.__sudokuChoose = async () => assert.fail("continuation must not ask");
+  await startAutoSavePolicy(game, session, "fill", { fetchFn });
+  globalThis.__sudokuChoose = prevChoose;
   assert.deepEqual(writes, [
     { lane: "bound", bytes: [4, 2] },
-    { lane: "host", bytes: [4, 2] },
+    { lane: "host", bytes: [4, 2], restoreCopy: "true" },
   ]);
 }
 
 {
-  // If bound working-target save fails, autosave must not silently mirror host lane.
+  // A failed bound write skips the host copy and surfaces the error.
   const writes = [];
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([3]) };
-    },
-  };
-  const session = {
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    boundFilename: "bound.sud",
-    writeContextEvent: async () => ({ ok: true }),
-    boundSnapshotWriter: async () => ({ ok: false, error: "bound write failed" }),
-  };
-  const fetchFn = async (url, init) => {
-    if (url === "./current-file") {
-      writes.push(new Uint8Array(init.body));
-      return { ok: true, status: 204 };
-    }
-    throw new Error(`unexpected fetch url: ${url}`);
-  };
+  const { game, session, fetchFn } = await boundAutosaveSetup(writes, { ok: false, error: "bound write failed" });
   let surfaced = null;
-  startAutoSavePolicy(game, session, "fill", {
+  const outcome = await startAutoSavePolicy(game, session, "fill", {
     fetchFn,
     onError: (err) => {
       surfaced = err;
     },
   });
-  await session.__autosave_lane;
-  assert.equal(writes.length, 0, "host mirror must not run when bound autosave fails");
+  assert.equal(outcome.kind, "show_error");
+  assert.deepEqual(writes, [{ lane: "bound", bytes: [4, 2] }], "host copy must not run when bound autosave fails");
   assert.equal(surfaced?.error, "bound write failed");
 }
 
 {
-  // Slow-user lifecycle seam: startup context publish is fire-and-forget, so the
-  // first autosave after restore can race and be dropped (no retry).
-  const writes = [];
-  let contextReady = false;
-  let releaseContext = null;
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([9]) };
-    },
-  };
-  const session = {
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    boundFilename: "autosave.sud",
-    write_context: WRITE_CONTEXT_DETACHED,
-    writeContextEvent: postWriteContextEvent,
-  };
-  const fetchFn = async (url, init) => {
-    if (url === "./current-file-context") {
-      return await new Promise((resolve) => {
-        releaseContext = () => {
-          contextReady = true;
-          resolve({
-            ok: true,
-            status: 200,
-            json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
-          });
-        };
-      });
-    }
-    if (url === "./current-file") {
-      if (!contextReady) {
-        return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
-      }
-      writes.push(new Uint8Array(init.body));
-      return { ok: true, status: 204 };
-    }
-    throw new Error(`unexpected fetch url: ${url}`);
-  };
-
-  // Matches page boot behavior: startup context publish starts before user edits.
-  session.startup_context_ready = postWriteContextEventForSession(
-    session,
-    "startup_restore",
-    fetchFn,
-  );
-  startAutoSavePolicy(game, session, "fill", { fetchFn });
-  await new Promise((resolve) => setImmediate(resolve));
-  releaseContext?.();
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(
-    writes.length,
-    1,
-    "first autosave after restore should not be dropped when startup context publish is in-flight",
-  );
+  // An opened game continues its file: the first autosave writes without a replace question.
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([9]) }) }, { autoSave: true });
+  game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud");
+  const host = hostFetch({ exists: true });
+  const prevChoose = globalThis.__sudokuChoose;
+  globalThis.__sudokuChoose = async () => assert.fail("continued file must not ask");
+  await startAutoSavePolicy(game, { config: { auto_save: true }, boundFilename: "autosave.sud" }, "fill", { fetchFn: host.fetchFn });
+  globalThis.__sudokuChoose = prevChoose;
+  assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Filename"], "autosave.sud");
 }
 
 {
-  // Reliability seam: failed startup-context publish must not block autosave.
-  const writes = [];
-  const startupContextFailed = Promise.reject(new Error("context publish failed"));
-  startupContextFailed.catch(() => {});
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([7]) };
-    },
-  };
-  const session = {
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    boundFilename: "autosave.sud",
-    writeContextEvent: async () => ({ ok: true }),
-    startup_context_ready: startupContextFailed,
-  };
-  const fetchFn = async (url, init) => {
-    if (url === "./current-file") {
-      writes.push(new Uint8Array(init.body));
-      return { ok: true, status: 204 };
-    }
-    throw new Error(`unexpected fetch url: ${url}`);
-  };
-
-  startAutoSavePolicy(game, session, "fill", { fetchFn });
-  await session.__autosave_lane;
-  assert.equal(writes.length, 1, "autosave should proceed even when startup context publish fails");
-  assert.equal(session.startup_context_ready, null, "failed startup context promise should be cleared");
-}
-
-{
-  // Autosave ordering contract: overlapping saves must persist latest state.
+  // Overlapping autosaves run one at a time, so the latest snapshot lands last.
   const writes = [];
   let firstWriteResolve = null;
   let currentSnapshot = new Uint8Array([1]);
-  const game = {
-    serialize() {
-      return { ok: true, bytes: currentSnapshot };
-    },
-  };
-  const session = {
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    boundFilename: "autosave.sud",
-    write_context: WRITE_CONTEXT_DETACHED,
-    writeContextEvent: postWriteContextEvent,
-  };
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: currentSnapshot }) }, { autoSave: true });
+  game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud");
+  const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
   const fetchFn = async (url, init) => {
+    if (url === "./current-file-exists") return { ok: true, json: async () => ({ exists: true }) };
     if (url === "./current-file") {
       const bodyBytes = new Uint8Array(init.body);
       if (firstWriteResolve == null) {
@@ -1257,33 +1016,18 @@ async function flushDialogPaint() {
       writes.push(bodyBytes);
       return { ok: true, status: 204 };
     }
-    if (url === "./current-file-context") {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ write_context: WRITE_CONTEXT_CONTINUATION }),
-      };
-    }
     throw new Error(`unexpected fetch url: ${url}`);
   };
 
-  // First autosave captures snapshot [1], but is delayed.
-  startAutoSavePolicy(game, session, "fill", { fetchFn });
-  // Second autosave captures newer snapshot [2], and completes immediately.
+  const first = startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await settleFlow();
   currentSnapshot = new Uint8Array([2]);
-  startAutoSavePolicy(game, session, "fill", { fetchFn });
-  await new Promise((resolve) => setImmediate(resolve));
-
-  // Release the delayed first save last (stale completion ordering hazard).
+  const second = startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await settleFlow();
+  assert.equal(writes.length, 0, "second autosave waits for the first");
   firstWriteResolve?.();
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(writes.length, 2);
-  assert.deepEqual(
-    [...writes[writes.length - 1]],
-    [2],
-    "latest autosave snapshot must win even if earlier save completes later",
-  );
+  await Promise.all([first, second]);
+  assert.deepEqual(writes.map((bytes) => [...bytes]), [[1], [2]], "latest autosave snapshot lands last");
 }
 
 {
@@ -1299,7 +1043,6 @@ async function flushDialogPaint() {
   const baseCells = lineToCells(fixture.puzzle_line);
 
   let savedBytes = null;
-  let writeContext = WRITE_CONTEXT_DETACHED;
   const hostCfg = () => ({
     difficulty: 1,
     log_level: 1,
@@ -1309,8 +1052,6 @@ async function flushDialogPaint() {
     auto_restore: true,
     auto_new: false,
     auto_save: true,
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku.sud",
     startup_action: savedBytes ? "restore" : "idle",
     startup_context_event: savedBytes ? "startup_restore" : "startup_idle",
@@ -1328,14 +1069,7 @@ async function flushDialogPaint() {
       savedBytes = new Uint8Array(init.body);
       return { ok: true, status: 204 };
     }
-    if (url === "./current-file-context" && init?.method === "POST") {
-      const event = String(init.body ?? "");
-      if (event === "startup_restore" || event === "auto_save_success") writeContext = WRITE_CONTEXT_CONTINUATION;
-      if (event === "startup_new" || event === "startup_idle" || event === "new_game_success" || event === "import_success" || event === "paste_success") {
-        writeContext = WRITE_CONTEXT_DETACHED;
-      }
-      return { ok: true, status: 200, json: async () => ({ write_context: writeContext }) };
-    }
+    if (url === "./current-file-exists") return { ok: true, json: async () => ({ exists: savedBytes != null }) };
     throw new Error(`unexpected fetch url: ${url}`);
   };
 
@@ -1386,30 +1120,22 @@ async function flushDialogPaint() {
     };
   };
 
-  const launchA = makeGame();
+  const launchA = await withCoreFlow(makeGame(), { autoSave: true });
   const bootA = await initializeWebSession(launchA, { fetchFn });
   const readyA = await offerInitialNewGame(launchA, bootA, null, { fetchFn });
   assert.equal(readyA.ok, true);
   assert.equal(readyA.kind, "empty");
   const sessionA = {
     config: readyA.config,
-    autosave_trigger_commands: readyA.autosave_trigger_commands,
     default_save_filename: readyA.default_save_filename,
     boundFilename: null,
-    write_context: WRITE_CONTEXT_DETACHED,
-    writeContextEvent: postWriteContextEvent,
   };
-  sessionA.startup_context_ready = postWriteContextEventForSession(
-    sessionA,
-    readyA.startup_context_event,
-    fetchFn,
-  );
+  recordStartupFileSession(launchA, readyA);
 
   for (const move of fixture.moves) {
     launchA.exec({ action: "fill", row: move.row, col: move.col, digit: move.digit });
-    startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
+    await startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
   }
-  await sessionA.__autosave_lane;
   assert.ok(savedBytes && savedBytes.length > 0, "autosave should persist a startup snapshot");
 
   const launchB = makeGame();
@@ -1580,7 +1306,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "restore",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_restore",
       startup_status: null,
       startup_save_path: "./current-file",
@@ -1596,7 +1321,6 @@ async function flushDialogPaint() {
   assert.equal(out.kind, "empty");
   assert.match(out.msg ?? "", /startup restore fetch failed/);
   assert.equal(out.default_save_filename, "sudoku.sud");
-  assert.deepEqual(out.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {
@@ -1633,7 +1357,6 @@ async function flushDialogPaint() {
       ok: true,
       kind: "empty",
       startup_action: "new",
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       startup_context_event: "startup_new",
       startup_status: null,
       default_save_filename: "sudoku.sud",
@@ -1657,7 +1380,6 @@ async function flushDialogPaint() {
   assert.equal(out.kind, "new");
   assert.equal(initDifficulty, 2);
   assert.equal(out.default_save_filename, "sudoku.sud");
-  assert.deepEqual(out.autosave_trigger_commands, AUTO_SAVE_TRIGGERS);
 }
 
 {
@@ -1671,7 +1393,6 @@ async function flushDialogPaint() {
       auto_restore: false,
       auto_new: false,
       auto_save: false,
-      autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
       default_save_filename: "sudoku_save.sud",
     };
     delete cfg[key];
@@ -1689,8 +1410,6 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_context_event: "startup_idle",
     on_restore_solved: "prompt",
@@ -1713,8 +1432,6 @@ async function flushDialogPaint() {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    write_context_events: WRITE_CONTEXT_EVENTS,
     default_save_filename: "sudoku_save.sud",
     startup_context_event: "startup_idle",
     on_restore_solved: "prompt",

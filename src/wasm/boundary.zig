@@ -10,6 +10,8 @@ const game_engine = @import("../core/engine/game_engine.zig");
 const about = @import("../core/about.zig");
 const legend_mod = @import("../core/renderer/legend.zig");
 const wire = @import("wire.zig");
+const flow = @import("../core/flow/mod.zig");
+const file_policy = @import("../core/file_policy.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
 
@@ -270,6 +272,112 @@ pub fn writeEventJsonWithOptions(out: OutBuffer, ev: event_mod.Event, options: E
         },
     }
     try std.Io.Writer.flush(&jw.writer);
+}
+
+/// Flow a web handler asks core to run (`flowStart` payload).
+pub const FlowStart = union(enum) {
+    save: []const u8,
+    save_as: []const u8,
+    autosave: []const u8,
+    autosave_flush,
+};
+
+const JsonFlowStart = struct {
+    flow: []const u8,
+    name: ?[]const u8 = null,
+    command: ?[]const u8 = null,
+};
+
+/// Parse `{flow, name?, command?}`; slices live in `arena`.
+pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStart {
+    const v = try std.json.parseFromSliceLeaky(JsonFlowStart, arena, json_text, .{});
+    const kind = std.meta.stringToEnum(std.meta.Tag(FlowStart), v.flow) orelse return error.UnknownFlow;
+    return switch (kind) {
+        .save => .{ .save = v.name orelse return error.MissingField },
+        .save_as => .{ .save_as = v.name orelse return error.MissingField },
+        .autosave => .{ .autosave = v.command orelse return error.MissingField },
+        .autosave_flush => .autosave_flush,
+    };
+}
+
+const JsonFlowInput = struct {
+    input: []const u8,
+    name: ?[]const u8 = null,
+    exists: ?bool = null,
+    yes: ?bool = null,
+    ok: ?bool = null,
+    cancelled: ?bool = null,
+    @"error": ?[]const u8 = null,
+};
+
+/// Parse one step result (`flowNext` payload); slices live in `arena`.
+pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Input {
+    const v = try std.json.parseFromSliceLeaky(JsonFlowInput, arena, json_text, .{});
+    const kind = std.meta.stringToEnum(std.meta.Tag(flow.Input), v.input) orelse return error.UnknownInput;
+    return switch (kind) {
+        .start => .start,
+        .default_target => .{ .default_target = v.name orelse return error.MissingField },
+        .target_checked => .{ .target_checked = v.exists orelse return error.MissingField },
+        .answered => .{ .answered = v.yes orelse return error.MissingField },
+        .wrote => .{ .wrote = if (v.ok == true)
+            .{ .ok = v.name orelse return error.MissingField }
+        else if (v.cancelled == true)
+            .cancelled
+        else
+            .{ .failed = v.@"error" orelse return error.MissingField } },
+    };
+}
+
+/// Step JSON: `{"step": <tag>, ...payload}`.
+pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
+    var mutable = out;
+    out.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    const w = &jw.writer;
+    try std.Io.Writer.writeAll(w, "{\"step\":");
+    try writeJsonString(w, @tagName(step));
+    switch (step) {
+        .resolve_default_target, .done => {},
+        .check_target, .write => |name| {
+            try std.Io.Writer.writeAll(w, ",\"name\":");
+            try writeJsonString(w, name);
+        },
+        .show_status, .show_error => |text| {
+            try std.Io.Writer.writeAll(w, ",\"text\":");
+            try writeJsonString(w, text);
+        },
+        .ask => |q| {
+            try std.Io.Writer.writeAll(w, ",\"title\":");
+            try writeJsonString(w, q.title);
+            try std.Io.Writer.writeAll(w, ",\"text\":");
+            try writeJsonString(w, q.text);
+            try std.Io.Writer.writeAll(w, ",\"ok_label\":");
+            try writeJsonString(w, q.ok_label);
+            try std.Io.Writer.writeAll(w, ",\"cancel_label\":");
+            try writeJsonString(w, q.cancel_label);
+        },
+    }
+    try std.Io.Writer.writeAll(w, "}");
+    try std.Io.Writer.flush(w);
+}
+
+/// Lifecycle event a web handler reports to the wasm FileSession (`fileSessionEvent` payload).
+pub const FileSessionEvent = struct {
+    event: file_policy.WriteContextEvent,
+    name: ?[]const u8,
+};
+
+const JsonFileSessionEvent = struct {
+    event: []const u8,
+    name: ?[]const u8 = null,
+};
+
+/// Parse `{event, name?}`; slices live in `arena`.
+pub fn parseFileSessionEvent(arena: std.mem.Allocator, json_text: []const u8) !FileSessionEvent {
+    const v = try std.json.parseFromSliceLeaky(JsonFileSessionEvent, arena, json_text, .{});
+    const event = file_policy.parseWriteContextEvent(v.event) orelse return error.UnknownEvent;
+    return .{ .event = event, .name = v.name };
 }
 
 pub fn writeAboutJson(out: OutBuffer) !void {
@@ -681,4 +789,46 @@ test "writeLegendJson includes paste flag" {
     });
     const json = out.finishJson();
     try std.testing.expect(std.mem.indexOf(u8, json, "\"paste\":true") != null);
+}
+
+test "flow start parses each web flow" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expectEqualStrings("game.sud", (try parseFlowStart(a, "{\"flow\":\"save\",\"name\":\"game.sud\"}")).save);
+    try std.testing.expectEqualStrings("fill", (try parseFlowStart(a, "{\"flow\":\"autosave\",\"command\":\"fill\"}")).autosave);
+    try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"autosave_flush\"}")) == .autosave_flush);
+    try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"nope\"}"));
+}
+
+test "flow input parses every step result" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"target_checked\",\"exists\":true}")).target_checked);
+    try std.testing.expect(!(try parseFlowInput(a, "{\"input\":\"answered\",\"yes\":false}")).answered);
+    try std.testing.expectEqualStrings("d.sud", (try parseFlowInput(a, "{\"input\":\"default_target\",\"name\":\"d.sud\"}")).default_target);
+    try std.testing.expectEqualStrings("w.sud", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":true,\"name\":\"w.sud\"}")).wrote.ok);
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"cancelled\":true}")).wrote == .cancelled);
+    try std.testing.expectEqualStrings("boom", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"error\":\"boom\"}")).wrote.failed);
+}
+
+test "step JSON carries the tag and its payload" {
+    var buf: [512]u8 = undefined;
+    var len: u32 = 0;
+    const out = OutBuffer{ .buf = &buf, .len = &len };
+    try writeStepJson(out, .{ .ask = .{ .title = "T", .text = "Q?", .ok_label = "Yes", .cancel_label = "No" } });
+    try std.testing.expectEqualStrings("{\"step\":\"ask\",\"title\":\"T\",\"text\":\"Q?\",\"ok_label\":\"Yes\",\"cancel_label\":\"No\"}", out.finishJson());
+    try writeStepJson(out, .{ .write = "a.sud" });
+    try std.testing.expectEqualStrings("{\"step\":\"write\",\"name\":\"a.sud\"}", out.finishJson());
+    try writeStepJson(out, .done);
+    try std.testing.expectEqualStrings("{\"step\":\"done\"}", out.finishJson());
+}
+
+test "file session event parses the event and optional name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const ev = try parseFileSessionEvent(arena.allocator(), "{\"event\":\"open_success\",\"name\":\"o.sud\"}");
+    try std.testing.expectEqual(file_policy.WriteContextEvent.open_success, ev.event);
+    try std.testing.expectEqualStrings("o.sud", ev.name.?);
 }

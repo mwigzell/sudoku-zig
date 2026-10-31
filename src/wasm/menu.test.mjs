@@ -14,19 +14,8 @@ import {
 } from "./menu.js";
 import { applyHintExecStatus } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
+import { hostFetch, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
 
-const AUTO_SAVE_TRIGGERS = [
-  "fill",
-  "clear",
-  "undo",
-  "redo",
-  "hint",
-  "solve",
-  "solve_for_me",
-  "open",
-  "import",
-  "paste",
-];
 
 function makeBtn() {
   const handlers = {};
@@ -166,16 +155,12 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     state: emptyState(),
     legend: { solve: true, undo: false, redo: false },
     config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku.sud",
   };
-  let posted = null;
+  const host = hostFetch();
   const prevFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    posted = { url, init };
-    return { ok: true, status: 204 };
-  };
-  const game = {
+  globalThis.fetch = host.fetchFn;
+  const game = await withCoreFlow({
     exec(action) {
       assert.equal(action.action, "solve");
       return { ok: true, state: session.state, msg: "Solved", is_quit: false };
@@ -186,7 +171,7 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     serialize() {
       return { ok: true, bytes: new Uint8Array([4, 5, 6]) };
     },
-  };
+  }, { autoSave: true });
 
   const outcome = handleEditAction(
     "solve",
@@ -199,10 +184,9 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     makeRenderElement(),
   );
   assert.equal(outcome.handled, true);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settleFlow();
   globalThis.fetch = prevFetch;
-  assert.equal(posted?.url, "./current-file");
-  assert.equal(posted?.init?.method, "POST");
+  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST");
 }
 
 // ── hint exec status: msg on bar; empty ok preserves bar, no modal ──
@@ -271,23 +255,16 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
 // ── hint triggers autosave when auto_save is enabled ──
 {
   const prevFetch = globalThis.fetch;
-  let postedCurrent = false;
-  globalThis.fetch = async (url, init = {}) => {
-    if (url === "./current-file") {
-      postedCurrent = true;
-      return { ok: true, status: 204 };
-    }
-    return { ok: false, status: 500, text: async () => `unexpected ${url} ${init.method ?? "GET"}` };
-  };
+  const host = hostFetch();
+  globalThis.fetch = host.fetchFn;
 
   const session = {
     state: emptyState(),
     legend: { undo: false, redo: false },
     config: { auto_save: true },
     default_save_filename: "sudoku.sud",
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
   };
-  const game = {
+  const game = await withCoreFlow({
     exec(action) {
       assert.deepEqual(action, { action: "hint" });
       return { ok: true, state: session.state, msg: "A1 takes 5 (placement)", is_quit: false };
@@ -298,7 +275,7 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     serialize() {
       return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
     },
-  };
+  }, { autoSave: true });
   const status = { textContent: "", className: "" };
   const outcome = handleEditAction(
     "hint",
@@ -311,10 +288,9 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     makeRenderElement(),
   );
   assert.equal(outcome.handled, true);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settleFlow();
   globalThis.fetch = prevFetch;
-  assert.equal(postedCurrent, true);
+  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST");
 }
 
 // ── wireEditMenu Hint menuitem click shows status ──
@@ -616,7 +592,7 @@ const GOLDEN_PUZZLE_LINE =
     boundFilename: "bound.sud",
   };
   const nextState = { cells: [{ value: 3, given: false, conflict: false }] };
-  const game = {
+  const game = await withCoreFlow({
     importPuzzle(text) {
       importedWith = text;
       return { ok: true, msg: "imported puzzle" };
@@ -630,7 +606,7 @@ const GOLDEN_PUZZLE_LINE =
     getConfig() {
       return { theme: "dark" };
     },
-  };
+  });
   const status = { textContent: "", className: "" };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const result = await handlePastePuzzle(game, session, status, errorModal, {
@@ -733,25 +709,26 @@ const GOLDEN_PUZZLE_LINE =
   const nextState = emptyState();
   nextState.cells[0] = { value: 5, given: true, conflict: false };
   const boardEl = makeMockBoard();
+  const game = await withCoreFlow({
+    importPuzzle(text) {
+      assert.equal(text, GOLDEN_PUZZLE_LINE);
+      return { ok: true };
+    },
+    getState() {
+      return nextState;
+    },
+    getLegend() {
+      return session.legend;
+    },
+    getConfig() {
+      return session.config;
+    },
+  });
   wireEditMenu(
     makeBtn(),
     makeBtn(),
     makeBtn(),
-    {
-      importPuzzle(text) {
-        assert.equal(text, GOLDEN_PUZZLE_LINE);
-        return { ok: true };
-      },
-      getState() {
-        return nextState;
-      },
-      getLegend() {
-        return session.legend;
-      },
-      getConfig() {
-        return session.config;
-      },
-    },
+    game,
     boardEl,
     { getSelection: () => null, deselect() {} },
     { textContent: "", className: "" },
@@ -777,22 +754,14 @@ const GOLDEN_PUZZLE_LINE =
     state: emptyState(),
     legend: { [LEGEND_WIRE_PASTE]: true },
     config: { show_region: false, auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
     default_save_filename: "sudoku.sud",
   };
   const nextState = emptyState();
   const boardEl = makeMockBoard();
-  let posted = null;
+  const host = hostFetch();
   const prevFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    posted = { url, init };
-    return { ok: true, status: 204 };
-  };
-  wireEditMenu(
-    makeBtn(),
-    makeBtn(),
-    makeBtn(),
-    {
+  globalThis.fetch = host.fetchFn;
+  const game = await withCoreFlow({
       importPuzzle() {
         return { ok: true };
       },
@@ -808,7 +777,12 @@ const GOLDEN_PUZZLE_LINE =
       serialize() {
         return { ok: true, bytes: new Uint8Array([9, 9, 9]) };
       },
-    },
+  }, { autoSave: true });
+  wireEditMenu(
+    makeBtn(),
+    makeBtn(),
+    makeBtn(),
+    game,
     boardEl,
     { getSelection: () => null, deselect() {} },
     { textContent: "", className: "" },
@@ -822,10 +796,9 @@ const GOLDEN_PUZZLE_LINE =
     },
   );
   pasteBtn.click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settleFlow();
   globalThis.fetch = prevFetch;
-  assert.equal(posted?.url, "./current-file");
-  assert.equal(posted?.init?.method, "POST");
+  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST");
 }
 
 console.log("menu.test.mjs OK");

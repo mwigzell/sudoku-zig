@@ -12,6 +12,7 @@ const settings_store = @import("../../core/settings_store.zig");
 const startup_policy = @import("../../core/startup/policy.zig");
 const startup_engine = @import("../../core/startup/engine.zig");
 const file_policy = @import("../../core/file_policy.zig");
+const flow_mod = @import("../../core/flow/mod.zig");
 const path_mod = @import("path.zig");
 
 const disambiguate = @import("../ascii/disambiguate.zig");
@@ -46,8 +47,12 @@ pub const Sudoku = struct {
     out: *std.Io.Writer,
     settings_persist: ?SettingsPersist = null,
     last_cell: ?facade_mod.Selection = null,
-    write_context: file_policy.WriteContext = .detached,
-    const WRITE_CANCELLED_MSG = "cancelled";
+    file_session: flow_mod.FileSession = .{},
+    /// The one flow in progress; terminal step text points into it until the next flow starts.
+    flow: flow_mod.Flow = undefined,
+
+    /// How a flow's `write` step is carried out: Save records its status in the game, autosave does not.
+    const WriteMode = enum { save, autosave };
 
     pub const StartupPolicyResult = struct {
         attempted_restore: bool,
@@ -69,7 +74,7 @@ pub const Sudoku = struct {
         var renderer_facade = facade;
         puzzle_gen.PuzzleGen.setPlayProgress(gen_progress.playProgressToFacade, @ptrCast(&renderer_facade));
         defer puzzle_gen.PuzzleGen.setPlayProgress(null, null);
-        return @This(){
+        var sudoku = @This(){
             .cfg = cfg,
             .renderer = facade,
             .transport = transport,
@@ -77,16 +82,18 @@ pub const Sudoku = struct {
             .settings_persist = settings_persist,
             .engine = try startup_engine.initEngineFromStartup(cfg),
         };
+        if (settings_persist) |sp| {
+            const current = settings_store.loadCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir) catch null;
+            defer if (current) |p| std.heap.page_allocator.free(p);
+            sudoku.file_session.setWorkingFile(current);
+        }
+        return sudoku;
     }
 
     fn persistSettingsIfNeeded(self: *@This()) void {
         const sp = self.settings_persist orelse return;
         self.cfg = self.engine.getConfig();
         settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, self.cfg) catch {};
-    }
-
-    fn commandTriggersAutoSave(cmd: command.Command) bool {
-        return file_policy.commandTriggersAutoSaveByName(@tagName(cmd));
     }
 
     fn pathExists(self: *@This(), path: []const u8) bool {
@@ -99,31 +106,6 @@ pub const Sudoku = struct {
         };
         self.transport.free(self.transport.context, bytes);
         return true;
-    }
-
-    fn shouldWriteTarget(self: *@This(), intent: file_policy.WriteIntent, path: []const u8) Error!bool {
-        const decision = file_policy.evaluateOverwritePolicy(.{
-            .intent = intent,
-            .target_exists = self.pathExists(path),
-            .write_context = self.write_context,
-        });
-        return switch (decision) {
-            .write => true,
-            .require_replace_confirm => self.renderer.confirmReplace(file_policy.REPLACE_CONFIRM_MSG) catch return error.System,
-        };
-    }
-
-    fn cancelledWriteEvent(self: *@This()) game_engine.Event {
-        return .{ .ok = .{
-            .board_view = self.engine.eventBoard(),
-            .msg = WRITE_CANCELLED_MSG,
-            .is_quit = false,
-        } };
-    }
-
-    fn loadCurrentFileIfAny(self: *@This()) ?[]u8 {
-        const sp = self.settings_persist orelse return null;
-        return settings_store.loadCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir) catch null;
     }
 
     /// Owned `<visible_save_dir>/sudoku.sud`; null without settings persistence.
@@ -139,70 +121,95 @@ pub const Sudoku = struct {
         settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch {};
     }
 
-    fn persistResolvedCurrentFile(self: *@This(), path: []const u8) void {
+    /// Successful Open: the opened file becomes the working file.
+    fn noteOpened(self: *@This(), path: []const u8) void {
         const resolved = self.transport.resolve(self.transport.context, path) catch return;
         defer self.transport.free(self.transport.context, resolved);
         self.persistCurrentFile(resolved);
+        self.file_session.setWorkingFile(resolved);
+        self.file_session.apply(.open_success);
     }
 
-    fn applyWriteContextEvent(self: *@This(), event: file_policy.WriteContextEvent) void {
-        self.write_context = file_policy.nextWriteContext(self.write_context, event);
-    }
-
-    fn autoSaveSnapshot(self: *@This(), path: []const u8) game_engine.Event {
-        const resolved = self.transport.resolve(self.transport.context, path) catch |err| {
-            var buf: [80]u8 = undefined;
-            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "resolve: {s}", .{@errorName(err)}) catch "system error" };
+    /// Carry out a `write` step; `scratch` holds the reported name or error text.
+    fn writeTarget(self: *@This(), mode: WriteMode, name: []const u8, scratch: []u8) flow_mod.Wrote {
+        const resolved = self.transport.resolve(self.transport.context, name) catch |err| {
+            return .{ .failed = std.fmt.bufPrint(scratch, "resolve: {s}", .{@errorName(err)}) catch "system error" };
         };
         defer self.transport.free(self.transport.context, resolved);
 
-        const save_buf = self.engine.toSaveFormat(std.heap.page_allocator) catch |err| {
-            return game_engine.Event{ .error_msg = @errorName(err) };
-        };
-        defer std.heap.page_allocator.free(save_buf);
-
-        self.transport.write(self.transport.context, resolved, save_buf) catch |err| {
-            return game_engine.Event{ .error_msg = @errorName(err) };
-        };
-
+        switch (mode) {
+            .save => switch (save_as_command.execute(&self.engine, self.transport, resolved)) {
+                .ok => {},
+                .error_msg => |msg| return .{ .failed = copyInto(scratch, msg) },
+            },
+            .autosave => {
+                const save_buf = self.engine.toSaveFormat(std.heap.page_allocator) catch |err| return .{ .failed = @errorName(err) };
+                defer std.heap.page_allocator.free(save_buf);
+                self.transport.write(self.transport.context, resolved, save_buf) catch |err| return .{ .failed = @errorName(err) };
+            },
+        }
         self.persistCurrentFile(resolved);
-        return .{ .ok = .{
+        return .{ .ok = copyInto(scratch, resolved) };
+    }
+
+    fn copyInto(scratch: []u8, text: []const u8) []const u8 {
+        const len = @min(text.len, scratch.len);
+        std.mem.copyForwards(u8, scratch[0..len], text[0..len]);
+        return scratch[0..len];
+    }
+
+    /// Drive `self.flow` to its terminal step, carrying out each step on this platform.
+    fn runFlow(self: *@This(), mode: WriteMode) Error!flow_mod.Step {
+        var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
+        var step = self.flow.next(.start);
+        while (!flow_mod.isTerminal(step)) {
+            const input: flow_mod.Input = switch (step) {
+                .resolve_default_target => blk: {
+                    const default_visible = self.defaultVisibleSavePath();
+                    defer if (default_visible) |p| std.heap.page_allocator.free(p);
+                    break :blk .{ .default_target = copyInto(&scratch, default_visible orelse save_command.DEFAULT_SAVE_FILE) };
+                },
+                .check_target => |name| .{ .target_checked = self.pathExists(name) },
+                .ask => |question| .{ .answered = try self.renderer.ask(question) },
+                .write => |name| .{ .wrote = self.writeTarget(mode, name, &scratch) },
+                .show_status, .show_error, .done => unreachable,
+            };
+            step = self.flow.next(input);
+        }
+        return step;
+    }
+
+    /// Map a flow's terminal step to the event the loop shows; `done` shows `otherwise`.
+    fn flowEvent(self: *@This(), terminal: flow_mod.Step, otherwise: game_engine.Event) game_engine.Event {
+        return switch (terminal) {
+            .show_status => |text| .{ .ok = .{
+                .board_view = self.engine.eventBoard(),
+                .msg = text,
+                .is_quit = false,
+            } },
+            .show_error => |msg| .{ .error_msg = msg },
+            else => otherwise,
+        };
+    }
+
+    fn runSaveFlow(self: *@This(), intent: file_policy.WriteIntent, path: []const u8) Error!game_engine.Event {
+        self.flow = .{ .save = flow_mod.SaveFlow.init(&self.file_session, intent, path) };
+        const terminal = try self.runFlow(.save);
+        return self.flowEvent(terminal, .{ .ok = .{
             .board_view = self.engine.eventBoard(),
             .msg = null,
             .is_quit = false,
-            .cell = null,
-        } };
+        } });
     }
 
     fn applyAutoSavePolicyIfNeeded(self: *@This(), cmd: command.Command, event: game_engine.Event) game_engine.Event {
-        if (!self.cfg.auto_save) return event;
-        if (!commandTriggersAutoSave(cmd)) return event;
         switch (event) {
             .error_msg => return event,
             .ok => {},
         }
-
-        const loaded = self.loadCurrentFileIfAny();
-        defer if (loaded) |p| std.heap.page_allocator.free(p);
-        const default_visible = self.defaultVisibleSavePath();
-        defer if (default_visible) |p| std.heap.page_allocator.free(p);
-        const target = switch (file_policy.autoSaveTarget(.{ .has_working_file = loaded != null })) {
-            .working_file => loaded.?,
-            .default_visible => default_visible orelse save_command.DEFAULT_SAVE_FILE,
-        };
-        const allowed = self.shouldWriteTarget(.auto_save, target) catch return event;
-        if (!allowed) return event;
-        const save_event = self.autoSaveSnapshot(target);
-        switch (save_event) {
-            .ok => {
-                self.applyWriteContextEvent(.auto_save_success);
-                // Preserve the originating command status (e.g. "You win!") on
-                // successful autosave; autosave is a background persistence side effect.
-                return event;
-            },
-            .error_msg => return save_event,
-        }
-        return event;
+        self.flow = .{ .autosave = flow_mod.AutosaveFlow.afterCommand(&self.file_session, self.engine.cfg.auto_save, @tagName(cmd)) };
+        const terminal = self.runFlow(.autosave) catch return event;
+        return self.flowEvent(terminal, event);
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
@@ -258,64 +265,23 @@ pub const Sudoku = struct {
                     else => {},
                 }
                 const event = switch (cmd) {
-                    .save => |data| blk: {
-                        const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                        if (!(try self.shouldWriteTarget(.save, path))) break :blk self.cancelledWriteEvent();
-                        break :blk save_command.execute(&self.engine, self.transport, path);
-                    },
+                    .save => |data| try self.runSaveFlow(.save, data.path orelse save_command.DEFAULT_SAVE_FILE),
                     .open => |data| open_command.execute(&self.engine, self.transport, data.path),
                     .import => |data| import_command.execute(&self.engine, self.transport, data.path),
                     .@"export" => |data| export_command.execute(&self.engine, self.transport, data.path),
                     .copy => copy_command.execute(&self.engine, self.out),
                     .paste => |data| paste_command.execute(&self.engine, data.line),
                     .new => |data| new_command.execute(&self.engine, data),
-                    .save_as => |data| blk: {
-                        const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                        if (!(try self.shouldWriteTarget(.save_as, path))) break :blk self.cancelledWriteEvent();
-                        break :blk save_as_command.execute(&self.engine, self.transport, path);
-                    },
+                    .save_as => |data| try self.runSaveFlow(.save_as, data.path orelse save_command.DEFAULT_SAVE_FILE),
                     else => self.engine.exec(cmd),
                 };
-                switch (cmd) {
-                    .save => |data| switch (event) {
-                        .ok => {
-                            const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                            self.persistResolvedCurrentFile(path);
-                            self.applyWriteContextEvent(.save_success);
-                        },
-                        .error_msg => {},
-                    },
-                    .save_as => |data| switch (event) {
-                        .ok => {
-                            const path = data.path orelse save_command.DEFAULT_SAVE_FILE;
-                            self.persistResolvedCurrentFile(path);
-                            self.applyWriteContextEvent(.save_as_success);
-                        },
-                        .error_msg => {},
-                    },
-                    .open => |data| switch (event) {
-                        .ok => {
-                            if (data.path) |path| {
-                                self.persistResolvedCurrentFile(path);
-                                self.applyWriteContextEvent(.open_success);
-                            }
-                        },
-                        .error_msg => {},
-                    },
-                    .new => switch (event) {
-                        .ok => self.applyWriteContextEvent(.new_game_success),
-                        .error_msg => {},
-                    },
-                    .import => switch (event) {
-                        .ok => self.applyWriteContextEvent(.import_success),
-                        .error_msg => {},
-                    },
-                    .paste => switch (event) {
-                        .ok => self.applyWriteContextEvent(.paste_success),
-                        .error_msg => {},
-                    },
+                if (event == .ok) switch (cmd) {
+                    .open => |data| if (data.path) |path| self.noteOpened(path),
+                    .new => self.file_session.apply(.new_game_success),
+                    .import => self.file_session.apply(.import_success),
+                    .paste => self.file_session.apply(.paste_success),
                     else => {},
-                }
+                };
                 const final_event = self.applyAutoSavePolicyIfNeeded(cmd, event);
                 const quit = try self.handleEvent(final_event);
                 if (persist_after) self.persistSettingsIfNeeded();
@@ -388,13 +354,18 @@ pub const Sudoku = struct {
             const event = self.restoreFromPath(current_file.?);
             switch (event) {
                 .ok => {
-                    self.applyWriteContextEvent(.startup_restore);
+                    self.file_session.apply(.startup_restore);
                     _ = try self.handleEvent(event);
                     if (decision.restore_solved == .prompt and self.engine.state.board.isSolved()) {
-                        const start_new = try self.renderer.confirmReplace(startup_policy.RESTORE_SOLVED_PROMPT);
+                        const start_new = try self.renderer.ask(.{
+                            .title = startup_policy.RESTORE_SOLVED_TITLE,
+                            .text = startup_policy.RESTORE_SOLVED_PROMPT,
+                            .ok_label = startup_policy.RESTORE_SOLVED_OK_LABEL,
+                            .cancel_label = startup_policy.RESTORE_SOLVED_CANCEL_LABEL,
+                        });
                         if (start_new) {
                             const new_event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
-                            self.applyWriteContextEvent(.startup_new);
+                            self.file_session.apply(.startup_new);
                             _ = try self.handleEvent(new_event);
                         }
                     }
@@ -409,12 +380,12 @@ pub const Sudoku = struct {
 
         if (decision.action == .new) {
             const event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
-            self.applyWriteContextEvent(.startup_new);
+            self.file_session.apply(.startup_new);
             _ = try self.handleEvent(event);
             return .{ .attempted_restore = false, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
         }
 
-        self.applyWriteContextEvent(.startup_idle);
+        self.file_session.apply(.startup_idle);
         return .{ .attempted_restore = false, .restore_failed = false, .rendered = false, .startup_status = startup_policy.statusForAction(decision.action) };
     }
 
@@ -462,8 +433,8 @@ const DeterministicFacade = struct {
         self.error_calls += 1;
     }
 
-    /// Records replace prompts and returns scripted OK/Cancel answers.
-    pub fn confirmReplace(self: *@This(), _: []const u8) !bool {
+    /// Records questions and returns scripted yes/no answers.
+    pub fn ask(self: *@This(), _: flow_mod.Ask) !bool {
         self.replace_prompts += 1;
         if (self.replace_idx >= self.replace_answers.len) return true;
         const answer = self.replace_answers[self.replace_idx];
@@ -1739,7 +1710,7 @@ test "startup policy: solved restore prompt cancel keeps restored solved board" 
     try std.testing.expect(startup.rendered);
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
     try std.testing.expect(app.engine.state.board.isSolved());
-    try std.testing.expectEqual(file_policy.WriteContext.continuation, app.write_context);
+    try std.testing.expectEqual(file_policy.WriteContext.continuation, app.file_session.write_context);
 }
 
 test "startup policy: solved restore prompt confirm starts fresh game" {
@@ -1775,7 +1746,7 @@ test "startup policy: solved restore prompt confirm starts fresh game" {
     try std.testing.expect(startup.rendered);
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
     try std.testing.expect(!app.engine.state.board.isSolved());
-    try std.testing.expectEqual(file_policy.WriteContext.detached, app.write_context);
+    try std.testing.expectEqual(file_policy.WriteContext.detached, app.file_session.write_context);
 }
 
 test "startup policy: relaunch restores latest autosave without rewriting givens" {
@@ -2182,7 +2153,7 @@ test "autosave: first autosave with no working file writes the visible save fold
     try std.testing.expect(bytes.len > 0);
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
-    try std.testing.expect(std.mem.indexOf(u8, output, file_policy.REPLACE_CONFIRM_MSG) == null);
+    try std.testing.expect(std.mem.indexOf(u8, output, file_policy.REPLACE_CONFIRM_TITLE) == null);
 }
 
 test "autosave: persisted SUD0 restores exact board given_bits and history pointer" {
@@ -2393,7 +2364,7 @@ test "replace confirm: paste detaches and requires replace confirm before autosa
     cfg.auto_save = true;
     var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = MemoryTransport.DIR });
     defer app.deinit();
-    app.write_context = .continuation;
+    app.file_session.write_context = .continuation;
 
     try app.showGame();
     while (true) if (try app.turn()) break;
@@ -2432,7 +2403,7 @@ test "replace confirm: undo autosave in detached context requires prompt before 
     const almost = "483921657967345821251876493548132976729504138136798245372689514814253769695417382";
     _ = app.engine.newFromOneLinePuzzle(almost);
     _ = app.engine.exec(.{ .fill = .{ .row = 4, .col = 4, .digit = cell.CellValue.six } });
-    app.write_context = .detached;
+    app.file_session.write_context = .detached;
 
     try app.showGame();
     while (true) if (try app.turn()) break;
@@ -2472,7 +2443,7 @@ test "replace confirm: redo autosave in detached context requires prompt before 
     _ = app.engine.newFromOneLinePuzzle(almost);
     _ = app.engine.exec(.{ .fill = .{ .row = 4, .col = 4, .digit = cell.CellValue.six } });
     _ = app.engine.exec(.{ .undo = {} });
-    app.write_context = .detached;
+    app.file_session.write_context = .detached;
 
     try app.showGame();
     while (true) if (try app.turn()) break;

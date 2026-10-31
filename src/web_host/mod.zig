@@ -19,7 +19,7 @@ pub const Router = router_mod.Router;
 pub const RouteResult = router_mod.RouteResult;
 
 /// Loopback host failed to start: no free port in the probe range, or an I/O fault.
-pub const ServeError = error{ AddressInUse, Conflict, System };
+pub const ServeError = error{ AddressInUse, System };
 
 /// First loopback port tried before `FallbackCount` alternates.
 pub const Port: u16 = 8080;
@@ -52,7 +52,6 @@ const Session = struct {
     /// Host-computed startup metadata: web restore depends on capability+path.
     has_current_file: bool,
     current_file: ?[]const u8,
-    write_context: file_policy.WriteContext,
     host_config_body_buf: [1024]u8,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
@@ -61,23 +60,13 @@ const Session = struct {
     }
 };
 
-fn writeContextName(ctx: file_policy.WriteContext) []const u8 {
-    return switch (ctx) {
-        .continuation => "continuation",
-        .detached => "detached",
-    };
-}
-
-fn overwriteDecisionName(decision: file_policy.OverwriteDecision) []const u8 {
-    return switch (decision) {
-        .write => "write",
-        .require_replace_confirm => "require_replace_confirm",
-    };
-}
-
-fn contextResponseBody(write_context: file_policy.WriteContext, buf: []u8) ServeError![]const u8 {
-    return std.fmt.bufPrint(buf, "{{\"write_context\":\"{s}\"}}", .{writeContextName(write_context)}) catch return ServeError.System;
-}
+/// Save file name the web shell is writing (bare name, no folders).
+const FILENAME_HEADER = "X-Sudoku-Filename";
+/// Set when the user's own file was written elsewhere (picker, file handle, Android bridge):
+/// the host copy is only the restore copy and lives in the hidden data dir.
+const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
+const CURRENT_FILE_PATH = "/current-file";
+const CURRENT_FILE_EXISTS_PATH = "/current-file-exists";
 
 const SettingsPostBody = struct {
     difficulty: ?[]const u8 = null,
@@ -199,8 +188,8 @@ fn validSaveName(name: []const u8) bool {
     return true;
 }
 
-fn allowsReplace(request: []const u8) bool {
-    const raw = headerValue(request, "X-Sudoku-Replace") orelse return false;
+fn headerFlag(request: []const u8, key: []const u8) bool {
+    const raw = headerValue(request, key) orelse return false;
     const value = std.mem.trim(u8, raw, " \t");
     return std.ascii.eqlIgnoreCase(value, "true") or std.mem.eql(u8, value, "1");
 }
@@ -215,81 +204,74 @@ fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError
     settings_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
 }
 
-/// Owned write path for a current-file POST. No working file: the default visible file.
-/// Working file with the same (or no) name: that file in place. A different name is a
-/// browser-bound file's restore copy, kept in the hidden data dir.
-fn currentFileTarget(io: std.Io, session: *const Session, save_name: ?[]const u8) ![]u8 {
+/// Owned write path for a current-file write, and whether it is only the hidden restore copy.
+const CurrentFileTarget = struct {
+    path: []u8,
+    restore_copy: bool,
+};
+
+/// No working file: the default visible file. Working file with the same (or no) name: that file
+/// in place. A restore copy, or a different name, goes to the hidden data dir.
+fn currentFileTarget(io: std.Io, session: *const Session, save_name: ?[]const u8, restore_copy: bool) !CurrentFileTarget {
     const gpa = std.heap.page_allocator;
     const requested: ?[]const u8 = if (save_name) |n| blk: {
         const trimmed = std.mem.trim(u8, n, " \t");
         break :blk if (validSaveName(trimmed)) trimmed else null;
     } else null;
+    if (restore_copy) {
+        const name = requested orelse startupFilename(session.current_file);
+        return .{ .path = try file_path.resolveSavePath(gpa, session.data_dir, name), .restore_copy = true };
+    }
     switch (file_policy.autoSaveTarget(.{ .has_working_file = session.current_file != null })) {
         .default_visible => {
             std.Io.Dir.cwd().createDirPath(io, session.visible_save_dir) catch {};
-            return file_path.resolveSavePath(gpa, session.visible_save_dir, requested orelse save_defaults.DEFAULT_SAVE_FILE);
+            return .{ .path = try file_path.resolveSavePath(gpa, session.visible_save_dir, requested orelse save_defaults.DEFAULT_SAVE_FILE), .restore_copy = false };
         },
         .working_file => {
             const current = session.current_file.?;
-            const name = requested orelse return gpa.dupe(u8, current);
-            if (std.mem.eql(u8, name, std.fs.path.basename(current))) return gpa.dupe(u8, current);
-            return file_path.resolveSavePath(gpa, session.data_dir, name);
+            const in_place: CurrentFileTarget = .{ .path = try gpa.dupe(u8, current), .restore_copy = isRestoreCopyPath(session, current) };
+            const name = requested orelse return in_place;
+            if (std.mem.eql(u8, name, std.fs.path.basename(current))) return in_place;
+            gpa.free(in_place.path);
+            return .{ .path = try file_path.resolveSavePath(gpa, session.data_dir, name), .restore_copy = true };
         },
     }
 }
 
-fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8, allow_replace: bool) ServeError!void {
+/// A file directly in the hidden data dir, when that dir is not also the visible save folder.
+fn isRestoreCopyPath(session: *const Session, path: []const u8) bool {
+    if (std.mem.eql(u8, session.data_dir, session.visible_save_dir)) return false;
+    return std.mem.eql(u8, std.fs.path.dirname(path) orelse "", session.data_dir);
+}
+
+/// True when a write of `save_name` would land on an existing file the user can see.
+fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]const u8) ServeError!bool {
+    const target = currentFileTarget(io, session, save_name, false) catch return ServeError.System;
+    defer std.heap.page_allocator.free(target.path);
+    if (target.restore_copy) return false;
+    _ = std.Io.Dir.cwd().statFile(io, target.path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return ServeError.System,
+    };
+    return true;
+}
+
+fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8, restore_copy: bool) ServeError!void {
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
 
     settings_store.ensureSettingsDir(io, session.data_dir);
-    const resolved = currentFileTarget(io, session, save_name) catch return ServeError.System;
-    defer std.heap.page_allocator.free(resolved);
-
-    const stat = std.Io.Dir.cwd().statFile(io, resolved, .{}) catch |err| switch (err) {
-        error.FileNotFound => null,
-        else => return ServeError.System,
-    };
-    const decision = file_policy.evaluateOverwritePolicy(.{
-        .intent = .auto_save,
-        .target_exists = stat != null,
-        .write_context = session.write_context,
-    });
-    log.info(
-        "current-file write decision: context={s} target={s} exists={any} allow_replace={any} decision={s}",
-        .{
-            writeContextName(session.write_context),
-            resolved,
-            stat != null,
-            allow_replace,
-            overwriteDecisionName(decision),
-        },
-    );
-    if (decision == .require_replace_confirm and !allow_replace) return ServeError.Conflict;
+    const target = currentFileTarget(io, session, save_name, restore_copy) catch return ServeError.System;
+    defer std.heap.page_allocator.free(target.path);
 
     const transport = file_transport.NativeTransport.make(io);
-    transport.write(transport.context, resolved, body) catch return ServeError.System;
+    transport.write(transport.context, target.path, body) catch return ServeError.System;
 
-    settings_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, resolved) catch return ServeError.System;
+    settings_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, target.path) catch return ServeError.System;
 
     if (session.current_file) |old| std.heap.page_allocator.free(old);
-    session.current_file = std.heap.page_allocator.dupe(u8, resolved) catch return ServeError.System;
+    session.current_file = std.heap.page_allocator.dupe(u8, target.path) catch return ServeError.System;
     session.has_current_file = true;
-    session.write_context = file_policy.nextWriteContext(session.write_context, .auto_save_success);
-    log.info(
-        "current-file write success: bytes={d} target={s} next_context={s}",
-        .{ body.len, resolved, writeContextName(session.write_context) },
-    );
-}
-
-fn applyCurrentFileContextEvent(io: std.Io, session: *Session, event_name: []const u8) ServeError!void {
-    _ = io;
-    const event = file_policy.parseWriteContextEvent(event_name) orelse return ServeError.System;
-    const prev = session.write_context;
-    session.write_context = file_policy.nextWriteContext(session.write_context, event);
-    log.info(
-        "current-file context event: event={s} {s}->{s}",
-        .{ event_name, writeContextName(prev), writeContextName(session.write_context) },
-    );
+    log.info("current-file write: bytes={d} target={s} restore_copy={any}", .{ body.len, target.path, target.restore_copy });
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -414,7 +396,6 @@ pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: 
         .visible_save_dir = visible_save_dir,
         .has_current_file = current_file != null,
         .current_file = current_file,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -472,28 +453,15 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         try writeFull(&w.interface, "204 No Content", "application/json", "");
         return;
     }
-    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/current-file")) {
+    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         const body = requestBody(request) orelse return ServeError.System;
-        const save_name = headerValue(request, "X-Sudoku-Filename");
-        applyCurrentFilePost(io, session, body, save_name, allowsReplace(request)) catch |err| switch (err) {
-            ServeError.Conflict => {
-                log.warn("current-file write blocked by replace policy", .{});
-                try writeFull(&w.interface, "409 Conflict", "text/plain", file_policy.REPLACE_CONFIRM_MSG);
-                return;
-            },
-            else => return err,
-        };
+        try applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER));
         try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
         return;
     }
-    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/current-file-context")) {
-        const body = requestBody(request) orelse return ServeError.System;
-        const event_name = std.mem.trim(u8, body, " \t\r\n");
-        if (event_name.len == 0) return ServeError.System;
-        try applyCurrentFileContextEvent(io, session, event_name);
-        var context_buf: [64]u8 = undefined;
-        const json = try contextResponseBody(session.write_context, &context_buf);
-        try writeFull(&w.interface, "200 OK", "application/json", json);
+    if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, CURRENT_FILE_EXISTS_PATH)) {
+        const exists = try currentFileTargetExists(io, session, headerValue(request, FILENAME_HEADER));
+        try writeFull(&w.interface, "200 OK", "application/json", if (exists) "{\"exists\":true}" else "{\"exists\":false}");
         return;
     }
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/client-log")) {
@@ -510,7 +478,7 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
         try writeFull(&w.interface, "204 No Content", "application/json", "");
         return;
     }
-    if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, "/current-file")) {
+    if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         const current_file = session.current_file orelse {
             try writeFull(&w.interface, "404 Not Found", "text/plain", "startup save not configured\n");
             return;
@@ -616,6 +584,7 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "board.js", .body = embed.board_js },
         .{ .name = "menu.js", .body = embed.menu_js },
         .{ .name = "file_menu.js", .body = embed.file_menu_js },
+        .{ .name = "step_runner.js", .body = embed.step_runner_js },
         .{ .name = "gen_worker.js", .body = embed.gen_worker_js },
         .{ .name = "generating.js", .body = embed.generating_js },
         .{ .name = "gen_progress_rows.js", .body = embed.gen_progress_rows_js },
@@ -698,6 +667,7 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/menu_bar.js", .expected = .menu_bar },
         .{ .path = "/theme.js", .expected = .theme },
         .{ .path = "/file_menu.js", .expected = .file_menu },
+        .{ .path = "/step_runner.js", .expected = .step_runner },
         .{ .path = "/generating.js", .expected = .generating },
         .{ .path = "/gen_progress_rows.js", .expected = .gen_progress_rows },
         .{ .path = "/gen_progress_format.js", .expected = .gen_progress_format },
@@ -800,7 +770,6 @@ test "applySettingsPost returns System on invalid JSON" {
         .visible_save_dir = ".",
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     try std.testing.expectError(ServeError.System, applySettingsPost(std.testing.io, &session, "{\"theme\":"));
@@ -813,7 +782,6 @@ test "applySettingsPost updates in-memory host config even when disk persistence
         .visible_save_dir = ".",
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     const body = "{\"difficulty\":\"hard\",\"log_level\":\"debug\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true}";
@@ -871,7 +839,6 @@ test "current-file POST writes startup snapshot and updates current_file pointer
         .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -915,7 +882,6 @@ test "current-file POST with no working file writes the visible save folder and 
         .visible_save_dir = visible_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -945,7 +911,6 @@ test "current-file POST keeps writing a visible working file in place" {
         .visible_save_dir = visible_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -977,7 +942,6 @@ test "current-file POST with a new name keeps the restore copy in the hidden dat
         .visible_save_dir = visible_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -1003,7 +967,6 @@ test "current-file POST supports explicit save name" {
         .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -1026,7 +989,6 @@ test "host-config default_save_filename follows persisted current_file basename"
         .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -1050,7 +1012,6 @@ test "current-file POST without explicit name reuses existing current_file basen
         .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -1059,7 +1020,7 @@ test "current-file POST without explicit name reuses existing current_file basen
     const first = try std.heap.page_allocator.dupe(u8, session.current_file.?);
     defer std.heap.page_allocator.free(first);
 
-    try applyCurrentFilePost(io, &session, "SUD0 second", null, true);
+    try applyCurrentFilePost(io, &session, "SUD0 second", null, false);
     try std.testing.expectEqualStrings(first, session.current_file.?);
 }
 
@@ -1076,7 +1037,6 @@ test "current-file POST bound target overwrite does not require replace header" 
         .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
@@ -1085,116 +1045,77 @@ test "current-file POST bound target overwrite does not require replace header" 
     try applyCurrentFilePost(io, &session, "SUD0 second", "replace-me.sud", false);
 }
 
-test "current-file POST rejects unbound existing target without replace header" {
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
-    defer std.testing.allocator.free(data_path);
-
-    var session = Session{
+fn testSession(data_path: []const u8, visible_path: []const u8) Session {
+    return .{
         .host_config = config.Config.default(),
         .data_dir = data_path,
-        .visible_save_dir = data_path,
+        .visible_save_dir = visible_path,
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
-    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
-
-    try applyCurrentFilePost(io, &session, "SUD0 first", "bound.sud", false);
-    const unbound_path = try file_path.resolveSavePath(std.testing.allocator, data_path, "other-existing.sud");
-    defer std.testing.allocator.free(unbound_path);
-    try std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{
-        .sub_path = unbound_path,
-        .data = "legacy",
-        .flags = .{ .truncate = true },
-    });
-    try applyCurrentFileContextEvent(io, &session, "new_game_success");
-    try std.testing.expectError(ServeError.Conflict, applyCurrentFilePost(io, &session, "SUD0 second", "other-existing.sud", false));
 }
 
-test "current-file POST allows overwrite with replace header" {
+test "current-file exists reports the visible target the next write lands on" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
+    const visible_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku", .{tmp.sub_path});
+    defer std.testing.allocator.free(visible_path);
 
-    var session = Session{
-        .host_config = config.Config.default(),
-        .data_dir = data_path,
-        .visible_save_dir = data_path,
-        .has_current_file = false,
-        .current_file = null,
-        .write_context = .detached,
-        .host_config_body_buf = undefined,
-    };
+    var session = testSession(data_path, visible_path);
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
 
-    try applyCurrentFilePost(io, &session, "SUD0 first", "replace-ok.sud", false);
-    try applyCurrentFilePost(io, &session, "SUD0 second", "replace-ok.sud", true);
+    try std.testing.expect(!try currentFileTargetExists(io, &session, save_defaults.DEFAULT_SAVE_FILE));
+    try applyCurrentFilePost(io, &session, "SUD0 first", save_defaults.DEFAULT_SAVE_FILE, false);
+    try std.testing.expect(try currentFileTargetExists(io, &session, save_defaults.DEFAULT_SAVE_FILE));
 }
 
-test "current-file context event can detach lane without clearing save target" {
+test "current-file exists never reports the hidden restore copy" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
+    const visible_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku", .{tmp.sub_path});
+    defer std.testing.allocator.free(visible_path);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
 
-    var session = Session{
-        .host_config = config.Config.default(),
-        .data_dir = data_path,
-        .visible_save_dir = data_path,
-        .has_current_file = false,
-        .current_file = null,
-        .write_context = .detached,
-        .host_config_body_buf = undefined,
-    };
+    var session = testSession(data_path, visible_path);
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
 
-    try applyCurrentFilePost(io, &session, "SUD0 first", "bound.sud", false);
-    try std.testing.expect(session.current_file != null);
-    try std.testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
-
-    try applyCurrentFileContextEvent(io, &session, "new_game_success");
-    try std.testing.expect(session.has_current_file);
-    try std.testing.expect(session.current_file != null);
-    try std.testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
-
-    const persisted = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
-    defer if (persisted) |p| std.testing.allocator.free(p);
-    try std.testing.expect(persisted != null);
-    try std.testing.expect(std.mem.endsWith(u8, persisted.?, "/bound.sud"));
+    try applyCurrentFilePost(io, &session, "SUD0 first", save_defaults.DEFAULT_SAVE_FILE, false);
+    try applyCurrentFilePost(io, &session, "SUD0 renamed", "picked.sud", false);
+    try std.testing.expect(!try currentFileTargetExists(io, &session, "picked.sud"));
 }
 
-test "restore then new makes first write to same existing target require replace confirm" {
+test "restore-copy POST writes the hidden data dir and leaves the visible working file alone" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
+    const visible_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku", .{tmp.sub_path});
+    defer std.testing.allocator.free(visible_path);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
 
-    var session = Session{
-        .host_config = config.Config.default(),
-        .data_dir = data_path,
-        .visible_save_dir = data_path,
-        .has_current_file = true,
-        .current_file = try file_path.resolveSavePath(std.heap.page_allocator, data_path, "sudoku.sud"),
-        .write_context = file_policy.nextWriteContext(.detached, .startup_restore),
-        .host_config_body_buf = undefined,
-    };
+    var session = testSession(data_path, visible_path);
     defer if (session.current_file) |p| std.heap.page_allocator.free(p);
 
-    try applyCurrentFilePost(io, &session, "SUD0 restored", "sudoku.sud", false);
-    try std.testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+    try applyCurrentFilePost(io, &session, "SUD0 visible", save_defaults.DEFAULT_SAVE_FILE, false);
+    try applyCurrentFilePost(io, &session, "SUD0 picked", save_defaults.DEFAULT_SAVE_FILE, true);
 
-    try applyCurrentFileContextEvent(io, &session, "new_game_success");
-    try std.testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
+    const visible_file = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ visible_path, save_defaults.DEFAULT_SAVE_FILE });
+    defer std.testing.allocator.free(visible_file);
+    const visible_bytes = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, visible_file, std.testing.allocator, std.Io.Limit.unlimited);
+    defer std.testing.allocator.free(visible_bytes);
+    try std.testing.expectEqualSlices(u8, "SUD0 visible", visible_bytes);
 
-    try std.testing.expectError(ServeError.Conflict, applyCurrentFilePost(io, &session, "SUD0 first-mutation", "sudoku.sud", false));
+    const hidden_file = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, save_defaults.DEFAULT_SAVE_FILE });
+    defer std.testing.allocator.free(hidden_file);
+    try std.testing.expectEqualStrings(hidden_file, session.current_file orelse return error.TestFailed);
 }
 
 test "web_host: host-config body reflects active host Config" {
@@ -1211,7 +1132,6 @@ test "web_host: host-config body reflects active host Config" {
         .visible_save_dir = ".",
         .has_current_file = false,
         .current_file = null,
-        .write_context = .detached,
         .host_config_body_buf = undefined,
     };
     const body = try session.hostConfigBody();
@@ -1267,6 +1187,9 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.file_menu);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.step_runner);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.generating);

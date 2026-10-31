@@ -9,6 +9,7 @@ const Legend = _legend.Legend;
 const command = @import("../command.zig");
 const config = @import("../config.zig");
 const logger = @import("../logger.zig");
+const file_policy = @import("../file_policy.zig");
 
 // Moved to src/core/event.zig, re-exported for backward compat
 const event = @import("../event.zig");
@@ -278,7 +279,7 @@ pub const GameEngine = struct {
     /// Shared adapter-facing event for successful save target writes.
     pub fn savedToPathEvent(self: *@This(), path: []const u8) Event {
         self.beginEventMsg();
-        self.appendEventMsgFmt("saved to: {s}", .{path});
+        self.appendEventMsgFmt(file_policy.SAVED_TO_FMT, .{path});
         return self.finishOkEvent(self.state.board.asView(), false, null, false);
     }
 

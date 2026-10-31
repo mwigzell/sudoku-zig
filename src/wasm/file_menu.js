@@ -13,13 +13,10 @@ import {
   applyConfigOutcomeStatus,
   applySessionOutcomeStatus,
   clearEventStatus,
-  postSessionWriteContextEvent,
-  persistCurrentFileSnapshotWithReplacePrompt,
+  persistCurrentFileBytes,
   startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
   WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
-  WRITE_CONTEXT_EVENT_SAVE_SUCCESS,
-  WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS,
   WRITE_CONTEXT_EVENT_IMPORT_SUCCESS,
   syncCurrentFileLabels,
   showErrorModal,
@@ -27,6 +24,7 @@ import {
 } from "./shell.js";
 import { renderBoard, setStatus } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
+import { askWithDialog, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAILED_MSG } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 
@@ -49,11 +47,6 @@ function bridgeSupportsSave(bridge) {
 /** Android bridge capability check for Open/Import picker path selection. */
 function bridgeSupportsOpen(bridge) {
   return bridge != null && typeof bridge.openSudokuFile === "function";
-}
-
-/** Default no-op publisher used when tests or hosts do not inject write-context wiring. */
-async function noOpWriteContextEvent() {
-  return { ok: true };
 }
 
 /** Android bridge transport helper: binary SUD0 bytes -> base64 text payload. */
@@ -174,12 +167,13 @@ function bindingForAndroidBridge() {
 function clearBoundSnapshotWriter(session) {
   session.boundSnapshotWriter = null;
   session.boundSnapshotWriterKind = null;
+  session.boundTargetExists = null;
 }
 
 function androidSaveOutcome(out) {
   if (!out || out.ok !== true) {
     if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
-    return { ok: false, error: out?.error ?? "save failed" };
+    return { ok: false, error: out?.error ?? SAVE_FAILED_MSG };
   }
   return typeof out.name === "string" && out.name.length > 0 ? { ok: true, name: out.name } : { ok: true };
 }
@@ -229,6 +223,7 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
   if (binding.kind === BINDING_KIND_FILE_HANDLE && binding.handle) {
     session.fileHandle = binding.handle;
     session.boundSnapshotWriterKind = BINDING_KIND_FILE_HANDLE;
+    session.boundTargetExists = () => true;
     session.boundSnapshotWriter = async (bytes) => {
       try {
         await writeHandle(binding.handle, bytes);
@@ -236,7 +231,7 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
       } catch (err) {
         session.fileHandle = null;
         clearBoundSnapshotWriter(session);
-        return { ok: false, error: err?.message ?? "save failed" };
+        return { ok: false, error: err?.message ?? SAVE_FAILED_MSG };
       }
     };
     return;
@@ -244,11 +239,13 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
   if (binding.kind === BINDING_KIND_ANDROID_BRIDGE) {
     const bridge = win?.AndroidFileBridge;
     session.boundSnapshotWriterKind = BINDING_KIND_ANDROID_BRIDGE;
+    // With no current file the bridge writes its default visible file and settles name clashes itself.
+    session.boundTargetExists = () => androidCurrentTargetName(win) != null;
     session.boundSnapshotWriter = async (bytes, suggestedName) => {
       try {
         return await saveToAndroidBoundTarget(bridge, bytes, suggestedName, win);
       } catch (err) {
-        return { ok: false, error: err?.message ?? "save failed" };
+        return { ok: false, error: err?.message ?? SAVE_FAILED_MSG };
       }
     };
   }
@@ -292,11 +289,11 @@ export async function persistBytes(
       const out = await bridge.saveSudokuFile(bytesToBase64(bytes), suggestedName, saveAs === true);
       if (!out || out.ok !== true) {
         if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
-        return { ok: false, error: out?.error ?? "save failed" };
+        return { ok: false, error: out?.error ?? SAVE_FAILED_MSG };
       }
       return { ok: true, filename: out.name ?? suggestedName, binding: bindingForAndroidBridge() };
     } catch (err) {
-      return { ok: false, error: err?.message ?? "save failed" };
+      return { ok: false, error: err?.message ?? SAVE_FAILED_MSG };
     }
   }
 
@@ -457,38 +454,48 @@ export function wireFileMenu(
     createElement,
     onViewRefresh,
     onPersist,
-    writeContextEvent = noOpWriteContextEvent,
   } = {},
 ) {
-  if (!session.writeContextEvent) session.writeContextEvent = writeContextEvent;
   const fail = (result) => {
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
   const MISSING_DEFAULT_SAVE_FILENAME = "missing default_save_filename in session";
 
-  /** Shared tail for successful manual Save/Save As actions. */
-  const completeManualSave = async (saved, writeContextEventName) => {
-    session.boundFilename = saved.filename;
-    bindSnapshotWriter(session, saved.binding, globalThis);
-    const mirrored = await persistCurrentFileSnapshotWithReplacePrompt(game, {
-      fetchFn: globalThis.fetch,
-      saveName: saved.filename,
-    });
-    if (!mirrored.ok) {
-      if (mirrored.cancelled) return false;
-      fail(mirrored);
-      return false;
+  /**
+   * Platform work for the core Save / Save As flow. The user's file is written by the bound
+   * handle, the Android bridge, a picker or a download; the host keeps the restore copy.
+   * Without a bound file the picker asks its own overwrite question, so the target is new to core.
+   */
+  const saveHandlers = (saveAsMode) => ({
+    checkTarget: () =>
+      !saveAsMode && (session.fileHandle != null || androidCurrentTargetName(globalThis) != null),
+    ask: (step) => askWithDialog(step, globalThis),
+    write: async (name) => {
+      const result = saveAsMode ? saveAs(game) : save(game);
+      if (!result.ok) return result;
+      const saved = await persistBytes(result.bytes, session, name, { saveAs: saveAsMode, download });
+      if (!saved.ok) return saved;
+      session.boundFilename = saved.filename;
+      bindSnapshotWriter(session, saved.binding, globalThis);
+      const hosted = await persistCurrentFileBytes(result.bytes, globalThis.fetch, saved.filename, { restoreCopy: true });
+      if (!hosted.ok) return hosted;
+      return { ok: true, name: saved.filename };
+    },
+    showStatus: (text) => {
+      syncCurrentFileLabels(session);
+      applyEventStatus(statusEl, { ok: true, msg: text });
+    },
+    showError: (text) => fail({ ok: false, error: text }),
+  });
+
+  const runSave = async (saveAsMode) => {
+    const suggested = suggestedSaveFilename(session);
+    if (!suggested) {
+      fail({ ok: false, error: MISSING_DEFAULT_SAVE_FILENAME });
+      return;
     }
-    const contextUpdated = await postSessionWriteContextEvent(
-      session,
-      writeContextEventName,
-      globalThis.fetch,
-    );
-    if (!contextUpdated.ok) fail(contextUpdated);
-    syncCurrentFileLabels(session);
-    applyEventStatus(statusEl, { ok: true, msg: `saved: ${saved.filename}` });
-    return true;
+    await runFlow(game, { flow: saveAsMode ? FLOW_SAVE_AS : FLOW_SAVE, name: suggested }, saveHandlers(saveAsMode));
   };
 
   if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, globalThis);
@@ -506,22 +513,20 @@ export function wireFileMenu(
       commandName = null,
     },
   ) => {
-    const finalized = await applyLoadedSessionOutcome(
+    const finalized = applyLoadedSessionOutcome(
+      game,
       session,
       statusEl,
       result,
       {
         writeContextEventName,
-        fetchFn: globalThis.fetch,
         fileHandle,
         boundFilename,
+        workingFile: writeContextEventName === WRITE_CONTEXT_EVENT_OPEN_SUCCESS ? boundFilename : null,
         legend,
         config,
       },
-    ).catch((err) => ({
-      ok: false,
-      error: err?.message ?? String(err),
-    }));
+    );
     if (!finalized.ok) fail(finalized);
     if (binding) {
       bindSnapshotWriter(session, binding, globalThis);
@@ -595,53 +600,18 @@ export function wireFileMenu(
   };
   controls.new?.addEventListener("click", openNewGameDialog);
 
-  // Phase C: manual Save path -> persist SUD0 bytes -> mirror host pointer -> publish context.
+  // Phase C: manual Save runs the core save flow.
   controls.save?.addEventListener("click", async () => {
     if (!session.legend.save) return;
     // Auto-save mode keeps manual Save inert; explicit state lives in File menu.
     if (session.config?.auto_save === true) return;
-    const result = save(game);
-    if (!result.ok) {
-      fail(result);
-      return;
-    }
-    const suggested = suggestedSaveFilename(session);
-    if (!suggested) {
-      fail({ ok: false, error: MISSING_DEFAULT_SAVE_FILENAME });
-      return;
-    }
-    const saved = await persistBytes(
-      result.bytes,
-      session,
-      suggested,
-      { download },
-    );
-    if (saved.ok) {
-      await completeManualSave(saved, WRITE_CONTEXT_EVENT_SAVE_SUCCESS);
-    } else if (!saved.ok && !saved.cancelled) {
-      fail(saved);
-    }
+    await runSave(false);
   });
 
-  // Phase D: Save As path -> explicit target selection -> same completion tail as Save.
+  // Phase D: Save As runs the same flow with a fresh target choice.
   controls.saveAs?.addEventListener("click", async () => {
     if (!session.legend.save_as) return;
-    const result = saveAs(game);
-    if (!result.ok) {
-      fail(result);
-      return;
-    }
-    const suggested = suggestedSaveFilename(session);
-    if (!suggested) {
-      fail({ ok: false, error: MISSING_DEFAULT_SAVE_FILENAME });
-      return;
-    }
-    const saved = await persistBytes(result.bytes, session, suggested, { saveAs: true, download });
-    if (saved.ok) {
-      await completeManualSave(saved, WRITE_CONTEXT_EVENT_SAVE_AS_SUCCESS);
-    } else if (!saved.ok && !saved.cancelled) {
-      fail(saved);
-    }
+    await runSave(true);
   });
 
   // Phase E: settings-only path (toggle autosave), no board replacement.
