@@ -47,6 +47,8 @@ pub const OnReadyFn = *const fn (io: std.Io, url: []const u8) void;
 const Session = struct {
     host_config: config.Config,
     data_dir: []const u8,
+    /// User-visible folder for the default autosave file when there is no working file.
+    visible_save_dir: []const u8,
     /// Host-computed startup metadata: web restore depends on capability+path.
     has_current_file: bool,
     current_file: ?[]const u8,
@@ -213,22 +215,34 @@ fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError
     settings_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
 }
 
+/// Owned write path for a current-file POST. No working file: the default visible file.
+/// Working file with the same (or no) name: that file in place. A different name is a
+/// browser-bound file's restore copy, kept in the hidden data dir.
+fn currentFileTarget(io: std.Io, session: *const Session, save_name: ?[]const u8) ![]u8 {
+    const gpa = std.heap.page_allocator;
+    const requested: ?[]const u8 = if (save_name) |n| blk: {
+        const trimmed = std.mem.trim(u8, n, " \t");
+        break :blk if (validSaveName(trimmed)) trimmed else null;
+    } else null;
+    switch (file_policy.autoSaveTarget(.{ .has_working_file = session.current_file != null })) {
+        .default_visible => {
+            std.Io.Dir.cwd().createDirPath(io, session.visible_save_dir) catch {};
+            return file_path.resolveSavePath(gpa, session.visible_save_dir, requested orelse save_defaults.DEFAULT_SAVE_FILE);
+        },
+        .working_file => {
+            const current = session.current_file.?;
+            const name = requested orelse return gpa.dupe(u8, current);
+            if (std.mem.eql(u8, name, std.fs.path.basename(current))) return gpa.dupe(u8, current);
+            return file_path.resolveSavePath(gpa, session.data_dir, name);
+        },
+    }
+}
+
 fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8, allow_replace: bool) ServeError!void {
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
 
     settings_store.ensureSettingsDir(io, session.data_dir);
-    const target_name = blk: {
-        if (save_name) |n| {
-            const trimmed = std.mem.trim(u8, n, " \t");
-            if (validSaveName(trimmed)) break :blk trimmed;
-        }
-        if (session.current_file) |existing| {
-            const base = std.fs.path.basename(existing);
-            if (validSaveName(base)) break :blk base;
-        }
-        break :blk save_defaults.DEFAULT_SAVE_FILE;
-    };
-    const resolved = file_path.resolveSavePath(std.heap.page_allocator, session.data_dir, target_name) catch return ServeError.System;
+    const resolved = currentFileTarget(io, session, save_name) catch return ServeError.System;
     defer std.heap.page_allocator.free(resolved);
 
     const stat = std.Io.Dir.cwd().statFile(io, resolved, .{}) catch |err| switch (err) {
@@ -384,7 +398,7 @@ fn bindProbe(io: std.Io, bind: BindFn, gate: *ReadyGate, session: *Session) Serv
 }
 
 /// Starts the loopback host: worker binds and serves; caller receives `on_ready` then blocks until shutdown.
-pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
+pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, visible_save_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
     shutdown_requested.store(false, .release);
 
     const current_file = settings_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch null;
@@ -397,6 +411,7 @@ pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: 
     var session = Session{
         .host_config = host_cfg,
         .data_dir = data_dir,
+        .visible_save_dir = visible_save_dir,
         .has_current_file = current_file != null,
         .current_file = current_file,
         .write_context = .detached,
@@ -420,9 +435,10 @@ pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: 
     thread.join();
 }
 
-/// Host-resolved startup config and caller-owned settings directory for POST persistence.
-pub fn runWithHostConfig(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
-    return runBlocking(io, bind, host_cfg, data_dir, on_ready);
+/// Host-resolved startup config, caller-owned settings directory for POST persistence, and the
+/// platform's user-visible folder for the default autosave file.
+pub fn runWithHostConfig(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, visible_save_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
+    return runBlocking(io, bind, host_cfg, data_dir, visible_save_dir, on_ready);
 }
 
 fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.Stream) ServeError!void {
@@ -560,7 +576,7 @@ fn recordReady(io: std.Io, url: []const u8) void {
 }
 
 fn runBlockingForTest(io: std.Io, bind: BindFn) ServeError!void {
-    return runBlocking(io, bind, config.Config.default(), ".", recordReady);
+    return runBlocking(io, bind, config.Config.default(), ".", ".", recordReady);
 }
 
 fn expectJsImportsServed(source: []const u8, base_path: []const u8) !void {
@@ -647,6 +663,24 @@ test "web_host: current file visibility contract exposes menu-bar filename slot"
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "margin-left: auto;") != null);
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "min-width: 8ch;") != null);
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "#current-file-desktop {\n        display: none;") == null);
+}
+
+test "web_host: every dialog is titled by an h2 heading" {
+    const marker = "aria-labelledby=\"";
+    var dialogs: usize = 0;
+    var rest: []const u8 = embed.page_html;
+    while (std.mem.indexOf(u8, rest, marker)) |at| {
+        rest = rest[at + marker.len ..];
+        const end = std.mem.indexOfScalar(u8, rest, '"') orelse return error.TestUnexpectedResult;
+        var heading_buf: [96]u8 = undefined;
+        const heading = try std.fmt.bufPrint(&heading_buf, "<h2 id=\"{s}\"", .{rest[0..end]});
+        if (std.mem.indexOf(u8, embed.page_html, heading) == null) {
+            std.debug.print("dialog labelled by '{s}' has no <h2> title\n", .{rest[0..end]});
+            return error.TestUnexpectedResult;
+        }
+        dialogs += 1;
+    }
+    try std.testing.expect(dialogs >= 6);
 }
 
 test "web_host: route map resolves every served path" {
@@ -763,6 +797,7 @@ test "applySettingsPost returns System on invalid JSON" {
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = ".",
+        .visible_save_dir = ".",
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -775,6 +810,7 @@ test "applySettingsPost updates in-memory host config even when disk persistence
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = ".",
+        .visible_save_dir = ".",
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -832,6 +868,7 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -863,6 +900,96 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     try std.testing.expectEqualSlices(u8, body, bytes);
 }
 
+test "current-file POST with no working file writes the visible save folder and makes it the working file" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const visible_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku", .{tmp.sub_path});
+    defer std.testing.allocator.free(visible_path);
+
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .visible_save_dir = visible_path,
+        .has_current_file = false,
+        .current_file = null,
+        .write_context = .detached,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    try applyCurrentFilePost(io, &session, "SUD0 first autosave", save_defaults.DEFAULT_SAVE_FILE, false);
+
+    const expected = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku/sudoku.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, session.current_file orelse return error.TestFailed);
+    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, expected, std.testing.allocator, std.Io.Limit.unlimited) catch return error.TestFailed;
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expectEqualSlices(u8, "SUD0 first autosave", bytes);
+}
+
+test "current-file POST keeps writing a visible working file in place" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const visible_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku", .{tmp.sub_path});
+    defer std.testing.allocator.free(visible_path);
+
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .visible_save_dir = visible_path,
+        .has_current_file = false,
+        .current_file = null,
+        .write_context = .detached,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    try applyCurrentFilePost(io, &session, "SUD0 first", save_defaults.DEFAULT_SAVE_FILE, false);
+    try applyCurrentFilePost(io, &session, "SUD0 second", save_defaults.DEFAULT_SAVE_FILE, false);
+
+    const expected = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku/sudoku.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, session.current_file orelse return error.TestFailed);
+    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, expected, std.testing.allocator, std.Io.Limit.unlimited) catch return error.TestFailed;
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expectEqualSlices(u8, "SUD0 second", bytes);
+}
+
+test "current-file POST with a new name keeps the restore copy in the hidden data dir" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const visible_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/Documents/Sudoku", .{tmp.sub_path});
+    defer std.testing.allocator.free(visible_path);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
+
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .visible_save_dir = visible_path,
+        .has_current_file = false,
+        .current_file = null,
+        .write_context = .detached,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    try applyCurrentFilePost(io, &session, "SUD0 first", save_defaults.DEFAULT_SAVE_FILE, false);
+    try applyCurrentFilePost(io, &session, "SUD0 renamed", "picked.sud", false);
+
+    const expected = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data/picked.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, session.current_file orelse return error.TestFailed);
+}
+
 test "current-file POST supports explicit save name" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -873,6 +1000,7 @@ test "current-file POST supports explicit save name" {
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -895,6 +1023,7 @@ test "host-config default_save_filename follows persisted current_file basename"
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -918,6 +1047,7 @@ test "current-file POST without explicit name reuses existing current_file basen
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -943,6 +1073,7 @@ test "current-file POST bound target overwrite does not require replace header" 
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -964,6 +1095,7 @@ test "current-file POST rejects unbound existing target without replace header" 
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -993,6 +1125,7 @@ test "current-file POST allows overwrite with replace header" {
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -1014,6 +1147,7 @@ test "current-file context event can detach lane without clearing save target" {
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,
@@ -1046,6 +1180,7 @@ test "restore then new makes first write to same existing target require replace
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = data_path,
+        .visible_save_dir = data_path,
         .has_current_file = true,
         .current_file = try file_path.resolveSavePath(std.heap.page_allocator, data_path, "sudoku.sud"),
         .write_context = file_policy.nextWriteContext(.detached, .startup_restore),
@@ -1073,6 +1208,7 @@ test "web_host: host-config body reflects active host Config" {
             .show_region = true,
         },
         .data_dir = ".",
+        .visible_save_dir = ".",
         .has_current_file = false,
         .current_file = null,
         .write_context = .detached,

@@ -34,10 +34,13 @@ export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
 const BRIDGE_CANCELLED = "cancelled";
+/** Android bridge reason: the default visible file belongs to an earlier install. */
+const BRIDGE_DEFAULT_TAKEN = "default_taken";
+const ANDROID_TAKEN_TITLE = "Autosave file";
+const ANDROID_TAKEN_PICK_LABEL = "Pick it";
+const ANDROID_TAKEN_RENAME_LABEL = "New name";
 const BINDING_KIND_FILE_HANDLE = "file_handle";
 const BINDING_KIND_ANDROID_BRIDGE = "android_bridge";
-const AUTOSAVE_EXTERNAL_PROMPT_DONE = "__autosaveExternalPromptDone";
-
 /** Android bridge capability check for Save/Save As path selection. */
 function bridgeSupportsSave(bridge) {
   return bridge != null && typeof bridge.saveSudokuFile === "function";
@@ -173,25 +176,52 @@ function clearBoundSnapshotWriter(session) {
   session.boundSnapshotWriterKind = null;
 }
 
-async function saveToAndroidBoundTarget(bridge, bytes, suggestedName) {
-  if (!bridge) return { ok: false, error: "no Android bridge" };
-  const saveCurrent = bridge.saveCurrentSudokuFile;
-  if (typeof saveCurrent === "function") {
-    const out = await saveCurrent(bytesToBase64(bytes), suggestedName);
-    if (!out || out.ok !== true) {
-      if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
-      return { ok: false, error: out?.error ?? "save failed" };
-    }
-    return { ok: true };
-  }
-  const saveLegacy = bridge.saveSudokuFile;
-  if (typeof saveLegacy !== "function") return { ok: false, error: "save bridge unavailable" };
-  const out = await saveLegacy(bytesToBase64(bytes), suggestedName, false);
+function androidSaveOutcome(out) {
   if (!out || out.ok !== true) {
     if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
     return { ok: false, error: out?.error ?? "save failed" };
   }
-  return { ok: true };
+  return typeof out.name === "string" && out.name.length > 0 ? { ok: true, name: out.name } : { ok: true };
+}
+
+/** Earlier-install default file: ask pick-or-rename in the web dialog until one picker writes a file. */
+async function resolveAndroidDefaultTaken(bridge, base64, name, dir, win) {
+  const choose = win?.__sudokuChoose;
+  if (typeof choose !== "function") return { ok: false, error: "save dialog unavailable" };
+  const message =
+    `${name} in ${dir} was saved by an earlier install. ` +
+    "Pick it to keep autosaving there, or choose a new name.";
+  while (true) {
+    const pickExisting = await choose(message, {
+      title: ANDROID_TAKEN_TITLE,
+      okLabel: ANDROID_TAKEN_PICK_LABEL,
+      cancelLabel: ANDROID_TAKEN_RENAME_LABEL,
+    });
+    const out = pickExisting
+      ? await bridge.saveSudokuFileToExisting(base64)
+      : await bridge.saveSudokuFile(base64, name, true);
+    const outcome = androidSaveOutcome(out);
+    if (outcome.cancelled) continue;
+    return outcome;
+  }
+}
+
+async function saveToAndroidBoundTarget(bridge, bytes, suggestedName, win = globalThis) {
+  if (!bridge) return { ok: false, error: "no Android bridge" };
+  const saveCurrent = bridge.saveCurrentSudokuFile;
+  if (typeof saveCurrent === "function") {
+    const base64 = bytesToBase64(bytes);
+    const out = await saveCurrent(base64, suggestedName);
+    if (out?.reason === BRIDGE_DEFAULT_TAKEN) {
+      return resolveAndroidDefaultTaken(bridge, base64, out.name ?? suggestedName, out.dir, win);
+    }
+    return androidSaveOutcome(out);
+  }
+  const saveLegacy = bridge.saveSudokuFile;
+  if (typeof saveLegacy !== "function") return { ok: false, error: "save bridge unavailable" };
+  const out = await saveLegacy(bytesToBase64(bytes), suggestedName, false);
+  const outcome = androidSaveOutcome(out);
+  return outcome.ok ? { ok: true } : outcome;
 }
 
 function bindSnapshotWriter(session, binding, win = globalThis) {
@@ -216,18 +246,12 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
     session.boundSnapshotWriterKind = BINDING_KIND_ANDROID_BRIDGE;
     session.boundSnapshotWriter = async (bytes, suggestedName) => {
       try {
-        return await saveToAndroidBoundTarget(bridge, bytes, suggestedName);
+        return await saveToAndroidBoundTarget(bridge, bytes, suggestedName, win);
       } catch (err) {
         return { ok: false, error: err?.message ?? "save failed" };
       }
     };
   }
-}
-
-function hasAndroidCurrentTarget(win = globalThis) {
-  const bridge = win?.AndroidFileBridge;
-  if (typeof bridge?.hasCurrentSudokuFile !== "function") return null;
-  return bridge.hasCurrentSudokuFile() === true;
 }
 
 function androidCurrentTargetName(win = globalThis) {
@@ -467,31 +491,6 @@ export function wireFileMenu(
     return true;
   };
 
-  const ensureAutosaveExternalTarget = async () => {
-    if (session[AUTOSAVE_EXTERNAL_PROMPT_DONE] === true) return { ok: true };
-    if (typeof session.boundSnapshotWriter === "function") {
-      const androidWriter = session.boundSnapshotWriterKind === BINDING_KIND_ANDROID_BRIDGE;
-      if (!androidWriter) return { ok: true };
-      const hasTarget = hasAndroidCurrentTarget(globalThis);
-      if (hasTarget === true || hasTarget === null) return { ok: true };
-    }
-    session[AUTOSAVE_EXTERNAL_PROMPT_DONE] = true;
-    const result = saveAs(game);
-    if (!result.ok) return result;
-    const suggested = suggestedSaveFilename(session);
-    if (!suggested) return { ok: false, error: MISSING_DEFAULT_SAVE_FILENAME };
-    const saved = await persistBytes(result.bytes, session, suggested, {
-      saveAs: true,
-      download,
-    });
-    if (!saved.ok) return saved;
-    if (!saved.binding) return { ok: true };
-    session.boundFilename = saved.filename;
-    bindSnapshotWriter(session, saved.binding, globalThis);
-    syncCurrentFileLabels(session);
-    return { ok: true };
-  };
-  session.ensureAutosaveExternalTarget = ensureAutosaveExternalTarget;
   if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, globalThis);
 
   /** Shared tail for successful board-replacing loads (new/open/import) before autosave kick. */
@@ -528,6 +527,8 @@ export function wireFileMenu(
       bindSnapshotWriter(session, binding, globalThis);
     } else if (fileHandle == null && boundFilename == null) {
       clearBoundSnapshotWriter(session);
+      // With no Android file bound there is nothing to detach from; the bridge writes its default visible file.
+      if (androidCurrentTargetName(globalThis) == null) primeAndroidBoundTarget(session, globalThis);
     }
     refreshSessionView(
       boardEl,

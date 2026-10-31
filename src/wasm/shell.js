@@ -731,8 +731,8 @@ export async function persistCurrentFileBytesWithReplacePrompt(
   if (!first.replace_required) return first;
   const prompt =
     typeof saveName === "string" && saveName.length > 0
-      ? `${saveName} exists, replace?`
-      : "File exists, replace?";
+      ? `${saveName} already exists. Do you want to replace it?`
+      : "This file already exists. Do you want to replace it?";
   if (typeof askConfirm !== "function") {
     return { ok: false, cancelled: true };
   }
@@ -752,7 +752,6 @@ export function startAutoSavePolicy(
     askConfirm,
     onError,
     commandMeta = null,
-    ensureExternalTarget,
   } = {},
 ) {
   const commandText =
@@ -770,10 +769,6 @@ export function startAutoSavePolicy(
     return;
   }
   const lane = session;
-  const ensureTarget =
-    typeof ensureExternalTarget === "function"
-      ? ensureExternalTarget
-      : lane?.ensureAutosaveExternalTarget;
   const run = async () => {
     logAutosave("run_start", {
       command: commandName,
@@ -795,27 +790,6 @@ export function startAutoSavePolicy(
         logAutosave("startup_context_failed", { command: commandName, command_text: commandText });
       }
       lane.startup_context_ready = null;
-    }
-    if (typeof ensureTarget === "function") {
-      const ensured = await ensureTarget({
-        game,
-        session: lane,
-        command: commandName,
-        command_text: commandText,
-      }).catch((err) => ({
-        ok: false,
-        error: err?.message ?? String(err),
-      }));
-      if (!ensured?.ok) {
-        logAutosave("ensure_target_failed", {
-          command: commandName,
-          command_text: commandText,
-          cancelled: ensured?.cancelled === true,
-          error: ensured?.error ?? null,
-        });
-        if (!ensured?.cancelled) onError?.(ensured);
-        return;
-      }
     }
     // Phase 2: persist snapshot with replace-confirm retry semantics.
     const serialized = game.serialize();
@@ -845,6 +819,10 @@ export function startAutoSavePolicy(
         return;
       }
       logAutosave("bound_persist_ok", { command: commandName, command_text: commandText });
+      if (typeof boundSaved.name === "string" && boundSaved.name.length > 0) {
+        lane.boundFilename = boundSaved.name;
+        syncCurrentFileLabels(lane);
+      }
     }
     const saved = await persistCurrentFileBytesWithReplacePrompt(serialized.bytes, {
       fetchFn,

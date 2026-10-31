@@ -34,6 +34,8 @@ pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 pub const SettingsPersist = struct {
     io: std.Io,
     data_dir: []const u8,
+    /// User-visible folder for the default autosave file when there is no working file.
+    visible_save_dir: []const u8,
 };
 
 pub const Sudoku = struct {
@@ -124,6 +126,14 @@ pub const Sudoku = struct {
         return settings_store.loadCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir) catch null;
     }
 
+    /// Owned `<visible_save_dir>/sudoku.sud`; null without settings persistence.
+    /// Only the default folder is created on demand; a missing working-file folder must still fail the write.
+    fn defaultVisibleSavePath(self: *@This()) ?[]u8 {
+        const sp = self.settings_persist orelse return null;
+        std.Io.Dir.cwd().createDirPath(sp.io, sp.visible_save_dir) catch {};
+        return path_mod.resolveSavePath(std.heap.page_allocator, sp.visible_save_dir, save_command.DEFAULT_SAVE_FILE) catch null;
+    }
+
     fn persistCurrentFile(self: *@This(), path: ?[]const u8) void {
         const sp = self.settings_persist orelse return;
         settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch {};
@@ -174,7 +184,12 @@ pub const Sudoku = struct {
 
         const loaded = self.loadCurrentFileIfAny();
         defer if (loaded) |p| std.heap.page_allocator.free(p);
-        const target = if (loaded) |p| p else save_command.DEFAULT_SAVE_FILE;
+        const default_visible = self.defaultVisibleSavePath();
+        defer if (default_visible) |p| std.heap.page_allocator.free(p);
+        const target = switch (file_policy.autoSaveTarget(.{ .has_working_file = loaded != null })) {
+            .working_file => loaded.?,
+            .default_visible => default_visible orelse save_command.DEFAULT_SAVE_FILE,
+        };
         const allowed = self.shouldWriteTarget(.auto_save, target) catch return event;
         if (!allowed) return event;
         const save_event = self.autoSaveSnapshot(target);
@@ -487,6 +502,9 @@ const MemoryTransport = struct {
     gpa: std.mem.Allocator,
     files: std.StringHashMap([]u8),
 
+    /// Folder bare names resolve into.
+    const DIR = "/virtual";
+
     fn init(gpa: std.mem.Allocator) @This() {
         return .{ .gpa = gpa, .files = std.StringHashMap([]u8).init(gpa) };
     }
@@ -546,7 +564,7 @@ const MemoryTransport = struct {
         if (std.mem.startsWith(u8, name, "/")) {
             return self.gpa.dupe(u8, name) catch return file_transport.TransportError.OutOfMemory;
         }
-        return std.fmt.allocPrint(self.gpa, "/virtual/{s}", .{name}) catch return file_transport.TransportError.OutOfMemory;
+        return std.fmt.allocPrint(self.gpa, DIR ++ "/{s}", .{name}) catch return file_transport.TransportError.OutOfMemory;
     }
 
     fn free(ctx: *anyopaque, buf: []u8) void {
@@ -867,7 +885,7 @@ test "integrated e2e - run: save_as failure does not persist current_file pointe
     defer host.deinit();
     var facade = try host.facade();
     defer facade.deinit();
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
 
     try app.showGame();
@@ -1484,7 +1502,7 @@ test "integrated e2e: menu Settings persists difficulty to settings.json" {
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(io);
-    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
 
     try app.showGame();
@@ -1509,7 +1527,7 @@ test "integrated e2e: menu Settings persists warn_solvability to settings.json" 
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(io);
-    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
 
     try app.showGame();
@@ -1539,7 +1557,7 @@ test "integrated e2e: menu Settings persists auto startup/save flags to settings
     var facade = try host.facade();
     defer facade.deinit();
     const transport = file_transport.NativeTransport.make(io);
-    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
 
     try app.showGame();
@@ -1818,7 +1836,7 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
     var first_facade = try first_host.facade();
     defer first_facade.deinit();
 
-    var first_app = try Sudoku.init(first_cfg, first_facade, file_transport.NativeTransport.make(io), first_host.writer(), .{ .io = io, .data_dir = data_path });
+    var first_app = try Sudoku.init(first_cfg, first_facade, file_transport.NativeTransport.make(io), first_host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer first_app.deinit();
     _ = first_app.engine.newFromOneLinePuzzle(fixture.puzzle_line);
     for (fixture.moves) |move| {
@@ -1849,7 +1867,7 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
     var second_facade = try second_host.facade();
     defer second_facade.deinit();
 
-    var second_app = try Sudoku.init(second_cfg, second_facade, file_transport.NativeTransport.make(io), second_host.writer(), .{ .io = io, .data_dir = data_path });
+    var second_app = try Sudoku.init(second_cfg, second_facade, file_transport.NativeTransport.make(io), second_host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer second_app.deinit();
 
     const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
@@ -2123,42 +2141,48 @@ test "startup policy: restore failure blocks and does not auto-new fallback in s
     try std.testing.expect(std.mem.indexOf(u8, output, "Press Enter to continue...") != null);
 }
 
-test "autosave: fill writes default save and bootstraps current_file when unset" {
+test "autosave: first autosave with no working file writes the visible save folder and makes it the working file" {
     const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const tmp_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(tmp_rel);
+    const tmp_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, tmp_rel, std.testing.allocator);
+    defer std.testing.allocator.free(tmp_abs_z);
+    const tmp_abs = tmp_abs_z[0 .. tmp_abs_z.len - 1];
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs});
     defer std.testing.allocator.free(data_path);
-    const default_path = try path_mod.resolveSavePath(std.testing.allocator, data_path, save_command.DEFAULT_SAVE_FILE);
-    defer std.testing.allocator.free(default_path);
-    std.Io.Dir.cwd().deleteFile(io, default_path) catch {};
+    const visible_dir = try std.fmt.allocPrint(std.testing.allocator, "{s}/Documents/Sudoku", .{tmp_abs});
+    defer std.testing.allocator.free(visible_dir);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
 
     var cfg = test_defaults.testConfigDefaults();
     cfg.auto_save = true;
 
-    // Include a possible replace-confirm response so this test is stable when
-    // a default target already exists in the native transport data dir.
-    const responses = [_][]const u8{ "fill A3 7", "ok", "quit" };
+    const responses = [_][]const u8{ "fill A3 7", "quit" };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
     var facade = try host.facade();
     defer facade.deinit();
 
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = visible_dir });
     defer app.deinit();
     try app.showGame();
     while (true) if (try app.turn()) break;
 
+    const expected = try std.fmt.allocPrint(std.testing.allocator, "{s}/Documents/Sudoku/sudoku.sud", .{tmp_abs});
+    defer std.testing.allocator.free(expected);
     const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (current) |p| std.testing.allocator.free(p);
-    try std.testing.expect(current != null);
+    try std.testing.expectEqualStrings(expected, current orelse return error.TestFailed);
 
-    const resolved_current = app.transport.resolve(app.transport.context, current.?) catch return error.TestFailed;
-    defer app.transport.free(app.transport.context, resolved_current);
-    const bytes = app.transport.readAll(app.transport.context, resolved_current) catch return error.TestFailed;
+    const bytes = app.transport.readAll(app.transport.context, expected) catch return error.TestFailed;
     defer app.transport.free(app.transport.context, bytes);
     try std.testing.expect(bytes.len > 0);
+
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, file_policy.REPLACE_CONFIRM_MSG) == null);
 }
 
 test "autosave: persisted SUD0 restores exact board given_bits and history pointer" {
@@ -2189,7 +2213,7 @@ test "autosave: persisted SUD0 restores exact board given_bits and history point
     var facade = try host.facade();
     defer facade.deinit();
 
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
     try app.showGame();
     while (true) if (try app.turn()) break;
@@ -2230,7 +2254,7 @@ test "autosave: non-state settings command does not bootstrap current_file" {
     var facade = try host.facade();
     defer facade.deinit();
 
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
     try app.showGame();
     while (true) if (try app.turn()) break;
@@ -2266,7 +2290,7 @@ test "autosave: successful open updates current_file pointer" {
     var facade = try host.facade();
     defer facade.deinit();
 
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
     try app.showGame();
     while (true) if (try app.turn()) break;
@@ -2295,7 +2319,7 @@ test "autosave: save failure surfaces error and keeps existing current_file poin
     var facade = try host.facade();
     defer facade.deinit();
 
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
     try app.showGame();
     while (true) if (try app.turn()) break;
@@ -2332,7 +2356,7 @@ test "replace confirm: autosave cancel leaves existing target unchanged" {
     var cfg = config.Config.default();
     cfg.auto_save = true;
 
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = MemoryTransport.DIR });
     defer app.deinit();
 
     try app.showGame();
@@ -2367,7 +2391,7 @@ test "replace confirm: paste detaches and requires replace confirm before autosa
 
     var cfg = config.Config.default();
     cfg.auto_save = true;
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = MemoryTransport.DIR });
     defer app.deinit();
     app.write_context = .continuation;
 
@@ -2403,7 +2427,7 @@ test "replace confirm: undo autosave in detached context requires prompt before 
 
     var cfg = config.Config.default();
     cfg.auto_save = true;
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = MemoryTransport.DIR });
     defer app.deinit();
     const almost = "483921657967345821251876493548132976729504138136798245372689514814253769695417382";
     _ = app.engine.newFromOneLinePuzzle(almost);
@@ -2442,7 +2466,7 @@ test "replace confirm: redo autosave in detached context requires prompt before 
 
     var cfg = config.Config.default();
     cfg.auto_save = true;
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = MemoryTransport.DIR });
     defer app.deinit();
     const almost = "483921657967345821251876493548132976729504138136798245372689514814253769695417382";
     _ = app.engine.newFromOneLinePuzzle(almost);
@@ -2530,7 +2554,7 @@ test "new triggers replace confirm before autosave can overwrite restored file" 
     cfg.auto_save = true;
     var out = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer out.deinit();
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path });
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
 
     try app.showGame();

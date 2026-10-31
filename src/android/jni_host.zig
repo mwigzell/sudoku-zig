@@ -37,7 +37,7 @@ fn hostThreadMain(state: *HostState) void {
     const io = threaded.io();
     const cfg = settings_store.loadOrDefault(std.heap.page_allocator, io, state.data_dir) catch config.Config.default();
     startup_config.applyLoggerFromStartup(cfg);
-    web_host.runWithHostConfig(io, web_host.bindLoopback, cfg, state.data_dir, recordReady) catch {};
+    web_host.runWithHostConfig(io, web_host.bindLoopback, cfg, state.data_dir, state.data_dir, recordReady) catch {};
 }
 
 fn setDataDirDefault() void {

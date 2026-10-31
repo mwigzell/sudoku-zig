@@ -34,16 +34,25 @@ function isTouchPlayPadPlatform(win = globalThis) {
   );
 }
 
+const REPLACE_CONFIRM_TITLE = "Replace file?";
+const REPLACE_CONFIRM_OK_LABEL = "Replace";
+const REPLACE_CONFIRM_CANCEL_LABEL = "Cancel";
+
+/** One two-button web dialog for every yes/no question, so all prompts share one look. */
 function installReplaceConfirm(root = document, win = globalThis) {
   const replaceConfirmModal = {
     el: root.getElementById("replace-confirm-modal"),
+    titleEl: root.getElementById("replace-confirm-title"),
     msgEl: root.getElementById("replace-confirm-msg"),
     cancelBtn: root.getElementById("replace-confirm-cancel"),
     okBtn: root.getElementById("replace-confirm-ok"),
   };
-  win.__sudokuConfirmReplace = (message) =>
+  win.__sudokuChoose = (message, { title, okLabel, cancelLabel }) =>
     new Promise((resolve) => {
+      replaceConfirmModal.titleEl.textContent = title;
       replaceConfirmModal.msgEl.textContent = message;
+      replaceConfirmModal.okBtn.textContent = okLabel;
+      replaceConfirmModal.cancelBtn.textContent = cancelLabel;
       replaceConfirmModal.el.hidden = false;
       const cleanup = () => {
         replaceConfirmModal.okBtn.removeEventListener("click", onOk);
@@ -61,6 +70,12 @@ function installReplaceConfirm(root = document, win = globalThis) {
       };
       replaceConfirmModal.okBtn.addEventListener("click", onOk);
       replaceConfirmModal.cancelBtn.addEventListener("click", onCancel);
+    });
+  win.__sudokuConfirmReplace = (message) =>
+    win.__sudokuChoose(message, {
+      title: REPLACE_CONFIRM_TITLE,
+      okLabel: REPLACE_CONFIRM_OK_LABEL,
+      cancelLabel: REPLACE_CONFIRM_CANCEL_LABEL,
     });
 }
 

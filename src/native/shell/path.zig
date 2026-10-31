@@ -12,6 +12,8 @@ const data_dir_suffix = switch (builtin.os.tag) {
     else => @compileError("computeDataDir: unsupported OS — add platform convention"),
 };
 
+const visible_save_dir_suffix = "/Documents/Sudoku";
+
 // POSIX: walks the C environ array to find $HOME.
 fn getHomeDir(gpa: std.mem.Allocator) ![]u8 {
     var i: usize = 0;
@@ -39,6 +41,13 @@ pub fn computeDataDir(gpa: std.mem.Allocator) ![]u8 {
     gpa.free(home);
 
     return data_dir;
+}
+
+/// User-visible folder for the default autosave file: `~/Documents/Sudoku` (path math only). Owned; caller frees.
+pub fn computeVisibleSaveDir(gpa: std.mem.Allocator) ![]u8 {
+    const home = try getHomeDir(gpa);
+    defer gpa.free(home);
+    return std.fmt.allocPrint(gpa, "{s}{s}", .{ home, visible_save_dir_suffix });
 }
 
 /// Parent directory of an absolute or relative file path (owned string).
@@ -79,6 +88,19 @@ test "computeDataDir returns platform data dir" {
     };
     try std.testing.expect(std.mem.endsWith(u8, data_dir, expected_suffix));
     try std.testing.expect(data_dir[0] == '/');
+}
+
+test "computeVisibleSaveDir is the Sudoku folder in the user's Documents" {
+    const gpa = std.testing.allocator;
+
+    const home = try getHomeDir(gpa);
+    defer gpa.free(home);
+    const visible = try computeVisibleSaveDir(gpa);
+    defer gpa.free(visible);
+
+    const expected = try std.fmt.allocPrint(gpa, "{s}/Documents/Sudoku", .{home});
+    defer gpa.free(expected);
+    try std.testing.expectEqualStrings(expected, visible);
 }
 
 test "best-effort createDirPath leaves the data dir on disk" {

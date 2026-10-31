@@ -1,6 +1,8 @@
 package com.wigzell.sudoku_zig;
 
 import android.app.Activity;
+import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
@@ -13,6 +15,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.util.Base64;
@@ -62,6 +66,10 @@ public final class MainActivity extends Activity {
         MIME_TEXT_PLAIN,
     };
     private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
+    private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/Sudoku";
+    private static final String REASON_DEFAULT_TAKEN = "default_taken";
+    private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents";
+    private static final String PRIMARY_VOLUME_DOC_PREFIX = "primary:";
     private static final String FILE_BIND_PREFS = "sudoku_file_binding";
     private static final String FILE_BIND_URI_KEY = "current_uri";
     private static final String FILE_BIND_NAME_KEY = "current_name";
@@ -88,7 +96,6 @@ public final class MainActivity extends Activity {
     private String currentFileName;
     private String pendingSystemBarsTheme;
     private boolean webBootReady;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -276,11 +283,11 @@ public final class MainActivity extends Activity {
             "saveSudokuFile:function(base64,suggestedName,saveAs){" +
             "return JSON.parse(window.__SudokuAndroidBridge.saveSudokuFile(String(base64||\"\"),String(suggestedName||\"\"),!!saveAs));" +
             "}," +
+            "saveSudokuFileToExisting:function(base64){" +
+            "return JSON.parse(window.__SudokuAndroidBridge.saveSudokuFileToExisting(String(base64||\"\")));" +
+            "}," +
             "saveCurrentSudokuFile:function(base64,suggestedName){" +
             "return JSON.parse(window.__SudokuAndroidBridge.saveCurrentSudokuFile(String(base64||\"\"),String(suggestedName||\"\")));" +
-            "}," +
-            "hasCurrentSudokuFile:function(){" +
-            "return !!window.__SudokuAndroidBridge.hasCurrentSudokuFile();" +
             "}," +
             "currentSudokuFileName:function(){" +
             "return String(window.__SudokuAndroidBridge.currentSudokuFileName()||\"\");" +
@@ -396,6 +403,19 @@ public final class MainActivity extends Activity {
             return new JSONObject().put("ok", false).put("error", message).toString();
         } catch (JSONException err) {
             return "{\"ok\":false,\"error\":\"internal error\"}";
+        }
+    }
+
+    private static String jsonDefaultTaken(String name) {
+        try {
+            return new JSONObject()
+                .put("ok", false)
+                .put("reason", REASON_DEFAULT_TAKEN)
+                .put("name", name)
+                .put("dir", DEFAULT_VISIBLE_SAVE_DIR)
+                .toString();
+        } catch (JSONException err) {
+            return jsonError("save failed");
         }
     }
 
@@ -572,7 +592,7 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private String saveViaCreateDocument(byte[] bytes, String suggestedName) {
+    private static Intent createDocumentIntent(String suggestedName) {
         final Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         create.addCategory(Intent.CATEGORY_OPENABLE);
         create.setType(MIME_OCTET_STREAM);
@@ -580,10 +600,13 @@ public final class MainActivity extends Activity {
         create.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         create.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         create.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        return create;
+    }
 
+    private String saveViaCreateDocument(byte[] bytes, String suggestedName) {
         final Intent result;
         try {
-            result = awaitResultIntent(REQUEST_CREATE_DOCUMENT, create);
+            result = awaitResultIntent(REQUEST_CREATE_DOCUMENT, createDocumentIntent(suggestedName));
         } catch (InterruptedException err) {
             Thread.currentThread().interrupt();
             return jsonError("save interrupted");
@@ -595,18 +618,41 @@ public final class MainActivity extends Activity {
         return saveBytesTo(uri, bytes, name);
     }
 
-    private String saveViaOpenDocument(byte[] bytes, String suggestedName) {
-        final Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        pick.addCategory(Intent.CATEGORY_OPENABLE);
-        pick.setType(MIME_OCTET_STREAM);
-        pick.putExtra(Intent.EXTRA_MIME_TYPES, OPEN_MIME_TYPES);
-        pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+    /**
+     * Writes the default autosave file in shared Downloads/Sudoku (no picker) and makes it the working file.
+     * A same-named file this install does not own (left by an earlier install) is never shadowed by a renamed copy;
+     * the result reports it so the web dialog can ask the user to pick it or choose a new name.
+     */
+    private String saveToDefaultVisible(byte[] bytes, String suggestedName) {
+        final String name = (suggestedName == null || suggestedName.isEmpty()) ? DEFAULT_SAVE_FILENAME : suggestedName;
+        final Uri owned = findOwnedDefaultVisible(name);
+        if (owned != null) return saveBytesTo(owned, bytes, name);
 
+        final ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+        values.put(MediaStore.MediaColumns.MIME_TYPE, MIME_OCTET_STREAM);
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, DEFAULT_VISIBLE_SAVE_DIR);
+        final Uri uri;
+        try {
+            uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+        } catch (RuntimeException err) {
+            return jsonError("save failed");
+        }
+        if (uri == null) return jsonError("save failed");
+        if (name.equals(displayNameOf(uri, name))) return saveBytesTo(uri, bytes, name);
+
+        try {
+            getContentResolver().delete(uri, null, null);
+        } catch (RuntimeException ignored) {
+            // Leaves an empty renamed entry; the user's pick or new name still decides the working file.
+        }
+        return jsonDefaultTaken(name);
+    }
+
+    private String saveViaPickExisting(byte[] bytes) {
         final Intent result;
         try {
-            result = awaitResultIntent(REQUEST_OPEN_DOCUMENT, pick);
+            result = awaitResultIntent(REQUEST_OPEN_DOCUMENT, pickExistingIntent());
         } catch (InterruptedException err) {
             Thread.currentThread().interrupt();
             return jsonError("save interrupted");
@@ -614,8 +660,36 @@ public final class MainActivity extends Activity {
         if (result == null || result.getData() == null) return jsonCancelled();
         rememberPersistedPermission(result);
         final Uri uri = result.getData();
-        final String name = displayNameOf(uri, suggestedName);
-        return saveBytesTo(uri, bytes, name);
+        return saveBytesTo(uri, bytes, displayNameOf(uri, DEFAULT_SAVE_FILENAME));
+    }
+
+    /** MediaStore only lists files this install owns, so a hit is ours to overwrite. */
+    private Uri findOwnedDefaultVisible(String name) {
+        final String[] projection = new String[] { MediaStore.MediaColumns._ID };
+        final String selection =
+            MediaStore.MediaColumns.RELATIVE_PATH + "=? AND " + MediaStore.MediaColumns.DISPLAY_NAME + "=?";
+        final String[] args = new String[] { DEFAULT_VISIBLE_SAVE_DIR + "/", name };
+        try (Cursor cursor = getContentResolver().query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args, null)) {
+            if (cursor == null || !cursor.moveToFirst()) return null;
+            return ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cursor.getLong(0));
+        } catch (RuntimeException err) {
+            return null;
+        }
+    }
+
+    /** Lets the user grant this install write access to an existing file in the default folder. */
+    private static Intent pickExistingIntent() {
+        final Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        pick.setType(MIME_OCTET_STREAM);
+        pick.putExtra(Intent.EXTRA_MIME_TYPES, OPEN_MIME_TYPES);
+        pick.putExtra(DocumentsContract.EXTRA_INITIAL_URI, DocumentsContract.buildDocumentUri(
+            EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY, PRIMARY_VOLUME_DOC_PREFIX + DEFAULT_VISIBLE_SAVE_DIR));
+        pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        return pick;
     }
 
     private final class AndroidFileBridge {
@@ -642,6 +716,17 @@ public final class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String saveSudokuFileToExisting(String base64) {
+            final byte[] bytes;
+            try {
+                bytes = Base64.decode(base64, Base64.DEFAULT);
+            } catch (IllegalArgumentException err) {
+                return jsonError("invalid save payload");
+            }
+            return saveViaPickExisting(bytes);
+        }
+
+        @JavascriptInterface
         public String saveCurrentSudokuFile(String base64, String suggestedName) {
             final byte[] bytes;
             try {
@@ -650,13 +735,8 @@ public final class MainActivity extends Activity {
                 return jsonError("invalid save payload");
             }
             final Uri uri = currentUri();
-            if (uri == null) return jsonError("no bound save target");
+            if (uri == null) return saveToDefaultVisible(bytes, suggestedName);
             return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
-        }
-
-        @JavascriptInterface
-        public boolean hasCurrentSudokuFile() {
-            return currentUri() != null;
         }
 
         @JavascriptInterface

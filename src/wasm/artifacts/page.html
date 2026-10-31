@@ -466,6 +466,12 @@
       text-align: left;
     }
 
+    [role="dialog"] h2,
+    [role="alertdialog"] h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.25rem;
+      text-align: center;
+    }
     #error-modal-msg {
       margin: 0 0 1rem;
       line-height: 1.45;
@@ -477,6 +483,7 @@
     #replace-confirm-actions {
       display: flex;
       justify-content: flex-end;
+      align-items: stretch;
       gap: 0.5rem;
     }
 
@@ -486,11 +493,6 @@
       object-fit: contain;
       display: block;
       margin: 0 auto 0.5rem;
-    }
-
-    #about-modal-title {
-      margin: 0 0 0.5rem;
-      font-size: 1.125rem;
     }
 
     #about-summary,
@@ -558,7 +560,6 @@
     #settings-modal-dismiss,
     #about-modal-dismiss,
     #error-modal-dismiss,
-    #replace-confirm-cancel,
     #new-difficulty-cancel {
       display: block;
       margin: 0.5rem 0 0 auto;
@@ -797,14 +798,16 @@
     </div>
   </main>
 
-  <div id="error-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="error-modal-msg">
+  <div id="error-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="error-modal-title" aria-describedby="error-modal-msg">
     <div class="error-dialog">
+      <h2 id="error-modal-title">Error</h2>
       <p id="error-modal-msg"></p>
       <button type="button" id="error-modal-dismiss">OK</button>
     </div>
   </div>
-  <div id="replace-confirm-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="replace-confirm-msg">
+  <div id="replace-confirm-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="replace-confirm-title" aria-describedby="replace-confirm-msg">
     <div class="error-dialog">
+      <h2 id="replace-confirm-title"></h2>
       <p id="replace-confirm-msg"></p>
       <div id="replace-confirm-actions">
         <button type="button" id="replace-confirm-cancel">Cancel</button>

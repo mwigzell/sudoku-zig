@@ -7,6 +7,7 @@ const sudoku = @import("shell/shell.zig");
 const file_transport = @import("shell/file_transport.zig");
 const settings_store = @import("../core/settings_store.zig");
 const input_source = @import("input_source.zig");
+const shell_path = @import("shell/path.zig");
 
 const log = logger.Logger(.sudoku);
 
@@ -30,10 +31,12 @@ pub fn run(io: std.Io, gpa: std.mem.Allocator, cfg: config.Config, data_dir: []c
     };
     defer facade_f.deinit();
 
+    const visible_save_dir: ?[]u8 = shell_path.computeVisibleSaveDir(gpa) catch null;
+    defer if (visible_save_dir) |dir| gpa.free(dir);
     const settings_persist: ?sudoku.SettingsPersist = if (std.mem.eql(u8, data_dir, "."))
         null
     else
-        .{ .io = io, .data_dir = data_dir };
+        .{ .io = io, .data_dir = data_dir, .visible_save_dir = visible_save_dir orelse data_dir };
 
     var game = try sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io), host.writer(), settings_persist);
     defer game.deinit();

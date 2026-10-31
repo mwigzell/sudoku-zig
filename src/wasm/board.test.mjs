@@ -607,7 +607,7 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
   const prevConfirm = globalThis.confirm;
   globalThis.fetch = async (url, init) => {
     fetchCalls.push({ url, init });
-    return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+    return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
   };
   globalThis.confirm = (msg) => {
     confirmPrompts.push(msg);
@@ -644,7 +644,7 @@ const openLegend = { fill: true, clear: true, undo: false, redo: false };
   assert.equal(fetchCalls.length, 1, "first autosave after detached context hits conflict path");
   assert.equal(fetchCalls[0]?.url, "./current-file");
   assert.equal(confirmPrompts.length, 1, "conflict surfaces replace confirmation");
-  assert.equal(confirmPrompts[0], "sudoku.sud exists, replace?");
+  assert.equal(confirmPrompts[0], "sudoku.sud already exists. Do you want to replace it?");
   assert.equal(errorModal.el.hidden, true, "cancelled replace prompt is not treated as modal error");
 }
 

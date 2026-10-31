@@ -547,12 +547,12 @@ async function flushDialogPaint() {
   const calls = [];
   const out = await persistCurrentFileSnapshot(game, async (url, init) => {
     calls.push({ url, init });
-    if (calls.length === 1) return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+    if (calls.length === 1) return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
     return { ok: true, status: 204 };
   });
   assert.equal(out.ok, false);
   assert.equal(out.replace_required, true);
-  assert.equal(out.error, "file already exists, replace?");
+  assert.equal(out.error, "This file already exists. Do you want to replace it?");
 }
 
 {
@@ -565,11 +565,11 @@ async function flushDialogPaint() {
   const out = await persistCurrentFileSnapshotWithReplacePrompt(game, {
     fetchFn: async (url, init) => {
       calls.push({ url, init });
-      if (calls.length === 1) return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+      if (calls.length === 1) return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
       return { ok: true, status: 204 };
     },
     askConfirm: (msg) => {
-      assert.equal(msg, "existing.sud exists, replace?");
+      assert.equal(msg, "existing.sud already exists. Do you want to replace it?");
       return true;
     },
     saveName: "existing.sud",
@@ -586,9 +586,9 @@ async function flushDialogPaint() {
     },
   };
   const out = await persistCurrentFileSnapshotWithReplacePrompt(game, {
-    fetchFn: async () => ({ ok: false, status: 409, text: async () => "file already exists, replace?" }),
+    fetchFn: async () => ({ ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" }),
     askConfirm: (msg) => {
-      assert.equal(msg, "File exists, replace?");
+      assert.equal(msg, "This file already exists. Do you want to replace it?");
       return false;
     },
   });
@@ -1069,69 +1069,6 @@ async function flushDialogPaint() {
 }
 
 {
-  // Autosave can require an external target before persisting.
-  const writes = [];
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([5, 5]) };
-    },
-  };
-  const session = {
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-    default_save_filename: "sudoku.sud",
-    boundFilename: "picked.sud",
-    writeContextEvent: async () => ({ ok: true }),
-  };
-  const fetchFn = async (url, init) => {
-    if (url === "./current-file") {
-      writes.push({ lane: "host", bytes: [...new Uint8Array(init.body)] });
-      return { ok: true, status: 204 };
-    }
-    throw new Error(`unexpected fetch url: ${url}`);
-  };
-  startAutoSavePolicy(game, session, "fill", {
-    fetchFn,
-    ensureExternalTarget: async ({ session: lane }) => {
-      lane.boundSnapshotWriter = async (bytes) => {
-        writes.push({ lane: "bound", bytes: [...bytes] });
-        return { ok: true };
-      };
-      return { ok: true };
-    },
-  });
-  await session.__autosave_lane;
-  assert.deepEqual(writes, [
-    { lane: "bound", bytes: [5, 5] },
-    { lane: "host", bytes: [5, 5] },
-  ]);
-}
-
-{
-  // If target binding setup fails, autosave aborts before any write lanes.
-  let surfaced = null;
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([9, 9]) };
-    },
-  };
-  const session = {
-    config: { auto_save: true },
-    autosave_trigger_commands: AUTO_SAVE_TRIGGERS,
-  };
-  const fetchFn = async () => ({ ok: true, status: 204 });
-  startAutoSavePolicy(game, session, "fill", {
-    fetchFn,
-    ensureExternalTarget: async () => ({ ok: false, error: "bind required" }),
-    onError: (err) => {
-      surfaced = err;
-    },
-  });
-  await session.__autosave_lane;
-  assert.equal(surfaced?.error, "bind required");
-}
-
-{
   // Bound working-target autosave writes target first, then mirrors startup lane.
   const writes = [];
   const game = {
@@ -1232,7 +1169,7 @@ async function flushDialogPaint() {
     }
     if (url === "./current-file") {
       if (!contextReady) {
-        return { ok: false, status: 409, text: async () => "file already exists, replace?" };
+        return { ok: false, status: 409, text: async () => "This file already exists. Do you want to replace it?" };
       }
       writes.push(new Uint8Array(init.body));
       return { ok: true, status: 204 };

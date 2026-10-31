@@ -14,6 +14,7 @@ import {
 import {
   WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
   WRITE_CONTEXT_EVENT_SAVE_SUCCESS,
+  startAutoSavePolicy,
 } from "./shell.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 import { wireGeneratingModal } from "./generating.js";
@@ -929,6 +930,239 @@ function makeRenderElement() {
   );
   await exportBtn.click();
   assert.equal(called, false);
+}
+
+// First autosave with nothing bound writes the host default file only: no Save As, no download.
+{
+  let downloads = 0;
+  let picks = 0;
+  const hostWrites = [];
+  const session = {
+    legend: {},
+    state: { cells: [] },
+    config: { auto_save: true },
+    autosave_trigger_commands: ["fill"],
+    default_save_filename: "sudoku.sud",
+  };
+  const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
+  wireFileMenu(
+    {},
+    game,
+    makeBoard(),
+    { select: () => {}, deselect: () => {} },
+    { textContent: "", className: "" },
+    { el: { hidden: true }, msgEl: { textContent: "" } },
+    session,
+    { sync() {} },
+    {
+      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      download() {
+        downloads += 1;
+      },
+      pick: async () => {
+        picks += 1;
+        return { ok: false, cancelled: true };
+      },
+      createElement: makeRenderElement(),
+    },
+  );
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file") hostWrites.push([...new Uint8Array(init.body)]);
+    return { ok: true, status: 204 };
+  };
+  startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await session.__autosave_lane;
+  assert.equal(downloads, 0, "autosave must not download");
+  assert.equal(picks, 0, "autosave must not open a picker");
+  assert.deepEqual(hostWrites, [[4, 2]]);
+}
+
+// Android with nothing bound: autosave after File → New still hands the bytes to the bridge default file.
+{
+  const bridgeWrites = [];
+  const prevBridge = globalThis.AndroidFileBridge;
+  const prevFetch = globalThis.fetch;
+  globalThis.AndroidFileBridge = {
+    saveCurrentSudokuFile(base64, suggestedName) {
+      bridgeWrites.push(suggestedName);
+      return { ok: true, name: suggestedName };
+    },
+    currentSudokuFileName: () => "",
+  };
+  globalThis.fetch = async () => ({ ok: true, status: 204, json: async () => ({}) });
+  const session = {
+    legend: { new: true },
+    state: { cells: [] },
+    config: { auto_save: true },
+    autosave_trigger_commands: ["fill"],
+    default_save_filename: "sudoku.sud",
+  };
+  const game = {
+    init: () => ({ ok: true }),
+    getState: () => ({ cells: [{ value: 1, given: true, conflict: false }] }),
+    getLegend: () => ({ new: true }),
+    getConfig: () => ({ theme: "light", show_region: false, auto_save: true }),
+    serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }),
+  };
+  const difficultyDialog = {
+    el: { hidden: true },
+    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
+  };
+  const controls = { new: makeBtn() };
+  const genContinue = makeBtn();
+  const generatingModal = wireGeneratingModal({ el: { hidden: true }, continueBtn: genContinue });
+  try {
+    wireFileMenu(
+      controls,
+      game,
+      makeBoard(),
+      { select: () => {}, deselect: () => {} },
+      { textContent: "", className: "" },
+      { el: { hidden: true }, msgEl: { textContent: "" } },
+      session,
+      { sync() {} },
+      {
+        difficultyDialog,
+        generatingModal,
+        download() {},
+        pick: async () => ({ ok: false, cancelled: true }),
+        createElement: makeRenderElement(),
+      },
+    );
+    controls.new.click();
+    const picked = difficultyDialog.buttons[0].el.click();
+    await flushDialogPaint();
+    await flushDialogPaint();
+    genContinue.click();
+    await picked;
+    await session.__autosave_lane;
+    bridgeWrites.length = 0;
+    startAutoSavePolicy(game, session, "fill", { fetchFn: globalThis.fetch });
+    await session.__autosave_lane;
+    assert.deepEqual(bridgeWrites, ["sudoku.sud"]);
+  } finally {
+    globalThis.AndroidFileBridge = prevBridge;
+    globalThis.fetch = prevFetch;
+  }
+}
+
+// Android autosave adopts the file name the bridge actually wrote (e.g. a new name the user picked).
+{
+  const prevBridge = globalThis.AndroidFileBridge;
+  const hostNames = [];
+  globalThis.AndroidFileBridge = {
+    saveCurrentSudokuFile: () => ({ ok: true, name: "game2.sud" }),
+    currentSudokuFileName: () => "",
+  };
+  const session = {
+    legend: {},
+    state: { cells: [] },
+    config: { auto_save: true },
+    autosave_trigger_commands: ["fill"],
+    default_save_filename: "sudoku.sud",
+  };
+  const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
+  try {
+    wireFileMenu(
+      {},
+      game,
+      makeBoard(),
+      { select: () => {}, deselect: () => {} },
+      { textContent: "", className: "" },
+      { el: { hidden: true }, msgEl: { textContent: "" } },
+      session,
+      { sync() {} },
+      {
+        difficultyDialog: { el: { hidden: true }, buttons: [] },
+        download() {},
+        pick: async () => ({ ok: false, cancelled: true }),
+        createElement: makeRenderElement(),
+      },
+    );
+    const fetchFn = async (url, init) => {
+      if (url === "./current-file") hostNames.push(init.headers?.["X-Sudoku-Filename"]);
+      return { ok: true, status: 204 };
+    };
+    startAutoSavePolicy(game, session, "fill", { fetchFn });
+    await session.__autosave_lane;
+    assert.equal(session.boundFilename, "game2.sud");
+    assert.deepEqual(hostNames, ["game2.sud"]);
+  } finally {
+    globalThis.AndroidFileBridge = prevBridge;
+  }
+}
+
+// Android default file taken by an earlier install: the web dialog asks pick-or-rename until a file is written.
+{
+  const prevBridge = globalThis.AndroidFileBridge;
+  const prevChoose = globalThis.__sudokuChoose;
+  const calls = [];
+  const answers = [false, true];
+  globalThis.__sudokuChoose = async (message, labels) => {
+    calls.push(["ask", labels.okLabel, labels.cancelLabel]);
+    assert.equal(labels.title, "Autosave file");
+    assert.match(message, /sudoku\.sud in Download\/Sudoku/);
+    return answers.shift();
+  };
+  globalThis.AndroidFileBridge = {
+    saveCurrentSudokuFile: () => {
+      calls.push(["current"]);
+      return { ok: false, reason: "default_taken", name: "sudoku.sud", dir: "Download/Sudoku" };
+    },
+    saveSudokuFile: (_b64, name, saveAs) => {
+      calls.push(["new_name", name, saveAs]);
+      return { ok: false, cancelled: true };
+    },
+    saveSudokuFileToExisting: () => {
+      calls.push(["pick_existing"]);
+      return { ok: true, name: "sudoku.sud" };
+    },
+    currentSudokuFileName: () => "",
+  };
+  const session = {
+    legend: {},
+    state: { cells: [] },
+    config: { auto_save: true },
+    autosave_trigger_commands: ["fill"],
+    default_save_filename: "sudoku.sud",
+  };
+  const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
+  try {
+    wireFileMenu(
+      {},
+      game,
+      makeBoard(),
+      { select: () => {}, deselect: () => {} },
+      { textContent: "", className: "" },
+      { el: { hidden: true }, msgEl: { textContent: "" } },
+      session,
+      { sync() {} },
+      {
+        difficultyDialog: { el: { hidden: true }, buttons: [] },
+        download() {},
+        pick: async () => ({ ok: false, cancelled: true }),
+        createElement: makeRenderElement(),
+      },
+    );
+    let errors = 0;
+    startAutoSavePolicy(game, session, "fill", {
+      fetchFn: async () => ({ ok: true, status: 204 }),
+      onError: () => { errors += 1; },
+    });
+    await session.__autosave_lane;
+    assert.deepEqual(calls, [
+      ["current"],
+      ["ask", "Pick it", "New name"],
+      ["new_name", "sudoku.sud", true],
+      ["ask", "Pick it", "New name"],
+      ["pick_existing"],
+    ]);
+    assert.equal(errors, 0);
+    assert.equal(session.boundFilename, "sudoku.sud");
+  } finally {
+    globalThis.AndroidFileBridge = prevBridge;
+    globalThis.__sudokuChoose = prevChoose;
+  }
 }
 
 console.log("file_menu.test.mjs OK");

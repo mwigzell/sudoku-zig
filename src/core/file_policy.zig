@@ -57,7 +57,7 @@ pub const WRITE_CONTEXT_EVENTS_JSON: []const u8 =
     "{\"startup_restore\":\"startup_restore\",\"startup_new\":\"startup_new\",\"startup_idle\":\"startup_idle\",\"open_success\":\"open_success\",\"save_success\":\"save_success\",\"save_as_success\":\"save_as_success\",\"auto_save_success\":\"auto_save_success\",\"new_game_success\":\"new_game_success\",\"import_success\":\"import_success\",\"paste_success\":\"paste_success\"}";
 
 /// User-facing replace confirmation copy used by all write seams.
-pub const REPLACE_CONFIRM_MSG: []const u8 = "file already exists, replace?";
+pub const REPLACE_CONFIRM_MSG: []const u8 = "This file already exists. Do you want to replace it?";
 
 /// Shared overwrite-policy inputs:
 pub const OverwriteInput = struct {
@@ -115,6 +115,22 @@ pub fn writeContextEventName(event: WriteContextEvent) []const u8 {
         .import_success => "import_success",
         .paste_success => "paste_success",
     };
+}
+
+/// Where an autosave writes; adapters resolve `default_visible` to their platform's user-visible location.
+pub const AutoSaveTarget = enum {
+    working_file,
+    default_visible,
+};
+
+/// Autosave target inputs gathered by the adapter.
+pub const AutoSaveTargetInput = struct {
+    has_working_file: bool,
+};
+
+/// Autosave follows the working file; with none, it writes the default visible file (which then becomes the working file).
+pub fn autoSaveTarget(input: AutoSaveTargetInput) AutoSaveTarget {
+    return if (input.has_working_file) .working_file else .default_visible;
 }
 
 /// Returns true when the command name should trigger auto-save policy.
@@ -182,6 +198,14 @@ test "nextWriteContext maps new/import/paste/idle events to detached" {
     for (detached_events) |event| {
         try std.testing.expectEqual(WriteContext.detached, nextWriteContext(.continuation, event));
     }
+}
+
+test "autosave targets the default visible file when there is no working file" {
+    try std.testing.expectEqual(AutoSaveTarget.default_visible, autoSaveTarget(.{ .has_working_file = false }));
+}
+
+test "autosave targets the working file when one exists" {
+    try std.testing.expectEqual(AutoSaveTarget.working_file, autoSaveTarget(.{ .has_working_file = true }));
 }
 
 test "commandTriggersAutoSaveByName follows shared trigger set" {
