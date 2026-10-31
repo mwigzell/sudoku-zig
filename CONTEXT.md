@@ -163,7 +163,7 @@ Front-end layers are adapters. They do I/O, lifecycle, and presentation; shared 
 |---|---|---|---|
 | Domain rules and state semantics | `src/core/engine/`, `src/core/board/`, shared codecs | submit commands, render returned state | reimplementing game behavior |
 | Session semantics (save/open/restore/new, conflict rules) | shared policy modules + host/domain seams | issue intent requests, present user prompts/results | local policy forks in JS/Java/renderer |
-| Startup behavior contract | `src/core/startup/` + host startup payload | execute instructed startup action | per-platform startup decision trees |
+| Startup behavior | `src/core/startup/policy.zig` + `src/core/flow/startup.zig` (`StartupFlow`) | read the current file, draw, ask, generate, forget the file when told | per-platform startup decision trees |
 | Configuration meaning and persistence schema | `src/core/config.zig` + `src/core/settings_store.zig` + host persistence seam | edit/view settings through exposed interfaces | parallel config schemas or defaults that override host contract |
 | Cross-platform command availability semantics | engine/legend + shared contracts | wire controls to existing contracts | feature-specific rule variants per platform |
 
@@ -177,8 +177,7 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 | Policy | Core authority | Platform call sites |
 |---|---|---|
 | Command semantics + `Event` meaning | `src/core/command.zig`, `src/core/engine/game_engine.zig` | Native: `src/native/shell/shell.zig` (`engine.exec`). Web/Android: wasm API in `src/entry_wasm.zig`, called by `src/wasm/{board,menu,file_menu}.js`. |
-| Startup decision (`restore/new/idle`) | `src/core/startup/policy.zig`, `src/core/startup/config.zig` | Native: `src/native/shell/shell.zig` (`runStartupPolicy`). Web/Android: `src/wasm/shell.js` (`initializeWebSession`, `offerInitialNewGame`) + `src/core/startup/web_startup.js`. |
-| Restore-solved branch (`on_restore_solved`) | core startup policy/contract seam (`src/core/startup/*`) | Native + web/android execute instructed branch only (`prompt`: launch New dialog; cancel stays on restored solved board). |
+| Startup choreography (restore / new / idle, restore failure, solved restore, generation failure) | `src/core/startup/policy.zig` (`evaluate`), `src/core/flow/startup.zig` (`StartupFlow`) | Native: `src/native/shell/shell.zig` (`runStartupFlow` → `runFlow`). Web/Android: `src/wasm/shell.js` (`runStartupFlow`, `startupHandlers`) after `app_boot.js` wires the idle session. Host JSON carries config and `startup_save_path` only; `DELETE /current-file` forgets (optionally deletes) the host's current file. |
 | Autosave trigger set (which commands autosave) | `src/core/file_policy.zig` (`commandTriggersAutoSaveByName`), applied by `src/core/flow/autosave.zig` | Native: `src/native/shell/shell.zig` (`applyAutoSavePolicyIfNeeded`). Web/Android: `src/wasm/shell.js` (`startAutoSavePolicy` → wasm `flowStart`). |
 | Overwrite/replace lane policy (`detached` vs `continuation`) | `src/core/file_policy.zig`; state in `src/core/flow/file_session.zig` (`FileSession`) | Native: `Sudoku.file_session`. Web/Android: wasm `fileSessionEvent`; no host-side context. |
 | Save / Save As / autosave choreography (check target → ask → write → status) | `src/core/flow/{step,save,autosave}.zig` (`Step` / `Input`) | Native: `src/native/shell/shell.zig` (`runFlow`). Web/Android: `src/wasm/step_runner.js` (`runFlow`) with handlers in `file_menu.js` / `shell.js`. Adapters report `exists` for the target they would write; pickers own their own overwrite question. |
@@ -186,7 +185,7 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 | Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/entry_wasm.zig`) | Native: `src/native/shell/{save,save_as,open}.zig` via `FileTransport`. Web/Android: `src/wasm/shell.js` via wasm `serialize`/`deserialize`. |
 | Log-level filtering policy | `src/core/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
 
-Planned policy extension (issue #77): when startup action is `restore` and restored board is solved, use `on_restore_solved = prompt` (run New dialog, cancel keeps restored solved state/status).
+Startup outcomes, the same on every platform: a failed restore shows the idle board, asks "Delete {file}?" (Delete / Keep) and always forgets the current file; a restored solved game asks "Puzzle solved" (New game / Keep), and New game generates at the saved difficulty; a failed generation shows the idle board then the error; a cancelled one goes straight to idle.
 
 **Desktop web entry** (`native/desktop_web.zig`):
 Wires **`web_host.runWithHostConfig`**, fatal bind errors, and **`whenHostReady`** → **`open_browser`**. Called from `main` when `-r web`.

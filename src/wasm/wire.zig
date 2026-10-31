@@ -20,6 +20,15 @@ pub const PlayerDifficulty = enum(u8) {
         };
     }
 
+    /// The player-facing level for a generator difficulty (`default` plays as easy).
+    pub fn fromPuzzleDifficulty(d: puzzle_gen.Difficulty) PlayerDifficulty {
+        return switch (d) {
+            .easy, .default => .easy,
+            .medium => .medium,
+            .hard => .hard,
+        };
+    }
+
     pub fn toPuzzleDifficulty(self: PlayerDifficulty) puzzle_gen.Difficulty {
         return switch (self) {
             .easy => .easy,
@@ -67,13 +76,8 @@ pub const WireConfig = struct {
     }
 
     pub fn fromConfig(cfg: config.Config) WireConfig {
-        const pd: PlayerDifficulty = switch (cfg.difficulty) {
-            .easy, .default => .easy,
-            .medium => .medium,
-            .hard => .hard,
-        };
         return .{
-            .difficulty = pd,
+            .difficulty = PlayerDifficulty.fromPuzzleDifficulty(cfg.difficulty),
             .log_level = cfg.log_level,
             .theme = cfg.theme,
             .show_region = cfg.show_region,

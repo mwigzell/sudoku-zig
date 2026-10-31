@@ -235,16 +235,8 @@ pub fn writeSystemErrorJson(out: OutBuffer) void {
     if (n < out.buf.len) out.buf[n] = 0;
 }
 
-pub const EventJsonOptions = struct {
-    startup_prompt_new_game: bool = false,
-};
-
+/// Writes Event JSON: `{ok, is_quit, msg, state}` or an error object.
 pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
-    return writeEventJsonWithOptions(out, ev, .{});
-}
-
-/// Writes Event JSON with optional startup metadata flags for host-driven flows.
-pub fn writeEventJsonWithOptions(out: OutBuffer, ev: event_mod.Event, options: EventJsonOptions) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
@@ -263,11 +255,6 @@ pub fn writeEventJsonWithOptions(out: OutBuffer, ev: event_mod.Event, options: E
             }
             try std.Io.Writer.writeAll(&jw.writer, "\"state\":");
             try wire.writeGameSnapshotJson(&jw.writer, snap);
-            try std.Io.Writer.print(
-                &jw.writer,
-                ",\"startup_prompt_new_game\":{any}",
-                .{options.startup_prompt_new_game},
-            );
             try std.Io.Writer.writeAll(&jw.writer, "}");
         },
     }
@@ -280,15 +267,24 @@ pub const FlowStart = union(enum) {
     save_as: []const u8,
     autosave: []const u8,
     autosave_flush,
+    /// The host's current file, or null when it has none.
+    startup: ?StartupFile,
+};
+
+/// Where the host serves its current file, and the name to label and save it under.
+pub const StartupFile = struct {
+    path: []const u8,
+    name: []const u8,
 };
 
 const JsonFlowStart = struct {
     flow: []const u8,
     name: ?[]const u8 = null,
     command: ?[]const u8 = null,
+    path: ?[]const u8 = null,
 };
 
-/// Parse `{flow, name?, command?}`; slices live in `arena`.
+/// Parse `{flow, name?, command?, path?}`; slices live in `arena`.
 pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStart {
     const v = try std.json.parseFromSliceLeaky(JsonFlowStart, arena, json_text, .{});
     const kind = std.meta.stringToEnum(std.meta.Tag(FlowStart), v.flow) orelse return error.UnknownFlow;
@@ -297,6 +293,7 @@ pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStar
         .save_as => .{ .save_as = v.name orelse return error.MissingField },
         .autosave => .{ .autosave = v.command orelse return error.MissingField },
         .autosave_flush => .autosave_flush,
+        .startup => .{ .startup = if (v.path) |path| .{ .path = path, .name = v.name orelse return error.MissingField } else null },
     };
 }
 
@@ -307,6 +304,7 @@ const JsonFlowInput = struct {
     yes: ?bool = null,
     ok: ?bool = null,
     cancelled: ?bool = null,
+    line: ?[]const u8 = null,
     @"error": ?[]const u8 = null,
 };
 
@@ -325,6 +323,17 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .cancelled
         else
             .{ .failed = v.@"error" orelse return error.MissingField } },
+        .file_read => if (v.ok == false)
+            .{ .file_read = .{ .failed = v.@"error" orelse return error.MissingField } }
+        else
+            error.MissingField,
+        .generated => .{ .generated = if (v.ok == true)
+            .{ .line = v.line orelse return error.MissingField }
+        else if (v.cancelled == true)
+            .cancelled
+        else
+            .{ .failed = v.@"error" orelse return error.MissingField } },
+        .ack => .ack,
     };
 }
 
@@ -357,9 +366,29 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"cancel_label\":");
             try writeJsonString(w, q.cancel_label);
         },
+        .read_file => |path| {
+            try std.Io.Writer.writeAll(w, ",\"path\":");
+            try writeJsonString(w, path);
+        },
+        .show_game => |g| {
+            try std.Io.Writer.writeAll(w, ",\"text\":");
+            try writeOptionalJsonString(w, g.status);
+            try std.Io.Writer.writeAll(w, ",\"file\":");
+            try writeOptionalJsonString(w, g.file);
+        },
+        .generate => |d| try std.Io.Writer.print(w, ",\"difficulty\":{d}", .{@backingInt(wire.PlayerDifficulty.fromPuzzleDifficulty(d))}),
+        .forget_current_file => |f| {
+            try std.Io.Writer.writeAll(w, ",\"path\":");
+            try writeJsonString(w, f.path);
+            try std.Io.Writer.print(w, ",\"delete\":{any}", .{f.delete});
+        },
     }
     try std.Io.Writer.writeAll(w, "}");
     try std.Io.Writer.flush(w);
+}
+
+fn writeOptionalJsonString(w: *std.Io.Writer, value: ?[]const u8) !void {
+    if (value) |v| try writeJsonString(w, v) else try std.Io.Writer.writeAll(w, "null");
 }
 
 /// Lifecycle event a web handler reports to the wasm FileSession (`fileSessionEvent` payload).
@@ -798,6 +827,11 @@ test "flow start parses each web flow" {
     try std.testing.expectEqualStrings("game.sud", (try parseFlowStart(a, "{\"flow\":\"save\",\"name\":\"game.sud\"}")).save);
     try std.testing.expectEqualStrings("fill", (try parseFlowStart(a, "{\"flow\":\"autosave\",\"command\":\"fill\"}")).autosave);
     try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"autosave_flush\"}")) == .autosave_flush);
+    try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"startup\"}")).startup == null);
+    const startup = (try parseFlowStart(a, "{\"flow\":\"startup\",\"path\":\"/current-file\",\"name\":\"g.sud\"}")).startup.?;
+    try std.testing.expectEqualStrings("/current-file", startup.path);
+    try std.testing.expectEqualStrings("g.sud", startup.name);
+    try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"startup\",\"path\":\"/current-file\"}"));
     try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"nope\"}"));
 }
 
@@ -811,6 +845,12 @@ test "flow input parses every step result" {
     try std.testing.expectEqualStrings("w.sud", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":true,\"name\":\"w.sud\"}")).wrote.ok);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"cancelled\":true}")).wrote == .cancelled);
     try std.testing.expectEqualStrings("boom", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"error\":\"boom\"}")).wrote.failed);
+    try std.testing.expectEqualStrings("gone", (try parseFlowInput(a, "{\"input\":\"file_read\",\"ok\":false,\"error\":\"gone\"}")).file_read.failed);
+    try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"file_read\",\"ok\":true}"));
+    try std.testing.expectEqualStrings("123", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":true,\"line\":\"123\"}")).generated.line);
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"cancelled\":true}")).generated == .cancelled);
+    try std.testing.expectEqualStrings("x", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"error\":\"x\"}")).generated.failed);
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"ack\"}")) == .ack);
 }
 
 test "step JSON carries the tag and its payload" {
@@ -823,6 +863,14 @@ test "step JSON carries the tag and its payload" {
     try std.testing.expectEqualStrings("{\"step\":\"write\",\"name\":\"a.sud\"}", out.finishJson());
     try writeStepJson(out, .done);
     try std.testing.expectEqualStrings("{\"step\":\"done\"}", out.finishJson());
+    try writeStepJson(out, .{ .read_file = "/current-file" });
+    try std.testing.expectEqualStrings("{\"step\":\"read_file\",\"path\":\"/current-file\"}", out.finishJson());
+    try writeStepJson(out, .{ .show_game = .{ .status = null, .file = "g.sud" } });
+    try std.testing.expectEqualStrings("{\"step\":\"show_game\",\"text\":null,\"file\":\"g.sud\"}", out.finishJson());
+    try writeStepJson(out, .{ .generate = .hard });
+    try std.testing.expectEqualStrings("{\"step\":\"generate\",\"difficulty\":3}", out.finishJson());
+    try writeStepJson(out, .{ .forget_current_file = .{ .path = "/current-file", .delete = true } });
+    try std.testing.expectEqualStrings("{\"step\":\"forget_current_file\",\"path\":\"/current-file\",\"delete\":true}", out.finishJson());
 }
 
 test "file session event parses the event and optional name" {

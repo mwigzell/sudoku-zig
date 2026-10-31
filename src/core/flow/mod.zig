@@ -3,6 +3,7 @@
 const std = @import("std");
 const save_mod = @import("save.zig");
 const autosave_mod = @import("autosave.zig");
+const startup_mod = @import("startup.zig");
 
 pub const step = @import("step.zig");
 pub const file_session = @import("file_session.zig");
@@ -13,16 +14,20 @@ pub const Wrote = step.Wrote;
 pub const FileSession = file_session.FileSession;
 pub const SaveFlow = save_mod.SaveFlow;
 pub const AutosaveFlow = autosave_mod.AutosaveFlow;
+pub const StartupFlow = startup_mod.StartupFlow;
+pub const startup = startup_mod;
 
 pub const Flow = union(enum) {
     save: SaveFlow,
     autosave: AutosaveFlow,
+    startup: StartupFlow,
 
     /// Advance whichever flow is running.
     pub fn next(self: *Flow, input: Input) Step {
         return switch (self.*) {
             .save => |*f| f.next(input),
             .autosave => |*f| f.next(input),
+            .startup => |*f| f.next(input),
         };
     }
 };
@@ -39,5 +44,6 @@ test {
     std.testing.refAllDecls(@This());
     _ = save_mod;
     _ = autosave_mod;
+    _ = startup_mod;
     _ = file_session;
 }

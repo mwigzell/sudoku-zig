@@ -1,9 +1,9 @@
-// step_runner.test.mjs — core save/autosave flows driven through the web step runner (real wasm).
+// step_runner.test.mjs — core save/autosave/startup flows driven through the web step runner (real wasm).
 
 import assert from "node:assert/strict";
-import { askWithDialog, FLOW_AUTOSAVE, FLOW_SAVE, FLOW_SAVE_AS, runFlow } from "./step_runner.js";
+import { askWithDialog, FLOW_AUTOSAVE, FLOW_SAVE, FLOW_SAVE_AS, FLOW_STARTUP, runFlow } from "./step_runner.js";
 import { WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, WRITE_CONTEXT_EVENT_OPEN_SUCCESS } from "./shell.js";
-import { loadCoreFlow } from "./test_support.mjs";
+import { loadCoreFlow, loadGame } from "./test_support.mjs";
 
 /** Handlers that record every step and answer from `answers`. */
 function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }) } = {}) {
@@ -148,6 +148,76 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
   assert.equal(yes, true);
   assert.deepEqual(seen, [{ text: "Q?", labels: { title: "T", okLabel: "Yes", cancelLabel: "No" } }]);
   assert.equal(await askWithDialog({ step: "ask", text: "Q?" }, {}), false, "no dialog means no");
+}
+
+/** Startup handlers that record each step; `read` and `generated` script the platform results. */
+function startupRecorder({ read, generated, yes = false } = {}) {
+  const log = [];
+  return {
+    log,
+    readFile: (path) => {
+      log.push(["read", path]);
+      if (read instanceof Error) throw read;
+      return read;
+    },
+    showGame: (step) => log.push(["show", step.text, step.file]),
+    ask: (step) => {
+      log.push(["ask", step.title]);
+      return yes;
+    },
+    generate: (difficulty) => {
+      log.push(["generate", difficulty]);
+      return generated;
+    },
+    forgetCurrentFile: (forget) => log.push(["forget", forget.path, forget.delete]),
+    showError: (text) => log.push(["error", text]),
+  };
+}
+
+const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
+
+// read_file bytes go to core through flowFileRead; the restored game is shown with its file name.
+{
+  const source = await loadGame();
+  source.importPuzzle("530070000600195000098000060800060003400803001700020006060000280000419005000080079");
+  const game = await loadGame({ auto_restore: true });
+  const handlers = startupRecorder({ read: { ok: true, bytes: source.serialize().bytes } });
+  const outcome = await runFlow(game, { flow: FLOW_STARTUP, path: "/current-file", name: "game.sud" }, handlers);
+  assert.equal(outcome.kind, "done");
+  assert.deepEqual(handlers.log[0], ["read", "/current-file"]);
+  assert.equal(handlers.log[1][0], "show");
+  assert.equal(handlers.log[1][2], "game.sud");
+}
+
+// A throwing reader is a failed read: idle board, delete question, forget without deleting.
+{
+  const game = await loadGame({ auto_restore: true });
+  const handlers = startupRecorder({ read: new Error("network down") });
+  await runFlow(game, { flow: FLOW_STARTUP, path: "/current-file", name: "game.sud" }, handlers);
+  assert.deepEqual(handlers.log, [
+    ["read", "/current-file"],
+    ["show", WELCOME, null],
+    ["ask", "Restore failed"],
+    ["forget", "/current-file", false],
+  ]);
+}
+
+// generate reports the line, cancellation, or failure to core.
+{
+  const line = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+  const ok = startupRecorder({ generated: { ok: true, line } });
+  assert.equal((await runFlow(await loadGame({ auto_new: true, difficulty: 2 }), { flow: FLOW_STARTUP }, ok)).kind, "done");
+  assert.deepEqual(ok.log[0], ["generate", 2]);
+  assert.notEqual(ok.log[1][1], WELCOME);
+
+  const cancelled = startupRecorder({ generated: { ok: false, cancelled: true } });
+  await runFlow(await loadGame({ auto_new: true }), { flow: FLOW_STARTUP }, cancelled);
+  assert.deepEqual(cancelled.log, [["generate", 1], ["show", WELCOME, null]]);
+
+  const failed = startupRecorder({ generated: { ok: false } });
+  const outcome = await runFlow(await loadGame({ auto_new: true }), { flow: FLOW_STARTUP }, failed);
+  assert.equal(outcome.kind, "show_error");
+  assert.deepEqual(failed.log.at(-1), ["error", "A new game could not be generated (generation failed)."]);
 }
 
 console.log("step_runner.test.mjs OK");

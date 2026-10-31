@@ -64,12 +64,12 @@ Anti-patterns (do not repeat):
 
 Concrete repo examples:
 
-- Native uses `renderer.ask(...)` for the solved-restore prompt, while web/android route through JS new-game UI flow. This is acceptable because both execute the same core `on_restore_solved` policy branch and preserve cancel/confirm semantics.
+- The solved-restore question is a core `ask` step of the startup flow: native answers it through `renderer.ask(...)`, web through the shared two-button dialog.
 - Web does not use the native renderer facade. This is acceptable because wasm boundary + shared startup/file-policy seams carry policy parity without forcing a fake `WasmRenderer` call shape.
 
 ### Amendment — core drives flows, adapters do platform work
 
-Multi-step user flows (Save, Save As, autosave) are choreographed by core as a sequence of steps (`src/core/flow/step.zig`). Core issues a step (`check_target`, `ask`, `write`, `show_status`, …); the adapter performs only the platform mechanics and answers with an input; core decides the next step. Question copy (title, text, button labels) and status text come from core.
+Multi-step user flows (Save, Save As, autosave, startup) are choreographed by core as a sequence of steps (`src/core/flow/step.zig`). Core issues a step (`check_target`, `ask`, `write`, `show_status`, …); the adapter performs only the platform mechanics and answers with an input; core decides the next step. Question copy (title, text, button labels) and status text come from core.
 
 | Concern | Owning layer | Never in |
 |---|---|---|

@@ -275,21 +275,6 @@ export fn deserialize(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) ca
     return returnJson(out);
 }
 
-/// Startup restore entrypoint: replace state from SUD0 and return restore Event JSON.
-export fn restore(in_ptr: u32, in_len: u32) callconv(.c) u32 {
-    const out = outBuffer();
-    const eng = engineOrError(out) orelse return returnJson(out);
-    const bytes = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const ev = eng.restoreFromSave(bytes);
-    switch (ev) {
-        .error_msg => |msg| return exportError(out, msg),
-        .ok => {},
-    }
-    boundary.writeEventJsonWithOptions(out, ev, .{
-        .startup_prompt_new_game = eng.state.board.isSolved(),
-    }) catch return exportWriteFailed(out);
-    return returnJson(out);
-}
 /// Import a one-line puzzle from a page-read file; codec is the engine's job.
 /// Returns Event JSON (same shape as exec / deserialize).
 export fn importPuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
@@ -342,7 +327,7 @@ fn returnStep(out: boundary.OutBuffer, step: flow.Step) u32 {
     return returnJson(out);
 }
 
-/// Start a core flow from `{flow, name?, command?}`; returns the first step JSON.
+/// Start a core flow from `{flow, name?, command?, path?}`; returns the first step JSON.
 export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
@@ -355,6 +340,11 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
         .save_as => |name| .{ .save = flow.SaveFlow.init(&file_session, .save_as, name) },
         .autosave => |command_name| .{ .autosave = flow.AutosaveFlow.afterCommand(&file_session, eng.cfg.auto_save, command_name) },
         .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, eng.cfg.auto_save) },
+        .startup => |file| .{ .startup = flow.StartupFlow.init(eng, &file_session, .{
+            .auto_restore = eng.cfg.auto_restore,
+            .auto_new = eng.cfg.auto_new,
+            .difficulty = eng.cfg.difficulty,
+        }, if (file) |f| .{ .path = f.path, .name = f.name, .working = f.name } else null) },
     };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
@@ -369,6 +359,14 @@ export fn flowNext(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     const input = boundary.parseFlowInput(arena.allocator(), json) catch return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
     return returnStep(out, active_flow.next(input));
+}
+
+/// Answer a `read_file` step with the file's bytes; returns the next step JSON.
+export fn flowFileRead(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+    const bytes = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    return returnStep(out, active_flow.next(.{ .file_read = .{ .bytes = bytes } }));
 }
 
 /// Record a lifecycle event `{event, name?}` (open, new, import, paste, startup) in the web FileSession.

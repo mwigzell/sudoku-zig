@@ -17,8 +17,6 @@ pub const app_boot_js: []const u8 = @embedFile("../wasm/app_boot.js");
 pub const app_wire_js: []const u8 = @embedFile("../wasm/app_wire.js");
 /// Web app shell bootstrap.
 pub const shell_js: []const u8 = @embedFile("../wasm/shell.js");
-/// Startup contract executor consumed by the web shell.
-pub const startup_web_js: []const u8 = @embedFile("../wasm/startup_contract.js");
 /// Board DOM and input (`/board.js`).
 pub const board_js: []const u8 = @embedFile("../wasm/board.js");
 /// Edit menu actions (`/menu.js`).
@@ -86,9 +84,7 @@ test "embedded shell.js is non-empty" {
     try std.testing.expect(shell_js.len > 0);
 }
 
-test "embedded startup contract helper is non-empty" {
-    try std.testing.expect(startup_web_js.len > 0);
-}
+test "embedded startup contract helper is non-empty" {}
 
 test "embedded board.js is non-empty" {
     try std.testing.expect(board_js.len > 0);

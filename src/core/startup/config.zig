@@ -7,9 +7,7 @@ const wire = @import("../../wasm/wire.zig");
 const cli = @import("../../native/cli.zig");
 const settings_store = @import("../settings_store.zig");
 const path = @import("../../native/shell/path.zig");
-const startup_policy = @import("policy.zig");
 const save_defaults = @import("../save_defaults.zig");
-const file_policy = @import("../file_policy.zig");
 
 /// View/theme fields the host wire carries alongside difficulty and log level.
 pub fn configFromHostWire(
@@ -42,12 +40,12 @@ pub fn applyLoggerFromStartup(startup: config.Config) void {
 
 /// JSON body for `/host-config.json` — same shape as wasm `getConfig()`.
 pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
-    return writeHostStartupJsonWithPolicy(w, startup, false, save_defaults.DEFAULT_SAVE_FILE);
+    return writeHostStartupJsonWithCurrentFile(w, startup, false, save_defaults.DEFAULT_SAVE_FILE);
 }
 
-/// Host bootstrap JSON for web clients, including shared startup policy action
-/// so browser code can follow the same decision as native startup.
-pub fn writeHostStartupJsonWithPolicy(
+/// Host bootstrap JSON for web clients: player config plus where the host serves its
+/// current file (`startup_save_path`, null without one) and the name to save under.
+pub fn writeHostStartupJsonWithCurrentFile(
     w: *std.Io.Writer,
     startup: config.Config,
     has_current_file: bool,
@@ -55,23 +53,6 @@ pub fn writeHostStartupJsonWithPolicy(
 ) !void {
     const startup_save_path = if (has_current_file) "/current-file" else null;
     const wire_cfg = wire.WireConfig.fromConfig(startup);
-    const decision = startup_policy.evaluate(.{
-        .auto_restore = startup.auto_restore,
-        .auto_new = startup.auto_new,
-        .has_current_file = has_current_file,
-    });
-    const startup_action: []const u8 = switch (decision.action) {
-        .restore => "restore",
-        .new => "new",
-        .idle => "idle",
-    };
-    const startup_context_event = switch (decision.action) {
-        .restore => file_policy.writeContextEventName(.startup_restore),
-        .new => file_policy.writeContextEventName(.startup_new),
-        .idle => file_policy.writeContextEventName(.startup_idle),
-    };
-    const on_restore_solved = startup_policy.restoreSolvedName(decision.restore_solved);
-    const startup_status = startup_policy.statusForAction(decision.action);
     const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
         .light => "light",
@@ -79,7 +60,7 @@ pub fn writeHostStartupJsonWithPolicy(
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"default_save_filename\":\"{s}\",\"startup_action\":\"{s}\",\"startup_context_event\":\"{s}\",\"on_restore_solved\":\"{s}\",\"startup_status\":{f},\"startup_save_path\":{f}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"default_save_filename\":\"{s}\",\"startup_save_path\":{f}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
@@ -90,10 +71,6 @@ pub fn writeHostStartupJsonWithPolicy(
             startup.auto_new,
             startup.auto_save,
             default_save_filename,
-            startup_action,
-            startup_context_event,
-            on_restore_solved,
-            std.json.fmt(startup_status, .{}),
             std.json.fmt(startup_save_path, .{}),
         },
     );
@@ -107,16 +84,15 @@ pub fn formatHostStartupJson(startup: config.Config, buf: []u8) ![]const u8 {
     return w.buffered();
 }
 
-/// Formats host startup JSON with explicit policy context (current-file
-/// presence + restore capability) for platform adapters.
-pub fn formatHostStartupJsonWithPolicy(
+/// Formats host startup JSON with the host's current-file facts for platform adapters.
+pub fn formatHostStartupJsonWithCurrentFile(
     startup: config.Config,
     has_current_file: bool,
     default_save_filename: []const u8,
     buf: []u8,
 ) ![]const u8 {
     var w = std.Io.Writer.fixed(buf);
-    try writeHostStartupJsonWithPolicy(&w, startup, has_current_file, default_save_filename);
+    try writeHostStartupJsonWithCurrentFile(&w, startup, has_current_file, default_save_filename);
     try std.Io.Writer.flush(&w);
     return w.buffered();
 }
@@ -199,7 +175,7 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
     var buf: [1024]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_action\":\"new\",\"startup_context_event\":\"startup_new\",\"on_restore_solved\":\"prompt\",\"startup_status\":null,\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
         json,
     );
 }
@@ -220,22 +196,19 @@ test "host startup JSON matches Config wire fields" {
     var buf: [1024]u8 = undefined;
     const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_action\":\"idle\",\"startup_context_event\":\"startup_idle\",\"on_restore_solved\":\"prompt\",\"startup_status\":\"Welcome to sudoku-zig! Choose New or Open to play\",\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
         json,
     );
 }
 
-test "host startup JSON policy chooses restore when current file exists" {
+test "host startup JSON points at the current file when the host has one" {
     const test_defaults = @import("../../test/config_defaults.zig");
     var cfg = test_defaults.testConfigDefaults();
     cfg.auto_restore = true;
     cfg.auto_new = false;
     var buf: [1024]u8 = undefined;
-    const json = try formatHostStartupJsonWithPolicy(cfg, true, save_defaults.DEFAULT_SAVE_FILE, &buf);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_action\":\"restore\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_context_event\":\"startup_restore\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"on_restore_solved\":\"prompt\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_status\":null") != null);
+    const json = try formatHostStartupJsonWithCurrentFile(cfg, true, save_defaults.DEFAULT_SAVE_FILE, &buf);
+    try std.testing.expect(std.mem.indexOf(u8, json, "startup_action") == null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_save_path\":\"/current-file\"") != null);
 }
 

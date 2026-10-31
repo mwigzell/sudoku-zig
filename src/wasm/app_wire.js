@@ -1,12 +1,13 @@
 // app_wire.js — DOM wiring for the web shell once startup/session are ready.
 
 import {
-  applySessionOutcomeStatus,
+  applyEventStatus,
   persistHostSettings,
   showErrorModal,
+  syncCurrentFileLabels,
   wireErrorModal,
 } from "./shell.js";
-import { getPlayGrid, setStatus, wireSelection, wirePlayLoop } from "./board.js";
+import { getPlayGrid, renderBoard, setStatus, wireSelection, wirePlayLoop } from "./board.js";
 import { wireEditMenu } from "./menu.js";
 import { collectMenuBarControls, wireMenuBar } from "./menu_bar.js";
 import { wireThemeMenu } from "./theme.js";
@@ -18,7 +19,6 @@ import { wireSettingsMenu } from "./settings.js";
 /**
  * @typedef {import("./types").GameApi} GameApi
  * @typedef {import("./types").WebSession} WebSession
- * @typedef {import("./types").StartupReady} StartupReady
  * @typedef {import("./types").GeneratingModal} GeneratingModal
  * @typedef {import("./types").GenWorker} GenWorker
  * @typedef {import("./types").ErrorModal} ErrorModal
@@ -86,7 +86,6 @@ function settingsModalFromDom(root = document) {
  * @typedef {Object} WireSudokuAppOptions
  * @property {GameApi} game
  * @property {WebSession} session
- * @property {StartupReady} ready
  * @property {GeneratingModal} generatingModal
  * @property {GenWorker} genWorker
  * @property {ErrorModal} errorModal
@@ -95,14 +94,18 @@ function settingsModalFromDom(root = document) {
  */
 
 /**
+ * @typedef {Object} WiredSudokuApp
+ * @property {(step: { text: string | null }) => void} showGame Redraw board, menus and status from the session.
+ */
+
+/**
  * Wire all DOM-facing web shell modules around one shared session object.
  * @param {WireSudokuAppOptions} options
- * @returns {void}
+ * @returns {WiredSudokuApp}
  */
 export function wireSudokuApp({
   game,
   session,
-  ready,
   generatingModal,
   genWorker,
   errorModal,
@@ -126,11 +129,7 @@ export function wireSudokuApp({
   wireAboutModal(aboutModal.el, root.getElementById("about-modal-dismiss"));
   const settingsModal = settingsModalFromDom(root);
 
-  if (ready.msg) {
-    applySessionOutcomeStatus(session, statusBar, { msg: ready.msg });
-  } else {
-    setStatus(statusBar, "");
-  }
+  setStatus(statusBar, "");
 
   const menuBar = wireMenuBar(menuControls, session, root);
   const syncPlayPadVisibility = (sel) => {
@@ -186,7 +185,7 @@ export function wireSudokuApp({
     cancelBtn: root.getElementById("new-difficulty-cancel"),
   };
 
-  const fileMenu = wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
+  wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
     difficultyDialog,
     generatingModal,
     genWorker,
@@ -196,13 +195,6 @@ export function wireSudokuApp({
     },
     onPersist: persistViewSettings,
   });
-  if (ready.startup_prompt_new_game === true) {
-    const schedule =
-      typeof requestAnimationFrame === "function"
-        ? requestAnimationFrame
-        : (fn) => queueMicrotask(fn);
-    schedule(() => fileMenu.openNewGameDialog({ preserveStatus: true }));
-  }
 
   editMenu = wireEditMenu(
     menuControls.undo,
@@ -237,6 +229,19 @@ export function wireSudokuApp({
   if (win.matchMedia?.("(pointer: fine)")?.matches === true) {
     getPlayGrid(boardEl).focus();
   }
+
+  return {
+    showGame: (step) => {
+      renderBoard(boardEl, session.state);
+      selection.deselect();
+      menuBar.sync();
+      editMenu.sync();
+      themeMenu.sync();
+      regionMenu.sync();
+      applyEventStatus(statusBar, { ok: true, msg: step.text ?? null });
+      syncCurrentFileLabels(session, root);
+    },
+  };
 }
 
 /**

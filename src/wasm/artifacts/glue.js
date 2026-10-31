@@ -158,15 +158,6 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
     },
 
-    // Startup auto-restore path: surface persisted durable status only.
-    restore(bytes) {
-      writeBytes(memory, SCRATCH, bytes);
-      if (typeof exports.restore === "function") {
-        return readJson(exports.restore(SCRATCH, bytes.length));
-      }
-      return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
-    },
-
     // One-line import path used by Paste and File -> Import.
     importPuzzle(text) {
       const bytes = new TextEncoder().encode(text);
@@ -197,6 +188,12 @@ export async function loadArtifact(wasmBytes) {
     /** Report one step result to the running flow; returns the next step. */
     flowNext(input) {
       return callJsonPayload(exports.flowNext, input);
+    },
+
+    /** Answer a `read_file` step with the file's bytes; returns the next step. */
+    flowFileRead(bytes) {
+      writeBytes(memory, SCRATCH, bytes);
+      return readJson(exports.flowFileRead(SCRATCH, bytes.length));
     },
 
     /** Record an open/new/import/paste/startup event in the web FileSession. */

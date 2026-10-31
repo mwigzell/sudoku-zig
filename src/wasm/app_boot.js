@@ -5,9 +5,9 @@ import {
   canUseGenWorker,
   createWebSessionFromStartup,
   initializeWebSession,
-  offerInitialNewGame,
+  runStartupFlow,
   showErrorModal,
-  recordStartupFileSession,
+  startupHandlers,
   syncCurrentFileLabels,
   wireFinalSnapshotOnPageHide,
   clientLog,
@@ -66,25 +66,14 @@ export async function bootSudokuWebApp(root = document) {
     if (!boot.ok) throw new Error(boot.error ?? "session init failed");
     primeWebBootChrome(boot, root);
 
-    // Boot phase 5: apply startup action contract (`restore`/`new`/`idle`).
-    const ready = await offerInitialNewGame(game, boot, generatingModal, {
-      genWorker,
-    });
-    clientLog("startup", "info", "startup_action_complete", { kind: ready.kind });
-    if (!ready.ok) throw new Error(ready.error ?? "New game failed");
-
-    // Boot phase 6: build canonical session object + record the startup event in core.
-    const session = createWebSessionFromStartup(ready);
-    recordStartupFileSession(game, ready);
+    // Boot phase 5: wire the UI around the idle session.
+    const session = createWebSessionFromStartup(boot);
     wireFinalSnapshotOnPageHide(game, session);
     syncCurrentFileLabels(session, root);
     renderBoard(boardEl, session.state);
-
-    // Boot phase 7: wire UI modules around shared session object.
-    wireSudokuApp({
+    const app = wireSudokuApp({
       game,
       session,
-      ready,
       generatingModal,
       genWorker,
       errorModal,
@@ -94,6 +83,19 @@ export async function bootSudokuWebApp(root = document) {
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
     clientLog("startup", "info", "ready");
+
+    // Boot phase 6: core startup flow decides restore / new / idle; its dialogs need the splash gone.
+    const outcome = await runStartupFlow(
+      game,
+      boot,
+      startupHandlers(game, session, {
+        generatingModal,
+        genWorker,
+        showGame: app.showGame,
+        showError: (text) => showErrorModal(errorModal, text),
+      }),
+    );
+    clientLog("startup", "info", "startup_flow_complete", { kind: outcome.kind });
   } catch (err) {
     const errorText = err && err.message ? err.message : String(err);
     clientLog("startup", "err", "boot_failed", { error: errorText });

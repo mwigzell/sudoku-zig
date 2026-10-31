@@ -11,6 +11,10 @@ export const STEP_RESOLVE_DEFAULT_TARGET = "resolve_default_target";
 export const STEP_CHECK_TARGET = "check_target";
 export const STEP_ASK = "ask";
 export const STEP_WRITE = "write";
+export const STEP_READ_FILE = "read_file";
+export const STEP_SHOW_GAME = "show_game";
+export const STEP_GENERATE = "generate";
+export const STEP_FORGET_CURRENT_FILE = "forget_current_file";
 export const STEP_SHOW_STATUS = "show_status";
 export const STEP_SHOW_ERROR = "show_error";
 export const STEP_DONE = "done";
@@ -19,11 +23,14 @@ export const FLOW_SAVE = "save";
 export const FLOW_SAVE_AS = "save_as";
 export const FLOW_AUTOSAVE = "autosave";
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
+export const FLOW_STARTUP = "startup";
 
 const FLOW_LANE = Symbol("flowLane");
 const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
 const FLOW_FAILED_MSG = "flow failed";
 export const SAVE_FAILED_MSG = "save failed";
+const READ_FAILED_MSG = "read failed";
+const GENERATE_FAILED_MSG = "generation failed";
 
 /**
  * Normalize a handler's write outcome to the wasm `wrote` input.
@@ -33,6 +40,25 @@ function wroteInput(result, name) {
   if (result?.ok === true) return { input: "wrote", ok: true, name: result.name ?? name };
   if (result?.cancelled === true) return { input: "wrote", ok: false, cancelled: true };
   return { input: "wrote", ok: false, error: result?.error ?? SAVE_FAILED_MSG };
+}
+
+/**
+ * Normalize a handler's generate outcome to the wasm `generated` input.
+ * @param {{ ok?: boolean, line?: string, cancelled?: boolean, error?: string }} result
+ */
+function generatedInput(result) {
+  if (result?.ok === true && typeof result.line === "string") return { input: "generated", ok: true, line: result.line };
+  if (result?.cancelled === true) return { input: "generated", ok: false, cancelled: true };
+  return { input: "generated", ok: false, error: result?.error ?? GENERATE_FAILED_MSG };
+}
+
+/** Run a handler, turning a throw into a failed result. */
+async function settle(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
 }
 
 /**
@@ -91,13 +117,31 @@ async function stepThrough(game, start, handlers) {
         step = game.flowNext({ input: "answered", yes: (await handlers.ask(step)) === true });
         break;
       case STEP_WRITE: {
-        let result;
-        try {
-          result = await handlers.write(step.name);
-        } catch (err) {
-          result = { ok: false, error: err?.message ?? String(err) };
-        }
-        step = game.flowNext(wroteInput(result, step.name));
+        const name = step.name;
+        step = game.flowNext(wroteInput(await settle(() => handlers.write(name)), name));
+        break;
+      }
+      case STEP_READ_FILE: {
+        const path = step.path;
+        const read = await settle(() => handlers.readFile(path));
+        step = read?.ok === true
+          ? game.flowFileRead(read.bytes)
+          : game.flowNext({ input: "file_read", ok: false, error: read?.error ?? READ_FAILED_MSG });
+        break;
+      }
+      case STEP_SHOW_GAME:
+        await handlers.showGame(step);
+        step = game.flowNext({ input: "ack" });
+        break;
+      case STEP_GENERATE: {
+        const difficulty = step.difficulty;
+        step = game.flowNext(generatedInput(await settle(() => handlers.generate(difficulty))));
+        break;
+      }
+      case STEP_FORGET_CURRENT_FILE: {
+        const forget = { path: step.path, delete: step.delete === true };
+        await settle(() => handlers.forgetCurrentFile(forget));
+        step = game.flowNext({ input: "ack" });
         break;
       }
       case STEP_SHOW_STATUS:

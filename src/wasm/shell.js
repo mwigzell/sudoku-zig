@@ -4,8 +4,15 @@
 import { runWithGeneratingDialog } from "./generating.js";
 import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
-import { applyWebStartupAction } from "./startup_contract.js";
-import { askWithDialog, FLOW_AUTOSAVE, FLOW_AUTOSAVE_FLUSH, runFlow, SAVE_FAILED_MSG, STEP_DONE } from "./step_runner.js";
+import {
+  askWithDialog,
+  FLOW_AUTOSAVE,
+  FLOW_AUTOSAVE_FLUSH,
+  FLOW_STARTUP,
+  runFlow,
+  SAVE_FAILED_MSG,
+  STEP_DONE,
+} from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 
@@ -45,6 +52,7 @@ const CURRENT_FILE_PATH = "./current-file";
 const CURRENT_FILE_EXISTS_PATH = "./current-file-exists";
 const FILENAME_HEADER = "X-Sudoku-Filename";
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
+const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
 const CLIENT_LOG_PATH = "./client-log";
 const DEFAULT_CLIENT_LOG_LEVEL = "info";
 const CLIENT_LOG_LEVEL_STATE = "__SUDOKU_CLIENT_LOG_LEVEL";
@@ -401,11 +409,8 @@ export function assertHostStartupConfig(config, label = "host-config") {
   if (config.default_save_filename === undefined) {
     throw new Error(`${label}: missing default_save_filename`);
   }
-  if (typeof config.startup_context_event !== "string" || config.startup_context_event.length === 0) {
-    throw new Error(`${label}: missing startup_context_event`);
-  }
-  if (config.startup_status === undefined) {
-    throw new Error(`${label}: missing startup_status`);
+  if (config.startup_save_path === undefined) {
+    throw new Error(`${label}: missing startup_save_path`);
   }
 }
 
@@ -415,11 +420,19 @@ export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
   return res.json();
 }
 
-/** Startup restore fetch adapter: host path -> bytes or normalized restore error. */
+/** Read the host's current file for a startup `read_file` step. */
 async function fetchStartupSaveBytes(path, fetchFn = globalThis.fetch) {
   const res = await fetchFn(path);
-  if (!res.ok) return { ok: false, error: `startup restore fetch failed: ${res.status}` };
+  if (!res.ok) return { ok: false, error: `fetch failed: ${res.status}` };
   return { ok: true, bytes: new Uint8Array(await res.arrayBuffer()) };
+}
+
+/** Stop the host restoring its current file at startup; `deleteFile` removes the file too. */
+export async function forgetHostCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
+  const headers = {};
+  if (deleteFile === true) headers[DELETE_FILE_HEADER] = "true";
+  const res = await fetchFn(CURRENT_FILE_PATH, { method: "DELETE", headers });
+  if (!res.ok) throw new Error(`current-file forget failed: ${res.status}`);
 }
 
 /** Bridge host config JSON to wasm bootstrap wire names and booleans. */
@@ -577,29 +590,22 @@ export function wireFinalSnapshotOnPageHide(
   return () => win.removeEventListener?.("pagehide", onPageHide);
 }
 
-/** Normalize boot outcome into the canonical web session shape. */
-export function createWebSessionFromStartup(ready) {
+/** The web session before startup has shown a game: the engine's idle board, no bound file. */
+export function createWebSessionFromStartup(boot) {
   for (const key of REQUIRED_STARTUP_READY_KEYS) {
-    if (ready?.[key] === undefined) {
-      throw new Error(`startup ready payload: missing ${key}`);
+    if (boot?.[key] === undefined) {
+      throw new Error(`startup boot payload: missing ${key}`);
     }
   }
   return {
-    state: ready.state,
-    legend: ready.legend,
-    config: ready.config,
-    default_save_filename: ready.default_save_filename,
-    boundFilename: ready.kind === "restore" ? ready.default_save_filename : null,
+    state: boot.state,
+    legend: boot.legend,
+    config: boot.config,
+    default_save_filename: boot.default_save_filename,
+    boundFilename: null,
     boundSnapshotWriter: null,
     boundTargetExists: null,
   };
-}
-
-/** Record the startup write-context event; a restored game continues its file. */
-/** @param {GameApi} game */
-export function recordStartupFileSession(game, ready) {
-  const name = ready.kind === "restore" ? ready.default_save_filename : null;
-  return recordFileSessionEvent(game, ready.startup_context_event, name);
 }
 
 /** Canonical load/import/paste outcome path: bind session, record the event in core, apply outcome+status. */
@@ -679,46 +685,52 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
   // Phase 3: return canonical boot/session shape for page entry wiring.
   return {
     ok: true,
-    kind: "empty",
     state: game.getState(),
     legend: game.getLegend(),
     config: game.getConfig(),
     msg: boot.msg ?? null,
     default_save_filename: hostCfg.default_save_filename,
-    startup_action: hostCfg.startup_action ?? "idle",
-    startup_context_event: hostCfg.startup_context_event,
-    on_restore_solved: hostCfg.on_restore_solved ?? "prompt",
-    startup_status: hostCfg.startup_status ?? null,
     startup_save_path: hostCfg.startup_save_path ?? null,
   };
 }
 
-/** Applies host startup policy: restore/new/idle on the host-resolved startup contract. */
-/** @param {GameApi} game */
-export async function offerInitialNewGame(
+/**
+ * Platform work for the core startup flow. `showGame` redraws the view after the session
+ * takes the engine's new state; `showError` presents the flow's closing error.
+ * @param {GameApi} game
+ */
+export function startupHandlers(
   game,
-  boot,
-  generatingModal,
-  { genWorker, fetchFn } = {},
+  session,
+  { fetchFn = globalThis.fetch, win = globalThis, generatingModal, genWorker, showGame, showError } = {},
 ) {
-  // Phase 4: apply startup action contract (`restore`/`new`/`idle`) and return normalized outcome.
-  return applyWebStartupAction(game, boot, {
-    fetchStartupSaveBytes: (restorePath) => fetchStartupSaveBytes(restorePath, fetchFn),
-    openFromSaveBytes: (bytes, _restorePath) =>
-      typeof game.restore === "function" ? game.restore(bytes) : open(game, bytes),
-    startNewGame: async (cfg, startupOptions = {}) => {
-      const { difficulty, log_level: logLevel } = cfg;
-      if (difficulty == null || logLevel == null) {
-        return { ok: false, error: "missing engine config after host bootstrap", kind: "empty" };
-      }
-      return newGameWithGeneratingModal(game, generatingModal, {
-        difficulty,
-        logLevel,
-        genWorker,
-        ...(startupOptions ?? {}),
-      });
+  return {
+    readFile: (path) => fetchStartupSaveBytes(path, fetchFn),
+    showGame: (step) => {
+      session.boundFilename = step.file ?? null;
+      applySessionOutcome(session, { state: game.getState(), legend: game.getLegend(), config: game.getConfig() });
+      showGame?.(step);
     },
-  });
+    ask: (step) => askWithDialog(step, win),
+    generate: (difficulty) =>
+      newGameWithGeneratingModal(game, generatingModal, { difficulty, genWorker, applyLine: generatedLineOnly }),
+    forgetCurrentFile: (forget) => forgetHostCurrentFile(forget.delete, fetchFn),
+    showError,
+  };
+}
+
+/** Run the core startup flow on the host's current file (if any). */
+/** @param {GameApi} game */
+export function runStartupFlow(game, boot, handlers) {
+  const start = boot.startup_save_path
+    ? { flow: FLOW_STARTUP, path: boot.startup_save_path, name: boot.default_save_filename }
+    : { flow: FLOW_STARTUP };
+  return runFlow(game, start, handlers);
+}
+
+/** Generation result for core to import itself (the startup flow owns the new game). */
+function generatedLineOnly(_game, line) {
+  return { ok: true, line };
 }
 
 /** Resolve effective difficulty/log level for generation from call options or live engine config. */
@@ -735,7 +747,14 @@ function genWireFromEngine(game, options) {
 export async function newGameWithWorkerGen(
   game,
   modal,
-  { difficulty, logLevel, genWorker, onGenProgress, onProgressWire, autoContinue = false } = {},
+  {
+    difficulty,
+    logLevel,
+    genWorker,
+    onGenProgress,
+    onProgressWire,
+    applyLine = applyGeneratedLineAsNewGame,
+  } = {},
 ) {
   const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
@@ -752,8 +771,8 @@ export async function newGameWithWorkerGen(
     cancelRef.fn = cancel;
     const gen = await promise;
     if (gen.cancelled || !gen.ok) return gen;
-    return applyGeneratedLineAsNewGame(game, gen.line, { difficulty: wire.difficulty });
-  }, { autoContinue });
+    return applyLine(game, gen.line, { difficulty: wire.difficulty });
+  });
 }
 
 /** Main-thread `generatePuzzle` + import (modal spinner; blocks main thread). */
@@ -761,7 +780,13 @@ export async function newGameWithWorkerGen(
 export async function newGameWithSyncGenerate(
   game,
   modal,
-  { difficulty, logLevel, onGenProgress, onProgressWire, autoContinue = false } = {},
+  {
+    difficulty,
+    logLevel,
+    onGenProgress,
+    onProgressWire,
+    applyLine = applyGeneratedLineAsNewGame,
+  } = {},
 ) {
   const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
@@ -777,11 +802,11 @@ export async function newGameWithSyncGenerate(
         if (gen.error === "cancelled") return { ok: false, cancelled: true };
         return gen;
       }
-      return applyGeneratedLineAsNewGame(game, gen.line, { difficulty: wire.difficulty });
+      return applyLine(game, gen.line, { difficulty: wire.difficulty });
     } finally {
       game.setGenProgressListener?.(null);
     }
-  }, { autoContinue });
+  });
 }
 
 function shouldFallbackFromWorker(result) {
@@ -794,25 +819,23 @@ function shouldFallbackFromWorker(result) {
 /** First load / New: prefer worker gen; fall back to main-thread generate or legacy `init`. */
 /** @param {GameApi} game */
 export async function newGameWithGeneratingModal(game, modal, options = {}) {
-  const { genWorker, onGenProgress, autoContinue = false } = options;
+  const { genWorker, onGenProgress, applyLine } = options;
   const wire = genWireFromEngine(game, options);
   const rowSink =
     typeof modal?.renderProgressRows === "function" ? createGenProgressModalSink(modal) : null;
   const onProgressWire = rowSink ? (phase, a, b) => rowSink.push(phase, a, b) : undefined;
-  const genProgress = { onGenProgress, onProgressWire };
+  const genProgress = { onGenProgress, onProgressWire, ...(applyLine ? { applyLine } : {}) };
   if (genWorker && canUseGenWorker()) {
     const workerResult = await newGameWithWorkerGen(game, modal, {
       difficulty: wire.difficulty,
       logLevel: wire.logLevel,
       genWorker,
-      autoContinue,
       ...genProgress,
     });
     if (!shouldFallbackFromWorker(workerResult)) return workerResult;
     return newGameWithSyncGenerate(game, modal, {
       difficulty: wire.difficulty,
       logLevel: wire.logLevel,
-      autoContinue,
       ...genProgress,
     });
   }
@@ -820,14 +843,11 @@ export async function newGameWithGeneratingModal(game, modal, options = {}) {
     return newGameWithSyncGenerate(game, modal, {
       difficulty: wire.difficulty,
       logLevel: wire.logLevel,
-      autoContinue,
       ...genProgress,
     });
   }
-  return runWithGeneratingDialog(
-    modal,
-    () => Promise.resolve(newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel })),
-    { autoContinue },
+  return runWithGeneratingDialog(modal, () =>
+    Promise.resolve(newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel })),
   );
 }
 

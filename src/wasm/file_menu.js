@@ -592,10 +592,10 @@ export function wireFileMenu(
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
 
   // Phase B: open New difficulty chooser (generation starts only after a pick).
-  const openNewGameDialog = ({ preserveStatus = false } = {}) => {
+  const openNewGameDialog = () => {
     if (!session.legend.new) return;
     menuBar.closeAll?.();
-    if (!preserveStatus) clearEventStatus(statusEl);
+    clearEventStatus(statusEl);
     newDialog.open();
   };
   controls.new?.addEventListener("click", openNewGameDialog);
@@ -694,7 +694,4 @@ export function wireFileMenu(
   });
 
   syncCurrentFileLabels(session);
-  return {
-    openNewGameDialog,
-  };
 }

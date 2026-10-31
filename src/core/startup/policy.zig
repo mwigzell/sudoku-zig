@@ -1,16 +1,10 @@
 const std = @import("std");
 
-/// Shared startup policy decision seam: both native and web evaluate the same
-/// flags/capabilities and then execute the chosen action in platform adapters.
+/// Startup decision seam: the startup flow evaluates it once per launch on every platform.
 pub const Action = enum {
     restore,
     new,
     idle,
-};
-
-/// Policy branch to apply when restore succeeds onto a solved board.
-pub const RestoreSolved = enum {
-    prompt,
 };
 
 /// Inputs required to evaluate startup behavior deterministically across
@@ -21,11 +15,9 @@ pub const Input = struct {
     has_current_file: bool,
 };
 
-/// Shared policy result: selected startup action plus any capability warning
-/// the adapter should surface to the user.
+/// The startup action the flow carries out.
 pub const Decision = struct {
     action: Action,
-    restore_solved: RestoreSolved = .prompt,
 };
 
 /// Idle startup status shown by all frontends when startup policy selects
@@ -36,33 +28,17 @@ pub const IDLE_STARTUP_STATUS: []const u8 = "Welcome to sudoku-zig! Choose New o
 /// restore (when requested + possible) -> new (when requested) -> idle.
 pub fn evaluate(input: Input) Decision {
     if (input.auto_restore and input.has_current_file) {
-        return .{ .action = .restore, .restore_solved = .prompt };
+        return .{ .action = .restore };
     }
-    if (input.auto_new) return .{ .action = .new, .restore_solved = .prompt };
-    return .{ .action = .idle, .restore_solved = .prompt };
+    if (input.auto_new) return .{ .action = .new };
+    return .{ .action = .idle };
 }
 
-/// Wire name for solved-restore policy branch.
-pub fn restoreSolvedName(policy: RestoreSolved) []const u8 {
-    return switch (policy) {
-        .prompt => "prompt",
-    };
-}
-
-/// Native question when restore lands on a solved board.
+/// Question when restore lands on a solved board.
 pub const RESTORE_SOLVED_TITLE: []const u8 = "Puzzle solved";
 pub const RESTORE_SOLVED_PROMPT: []const u8 = "The restored puzzle is already solved. Do you want to start a new game?";
 pub const RESTORE_SOLVED_OK_LABEL: []const u8 = "New game";
 pub const RESTORE_SOLVED_CANCEL_LABEL: []const u8 = "Keep";
-
-/// Shared startup-status message for the selected action.
-/// Restore/new are surfaced by command events; idle gets an explicit startup line.
-pub fn statusForAction(action: Action) ?[]const u8 {
-    return switch (action) {
-        .idle => IDLE_STARTUP_STATUS,
-        .restore, .new => null,
-    };
-}
 
 test "evaluate chooses restore when restore is enabled and path exists" {
     const d = evaluate(.{
@@ -89,20 +65,4 @@ test "evaluate chooses idle when restore is requested but no file exists and aut
         .has_current_file = false,
     });
     try std.testing.expectEqual(Action.idle, d.action);
-}
-
-test "statusForAction returns idle startup status only for idle action" {
-    try std.testing.expectEqualStrings(IDLE_STARTUP_STATUS, statusForAction(.idle).?);
-    try std.testing.expect(statusForAction(.restore) == null);
-    try std.testing.expect(statusForAction(.new) == null);
-}
-
-test "evaluate defaults restore_solved policy to prompt" {
-    const restore = evaluate(.{
-        .auto_restore = true,
-        .auto_new = true,
-        .has_current_file = true,
-    });
-    try std.testing.expectEqual(RestoreSolved.prompt, restore.restore_solved);
-    try std.testing.expectEqualStrings("prompt", restoreSolvedName(restore.restore_solved));
 }

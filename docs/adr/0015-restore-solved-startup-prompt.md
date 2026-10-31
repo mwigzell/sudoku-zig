@@ -1,6 +1,6 @@
 # ADR-0015 — Restore-solved startup prompt policy
 
-Status: proposed
+Status: accepted (amended: the question is a core `ask` step, not the New Game dialog)
 Date: 2026-10-24
 
 ## Context
@@ -23,13 +23,14 @@ Add an explicit solved-restore branch in shared startup policy:
 Meaning:
 
 - if startup action resolves to `restore` and restored board is solved,
-- launch the same New Game dialog used by normal New flow,
-- **confirm** => start a new game,
-- **cancel** => keep restored solved board and restored status.
+- the startup flow asks "Puzzle solved" (New game / Keep) on every platform,
+- **New game** => generate at the saved difficulty,
+- **Keep** => keep restored solved board and restored status.
 
 ## Consequences
 
-- Maintains core policy centralization: adapters execute the branch, they do not invent behavior.
+- Maintains core policy centralization: adapters only show the question, they do not invent behavior.
+- Web loses the difficulty picker on this path; the saved difficulty is used.
 - Preserves restore continuity when user cancels.
 - Provides forward-compatible seam if future options are needed (`stay`, `auto_new`, `prompt`).
 

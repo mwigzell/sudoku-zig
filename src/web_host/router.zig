@@ -11,7 +11,6 @@ pub const RouteResult = enum {
     app_boot,
     app_wire,
     shell,
-    startup_web,
     board,
     menu,
     menu_bar,
@@ -61,7 +60,6 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/app_boot.js")) return .app_boot;
         if (std.mem.eql(u8, path, "/app_wire.js")) return .app_wire;
         if (std.mem.eql(u8, path, "/shell.js")) return .shell;
-        if (std.mem.eql(u8, path, "/startup_contract.js")) return .startup_web;
         if (std.mem.eql(u8, path, "/board.js")) return .board;
         if (std.mem.eql(u8, path, "/menu.js")) return .menu;
         if (std.mem.eql(u8, path, "/menu_bar.js")) return .menu_bar;
@@ -110,7 +108,6 @@ pub const Router = struct {
             .app_boot => embed.app_boot_js,
             .app_wire => embed.app_wire_js,
             .shell => embed.shell_js,
-            .startup_web => embed.startup_web_js,
             .board => embed.board_js,
             .menu => embed.menu_js,
             .menu_bar => embed.menu_bar_js,
@@ -144,7 +141,7 @@ pub const Router = struct {
             .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
-            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .shell, .startup_web, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
+            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
         };
     }
 };

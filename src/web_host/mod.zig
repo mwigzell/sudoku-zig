@@ -56,7 +56,7 @@ const Session = struct {
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
         const startup_name = startupFilename(self.current_file);
-        return startup_config.formatHostStartupJsonWithPolicy(self.host_config, self.has_current_file, startup_name, &self.host_config_body_buf) catch return ServeError.System;
+        return startup_config.formatHostStartupJsonWithCurrentFile(self.host_config, self.has_current_file, startup_name, &self.host_config_body_buf) catch return ServeError.System;
     }
 };
 
@@ -65,6 +65,8 @@ const FILENAME_HEADER = "X-Sudoku-Filename";
 /// Set when the user's own file was written elsewhere (picker, file handle, Android bridge):
 /// the host copy is only the restore copy and lives in the hidden data dir.
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
+/// On `DELETE /current-file`: also delete the file itself, not just the restore pointer.
+const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
 const CURRENT_FILE_PATH = "/current-file";
 const CURRENT_FILE_EXISTS_PATH = "/current-file-exists";
 
@@ -274,6 +276,22 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
     log.info("current-file write: bytes={d} target={s} restore_copy={any}", .{ body.len, target.path, target.restore_copy });
 }
 
+/// Stop restoring the current file at startup; with `delete_file`, remove it from disk too.
+fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) ServeError!void {
+    const current = session.current_file orelse return;
+    if (delete_file) std.Io.Dir.cwd().deleteFile(io, current) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return ServeError.System,
+    };
+    if (session.data_dir.len != 0 and !std.mem.eql(u8, session.data_dir, ".")) {
+        settings_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, null) catch return ServeError.System;
+    }
+    log.info("current-file forget: path={s} deleted={any}", .{ current, delete_file });
+    std.heap.page_allocator.free(current);
+    session.current_file = null;
+    session.has_current_file = false;
+}
+
 var shutdown_requested = std.atomic.Value(bool).init(false);
 var listener_guard: std.Io.Mutex = .init;
 var active_listener: ?*net.Server = null;
@@ -456,6 +474,11 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         const body = requestBody(request) orelse return ServeError.System;
         try applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER));
+        try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
+        return;
+    }
+    if (std.mem.eql(u8, method, "DELETE") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
+        try applyCurrentFileForget(io, session, headerFlag(request, DELETE_FILE_HEADER));
         try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
         return;
     }
@@ -661,7 +684,6 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/app_boot.js", .expected = .app_boot },
         .{ .path = "/app_wire.js", .expected = .app_wire },
         .{ .path = "/shell.js", .expected = .shell },
-        .{ .path = "/startup_contract.js", .expected = .startup_web },
         .{ .path = "/board.js", .expected = .board },
         .{ .path = "/menu.js", .expected = .menu },
         .{ .path = "/menu_bar.js", .expected = .menu_bar },
@@ -865,6 +887,44 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     ) catch return error.TestFailed;
     defer std.testing.allocator.free(bytes);
     try std.testing.expectEqualSlices(u8, body, bytes);
+}
+
+fn forgetScenario(delete_file: bool) !void {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    var session = Session{
+        .host_config = config.Config.default(),
+        .data_dir = data_path,
+        .visible_save_dir = data_path,
+        .has_current_file = false,
+        .current_file = null,
+        .host_config_body_buf = undefined,
+    };
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+    try applyCurrentFilePost(io, &session, "broken", null, false);
+    const written = try std.testing.allocator.dupe(u8, session.current_file.?);
+    defer std.testing.allocator.free(written);
+
+    try applyCurrentFileForget(io, &session, delete_file);
+
+    try std.testing.expect(session.current_file == null);
+    try std.testing.expect(!session.has_current_file);
+    const pointer = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (pointer) |p| std.testing.allocator.free(p);
+    try std.testing.expect(pointer == null);
+    const still_there = if (std.Io.Dir.cwd().statFile(io, written, .{})) |_| true else |_| false;
+    try std.testing.expectEqual(!delete_file, still_there);
+}
+
+test "current-file DELETE forgets the pointer and deletes the file when asked" {
+    try forgetScenario(true);
+}
+
+test "current-file DELETE without the delete flag forgets the pointer and keeps the file" {
+    try forgetScenario(false);
 }
 
 test "current-file POST with no working file writes the visible save folder and makes it the working file" {
@@ -1171,7 +1231,6 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     r.markDelivered(.shell);
     try std.testing.expect(!r.allDelivered());
 
-    r.markDelivered(.startup_web);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.board);

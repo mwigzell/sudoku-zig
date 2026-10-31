@@ -54,13 +54,6 @@ pub const Sudoku = struct {
     /// How a flow's `write` step is carried out: Save records its status in the game, autosave does not.
     const WriteMode = enum { save, autosave };
 
-    pub const StartupPolicyResult = struct {
-        attempted_restore: bool,
-        restore_failed: bool,
-        rendered: bool,
-        startup_status: ?[]const u8 = null,
-    };
-
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
     pub fn init(
@@ -158,11 +151,38 @@ pub const Sudoku = struct {
         return scratch[0..len];
     }
 
+    /// Carry out a `read_file` step; on success the bytes are owned by the caller.
+    fn readFile(self: *@This(), path: []const u8, scratch: []u8) flow_mod.step.FileRead {
+        var stage: read_path.Stage = .resolve;
+        const read = read_path.readFileBytes(self.transport, path, &stage) catch |err| {
+            const label: []const u8 = switch (stage) {
+                .resolve => "resolve",
+                .read => "readAll",
+            };
+            return .{ .failed = std.fmt.bufPrint(scratch, "{s}: {s}", .{ label, @errorName(err) }) catch "system error" };
+        };
+        self.transport.free(self.transport.context, read.resolved);
+        return .{ .bytes = read.bytes };
+    }
+
+    /// Carry out a `forget_current_file` step: stop restoring it, and delete it when asked.
+    fn forgetCurrentFile(self: *@This(), forget: flow_mod.step.ForgetCurrentFile) void {
+        const sp = self.settings_persist orelse return;
+        if (forget.delete) delete: {
+            const resolved = self.transport.resolve(self.transport.context, forget.path) catch break :delete;
+            defer self.transport.free(self.transport.context, resolved);
+            std.Io.Dir.deleteFileAbsolute(sp.io, resolved) catch {};
+        }
+        self.persistCurrentFile(null);
+    }
+
     /// Drive `self.flow` to its terminal step, carrying out each step on this platform.
     fn runFlow(self: *@This(), mode: WriteMode) Error!flow_mod.Step {
         var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
         var step = self.flow.next(.start);
         while (!flow_mod.isTerminal(step)) {
+            var read_bytes: ?[]u8 = null;
+            defer if (read_bytes) |b| self.transport.free(self.transport.context, b);
             const input: flow_mod.Input = switch (step) {
                 .resolve_default_target => blk: {
                     const default_visible = self.defaultVisibleSavePath();
@@ -172,6 +192,20 @@ pub const Sudoku = struct {
                 .check_target => |name| .{ .target_checked = self.pathExists(name) },
                 .ask => |question| .{ .answered = try self.renderer.ask(question) },
                 .write => |name| .{ .wrote = self.writeTarget(mode, name, &scratch) },
+                .read_file => |path| blk: {
+                    const read = self.readFile(path, &scratch);
+                    if (read == .bytes) read_bytes = @constCast(read.bytes);
+                    break :blk .{ .file_read = read };
+                },
+                .show_game => |game| blk: {
+                    try self.showGameWithStatus(game.status);
+                    break :blk .ack;
+                },
+                .generate => |difficulty| .{ .generated = .{ .line = puzzle_gen.PuzzleGen.generate(difficulty) } },
+                .forget_current_file => |forget| blk: {
+                    self.forgetCurrentFile(forget);
+                    break :blk .ack;
+                },
                 .show_status, .show_error, .done => unreachable,
             };
             step = self.flow.next(input);
@@ -324,69 +358,21 @@ pub const Sudoku = struct {
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
-    /// Startup restore path: load bytes through transport, then hydrate engine
-    /// without an "opened:" status prefix so persisted durable status remains authoritative.
-    pub fn restoreFromPath(self: *@This(), file_path: []const u8) game_engine.Event {
-        var stage: read_path.Stage = .resolve;
-        const read = read_path.readFileBytes(self.transport, file_path, &stage) catch |err| {
-            var buf: [80]u8 = undefined;
-            const label: []const u8 = switch (stage) {
-                .resolve => "resolve",
-                .read => "readAll",
-            };
-            return game_engine.Event{ .error_msg = std.fmt.bufPrint(&buf, "{s}: {s}", .{ label, @errorName(err) }) catch "system error" };
-        };
-        defer self.transport.free(self.transport.context, read.resolved);
-        defer self.transport.free(self.transport.context, read.bytes);
-        return self.engine.restoreFromSave(read.bytes);
-    }
-
-    /// Startup action executor for native play; action selection is centralized
-    /// in `startup_policy.evaluate` so web/native share one decision contract.
-    pub fn runStartupPolicy(self: *@This(), current_file: ?[]const u8) Error!StartupPolicyResult {
-        const decision = startup_policy.evaluate(.{
-            .auto_restore = self.cfg.auto_restore,
-            .auto_new = self.cfg.auto_new,
-            .has_current_file = current_file != null,
-        });
-
-        if (decision.action == .restore) {
-            const event = self.restoreFromPath(current_file.?);
-            switch (event) {
-                .ok => {
-                    self.file_session.apply(.startup_restore);
-                    _ = try self.handleEvent(event);
-                    if (decision.restore_solved == .prompt and self.engine.state.board.isSolved()) {
-                        const start_new = try self.renderer.ask(.{
-                            .title = startup_policy.RESTORE_SOLVED_TITLE,
-                            .text = startup_policy.RESTORE_SOLVED_PROMPT,
-                            .ok_label = startup_policy.RESTORE_SOLVED_OK_LABEL,
-                            .cancel_label = startup_policy.RESTORE_SOLVED_CANCEL_LABEL,
-                        });
-                        if (start_new) {
-                            const new_event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
-                            self.file_session.apply(.startup_new);
-                            _ = try self.handleEvent(new_event);
-                        }
-                    }
-                    return .{ .attempted_restore = true, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
-                },
-                .error_msg => |msg| {
-                    try self.renderer.showError(msg);
-                    return .{ .attempted_restore = true, .restore_failed = true, .rendered = false, .startup_status = startup_policy.statusForAction(decision.action) };
-                },
-            }
+    /// Run the shared startup flow: restore `current_file`, start a new game, or show the idle board.
+    pub fn runStartupFlow(self: *@This(), current_file: ?[]const u8) Error!void {
+        const current: ?flow_mod.startup.CurrentFile = if (current_file) |path|
+            .{ .path = path, .name = std.fs.path.basename(path), .working = path }
+        else
+            null;
+        self.flow = .{ .startup = flow_mod.StartupFlow.init(&self.engine, &self.file_session, .{
+            .auto_restore = self.engine.cfg.auto_restore,
+            .auto_new = self.engine.cfg.auto_new,
+            .difficulty = self.engine.cfg.difficulty,
+        }, current) };
+        switch (try self.runFlow(.save)) {
+            .show_error => |msg| try self.renderer.showError(msg),
+            else => {},
         }
-
-        if (decision.action == .new) {
-            const event = self.engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.generate(self.cfg.difficulty));
-            self.file_session.apply(.startup_new);
-            _ = try self.handleEvent(event);
-            return .{ .attempted_restore = false, .restore_failed = false, .rendered = true, .startup_status = startup_policy.statusForAction(decision.action) };
-        }
-
-        self.file_session.apply(.startup_idle);
-        return .{ .attempted_restore = false, .restore_failed = false, .rendered = false, .startup_status = startup_policy.statusForAction(decision.action) };
     }
 
     /// Release the engine and native transport session state.
@@ -1561,14 +1547,13 @@ test "startup policy: auto_restore false and auto_new false keeps manual startup
     var expected_idle: [81]u8 = undefined;
     @memset(&expected_idle, '0');
     const before = export_command.currentPuzzleLine(&app.engine);
-    const startup = try app.runStartupPolicy(null);
+    try app.runStartupFlow(null);
     const after = export_command.currentPuzzleLine(&app.engine);
 
     try std.testing.expectEqualSlices(u8, &expected_idle, &before);
-    try std.testing.expect(!startup.attempted_restore);
-    try std.testing.expect(!startup.restore_failed);
-    try std.testing.expect(!startup.rendered);
     try std.testing.expectEqualSlices(u8, &before, &after);
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, startup_policy.IDLE_STARTUP_STATUS) != null);
 }
 
 test "showGameWithStatus forwards startup status to renderer" {
@@ -1603,8 +1588,7 @@ test "manual startup does not print generation progress when both auto flags are
     var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(std.testing.io), host.writer(), null);
     defer app.deinit();
 
-    const startup = try app.runStartupPolicy(null);
-    if (!startup.rendered) try app.showGame();
+    try app.runStartupFlow(null);
     while (true) if (try app.turn()) break;
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
@@ -1671,10 +1655,8 @@ test "startup policy: auto_restore true restores from current_file path" {
     defer app.deinit();
     _ = app.engine.exec(.{ .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.seven } });
 
-    const startup = try app.runStartupPolicy(tmp_path);
-    try std.testing.expect(startup.attempted_restore);
-    try std.testing.expect(!startup.restore_failed);
-    try std.testing.expect(startup.rendered);
+    try app.runStartupFlow(tmp_path);
+    try std.testing.expectEqualStrings(tmp_path, app.file_session.workingFile().?);
     try std.testing.expectEqual(saved_b2, app.engine.eventBoard().get(1, 1));
 }
 
@@ -1704,10 +1686,7 @@ test "startup policy: solved restore prompt cancel keeps restored solved board" 
     var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
     defer app.deinit();
 
-    const startup = try app.runStartupPolicy("/startup.sud");
-    try std.testing.expect(startup.attempted_restore);
-    try std.testing.expect(!startup.restore_failed);
-    try std.testing.expect(startup.rendered);
+    try app.runStartupFlow("/startup.sud");
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
     try std.testing.expect(app.engine.state.board.isSolved());
     try std.testing.expectEqual(file_policy.WriteContext.continuation, app.file_session.write_context);
@@ -1740,10 +1719,7 @@ test "startup policy: solved restore prompt confirm starts fresh game" {
     var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
     defer app.deinit();
 
-    const startup = try app.runStartupPolicy("/startup.sud");
-    try std.testing.expect(startup.attempted_restore);
-    try std.testing.expect(!startup.restore_failed);
-    try std.testing.expect(startup.rendered);
+    try app.runStartupFlow("/startup.sud");
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
     try std.testing.expect(!app.engine.state.board.isSolved());
     try std.testing.expectEqual(file_policy.WriteContext.detached, app.file_session.write_context);
@@ -1845,10 +1821,7 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expect(current != null);
 
-    const startup = try second_app.runStartupPolicy(current.?);
-    try std.testing.expect(startup.attempted_restore);
-    try std.testing.expect(!startup.restore_failed);
-    try std.testing.expect(startup.rendered);
+    try second_app.runStartupFlow(current.?);
 
     try std.testing.expect(board.equal(expected_board, second_app.engine.state.board));
     try std.testing.expectEqual(expected_history_pointer, second_app.engine.state.history.pointer);
@@ -2084,32 +2057,57 @@ test "paste flow parity fixture: successful paste resets history and invalid pas
     );
 }
 
-test "startup policy: restore failure blocks and does not auto-new fallback in same run" {
+fn restoreFailureScenario(delete: bool) !void {
     const test_defaults = @import("../../test/config_defaults.zig");
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_rel);
+    const tmp_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_rel, std.testing.allocator);
+    defer std.testing.allocator.free(tmp_abs_z);
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs_z[0 .. tmp_abs_z.len - 1]});
+    defer std.testing.allocator.free(data_path);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
+    const broken_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/broken.sud", .{data_path});
+    defer std.testing.allocator.free(broken_path);
+    const transport = file_transport.NativeTransport.make(io);
+    try transport.write(transport.context, broken_path, "not a save");
+    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, broken_path);
+
     var cfg = test_defaults.testConfigDefaults();
-    cfg.difficulty = .hard;
     cfg.auto_restore = true;
     cfg.auto_new = true;
-
-    const responses = [_][]const u8{"\n"};
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(std.testing.io), host.writer(), null);
+    var facade_impl = DeterministicFacade{
+        .steps = &[_]command.ParseCommandResult{},
+        .replace_answers = &[_]bool{delete},
+    };
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport, &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
     const before = export_command.currentPuzzleLine(&app.engine);
 
-    const startup = try app.runStartupPolicy("/tmp/missing_startup_restore_file.sud");
-    const after = export_command.currentPuzzleLine(&app.engine);
-    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try app.runStartupFlow(broken_path);
 
-    try std.testing.expect(startup.attempted_restore);
-    try std.testing.expect(startup.restore_failed);
-    try std.testing.expect(!startup.rendered);
+    const after = export_command.currentPuzzleLine(&app.engine);
     try std.testing.expectEqualSlices(u8, &before, &after);
-    try std.testing.expect(std.mem.indexOf(u8, output, "Press Enter to continue...") != null);
+    try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, facade_impl.last_render_msg.?);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+    try std.testing.expect(app.file_session.workingFile() == null);
+    const pointer = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (pointer) |p| std.testing.allocator.free(p);
+    try std.testing.expect(pointer == null);
+    const still_there = if (std.Io.Dir.cwd().statFile(io, broken_path, .{})) |_| true else |_| false;
+    try std.testing.expectEqual(!delete, still_there);
+}
+
+test "startup: restore failure shows the idle board, deletes the file on Delete and forgets it" {
+    try restoreFailureScenario(true);
+}
+
+test "startup: restore failure keeps the file on Keep but still forgets it" {
+    try restoreFailureScenario(false);
 }
 
 test "autosave: first autosave with no working file writes the visible save folder and makes it the working file" {

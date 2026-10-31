@@ -206,6 +206,7 @@ fn pushCellEntry(history: *mutation_history.MutationHistory, coords: u8, values:
 
 /// Deserialize from a toSaveFormat blob into a fresh State.
 pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) !state_mod.State {
+    if (buf.len < SAVE_HEADER_SIZE) return error.InvalidSaveFile;
     const header = readSaveHeader(buf[0..SAVE_HEADER_SIZE]);
     if (!std.mem.eql(u8, &header.magic, "SUD0")) {
         return error.InvalidSaveFile;

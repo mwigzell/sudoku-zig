@@ -6,7 +6,6 @@ const host_mod = @import("host.zig");
 const sudoku = @import("shell/shell.zig");
 const file_transport = @import("shell/file_transport.zig");
 const settings_store = @import("../core/settings_store.zig");
-const input_source = @import("input_source.zig");
 const shell_path = @import("shell/path.zig");
 
 const log = logger.Logger(.sudoku);
@@ -47,34 +46,8 @@ pub fn run(io: std.Io, gpa: std.mem.Allocator, cfg: config.Config, data_dir: []c
         null;
     defer if (current_file) |path| gpa.free(path);
 
-    const startup = try game.runStartupPolicy(current_file);
-    if (startup.restore_failed) {
-        // Restore errors are blocking for this run; after acknowledgement,
-        // allow explicit cleanup and clear the pointer to avoid repeat failures.
-        if (current_file) |failed_path| {
-            maybeDeleteFailedRestoreFile(io, host.writer(), &game, failed_path);
-        }
-        if (settings_persist) |sp| {
-            settings_store.setCurrentFile(gpa, sp.io, sp.data_dir, null) catch {};
-        }
-    }
-
-    if (!startup.rendered) try game.showGameWithStatus(startup.startup_status);
+    try game.runStartupFlow(current_file);
     while (true) if (try game.turn()) break;
 
     log.debug("Ending sudoku game.", .{});
-}
-
-fn maybeDeleteFailedRestoreFile(io: std.Io, out: *std.Io.Writer, game: *sudoku.Sudoku, file_path: []const u8) void {
-    out.print("restore failed for '{s}'. delete this file? [y/N]: ", .{file_path}) catch return;
-    var prompt = input_source.StdinSource.initStdin(std.heap.page_allocator, io);
-    const line = prompt.readLine() catch return;
-    defer std.heap.page_allocator.free(line);
-
-    if (line.len == 0) return;
-    if (!(line[0] == 'y' or line[0] == 'Y')) return;
-
-    const resolved = game.transport.resolve(game.transport.context, file_path) catch return;
-    defer game.transport.free(game.transport.context, resolved);
-    std.Io.Dir.deleteFileAbsolute(io, resolved) catch {};
 }

@@ -2,12 +2,10 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { applyWebStartupAction } from "./startup_contract.js";
 import {
   CURRENT_FILE_DESKTOP_ID,
   persistCurrentFileBytes,
   hostCurrentFileExists,
-  recordStartupFileSession,
   startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
   WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
@@ -15,7 +13,8 @@ import {
   applySessionOutcomeStatus,
   hostViewPrefsForPersist,
   initializeWebSession,
-  offerInitialNewGame,
+  runStartupFlow,
+  startupHandlers,
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
   importPuzzle,
@@ -31,7 +30,7 @@ import {
   setClientLogLevel,
   CURRENT_FILE_UNSAVED_LABEL,
 } from "./shell.js";
-import { hostFetch, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
 import { wireGeneratingModal } from "./generating.js";
 
 const AUTOSAVE_RESTORE_PARITY_FIXTURE = JSON.parse(
@@ -352,7 +351,6 @@ async function flushDialogPaint() {
 
 {
   const ready = {
-    kind: "empty",
     state: { cells: [] },
     legend: { new: true },
     config: { auto_save: true },
@@ -365,21 +363,8 @@ async function flushDialogPaint() {
 }
 
 {
-  const ready = {
-    kind: "restore",
-    state: { cells: [] },
-    legend: {},
-    config: {},
-    default_save_filename: "sudoku.sud",
-  };
-  const session = createWebSessionFromStartup(ready);
-  assert.equal(session.boundFilename, "sudoku.sud");
-}
-
-{
   for (const key of REQUIRED_STARTUP_READY_KEYS) {
     const ready = {
-      kind: "empty",
       state: { cells: [] },
       legend: {},
       config: {},
@@ -404,22 +389,6 @@ function makePageHideWin() {
       if (listeners.get(name) === fn) listeners.delete(name);
     },
   };
-}
-
-// Startup forwards the host's event to core; a restored game continues the default file.
-{
-  const recorded = [];
-  const game = {
-    fileSessionEvent(event, name) {
-      recorded.push([event, name]);
-      return { ok: true };
-    },
-  };
-  const restoreEvent = Symbol("restore event");
-  const idleEvent = Symbol("idle event");
-  recordStartupFileSession(game, { kind: "restore", startup_context_event: restoreEvent, default_save_filename: "autosave.sud" });
-  recordStartupFileSession(game, { kind: "empty", startup_context_event: idleEvent, default_save_filename: "sudoku.sud" });
-  assert.deepEqual(recorded, [[restoreEvent, "autosave.sud"], [idleEvent, null]]);
 }
 
 // Pagehide while continuing a file: one keepalive host write.
@@ -600,10 +569,7 @@ function makePageHideWin() {
     auto_new: false,
     auto_save: false,
     default_save_filename: "sudoku_save.sud",
-    startup_action: "new",
-    startup_context_event: "startup_new",
-    on_restore_solved: "prompt",
-    startup_status: null,
+    startup_save_path: "/current-file",
   };
   const game = {
     bootstrapHostConfig(cfg) {
@@ -645,10 +611,9 @@ function makePageHideWin() {
     fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
   });
   assert.equal(out.ok, true);
-  assert.equal(out.kind, "empty");
   assert.equal(out.config.difficulty, 2);
-  assert.equal(out.startup_action, "new");
-  assert.equal(out.startup_context_event, "startup_new");
+  assert.equal(out.startup_save_path, "/current-file");
+  assert.equal(out.default_save_filename, "sudoku_save.sud");
 }
 
 {
@@ -662,10 +627,7 @@ function makePageHideWin() {
     auto_new: false,
     auto_save: false,
     default_save_filename: "sudoku_save.sud",
-    startup_action: "idle",
-    startup_context_event: "startup_idle",
-    on_restore_solved: "prompt",
-    startup_status: "Welcome to sudoku-zig! Choose New or Open to play",
+    startup_save_path: null,
   };
   const game = {
     bootstrapHostConfig() {
@@ -685,227 +647,212 @@ function makePageHideWin() {
     fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
   });
   assert.equal(out.ok, true);
-  assert.equal(out.kind, "empty");
-  assert.equal(out.startup_action, "idle");
-  assert.equal(out.startup_context_event, "startup_idle");
-  assert.equal(out.startup_status, "Welcome to sudoku-zig! Choose New or Open to play");
+  assert.equal(out.startup_save_path, null);
 }
 
-// ── offerInitialNewGame: action=new runs generation; action=idle remains manual ──
-{
-  const manual = await offerInitialNewGame(
-    {},
-    {
-      ok: true,
-      kind: "empty",
-      startup_action: "idle",
-      startup_context_event: "startup_idle",
-      state: {},
-      legend: {},
-      config: {},
-      startup_status: "Welcome to sudoku-zig! Choose New or Open to play",
-    },
-    null,
-  );
-  assert.equal(manual.kind, "empty");
-  assert.equal(manual.msg, "Welcome to sudoku-zig! Choose New or Open to play");
+// ── startup flow: core decides restore / new / idle; the web only fetches, draws and asks ──
+const SOLVED_LINE = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+const OPEN_LINE = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+const WELCOME_STATUS = "Welcome to sudoku-zig! Choose New or Open to play";
+const HOST_CURRENT_FILE = "/current-file";
+
+/** Bytes of a saved game holding `line`. */
+async function savedGameBytes(line) {
+  const source = await loadGame();
+  assert.equal(source.importPuzzle(line).ok, true);
+  return source.serialize().bytes;
 }
 
-{
-  const restoredState = { cells: [{ value: 7, given: false, conflict: false }] };
-  let deserializeCalls = 0;
-  let importCalls = 0;
-  const game = {
-    deserialize() {
-      deserializeCalls += 1;
-      return { ok: true, state: restoredState, msg: "opened: startup-save.sud" };
-    },
-    importPuzzle() {
-      importCalls += 1;
-      return { ok: true, state: { cells: [{ value: 1, given: true, conflict: false }] } };
-    },
-    getLegend() {
-      return { save: true };
-    },
-    getConfig() {
-      return { difficulty: 1, log_level: 1 };
-    },
-    getState() {
-      return { cells: [] };
+/**
+ * Run the startup flow on a real game with recording handlers.
+ * `answers` feeds each `ask`; `generated` answers each `generate`.
+ */
+async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [] } = {}) {
+  const game = await loadGame(config);
+  const calls = [];
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (url === HOST_CURRENT_FILE && init.method === "DELETE") return { ok: true, status: 204 };
+    if (url === HOST_CURRENT_FILE) {
+      if (!currentFile?.bytes) return { ok: false, status: 404 };
+      return { ok: true, arrayBuffer: async () => currentFile.bytes.slice().buffer };
+    }
+    throw new Error(`unexpected fetch url: ${url}`);
+  };
+  const shown = [];
+  const asked = [];
+  const errors = [];
+  const generateCalls = [];
+  const boot = {
+    state: game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    default_save_filename: currentFile?.name ?? "sudoku.sud",
+    startup_save_path: currentFile ? HOST_CURRENT_FILE : null,
+  };
+  const session = createWebSessionFromStartup(boot);
+  const win = {
+    __sudokuChoose: async (text, opts) => {
+      asked.push({ text, ...opts });
+      return answers.shift() === true;
     },
   };
-  const out = await offerInitialNewGame(
-    game,
-    {
-      ok: true,
-      kind: "empty",
-      startup_action: "restore",
-      startup_context_event: "startup_restore",
-      on_restore_solved: "prompt",
-      startup_status: null,
-      startup_save_path: "./current-file",
-      default_save_filename: "sudoku.sud",
-      state: {},
-      legend: {},
-      config: {},
+  const handlers = {
+    ...startupHandlers(game, session, {
+      fetchFn,
+      win,
+      showGame: (step) => shown.push({ text: step.text, file: step.file }),
+      showError: (text) => errors.push(text),
+    }),
+    generate: async (difficulty) => {
+      generateCalls.push(difficulty);
+      return generated.shift() ?? { ok: false, error: "no generation scripted" };
     },
-    null,
-    { fetchFn: async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }) },
-  );
+  };
+  const outcome = await runStartupFlow(game, boot, handlers);
+  return { game, session, outcome, calls, shown, asked, errors, generateCalls, fetchFn };
+}
+
+{
+  // No current file and no auto new: the idle board with the welcome line.
+  const run = await runStartupScenario({ config: { auto_restore: true } });
+  assert.equal(run.outcome.kind, "done");
+  assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
+  assert.equal(run.calls.length, 0);
+  assert.equal(run.session.boundFilename, null);
+}
+
+{
+  // Restore: the saved game comes back, labelled with its file, and autosave continues it without asking.
+  const bytes = await savedGameBytes(OPEN_LINE);
+  const run = await runStartupScenario({
+    config: { auto_restore: true, auto_new: true, auto_save: true },
+    currentFile: { name: "game.sud", bytes },
+  });
+  assert.equal(run.outcome.kind, "done");
+  assert.equal(run.shown.length, 1);
+  assert.equal(run.shown[0].file, "game.sud");
+  assert.equal(run.session.boundFilename, "game.sud");
+  assert.equal(run.session.state.cells[0].value, 5);
+  assert.equal(run.asked.length, 0);
+  assert.equal(run.generateCalls.length, 0);
+
+  run.game.exec({ action: "fill", row: 0, col: 2, digit: 4 });
+  const host = hostFetch({ exists: true });
+  const prevChoose = globalThis.__sudokuChoose;
+  globalThis.__sudokuChoose = async () => assert.fail("a restored game continues its file");
+  await startAutoSavePolicy(run.game, run.session, "fill", { fetchFn: host.fetchFn });
+  globalThis.__sudokuChoose = prevChoose;
+  assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Filename"], "game.sud");
+}
+
+for (const deleteIt of [true, false]) {
+  // Restore failure: idle board, one question, then the host forgets (and maybe deletes) the file.
+  const run = await runStartupScenario({
+    config: { auto_restore: true, auto_new: true },
+    currentFile: { name: "game.sud", bytes: null },
+    answers: [deleteIt],
+  });
+  assert.equal(run.outcome.kind, "done");
+  assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
+  assert.equal(run.asked.length, 1);
+  assert.equal(run.asked[0].title, "Restore failed");
+  assert.equal(run.asked[0].text, "game.sud could not be restored (fetch failed: 404). Do you want to delete it?");
+  assert.equal(run.asked[0].okLabel, "Delete");
+  assert.equal(run.asked[0].cancelLabel, "Keep");
+  const forget = run.calls.find((c) => c.init.method === "DELETE");
+  assert.ok(forget, "the host must forget the current file");
+  assert.equal(forget.init.headers["X-Sudoku-Delete-File"], deleteIt ? "true" : undefined);
+  assert.equal(run.generateCalls.length, 0, "a failed restore never falls back to a new game");
+}
+
+{
+  // Unreadable bytes are a restore failure too.
+  const run = await runStartupScenario({
+    config: { auto_restore: true },
+    currentFile: { name: "game.sud", bytes: new Uint8Array([1, 2, 3]) },
+    answers: [false],
+  });
+  assert.equal(run.asked[0].title, "Restore failed");
+}
+
+{
+  // Restored game already solved: core asks; New game generates at the saved difficulty.
+  const bytes = await savedGameBytes(SOLVED_LINE);
+  const run = await runStartupScenario({
+    config: { auto_restore: true, difficulty: 3 },
+    currentFile: { name: "game.sud", bytes },
+    answers: [true],
+    generated: [{ ok: true, line: OPEN_LINE }],
+  });
+  assert.equal(run.outcome.kind, "done");
+  assert.equal(run.asked[0].title, "Puzzle solved");
+  assert.equal(run.asked[0].okLabel, "New game");
+  assert.deepEqual(run.generateCalls, [3]);
+  assert.equal(run.shown.length, 2);
+  assert.equal(run.session.state.cells[0].value, 5);
+}
+
+{
+  // Restored game already solved, Keep: the solved board stays.
+  const bytes = await savedGameBytes(SOLVED_LINE);
+  const run = await runStartupScenario({
+    config: { auto_restore: true },
+    currentFile: { name: "game.sud", bytes },
+    answers: [false],
+  });
+  assert.equal(run.outcome.kind, "done");
+  assert.equal(run.generateCalls.length, 0);
+  assert.equal(run.session.state.cells[0].value, 4);
+}
+
+{
+  // Auto new: core imports the generated line itself.
+  const run = await runStartupScenario({ config: { auto_new: true, difficulty: 2 }, generated: [{ ok: true, line: OPEN_LINE }] });
+  assert.equal(run.outcome.kind, "done");
+  assert.deepEqual(run.generateCalls, [2]);
+  assert.equal(run.shown.length, 1);
+  assert.notEqual(run.shown[0].text, WELCOME_STATUS);
+  assert.equal(run.session.state.cells[0].value, 5);
+}
+
+{
+  // Auto new cancelled: straight to the idle board.
+  const run = await runStartupScenario({ config: { auto_new: true }, generated: [{ ok: false, cancelled: true }] });
+  assert.equal(run.outcome.kind, "done");
+  assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
+  assert.equal(run.errors.length, 0);
+}
+
+{
+  // Auto new failed: the idle board, then the error; boot itself does not fail.
+  const run = await runStartupScenario({ config: { auto_new: true }, generated: [{ ok: false, error: "worker crashed" }] });
+  assert.equal(run.outcome.kind, "show_error");
+  assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
+  assert.deepEqual(run.errors, ["A new game could not be generated (worker crashed)."]);
+}
+
+{
+  // The web generate step hands core the line and does not import it; Continue still closes the modal.
+  let imported = 0;
+  const game = {
+    getConfig: () => ({ difficulty: 1, log_level: 1 }),
+    generatePuzzle: ({ difficulty }) => ({ ok: true, line: `${difficulty}`.repeat(81) }),
+    importPuzzleNewGame: () => {
+      imported += 1;
+      return { ok: true };
+    },
+  };
+  const modal = makeModal();
+  const handlers = startupHandlers(game, {}, { generatingModal: modal });
+  const running = handlers.generate(2);
+  await flushDialogPaint();
+  assert.equal(modal.el.hidden, false, "startup generation waits for Continue");
+  modal.continueBtn.click();
+  const out = await running;
   assert.equal(out.ok, true);
-  assert.equal(out.kind, "restore");
-  assert.equal(out.state.cells[0].value, 7);
-  assert.equal(out.state.cells[0].given, false);
-  assert.equal(deserializeCalls, 1, "restore startup path must use deserialize");
-  assert.equal(importCalls, 0, "restore startup path must not use one-line import path");
-  assert.equal(out.default_save_filename, "sudoku.sud");
-}
-
-{
-  // End-to-end startup-restore status pass-through: core-concatenated message
-  // must survive shell startup + status rendering unchanged.
-  const concatMsg = "opened: dead.sud; this puzzle has no solution (no-solution)";
-  const game = {
-    deserialize() {
-      return {
-        ok: true,
-        state: { cells: [{ value: 7, given: false, conflict: false }] },
-        msg: concatMsg,
-      };
-    },
-    getLegend() {
-      return { save: true };
-    },
-    getConfig() {
-      return { difficulty: 1, log_level: 1 };
-    },
-    getState() {
-      return { cells: [] };
-    },
-  };
-  const ready = await offerInitialNewGame(
-    game,
-    {
-      ok: true,
-      kind: "empty",
-      startup_action: "restore",
-      on_restore_solved: "prompt",
-      startup_status: null,
-      startup_save_path: "./current-file",
-      default_save_filename: "sudoku.sud",
-      state: {},
-      legend: {},
-      config: {},
-    },
-    null,
-    { fetchFn: async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }) },
-  );
-  assert.equal(ready.ok, true);
-  assert.equal(ready.kind, "restore");
-  assert.equal(ready.msg, concatMsg);
-
-  const status = { textContent: "old", className: "" };
-  const session = createWebSessionFromStartup(ready);
-  applySessionOutcomeStatus(session, status, { msg: ready.msg });
-  assert.equal(status.textContent, concatMsg);
-}
-
-{
-  const solvedCells = Array.from({ length: 81 }, () => ({ value: 1, given: true, conflict: false }));
-  let startNewCalls = 0;
-  const game = {
-    getLegend() {
-      return { save: true };
-    },
-    getConfig() {
-      return { difficulty: 2, log_level: 1 };
-    },
-    getState() {
-      return { cells: [] };
-    },
-  };
-  const out = await applyWebStartupAction(
-    game,
-    {
-      ok: true,
-      kind: "empty",
-      startup_action: "restore",
-      on_restore_solved: "prompt",
-      startup_status: null,
-      startup_save_path: "./current-file",
-      default_save_filename: "sudoku.sud",
-      state: {},
-      legend: {},
-      config: { difficulty: 2, log_level: 1 },
-    },
-    {
-      fetchStartupSaveBytes: async () => ({ ok: true, bytes: new Uint8Array([1]) }),
-      openFromSaveBytes: () => ({
-        ok: true,
-        state: { cells: solvedCells },
-        msg: "You win!",
-        startup_prompt_new_game: true,
-      }),
-      startNewGame: async () => {
-        startNewCalls += 1;
-        return { ok: true };
-      },
-    },
-  );
-  assert.equal(out.ok, true);
-  assert.equal(out.kind, "restore");
-  assert.equal(out.msg, "You win!");
-  assert.equal(out.startup_prompt_new_game, true);
-  assert.equal(startNewCalls, 0, "startup restore path should not start new before UI prompt");
-}
-
-{
-  const solvedCells = Array.from({ length: 81 }, () => ({ value: 1, given: true, conflict: false }));
-  const game = {
-    getLegend() {
-      return { save: true };
-    },
-    getConfig() {
-      return { difficulty: 2, log_level: 1 };
-    },
-    getState() {
-      return { cells: [] };
-    },
-  };
-  const out = await applyWebStartupAction(
-    game,
-    {
-      ok: true,
-      kind: "empty",
-      startup_action: "restore",
-      on_restore_solved: "prompt",
-      startup_status: null,
-      startup_save_path: "./current-file",
-      default_save_filename: "sudoku.sud",
-      state: {},
-      legend: {},
-      config: { difficulty: 2, log_level: 1 },
-    },
-    {
-      fetchStartupSaveBytes: async () => ({ ok: true, bytes: new Uint8Array([1]) }),
-      openFromSaveBytes: () => ({
-        ok: true,
-        state: { cells: solvedCells },
-        msg: "You win!",
-        startup_prompt_new_game: true,
-      }),
-      startNewGame: async () => ({
-        ok: true,
-        state: { cells: [{ value: 0, given: false, conflict: false }] },
-        legend: { new: true },
-        config: { difficulty: 2, log_level: 1 },
-        msg: "new game started",
-      }),
-    },
-  );
-  assert.equal(out.ok, true);
-  assert.equal(out.kind, "restore");
-  assert.equal(out.startup_prompt_new_game, true);
+  assert.equal(out.line, "2".repeat(81));
+  assert.equal(imported, 0);
 }
 
 {
@@ -1031,40 +978,12 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
 }
 
 {
-  // Full-cycle regression guard: autosave snapshot must survive restart with
+  // Full-cycle regression guard: an autosave snapshot survives restart with
   // player-entered cells still marked as non-givens.
   const idx = (row, col) => row * 9 + col;
-  const lineToCells = (line) =>
-    Array.from(line, (ch) => {
-      const value = Number(ch);
-      return { value, given: value !== 0, conflict: false };
-    });
   const fixture = AUTOSAVE_RESTORE_PARITY_FIXTURE;
-  const baseCells = lineToCells(fixture.puzzle_line);
-
   let savedBytes = null;
-  const hostCfg = () => ({
-    difficulty: 1,
-    log_level: 1,
-    theme: "dark",
-    show_region: false,
-    warn_solvability: false,
-    auto_restore: true,
-    auto_new: false,
-    auto_save: true,
-    default_save_filename: "sudoku.sud",
-    startup_action: savedBytes ? "restore" : "idle",
-    startup_context_event: savedBytes ? "startup_restore" : "startup_idle",
-    on_restore_solved: "prompt",
-    startup_status: savedBytes ? null : "manual startup",
-    startup_save_path: savedBytes ? "./current-file" : null,
-  });
   const fetchFn = async (url, init) => {
-    if (url === "./host-config.json") return { ok: true, json: async () => hostCfg() };
-    if (url === "./current-file" && !init) {
-      if (!savedBytes) return { ok: false, status: 404 };
-      return { ok: true, arrayBuffer: async () => savedBytes.buffer.slice(0) };
-    }
     if (url === "./current-file" && init?.method === "POST") {
       savedBytes = new Uint8Array(init.body);
       return { ok: true, status: 204 };
@@ -1073,78 +992,21 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
     throw new Error(`unexpected fetch url: ${url}`);
   };
 
-  const makeGame = () => {
-    let state = { cells: baseCells.map((c) => ({ ...c })) };
-    let config = {};
-    return {
-      bootstrapHostConfig(next) {
-        config = { ...next };
-        return { ok: true, msg: "engine ready" };
-      },
-      getState() {
-        return { cells: state.cells.map((c) => ({ ...c })) };
-      },
-      getLegend() {
-        return { fill: true, clear: true, undo: true, redo: true, save: true };
-      },
-      getConfig() {
-        return {
-          difficulty: config.difficulty ?? 1,
-          log_level: config.logLevel ?? 1,
-          theme: config.theme ?? "dark",
-          show_region: config.show_region ?? false,
-          warn_solvability: config.warn_solvability ?? false,
-          auto_restore: config.auto_restore ?? true,
-          auto_new: config.auto_new ?? false,
-          auto_save: config.auto_save ?? true,
-        };
-      },
-      exec(action) {
-        if (action?.action === "fill") {
-          const i = idx(action.row, action.col);
-          state.cells[i] = { value: action.digit, given: false, conflict: false };
-          return { ok: true, state: this.getState(), msg: null, is_quit: false };
-        }
-        return { ok: false, error: "unsupported action" };
-      },
-      serialize() {
-        return { ok: true, bytes: new TextEncoder().encode(JSON.stringify(state)) };
-      },
-      deserialize(bytes) {
-        state = JSON.parse(new TextDecoder().decode(bytes));
-        return { ok: true, state: this.getState(), msg: "opened: ./current-file" };
-      },
-      importPuzzle() {
-        return { ok: false, error: "must not import in restore path" };
-      },
-    };
-  };
-
-  const launchA = await withCoreFlow(makeGame(), { autoSave: true });
-  const bootA = await initializeWebSession(launchA, { fetchFn });
-  const readyA = await offerInitialNewGame(launchA, bootA, null, { fetchFn });
-  assert.equal(readyA.ok, true);
-  assert.equal(readyA.kind, "empty");
-  const sessionA = {
-    config: readyA.config,
-    default_save_filename: readyA.default_save_filename,
-    boundFilename: null,
-  };
-  recordStartupFileSession(launchA, readyA);
-
+  const launchA = await loadGame({ auto_restore: true, auto_save: true });
+  assert.equal(launchA.importPuzzle(fixture.puzzle_line).ok, true);
+  const sessionA = { config: launchA.getConfig(), default_save_filename: "sudoku.sud", boundFilename: null };
   for (const move of fixture.moves) {
-    launchA.exec({ action: "fill", row: move.row, col: move.col, digit: move.digit });
+    assert.equal(launchA.exec({ action: "fill", row: move.row, col: move.col, digit: move.digit }).ok, true);
     await startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
   }
   assert.ok(savedBytes && savedBytes.length > 0, "autosave should persist a startup snapshot");
 
-  const launchB = makeGame();
-  const bootB = await initializeWebSession(launchB, { fetchFn });
-  const readyB = await offerInitialNewGame(launchB, bootB, null, { fetchFn });
-  assert.equal(readyB.ok, true);
-  assert.equal(readyB.kind, "restore");
-
-  const restored = readyB.state.cells;
+  const run = await runStartupScenario({
+    config: { auto_restore: true, auto_save: true },
+    currentFile: { name: "sudoku.sud", bytes: savedBytes },
+  });
+  assert.equal(run.outcome.kind, "done");
+  const restored = run.session.state.cells;
   assert.equal(restored[idx(fixture.given_probe.row, fixture.given_probe.col)].value, fixture.given_probe.value);
   assert.equal(restored[idx(fixture.given_probe.row, fixture.given_probe.col)].given, true);
   for (const probe of fixture.move_probes) {
@@ -1289,100 +1151,6 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
 }
 
 {
-  const game = {
-    getLegend() {
-      return {};
-    },
-    getConfig() {
-      return {};
-    },
-    getState() {
-      return { cells: [] };
-    },
-  };
-  const out = await offerInitialNewGame(
-    game,
-    {
-      ok: true,
-      kind: "empty",
-      startup_action: "restore",
-      startup_context_event: "startup_restore",
-      startup_status: null,
-      startup_save_path: "./current-file",
-      default_save_filename: "sudoku.sud",
-      state: {},
-      legend: {},
-      config: {},
-    },
-    null,
-    { fetchFn: async () => ({ ok: false, status: 404 }) },
-  );
-  assert.equal(out.ok, true);
-  assert.equal(out.kind, "empty");
-  assert.match(out.msg ?? "", /startup restore fetch failed/);
-  assert.equal(out.default_save_filename, "sudoku.sud");
-}
-
-{
-  const missing = await offerInitialNewGame(
-    {},
-    { ok: true, kind: "empty", startup_action: "new", startup_context_event: "startup_new", state: {}, legend: {}, config: {} },
-    null,
-  );
-  assert.equal(missing.ok, false);
-  assert.match(missing.error, /engine config/);
-}
-
-{
-  let initDifficulty;
-  const game = {
-    getConfig() {
-      return { difficulty: 2, log_level: 1 };
-    },
-    init({ difficulty }) {
-      initDifficulty = difficulty;
-      return { ok: true, msg: "new game started" };
-    },
-    getState() {
-      return { cells: [] };
-    },
-    getLegend() {
-      return {};
-    },
-  };
-  const modal = makeModal();
-  const running = offerInitialNewGame(
-    game,
-    {
-      ok: true,
-      kind: "empty",
-      startup_action: "new",
-      startup_context_event: "startup_new",
-      startup_status: null,
-      default_save_filename: "sudoku.sud",
-      config: { difficulty: 2, log_level: 1 },
-      state: {},
-      legend: {},
-    },
-    modal,
-  );
-  await flushDialogPaint();
-  let resolved = false;
-  void running.then(() => {
-    resolved = true;
-  });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(modal.el.hidden, false, "startup auto-new keeps generating modal open until Continue");
-  assert.equal(resolved, false, "startup auto-new must not auto-continue");
-  modal.continueBtn.click();
-  const out = await running;
-  assert.equal(out.ok, true);
-  assert.equal(out.kind, "new");
-  assert.equal(initDifficulty, 2);
-  assert.equal(out.default_save_filename, "sudoku.sud");
-}
-
-{
   for (const key of REQUIRED_WEB_BOOT_CONFIG_KEYS) {
     const cfg = {
       difficulty: 1,
@@ -1411,14 +1179,12 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
     auto_new: false,
     auto_save: false,
     default_save_filename: "sudoku_save.sud",
-    startup_context_event: "startup_idle",
-    on_restore_solved: "prompt",
-    startup_status: null,
+    startup_save_path: null,
   };
-  delete hostCfg.startup_status;
+  delete hostCfg.startup_save_path;
   assert.throws(
     () => assertHostStartupConfig(hostCfg),
-    /missing startup_status/,
+    /missing startup_save_path/,
   );
 }
 
@@ -1433,9 +1199,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
     auto_new: false,
     auto_save: false,
     default_save_filename: "sudoku_save.sud",
-    startup_context_event: "startup_idle",
-    on_restore_solved: "prompt",
-    startup_status: null,
+    startup_save_path: null,
   };
   delete hostCfg.default_save_filename;
   assert.throws(

@@ -8,10 +8,10 @@ import { loadArtifact } from "./artifacts/glue.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifacts/artifact.wasm"));
 
-/** Fresh wasm instance bootstrapped with `autoSave`, for flow exports only. */
-export async function loadCoreFlow({ autoSave = false } = {}) {
-  const core = await loadArtifact(wasmBytes);
-  const boot = core.bootstrapHostConfig({
+/** A real wasm game bootstrapped like the host does; `config` overrides the defaults. */
+export async function loadGame(config = {}) {
+  const game = await loadArtifact(wasmBytes);
+  const boot = game.bootstrapHostConfig({
     difficulty: 1,
     logLevel: 1,
     theme: "dark",
@@ -19,10 +19,16 @@ export async function loadCoreFlow({ autoSave = false } = {}) {
     warn_solvability: false,
     auto_restore: false,
     auto_new: false,
-    auto_save: autoSave,
+    auto_save: false,
+    ...config,
   });
-  if (!boot.ok) throw new Error(`core flow bootstrap failed: ${boot.error}`);
-  return core;
+  if (!boot.ok) throw new Error(`game bootstrap failed: ${boot.error}`);
+  return game;
+}
+
+/** Fresh wasm instance bootstrapped with `autoSave`, for flow exports only. */
+export function loadCoreFlow({ autoSave = false } = {}) {
+  return loadGame({ auto_save: autoSave });
 }
 
 /** Attach real `flowStart` / `flowNext` / `fileSessionEvent` to a fake game once; returns the game. */
