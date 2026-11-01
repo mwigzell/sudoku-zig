@@ -12,6 +12,9 @@ import * as board from "./board.js";
 import * as theme from "./menus/theme.js";
 import * as appWire from "./app_wire.js";
 
+/** Shown when the game core itself failed to load, so it cannot word the error; the reason is logged. */
+const BOOT_FAILED_MSG = "The game could not start. Reload the page to try again.";
+
 /**
  * Entry point used by `page.html` module script.
  * @param {Document} root
@@ -96,8 +99,7 @@ export async function bootSudokuWebApp(root = document) {
     clientLog.clientLog("startup", "err", "boot_failed", { error: errorText });
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
-    const msg = `failed to load wasm: ${err && err.message ? err.message : err}`;
-    board.setStatus(statusBar, msg, { error: true });
-    errorModalMod.showErrorModal(errorModal, msg);
+    board.setStatus(statusBar, BOOT_FAILED_MSG, { error: true });
+    errorModalMod.showErrorModal(errorModal, BOOT_FAILED_MSG);
   }
 }

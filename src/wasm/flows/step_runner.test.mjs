@@ -106,7 +106,7 @@ const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. 
   assert.equal(outcome.kind, "show_status");
 }
 
-// A picker the user closed ends quietly; a failed write shows the error.
+// A picker the user closed ends quietly; a failed write shows core's sentence and only logs the thrown message.
 {
   const core = await loadCoreFlow();
   const closed = saveHandlers({ write: () => ({ ok: false, cancelled: true }) });
@@ -116,8 +116,18 @@ const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. 
       throw new Error("disk full");
     },
   });
-  await stepRunner.runCommand(core, SAVE, failed);
+  const logged = [];
+  const originalInfo = console.info;
+  console.info = (line) => logged.push(line);
+  globalThis.__SUDOKU_LOG = true;
+  try {
+    await stepRunner.runCommand(core, SAVE, failed);
+  } finally {
+    delete globalThis.__SUDOKU_LOG;
+    console.info = originalInfo;
+  }
   assert.deepEqual(failed.log.at(-1), ["error", "The game could not be saved."]);
+  assert.ok(logged.some((line) => String(line).includes("disk full")), "the thrown message is logged");
 }
 
 // A move's first autosave with no working file resolves the default target, then asks if it exists.
@@ -141,14 +151,14 @@ const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. 
   assert.deepEqual(handlers.log, []);
 }
 
-// A handler that throws outside write ends the flow with its message; the next flow still runs.
+// A handler that throws outside write ends the flow with core's sentence, not the thrown message; the next flow still runs.
 {
   const core = await loadCoreFlow();
   const broken = saveHandlers();
   broken.checkTarget = () => {
     throw new Error("host unreachable");
   };
-  assert.deepEqual(await stepRunner.runCommand(core, SAVE, broken), { kind: "show_error", text: "host unreachable" });
+  assert.deepEqual(await stepRunner.runCommand(core, SAVE, broken), { kind: "show_error", text: "The command could not finish because the app sent an unexpected answer." });
   const next = saveHandlers();
   await stepRunner.runCommand(core, SAVE, next);
   assert.deepEqual(next.log.at(-1), ["status", "saved to: game.sud"]);

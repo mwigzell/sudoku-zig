@@ -178,6 +178,11 @@ export async function loadArtifact(wasmBytes) {
       return callJsonPayload(exports.flowNext, input);
     },
 
+    /** End the running flow because the web side could not carry it on; returns core's error step. */
+    flowFail() {
+      return readJson(exports.flowFail());
+    },
+
     /** Answer a `read_file` step with the file's bytes; returns the next step. */
     flowFileRead(bytes) {
       writeBytes(memory, SCRATCH, bytes);

@@ -46,6 +46,7 @@ export async function withCoreFlow(game, { opened = null, newGame = false, ...op
   game.flowStart = (start) => core.flowStart(start);
   game.commandStart = (action) => core.commandStart(action);
   game.flowNext = (input) => core.flowNext(input);
+  game.flowFail = () => core.flowFail();
   return game;
 }
 

@@ -1,6 +1,8 @@
 // step_runner.js — carries out core flow steps on the web: core (wasm) decides
 // what happens next; handlers only do the platform work and report back.
 
+import * as clientLog from "../client_log.js";
+
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").FlowStart} FlowStart */
 /** @typedef {import("../types").FlowStep} FlowStep */
@@ -31,14 +33,19 @@ export const FLOW_STARTUP = "startup";
 
 const FLOW_LANE = Symbol("flowLane");
 const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
-const FLOW_FAILED_MSG = "flow failed";
-export const SAVE_FAILED_MSG = "save failed";
-const READ_FAILED_MSG = "read failed";
-const OPEN_FAILED_MSG = "open failed";
-const CLIPBOARD_FAILED_MSG = "clipboard read failed";
-const GENERATE_FAILED_MSG = "generation failed";
-const PERSIST_FAILED_MSG = "settings write failed";
-const COPY_FAILED_MSG = "copy failed";
+/** Logged when a handler reports failure without saying why; core words what the user sees. */
+const NO_REASON = "no reason given";
+
+/**
+ * A failed `input` for core; the reason is logged here because core cannot log on wasm.
+ * @param {string} input
+ * @param {{ error?: string }} [result]
+ */
+function failedInput(input, result) {
+  const error = result?.error ?? NO_REASON;
+  clientLog.clientLog("flow", "info", "step_failed", { input, error });
+  return { input, ok: false, error };
+}
 
 /**
  * Normalize a handler's write outcome to the wasm `wrote` input.
@@ -48,7 +55,7 @@ function wroteInput(result, name) {
   if (result?.ok === true) return { input: "wrote", ok: true, name: result.name ?? name };
   if (result?.cancelled === true) return { input: "wrote", ok: false, cancelled: true };
   if (result?.taken) return { input: "wrote", ok: false, taken: true, name: result.taken.name, dir: result.taken.dir };
-  return { input: "wrote", ok: false, error: result?.error ?? SAVE_FAILED_MSG };
+  return failedInput("wrote", result);
 }
 
 /**
@@ -58,7 +65,7 @@ function wroteInput(result, name) {
 function generatedInput(result) {
   if (result?.ok === true && typeof result.line === "string") return { input: "generated", ok: true, line: result.line };
   if (result?.cancelled === true) return { input: "generated", ok: false, cancelled: true };
-  return { input: "generated", ok: false, error: result?.error ?? GENERATE_FAILED_MSG };
+  return failedInput("generated", result);
 }
 
 /**
@@ -66,13 +73,13 @@ function generatedInput(result) {
  * @param {{ ok?: boolean, error?: string }} result
  */
 function persistedInput(result) {
-  return outcomeInput("persisted", result, PERSIST_FAILED_MSG);
+  return outcomeInput("persisted", result);
 }
 
 /** Normalize an ok-or-error outcome to the wasm `input` named `input`. */
-function outcomeInput(input, result, fallbackError) {
+function outcomeInput(input, result) {
   if (result?.ok === true) return { input, ok: true };
-  return { input, ok: false, error: result?.error ?? fallbackError };
+  return failedInput(input, result);
 }
 
 /** Run a handler, turning a throw into a failed result. */
@@ -129,14 +136,17 @@ async function driveFlow(begin, game, handlers) {
   try {
     return await stepThrough(game, begin(), handlers);
   } catch (err) {
-    return failFlow(handlers, err?.message ?? String(err));
+    return failFlow(game, handlers, err?.message ?? String(err));
   }
 }
 
-/** @returns {FlowOutcome} */
-function failFlow(handlers, text) {
-  handlers.showError?.(text);
-  return { kind: STEP_SHOW_ERROR, text };
+/**
+ * The web side could not carry the flow on: log why, and let core end it with its own sentence.
+ * @returns {Promise<FlowOutcome>}
+ */
+function failFlow(game, handlers, reason) {
+  clientLog.clientLog("flow", "err", "flow_failed", { error: reason });
+  return stepThrough(game, game.flowFail(), handlers);
 }
 
 /**
@@ -148,7 +158,7 @@ function failFlow(handlers, text) {
 async function stepThrough(game, first, handlers) {
   let step = first;
   while (true) {
-    if (step?.ok === false) return failFlow(handlers, step.error ?? FLOW_FAILED_MSG);
+    if (step?.ok === false) return failFlow(game, handlers, step.error ?? NO_REASON);
     switch (step.step) {
       case STEP_RESOLVE_DEFAULT_TARGET:
         step = game.flowNext({ input: "default_target", name: await handlers.resolveDefaultTarget() });
@@ -173,28 +183,28 @@ async function stepThrough(game, first, handlers) {
         break;
       }
       case STEP_COPY_LINE:
-        step = game.flowNext(outcomeInput("copied", await settle(() => handlers.copyLine()), COPY_FAILED_MSG));
+        step = game.flowNext(outcomeInput("copied", await settle(() => handlers.copyLine())));
         break;
       case STEP_READ_FILE: {
         const path = step.path;
         const read = await settle(() => handlers.readFile(path));
         step = read?.ok === true
           ? game.flowFileRead(read.bytes)
-          : game.flowNext({ input: "file_read", ok: false, error: read?.error ?? READ_FAILED_MSG });
+          : game.flowNext(failedInput("file_read", read));
         break;
       }
       case STEP_PICK_OPEN: {
         const picked = await settle(() => handlers.pickOpen(step));
         if (picked?.ok === true) step = game.flowPicked(picked.bytes, picked.name ?? null);
         else if (picked?.cancelled === true) step = game.flowNext({ input: "picked", ok: false, cancelled: true });
-        else step = game.flowNext({ input: "picked", ok: false, error: picked?.error ?? OPEN_FAILED_MSG });
+        else step = game.flowNext(failedInput("picked", picked));
         break;
       }
       case STEP_READ_CLIPBOARD: {
         const read = await settle(() => handlers.readClipboard());
         step = read?.ok === true
           ? game.flowFileRead(new TextEncoder().encode(read.text))
-          : game.flowNext({ input: "file_read", ok: false, error: read?.error ?? CLIPBOARD_FAILED_MSG });
+          : game.flowNext(failedInput("file_read", read));
         break;
       }
       case STEP_SHOW_GAME:
@@ -226,7 +236,7 @@ async function stepThrough(game, first, handlers) {
       case STEP_DONE:
         return { kind: STEP_DONE };
       default:
-        return failFlow(handlers, `${UNKNOWN_STEP_PREFIX}${step.step}`);
+        return failFlow(game, handlers, `${UNKNOWN_STEP_PREFIX}${step.step}`);
     }
   }
 }

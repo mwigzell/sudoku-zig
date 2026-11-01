@@ -323,6 +323,11 @@ export fn flowNext(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     return returnStep(out, active_flow.next(input));
 }
 
+/// The adapter could not carry the running flow on; ends it with core's error step.
+export fn flowFail() callconv(.c) u32 {
+    return returnStep(outBuffer(), .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+}
+
 /// Answer a `read_file` step with the file's bytes; returns the next step JSON.
 export fn flowFileRead(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();

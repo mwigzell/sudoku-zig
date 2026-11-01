@@ -227,7 +227,7 @@ JSON-serializable display twin of `BoardView` — per-cell `value`, `given`, `co
 _Avoid_: duplicating SaveFormat fields in JS
 
 **entry_wasm**:
-Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `serialize`, and the core flow (`commandStart` / `flowNext` / `flowPicked` / `flowFileRead`). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
+Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `serialize`, and the core flow (`commandStart` / `flowNext` / `flowPicked` / `flowFileRead`, and `flowFail` when the web side cannot carry a flow on). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
 _Avoid_: `step(line)`, `page_bytes_out`, or other REPL imports (removed — see ADR-0010)
 
 **glue.js**:

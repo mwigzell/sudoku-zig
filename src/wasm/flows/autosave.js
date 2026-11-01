@@ -43,7 +43,7 @@ export function autosaveHandlers(
     let written = name;
     if (writeUserFile) {
       const saved = await writeUserFile(serialized.bytes);
-      if (!saved?.ok) return saved ?? { ok: false, error: stepRunner.SAVE_FAILED_MSG };
+      if (!saved?.ok) return saved ?? { ok: false };
       if (typeof saved.name === "string" && saved.name.length > 0) written = saved.name;
     }
     const hosted = await hostApi.persistCurrentFileBytes(serialized.bytes, fetchFn, written, { restoreCopy: bound() });

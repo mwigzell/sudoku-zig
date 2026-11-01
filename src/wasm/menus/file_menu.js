@@ -144,7 +144,7 @@ function clearBoundSnapshotWriter(session) {
 function androidSaveOutcome(out) {
   if (!out || out.ok !== true) {
     if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
-    return { ok: false, error: out?.error ?? stepRunner.SAVE_FAILED_MSG };
+    return { ok: false, error: out?.error };
   }
   return typeof out.name === "string" && out.name.length > 0 ? { ok: true, name: out.name } : { ok: true };
 }
@@ -187,7 +187,7 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
       } catch (err) {
         session.fileHandle = null;
         clearBoundSnapshotWriter(session);
-        return { ok: false, error: err?.message ?? stepRunner.SAVE_FAILED_MSG };
+        return { ok: false, error: err?.message ?? String(err) };
       }
     };
     return;
@@ -201,7 +201,7 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
       try {
         return await saveToAndroidBoundTarget(bridge, bytes, suggestedName);
       } catch (err) {
-        return { ok: false, error: err?.message ?? stepRunner.SAVE_FAILED_MSG };
+        return { ok: false, error: err?.message ?? String(err) };
       }
     };
     // Pickers for when the default file belongs to an earlier install; core decides which one runs.
@@ -265,11 +265,11 @@ export async function persistBytes(
       const out = await bridge.saveSudokuFile(bytesToBase64(bytes), suggestedName, saveAs === true);
       if (!out || out.ok !== true) {
         if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
-        return { ok: false, error: out?.error ?? stepRunner.SAVE_FAILED_MSG };
+        return { ok: false, error: out?.error };
       }
       return { ok: true, filename: out.name ?? suggestedName, binding: bindingForAndroidBridge() };
     } catch (err) {
-      return { ok: false, error: err?.message ?? stepRunner.SAVE_FAILED_MSG };
+      return { ok: false, error: err?.message ?? String(err) };
     }
   }
 
@@ -311,7 +311,7 @@ export async function persistPuzzleText(
       return { ok: true, filename: handle.name };
     } catch (err) {
       if (err?.name === "AbortError") return { ok: false, cancelled: true };
-      return { ok: false, error: err?.message ?? "export failed" };
+      return { ok: false, error: err?.message ?? String(err) };
     }
   }
 
@@ -327,14 +327,14 @@ export async function pickBytes(doc = document, session = {}, { types = sudFileP
       const out = await bridge.openSudokuFile();
       if (!out || out.ok !== true) {
         if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
-        return { ok: false, error: out?.error ?? "open failed" };
+        return { ok: false, error: out?.error };
       }
       if (typeof out.base64 !== "string" || typeof out.name !== "string") {
         return { ok: false, error: "invalid Android file payload" };
       }
       return { ok: true, bytes: base64ToBytes(out.base64), name: out.name, binding: bindingForAndroidBridge() };
     } catch (err) {
-      return { ok: false, error: err?.message ?? "open failed" };
+      return { ok: false, error: err?.message ?? String(err) };
     }
   }
 
