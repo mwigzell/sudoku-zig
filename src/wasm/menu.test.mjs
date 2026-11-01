@@ -127,31 +127,6 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
   return handleEditAction(action, game, makeMockBoard(), selection, status, errorModalStub(), session, makeRenderElement());
 }
 
-// ── undo exec + board refresh ──
-{
-  const { game, session } = await editGame();
-  assert.equal(game.exec({ action: "fill", row: 0, col: 2, digit: 4 }).ok, true);
-  session.legend = game.getLegend();
-  const outcome = runEdit("undo", game, session);
-  assert.equal(outcome.handled, true);
-  await outcome.done;
-  assert.equal(session.state.cells[2].value, 0);
-  assert.equal(session.legend.redo, true);
-}
-
-// ── solve and hint with auto-save persist the current game ──
-for (const action of ["solve", "hint"]) {
-  const { game, session } = await editGame({ auto_save: true });
-  const host = hostFetch();
-  const prevFetch = globalThis.fetch;
-  globalThis.fetch = host.fetchFn;
-  const outcome = runEdit(action, game, session);
-  assert.equal(outcome.handled, true);
-  await outcome.done;
-  globalThis.fetch = prevFetch;
-  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST", `${action} autosaves`);
-}
-
 // ── hint: core picks a cell when deselected, targets the selected cell otherwise ──
 {
   const { game, session } = await editGame();
@@ -428,28 +403,15 @@ const GOLDEN_PUZZLE_LINE =
 
 const clipboardWith = (text) => ({ readText: async () => text });
 
-// ── Paste: core reads the clipboard and loads the line; the session follows ──
+// ── Paste with the clipboard denied → error modal; board unchanged ──
 {
-  const { game, session } = await editGame();
-  const status = statusStub();
-  const errorModal = errorModalStub();
-  const result = handlePastePuzzle(game, session, status, errorModal, { clipboard: clipboardWith(GOLDEN_PUZZLE_LINE) });
-  assert.equal(result.handled, true);
-  await result.done;
-  assert.equal(session.state.cells[2].value, 3);
-  assert.equal(session.state.cells[2].given, true);
-  assert.equal(status.textContent, "paste: puzzle loaded");
-  assert.equal(errorModal.el.hidden, true);
-}
-
-// ── Paste invalid line or denied clipboard → error modal; board unchanged ──
-for (const clipboard of [clipboardWith("x".repeat(81)), { readText: async () => { throw new Error("denied"); } }]) {
   const { game, session } = await editGame();
   const before = JSON.stringify(game.getState());
   const errorModal = errorModalStub();
+  const clipboard = { readText: async () => { throw new Error("denied"); } };
   await handlePastePuzzle(game, session, statusStub(), errorModal, { clipboard }).done;
   assert.equal(errorModal.el.hidden, false);
-  assert.match(errorModal.msgEl.textContent, /invalid|clipboard/i);
+  assert.match(errorModal.msgEl.textContent, /clipboard/i);
   assert.equal(JSON.stringify(game.getState()), before);
 }
 

@@ -208,14 +208,14 @@
     },
     {
       "name": "solve_then_rejected_fill",
-      "summary": "Solve fills the board and reports the win; a move on a given cell is then rejected with an error and changes nothing.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "summary": "Solve fills the board, reports the win and autosaves; a move on a given cell is then rejected with an error and changes and writes nothing.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
       "steps": [{ "solve": true }, { "fill": { "row": 0, "col": 2, "digit": 1 } }],
       "expect": {
         "questions": 0,
-        "written": [],
+        "written": ["sudoku.sud"],
         "status": "You win!",
         "errors": 1,
         "probes": [

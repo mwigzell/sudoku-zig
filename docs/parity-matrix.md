@@ -38,7 +38,7 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `paste_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
 | `settings_change_does_not_autosave` | With Auto Save on, Region and Theme changes persist settings and write no game file; the status line keeps the last message | same | same |
 | `hint_reports_and_autosaves` | Status shows the hint text; the hinted cell stays empty; the hint autosaves `sudoku.sud` without asking | same | same |
-| `solve_then_rejected_fill` | Status `You win!`; a fill on a given cell shows one error and leaves the board solved | same | same |
+| `solve_then_rejected_fill` | Status `You win!`; Solve autosaves `sudoku.sud`; a fill on a given cell shows one error, leaves the board solved and writes nothing | same | same |
 | `open_then_move_continues_file` | Open and the next move both write `game.sud` without asking; saved moves stay non-givens | same | same |
 | `import_starts_unsaved_game` | Imported line becomes the givens; status `import: puzzle loaded`; autosave writes `sudoku.sud`; Undo not offered | same | same |
 | `import_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
