@@ -12,13 +12,13 @@ pub const PERSIST_FAILED_FMT = "Your settings could not be saved ({s}).";
 /// Commands whose change belongs in `settings.json`.
 const persisted_commands = [_][]const u8{
     "set_theme",
-    "set_region",
-    "set_warn_solvability",
+    "toggle_region",
+    "toggle_warn_solvability",
     "set_difficulty",
     "set_log_level",
-    "set_auto_restore",
-    "set_auto_new",
-    "set_auto_save",
+    "toggle_auto_restore",
+    "toggle_auto_new",
+    "toggle_auto_save",
 };
 
 fn commandPersistsSettings(command_name: []const u8) bool {
@@ -101,12 +101,12 @@ test "a persist failure is shown as a sentence with the reason" {
 }
 
 test "a wrong answer to persist_settings ends the flow with an error" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), "set_region");
+    var flow = SettingsFlow.afterCommand(config.Config.default(), "toggle_region");
     _ = flow.next(.start);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).show_error);
 }
 
 test "the flow must be started with start" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), "set_region");
+    var flow = SettingsFlow.afterCommand(config.Config.default(), "toggle_region");
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).show_error);
 }

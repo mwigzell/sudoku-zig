@@ -5,10 +5,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadGame, settleFlow } from "./test_support.mjs";
-import { createWebSessionFromStartup, runStartupFlow, settingsHandlers, startupHandlers } from "./shell.js";
+import { commandHandlers, createWebSessionFromStartup, runStartupFlow, showErrorModal, startupHandlers } from "./shell.js";
 import { handlePlayKey } from "./board.js";
 import { wireFileMenu } from "./file_menu.js";
 import { handleEditAction, handlePastePuzzle } from "./menu.js";
+import { wireRegionMenu } from "./region.js";
+import { wireThemeMenu } from "./theme.js";
 
 /** @typedef {{ row: number, col: number }} CellAt */
 /** @typedef {{ row: number, col: number, digit: number }} Move */
@@ -22,7 +24,8 @@ import { handleEditAction, handlePastePuzzle } from "./menu.js";
  *   generated_line?: string,
  *   answers: boolean[],
  *   steps: Array<{
- *     fill?: Move, clear?: CellAt, set_auto_save?: boolean, fill_first_empty?: boolean,
+ *     fill?: Move, clear?: CellAt, toggle_auto_save?: boolean, toggle_region?: boolean, set_theme?: string,
+ *     fill_first_empty?: boolean,
  *     undo?: boolean, redo?: boolean, paste?: string,
  *   }>,
  *   expect: {
@@ -31,7 +34,7 @@ import { handleEditAction, handlePastePuzzle } from "./menu.js";
  *     written: string[],
  *     status: string | null,
  *     errors?: number,
- *     settings?: { auto_save?: boolean },
+ *     settings?: { auto_save?: boolean, show_region?: boolean, theme?: string },
  *     legend?: { undo?: boolean, redo?: boolean },
  *     probes: Array<{ row: number, col: number, value: number, given: boolean }>,
  *   },
@@ -88,6 +91,21 @@ function makeBtn() {
     },
   };
 }
+
+/** A View menu item: records its click listener and accepts checked-state updates. */
+const makeMenuItem = () => ({
+  ...makeBtn(),
+  setAttribute() {},
+  classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
+  click() {
+    return this.handlers.click?.();
+  },
+});
+
+const themeRoot = () => ({
+  documentElement: { dataset: {} },
+  defaultView: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
+});
 
 const makeBoard = () => ({ children: [], replaceChildren(...nodes) { this.children = nodes; } });
 const createElement = (tag) => ({ tag, classList: { add() {}, remove() {} }, textContent: "", dataset: {}, setAttribute() {} });
@@ -181,21 +199,35 @@ async function runScenario(scenario) {
       }
     }
     if (scenario.puzzle_line) {
-      assert.equal(game.importPuzzle(scenario.puzzle_line).ok, true);
+      assert.equal(game.importPuzzleNewGame(scenario.puzzle_line, DIFFICULTY_WIRE.easy).ok, true);
       session.state = game.getState();
       session.legend = game.getLegend();
     }
 
-    const controls = { autoSave: makeBtn() };
+    const controls = { autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() };
+    const commandFlow = commandHandlers(game, session, { fetchFn: host.fetchFn, statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) });
+    wireRegionMenu(controls, game, session, boardEl, () => null, { commandFlow });
+    wireThemeMenu(controls, game, session, { root: themeRoot(), commandFlow });
     wireFileMenu(controls, game, boardEl, { select() {}, deselect() {} }, statusEl, errorModal, session, { sync() {} }, {
       createElement,
       difficultyDialog: { el: { hidden: true }, buttons: [] },
-      settingsFlow: settingsHandlers({ fetchFn: host.fetchFn }),
+      commandFlow,
     });
 
     for (const step of scenario.steps) {
-      if (step.set_auto_save !== undefined) {
-        if ((session.config?.auto_save === true) !== step.set_auto_save) await controls.autoSave.click();
+      if (step.toggle_auto_save) {
+        await controls.autoSave.click();
+        continue;
+      }
+      if (step.toggle_region) {
+        controls.viewRegion.click();
+        await settleFlow();
+        continue;
+      }
+      if (step.set_theme) {
+        const item = { light: controls.viewLight, dark: controls.viewDark, system: controls.viewSystem }[step.set_theme];
+        item.click();
+        await settleFlow();
         continue;
       }
       const edit = step.undo ? "undo" : step.redo ? "redo" : null;
@@ -225,8 +257,8 @@ async function runScenario(scenario) {
     assert.deepEqual(host.written, e.written, "files written");
     assert.equal(statusEl.textContent === "" ? null : statusEl.textContent, e.status, "status");
     assert.equal(errors, e.errors ?? 0, `errors shown (last: ${lastError})`);
-    if (e.settings?.auto_save !== undefined) {
-      assert.equal(host.settings()?.auto_save, e.settings.auto_save, "persisted auto_save");
+    for (const [key, want] of Object.entries(e.settings ?? {})) {
+      assert.equal(host.settings()?.[key], want, `persisted ${key}`);
     }
     const legend = game.getLegend();
     if (e.legend?.undo !== undefined) assert.equal(legend.undo, e.legend.undo, "legend undo");

@@ -6,6 +6,7 @@
 /** @typedef {import("./types").FlowStep} FlowStep */
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
 /** @typedef {import("./types").FlowOutcome} FlowOutcome */
+/** @typedef {import("./types").ExecAction} ExecAction */
 
 export const STEP_RESOLVE_DEFAULT_TARGET = "resolve_default_target";
 export const STEP_CHECK_TARGET = "check_target";
@@ -28,7 +29,6 @@ export const FLOW_SAVE_AS = "save_as";
 export const FLOW_AUTOSAVE = "autosave";
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
-export const FLOW_SETTINGS = "settings";
 export const FLOW_EXPORT = "export";
 export const FLOW_COPY = "copy";
 
@@ -93,21 +93,42 @@ async function settle(fn) {
  * @returns {Promise<FlowOutcome>}
  */
 export function runFlow(game, start, handlers) {
+  return enqueueFlow(game, () => game.flowStart(start), handlers);
+}
+
+/**
+ * Run one player command end to end: core applies it, then drives every follow-up as steps.
+ * @param {GameApi} game
+ * @param {ExecAction} action
+ * @param {FlowHandlers} handlers
+ * @returns {Promise<FlowOutcome>}
+ */
+export function runCommand(game, action, handlers) {
+  return enqueueFlow(game, () => game.commandStart(action), handlers);
+}
+
+/**
+ * @param {GameApi} game
+ * @param {() => FlowStep} begin
+ * @param {FlowHandlers} handlers
+ * @returns {Promise<FlowOutcome>}
+ */
+function enqueueFlow(game, begin, handlers) {
   const previous = game[FLOW_LANE] ?? Promise.resolve();
-  const run = previous.catch(() => {}).then(() => driveFlow(game, start, handlers));
+  const run = previous.catch(() => {}).then(() => driveFlow(begin, game, handlers));
   game[FLOW_LANE] = run;
   return run;
 }
 
 /**
+ * @param {() => FlowStep} begin
  * @param {GameApi} game
- * @param {FlowStart} start
  * @param {FlowHandlers} handlers
  * @returns {Promise<FlowOutcome>}
  */
-async function driveFlow(game, start, handlers) {
+async function driveFlow(begin, game, handlers) {
   try {
-    return await stepThrough(game, start, handlers);
+    return await stepThrough(game, begin(), handlers);
   } catch (err) {
     return failFlow(handlers, err?.message ?? String(err));
   }
@@ -121,13 +142,12 @@ function failFlow(handlers, text) {
 
 /**
  * @param {GameApi} game
- * @param {FlowStart} start
+ * @param {FlowStep} first
  * @param {FlowHandlers} handlers
  * @returns {Promise<FlowOutcome>}
  */
-async function stepThrough(game, start, handlers) {
-  /** @type {FlowStep} */
-  let step = game.flowStart(start);
+async function stepThrough(game, first, handlers) {
+  let step = first;
   while (true) {
     if (step?.ok === false) return failFlow(handlers, step.error ?? FLOW_FAILED_MSG);
     switch (step.step) {

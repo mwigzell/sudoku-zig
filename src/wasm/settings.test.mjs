@@ -2,7 +2,8 @@
 
 import assert from "node:assert/strict";
 import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settings.js";
-import { withCoreFlow } from "./test_support.mjs";
+import { commandHandlers } from "./shell.js";
+import { loadGame } from "./test_support.mjs";
 
 {
   const modal = {
@@ -35,139 +36,79 @@ import { withCoreFlow } from "./test_support.mjs";
   assert.equal(modal.checkbox.checked, true);
 }
 
+/** Real wasm game, its session, and a command flow that records every settings write. */
+async function settingsHarness() {
+  const game = await loadGame();
+  const session = { config: game.getConfig(), legend: game.getLegend(), state: game.getState() };
+  const persisted = [];
+  const commandFlow = commandHandlers(game, session, {
+    fetchFn: async (url, init) => {
+      persisted.push(JSON.parse(init.body));
+      return { ok: true, status: 204 };
+    },
+  });
+  return { game, session, persisted, commandFlow };
+}
+
+/** A control that records its listener for `type` under `on<type>`. */
+const control = (extra = {}) => ({
+  ...extra,
+  addEventListener(type, fn) {
+    this[`on${type}`] = fn;
+  },
+});
+
 {
-  const execCalls = [];
-  const persistCalls = [];
-  const game = await withCoreFlow({
-    getLegend: () => ({}),
-    getConfig() {
-      return {
-        theme: "dark",
-        show_region: false,
-        warn_solvability: execCalls.at(-1)?.enabled === true,
-        auto_restore: false,
-        auto_new: false,
-        auto_save: false,
-      };
-    },
-    exec(action) {
-      execCalls.push(action);
-      return { ok: true };
-    },
-  });
-  const session = { config: { warn_solvability: false } };
-  const modal = {
-    el: { hidden: true },
-    checkbox: { checked: false, addEventListener(type, fn) { this[`on${type}`] = fn; } },
-    dismissEl: { addEventListener(type, fn) { this[`on${type}`] = fn; } },
-  };
-  let openSettings;
-  const btn = {
-    addEventListener(type, fn) {
-      if (type === "click") openSettings = fn;
-    },
-  };
-  let dismissSettings;
-  modal.dismissEl.addEventListener = (type, fn) => {
-    if (type === "click") dismissSettings = fn;
-  };
-  let onCheckboxChange;
-  modal.checkbox.addEventListener = (type, fn) => {
-    if (type === "change") onCheckboxChange = fn;
-  };
+  const { game, session, persisted, commandFlow } = await settingsHarness();
+  const modal = { el: { hidden: true }, checkbox: control({ checked: false }), dismissEl: control() };
+  const btn = control();
+  wireSettingsMenu(btn, game, session, modal, { commandFlow });
 
-  wireSettingsMenu(btn, game, session, modal, {
-    settingsFlow: {
-      persistSettings: (settings) => {
-        persistCalls.push(settings);
-        return { ok: true };
-      },
-    },
-  });
-
-  openSettings();
+  btn.onclick();
   assert.equal(modal.el.hidden, false);
 
   modal.checkbox.checked = true;
-  await onCheckboxChange();
-  assert.deepEqual(execCalls[0], { action: "set_warn_solvability", enabled: true });
+  await modal.checkbox.onchange();
   assert.equal(session.config.warn_solvability, true);
-  assert.equal(persistCalls.length, 1, "core asks to persist after the settings change");
+  assert.equal(modal.checkbox.checked, true);
+  assert.equal(persisted.length, 1, "core asks to persist after the settings change");
+  assert.equal(persisted[0].warn_solvability, true);
 
-  dismissSettings();
+  modal.dismissEl.onclick();
   assert.equal(modal.el.hidden, true);
 }
 
 {
-  const execCalls = [];
-  const game = {
-    getLegend: () => ({}),
-    getConfig() {
-      const last = execCalls.at(-1);
-      return {
-        difficulty: last?.difficulty === "hard" ? 3 : 1,
-        log_level: 1,
-        warn_solvability: false,
-      };
-    },
-    exec(action) {
-      execCalls.push(action);
-      return { ok: true };
-    },
-  };
-  const session = { config: { difficulty: 1 } };
-  let onDifficultyChange;
+  const { game, session, commandFlow } = await settingsHarness();
   const modal = {
     el: { hidden: true },
-    checkbox: { addEventListener() {} },
-    difficultySelect: {
-      value: "easy",
-      addEventListener(type, fn) {
-        if (type === "change") onDifficultyChange = fn;
-      },
-    },
-    logLevelSelect: { addEventListener() {} },
-    dismissEl: { addEventListener() {} },
+    checkbox: control(),
+    difficultySelect: control({ value: "easy" }),
+    logLevelSelect: control(),
+    dismissEl: control(),
   };
-  wireSettingsMenu({ addEventListener() {} }, game, session, modal, {});
+  wireSettingsMenu(control(), game, session, modal, { commandFlow });
   modal.difficultySelect.value = "hard";
-  await onDifficultyChange();
-  assert.deepEqual(execCalls[0], { action: "set_difficulty", difficulty: "hard" });
+  await modal.difficultySelect.onchange();
   assert.equal(session.config.difficulty, 3);
+  assert.equal(modal.difficultySelect.value, "hard");
 }
 
 {
-  const execCalls = [];
-  const game = {
-    getLegend: () => ({}),
-    getConfig() {
-      return { auto_save: execCalls.at(-1)?.enabled === true };
-    },
-    exec(action) {
-      execCalls.push(action);
-      return { ok: true };
-    },
-  };
-  const session = { config: { auto_save: false } };
-  let onAutoSaveChange;
+  const { game, session, persisted, commandFlow } = await settingsHarness();
   const modal = {
     el: { hidden: true },
-    checkbox: { addEventListener() {} },
-    difficultySelect: { addEventListener() {} },
-    logLevelSelect: { addEventListener() {} },
-    autoSaveCheckbox: {
-      checked: false,
-      addEventListener(type, fn) {
-        if (type === "change") onAutoSaveChange = fn;
-      },
-    },
-    dismissEl: { addEventListener() {} },
+    checkbox: control(),
+    difficultySelect: control(),
+    logLevelSelect: control(),
+    autoSaveCheckbox: control({ checked: false }),
+    dismissEl: control(),
   };
-  wireSettingsMenu({ addEventListener() {} }, game, session, modal, {});
+  wireSettingsMenu(control(), game, session, modal, { commandFlow });
   modal.autoSaveCheckbox.checked = true;
-  await onAutoSaveChange();
-  assert.deepEqual(execCalls[0], { action: "set_auto_save", enabled: true });
+  await modal.autoSaveCheckbox.onchange();
   assert.equal(session.config.auto_save, true);
+  assert.equal(persisted.at(-1).auto_save, true);
 }
 
 console.log("settings.test.mjs OK");

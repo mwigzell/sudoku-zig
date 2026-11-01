@@ -200,6 +200,11 @@ export async function loadArtifact(wasmBytes) {
       return callJsonPayload(exports.flowStart, start);
     },
 
+    /** Run one player command end to end (same action JSON as `exec`); returns the first step. */
+    commandStart(action) {
+      return callJsonPayload(exports.commandStart, action);
+    },
+
     /** Report one step result to the running flow; returns the next step. */
     flowNext(input) {
       return callJsonPayload(exports.flowNext, input);

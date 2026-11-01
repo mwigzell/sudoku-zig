@@ -8,8 +8,8 @@ import {
   askWithDialog,
   FLOW_AUTOSAVE,
   FLOW_AUTOSAVE_FLUSH,
-  FLOW_SETTINGS,
   FLOW_STARTUP,
+  runCommand,
   runFlow,
   SAVE_FAILED_MSG,
   STEP_DONE,
@@ -219,22 +219,6 @@ export function applySessionOutcomeStatus(
   applySessionOutcome(session, { state, legend, config });
   if (statusEl) applyEventStatus(statusEl, { ok: true, msg: msg ?? null });
   syncCurrentFileLabels(session);
-}
-
-/** Canonical config/status update path for successful settings-style outcomes. */
-export function applyConfigOutcomeStatus(
-  session,
-  game,
-  statusEl,
-  result,
-) {
-  if (!result?.ok) return false;
-  applySessionOutcomeStatus(session, statusEl, {
-    legend: game.getLegend(),
-    config: game.getConfig(),
-    msg: result.msg ?? null,
-  });
-  return true;
 }
 
 /** Canonical state/legend command outcome path for successful play/edit commands. */
@@ -468,28 +452,6 @@ async function postHostSettings(settings, fetchFn) {
   return { ok: true };
 }
 
-/**
- * Platform work for the core settings flow.
- * @param {{ fetchFn?: typeof fetch, onError?: (text: string) => void }} [options]
- * @returns {FlowHandlers}
- */
-export function settingsHandlers({ fetchFn = globalThis.fetch, onError } = {}) {
-  return {
-    persistSettings: (settings) => postHostSettings(settings, fetchFn),
-    showError: onError,
-  };
-}
-
-/**
- * Run the core settings flow after `commandName`; core decides whether settings are persisted.
- * @param {GameApi} game
- * @param {string} commandName
- * @param {FlowHandlers} [handlers]
- */
-export function persistSettingsAfter(game, commandName, handlers = settingsHandlers()) {
-  return runFlow(game, { flow: FLOW_SETTINGS, command: commandName }, handlers);
-}
-
 /** Write SUD0 bytes as the host copy (`/current-file`); `restoreCopy` keeps it out of the visible folder. */
 export async function persistCurrentFileBytes(
   bytes,
@@ -564,6 +526,47 @@ export function autosaveHandlers(
     pickNew: (name) => writeGame((bytes) => session.boundPickNew(bytes, name), name),
     showError: (text) => onError?.({ ok: false, error: text }),
   };
+}
+
+/**
+ * Platform work for a core command flow: take the shown game into the session, persist
+ * settings, autosave. Core decides which of these a command needs.
+ * @param {GameApi} game
+ * @param {{ fetchFn?: typeof fetch, win?: Window & typeof globalThis, statusEl?: HTMLElement | null, onError?: (failed: { ok: false, error: string }) => void }} [options]
+ * @returns {FlowHandlers}
+ */
+export function commandHandlers(game, session, { fetchFn = globalThis.fetch, win = globalThis, statusEl = null, onError } = {}) {
+  return {
+    ...autosaveHandlers(game, session, { fetchFn, win, onError }),
+    persistSettings: (settings) => postHostSettings(settings, fetchFn),
+    showGame: (step) =>
+      applySessionOutcomeStatus(session, statusEl, {
+        state: step.state,
+        legend: step.legend,
+        config: step.config,
+        msg: step.text ?? null,
+      }),
+    showStatus: (text) => {
+      if (statusEl) applyEventStatus(statusEl, { ok: true, msg: text });
+    },
+  };
+}
+
+/**
+ * Run `action` through core; `onShown` redraws once the session holds the game core showed.
+ * @param {GameApi} game
+ * @param {import("./types").ExecAction} action
+ * @param {FlowHandlers} handlers
+ * @param {(step: import("./types").FlowStep) => void} [onShown]
+ */
+export function runSessionCommand(game, action, handlers, onShown) {
+  return runCommand(game, action, {
+    ...handlers,
+    showGame: async (step) => {
+      await handlers.showGame?.(step);
+      onShown?.(step);
+    },
+  });
 }
 
 /** Install one best-effort final snapshot flush for tab hide/close in autosave mode. */
@@ -703,7 +706,7 @@ export function startupHandlers(
     readFile: (path) => fetchStartupSaveBytes(path, fetchFn),
     showGame: (step) => {
       session.boundFilename = step.file ?? null;
-      applySessionOutcome(session, { state: game.getState(), legend: game.getLegend(), config: game.getConfig() });
+      applySessionOutcome(session, { state: step.state, legend: step.legend, config: step.config });
       showGame?.(step);
     },
     ask: (step) => askWithDialog(step, win),

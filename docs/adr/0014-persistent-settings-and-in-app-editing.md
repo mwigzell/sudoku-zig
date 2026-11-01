@@ -24,7 +24,7 @@ Gaps that motivated this ADR as a **standing product rule** (not only a one-off 
 | **`getConfig()` (wasm)** | JSON readout of `engine.cfg` for the DOM — **not** startup authority. |
 | **`/host-config.json` (web serve)** | Host-resolved config snapshot for **first** wasm init — same merge rules as native startup. |
 
-Mutations in session: **`Command` / `exec`** (`set_theme`, `set_region`, `set_warn_solvability`, `set_difficulty`, `set_log_level`, …) update `engine.cfg`; they do not live in `Legend`, SUD0, or ad-hoc JS globals.
+Mutations in session: **`Command` / `exec`** (`set_theme`, `toggle_region`, `toggle_warn_solvability`, `set_difficulty`, `set_log_level`, …) update `engine.cfg`; they do not live in `Legend`, SUD0, or ad-hoc JS globals.
 
 ### Startup merge (native and web host)
 
@@ -81,5 +81,5 @@ Single toggle **`warn_solvability`** (default **off**) drives proactive move/loa
 
 - `src/core/config.zig`, `src/core/settings_store.zig`, `src/core/startup/config.zig`, `src/core/flow/settings.zig`
 - `src/native/shell/shell.zig`, `src/native/desktop_web.zig`, `src/web_host/mod.zig`
-- `src/wasm/shell.js` (`initializeWebSession`, `settingsHandlers`, `persistSettingsAfter`)
+- `src/wasm/shell.js` (`initializeWebSession`, `commandHandlers`, `runSessionCommand`)
 - README — Settings section (data-dir paths)

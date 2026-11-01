@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cross-entry parity drift check: every scenario in the shared file must run on both entries
 # (native shell + web shell), be listed in the parity matrix, and any entry it skips must name
-# the gap and an open issue.
+# the gap and an open issue. Also every core step kind must have a web step-runner case.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -54,6 +54,20 @@ while IFS=$'\t' read -r name entry gap issue; do
   state="$(gh issue view "$issue" --json state -q .state 2>/dev/null || echo UNKNOWN)"
   [[ "$state" == "OPEN" ]] || violation "scenario $name skips $entry under issue #$issue, which is $state (must be open)"
 done < <(jq -r '.scenarios[] | select(.skip != null) | [.name, .skip.entry, (.skip.gap // ""), (.skip.issue // "" | tostring)] | @tsv' "$SCENARIOS")
+
+STEP_ZIG="src/core/flow/step.zig"
+STEP_RUNNER="src/wasm/step_runner.js"
+step_kinds="$(awk '/^pub const Step = union\(enum\) \{/ {on=1; next} on && /^\};/ {exit} on && /^    [a-z_]+[,:]/ {sub(/^    /, ""); sub(/[,:].*/, ""); print}' "$STEP_ZIG")"
+[[ -n "$step_kinds" ]] || violation "no step kinds found in $STEP_ZIG"
+while IFS= read -r kind; do
+  [[ -z "$kind" ]] && continue
+  const_name="$(grep -E "^export const STEP_[A-Z_]+ = \"$kind\";" "$STEP_RUNNER" | sed -E 's/^export const (STEP_[A-Z_]+).*/\1/')"
+  if [[ -z "$const_name" ]]; then
+    violation "step $kind has no STEP_* constant in $STEP_RUNNER"
+  elif ! grep -q "case $const_name:" "$STEP_RUNNER"; then
+    violation "step $kind has no case in $STEP_RUNNER"
+  fi
+done <<< "$step_kinds"
 
 if [[ $FAIL -ne 0 ]]; then
   echo "✗ parity drift check failed — see $MATRIX" >&2

@@ -9,7 +9,8 @@ import {
   applyBootTheme,
   wireThemeMenu,
 } from "./theme.js";
-import { withCoreFlow } from "./test_support.mjs";
+import { commandHandlers } from "./shell.js";
+import { loadGame, settleFlow } from "./test_support.mjs";
 
 function makeThemeBtn() {
   return {
@@ -68,46 +69,34 @@ function makeThemeBtn() {
 
 {
   const html = { dataset: {} };
-  const session = {
-    config: { theme: "dark", show_region: false },
-  };
-  const game = await withCoreFlow({
-    exec(action) {
-      if (action.action === "set_theme" && action.theme === "light") {
-        session.config = { theme: "light", show_region: false };
-        return { ok: true };
-      }
-      return { ok: false };
-    },
-    getLegend: () => ({}),
-    getConfig() {
-      return session.config;
-    },
-  });
+  const game = await loadGame({ theme: "dark" });
+  const session = { config: game.getConfig(), legend: game.getLegend(), state: game.getState() };
   const controls = {
     viewSystem: { ...makeThemeBtn(), addEventListener() {} },
     viewLight: { ...makeThemeBtn(), addEventListener(_, fn) { this.click = fn; } },
     viewDark: { ...makeThemeBtn(), addEventListener() {} },
   };
   const persistCalls = [];
+  const commandFlow = commandHandlers(game, session, {
+    fetchFn: async (url, init) => {
+      persistCalls.push(JSON.parse(init.body));
+      return { ok: true, status: 204 };
+    },
+  });
   wireThemeMenu(controls, game, session, {
     root: {
       documentElement: html,
       defaultView: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
     },
-    settingsFlow: {
-      persistSettings: (settings) => {
-        persistCalls.push(settings);
-        return { ok: true };
-      },
-    },
+    commandFlow,
   });
   assert.equal(themeFromConfig(session.config), "dark");
-  controls.viewLight.click();
-  await new Promise((r) => setTimeout(r, 0));
+  await controls.viewLight.click();
+  await settleFlow();
   assert.equal(themeFromConfig(session.config), "light");
   assert.equal(html.dataset.theme, "light");
   assert.equal(persistCalls.length, 1, "core asks to persist after the theme change");
+  assert.equal(persistCalls[0].theme, "light");
 }
 
 console.log("theme.test.mjs OK");

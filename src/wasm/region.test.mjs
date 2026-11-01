@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { syncRegionMenu, wireRegionMenu } from "./region.js";
 import { applyRegionHighlight, cellsInRegion } from "./board.js";
-import { withCoreFlow } from "./test_support.mjs";
+import { commandHandlers } from "./shell.js";
+import { loadGame, settleFlow } from "./test_support.mjs";
 
 function makeToggleBtn() {
   return {
@@ -62,22 +63,8 @@ function makeMockCell(row, col) {
     for (let col = 0; col < 9; col += 1) cells.push(makeMockCell(row, col));
   }
   const board = { children: cells };
-  const session = {
-    config: { theme: "dark", show_region: false },
-  };
-  const game = await withCoreFlow({
-    exec(action) {
-      if (action.action === "set_region") {
-        session.config = { ...session.config, show_region: action.enabled };
-        return { ok: true };
-      }
-      return { ok: false };
-    },
-    getLegend: () => ({}),
-    getConfig() {
-      return session.config;
-    },
-  });
+  const game = await loadGame();
+  const session = { config: game.getConfig(), legend: game.getLegend(), state: game.getState() };
   const controls = {
     viewRegion: {
       ...makeToggleBtn(),
@@ -94,20 +81,21 @@ function makeMockCell(row, col) {
     board,
     () => ({ row: 1, col: 1 }),
     {
-      settingsFlow: {
-        persistSettings: (settings) => {
-          persistCalls.push(settings);
-          return { ok: true };
+      commandFlow: commandHandlers(game, session, {
+        fetchFn: async (url, init) => {
+          persistCalls.push(JSON.parse(init.body));
+          return { ok: true, status: 204 };
         },
-      },
+      }),
     },
   );
   assert.equal(menu.isEnabled(), false);
   controls.viewRegion.click();
-  await new Promise((r) => setTimeout(r, 0));
+  await settleFlow();
   assert.equal(menu.isEnabled(), true);
   assert.ok(board.children.find((c) => c.dataset.row === "1" && c.dataset.col === "1").classList.contains("region"));
   assert.equal(persistCalls.length, 1, "core asks to persist after the region toggle");
+  assert.equal(persistCalls[0].show_region, true);
 }
 
 console.log("region.test.mjs OK");

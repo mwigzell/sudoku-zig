@@ -368,10 +368,20 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
             .auto_new = eng.cfg.auto_new,
             .difficulty = eng.cfg.difficulty,
         }, if (file) |f| .{ .path = f.path, .name = f.name, .working = f.name } else null) },
-        .settings => |command_name| .{ .settings = flow.SettingsFlow.afterCommand(eng.cfg, command_name) },
         .@"export" => |name| .{ .@"export" = flow.ExportFlow.toFile(name) },
         .copy => .{ .@"export" = flow.ExportFlow.toClipboard() },
     };
+    have_flow = true;
+    return returnStep(out, active_flow.next(.start));
+}
+
+/// Run one player command (`exec` action JSON) end to end; returns the first step JSON.
+export fn commandStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    const eng = engineOrError(out) orelse return returnJson(out);
+    const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const cmd = boundary.parseAction(json) catch return exportError(out, "invalid action");
+    active_flow = .{ .command = flow.CommandFlow.init(eng, &file_session, cmd) };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
 }

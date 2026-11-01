@@ -48,7 +48,7 @@ Rules from `AGENTS.md`, `CONTEXT.md`, and `docs/coding-standards.md` that grep c
 
 ## Cross-entry parity (`zig build parity`)
 
-`scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/parity/scenarios.json` is missing from `docs/parity-matrix.md`, when either runner (`src/native/shell/parity_test.zig`, `src/wasm/parity.test.mjs`) stops loading the scenarios or drops out of its test list, or when a scenario `skip` lacks a gap or an open issue. It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
+`scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/parity/scenarios.json` is missing from `docs/parity-matrix.md`, when either runner (`src/native/shell/parity_test.zig`, `src/wasm/parity.test.mjs`) stops loading the scenarios or drops out of its test list, when a scenario `skip` lacks a gap or an open issue, or when a step kind in `src/core/flow/step.zig` has no `STEP_*` constant and `case` in `src/wasm/step_runner.js` (native gets that check from the Zig compiler). It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
 
 ## What it does not enforce
 

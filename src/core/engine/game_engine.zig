@@ -359,25 +359,25 @@ pub const GameEngine = struct {
                 self.cfg.theme = theme;
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
-            .set_region => |enabled| {
-                self.cfg.show_region = enabled;
+            .toggle_region => {
+                self.cfg.show_region = !self.cfg.show_region;
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
-            .set_warn_solvability => |enabled| {
-                self.cfg.warn_solvability = enabled;
+            .toggle_warn_solvability => {
+                self.cfg.warn_solvability = !self.cfg.warn_solvability;
                 self.applySolvabilityWarningsFromConfig();
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
-            .set_auto_restore => |enabled| {
-                self.cfg.auto_restore = enabled;
+            .toggle_auto_restore => {
+                self.cfg.auto_restore = !self.cfg.auto_restore;
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
-            .set_auto_new => |enabled| {
-                self.cfg.auto_new = enabled;
+            .toggle_auto_new => {
+                self.cfg.auto_new = !self.cfg.auto_new;
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
-            .set_auto_save => |enabled| {
-                self.cfg.auto_save = enabled;
+            .toggle_auto_save => {
+                self.cfg.auto_save = !self.cfg.auto_save;
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .set_difficulty => |diff| {
@@ -1506,23 +1506,23 @@ test "getConfig: default view prefs are system theme and region off" {
     try std.testing.expect(!cfg.show_region);
 }
 
-test "exec set_warn_solvability toggles engine warning flags" {
+test "exec toggle_warn_solvability flips engine warning flags" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try std.testing.expect(!engine.warn_dead_moves);
     try std.testing.expect(!engine.warn_unsolvable_load);
 
-    _ = try expectOk(execTest(&engine, command.Command{ .set_warn_solvability = true }));
+    _ = try expectOk(execTest(&engine, command.Command{ .toggle_warn_solvability = {} }));
     try std.testing.expect(engine.warn_dead_moves);
     try std.testing.expect(engine.warn_unsolvable_load);
     try std.testing.expect(engine.getConfig().warn_solvability);
 
-    _ = try expectOk(execTest(&engine, command.Command{ .set_warn_solvability = false }));
+    _ = try expectOk(execTest(&engine, command.Command{ .toggle_warn_solvability = {} }));
     try std.testing.expect(!engine.warn_dead_moves);
     try std.testing.expect(!engine.warn_unsolvable_load);
 }
 
-test "exec set_theme and set_region update view config" {
+test "exec set_theme and toggle_region update view config" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
@@ -1530,7 +1530,7 @@ test "exec set_theme and set_region update view config" {
     var cfg = engine.getConfig();
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
 
-    _ = try expectOk(execTest(&engine, command.Command{ .set_region = true }));
+    _ = try expectOk(execTest(&engine, command.Command{ .toggle_region = {} }));
     cfg = engine.getConfig();
     try std.testing.expect(cfg.show_region);
 }
@@ -1547,13 +1547,13 @@ test "exec set_difficulty and set_log_level update config" {
     try std.testing.expectEqual(logger.Severity.debug, logger.min_level);
 }
 
-test "exec startup auto flags update config" {
+test "exec startup auto toggles flip config" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
-    _ = try expectOk(execTest(&engine, command.Command{ .set_auto_restore = true }));
-    _ = try expectOk(execTest(&engine, command.Command{ .set_auto_new = true }));
-    _ = try expectOk(execTest(&engine, command.Command{ .set_auto_save = true }));
+    _ = try expectOk(execTest(&engine, command.Command{ .toggle_auto_restore = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .toggle_auto_new = {} }));
+    _ = try expectOk(execTest(&engine, command.Command{ .toggle_auto_save = {} }));
 
     const cfg = engine.getConfig();
     try std.testing.expect(cfg.auto_restore);

@@ -1,6 +1,6 @@
 // theme.js — View menu light/dark theme via engine config.
 
-import { applyConfigOutcomeStatus, assertWebBootConfig, persistSettingsAfter } from "./shell.js";
+import { assertWebBootConfig, runSessionCommand } from "./shell.js";
 
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
 
@@ -73,13 +73,13 @@ export function syncThemeMenu(controls, config) {
 }
 
 /**
- * @param {{ root?: Document, onChange?: () => void, settingsFlow?: FlowHandlers, statusEl?: HTMLElement }} [options]
+ * @param {{ root?: Document, onChange?: () => void, commandFlow?: FlowHandlers }} [options]
  */
 export function wireThemeMenu(
   controls,
   game,
   session,
-  { root = document, onChange, settingsFlow, statusEl } = {},
+  { root = document, onChange, commandFlow } = {},
 ) {
   const win = root.defaultView ?? globalThis;
   const mediaQuery = typeof win.matchMedia === "function" ? win.matchMedia(MEDIA_DARK) : null;
@@ -96,11 +96,10 @@ export function wireThemeMenu(
 
   const chooseTheme = async (theme) => {
     if (session.config.theme === theme) return;
-    const result = game.exec({ action: SET_THEME, theme });
-    if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
-    sync();
-    onChange?.();
-    await persistSettingsAfter(game, SET_THEME, settingsFlow);
+    await runSessionCommand(game, { action: SET_THEME, theme }, commandFlow, () => {
+      sync();
+      onChange?.();
+    });
   };
 
   controls.viewSystem?.addEventListener("click", () => void chooseTheme(THEME_SYSTEM));

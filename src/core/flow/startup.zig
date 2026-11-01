@@ -210,7 +210,7 @@ pub const StartupFlow = struct {
             self.text.set(s);
             break :blk self.text.get();
         } else null;
-        return .{ .show_game = .{ .status = shown, .file = if (self.restored) self.name.get() else null } };
+        return step_mod.showGame(self.engine, shown, if (self.restored) self.name.get() else null);
     }
 
     /// Idle board with the welcome line; `phase` says what follows once it is drawn.
@@ -218,7 +218,7 @@ pub const StartupFlow = struct {
         self.session.setWorkingFile(null);
         self.session.apply(.startup_idle);
         self.phase = phase;
-        return .{ .show_game = .{ .status = startup_policy.IDLE_STARTUP_STATUS, .file = null } };
+        return step_mod.showGame(self.engine, startup_policy.IDLE_STARTUP_STATUS, null);
     }
 
     fn restoreFailed(self: *StartupFlow, reason: []const u8) Step {

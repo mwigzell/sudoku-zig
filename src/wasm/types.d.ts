@@ -9,11 +9,7 @@ export type ExecAction =
   | { action: "solve" }
   | { action: "hint"; row?: number; col?: number }
   | { action: "set_theme"; theme: "light" | "dark" | "system" }
-  | { action: "set_region"; enabled: boolean }
-  | { action: "set_warn_solvability"; enabled: boolean }
-  | { action: "set_auto_restore"; enabled: boolean }
-  | { action: "set_auto_new"; enabled: boolean }
-  | { action: "set_auto_save"; enabled: boolean }
+  | { action: "toggle_region" | "toggle_warn_solvability" | "toggle_auto_restore" | "toggle_auto_new" | "toggle_auto_save" }
   | { action: "set_difficulty"; difficulty: "easy" | "medium" | "hard" }
   | { action: "set_log_level"; log_level: "debug" | "info" | "warn" | "err" | "fatal" };
 
@@ -45,9 +41,11 @@ export type FlowStart =
   | { flow: "autosave"; command: string }
   | { flow: "autosave_flush" }
   | { flow: "startup"; path?: string; name?: string }
-  | { flow: "settings"; command: string }
   | { flow: "export"; name: string | null }
   | { flow: "copy" };
+
+/** Board snapshot as wasm `getState` and `show_game` report it. */
+export type GameState = { cells: Array<{ value: number; given: boolean; conflict: boolean }> };
 
 /** Player settings as core writes them to `settings.json` (no renderer choice, no current file). */
 export type PlayerSettings = {
@@ -73,7 +71,15 @@ export type FlowStep =
   | { step: "pick_existing" | "copy_line" }
   | { step: "ask"; title: string; text: string; ok_label: string; cancel_label: string }
   | { step: "read_file"; path: string }
-  | { step: "show_game"; text: string | null; file: string | null }
+  | {
+      step: "show_game";
+      text: string | null;
+      file: string | null;
+      state: GameState;
+      legend: Record<string, boolean>;
+      config: Record<string, unknown>;
+      cell?: { row: number; col: number };
+    }
   | { step: "generate"; difficulty: number }
   | { step: "forget_current_file"; path: string; delete: boolean }
   | { step: "persist_settings"; settings: PlayerSettings }

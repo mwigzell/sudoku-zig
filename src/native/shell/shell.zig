@@ -208,7 +208,7 @@ pub const Sudoku = struct {
                     break :blk .{ .file_read = read };
                 },
                 .show_game => |game| blk: {
-                    try self.showGameWithStatus(game.status);
+                    try self.showStep(game);
                     break :blk .ack;
                 },
                 .generate => |difficulty| .{ .generated = .{ .line = puzzle_gen.PuzzleGen.generate(difficulty) } },
@@ -278,14 +278,22 @@ pub const Sudoku = struct {
         return self.flowEvent(terminal, event);
     }
 
-    fn persistSettingsAfter(self: *@This(), cmd: command.Command, event: game_engine.Event) game_engine.Event {
-        switch (event) {
-            .error_msg => return event,
-            .ok => {},
+    /// Run one command through the core command flow: apply, show, persist settings, autosave.
+    fn runCommandFlow(self: *@This(), cmd: command.Command) Error!void {
+        self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, cmd) };
+        switch (try self.runFlow(.autosave)) {
+            .show_status => |text| try self.showGameWithStatus(text),
+            .show_error => |msg| try self.renderer.showError(msg),
+            else => {},
         }
-        self.flow = .{ .settings = flow_mod.SettingsFlow.afterCommand(self.engine.getConfig(), @tagName(cmd)) };
-        const terminal = self.runFlow(.autosave) catch return event;
-        return self.flowEvent(terminal, event);
+    }
+
+    /// Carry out a `show_game` step: draw what core reports, remembering the edited cell for region shading.
+    fn showStep(self: *@This(), game: flow_mod.step.ShowGame) Error!void {
+        if (game.cell) |c| self.last_cell = c;
+        const region: ?facade_mod.Selection = if (game.config.show_region) self.last_cell else null;
+        try self.renderer.render(game.board, game.status, region);
+        try self.renderer.showLegend(game.legend);
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
@@ -322,6 +330,13 @@ pub const Sudoku = struct {
             },
             .valid => |cmd| {
                 switch (cmd) {
+                    .quit, .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => {},
+                    else => {
+                        try self.runCommandFlow(cmd);
+                        return false;
+                    },
+                }
+                switch (cmd) {
                     .new => {
                         self.last_cell = null;
                     },
@@ -346,8 +361,7 @@ pub const Sudoku = struct {
                     .paste => self.file_session.noteLoad(.paste),
                     else => {},
                 };
-                const persisted = self.persistSettingsAfter(cmd, event);
-                return try self.handleEvent(self.applyAutoSavePolicyIfNeeded(cmd, persisted));
+                return try self.handleEvent(self.applyAutoSavePolicyIfNeeded(cmd, event));
             },
         }
     }

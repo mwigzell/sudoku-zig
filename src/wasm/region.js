@@ -1,11 +1,11 @@
 // region.js — View menu region highlight via engine config.
 
 import { applyRegionHighlight } from "./board.js";
-import { applyConfigOutcomeStatus, persistSettingsAfter } from "./shell.js";
+import { runSessionCommand } from "./shell.js";
 
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
 
-const SET_REGION = "set_region";
+const TOGGLE_REGION = "toggle_region";
 
 export function syncRegionMenu(controls, config) {
   if (!controls.viewRegion) return;
@@ -15,7 +15,7 @@ export function syncRegionMenu(controls, config) {
 }
 
 /**
- * @param {{ onChange?: () => void, settingsFlow?: FlowHandlers, statusEl?: HTMLElement }} [options]
+ * @param {{ onChange?: () => void, commandFlow?: FlowHandlers }} [options]
  */
 export function wireRegionMenu(
   controls,
@@ -23,7 +23,7 @@ export function wireRegionMenu(
   session,
   boardEl,
   getSelection,
-  { onChange, settingsFlow, statusEl } = {},
+  { onChange, commandFlow } = {},
 ) {
   const syncBoard = () => {
     syncRegionMenu(controls, session.config);
@@ -36,14 +36,10 @@ export function wireRegionMenu(
   };
 
   controls.viewRegion?.addEventListener("click", () => {
-    void (async () => {
-      const next = !session.config.show_region;
-      const result = game.exec({ action: SET_REGION, enabled: next });
-      if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
+    void runSessionCommand(game, { action: TOGGLE_REGION }, commandFlow, () => {
       syncBoard();
       onChange?.();
-      await persistSettingsAfter(game, SET_REGION, settingsFlow);
-    })();
+    });
   });
 
   syncBoard();

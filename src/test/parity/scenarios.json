@@ -45,7 +45,7 @@
       "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "set_auto_save": true }, { "fill": { "row": 0, "col": 0, "digit": 4 } }],
+      "steps": [{ "toggle_auto_save": true }, { "fill": { "row": 0, "col": 0, "digit": 4 } }],
       "expect": {
         "questions": 0,
         "settings": { "auto_save": true },
@@ -149,6 +149,21 @@
           { "row": 0, "col": 0, "value": 0, "given": false },
           { "row": 8, "col": 8, "value": 2, "given": false }
         ]
+      }
+    },
+    {
+      "name": "settings_change_does_not_autosave",
+      "summary": "With Auto Save on, View and Settings changes persist the settings but never write the game file.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{ "toggle_region": true }, { "set_theme": "light" }],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "status": "new game started",
+        "settings": { "auto_save": true, "show_region": true, "theme": "light" },
+        "probes": []
       }
     }
   ]

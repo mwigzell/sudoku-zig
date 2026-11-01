@@ -2,6 +2,10 @@
 // platform and report the result back as the next input.
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const config = @import("../config.zig");
+const board = @import("../board/board.zig");
+const legend_mod = @import("../renderer/legend.zig");
+const game_engine = @import("../engine/game_engine.zig");
+const event = @import("../event.zig");
 
 /// A two-button question; `yes` in the answer means the user picked `ok_label`.
 pub const Ask = struct {
@@ -41,12 +45,28 @@ pub const Step = union(enum) {
     done,
 };
 
-/// What `show_game` puts on screen besides the board.
+/// Everything the adapter draws for `show_game`, so it needs nothing else from the engine.
 pub const ShowGame = struct {
     status: ?[]const u8,
     /// The working file to label the game with; null for an unsaved game.
     file: ?[]const u8,
+    board: board.Board.BoardView,
+    legend: legend_mod.Legend,
+    config: config.Config,
+    /// The cell the command edited, if any.
+    cell: ?event.CellCoord = null,
 };
+
+/// The `show_game` step for the engine's current game.
+pub fn showGame(engine: *game_engine.GameEngine, status: ?[]const u8, file: ?[]const u8) Step {
+    return .{ .show_game = .{
+        .status = status,
+        .file = file,
+        .board = engine.eventBoard(),
+        .legend = engine.getLegend(),
+        .config = engine.getConfig(),
+    } };
+}
 
 /// The current file to forget, and whether to delete it from disk too.
 pub const ForgetCurrentFile = struct {

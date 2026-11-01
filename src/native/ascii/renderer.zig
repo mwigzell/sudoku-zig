@@ -302,7 +302,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
             if (std.mem.eql(u8, pick, "1")) {
-                return .{ .valid = _command.Command{ .set_warn_solvability = !warn_solvability } };
+                return .{ .valid = _command.Command{ .toggle_warn_solvability = {} } };
             }
             if (std.mem.eql(u8, pick, "2")) {
                 const diff = try self.pickDifficulty();
@@ -317,10 +317,10 @@ pub fn AsciiRenderer(StylerType: type) type {
                 return .{ .valid = _command.Command{ .set_theme = picked } };
             }
             if (std.mem.eql(u8, pick, "5")) {
-                return .{ .valid = _command.Command{ .set_auto_restore = !auto_restore } };
+                return .{ .valid = _command.Command{ .toggle_auto_restore = {} } };
             }
-            if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .set_auto_new = !auto_new } };
-            if (std.mem.eql(u8, pick, "7")) return .{ .valid = _command.Command{ .set_auto_save = !auto_save } };
+            if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .toggle_auto_new = {} } };
+            if (std.mem.eql(u8, pick, "7")) return .{ .valid = _command.Command{ .toggle_auto_save = {} } };
             if (std.mem.eql(u8, pick, "8")) {
                 return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
             }
@@ -377,7 +377,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "4")) return .{ .valid = _command.Command{ .@"export" = .{ .path = null } } };
             if (std.mem.eql(u8, pick, "5")) return .{ .valid = _command.Command{ .new = .{ .puzzle = null } } };
             if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .save_as = .{ .path = null } } };
-            if (std.mem.eql(u8, pick, "7")) return .{ .valid = _command.Command{ .set_region = !show_region } };
+            if (std.mem.eql(u8, pick, "7")) return .{ .valid = _command.Command{ .toggle_region = {} } };
             if (std.mem.eql(u8, pick, "8")) {
                 return .{ .valid = hintCommandFromTarget(hint_target) };
             }
@@ -1523,7 +1523,7 @@ test "showMenu: hint pick uses last cell for targeted hint" {
     }
 }
 
-test "showMenu: region pick toggles set_region" {
+test "showMenu: region pick is toggle_region" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -1542,14 +1542,13 @@ test "showMenu: region pick toggles set_region" {
     const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
-            try std.testing.expectEqualStrings(@tagName(cmd), "set_region");
-            try std.testing.expect(cmd.set_region);
+            try std.testing.expectEqualStrings(@tagName(cmd), "toggle_region");
         },
         .error_msg => try std.testing.expect(false),
     }
 }
 
-test "showMenu: settings enables solvability warnings" {
+test "showMenu: settings toggles solvability warnings" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
 
@@ -1568,8 +1567,7 @@ test "showMenu: settings enables solvability warnings" {
     const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
-            try std.testing.expectEqualStrings(@tagName(cmd), "set_warn_solvability");
-            try std.testing.expect(cmd.set_warn_solvability);
+            try std.testing.expectEqualStrings(@tagName(cmd), "toggle_warn_solvability");
         },
         .error_msg => try std.testing.expect(false),
     }

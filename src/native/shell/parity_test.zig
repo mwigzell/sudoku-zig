@@ -22,7 +22,9 @@ const Probe = struct { row: u8, col: u8, value: u8, given: bool };
 const Step = struct {
     fill: ?Move = null,
     clear: ?CellAt = null,
-    set_auto_save: ?bool = null,
+    toggle_auto_save: ?bool = null,
+    toggle_region: ?bool = null,
+    set_theme: ?[]const u8 = null,
     fill_first_empty: ?bool = null,
     undo: ?bool = null,
     redo: ?bool = null,
@@ -38,7 +40,7 @@ const ScenarioConfig = struct {
 
 const CurrentFile = struct { name: []const u8, puzzle_line: []const u8, moves: []const Move = &.{} };
 
-const Settings = struct { auto_save: ?bool = null };
+const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null };
 
 const Legend = struct { undo: ?bool = null, redo: ?bool = null };
 
@@ -115,7 +117,9 @@ fn firstEmptyLegalFill(view: board.Board.BoardView) !command.FillData {
 fn stepCommand(app: *shell.Sudoku, step: Step) !command.Command {
     if (step.fill) |m| return .{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
     if (step.clear) |at| return .{ .clear = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
-    if (step.set_auto_save) |on| return .{ .set_auto_save = on };
+    if (step.toggle_auto_save != null) return .{ .toggle_auto_save = {} };
+    if (step.toggle_region != null) return .{ .toggle_region = {} };
+    if (step.set_theme) |name| return .{ .set_theme = std.meta.stringToEnum(config.ViewTheme, name) orelse return error.UnknownTheme };
     if (step.fill_first_empty != null) return .{ .fill = try firstEmptyLegalFill(app.engine.eventBoard()) };
     if (step.undo != null) return .{ .undo = {} };
     if (step.redo != null) return .{ .redo = {} };
@@ -149,7 +153,10 @@ fn runScenario(io: std.Io, data_dir: []const u8, scenario: Scenario) !void {
             try std.testing.expectEqual(solved, app.engine.state.board.isSolved());
         }
     }
-    if (scenario.puzzle_line) |line| _ = app.engine.newFromOneLinePuzzle(line);
+    if (scenario.puzzle_line) |line| {
+        if (app.engine.newFromOneLinePuzzle(line) != .ok) return error.SetupPuzzleRejected;
+        app.file_session.noteLoad(.new_game);
+    }
 
     for (scenario.steps) |step| {
         const one = [_]command.ParseCommandResult{.{ .valid = try stepCommand(&app, step) }};
@@ -173,6 +180,8 @@ fn runScenario(io: std.Io, data_dir: []const u8, scenario: Scenario) !void {
     if (scenario.expect.settings) |want| {
         const saved = try settings_store.loadOrDefault(std.testing.allocator, io, data_dir);
         if (want.auto_save) |on| try std.testing.expectEqual(on, saved.auto_save);
+        if (want.show_region) |on| try std.testing.expectEqual(on, saved.show_region);
+        if (want.theme) |name| try std.testing.expectEqualStrings(name, @tagName(saved.theme));
     }
     if (scenario.expect.legend) |want| {
         const legend = app.engine.getLegend();

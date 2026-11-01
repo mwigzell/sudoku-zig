@@ -10,11 +10,10 @@ import {
   exportPuzzle,
   applyEventStatus,
   applyLoadedSessionOutcome,
-  applyConfigOutcomeStatus,
   applySessionOutcomeStatus,
   clearEventStatus,
   persistCurrentFileBytes,
-  persistSettingsAfter,
+  runSessionCommand,
   startAutoSavePolicy,
   syncCurrentFileLabels,
   showErrorModal,
@@ -38,7 +37,7 @@ import { askWithDialog, FLOW_EXPORT, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAIL
 export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
-const SET_AUTO_SAVE = "set_auto_save";
+const TOGGLE_AUTO_SAVE = "toggle_auto_save";
 const NEW_COMMAND = "new";
 const OPEN_COMMAND = "open";
 const IMPORT_COMMAND = "import";
@@ -468,7 +467,7 @@ export function wireFileMenu(
     exportText = persistPuzzleText,
     createElement,
     onViewRefresh,
-    settingsFlow,
+    commandFlow,
   } = {},
 ) {
   const fail = (result) => {
@@ -612,17 +611,11 @@ export function wireFileMenu(
     await runSave(true);
   });
 
-  // Settings-only path (toggle autosave), no board replacement.
   controls.autoSave?.addEventListener("click", async () => {
-    const enabled = session.config?.auto_save !== true;
-    const result = game.exec({ action: SET_AUTO_SAVE, enabled });
-    if (!applyConfigOutcomeStatus(session, game, null, result)) {
-      fail(result);
-      return;
-    }
-    menuBar.sync();
-    onViewRefresh?.();
-    await persistSettingsAfter(game, SET_AUTO_SAVE, settingsFlow);
+    await runSessionCommand(game, { action: TOGGLE_AUTO_SAVE }, commandFlow, () => {
+      menuBar.sync();
+      onViewRefresh?.();
+    });
   });
 
   // Phase F: Open path (SUD0 bytes) -> canonical loaded-session completion -> autosave kick.

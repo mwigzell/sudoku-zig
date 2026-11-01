@@ -1,6 +1,7 @@
 // settings.js — File → Settings: warn, default difficulty, log level.
 
-import { applyConfigOutcomeStatus, difficultyName, logLevelName, persistSettingsAfter } from "./shell.js";
+import { difficultyName, logLevelName, runSessionCommand } from "./shell.js";
+import { STEP_SHOW_ERROR } from "./step_runner.js";
 
 /** @typedef {import("./types").ExecAction} ExecAction */
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
@@ -22,29 +23,26 @@ export function showSettingsModal(modal, config) {
 }
 
 /**
- * Run one settings command, then the core settings flow for it.
+ * Run one settings command through core; the dialog re-syncs from the config core shows,
+ * or from the unchanged session config when core rejects the command.
  * @param {ExecAction} action
- * @param {FlowHandlers} [settingsFlow]
+ * @param {FlowHandlers} [commandFlow]
  */
-async function applySettingChange(game, session, modal, settingsFlow, action) {
-  const result = game.exec(action);
-  if (!applyConfigOutcomeStatus(session, game, null, result)) {
-    syncSettingsModal(modal, session.config ?? game.getConfig());
-    return;
-  }
-  await persistSettingsAfter(game, action.action, settingsFlow);
+async function applySettingChange(game, session, modal, commandFlow, action) {
+  const outcome = await runSessionCommand(game, action, commandFlow, (step) => syncSettingsModal(modal, step.config));
+  if (outcome.kind === STEP_SHOW_ERROR) syncSettingsModal(modal, session.config);
 }
 
 /**
  * File → Settings dialog.
- * @param {{ settingsFlow?: FlowHandlers, onDismiss?: () => void, closeMenus?: () => void }} [options]
+ * @param {{ commandFlow?: FlowHandlers, onDismiss?: () => void, closeMenus?: () => void }} [options]
  */
 export function wireSettingsMenu(
   settingsBtn,
   game,
   session,
   modal,
-  { settingsFlow, onDismiss, closeMenus } = {},
+  { commandFlow, onDismiss, closeMenus } = {},
 ) {
   if (!settingsBtn || !modal?.el) return;
   settingsBtn.addEventListener("click", () => {
@@ -52,10 +50,10 @@ export function wireSettingsMenu(
     showSettingsModal(modal, session.config ?? game.getConfig());
   });
 
-  const change = (action) => applySettingChange(game, session, modal, settingsFlow, action);
+  const change = (action) => applySettingChange(game, session, modal, commandFlow, action);
 
   modal.checkbox?.addEventListener("change", async () => {
-    await change({ action: "set_warn_solvability", enabled: modal.checkbox.checked });
+    await change({ action: "toggle_warn_solvability" });
   });
 
   modal.difficultySelect?.addEventListener("change", async () => {
@@ -67,15 +65,15 @@ export function wireSettingsMenu(
   });
 
   modal.autoRestoreCheckbox?.addEventListener("change", async () => {
-    await change({ action: "set_auto_restore", enabled: modal.autoRestoreCheckbox.checked });
+    await change({ action: "toggle_auto_restore" });
   });
 
   modal.autoNewCheckbox?.addEventListener("change", async () => {
-    await change({ action: "set_auto_new", enabled: modal.autoNewCheckbox.checked });
+    await change({ action: "toggle_auto_new" });
   });
 
   modal.autoSaveCheckbox?.addEventListener("change", async () => {
-    await change({ action: "set_auto_save", enabled: modal.autoSaveCheckbox.checked });
+    await change({ action: "toggle_auto_save" });
   });
 
   modal.dismissEl?.addEventListener("click", () => {

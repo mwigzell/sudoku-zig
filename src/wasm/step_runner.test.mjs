@@ -1,4 +1,4 @@
-// step_runner.test.mjs — core save/autosave/startup/settings flows driven through the web step runner (real wasm).
+// step_runner.test.mjs — core save/autosave/startup/command flows driven through the web step runner (real wasm).
 
 import assert from "node:assert/strict";
 import {
@@ -6,8 +6,8 @@ import {
   FLOW_AUTOSAVE,
   FLOW_SAVE,
   FLOW_SAVE_AS,
-  FLOW_SETTINGS,
   FLOW_STARTUP,
+  runCommand,
   runFlow,
 } from "./step_runner.js";
 import { loadCoreFlow, loadGame, openAs, startNewGame } from "./test_support.mjs";
@@ -237,28 +237,34 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
   assert.deepEqual(failed.log.at(-1), ["error", "A new game could not be generated (generation failed)."]);
 }
 
-// persist_settings hands core's settings to the platform; failures and throws come back as core's sentence.
+// A command runs end to end in core: show_game carries what the adapter draws, then
+// persist_settings hands core's settings over; failures and throws come back as core's sentence.
 {
-  const game = await loadGame({ theme: "light" });
+  const game = await loadGame({ theme: "dark" });
+  const shown = [];
   const persisted = [];
   const errors = [];
   const handlers = {
+    showGame: (step) => shown.push(step),
     persistSettings: (settings) => {
       persisted.push(settings.theme);
       return { ok: true };
     },
     showError: (text) => errors.push(text),
   };
-  assert.deepEqual(await runFlow(game, { flow: FLOW_SETTINGS, command: "set_theme" }, handlers), { kind: "done" });
+  assert.deepEqual(await runCommand(game, { action: "set_theme", theme: "light" }, handlers), { kind: "done" });
+  assert.equal(shown[0].config.theme, "light");
+  assert.equal(shown[0].legend.fill, true);
+  assert.equal(shown[0].state.cells.length, 81);
   assert.deepEqual(persisted, ["light"]);
 
-  const failed = await runFlow(game, { flow: FLOW_SETTINGS, command: "set_region" }, {
+  const failed = await runCommand(game, { action: "toggle_region" }, {
     ...handlers,
     persistSettings: () => ({ ok: false }),
   });
   assert.deepEqual(failed, { kind: "show_error", text: "Your settings could not be saved (settings write failed)." });
 
-  const thrown = await runFlow(game, { flow: FLOW_SETTINGS, command: "set_region" }, {
+  const thrown = await runCommand(game, { action: "toggle_region" }, {
     ...handlers,
     persistSettings: () => {
       throw new Error("offline");
@@ -266,6 +272,16 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
   });
   assert.equal(thrown.text, "Your settings could not be saved (offline).");
   assert.equal(errors.length, 2);
+  assert.equal(game.getConfig().show_region, false, "two toggles leave the setting where it started");
+}
+
+// A command core rejects ends with its error and shows nothing.
+{
+  const game = await loadGame();
+  const shown = [];
+  const outcome = await runCommand(game, { action: "undo" }, { showGame: (step) => shown.push(step), showError() {} });
+  assert.equal(outcome.kind, "show_error");
+  assert.equal(shown.length, 0);
 }
 
 console.log("step_runner.test.mjs OK");

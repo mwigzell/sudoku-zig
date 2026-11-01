@@ -6,6 +6,7 @@ const autosave_mod = @import("autosave.zig");
 const startup_mod = @import("startup.zig");
 const settings_mod = @import("settings.zig");
 const export_mod = @import("export.zig");
+const command_mod = @import("command.zig");
 
 pub const step = @import("step.zig");
 pub const file_session = @import("file_session.zig");
@@ -19,6 +20,7 @@ pub const AutosaveFlow = autosave_mod.AutosaveFlow;
 pub const StartupFlow = startup_mod.StartupFlow;
 pub const SettingsFlow = settings_mod.SettingsFlow;
 pub const ExportFlow = export_mod.ExportFlow;
+pub const CommandFlow = command_mod.CommandFlow;
 pub const startup = startup_mod;
 
 pub const Flow = union(enum) {
@@ -27,6 +29,7 @@ pub const Flow = union(enum) {
     startup: StartupFlow,
     settings: SettingsFlow,
     @"export": ExportFlow,
+    command: CommandFlow,
 
     /// Advance whichever flow is running.
     pub fn next(self: *Flow, input: Input) Step {
@@ -36,6 +39,7 @@ pub const Flow = union(enum) {
             .startup => |*f| f.next(input),
             .settings => |*f| f.next(input),
             .@"export" => |*f| f.next(input),
+            .command => |*f| f.next(input),
         };
     }
 };
@@ -55,5 +59,6 @@ test {
     _ = startup_mod;
     _ = settings_mod;
     _ = export_mod;
+    _ = command_mod;
     _ = file_session;
 }

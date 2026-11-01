@@ -230,7 +230,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   config = game.getConfig();
   assert.equal(config.theme, "light");
 
-  const region = game.exec({ action: "set_region", enabled: true });
+  const region = game.exec({ action: "toggle_region" });
   assert.equal(region.ok, true);
   config = game.getConfig();
   assert.equal(config.show_region, true);
@@ -264,7 +264,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const dead = await loadArtifact(wasmBytes);
   assert.equal(dead.init({ difficulty: 1 }).ok, true);
-  assert.equal(dead.exec({ action: "set_warn_solvability", enabled: true }).ok, true);
+  assert.equal(dead.exec({ action: "toggle_warn_solvability" }).ok, true);
   assert.equal(dead.importPuzzle(EASY_FIXTURE).ok, true);
   const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(bad.ok, true);
@@ -275,14 +275,14 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
   const fresh = await loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
-  assert.equal(fresh.exec({ action: "set_warn_solvability", enabled: true }).ok, true);
+  assert.equal(fresh.exec({ action: "toggle_warn_solvability" }).ok, true);
   const loaded = fresh.deserialize(saved.bytes);
   assert.equal(loaded.ok, true);
   assert.match(loaded.msg ?? "", /no solution/i);
 
   const named = await loadArtifact(wasmBytes);
   assert.equal(named.init({ difficulty: 1 }).ok, true);
-  assert.equal(named.exec({ action: "set_warn_solvability", enabled: true }).ok, true);
+  assert.equal(named.exec({ action: "toggle_warn_solvability" }).ok, true);
   const opened = named.deserialize(saved.bytes, { name: "dead.sud" });
   assert.equal(opened.ok, true);
   assert.match(opened.msg ?? "", /opened: dead\.sud/i);

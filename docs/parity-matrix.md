@@ -20,7 +20,7 @@ Native and web front ends call core differently, but must produce the same **sem
 | `legend` | Whether Undo / Redo are offered after the steps. |
 | `probes` | Cell value and given flag after the steps. |
 
-Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `paste` (clipboard text), `set_auto_save` (the Auto Save menu toggle).
+Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `paste` (clipboard text), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
 
 Write context (core's `continuation` / `detached`) is checked by what follows it: under `continuation` the next autosave writes the working file without asking; under `detached` it asks before overwriting an existing file.
 
@@ -35,6 +35,7 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `history_branch_discards_redo` | A move after Undo discards the undone move; Redo not offered | same | same |
 | `paste_valid_resets_history` | Pasted line becomes the givens; status `paste: puzzle loaded`; Undo not offered | same | same |
 | `paste_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
+| `settings_change_does_not_autosave` | With Auto Save on, Region and Theme changes persist settings and write no game file; the status line keeps the last message | same | same |
 
 ## Adding a scenario
 

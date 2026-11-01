@@ -7,6 +7,7 @@ const config = @import("../core/config.zig");
 const logger = @import("../core/logger.zig");
 const event_mod = @import("../core/event.zig");
 const game_engine = @import("../core/engine/game_engine.zig");
+const puzzle_gen = @import("../core/puzzle_gen/mod.zig");
 const about = @import("../core/about.zig");
 const legend_mod = @import("../core/renderer/legend.zig");
 const wire = @import("wire.zig");
@@ -76,14 +77,6 @@ const JsonWriter = struct {
     }
 };
 
-fn writeJson(out: *OutBuffer, comptime fmt: []const u8, args: anytype) !void {
-    out.reset();
-    var jw: JsonWriter = undefined;
-    JsonWriter.init(out, &jw);
-    try std.Io.Writer.print(&jw.writer, fmt, args);
-    try std.Io.Writer.flush(&jw.writer);
-}
-
 fn writeJsonString(w: *std.Io.Writer, text: []const u8) !void {
     try std.json.Stringify.encodeJsonString(text, .{}, w);
 }
@@ -94,7 +87,6 @@ const JsonAction = struct {
     col: ?u8 = null,
     digit: ?u8 = null,
     theme: ?[]const u8 = null,
-    enabled: ?bool = null,
     difficulty: ?[]const u8 = null,
     log_level: ?[]const u8 = null,
 };
@@ -138,26 +130,11 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         if (std.ascii.eqlIgnoreCase(theme_name, "system")) return .{ .set_theme = .system };
         return error.InvalidTheme;
     }
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_region")) {
-        const enabled = parsed.value.enabled orelse return error.MissingField;
-        return .{ .set_region = enabled };
-    }
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_warn_solvability")) {
-        const enabled = parsed.value.enabled orelse return error.MissingField;
-        return .{ .set_warn_solvability = enabled };
-    }
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_auto_restore")) {
-        const enabled = parsed.value.enabled orelse return error.MissingField;
-        return .{ .set_auto_restore = enabled };
-    }
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_auto_new")) {
-        const enabled = parsed.value.enabled orelse return error.MissingField;
-        return .{ .set_auto_new = enabled };
-    }
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_auto_save")) {
-        const enabled = parsed.value.enabled orelse return error.MissingField;
-        return .{ .set_auto_save = enabled };
-    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_region")) return .{ .toggle_region = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_warn_solvability")) return .{ .toggle_warn_solvability = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_restore")) return .{ .toggle_auto_restore = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_new")) return .{ .toggle_auto_new = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_save")) return .{ .toggle_auto_save = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_difficulty")) {
         const name = parsed.value.difficulty orelse return error.MissingField;
         if (std.ascii.eqlIgnoreCase(name, "easy")) return .{ .set_difficulty = .easy };
@@ -264,8 +241,6 @@ pub const FlowStart = union(enum) {
     autosave_flush,
     /// The host's current file, or null when it has none.
     startup: ?StartupFile,
-    /// The command that just ran.
-    settings: []const u8,
     /// The file to export to, or null when there is none.
     @"export": ?[]const u8,
     copy,
@@ -294,7 +269,6 @@ pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStar
         .autosave => .{ .autosave = v.command orelse return error.MissingField },
         .autosave_flush => .autosave_flush,
         .startup => .{ .startup = if (v.path) |path| .{ .path = path, .name = v.name orelse return error.MissingField } else null },
-        .settings => .{ .settings = v.command orelse return error.MissingField },
         .@"export" => .{ .@"export" = v.name },
         .copy => .copy,
     };
@@ -389,6 +363,13 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try writeOptionalJsonString(w, g.status);
             try std.Io.Writer.writeAll(w, ",\"file\":");
             try writeOptionalJsonString(w, g.file);
+            try std.Io.Writer.writeAll(w, ",\"state\":");
+            try wire.writeGameSnapshotJson(w, wire.GameSnapshot.fromView(g.board));
+            try std.Io.Writer.writeAll(w, ",\"legend\":");
+            try writeLegendTo(w, g.legend);
+            try std.Io.Writer.writeAll(w, ",\"config\":");
+            try writeWireConfigTo(w, wire.WireConfig.fromConfig(g.config));
+            if (g.cell) |c| try std.Io.Writer.print(w, ",\"cell\":{{\"row\":{d},\"col\":{d}}}", .{ c.row, c.col });
         },
         .generate => |d| try std.Io.Writer.print(w, ",\"difficulty\":{d}", .{@backingInt(wire.PlayerDifficulty.fromPuzzleDifficulty(d))}),
         .forget_current_file => |f| {
@@ -441,8 +422,16 @@ pub fn writeAboutJson(out: OutBuffer, debug_build: bool) !void {
 
 pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     var mutable = out;
-    try writeJson(
-        &mutable,
+    out.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    try writeLegendTo(&jw.writer, legend);
+    try std.Io.Writer.flush(&jw.writer);
+}
+
+fn writeLegendTo(w: *std.Io.Writer, legend: legend_mod.Legend) !void {
+    try std.Io.Writer.print(
+        w,
         "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"paste\":{any},\"save_as\":{any},\"solve\":{any}}}",
         .{
             legend.fill,
@@ -464,14 +453,22 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
 }
 
 pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
+    var mutable = out;
+    out.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    try writeWireConfigTo(&jw.writer, wire_cfg);
+    try std.Io.Writer.flush(&jw.writer);
+}
+
+fn writeWireConfigTo(w: *std.Io.Writer, wire_cfg: wire.WireConfig) !void {
     const theme_name: []const u8 = switch (wire_cfg.theme) {
         .dark => "dark",
         .light => "light",
         .system => "system",
     };
-    var mutable = out;
-    try writeJson(
-        &mutable,
+    try std.Io.Writer.print(
+        w,
         "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
@@ -547,7 +544,7 @@ test "writeEventJson ok embeds state snapshot" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"state\"") != null);
 }
 
-test "parseAction set_theme and set_region" {
+test "parseAction set_theme and toggles" {
     const theme_cmd = try parseAction("{\"action\":\"set_theme\",\"theme\":\"light\"}");
     switch (theme_cmd) {
         .set_theme => |theme| try std.testing.expectEqual(config.ViewTheme.light, theme),
@@ -559,35 +556,14 @@ test "parseAction set_theme and set_region" {
         else => return error.TestFailed,
     }
 
-    const region_cmd = try parseAction("{\"action\":\"set_region\",\"enabled\":true}");
-    switch (region_cmd) {
-        .set_region => |enabled| try std.testing.expect(enabled),
-        else => return error.TestFailed,
-    }
-
-    const warn_cmd = try parseAction("{\"action\":\"set_warn_solvability\",\"enabled\":true}");
-    switch (warn_cmd) {
-        .set_warn_solvability => |enabled| try std.testing.expect(enabled),
-        else => return error.TestFailed,
-    }
-
-    const auto_restore_cmd = try parseAction("{\"action\":\"set_auto_restore\",\"enabled\":true}");
-    switch (auto_restore_cmd) {
-        .set_auto_restore => |enabled| try std.testing.expect(enabled),
-        else => return error.TestFailed,
-    }
-
-    const auto_new_cmd = try parseAction("{\"action\":\"set_auto_new\",\"enabled\":false}");
-    switch (auto_new_cmd) {
-        .set_auto_new => |enabled| try std.testing.expect(!enabled),
-        else => return error.TestFailed,
-    }
-
-    const auto_save_cmd = try parseAction("{\"action\":\"set_auto_save\",\"enabled\":true}");
-    switch (auto_save_cmd) {
-        .set_auto_save => |enabled| try std.testing.expect(enabled),
-        else => return error.TestFailed,
-    }
+    const toggles = [_]struct { json: []const u8, tag: command.CommandTag }{
+        .{ .json = "{\"action\":\"toggle_region\"}", .tag = .toggle_region },
+        .{ .json = "{\"action\":\"toggle_warn_solvability\"}", .tag = .toggle_warn_solvability },
+        .{ .json = "{\"action\":\"toggle_auto_restore\"}", .tag = .toggle_auto_restore },
+        .{ .json = "{\"action\":\"toggle_auto_new\"}", .tag = .toggle_auto_new },
+        .{ .json = "{\"action\":\"toggle_auto_save\"}", .tag = .toggle_auto_save },
+    };
+    for (toggles) |t| try std.testing.expectEqual(t.tag, std.meta.activeTag(try parseAction(t.json)));
 
     const diff_cmd = try parseAction("{\"action\":\"set_difficulty\",\"difficulty\":\"medium\"}");
     switch (diff_cmd) {
@@ -833,8 +809,6 @@ test "flow start parses each web flow" {
     try std.testing.expectEqualStrings("/current-file", startup.path);
     try std.testing.expectEqualStrings("g.sud", startup.name);
     try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"startup\",\"path\":\"/current-file\"}"));
-    try std.testing.expectEqualStrings("set_theme", (try parseFlowStart(a, "{\"flow\":\"settings\",\"command\":\"set_theme\"}")).settings);
-    try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"settings\"}"));
     try std.testing.expectEqualStrings("p.txt", (try parseFlowStart(a, "{\"flow\":\"export\",\"name\":\"p.txt\"}")).@"export".?);
     try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"export\"}")).@"export" == null);
     try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"copy\"}")) == .copy);
@@ -867,7 +841,7 @@ test "flow input parses every step result" {
 }
 
 test "step JSON carries the tag and its payload" {
-    var buf: [512]u8 = undefined;
+    var buf: [8192]u8 = undefined;
     var len: u32 = 0;
     const out = OutBuffer{ .buf = &buf, .len = &len };
     try writeStepJson(out, .{ .ask = .{ .title = "T", .text = "Q?", .ok_label = "Yes", .cancel_label = "No" } });
@@ -884,8 +858,16 @@ test "step JSON carries the tag and its payload" {
     try std.testing.expectEqualStrings("{\"step\":\"done\"}", out.finishJson());
     try writeStepJson(out, .{ .read_file = "/current-file" });
     try std.testing.expectEqualStrings("{\"step\":\"read_file\",\"path\":\"/current-file\"}", out.finishJson());
-    try writeStepJson(out, .{ .show_game = .{ .status = null, .file = "g.sud" } });
-    try std.testing.expectEqualStrings("{\"step\":\"show_game\",\"text\":null,\"file\":\"g.sud\"}", out.finishJson());
+    var shown_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer shown_engine.deinit();
+    var shown = flow.step.showGame(&shown_engine, null, "g.sud");
+    shown.show_game.cell = .{ .row = 1, .col = 2 };
+    try writeStepJson(out, shown);
+    const shown_json = out.finishJson();
+    try std.testing.expect(std.mem.startsWith(u8, shown_json, "{\"step\":\"show_game\",\"text\":null,\"file\":\"g.sud\",\"state\":{"));
+    try std.testing.expect(std.mem.indexOf(u8, shown_json, ",\"legend\":{\"fill\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, shown_json, ",\"config\":{\"difficulty\":") != null);
+    try std.testing.expect(std.mem.endsWith(u8, shown_json, ",\"cell\":{\"row\":1,\"col\":2}}"));
     try writeStepJson(out, .{ .generate = .hard });
     try std.testing.expectEqualStrings("{\"step\":\"generate\",\"difficulty\":3}", out.finishJson());
     try writeStepJson(out, .{ .forget_current_file = .{ .path = "/current-file", .delete = true } });
