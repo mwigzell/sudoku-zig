@@ -1,7 +1,7 @@
 // region.js — View menu region highlight via engine config.
 
 import { applyRegionHighlight } from "./board.js";
-import { runSessionCommand } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
 
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
 
@@ -36,7 +36,7 @@ export function wireRegionMenu(
   };
 
   controls.viewRegion?.addEventListener("click", () => {
-    void runSessionCommand(game, { action: TOGGLE_REGION }, commandFlow, () => {
+    void commandFlowMod.runSessionCommand(game, { action: TOGGLE_REGION }, commandFlow, () => {
       syncBoard();
       onChange?.();
     });

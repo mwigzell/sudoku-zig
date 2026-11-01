@@ -16,7 +16,7 @@ export type ExecAction =
   | { action: "open" | "import" | "paste" }
   | { action: "save" | "save_as" | "export" | "copy" };
 
-export type WebSession = ReturnType<typeof import("./shell.js").createWebSessionFromStartup>;
+export type WebSession = ReturnType<typeof import("./session.js").createWebSessionFromStartup>;
 /** Menubar item elements resolved from the page shell. */
 export type MenuBarControls = ReturnType<typeof import("./menu_bar.js").collectMenuBarControls>;
 /** Wired menubar: `sync()` re-applies legend/config enablement and labels; `closeAll()` closes open dropdowns. */
@@ -28,7 +28,7 @@ export type FileMenuControls = Partial<
   Pick<MenuBarControls, "new" | "open" | "import" | "export" | "save" | "saveAs" | "autoSave">
 >;
 export type GeneratingModal = ReturnType<typeof import("./generating.js").wireGeneratingModal>;
-export type ErrorModal = ReturnType<typeof import("./shell.js").wireErrorModal>;
+export type ErrorModal = ReturnType<typeof import("./error_modal.js").wireErrorModal>;
 export type GenWorker =
   | {
       workerUrl: string;

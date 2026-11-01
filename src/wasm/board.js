@@ -1,12 +1,11 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
-import { applyEventStatus, commandHandlers, runSessionCommand, showErrorModal } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
+import * as errorModalMod from "./error_modal.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
 /** @typedef {import("./types").FlowStep} FlowStep */
-
-export { applyEventStatus };
 
 const GRID_SIZE = 9;
 export const FRAME_SIZE = 11;
@@ -342,7 +341,7 @@ export function parsePlayKey(key, code = "") {
  * @param {{ boardEl: any, selection: any, createElement?: any, commandFlow: FlowHandlers, onShown?: (step: FlowStep) => void }} options
  */
 export function runBoardCommand(game, action, { boardEl, selection, createElement, commandFlow, onShown }) {
-  return runSessionCommand(game, action, commandFlow, (step) => {
+  return commandFlowMod.runSessionCommand(game, action, commandFlow, (step) => {
     renderBoard(boardEl, step.state, createElement);
     const sel = selection.getSelection();
     if (sel) selection.select(sel.row, sel.col);
@@ -352,7 +351,7 @@ export function runBoardCommand(game, action, { boardEl, selection, createElemen
 
 /** Command flow handlers for a board view: errors go to the error modal, status to the status bar. */
 export function boardCommandFlow(game, session, statusEl, errorModal) {
-  return commandHandlers(game, session, { statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) });
+  return commandFlowMod.commandHandlers(game, session, { statusEl, onError: (failed) => errorModalMod.showErrorModal(errorModal, failed.error) });
 }
 
 /**

@@ -1,12 +1,9 @@
 // app_wire.js — DOM wiring for the web shell once startup/session are ready.
 
-import {
-  applyEventStatus,
-  commandHandlers,
-  showErrorModal,
-  syncCurrentFileLabels,
-  wireErrorModal,
-} from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
+import * as errorModalMod from "./error_modal.js";
+import * as sessionMod from "./session.js";
+import * as statusBarMod from "./status_bar.js";
 import { getPlayGrid, renderBoard, setStatus, wireSelection, wirePlayLoop } from "./board.js";
 import { wireEditMenu } from "./menu.js";
 import { collectMenuBarControls, wireMenuBar } from "./menu_bar.js";
@@ -142,10 +139,10 @@ export function wireSudokuApp({
   };
   syncPlayPadVisibility(null);
 
-  const commandFlow = commandHandlers(game, session, {
+  const commandFlow = commandFlowMod.commandHandlers(game, session, {
     win,
     statusEl: statusBar,
-    onError: (failed) => showErrorModal(errorModal, failed.error),
+    onError: (failed) => errorModalMod.showErrorModal(errorModal, failed.error),
     generatingModal,
     genWorker,
   });
@@ -237,8 +234,8 @@ export function wireSudokuApp({
       editMenu.sync();
       themeMenu.sync();
       regionMenu.sync();
-      applyEventStatus(statusBar, { ok: true, msg: step.text ?? null });
-      syncCurrentFileLabels(session, root);
+      statusBarMod.applyEventStatus(statusBar, { ok: true, msg: step.text ?? null });
+      sessionMod.syncCurrentFileLabels(session, root);
     },
   };
 }
@@ -249,7 +246,7 @@ export function wireSudokuApp({
  * @returns {ErrorModal}
  */
 export function createErrorModal(root = document) {
-  return wireErrorModal(
+  return errorModalMod.wireErrorModal(
     root.getElementById("error-modal"),
     root.getElementById("error-modal-msg"),
     root.getElementById("error-modal-dismiss"),

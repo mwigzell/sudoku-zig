@@ -603,7 +603,16 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
     const modules = [_]struct { name: []const u8, body: []const u8 }{
         .{ .name = "app_boot.js", .body = embed.app_boot_js },
         .{ .name = "app_wire.js", .body = embed.app_wire_js },
-        .{ .name = "shell.js", .body = embed.shell_js },
+        .{ .name = "status_bar.js", .body = embed.status_bar_js },
+        .{ .name = "error_modal.js", .body = embed.error_modal_js },
+        .{ .name = "client_log.js", .body = embed.client_log_js },
+        .{ .name = "session.js", .body = embed.session_js },
+        .{ .name = "host_api.js", .body = embed.host_api_js },
+        .{ .name = "generate.js", .body = embed.generate_js },
+        .{ .name = "clipboard.js", .body = embed.clipboard_js },
+        .{ .name = "autosave.js", .body = embed.autosave_js },
+        .{ .name = "command_flow.js", .body = embed.command_flow_js },
+        .{ .name = "startup.js", .body = embed.startup_js },
         .{ .name = "board.js", .body = embed.board_js },
         .{ .name = "menu.js", .body = embed.menu_js },
         .{ .name = "file_menu.js", .body = embed.file_menu_js },
@@ -692,7 +701,16 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/gen_worker.js", .expected = .gen_worker },
         .{ .path = "/app_boot.js", .expected = .app_boot },
         .{ .path = "/app_wire.js", .expected = .app_wire },
-        .{ .path = "/shell.js", .expected = .shell },
+        .{ .path = "/status_bar.js", .expected = .status_bar },
+        .{ .path = "/error_modal.js", .expected = .error_modal },
+        .{ .path = "/client_log.js", .expected = .client_log },
+        .{ .path = "/session.js", .expected = .session },
+        .{ .path = "/host_api.js", .expected = .host_api },
+        .{ .path = "/generate.js", .expected = .generate },
+        .{ .path = "/clipboard.js", .expected = .clipboard },
+        .{ .path = "/autosave.js", .expected = .autosave },
+        .{ .path = "/command_flow.js", .expected = .command_flow },
+        .{ .path = "/startup.js", .expected = .startup },
         .{ .path = "/board.js", .expected = .board },
         .{ .path = "/menu.js", .expected = .menu },
         .{ .path = "/menu_bar.js", .expected = .menu_bar },
@@ -1248,7 +1266,34 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     r.markDelivered(.app_wire);
     try std.testing.expect(!r.allDelivered());
 
-    r.markDelivered(.shell);
+    r.markDelivered(.status_bar);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.error_modal);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.client_log);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.session);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.host_api);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.generate);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.clipboard);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.autosave);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.command_flow);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.startup);
     try std.testing.expect(!r.allDelivered());
 
     try std.testing.expect(!r.allDelivered());

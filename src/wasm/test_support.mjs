@@ -1,9 +1,12 @@
-// test_support.mjs — node test helpers: give fake games the real core flow from the wasm artifact.
+// test_support.mjs — node test helpers: real wasm games, the core flow for fake games, and stubs shared by test files.
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadArtifact } from "./artifacts/glue.js";
+import * as autosave from "./autosave.js";
+import { wireGeneratingModal } from "./generating.js";
+import { runCommand } from "./step_runner.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifacts/artifact.wasm"));
@@ -106,4 +109,65 @@ export function postedCurrentFile(calls) {
 /** Let a flow started without `await` run its async steps to the end. */
 export async function settleFlow() {
   for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Generating dialog wired to stub elements; `progressRowsEl` turns on the progress rows. */
+export function generatingModalStub({ progressRowsEl } = {}) {
+  const el = { hidden: true };
+  const continueBtn = makeContinueBtn();
+  const cancelBtn = makeContinueBtn();
+  return wireGeneratingModal({
+    el,
+    continueBtn,
+    cancelBtn,
+    spinnerEl: { hidden: true },
+    msgEl: { textContent: "" },
+    progressRowsEl,
+    createElement: progressRowsEl ? () => makeRowEl() : undefined,
+  });
+}
+
+/** Wait until the dialog has painted (two animation frames, or one macrotask under node). */
+export async function flushDialogPaint() {
+  if (typeof requestAnimationFrame === "function") {
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+    return;
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+export const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
+
+/** One move through the core command flow with the web autosave handlers; core decides what is written. */
+export function moveWithAutosave(game, session, { fetchFn, onError } = {}, move = FILL_MOVE) {
+  return runCommand(game, move, { ...autosave.autosaveHandlers(game, session, { fetchFn, onError }), showGame() {} });
+}
+
+function makeContinueBtn() {
+  return {
+    disabled: false,
+    handlers: {},
+    addEventListener(type, fn) {
+      this.handlers[type] = fn;
+    },
+    click() {
+      this.handlers.click?.();
+    },
+  };
+}
+
+function makeRowEl() {
+  return {
+    className: "",
+    textContent: "",
+    hidden: false,
+    classList: {
+      _set: new Set(),
+      add(...n) {
+        n.forEach((x) => this._set.add(x));
+      },
+    },
+  };
 }

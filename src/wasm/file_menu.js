@@ -1,18 +1,11 @@
-// file_menu.js — File menu session actions via shell.js.
+// file_menu.js — File menu: wires each item to core flows and the browser or Android file APIs.
 
-import {
-  save,
-  saveAs,
-  exportPuzzle,
-  applyEventStatus,
-  clearEventStatus,
-  difficultyName,
-  persistCurrentFileBytes,
-  runSessionCommand,
-  syncCurrentFileLabels,
-  showErrorModal,
-  waitForStatusPaint,
-} from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
+import * as errorModalMod from "./error_modal.js";
+import * as hostApi from "./host_api.js";
+import * as sessionMod from "./session.js";
+import * as settings from "./settings.js";
+import * as statusBar from "./status_bar.js";
 import { renderBoard } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 import { askWithDialog, runCommand, SAVE_FAILED_MSG } from "./step_runner.js";
@@ -394,7 +387,7 @@ export function wireDifficultyDialog(dialog, onChoose) {
     button.el.addEventListener("click", () => {
       dialog.el.hidden = true;
       return (async () => {
-        await waitForStatusPaint();
+        await statusBar.waitForStatusPaint();
         try {
           await onChoose(button.difficulty);
         } catch (err) {
@@ -446,7 +439,7 @@ export function wireFileMenu(
   } = {},
 ) {
   const fail = (result) => {
-    if (result.error) showErrorModal(errorModal, result.error);
+    if (result.error) errorModalMod.showErrorModal(errorModal, result.error);
   };
 
   /**
@@ -459,19 +452,19 @@ export function wireFileMenu(
       !saveAsMode && (session.fileHandle != null || androidCurrentTargetName(globalThis) != null),
     ask: (step) => askWithDialog(step, globalThis),
     write: async (name) => {
-      const result = saveAsMode ? saveAs(game) : save(game);
+      const result = game.serialize();
       if (!result.ok) return result;
       const saved = await persistBytes(result.bytes, session, name, { saveAs: saveAsMode, download });
       if (!saved.ok) return saved;
       session.boundFilename = saved.filename;
       bindSnapshotWriter(session, saved.binding, globalThis);
-      const hosted = await persistCurrentFileBytes(result.bytes, globalThis.fetch, saved.filename, { restoreCopy: true });
+      const hosted = await hostApi.persistCurrentFileBytes(result.bytes, globalThis.fetch, saved.filename, { restoreCopy: true });
       if (!hosted.ok) return hosted;
       return { ok: true, name: saved.filename };
     },
     showStatus: (text) => {
-      syncCurrentFileLabels(session);
-      applyEventStatus(statusEl, { ok: true, msg: text });
+      sessionMod.syncCurrentFileLabels(session);
+      statusBar.applyEventStatus(statusEl, { ok: true, msg: text });
     },
     showError: (text) => fail({ ok: false, error: text }),
   });
@@ -497,20 +490,20 @@ export function wireFileMenu(
         return picked;
       },
     };
-    return runSessionCommand(game, action, handlers, (step) => {
+    return commandFlowMod.runSessionCommand(game, action, handlers, (step) => {
       if (step.loaded) bindLoadedGame(session, pickedGame);
       refreshSessionView(boardEl, selection, menuBar, session.state, createElement, onViewRefresh);
     });
   };
 
-  const startNewGame = (difficulty) => runLoad({ action: NEW_COMMAND, difficulty: difficultyName({ difficulty }) });
+  const startNewGame = (difficulty) => runLoad({ action: NEW_COMMAND, difficulty: settings.difficultyName({ difficulty }) });
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
 
   // Phase B: open New difficulty chooser (generation starts only after a pick).
   const openNewGameDialog = () => {
     if (!session.legend.new) return;
     menuBar.closeAll?.();
-    clearEventStatus(statusEl);
+    statusBar.clearEventStatus(statusEl);
     newDialog.open();
   };
   controls.new?.addEventListener("click", openNewGameDialog);
@@ -528,7 +521,7 @@ export function wireFileMenu(
   });
 
   controls.autoSave?.addEventListener("click", async () => {
-    await runSessionCommand(game, { action: TOGGLE_AUTO_SAVE }, commandFlow, () => {
+    await commandFlowMod.runSessionCommand(game, { action: TOGGLE_AUTO_SAVE }, commandFlow, () => {
       menuBar.sync();
       onViewRefresh?.();
     });
@@ -536,13 +529,13 @@ export function wireFileMenu(
 
   controls.open?.addEventListener("click", async () => {
     if (!session.legend.open) return;
-    clearEventStatus(statusEl);
+    statusBar.clearEventStatus(statusEl);
     await runLoad({ action: OPEN_COMMAND });
   });
 
   controls.import?.addEventListener("click", async () => {
     if (!session.legend.import) return;
-    clearEventStatus(statusEl);
+    statusBar.clearEventStatus(statusEl);
     await runLoad({ action: IMPORT_COMMAND });
   });
 
@@ -552,15 +545,15 @@ export function wireFileMenu(
     await runCommand(game, { action: EXPORT_COMMAND }, {
       ...commandFlow,
       write: async (name) => {
-        const result = exportPuzzle(game);
+        const result = game.exportPuzzle();
         if (!result.ok) return result;
         const saved = await exportText(result.bytes, session, name, { download });
         return saved.ok ? { ok: true, name: saved.filename } : saved;
       },
-      showStatus: (text) => applyEventStatus(statusEl, { ok: true, msg: text }),
+      showStatus: (text) => statusBar.applyEventStatus(statusEl, { ok: true, msg: text }),
       showError: (text) => fail({ ok: false, error: text }),
     });
   });
 
-  syncCurrentFileLabels(session);
+  sessionMod.syncCurrentFileLabels(session);
 }

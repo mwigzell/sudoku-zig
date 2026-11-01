@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { loadArtifact } from "./glue.js";
-import { save } from "../shell.js";
 import { openBytes, startNewGame } from "../test_support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -314,7 +313,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const before = game.getState();
   const configBefore = game.getConfig();
-  const saved = save(game);
+  const saved = game.serialize();
   assert.equal(saved.ok, true);
   assert.ok(saved.bytes.length > 16);
 

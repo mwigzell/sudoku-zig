@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cross-entry parity drift check: every scenario in the shared file must run on both entries
-# (native shell + web shell), be listed in the parity matrix, and any entry it skips must name
+# (native shell + web startup), be listed in the parity matrix, and any entry it skips must name
 # the gap and an open issue. Also every core step kind must have a web step-runner case.
 set -euo pipefail
 
@@ -9,7 +9,7 @@ cd "$ROOT"
 
 SCENARIOS="src/test/fixtures/parity_scenarios.json"
 NATIVE_RUNNER="src/native/shell/shell.zig"
-WEB_RUNNER="src/wasm/shell.test.mjs"
+WEB_RUNNER="src/wasm/startup.test.mjs"
 MATRIX="docs/parity-matrix.md"
 
 if ! command -v jq >/dev/null 2>&1; then

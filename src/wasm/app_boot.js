@@ -1,17 +1,12 @@
 // app_boot.js — startup phases for web shell, delegates UI wiring to app_wire.js.
 
 import { loadArtifact } from "./glue.js";
-import {
-  canUseGenWorker,
-  createWebSessionFromStartup,
-  initializeWebSession,
-  runStartupFlow,
-  showErrorModal,
-  startupHandlers,
-  syncCurrentFileLabels,
-  wireFinalSnapshotOnPageHide,
-  clientLog,
-} from "./shell.js";
+import * as autosave from "./autosave.js";
+import * as clientLog from "./client_log.js";
+import * as errorModalMod from "./error_modal.js";
+import * as sessionMod from "./session.js";
+import * as startupMod from "./startup.js";
+import { canUseGenWorker } from "./gen_client.js";
 import { wireGeneratingModal } from "./generating.js";
 import { renderBoard, setStatus } from "./board.js";
 import { primeWebBootChrome } from "./theme.js";
@@ -32,20 +27,20 @@ export async function bootSudokuWebApp(root = document) {
   const errorModal = createErrorModal(root);
 
   try {
-    clientLog("startup", "debug", "module_start");
+    clientLog.clientLog("startup", "debug", "module_start");
     // Boot phase 1: ensure first paint/splash is visible before wasm/network work.
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    clientLog("startup", "debug", "after_first_paint");
+    clientLog.clientLog("startup", "debug", "after_first_paint");
 
     // Boot phase 2: fetch + instantiate wasm artifact.
     const res = await fetch("./artifact.wasm");
-    clientLog("startup", "debug", "artifact_fetch_response", { status: res.status });
+    clientLog.clientLog("startup", "debug", "artifact_fetch_response", { status: res.status });
     if (!res.ok) throw new Error(`fetch failed: ${res.status} ${res.statusText}`);
     const bytes = new Uint8Array(await res.arrayBuffer());
-    clientLog("startup", "debug", "artifact_bytes", { bytes: bytes.length });
+    clientLog.clientLog("startup", "debug", "artifact_bytes", { bytes: bytes.length });
 
     const game = await loadArtifact(bytes);
-    clientLog("startup", "debug", "wasm_loaded");
+    clientLog.clientLog("startup", "debug", "wasm_loaded");
 
     // Boot phase 3: wire generation modal and optional worker generation context.
     const generatingModal = wireGeneratingModal({
@@ -61,15 +56,15 @@ export async function bootSudokuWebApp(root = document) {
       : undefined;
 
     // Boot phase 4: fetch host startup contract + bootstrap engine config.
-    const boot = await initializeWebSession(game);
-    clientLog("startup", "info", "host_config_loaded", { log_level: boot?.config?.log_level ?? null });
+    const boot = await startupMod.initializeWebSession(game);
+    clientLog.clientLog("startup", "info", "host_config_loaded", { log_level: boot?.config?.log_level ?? null });
     if (!boot.ok) throw new Error(boot.error ?? "session init failed");
     primeWebBootChrome(boot, root);
 
     // Boot phase 5: wire the UI around the idle session.
-    const session = createWebSessionFromStartup(boot);
-    wireFinalSnapshotOnPageHide(game, session);
-    syncCurrentFileLabels(session, root);
+    const session = sessionMod.createWebSessionFromStartup(boot);
+    autosave.wireFinalSnapshotOnPageHide(game, session);
+    sessionMod.syncCurrentFileLabels(session, root);
     renderBoard(boardEl, session.state);
     const app = wireSudokuApp({
       game,
@@ -82,27 +77,27 @@ export async function bootSudokuWebApp(root = document) {
 
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
-    clientLog("startup", "info", "ready");
+    clientLog.clientLog("startup", "info", "ready");
 
     // Boot phase 6: core startup flow decides restore / new / idle; its dialogs need the splash gone.
-    const outcome = await runStartupFlow(
+    const outcome = await startupMod.runStartupFlow(
       game,
       boot,
-      startupHandlers(game, session, {
+      startupMod.startupHandlers(game, session, {
         generatingModal,
         genWorker,
         showGame: app.showGame,
-        showError: (text) => showErrorModal(errorModal, text),
+        showError: (text) => errorModalMod.showErrorModal(errorModal, text),
       }),
     );
-    clientLog("startup", "info", "startup_flow_complete", { kind: outcome.kind });
+    clientLog.clientLog("startup", "info", "startup_flow_complete", { kind: outcome.kind });
   } catch (err) {
     const errorText = err && err.message ? err.message : String(err);
-    clientLog("startup", "err", "boot_failed", { error: errorText });
+    clientLog.clientLog("startup", "err", "boot_failed", { error: errorText });
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
     const msg = `failed to load wasm: ${err && err.message ? err.message : err}`;
     setStatus(statusBar, msg, { error: true });
-    showErrorModal(errorModal, msg);
+    errorModalMod.showErrorModal(errorModal, msg);
   }
 }

@@ -1,6 +1,7 @@
 // theme.js — View menu light/dark theme via engine config.
 
-import { assertWebBootConfig, runSessionCommand } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
+import * as startup from "./startup.js";
 
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
 
@@ -49,7 +50,7 @@ export function applyBootTheme(boot, root = document) {
 
 /** page.html boot order: full engine config, then theme on `<html>` before any modal. */
 export function primeWebBootChrome(boot, root = document) {
-  assertWebBootConfig(boot.config);
+  startup.assertWebBootConfig(boot.config);
   applyBootTheme(boot, root);
 }
 
@@ -96,7 +97,7 @@ export function wireThemeMenu(
 
   const chooseTheme = async (theme) => {
     if (session.config.theme === theme) return;
-    await runSessionCommand(game, { action: SET_THEME, theme }, commandFlow, () => {
+    await commandFlowMod.runSessionCommand(game, { action: SET_THEME, theme }, commandFlow, () => {
       sync();
       onChange?.();
     });

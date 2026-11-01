@@ -15,8 +15,26 @@ pub const gen_client_js: []const u8 = @embedFile("../wasm/gen_client.js");
 pub const app_boot_js: []const u8 = @embedFile("../wasm/app_boot.js");
 /// Web UI wiring after startup/session are ready.
 pub const app_wire_js: []const u8 = @embedFile("../wasm/app_wire.js");
-/// Web app shell bootstrap.
-pub const shell_js: []const u8 = @embedFile("../wasm/shell.js");
+/// Status bar text (`/status_bar.js`).
+pub const status_bar_js: []const u8 = @embedFile("../wasm/status_bar.js");
+/// Error dialog (`/error_modal.js`).
+pub const error_modal_js: []const u8 = @embedFile("../wasm/error_modal.js");
+/// Client diagnostics log (`/client_log.js`).
+pub const client_log_js: []const u8 = @embedFile("../wasm/client_log.js");
+/// Web session and current-file label (`/session.js`).
+pub const session_js: []const u8 = @embedFile("../wasm/session.js");
+/// Host HTTP calls (`/host_api.js`).
+pub const host_api_js: []const u8 = @embedFile("../wasm/host_api.js");
+/// Generate step answerer (`/generate.js`).
+pub const generate_js: []const u8 = @embedFile("../wasm/generate.js");
+/// Clipboard copy and paste (`/clipboard.js`).
+pub const clipboard_js: []const u8 = @embedFile("../wasm/clipboard.js");
+/// Autosave platform work (`/autosave.js`).
+pub const autosave_js: []const u8 = @embedFile("../wasm/autosave.js");
+/// Command flow platform work (`/command_flow.js`).
+pub const command_flow_js: []const u8 = @embedFile("../wasm/command_flow.js");
+/// Web startup (`/startup.js`).
+pub const startup_js: []const u8 = @embedFile("../wasm/startup.js");
 /// Board DOM and input (`/board.js`).
 pub const board_js: []const u8 = @embedFile("../wasm/board.js");
 /// Edit menu actions (`/menu.js`).
@@ -82,8 +100,44 @@ test "embedded app_wire.js is non-empty" {
     try std.testing.expect(app_wire_js.len > 0);
 }
 
-test "embedded shell.js is non-empty" {
-    try std.testing.expect(shell_js.len > 0);
+test "embedded status_bar.js is non-empty" {
+    try std.testing.expect(status_bar_js.len > 0);
+}
+
+test "embedded error_modal.js is non-empty" {
+    try std.testing.expect(error_modal_js.len > 0);
+}
+
+test "embedded client_log.js is non-empty" {
+    try std.testing.expect(client_log_js.len > 0);
+}
+
+test "embedded session.js is non-empty" {
+    try std.testing.expect(session_js.len > 0);
+}
+
+test "embedded host_api.js is non-empty" {
+    try std.testing.expect(host_api_js.len > 0);
+}
+
+test "embedded generate.js is non-empty" {
+    try std.testing.expect(generate_js.len > 0);
+}
+
+test "embedded clipboard.js is non-empty" {
+    try std.testing.expect(clipboard_js.len > 0);
+}
+
+test "embedded autosave.js is non-empty" {
+    try std.testing.expect(autosave_js.len > 0);
+}
+
+test "embedded command_flow.js is non-empty" {
+    try std.testing.expect(command_flow_js.len > 0);
+}
+
+test "embedded startup.js is non-empty" {
+    try std.testing.expect(startup_js.len > 0);
 }
 
 test "embedded startup contract helper is non-empty" {}

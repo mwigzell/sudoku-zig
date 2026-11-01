@@ -1,12 +1,9 @@
 // menu.js — Edit menu: undo/redo/solve/deselect (web only; native has no cell selection).
 
-import {
-  applyEventStatus,
-  showErrorModal,
-  runSessionCommand,
-  startCopyPuzzleOnClick,
-  readClipboardText,
-} from "./shell.js";
+import * as clipboardMod from "./clipboard.js";
+import * as commandFlowMod from "./command_flow.js";
+import * as errorModalMod from "./error_modal.js";
+import * as statusBar from "./status_bar.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 import { boardCommandFlow, readSelection, renderBoard, runBoardCommand } from "./board.js";
 
@@ -54,9 +51,9 @@ export async function handleCopyPuzzle(
 ) {
   if (!session.legend[LEGEND_WIRE_COPY]) return { handled: false };
   const outcome = await runCommand(game, { action: COPY_COMMAND }, {
-    copyLine: () => startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document }),
-    showStatus: (text) => applyEventStatus(statusEl, { ok: true, msg: text }),
-    showError: (text) => showErrorModal(errorModal, text),
+    copyLine: () => clipboardMod.startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document }),
+    showStatus: (text) => statusBar.applyEventStatus(statusEl, { ok: true, msg: text }),
+    showError: (text) => errorModalMod.showErrorModal(errorModal, text),
   });
   return { handled: true, ok: outcome.kind === STEP_SHOW_STATUS };
 }
@@ -74,12 +71,12 @@ export function handlePastePuzzle(
   { clipboard, commandFlow = boardCommandFlow(game, session, statusEl, errorModal), onShown } = {},
 ) {
   if (!session.legend[LEGEND_WIRE_PASTE]) return { handled: false };
-  const handlers = { ...commandFlow, readClipboard: () => readClipboardText({ clipboard }) };
+  const handlers = { ...commandFlow, readClipboard: () => clipboardMod.readClipboardText({ clipboard }) };
   const shown = (step) => {
     if (step.loaded) bindLoadedGame(session, null);
     onShown?.(step);
   };
-  return { handled: true, done: runSessionCommand(game, { action: PASTE_COMMAND }, handlers, shown) };
+  return { handled: true, done: commandFlowMod.runSessionCommand(game, { action: PASTE_COMMAND }, handlers, shown) };
 }
 
 export function handleDeselect(selection) {

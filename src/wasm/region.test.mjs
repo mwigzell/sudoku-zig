@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { syncRegionMenu, wireRegionMenu } from "./region.js";
 import { applyRegionHighlight, cellsInRegion } from "./board.js";
-import { commandHandlers } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
 import { loadGame, settleFlow } from "./test_support.mjs";
 
 function makeToggleBtn() {
@@ -81,7 +81,7 @@ function makeMockCell(row, col) {
     board,
     () => ({ row: 1, col: 1 }),
     {
-      commandFlow: commandHandlers(game, session, {
+      commandFlow: commandFlowMod.commandHandlers(game, session, {
         fetchFn: async (url, init) => {
           persistCalls.push(JSON.parse(init.body));
           return { ok: true, status: 204 };

@@ -9,7 +9,7 @@ import {
   applyBootTheme,
   wireThemeMenu,
 } from "./theme.js";
-import { commandHandlers } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
 import { loadGame, settleFlow } from "./test_support.mjs";
 
 function makeThemeBtn() {
@@ -77,7 +77,7 @@ function makeThemeBtn() {
     viewDark: { ...makeThemeBtn(), addEventListener() {} },
   };
   const persistCalls = [];
-  const commandFlow = commandHandlers(game, session, {
+  const commandFlow = commandFlowMod.commandHandlers(game, session, {
     fetchFn: async (url, init) => {
       persistCalls.push(JSON.parse(init.body));
       return { ok: true, status: 204 };

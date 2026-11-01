@@ -24,7 +24,7 @@ import {
   GUTTER_FR,
   PLAY_FR,
 } from "./board.js";
-import { applyEventStatus, showErrorModal, formatGenProgress } from "./shell.js";
+import { formatGenProgress } from "./gen_progress_format.js";
 import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame } from "./test_support.mjs";
 
 
@@ -568,21 +568,6 @@ function selectedAt(board, row, col) {
   await settleFlow();
   assert.equal(game.getState().cells[cellIndex(0, 2)].value, 4);
   assert.equal(shownLegend?.undo, true);
-}
-
-{
-  const status = { textContent: "saved to: foo", className: "" };
-  applyEventStatus(status, { ok: true, msg: null });
-  assert.equal(status.textContent, "");
-
-  applyEventStatus(status, { ok: true, msg: "opened: bar" });
-  assert.equal(status.textContent, "opened: bar");
-  assert.equal(status.className, "");
-
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  showErrorModal(errorModal, "cannot modify a puzzle cell");
-  assert.equal(errorModal.msgEl.textContent, "cannot modify a puzzle cell");
-  assert.equal(errorModal.el.hidden, false);
 }
 
 console.log("board.test.mjs OK");

@@ -10,17 +10,10 @@ import {
   DIFFICULTIES,
   filePickerStartIn,
 } from "./file_menu.js";
-import { autosaveHandlers, commandHandlers, showErrorModal } from "./shell.js";
-import { runCommand } from "./step_runner.js";
-import { PUZZLE_LINE, hostFetch, loadGame, openAs, postedCurrentFile, startNewGame, withCoreFlow } from "./test_support.mjs";
+import * as commandFlowMod from "./command_flow.js";
+import * as errorModalMod from "./error_modal.js";
+import { PUZZLE_LINE, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow } from "./test_support.mjs";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
-
-const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
-
-/** One move through the core command flow with the web autosave handlers. */
-function moveWithAutosave(game, session, options = {}) {
-  return runCommand(game, FILL_MOVE, { ...autosaveHandlers(game, session, options), showGame() {} });
-}
 
 async function flushDialogPaint() {
   if (typeof requestAnimationFrame === "function") {
@@ -88,7 +81,7 @@ function makeRenderElement() {
 function loadFlow(game, session, { statusEl = null, errorModal = makeErrorModal(), fetchFn = hostFetch().fetchFn, generated = [] } = {}) {
   const difficulties = [];
   const flow = {
-    ...commandHandlers(game, session, { fetchFn, statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) }),
+    ...commandFlowMod.commandHandlers(game, session, { fetchFn, statusEl, onError: (failed) => errorModalMod.showErrorModal(errorModal, failed.error) }),
     generate: async (difficulty) => {
       difficulties.push(difficulty);
       return generated.shift() ?? { ok: true, line: PUZZLE_LINE };

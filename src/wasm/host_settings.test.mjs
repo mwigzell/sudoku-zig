@@ -2,7 +2,7 @@
 // what is persisted and produces the `POST /settings.json` body.
 
 import assert from "node:assert/strict";
-import { commandHandlers, runSessionCommand } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
 import { wireThemeMenu } from "./theme.js";
 import { wireRegionMenu } from "./region.js";
 import { wireSettingsMenu } from "./settings.js";
@@ -27,7 +27,7 @@ function recordingCommandFlow(game, session, { status = 204 } = {}) {
     posts.push({ url, method: init.method, body: JSON.parse(init.body) });
     return { ok: status < 400, status };
   };
-  const commandFlow = commandHandlers(game, session, { fetchFn, onError: (failed) => errors.push(failed.error) });
+  const commandFlow = commandFlowMod.commandHandlers(game, session, { fetchFn, onError: (failed) => errors.push(failed.error) });
   return { posts, errors, commandFlow };
 }
 
@@ -129,7 +129,7 @@ const themeRoot = {
 {
   const { game, session } = await gameAndSession();
   const { posts, commandFlow } = recordingCommandFlow(game, session);
-  const outcome = await runSessionCommand(game, { action: "fill", row: 0, col: 0, digit: 4 }, commandFlow);
+  const outcome = await commandFlowMod.runSessionCommand(game, { action: "fill", row: 0, col: 0, digit: 4 }, commandFlow);
   assert.deepEqual(outcome, { kind: "done" });
   assert.equal(posts.length, 0);
   assert.equal(session.state.cells[0].value, 4);

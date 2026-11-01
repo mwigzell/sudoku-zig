@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settings.js";
-import { commandHandlers } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
 import { loadGame } from "./test_support.mjs";
 
 {
@@ -41,7 +41,7 @@ async function settingsHarness() {
   const game = await loadGame();
   const session = { config: game.getConfig(), legend: game.getLegend(), state: game.getState() };
   const persisted = [];
-  const commandFlow = commandHandlers(game, session, {
+  const commandFlow = commandFlowMod.commandHandlers(game, session, {
     fetchFn: async (url, init) => {
       persisted.push(JSON.parse(init.body));
       return { ok: true, status: 204 };

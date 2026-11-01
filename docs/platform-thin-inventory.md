@@ -25,10 +25,10 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 
 | Area | File/symbols | Why it stays in the adapter | Tag |
 |---|---|---|---|
-| Web status and modals | `src/wasm/shell.js` (`applyEventStatus`, `showErrorModal`) | DOM presentation of core text | `KEEP` |
+| Web status and modals | `src/wasm/status_bar.js` (`applyEventStatus`), `error_modal.js` (`showErrorModal`) | DOM presentation of core text | `KEEP` |
 | Web board and selection | `src/wasm/board.js` | DOM rendering and pointer/key input | `KEEP` |
 | Web step handlers | `src/wasm/step_runner.js`, `autosaveHandlers`, `saveHandlers` | Carry out one step each with browser APIs; no branching on outcomes | `KEEP` |
-| Web pickers, download, clipboard | `src/wasm/file_menu.js` (`persistBytes`, `pickBytes`, `persistPuzzleText`), `shell.js` (`writeClipboardText`) | Browser and Android bridge APIs exist only in the page | `KEEP` |
+| Web pickers, download, clipboard | `src/wasm/file_menu.js` (`persistBytes`, `pickBytes`, `persistPuzzleText`), `clipboard.js` (`startCopyPuzzleOnClick`, `readClipboardText`) | Browser and Android bridge APIs exist only in the page | `KEEP` |
 | Menubar drag-release | `src/wasm/menu_bar.js` | DOM event mechanics | `KEEP` |
 | Android WebView bootstrap | `MainActivity.java` (`onCreate`, `injectBridgeShim`), `page.html` boot-ready signal | WebView lifecycle | `KEEP` |
 | Android URI bridge | `MainActivity.java` (`saveCurrentSudokuFile`, `saveSudokuFileToExisting`, `openSudokuFile`) | Storage Access Framework and MediaStore; reports `default_taken` as a fact for core | `KEEP` |

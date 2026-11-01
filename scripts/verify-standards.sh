@@ -260,14 +260,14 @@ done
 for f in "${CHANGED[@]}"; do
   [[ "$f" =~ ^src/wasm/.*\.mjs$ ]] || continue
   check_added_pattern "$f" 'const[[:space:]]+WRITE_CONTEXT_EVENTS[[:space:]]*=[[:space:]]*\{' \
-    "local write-context event map fixture (import REQUIRED_WRITE_CONTEXT_EVENT_KEYS from shell.js)"
+    "local write-context event map fixture (write-context events are core-owned; take them from core)"
 done
 
-# --- 13. Status authorship: wasm shell must not invent fallback status copy ---
+# --- 13. Status authorship: web modules must not invent fallback status copy ---
 for f in "${CHANGED[@]}"; do
-  [[ "$f" == "src/wasm/shell.js" ]] || continue
+  [[ "$f" =~ ^src/wasm/.*\.js$ && "$f" != src/wasm/artifacts/* ]] || continue
   check_added_pattern "$f" 'msg[[:space:]]*:[^,]*\?\?[[:space:]]*["'\'']' \
-    "adapter-authored status fallback literal in wasm shell (status text belongs to core)"
+    "adapter-authored status fallback literal in a web module (status text belongs to core)"
 done
 
 # --- 14. Status authorship: native shell adapters must not mint .ok.msg literals ---
@@ -280,7 +280,7 @@ done
 
 # --- 15. Startup restore policy: do not route restore through named open copy ---
 for f in "${CHANGED[@]}"; do
-  [[ "$f" == "src/wasm/shell.js" ]] || continue
+  [[ "$f" =~ ^src/wasm/(.*/)?startup\.js$ ]] || continue
   check_added_pattern "$f" 'name:[[:space:]]*restorePath' \
     "startup restore routed via open(name=restorePath) copy (use restore lane for persisted status)"
 done

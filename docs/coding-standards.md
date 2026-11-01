@@ -24,6 +24,7 @@
    - **HARD RULE (MANDATORY):** Status message authorship is core-owned. Adapters must not invent fallback status copy for core flows (startup/new/open/save/import/autosave).
    - **HARD RULE (MANDATORY):** Durable status lifecycle (`set|preserve|clear`) is decided in core seams only; adapters render/pass through only.
    - **HARD RULE (MANDATORY):** Startup restore must use the core restore lane (persisted status continuity), not generic open-with-label behavior.
+10. **Web modules import each other by namespace.** In `src/wasm/`, `import * as statusBar from "./status_bar.js"`, so a call site reads `statusBar.applyEventStatus(...)`. The namespace is the file name in camelCase; when that clashes with a local name, add `Mod` (`sessionMod`, as Zig uses `storage_mod`).
 
 ## Test / SUT colocated (Ziglings 105 style)
 - Test blocks are colocated with the code being tested.

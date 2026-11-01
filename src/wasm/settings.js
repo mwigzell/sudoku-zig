@@ -1,10 +1,25 @@
 // settings.js — File → Settings: warn, default difficulty, log level.
 
-import { difficultyName, logLevelName, runSessionCommand } from "./shell.js";
+import * as commandFlowMod from "./command_flow.js";
 import { STEP_SHOW_ERROR } from "./step_runner.js";
 
 /** @typedef {import("./types").ExecAction} ExecAction */
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
+
+const DIFFICULTY_WIRE = { 1: "easy", 2: "medium", 3: "hard" };
+const LOG_WIRE = ["debug", "info", "warn", "err", "fatal"];
+
+/** Normalize config difficulty enum/wire value to persisted settings string. */
+export function difficultyName(config) {
+  if (typeof config.difficulty === "string") return config.difficulty;
+  return DIFFICULTY_WIRE[config.difficulty] ?? "easy";
+}
+
+/** Normalize config log level enum/wire value to persisted settings string. */
+function logLevelName(config) {
+  if (typeof config.log_level === "string") return config.log_level;
+  return LOG_WIRE[config.log_level] ?? "info";
+}
 
 /** Sync controls from wasm getConfig(). */
 export function syncSettingsModal(modal, config) {
@@ -29,7 +44,7 @@ export function showSettingsModal(modal, config) {
  * @param {FlowHandlers} [commandFlow]
  */
 async function applySettingChange(game, session, modal, commandFlow, action) {
-  const outcome = await runSessionCommand(game, action, commandFlow, (step) => syncSettingsModal(modal, step.config));
+  const outcome = await commandFlowMod.runSessionCommand(game, action, commandFlow, (step) => syncSettingsModal(modal, step.config));
   if (outcome.kind === STEP_SHOW_ERROR) syncSettingsModal(modal, session.config);
 }
 
