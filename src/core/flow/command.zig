@@ -11,6 +11,9 @@ const settings_mod = @import("settings.zig");
 const autosave_mod = @import("autosave.zig");
 const save_mod = @import("save.zig");
 const export_mod = @import("export.zig");
+const logger = @import("../logger.zig");
+
+const log = logger.Logger(.flow);
 
 const Step = step_mod.Step;
 const Input = step_mod.Input;
@@ -19,6 +22,13 @@ const SettingsFlow = settings_mod.SettingsFlow;
 const AutosaveFlow = autosave_mod.AutosaveFlow;
 const SaveFlow = save_mod.SaveFlow;
 const ExportFlow = export_mod.ExportFlow;
+
+/// Shown when the platform could not read the chosen game; its reason goes to the log.
+pub const OPEN_FAILED_MSG = "The game could not be opened.";
+/// Shown when the platform could not read the chosen puzzle file; its reason goes to the log.
+pub const IMPORT_FAILED_MSG = "The puzzle could not be imported.";
+/// Shown when the platform could not read a puzzle from the clipboard; its reason goes to the log.
+pub const PASTE_FAILED_MSG = "There is no puzzle on the clipboard to paste.";
 
 pub const CommandFlow = struct {
     engine: *game_engine.GameEngine,
@@ -87,7 +97,7 @@ pub const CommandFlow = struct {
                 return switch (input.generated) {
                     .line => |line| self.load(.new_game, line),
                     .cancelled => self.finish(.done),
-                    .failed => |msg| self.finish(.{ .show_error = msg }),
+                    .failed => |reason| self.failed(step_mod.GENERATE_FAILED_MSG, reason),
                 };
             },
             .open, .import => {
@@ -98,14 +108,14 @@ pub const CommandFlow = struct {
                         else => self.load(.import, file.bytes),
                     },
                     .cancelled => self.finish(.done),
-                    .failed => |msg| self.finish(.{ .show_error = msg }),
+                    .failed => |reason| self.failed(if (self.cmd == .open) OPEN_FAILED_MSG else IMPORT_FAILED_MSG, reason),
                 };
             },
             .paste => {
                 if (input != .file_read) return self.finish(unexpected);
                 return switch (input.file_read) {
                     .bytes => |text| self.load(.paste, text),
-                    .failed => |msg| self.finish(.{ .show_error = msg }),
+                    .failed => |reason| self.failed(PASTE_FAILED_MSG, reason),
                 };
             },
             else => return self.finish(unexpected),
@@ -180,6 +190,11 @@ pub const CommandFlow = struct {
         };
     }
 
+    fn failed(self: *CommandFlow, msg: []const u8, reason: []const u8) Step {
+        log.info("{s} failed: {s}", .{ @tagName(self.cmd), reason });
+        return self.finish(.{ .show_error = msg });
+    }
+
     fn finish(self: *CommandFlow, terminal: Step) Step {
         self.phase = .finished;
         return terminal;
@@ -240,7 +255,7 @@ test "a failed settings write ends the command with the error" {
     var flow = CommandFlow.init(&engine, &session, .{ .set_theme = .light });
     _ = flow.next(.start);
     _ = flow.next(.ack);
-    try testing.expect(flow.next(.{ .persisted = .{ .failed = "disk full" } }) == .show_error);
+    try testing.expectEqualStrings(settings_mod.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).show_error);
 }
 
 test "open asks for a game file, loads the pick and makes it the working file" {
@@ -300,7 +315,7 @@ test "paste with a line skips the clipboard; without one it reads the clipboard"
 
     var clipboard = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = null } });
     try testing.expect(clipboard.next(.start) == .read_clipboard);
-    try testing.expectEqualStrings("denied", clipboard.next(.{ .file_read = .{ .failed = "denied" } }).show_error);
+    try testing.expectEqualStrings(PASTE_FAILED_MSG, clipboard.next(.{ .file_read = .{ .failed = "denied" } }).show_error);
 }
 
 test "new generates at the chosen difficulty, which the game then keeps" {
@@ -362,4 +377,20 @@ test "stopping generation ends New quietly; a wrong answer is an error" {
     var wrong = CommandFlow.init(&engine, &session, .{ .new = .{} });
     _ = wrong.next(.start);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, wrong.next(.ack).show_error);
+}
+
+test "every message a command can show in a dialog reads as a sentence" {
+    const sentence = @import("../../test/sentence.zig");
+    for ([_][]const u8{
+        OPEN_FAILED_MSG,
+        IMPORT_FAILED_MSG,
+        PASTE_FAILED_MSG,
+        step_mod.GENERATE_FAILED_MSG,
+        step_mod.UNEXPECTED_INPUT_MSG,
+        save_mod.SAVE_FAILED_MSG,
+        save_mod.NAME_TOO_LONG_MSG,
+        export_mod.EXPORT_FAILED_MSG,
+        export_mod.COPY_FAILED_MSG,
+        settings_mod.PERSIST_FAILED_MSG,
+    }) |msg| try sentence.expectSentence(msg);
 }

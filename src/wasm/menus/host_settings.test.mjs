@@ -122,7 +122,7 @@ const themeRoot = {
   controls.viewLight.click();
   await settleFlow();
   assert.equal(posts.length, 1);
-  assert.deepEqual(errors, ["Your settings could not be saved (HTTP 500)."]);
+  assert.deepEqual(errors, ["Your settings could not be saved."]);
 }
 
 // Commands that change no setting post nothing.

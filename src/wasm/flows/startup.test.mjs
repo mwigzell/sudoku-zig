@@ -291,7 +291,7 @@ for (const deleteIt of [true, false]) {
   const run = await runStartupScenario({ config: { auto_new: true }, generated: [{ ok: false, error: "worker crashed" }] });
   assert.equal(run.outcome.kind, "show_error");
   assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
-  assert.deepEqual(run.errors, ["A new game could not be generated (worker crashed)."]);
+  assert.deepEqual(run.errors, ["A new game could not be generated."]);
 }
 
 {

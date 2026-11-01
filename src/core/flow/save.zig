@@ -4,6 +4,9 @@ const std = @import("std");
 const file_policy = @import("../file_policy.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
+const logger = @import("../logger.zig");
+
+const log = logger.Logger(.flow);
 
 const Step = step_mod.Step;
 const Input = step_mod.Input;
@@ -12,6 +15,8 @@ const MAX_NAME_LEN = file_session_mod.MAX_NAME_LEN;
 
 /// Shown when the save target name cannot be kept by the flow.
 pub const NAME_TOO_LONG_MSG = "The file name is too long to save.";
+/// Shown when the platform could not write the game; its reason goes to the log.
+pub const SAVE_FAILED_MSG = "The game could not be saved.";
 
 pub const SaveFlow = struct {
     session: *FileSession,
@@ -113,7 +118,7 @@ pub const SaveFlow = struct {
                     .ok => |written| self.succeeded(written),
                     .cancelled => self.finish(.done),
                     .taken => |taken| self.askTaken(taken),
-                    .failed => |msg| self.fail(msg),
+                    .failed => |reason| self.writeFailed(reason),
                 };
             },
             .asking_taken => {
@@ -133,7 +138,7 @@ pub const SaveFlow = struct {
                 return switch (wrote) {
                     .ok => |written| self.succeeded(written),
                     .cancelled, .taken => self.repeatTakenAsk(),
-                    .failed => |msg| self.fail(msg),
+                    .failed => |reason| self.writeFailed(reason),
                 };
             },
             .finished => return .done,
@@ -205,10 +210,13 @@ pub const SaveFlow = struct {
         };
     }
 
+    fn writeFailed(self: *SaveFlow, reason: []const u8) Step {
+        log.info("write of {s} failed: {s}", .{ self.targetName(), reason });
+        return self.fail(SAVE_FAILED_MSG);
+    }
+
     fn fail(self: *SaveFlow, msg: []const u8) Step {
-        const len = @min(msg.len, self.text_buf.len);
-        std.mem.copyForwards(u8, self.text_buf[0..len], msg[0..len]);
-        return self.finish(.{ .show_error = self.text_buf[0..len] });
+        return self.finish(.{ .show_error = msg });
     }
 
     fn finish(self: *SaveFlow, terminal: Step) Step {
@@ -302,7 +310,7 @@ test "closing the picker asks again, since there is nowhere else to autosave" {
     _ = flow.next(.{ .answered = true });
     try testing.expectEqualStrings(taken_ask_text, flow.next(.{ .wrote = .cancelled }).ask.text);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).pick_new);
-    try testing.expectEqualStrings("disk full", flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
+    try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
     try testing.expect(session.workingFile() == null);
 }
 
@@ -340,7 +348,7 @@ test "write failure shows the error and leaves the session alone" {
     var flow = SaveFlow.init(&session, .save, "game.sud");
     _ = flow.next(.start);
     _ = flow.next(.{ .target_checked = false });
-    try testing.expectEqualStrings("disk full", flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
+    try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
     try testing.expect(session.workingFile() == null);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }

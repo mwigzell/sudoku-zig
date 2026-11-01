@@ -3,6 +3,9 @@
 const std = @import("std");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
+const logger = @import("../logger.zig");
+
+const log = logger.Logger(.flow);
 
 const Step = step_mod.Step;
 const Input = step_mod.Input;
@@ -13,6 +16,10 @@ pub const EXPORTED_TO_FMT = "exported to: {s}";
 pub const COPIED_MSG: []const u8 = "copy: puzzle line copied";
 /// Export target when the player names none.
 pub const DEFAULT_EXPORT_FILE: []const u8 = "puzzle.txt";
+/// Shown when the platform could not write the puzzle file; its reason goes to the log.
+pub const EXPORT_FAILED_MSG = "The puzzle could not be exported.";
+/// Shown when the platform could not copy the puzzle line; its reason goes to the log.
+pub const COPY_FAILED_MSG = "The puzzle could not be copied.";
 
 pub const ExportFlow = struct {
     target: Target,
@@ -55,7 +62,7 @@ pub const ExportFlow = struct {
                     .wrote => |wrote| return switch (wrote) {
                         .ok => |written| self.exported(written),
                         .cancelled => self.finish(.done),
-                        .failed => |msg| self.fail(msg),
+                        .failed => |reason| self.failedWith(EXPORT_FAILED_MSG, reason),
                         .taken => self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                     },
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
@@ -63,7 +70,7 @@ pub const ExportFlow = struct {
                 .clipboard => switch (input) {
                     .copied => |copied| return switch (copied) {
                         .ok => self.finish(.{ .show_status = COPIED_MSG }),
-                        .failed => |msg| self.fail(msg),
+                        .failed => |reason| self.failedWith(COPY_FAILED_MSG, reason),
                     },
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                 },
@@ -77,10 +84,13 @@ pub const ExportFlow = struct {
         return self.finish(.{ .show_status = text });
     }
 
+    fn failedWith(self: *ExportFlow, msg: []const u8, reason: []const u8) Step {
+        log.info("{s} failed: {s}", .{ @tagName(self.target), reason });
+        return self.fail(msg);
+    }
+
     fn fail(self: *ExportFlow, msg: []const u8) Step {
-        const len = @min(msg.len, self.text_buf.len);
-        std.mem.copyForwards(u8, self.text_buf[0..len], msg[0..len]);
-        return self.finish(.{ .show_error = self.text_buf[0..len] });
+        return self.finish(.{ .show_error = msg });
     }
 
     fn finish(self: *ExportFlow, terminal: Step) Step {
@@ -109,7 +119,7 @@ test "a closed export picker ends quietly; a failed write shows the error" {
     try testing.expect(cancelled.next(.{ .wrote = .cancelled }) == .done);
     var failed = ExportFlow.toFile("puzzle.txt");
     _ = failed.next(.start);
-    try testing.expectEqualStrings("AccessDenied", failed.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
+    try testing.expectEqualStrings(EXPORT_FAILED_MSG, failed.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
 }
 
 test "copy hands over the line and reports it, or shows why it could not" {
@@ -118,7 +128,7 @@ test "copy hands over the line and reports it, or shows why it could not" {
     try testing.expectEqualStrings(COPIED_MSG, flow.next(.{ .copied = .ok }).show_status);
     var denied = ExportFlow.toClipboard();
     _ = denied.next(.start);
-    try testing.expectEqualStrings("copy: clipboard write denied", denied.next(.{ .copied = .{ .failed = "copy: clipboard write denied" } }).show_error);
+    try testing.expectEqualStrings(COPY_FAILED_MSG, denied.next(.{ .copied = .{ .failed = "copy: clipboard write denied" } }).show_error);
 }
 
 test "a wrong answer ends the export with an error" {

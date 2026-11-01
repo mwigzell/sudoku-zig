@@ -39,6 +39,7 @@ const DEFAULT = ["default"];
 /** Recording handlers whose default target is `game.sud`. */
 const saveHandlers = (options = {}) => recordingHandlers({ defaultName: "game.sud", ...options });
 
+const NOT_SAVED = "The game was not saved.";
 const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. Do you want to replace it?", "Replace", "Cancel"];
 
 // Save with no working file names the default target, writes and reports the core status text.
@@ -56,7 +57,7 @@ const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. 
   startNewGame(core);
   const handlers = saveHandlers({ exists: true, yes: false });
   const outcome = await stepRunner.runCommand(core, SAVE, handlers);
-  assert.deepEqual(handlers.log, [DEFAULT, ["check", "game.sud"], REPLACE_ASK, ["status", "cancelled"]]);
+  assert.deepEqual(handlers.log, [DEFAULT, ["check", "game.sud"], REPLACE_ASK, ["status", NOT_SAVED]]);
   assert.equal(outcome.kind, "show_status");
 }
 
@@ -81,7 +82,7 @@ const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. 
   startNewGame(core);
   const detached = saveHandlers({ exists: true, yes: false });
   await stepRunner.runCommand(core, SAVE_AS, detached);
-  assert.deepEqual(detached.log, [["check", "game.sud"], REPLACE_ASK, ["status", "cancelled"]]);
+  assert.deepEqual(detached.log, [["check", "game.sud"], REPLACE_ASK, ["status", NOT_SAVED]]);
 }
 
 // The name the platform actually wrote becomes the status and the working file.
@@ -116,7 +117,7 @@ const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. 
     },
   });
   await stepRunner.runCommand(core, SAVE, failed);
-  assert.deepEqual(failed.log.at(-1), ["error", "disk full"]);
+  assert.deepEqual(failed.log.at(-1), ["error", "The game could not be saved."]);
 }
 
 // A move's first autosave with no working file resolves the default target, then asks if it exists.
@@ -235,7 +236,7 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
   const failed = startupRecorder({ generated: { ok: false } });
   const outcome = await stepRunner.runFlow(await loadGame({ auto_new: true }), { flow: stepRunner.FLOW_STARTUP }, failed);
   assert.equal(outcome.kind, "show_error");
-  assert.deepEqual(failed.log.at(-1), ["error", "A new game could not be generated (generation failed)."]);
+  assert.deepEqual(failed.log.at(-1), ["error", "A new game could not be generated."]);
 }
 
 // A command runs end to end in core: show_game carries what the adapter draws, then
@@ -263,7 +264,7 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
     ...handlers,
     persistSettings: () => ({ ok: false }),
   });
-  assert.deepEqual(failed, { kind: "show_error", text: "Your settings could not be saved (settings write failed)." });
+  assert.deepEqual(failed, { kind: "show_error", text: "Your settings could not be saved." });
 
   const thrown = await stepRunner.runCommand(game, { action: "toggle_region" }, {
     ...handlers,
@@ -271,7 +272,7 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
       throw new Error("offline");
     },
   });
-  assert.equal(thrown.text, "Your settings could not be saved (offline).");
+  assert.equal(thrown.text, "Your settings could not be saved.");
   assert.equal(errors.length, 2);
   assert.equal(game.getConfig().show_region, false, "two toggles leave the setting where it started");
 }
@@ -307,7 +308,7 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
 
   assert.deepEqual(await stepRunner.runCommand(game, { action: "import" }, handlers(() => ({ ok: false, cancelled: true }))), { kind: "done" });
   const failed = await stepRunner.runCommand(game, { action: "import" }, handlers(() => ({ ok: false, error: "unreadable" })));
-  assert.deepEqual(failed, { kind: "show_error", text: "unreadable" });
+  assert.deepEqual(failed, { kind: "show_error", text: "The puzzle could not be imported." });
   assert.equal(shown.length, 1, "a cancelled or failed pick shows nothing");
 }
 
@@ -323,7 +324,7 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
   assert.equal(shown[0].text, "paste: puzzle loaded");
   const before = game.getState();
   const denied = await stepRunner.runCommand(game, { action: "paste" }, { readClipboard: () => ({ ok: false, error: "denied" }), showError() {} });
-  assert.deepEqual(denied, { kind: "show_error", text: "denied" });
+  assert.deepEqual(denied, { kind: "show_error", text: "There is no puzzle on the clipboard to paste." });
   assert.deepEqual(game.getState(), before);
 }
 

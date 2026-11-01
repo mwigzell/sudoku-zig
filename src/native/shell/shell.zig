@@ -1550,7 +1550,8 @@ test "autosave: save failure surfaces error and keeps existing current_file poin
     try std.testing.expect(current != null);
     try std.testing.expectEqualStrings(bad_path, current.?);
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
-    try std.testing.expect(std.mem.indexOf(u8, output, "System") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, flow_mod.save.SAVE_FAILED_MSG) != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "System") == null);
 }
 
 test "replace confirm: autosave cancel leaves existing target unchanged" {

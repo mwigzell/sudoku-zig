@@ -144,7 +144,7 @@ test "autosave write failure is shown" {
     var flow = AutosaveFlow.afterCommand(&session, true, "fill");
     _ = flow.next(.start);
     _ = flow.next(.{ .target_checked = false });
-    try testing.expectEqualStrings("AccessDenied", flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
+    try testing.expectEqualStrings(save_mod.SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
 }
 
 test "flush continues the working file without checking" {

@@ -125,7 +125,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
 }
 
 {
-  // A failed bound write skips the host copy and surfaces the error.
+  // A failed bound write skips the host copy and shows core's sentence, not the write's reason.
   const writes = [];
   const { game, session, fetchFn } = await boundAutosaveSetup(writes, { ok: false, error: "bound write failed" });
   let surfaced = null;
@@ -137,7 +137,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   });
   assert.equal(outcome.kind, "show_error");
   assert.deepEqual(writes, [{ lane: "bound", bytes: [4, 2] }], "host copy must not run when bound autosave fails");
-  assert.equal(surfaced?.error, "bound write failed");
+  assert.equal(surfaced?.error, "The game could not be saved.");
 }
 
 {

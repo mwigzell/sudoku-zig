@@ -3,11 +3,15 @@
 const std = @import("std");
 const config = @import("../config.zig");
 const step_mod = @import("step.zig");
+const logger = @import("../logger.zig");
+
+const log = logger.Logger(.flow);
 
 const Step = step_mod.Step;
 const Input = step_mod.Input;
 
-pub const PERSIST_FAILED_FMT = "Your settings could not be saved ({s}).";
+/// Shown when the platform could not store the settings; its reason goes to the log.
+pub const PERSIST_FAILED_MSG = "Your settings could not be saved.";
 
 /// Commands whose change belongs in `settings.json`.
 const persisted_commands = [_][]const u8{
@@ -32,7 +36,6 @@ pub const SettingsFlow = struct {
     cfg: config.Config,
     command_name: []const u8,
     phase: Phase = .start,
-    text_buf: [160]u8 = undefined,
 
     const Phase = enum { start, persisting, finished };
 
@@ -54,8 +57,8 @@ pub const SettingsFlow = struct {
                 .persisted => |result| switch (result) {
                     .ok => return self.finish(.done),
                     .failed => |reason| {
-                        const text = std.fmt.bufPrint(&self.text_buf, PERSIST_FAILED_FMT, .{reason}) catch reason;
-                        return self.finish(.{ .show_error = text });
+                        log.info("settings save failed: {s}", .{reason});
+                        return self.finish(.{ .show_error = PERSIST_FAILED_MSG });
                     },
                 },
                 else => return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG }),
@@ -91,11 +94,11 @@ test "commands that change no setting persist nothing" {
     }
 }
 
-test "a persist failure is shown as a sentence with the reason" {
+test "a persist failure shows core's sentence, not the platform's reason" {
     var flow = SettingsFlow.afterCommand(config.Config.default(), "set_theme");
     _ = flow.next(.start);
     try testing.expectEqualStrings(
-        "Your settings could not be saved (AccessDenied).",
+        PERSIST_FAILED_MSG,
         flow.next(.{ .persisted = .{ .failed = "AccessDenied" } }).show_error,
     );
 }

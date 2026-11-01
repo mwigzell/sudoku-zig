@@ -338,7 +338,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   );
   assert.equal(result.ok, false);
   assert.equal(errorModal.el.hidden, false);
-  assert.match(errorModal.msgEl.textContent, /clipboard/i);
+  assert.equal(errorModal.msgEl.textContent, "The puzzle could not be copied.");
   assert.equal(JSON.stringify(session.state), before);
 }
 

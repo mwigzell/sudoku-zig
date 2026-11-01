@@ -56,7 +56,7 @@ pub const REPLACE_CONFIRM_OK_LABEL: []const u8 = "Replace";
 pub const REPLACE_CONFIRM_CANCEL_LABEL: []const u8 = "Cancel";
 
 /// Status after the user declines to replace a file on Save / Save As.
-pub const WRITE_CANCELLED_MSG: []const u8 = "cancelled";
+pub const WRITE_CANCELLED_MSG: []const u8 = "The game was not saved.";
 /// Status after a successful Save / Save As; `{s}` is the written target.
 pub const SAVED_TO_FMT = "saved to: {s}";
 /// Question when the platform's autosave file was created by an earlier install; `{s}` are the file and its folder.

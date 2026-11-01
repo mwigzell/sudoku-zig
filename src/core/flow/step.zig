@@ -157,4 +157,6 @@ pub const Input = union(enum) {
 };
 
 /// Shown when an adapter answers a step with the wrong kind of input.
-pub const UNEXPECTED_INPUT_MSG = "The save could not finish because the app sent an unexpected answer.";
+pub const UNEXPECTED_INPUT_MSG = "The command could not finish because the app sent an unexpected answer.";
+/// Shown when the platform could not generate a puzzle; its reason goes to the log.
+pub const GENERATE_FAILED_MSG = "A new game could not be generated.";

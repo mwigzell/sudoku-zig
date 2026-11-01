@@ -224,7 +224,7 @@ function easyDialog() {
   wireLoads({ new: makeBtn() }, game, session, { difficultyDialog, errorModal, commandFlow: flow });
   await difficultyDialog.buttons[0].el.click();
   assert.equal(errorModal.el.hidden, false, "error modal shown");
-  assert.match(errorModal.msgEl.textContent, /gen failed/i);
+  assert.equal(errorModal.msgEl.textContent, "A new game could not be generated.");
   assert.deepEqual(session.state.cells, []);
 }
 
@@ -592,7 +592,7 @@ function easyDialog() {
   );
   await exportBtn.click();
   assert.equal(errorModal.el.hidden, false);
-  assert.match(errorModal.msgEl.textContent, /write failed/);
+  assert.equal(errorModal.msgEl.textContent, "The puzzle could not be exported.");
   assert.equal(JSON.stringify(session.state), before);
   assert.equal(session.fileHandle.name, "game.sud");
 }

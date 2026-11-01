@@ -21,7 +21,6 @@ pub const RESTORE_FAILED_TITLE = "Restore failed";
 pub const RESTORE_FAILED_FMT = "The file {s} could not be restored. Do you want to delete it?";
 pub const RESTORE_FAILED_OK_LABEL = "Delete";
 pub const RESTORE_FAILED_CANCEL_LABEL = "Keep";
-pub const GENERATE_FAILED_FMT = "A new game could not be generated ({s}).";
 
 /// The file startup may restore: where to read it, what to call it, and what the
 /// FileSession should follow afterwards (a path natively, a host name on the web).
@@ -232,15 +231,10 @@ pub const StartupFlow = struct {
     }
 
     fn generateFailed(self: *StartupFlow, reason: []const u8) Step {
-        if (self.restored) return self.finish(.{ .show_error = self.formatError(reason) });
-        _ = self.formatError(reason);
+        log.info("generate failed: {s}", .{reason});
+        if (self.restored) return self.finish(.{ .show_error = step_mod.GENERATE_FAILED_MSG });
+        self.text.set(step_mod.GENERATE_FAILED_MSG);
         return self.showIdle(.showing_idle_then_error);
-    }
-
-    fn formatError(self: *StartupFlow, reason: []const u8) []const u8 {
-        const text = std.fmt.bufPrint(&self.text.buf, GENERATE_FAILED_FMT, .{reason}) catch reason;
-        if (text.ptr == &self.text.buf) self.text.len = text.len else self.text.set(text);
-        return self.text.get();
     }
 
     fn fail(self: *StartupFlow, msg: []const u8) Step {
@@ -392,7 +386,7 @@ test "startup new failure shows the idle board, then the error" {
     var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .easy }, null);
     _ = f.next(.start);
     _ = f.next(.{ .generated = .{ .failed = "worker crashed" } });
-    try std.testing.expectEqualStrings("A new game could not be generated (worker crashed).", f.next(.ack).show_error);
+    try std.testing.expectEqualStrings(step_mod.GENERATE_FAILED_MSG, f.next(.ack).show_error);
 }
 
 test "startup new with an invalid generated line is a generation failure" {
