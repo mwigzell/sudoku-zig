@@ -61,6 +61,11 @@ export type PlayerSettings = {
   auto_save: boolean;
 };
 
+/** The serving host's build facts (`/build-info.json`), separate from player settings. */
+export type HostBuildInfo = {
+  debug_build: boolean;
+};
+
 /** One core step (wasm `flowStart` / `flowNext` result). */
 export type FlowStep =
   | { step: "resolve_default_target" }

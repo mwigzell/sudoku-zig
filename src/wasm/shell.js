@@ -20,6 +20,7 @@ import {
 /** @typedef {import("./types").PlayerSettings} PlayerSettings */
 /** @typedef {import("./types").PersistResult} PersistResult */
 /** @typedef {import("./types").WriteResult} WriteResult */
+/** @typedef {import("./types").HostBuildInfo} HostBuildInfo */
 
 /** Apply `.ok.msg` to the status bar. */
 export function applyOkStatus(statusEl, result) {
@@ -50,6 +51,7 @@ export const CURRENT_FILE_UNSAVED_LABEL = "unsaved";
 export const REQUIRED_STARTUP_READY_KEYS = ["default_save_filename"];
 
 const CURRENT_FILE_PATH = "./current-file";
+const BUILD_INFO_PATH = "./build-info.json";
 const CURRENT_FILE_EXISTS_PATH = "./current-file-exists";
 const FILENAME_HEADER = "X-Sudoku-Filename";
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
@@ -423,6 +425,17 @@ export function bootstrapEngineFromHostConfig(game, hostCfg) {
   });
 }
 
+/**
+ * The serving host's build facts, kept apart from player config.
+ * @returns {Promise<HostBuildInfo>}
+ */
+export async function fetchHostBuildInfo(fetchFn = globalThis.fetch) {
+  const res = await fetchFn(BUILD_INFO_PATH);
+  if (!res.ok) throw new Error(`build-info fetch failed: ${res.status}`);
+  const body = await res.json();
+  return { debug_build: body.debug_build === true };
+}
+
 const DIFFICULTY_WIRE = { 1: "easy", 2: "medium", 3: "hard" };
 const LOG_WIRE = ["debug", "info", "warn", "err", "fatal"];
 
@@ -662,6 +675,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
   // Phase 2: bootstrap engine config from host contract (difficulty/theme/flags).
   const boot = bootstrapEngineFromHostConfig(game, hostCfg);
   if (!boot.ok) return boot;
+  game.setHostBuildInfo(await fetchHostBuildInfo(fetchFn));
 
   // Phase 3: return canonical boot/session shape for page entry wiring.
   return {

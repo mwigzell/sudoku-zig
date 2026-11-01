@@ -1,6 +1,7 @@
 // Native About acknowledgement text — equal-width lines via `display_width`.
 const std = @import("std");
 const about = @import("../../core/about.zig");
+const build_info = @import("../../build_info.zig");
 const display_width = @import("display_width.zig");
 
 fn nativeLines(info: about.Info) [6][]const u8 {
@@ -16,7 +17,7 @@ fn nativeLines(info: about.Info) [6][]const u8 {
 
 /// Multi-line About text for the native acknowledgement box — each line padded to equal width.
 pub fn formatNativeText(allocator: std.mem.Allocator) ![]u8 {
-    const info = about.get();
+    const info = about.get(build_info.debug_build);
     const lines = nativeLines(info);
 
     var max_cols: usize = 0;
@@ -40,7 +41,7 @@ test "formatNativeText includes logo summary copyright licence" {
     const text = try formatNativeText(std.testing.allocator);
     defer std.testing.allocator.free(text);
     try std.testing.expect(std.mem.indexOf(u8, text, about.logo_lines[0]) != null);
-    try std.testing.expect(std.mem.indexOf(u8, text, about.summaryLine()) != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, about.summaryLine(build_info.debug_build)) != null);
     try std.testing.expect(std.mem.indexOf(u8, text, about.copyright_line) != null);
     try std.testing.expect(std.mem.indexOf(u8, text, about.licence) != null);
 }

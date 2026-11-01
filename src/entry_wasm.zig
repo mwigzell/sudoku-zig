@@ -18,6 +18,7 @@ var out_len: u32 = 0;
 
 var engine: game_engine.GameEngine = undefined;
 var have_engine: bool = false;
+var host_debug_build: bool = false;
 var gen_abort_requested: bool = false;
 
 /// Web write context and working file; resets on page reload.
@@ -203,10 +204,16 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     return returnJson(out);
 }
 
+/// Serving host's build facts: one wasm ships in every host, so its own build mode says nothing.
+/// debug_build: 1 when the host is a Debug build (shown in About).
+export fn setHostBuildInfo(debug_build: u32) callconv(.c) void {
+    host_debug_build = debug_build != 0;
+}
+
 /// Product metadata for Help/About as JSON.
 export fn getAbout() callconv(.c) u32 {
     const out = outBuffer();
-    boundary.writeAboutJson(out) catch return exportWriteFailed(out);
+    boundary.writeAboutJson(out, host_debug_build) catch return exportWriteFailed(out);
     return returnJson(out);
 }
 

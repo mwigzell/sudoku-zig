@@ -43,6 +43,17 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(cfg.auto_save, true);
 }
 
+// ── host build info marks the About version on Debug hosts only ──
+{
+  const buildGame = await loadArtifact(wasmBytes);
+  assert.match(buildGame.getAbout().version, /^\d+\.\d+\.\d+$/, "no host build info shows the bare version");
+  buildGame.setHostBuildInfo({ debug_build: true });
+  assert.match(buildGame.getAbout().version, /^\d+\.\d+\.\d+ debug$/, "a Debug host marks the About version");
+  assert.ok(buildGame.getAbout().summary.includes(buildGame.getAbout().version));
+  buildGame.setHostBuildInfo({ debug_build: false });
+  assert.match(buildGame.getAbout().version, /^\d+\.\d+\.\d+$/, "a release host shows the bare version");
+}
+
 // ── bootstrapHostConfig + generatePuzzle (worker handoff) ──
 {
   const handoff = await loadArtifact(wasmBytes);

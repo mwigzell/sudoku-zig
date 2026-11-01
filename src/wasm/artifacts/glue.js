@@ -102,6 +102,14 @@ export async function loadArtifact(wasmBytes) {
       );
     },
 
+    /**
+     * The serving host's build facts; About marks the version when the host is a Debug build.
+     * @param {import("../types").HostBuildInfo} info
+     */
+    setHostBuildInfo({ debug_build }) {
+      exports.setHostBuildInfo(debug_build ? 1 : 0);
+    },
+
     /** Run `generateForPlay` in this instance; returns `{ ok, line }` JSON for worker handoff. */
     generatePuzzle({ difficulty = 1, logLevel = 1, seed } = {}) {
       const entropy = Number.isInteger(seed) ? (seed >>> 0) : randomSeed32();

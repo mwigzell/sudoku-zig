@@ -1,4 +1,5 @@
 const about = @import("../../core/about.zig");
+const build_info = @import("../../build_info.zig");
 const display_width = @import("display_width.zig");
 const about_format = @import("about_format.zig");
 const board = @import("../../core/board/board.zig");
@@ -1259,7 +1260,7 @@ test "showAbout: writes name version commit build date and licence" {
     try renderer.showAbout();
 
     const contents = aw.writer.buffered();
-    const info = about.get();
+    const info = about.get(build_info.debug_build);
     try std.testing.expect(std.mem.indexOf(u8, contents, info.name) != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, info.version) != null);
     try std.testing.expect(std.mem.indexOf(u8, contents, info.commit) != null);

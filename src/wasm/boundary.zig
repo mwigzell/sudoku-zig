@@ -409,8 +409,9 @@ fn writeOptionalJsonString(w: *std.Io.Writer, value: ?[]const u8) !void {
     if (value) |v| try writeJsonString(w, v) else try std.Io.Writer.writeAll(w, "null");
 }
 
-pub fn writeAboutJson(out: OutBuffer) !void {
-    const info = about.get();
+/// About metadata JSON; `debug_build` is the serving host's build mode.
+pub fn writeAboutJson(out: OutBuffer, debug_build: bool) !void {
+    const info = about.get(debug_build);
     var mutable = out;
     mutable.reset();
     var jw: JsonWriter = undefined;
@@ -741,11 +742,11 @@ test "writeAboutJson exposes product metadata" {
     var buf: [1024]u8 = undefined;
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
-    try writeAboutJson(out);
+    try writeAboutJson(out, true);
 
     const parsed = try std.json.parseFromSlice(AboutWire, std.testing.allocator, out.finishJson(), .{});
     defer parsed.deinit();
-    const info = about.get();
+    const info = about.get(true);
     try std.testing.expectEqualStrings(info.name, parsed.value.name);
     try std.testing.expectEqualStrings(info.version, parsed.value.version);
     try std.testing.expectEqualStrings(info.commit, parsed.value.commit);

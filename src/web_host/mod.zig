@@ -714,12 +714,22 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/branding/android-chrome-512x512.png", .expected = .brand_android_chrome_512 },
         .{ .path = "/branding/splash-mark-256.png", .expected = .brand_splash_mark_256 },
         .{ .path = "/branding/about-variant-96.png", .expected = .brand_about_variant_96 },
+        .{ .path = "/build-info.json", .expected = .build_info },
         .{ .path = "/host-config.json", .expected = .host_config },
         .{ .path = "/artifact.wasm", .expected = .artifact },
     };
     for (cases) |case| {
         try std.testing.expectEqual(case.expected, try Router.route(case.path));
     }
+}
+
+test "web_host: build-info body carries this host's build mode, apart from config" {
+    const build_info = @import("../build_info.zig");
+    const Info = struct { debug_build: bool };
+    const parsed = try std.json.parseFromSlice(Info, std.testing.allocator, Router.body(.build_info), .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(build_info.debug_build, parsed.value.debug_build);
+    try std.testing.expectEqualStrings("application/json", Router.contentType(.build_info));
 }
 
 test "mergeSettingsPostPatch updates view prefs on Config" {
@@ -1304,6 +1314,9 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.brand_about_variant_96);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.build_info);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.host_config);

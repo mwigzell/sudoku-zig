@@ -542,6 +542,8 @@ function makePageHideWin() {
     default_save_filename: "sudoku_save.sud",
     startup_save_path: "/current-file",
   };
+  /** @type {unknown[]} */
+  const buildInfoCalls = [];
   const game = {
     bootstrapHostConfig(cfg) {
       assert.deepEqual(cfg, {
@@ -555,6 +557,9 @@ function makePageHideWin() {
         auto_save: false,
       });
       return { ok: true, msg: "engine ready" };
+    },
+    setHostBuildInfo(info) {
+      buildInfoCalls.push(info);
     },
     getState() {
       return { cells: [{ value: 0, given: false, conflict: false }] };
@@ -579,9 +584,13 @@ function makePageHideWin() {
     },
   };
   const out = await initializeWebSession(game, {
-    fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
+    fetchFn: async (url) => ({
+      ok: true,
+      json: async () => (url === "./build-info.json" ? { debug_build: true } : hostCfg),
+    }),
   });
   assert.equal(out.ok, true);
+  assert.deepEqual(buildInfoCalls, [{ debug_build: true }], "host build facts reach wasm apart from config");
   assert.equal(out.config.difficulty, 2);
   assert.equal(out.startup_save_path, "/current-file");
   assert.equal(out.default_save_filename, "sudoku_save.sud");
@@ -604,6 +613,7 @@ function makePageHideWin() {
     bootstrapHostConfig() {
       return { ok: true };
     },
+    setHostBuildInfo() {},
     getState() {
       return { cells: [{ value: 5, given: true, conflict: false }] };
     },

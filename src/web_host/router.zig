@@ -1,6 +1,10 @@
 /// Path → embedded asset routing (pure; sockets live in `mod.zig`).
 const std = @import("std");
 const embed = @import("embed.zig");
+const build_info = @import("../build_info.zig");
+
+/// This host's build facts for the page: the wasm ships in every host, so it cannot know the host's mode.
+pub const build_info_json = std.fmt.comptimePrint("{{\"debug_build\":{}}}", .{build_info.debug_build});
 
 /// Known GET paths under the loopback static host (plus dynamic `host_config` body at serve time).
 pub const RouteResult = enum {
@@ -32,6 +36,7 @@ pub const RouteResult = enum {
     brand_android_chrome_512,
     brand_splash_mark_256,
     brand_about_variant_96,
+    build_info,
     host_config,
     artifact,
 };
@@ -82,6 +87,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/branding/android-chrome-512x512.png")) return .brand_android_chrome_512;
         if (std.mem.eql(u8, path, "/branding/splash-mark-256.png")) return .brand_splash_mark_256;
         if (std.mem.eql(u8, path, "/branding/about-variant-96.png")) return .brand_about_variant_96;
+        if (std.mem.eql(u8, path, "/build-info.json")) return .build_info;
         if (std.mem.eql(u8, path, "/host-config.json")) return .host_config;
         if (std.mem.eql(u8, path, "/artifact.wasm")) return .artifact;
         return Error.NotFound;
@@ -131,6 +137,7 @@ pub const Router = struct {
             .brand_android_chrome_512 => embed.brand_android_chrome_512,
             .brand_splash_mark_256 => embed.brand_splash_mark_256,
             .brand_about_variant_96 => embed.brand_about_variant_96,
+            .build_info => build_info_json,
             .host_config => "",
             .artifact => embed.wasm_bytes,
         };
@@ -141,7 +148,7 @@ pub const Router = struct {
         return switch (result) {
             .page => "text/html",
             .artifact => "application/wasm",
-            .host_config => "application/json",
+            .build_info, .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
             .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
