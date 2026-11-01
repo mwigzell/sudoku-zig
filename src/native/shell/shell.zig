@@ -1396,7 +1396,7 @@ fn restoreFailureScenario(delete: bool) !void {
     defer std.testing.allocator.free(data_rel);
     const tmp_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_rel, std.testing.allocator);
     defer std.testing.allocator.free(tmp_abs_z);
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs_z[0 .. tmp_abs_z.len - 1]});
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs_z});
     defer std.testing.allocator.free(data_path);
     try std.Io.Dir.cwd().createDirPath(io, data_path);
     const broken_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/broken.sud", .{data_path});
@@ -1449,7 +1449,7 @@ test "autosave: first autosave with no working file writes the visible save fold
     defer std.testing.allocator.free(tmp_rel);
     const tmp_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, tmp_rel, std.testing.allocator);
     defer std.testing.allocator.free(tmp_abs_z);
-    const tmp_abs = tmp_abs_z[0 .. tmp_abs_z.len - 1];
+    const tmp_abs = tmp_abs_z;
     const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs});
     defer std.testing.allocator.free(data_path);
     const visible_dir = try std.fmt.allocPrint(std.testing.allocator, "{s}/Documents/Sudoku", .{tmp_abs});
@@ -2028,7 +2028,7 @@ test "parity scenarios: native shell meets every shared scenario expectation" {
         defer std.testing.allocator.free(rel);
         const abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, rel, std.testing.allocator);
         defer std.testing.allocator.free(abs_z);
-        parity.runScenario(io, abs_z[0 .. abs_z.len - 1], scenario) catch |err| {
+        parity.runScenario(io, abs_z, scenario) catch |err| {
             std.debug.print("parity scenario failed: {s}\n", .{scenario.name});
             return err;
         };
