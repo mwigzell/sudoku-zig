@@ -1,0 +1,212 @@
+// Cross-entry parity scenarios, native side: each scenario in `src/test/parity/scenarios.json`
+// runs through the real `Sudoku` loop (startup flow + `turn`) and must meet the shared expectations.
+const std = @import("std");
+const shell = @import("shell.zig");
+const test_doubles = @import("test_doubles.zig");
+const command = @import("../../core/command.zig");
+const config = @import("../../core/config.zig");
+const cell = @import("../../core/board/cell.zig");
+const board = @import("../../core/board/board.zig");
+const game_engine = @import("../../core/engine/game_engine.zig");
+const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
+const settings_store = @import("../../core/settings_store.zig");
+const test_defaults = @import("../../test/config_defaults.zig");
+
+const SCENARIOS_PATH = "src/test/parity/scenarios.json";
+const STARTUP_PATH_DIR = "/";
+
+const CellAt = struct { row: u8, col: u8 };
+const Move = struct { row: u8, col: u8, digit: u8 };
+const Probe = struct { row: u8, col: u8, value: u8, given: bool };
+
+const Step = struct {
+    fill: ?Move = null,
+    clear: ?CellAt = null,
+    set_auto_save: ?bool = null,
+    fill_first_empty: ?bool = null,
+    undo: ?bool = null,
+    redo: ?bool = null,
+    paste: ?[]const u8 = null,
+};
+
+const ScenarioConfig = struct {
+    auto_restore: bool = false,
+    auto_new: bool = false,
+    auto_save: bool = false,
+    difficulty: ?[]const u8 = null,
+};
+
+const CurrentFile = struct { name: []const u8, puzzle_line: []const u8, moves: []const Move = &.{} };
+
+const Settings = struct { auto_save: ?bool = null };
+
+const Legend = struct { undo: ?bool = null, redo: ?bool = null };
+
+const Expect = struct {
+    questions: usize,
+    solved_after_startup: ?bool = null,
+    written: []const []const u8,
+    status: ?[]const u8,
+    errors: usize = 0,
+    settings: ?Settings = null,
+    legend: ?Legend = null,
+    probes: []const Probe,
+};
+
+/// An entry that cannot run the scenario yet; the drift check requires the gap and an open issue.
+const Skip = struct { entry: []const u8, gap: []const u8, issue: u32 };
+
+const NATIVE_ENTRY = "native";
+
+const Scenario = struct {
+    name: []const u8,
+    skip: ?Skip = null,
+    config: ScenarioConfig,
+    current_file: ?CurrentFile = null,
+    puzzle_line: ?[]const u8 = null,
+    answers: []const bool,
+    steps: []const Step,
+    expect: Expect,
+};
+
+const Scenarios = struct { scenarios: []const Scenario };
+
+fn scenarioConfig(sc: ScenarioConfig) !config.Config {
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_restore = sc.auto_restore;
+    cfg.auto_new = sc.auto_new;
+    cfg.auto_save = sc.auto_save;
+    if (sc.difficulty) |name| cfg.difficulty = std.meta.stringToEnum(config.Difficulty, name) orelse return error.UnknownDifficulty;
+    return cfg;
+}
+
+/// Bytes of a saved game: `puzzle_line` with the player's `moves` on top.
+fn savedGame(cfg: config.Config, file: CurrentFile) ![]u8 {
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+    defer engine.deinit();
+    _ = engine.newFromOneLinePuzzle(file.puzzle_line);
+    for (file.moves) |m| {
+        const event = engine.exec(.{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } });
+        if (event != .ok) return error.SetupMoveRejected;
+    }
+    return engine.toSaveFormat(std.testing.allocator);
+}
+
+/// First empty cell and the lowest digit that does not repeat in its row, column or box.
+fn firstEmptyLegalFill(view: board.Board.BoardView) !command.FillData {
+    for (0..9) |r| for (0..9) |c| {
+        const row: u4 = @intCast(r);
+        const col: u4 = @intCast(c);
+        if (view.get(row, col) != .zero) continue;
+        digit: for (1..10) |d| {
+            const value = cell.rawToCellValue(@intCast(d));
+            for (0..9) |i| {
+                const k: u4 = @intCast(i);
+                const box_row: u4 = @intCast(r / 3 * 3 + i / 3);
+                const box_col: u4 = @intCast(c / 3 * 3 + i % 3);
+                if (view.get(row, k) == value or view.get(k, col) == value or view.get(box_row, box_col) == value) continue :digit;
+            }
+            return .{ .row = row, .col = col, .digit = value };
+        }
+    };
+    return error.NoLegalFill;
+}
+
+fn stepCommand(app: *shell.Sudoku, step: Step) !command.Command {
+    if (step.fill) |m| return .{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
+    if (step.clear) |at| return .{ .clear = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
+    if (step.set_auto_save) |on| return .{ .set_auto_save = on };
+    if (step.fill_first_empty != null) return .{ .fill = try firstEmptyLegalFill(app.engine.eventBoard()) };
+    if (step.undo != null) return .{ .undo = {} };
+    if (step.redo != null) return .{ .redo = {} };
+    if (step.paste) |line| return .{ .paste = .{ .line = line } };
+    return error.UnknownScenarioStep;
+}
+
+fn runScenario(io: std.Io, data_dir: []const u8, scenario: Scenario) !void {
+    const cfg = try scenarioConfig(scenario.config);
+    var facade_impl = test_doubles.DeterministicFacade{ .steps = &.{}, .replace_answers = scenario.answers };
+    var transport_impl = test_doubles.MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var app = try shell.Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{
+        .io = io,
+        .data_dir = data_dir,
+        .visible_save_dir = data_dir,
+    });
+    defer app.deinit();
+
+    if (scenario.current_file) |file| {
+        const bytes = try savedGame(cfg, file);
+        defer std.testing.allocator.free(bytes);
+        const path = try std.fs.path.join(std.testing.allocator, &.{ STARTUP_PATH_DIR, file.name });
+        defer std.testing.allocator.free(path);
+        try transport_impl.put(path, bytes);
+        try app.runStartupFlow(path);
+        if (scenario.expect.solved_after_startup) |solved| {
+            try std.testing.expectEqual(solved, app.engine.state.board.isSolved());
+        }
+    }
+    if (scenario.puzzle_line) |line| _ = app.engine.newFromOneLinePuzzle(line);
+
+    for (scenario.steps) |step| {
+        const one = [_]command.ParseCommandResult{.{ .valid = try stepCommand(&app, step) }};
+        facade_impl.steps = &one;
+        facade_impl.idx = 0;
+        _ = try app.turn();
+    }
+
+    try std.testing.expectEqual(scenario.expect.questions, facade_impl.replace_prompts);
+    try std.testing.expectEqual(scenario.expect.written.len, transport_impl.written.items.len);
+    for (scenario.expect.written, transport_impl.written.items) |want, got| {
+        try std.testing.expectEqualStrings(want, std.fs.path.basename(got));
+    }
+    const status: ?[]const u8 = facade_impl.last_render_msg;
+    if (scenario.expect.status) |want| {
+        try std.testing.expectEqualStrings(want, status orelse "");
+    } else {
+        try std.testing.expect(status == null or status.?.len == 0);
+    }
+    try std.testing.expectEqual(scenario.expect.errors, facade_impl.error_calls);
+    if (scenario.expect.settings) |want| {
+        const saved = try settings_store.loadOrDefault(std.testing.allocator, io, data_dir);
+        if (want.auto_save) |on| try std.testing.expectEqual(on, saved.auto_save);
+    }
+    if (scenario.expect.legend) |want| {
+        const legend = app.engine.getLegend();
+        if (want.undo) |on| try std.testing.expectEqual(on, legend.undo);
+        if (want.redo) |on| try std.testing.expectEqual(on, legend.redo);
+    }
+    const view = app.engine.eventBoard();
+    for (scenario.expect.probes) |p| {
+        const row: u4 = @intCast(p.row);
+        const col: u4 = @intCast(p.col);
+        try std.testing.expectEqual(cell.rawToCellValue(p.value), view.get(row, col));
+        try std.testing.expectEqual(p.given, view.isGiven(row, col));
+    }
+}
+
+test "parity scenarios: native shell meets every shared scenario expectation" {
+    const io = std.testing.io;
+    const bytes = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, SCENARIOS_PATH, std.testing.allocator, .unlimited);
+    defer std.testing.allocator.free(bytes);
+    const parsed = try std.json.parseFromSlice(Scenarios, std.testing.allocator, bytes, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.scenarios.len > 0);
+
+    for (parsed.value.scenarios) |scenario| {
+        if (scenario.skip) |skip| if (std.mem.eql(u8, skip.entry, NATIVE_ENTRY)) continue;
+        var tmp = std.testing.tmpDir(.{});
+        defer tmp.cleanup();
+        const rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+        defer std.testing.allocator.free(rel);
+        const abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, rel, std.testing.allocator);
+        defer std.testing.allocator.free(abs_z);
+        runScenario(io, abs_z[0 .. abs_z.len - 1], scenario) catch |err| {
+            std.debug.print("parity scenario failed: {s}\n", .{scenario.name});
+            return err;
+        };
+    }
+}

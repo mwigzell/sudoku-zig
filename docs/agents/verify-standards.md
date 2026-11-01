@@ -46,6 +46,10 @@ Rules from `AGENTS.md`, `CONTEXT.md`, and `docs/coding-standards.md` that grep c
 | Status ownership (native) | No `.ok.msg` string literals minted in `src/native/shell/*` adapters (except core-owned engine helpers) |
 | Restore lane contract | No startup restore routing through named-open copy (`name: restorePath`) in wasm shell |
 
+## Cross-entry parity (`zig build parity`)
+
+`scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/parity/scenarios.json` is missing from `docs/parity-matrix.md`, when either runner (`src/native/shell/parity_test.zig`, `src/wasm/parity.test.mjs`) stops loading the scenarios or drops out of its test list, or when a scenario `skip` lacks a gap or an open issue. It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
+
 ## What it does not enforce
 
 SOLID judgement, Feature Envy, speculative generality, and full architecture review still belong in **two-axis review** (`/code-review` skill or GitHub review issues). The script prints a reminder when it passes.

@@ -1,0 +1,155 @@
+{
+  "scenarios": [
+    {
+      "name": "restore_solved_keep",
+      "summary": "Restoring a solved game and keeping it continues the file: the next autosave writes it without asking.",
+      "config": { "auto_restore": true, "auto_new": true, "auto_save": true },
+      "current_file": {
+        "name": "startup.sud",
+        "puzzle_line": "483921657967345821251876493548132976729504138136798245372689514814253769695417382",
+        "moves": [{ "row": 4, "col": 4, "digit": 6 }]
+      },
+      "answers": [false],
+      "steps": [{ "clear": { "row": 4, "col": 4 } }],
+      "expect": {
+        "questions": 1,
+        "solved_after_startup": true,
+        "written": ["startup.sud"],
+        "status": null,
+        "probes": [{ "row": 4, "col": 4, "value": 0, "given": false }]
+      }
+    },
+    {
+      "name": "restore_solved_new_game",
+      "summary": "Restoring a solved game and starting a new one detaches the file: the next autosave asks before overwriting it.",
+      "config": { "auto_restore": true, "auto_new": true, "auto_save": true, "difficulty": "easy" },
+      "current_file": {
+        "name": "startup.sud",
+        "puzzle_line": "483921657967345821251876493548132976729504138136798245372689514814253769695417382",
+        "moves": [{ "row": 4, "col": 4, "digit": 6 }]
+      },
+      "generated_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [true, false],
+      "steps": [{ "fill_first_empty": true }],
+      "expect": {
+        "questions": 2,
+        "solved_after_startup": false,
+        "written": [],
+        "status": null,
+        "probes": []
+      }
+    },
+    {
+      "name": "auto_save_toggle_then_autosave",
+      "summary": "Turning Auto Save on persists the setting; the next move writes the default file without asking and makes it the working file.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{ "set_auto_save": true }, { "fill": { "row": 0, "col": 0, "digit": 4 } }],
+      "expect": {
+        "questions": 0,
+        "settings": { "auto_save": true },
+        "written": ["sudoku.sud"],
+        "status": null,
+        "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
+      }
+    },
+    {
+      "name": "restore_unsolved_moves",
+      "summary": "Restoring an unfinished game brings back the player's moves and their undo history without asking.",
+      "config": { "auto_restore": true, "auto_new": false, "auto_save": false },
+      "current_file": {
+        "name": "startup.sud",
+        "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+        "moves": [
+          { "row": 0, "col": 0, "digit": 4 },
+          { "row": 0, "col": 1, "digit": 8 },
+          { "row": 8, "col": 8, "digit": 2 }
+        ]
+      },
+      "answers": [],
+      "steps": [],
+      "expect": {
+        "questions": 0,
+        "solved_after_startup": false,
+        "written": [],
+        "status": null,
+        "legend": { "undo": true, "redo": false },
+        "probes": [
+          { "row": 0, "col": 2, "value": 3, "given": true },
+          { "row": 0, "col": 0, "value": 4, "given": false },
+          { "row": 0, "col": 1, "value": 8, "given": false },
+          { "row": 8, "col": 8, "value": 2, "given": false }
+        ]
+      }
+    },
+    {
+      "name": "history_branch_discards_redo",
+      "summary": "A move after Undo discards the undone branch: Redo is no longer offered and the undone move stays gone.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        { "fill": { "row": 0, "col": 0, "digit": 4 } },
+        { "fill": { "row": 0, "col": 1, "digit": 8 } },
+        { "undo": true },
+        { "fill": { "row": 8, "col": 8, "digit": 2 } }
+      ],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "status": null,
+        "legend": { "undo": true, "redo": false },
+        "probes": [
+          { "row": 0, "col": 2, "value": 3, "given": true },
+          { "row": 0, "col": 0, "value": 4, "given": false },
+          { "row": 0, "col": 1, "value": 0, "given": false },
+          { "row": 8, "col": 8, "value": 2, "given": false }
+        ]
+      }
+    },
+    {
+      "name": "paste_valid_resets_history",
+      "summary": "Pasting a valid puzzle replaces the board with new givens and clears undo history.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        { "fill": { "row": 0, "col": 0, "digit": 4 } },
+        { "paste": "483921657967345821251876493548132976729564138136798245372689514814253769695417380" }
+      ],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "status": "paste: puzzle loaded",
+        "legend": { "undo": false, "redo": false },
+        "probes": [
+          { "row": 0, "col": 0, "value": 4, "given": true },
+          { "row": 8, "col": 8, "value": 0, "given": false }
+        ]
+      }
+    },
+    {
+      "name": "paste_invalid_keeps_board",
+      "summary": "Pasting an invalid line shows an error and leaves the board and undo history as they were.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        { "fill": { "row": 8, "col": 8, "digit": 2 } },
+        { "paste": "48392165796734582125187649354813297672956413x136798245372689514814253769695417380" }
+      ],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "status": null,
+        "errors": 1,
+        "legend": { "undo": true, "redo": false },
+        "probes": [
+          { "row": 0, "col": 0, "value": 0, "given": false },
+          { "row": 8, "col": 8, "value": 2, "given": false }
+        ]
+      }
+    }
+  ]
+}

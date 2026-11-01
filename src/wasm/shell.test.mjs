@@ -14,7 +14,6 @@ import {
   startupHandlers,
   newGameWithGeneratingModal,
   newGameWithWorkerGen,
-  importPuzzle,
   currentFileLabel,
   syncCurrentFileLabels,
   createWebSessionFromStartup,
@@ -32,12 +31,6 @@ import { wireGeneratingModal } from "./generating.js";
 
 const AUTOSAVE_RESTORE_PARITY_FIXTURE = JSON.parse(
   readFileSync(new URL("../test/fixtures/autosave_restore_parity.json", import.meta.url), "utf8"),
-);
-const HISTORY_BRANCH_PARITY_FIXTURE = JSON.parse(
-  readFileSync(new URL("../test/fixtures/history_branch_parity.json", import.meta.url), "utf8"),
-);
-const PASTE_FLOW_PARITY_FIXTURE = JSON.parse(
-  readFileSync(new URL("../test/fixtures/paste_flow_parity.json", import.meta.url), "utf8"),
 );
 
 function makeContinueBtn() {
@@ -991,141 +984,6 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
     assert.equal(restored[idx(probe.row, probe.col)].value, probe.value);
     assert.equal(restored[idx(probe.row, probe.col)].given, false);
   }
-}
-
-{
-  // Cross-entry parity fixture: redo must not resurrect discarded history after
-  // a divergent fill branch.
-  const idx = (row, col) => row * 9 + col;
-  const lineToCells = (line) =>
-    Array.from(line, (ch) => {
-      const value = Number(ch);
-      return { value, given: value !== 0, conflict: false };
-    });
-  const fixture = HISTORY_BRANCH_PARITY_FIXTURE;
-  const state = { cells: lineToCells(fixture.puzzle_line) };
-  const history = [];
-  let pointer = 0;
-
-  const recordMutation = (row, col, oldValue, newValue) => {
-    if (pointer < history.length) history.splice(pointer);
-    history.push({ row, col, oldValue, newValue });
-    pointer = history.length;
-  };
-
-  const exec = (step) => {
-    if (step.action === "fill") {
-      const i = idx(step.row, step.col);
-      const oldValue = state.cells[i].value;
-      state.cells[i] = { ...state.cells[i], value: step.digit, given: false };
-      recordMutation(step.row, step.col, oldValue, step.digit);
-      return;
-    }
-    if (step.action === "undo") {
-      if (pointer === 0) return;
-      const mutation = history[pointer - 1];
-      pointer -= 1;
-      const i = idx(mutation.row, mutation.col);
-      state.cells[i] = { ...state.cells[i], value: mutation.oldValue, given: false };
-      return;
-    }
-    if (step.action === "redo") {
-      if (pointer >= history.length) return;
-      const mutation = history[pointer];
-      pointer += 1;
-      const i = idx(mutation.row, mutation.col);
-      state.cells[i] = { ...state.cells[i], value: mutation.newValue, given: false };
-      return;
-    }
-    throw new Error(`unsupported action: ${step.action}`);
-  };
-
-  for (const step of fixture.steps) exec(step);
-
-  assert.equal(state.cells[idx(fixture.given_probe.row, fixture.given_probe.col)].value, fixture.given_probe.value);
-  assert.equal(state.cells[idx(fixture.given_probe.row, fixture.given_probe.col)].given, true);
-  for (const probe of fixture.probes) {
-    assert.equal(state.cells[idx(probe.row, probe.col)].value, probe.value);
-    assert.equal(state.cells[idx(probe.row, probe.col)].given, probe.given);
-  }
-  assert.equal(pointer, fixture.history_pointer);
-  assert.equal(history.length, fixture.history_length);
-}
-
-{
-  // Cross-entry parity fixture: paste/import success resets history; invalid
-  // paste/import preserves state + history.
-  const idx = (row, col) => row * 9 + col;
-  const lineToCells = (line) =>
-    Array.from(line, (ch) => {
-      const value = Number(ch);
-      return { value, given: value !== 0, conflict: false };
-    });
-  const fixture = PASTE_FLOW_PARITY_FIXTURE;
-  let state = { cells: lineToCells(fixture.seed_line) };
-  let historyCount = 0;
-
-  const game = {
-    exec(action) {
-      if (action?.action !== "fill") return { ok: false, error: "unsupported action" };
-      const i = idx(action.row, action.col);
-      state.cells[i] = { ...state.cells[i], value: action.digit, given: false };
-      historyCount += 1;
-      return { ok: true, state: this.getState(), msg: null };
-    },
-    importPuzzle(line) {
-      if (line.length !== 81) return { ok: false, error: "import: puzzle line must be exactly 81 chars" };
-      if (/[^0-9]/.test(line)) return { ok: false, error: "import: invalid character in puzzle line" };
-      state = { cells: lineToCells(line) };
-      historyCount = 0;
-      return { ok: true, msg: "import: puzzle loaded" };
-    },
-    getState() {
-      return { cells: state.cells.map((cell) => ({ ...cell })) };
-    },
-    getLegend() {
-      return { paste: true };
-    },
-    getConfig() {
-      return { auto_save: false };
-    },
-    historyCount() {
-      return historyCount;
-    },
-  };
-
-  const prefill = game.exec({ action: "fill", row: fixture.prefill.row, col: fixture.prefill.col, digit: fixture.prefill.digit });
-  assert.equal(prefill.ok, true);
-  assert.equal(state.cells[idx(fixture.prefill_probe.row, fixture.prefill_probe.col)].value, fixture.prefill_probe.value);
-  assert.equal(state.cells[idx(fixture.prefill_probe.row, fixture.prefill_probe.col)].given, fixture.prefill_probe.given);
-  assert.equal(game.historyCount(), fixture.history_after_prefill);
-
-  const imported = importPuzzle(game, fixture.valid_import_line);
-  assert.equal(imported.ok, true);
-  for (const probe of fixture.success_probes) {
-    assert.equal(state.cells[idx(probe.row, probe.col)].value, probe.value);
-    assert.equal(state.cells[idx(probe.row, probe.col)].given, probe.given);
-  }
-  assert.equal(game.historyCount(), fixture.history_after_success_import);
-
-  const refill = game.exec({ action: "fill", row: fixture.refill.row, col: fixture.refill.col, digit: fixture.refill.digit });
-  assert.equal(refill.ok, true);
-  assert.equal(game.historyCount(), fixture.history_after_refill);
-  const beforeInvalid = JSON.stringify(game.getState());
-
-  const invalidImport = importPuzzle(game, fixture.invalid_import_line);
-  assert.equal(invalidImport.ok, false);
-  assert.match(invalidImport.error ?? "", /invalid character/i);
-  assert.equal(JSON.stringify(game.getState()), beforeInvalid);
-  assert.equal(game.historyCount(), fixture.history_after_invalid_import);
-  assert.equal(
-    state.cells[idx(fixture.invalid_preserve_probe.row, fixture.invalid_preserve_probe.col)].value,
-    fixture.invalid_preserve_probe.value,
-  );
-  assert.equal(
-    state.cells[idx(fixture.invalid_preserve_probe.row, fixture.invalid_preserve_probe.col)].given,
-    fixture.invalid_preserve_probe.given,
-  );
 }
 
 {
