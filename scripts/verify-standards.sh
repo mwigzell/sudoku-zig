@@ -81,15 +81,27 @@ note_violation() {
 }
 
 # --- helpers: scan only added/changed lines in the diff ---
+# Each file is diffed once; every check reads the cached diff instead of running git again.
+DIFF_DIR="$(mktemp -d)"
+trap 'rm -rf "$DIFF_DIR"' EXIT
+for f in "${CHANGED[@]}"; do
+  key="$DIFF_DIR/${f//\//__}"
+  git diff -U0 "$BASE" -- "$f" > "$key.diff"
+  sed -n 's/^+//p' "$key.diff" | grep -v '^+++' > "$key.added" || true
+done
+
+file_diff() {
+  cat "$DIFF_DIR/${1//\//__}.diff"
+}
+
 diff_added_lines() {
-  local file=$1
-  git diff -U0 "$BASE" -- "$file" | sed -n 's/^+//p' | grep -v '^+++' || true
+  cat "$DIFF_DIR/${1//\//__}.added"
 }
 
 check_added_pattern() {
   local file=$1 pattern=$2 msg=$3
   local hits
-  hits="$(diff_added_lines "$file" | grep -E "$pattern" | grep -vE '^\s*test "' || true)"
+  hits="$(grep -E "$pattern" "$DIFF_DIR/${file//\//__}.added" | grep -vE '^\s*test "' || true)"
   if [[ -n "$hits" ]]; then
     note_violation "$msg in ${file}" "$(echo "$hits" | head -3 | sed 's/^/+ /')"
   fi
@@ -97,7 +109,7 @@ check_added_pattern() {
 
 added_public_symbol_lines() {
   local file=$1
-  git diff -U0 "$BASE" -- "$file" | awk '
+  file_diff "$file" | awk '
     /^@@/ {
       if (match($0, /\+[0-9]+/)) {
         line = substr($0, RSTART + 1, RLENGTH - 1) - 1
