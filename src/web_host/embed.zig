@@ -10,7 +10,7 @@ pub const glue_js: []const u8 = @embedFile("../wasm/artifacts/glue.js");
 /// Puzzle-generation worker script.
 pub const gen_worker_js: []const u8 = @embedFile("../wasm/artifacts/gen_worker.js");
 /// Main-thread client for the gen worker.
-pub const gen_client_js: []const u8 = @embedFile("../wasm/gen_client.js");
+pub const gen_client_js: []const u8 = @embedFile("../wasm/gen/gen_client.js");
 /// Web startup phase orchestration entry point.
 pub const app_boot_js: []const u8 = @embedFile("../wasm/app_boot.js");
 /// Web UI wiring after startup/session are ready.
@@ -18,49 +18,49 @@ pub const app_wire_js: []const u8 = @embedFile("../wasm/app_wire.js");
 /// Status bar text (`/status_bar.js`).
 pub const status_bar_js: []const u8 = @embedFile("../wasm/status_bar.js");
 /// Error dialog (`/error_modal.js`).
-pub const error_modal_js: []const u8 = @embedFile("../wasm/error_modal.js");
+pub const error_modal_js: []const u8 = @embedFile("../wasm/dialogs/error_modal.js");
 /// Client diagnostics log (`/client_log.js`).
 pub const client_log_js: []const u8 = @embedFile("../wasm/client_log.js");
 /// Web session and current-file label (`/session.js`).
-pub const session_js: []const u8 = @embedFile("../wasm/session.js");
+pub const session_js: []const u8 = @embedFile("../wasm/flows/session.js");
 /// Host HTTP calls (`/host_api.js`).
 pub const host_api_js: []const u8 = @embedFile("../wasm/host_api.js");
 /// Generate step answerer (`/generate.js`).
-pub const generate_js: []const u8 = @embedFile("../wasm/generate.js");
+pub const generate_js: []const u8 = @embedFile("../wasm/gen/generate.js");
 /// Clipboard copy and paste (`/clipboard.js`).
 pub const clipboard_js: []const u8 = @embedFile("../wasm/clipboard.js");
 /// Autosave platform work (`/autosave.js`).
-pub const autosave_js: []const u8 = @embedFile("../wasm/autosave.js");
+pub const autosave_js: []const u8 = @embedFile("../wasm/flows/autosave.js");
 /// Command flow platform work (`/command_flow.js`).
-pub const command_flow_js: []const u8 = @embedFile("../wasm/command_flow.js");
+pub const command_flow_js: []const u8 = @embedFile("../wasm/flows/command_flow.js");
 /// Web startup (`/startup.js`).
-pub const startup_js: []const u8 = @embedFile("../wasm/startup.js");
+pub const startup_js: []const u8 = @embedFile("../wasm/flows/startup.js");
 /// Board DOM and input (`/board.js`).
 pub const board_js: []const u8 = @embedFile("../wasm/board.js");
 /// Edit menu actions (`/menu.js`).
-pub const menu_js: []const u8 = @embedFile("../wasm/menu.js");
+pub const menu_js: []const u8 = @embedFile("../wasm/menus/menu.js");
 /// Top menubar chrome (`/menu_bar.js`).
-pub const menu_bar_js: []const u8 = @embedFile("../wasm/menu_bar.js");
+pub const menu_bar_js: []const u8 = @embedFile("../wasm/menus/menu_bar.js");
 /// Theme tokens (`/theme.js`).
-pub const theme_js: []const u8 = @embedFile("../wasm/theme.js");
+pub const theme_js: []const u8 = @embedFile("../wasm/menus/theme.js");
 /// File menu (`/file_menu.js`).
-pub const file_menu_js: []const u8 = @embedFile("../wasm/file_menu.js");
+pub const file_menu_js: []const u8 = @embedFile("../wasm/menus/file_menu.js");
 /// Android WebView bridge wrapper, loaded in the page head (`/android_bridge.js`).
 pub const android_bridge_js: []const u8 = @embedFile("../wasm/android_bridge.js");
 /// Core flow step runner (`/step_runner.js`).
-pub const step_runner_js: []const u8 = @embedFile("../wasm/step_runner.js");
+pub const step_runner_js: []const u8 = @embedFile("../wasm/flows/step_runner.js");
 /// New-game / generating modal (`/generating.js`).
-pub const generating_js: []const u8 = @embedFile("../wasm/generating.js");
+pub const generating_js: []const u8 = @embedFile("../wasm/dialogs/generating.js");
 /// Gen progress UI rows (`/gen_progress_rows.js`).
-pub const gen_progress_rows_js: []const u8 = @embedFile("../wasm/gen_progress_rows.js");
+pub const gen_progress_rows_js: []const u8 = @embedFile("../wasm/gen/gen_progress_rows.js");
 /// Gen progress formatting helpers (`/gen_progress_format.js`).
-pub const gen_progress_format_js: []const u8 = @embedFile("../wasm/gen_progress_format.js");
+pub const gen_progress_format_js: []const u8 = @embedFile("../wasm/gen/gen_progress_format.js");
 /// Region overlay toggle (`/region.js`).
-pub const region_js: []const u8 = @embedFile("../wasm/region.js");
+pub const region_js: []const u8 = @embedFile("../wasm/menus/region.js");
 /// Help copy (`/help.js`).
-pub const help_js: []const u8 = @embedFile("../wasm/help.js");
+pub const help_js: []const u8 = @embedFile("../wasm/menus/help.js");
 /// Settings panel (`/settings.js`).
-pub const settings_js: []const u8 = @embedFile("../wasm/settings.js");
+pub const settings_js: []const u8 = @embedFile("../wasm/menus/settings.js");
 /// Web app manifest (`/site.webmanifest`).
 pub const site_webmanifest: []const u8 = @embedFile("../wasm/artifacts/site.webmanifest");
 /// Web/app icon set and artwork variants (`/branding/*`).

@@ -1,43 +1,21 @@
 // board.test.mjs — DOM board shell contract.
 
 import assert from "node:assert/strict";
-import {
-  cellIndex,
-  cellClasses,
-  formatDigit,
-  boardCellDescriptors,
-  ensureBoardFrame,
-  getPlayGrid,
-  renderBoard,
-  setStatus,
-  moveSelection,
-  findCellElement,
-  applySelection,
-  readSelection,
-  wireSelection,
-  parsePlayKey,
-  handlePlayKey,
-  wirePlayLoop,
-  COLUMN_LETTERS,
-  FRAME_SIZE,
-  PLAY_OFFSET,
-  GUTTER_FR,
-  PLAY_FR,
-} from "./board.js";
-import { formatGenProgress } from "./gen_progress_format.js";
+import * as boardMod from "./board.js";
+import * as genProgressFormat from "./gen/gen_progress_format.js";
 import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame } from "./test_support.mjs";
 
 
-assert.equal(formatGenProgress(4, 71, 36), "Generating: 71 givens → ≤36");
-assert.equal(formatGenProgress(0, 0, 0), "Generating: new attempt…");
+assert.equal(genProgressFormat.formatGenProgress(4, 71, 36), "Generating: 71 givens → ≤36");
+assert.equal(genProgressFormat.formatGenProgress(0, 0, 0), "Generating: new attempt…");
 
-assert.equal(cellIndex(2, 4), 22);
-assert.equal(cellIndex(0, 0), 0);
-assert.equal(cellIndex(8, 8), 80);
+assert.equal(boardMod.cellIndex(2, 4), 22);
+assert.equal(boardMod.cellIndex(0, 0), 0);
+assert.equal(boardMod.cellIndex(8, 8), 80);
 
 {
   const given = { value: 7, given: true, conflict: false };
-  const classes = cellClasses(0, 0, given);
+  const classes = boardMod.cellClasses(0, 0, given);
   assert.ok(classes.includes("cell"));
   assert.ok(classes.includes("given"));
   assert.ok(!classes.includes("conflict"));
@@ -46,20 +24,20 @@ assert.equal(cellIndex(8, 8), 80);
 
 {
   const conflict = { value: 3, given: false, conflict: true };
-  const classes = cellClasses(1, 1, conflict);
+  const classes = boardMod.cellClasses(1, 1, conflict);
   assert.ok(classes.includes("conflict"));
   assert.ok(classes.includes("player"));
 }
 
 {
-  const classes = cellClasses(2, 5, { value: 0, given: false, conflict: false });
+  const classes = boardMod.cellClasses(2, 5, { value: 0, given: false, conflict: false });
   assert.ok(classes.includes("empty"));
   assert.ok(classes.includes("box-right"));
   assert.ok(classes.includes("box-bottom"));
 }
 
-assert.equal(formatDigit({ value: 0 }), "");
-assert.equal(formatDigit({ value: 9 }), "9");
+assert.equal(boardMod.formatDigit({ value: 0 }), "");
+assert.equal(boardMod.formatDigit({ value: 9 }), "9");
 
 {
   const state = {
@@ -68,7 +46,7 @@ assert.equal(formatDigit({ value: 9 }), "9");
       { value: 0, given: false, conflict: false },
     ].concat(Array(79).fill({ value: 0, given: false, conflict: false })),
   };
-  const desc = boardCellDescriptors(state);
+  const desc = boardMod.boardCellDescriptors(state);
   assert.equal(desc.length, 81);
   assert.equal(desc[0].text, "5");
   assert.ok(desc[0].classes.includes("given"));
@@ -78,11 +56,11 @@ assert.equal(formatDigit({ value: 9 }), "9");
 
 // ── framed board ──
 
-assert.equal(FRAME_SIZE, 11);
-assert.equal(PLAY_OFFSET, 1);
-assert.equal(GUTTER_FR, 1);
-assert.equal(PLAY_FR, 2);
-assert.equal(COLUMN_LETTERS, "ABCDEFGHI");
+assert.equal(boardMod.FRAME_SIZE, 11);
+assert.equal(boardMod.PLAY_OFFSET, 1);
+assert.equal(boardMod.GUTTER_FR, 1);
+assert.equal(boardMod.PLAY_FR, 2);
+assert.equal(boardMod.COLUMN_LETTERS, "ABCDEFGHI");
 
 function makeFrameElement() {
   return {
@@ -157,16 +135,16 @@ function makeRenderElement() {
 {
   const frameEl = makeFrameElement();
   const createElement = makeRenderElement();
-  const playEl = ensureBoardFrame(frameEl, createElement);
+  const playEl = boardMod.ensureBoardFrame(frameEl, createElement);
   assert.ok(frameEl.classList.contains("board-frame"));
   assert.ok(playEl.classList.contains("board-play"));
-  assert.equal(getPlayGrid(frameEl), playEl);
+  assert.equal(boardMod.getPlayGrid(frameEl), playEl);
 
   const colLabels = frameEl._children.filter((c) => c.classList.contains("col-label"));
   assert.equal(colLabels.length, 18);
   assert.deepEqual(
     colLabels.map((c) => c.textContent),
-    [...COLUMN_LETTERS, ...COLUMN_LETTERS],
+    [...boardMod.COLUMN_LETTERS, ...boardMod.COLUMN_LETTERS],
   );
 
   const rowLabels = frameEl._children.filter((c) => c.classList.contains("row-label"));
@@ -208,8 +186,8 @@ function makeRenderElement() {
       i === 0 ? { value: 1, given: true, conflict: false } : { value: 0, given: false, conflict: false },
     ),
   };
-  renderBoard(frameEl, state, createElement);
-  const playEl = getPlayGrid(frameEl);
+  boardMod.renderBoard(frameEl, state, createElement);
+  const playEl = boardMod.getPlayGrid(frameEl);
   assert.equal(playEl._children.length, 81);
   assert.equal(playEl._children[0].textContent, "1");
   assert.ok(playEl._children[0].classList.contains("given"));
@@ -218,23 +196,23 @@ function makeRenderElement() {
 
 {
   const el = { textContent: "", className: "", classList: { add() {}, remove() {} } };
-  setStatus(el, "Ready");
+  boardMod.setStatus(el, "Ready");
   assert.equal(el.textContent, "Ready");
   assert.equal(el.className, "");
-  setStatus(el, "bad move", { error: true });
+  boardMod.setStatus(el, "bad move", { error: true });
   assert.equal(el.textContent, "bad move");
   assert.equal(el.className, "error");
-  setStatus(el, "ok again");
+  boardMod.setStatus(el, "ok again");
   assert.equal(el.className, "");
 }
 
 // ── selection ──
 
-assert.deepEqual(moveSelection(4, 4, "ArrowUp"), { row: 3, col: 4 });
-assert.deepEqual(moveSelection(0, 0, "ArrowUp"), { row: 0, col: 0 });
-assert.deepEqual(moveSelection(8, 8, "ArrowDown"), { row: 8, col: 8 });
-assert.deepEqual(moveSelection(2, 5, "ArrowLeft"), { row: 2, col: 4 });
-assert.deepEqual(moveSelection(2, 8, "ArrowRight"), { row: 2, col: 8 });
+assert.deepEqual(boardMod.moveSelection(4, 4, "ArrowUp"), { row: 3, col: 4 });
+assert.deepEqual(boardMod.moveSelection(0, 0, "ArrowUp"), { row: 0, col: 0 });
+assert.deepEqual(boardMod.moveSelection(8, 8, "ArrowDown"), { row: 8, col: 8 });
+assert.deepEqual(boardMod.moveSelection(2, 5, "ArrowLeft"), { row: 2, col: 4 });
+assert.deepEqual(boardMod.moveSelection(2, 8, "ArrowRight"), { row: 2, col: 8 });
 
 function makeMockCell(row, col) {
   const el = {
@@ -325,23 +303,23 @@ function makeMockBoard() {
 
 {
   const board = makeMockBoard();
-  applySelection(board, 1, 2);
-  assert.ok(findCellElement(board, 1, 2).classList.contains("selected"));
+  boardMod.applySelection(board, 1, 2);
+  assert.ok(boardMod.findCellElement(board, 1, 2).classList.contains("selected"));
   assert.equal(
     board.play.children.filter((c) => c.classList.contains("selected")).length,
     1,
   );
-  applySelection(board, 4, 4);
-  assert.ok(!findCellElement(board, 1, 2).classList.contains("selected"));
-  assert.ok(findCellElement(board, 4, 4).classList.contains("selected"));
+  boardMod.applySelection(board, 4, 4);
+  assert.ok(!boardMod.findCellElement(board, 1, 2).classList.contains("selected"));
+  assert.ok(boardMod.findCellElement(board, 4, 4).classList.contains("selected"));
 }
 
 {
   const board = makeMockBoard();
-  applySelection(board, 0, 3);
+  boardMod.applySelection(board, 0, 3);
   let synced = null;
   assert.deepEqual(
-    readSelection(board, {
+    boardMod.readSelection(board, {
       getSelection: () => ({ row: 1, col: 2 }),
       select(row, col) {
         synced = { row, col };
@@ -350,17 +328,17 @@ function makeMockBoard() {
     { row: 0, col: 3 },
   );
   assert.deepEqual(synced, { row: 0, col: 3 });
-  applySelection(board, 5, 5);
-  assert.deepEqual(readSelection(board, { getSelection: () => null }), { row: 5, col: 5 });
+  boardMod.applySelection(board, 5, 5);
+  assert.deepEqual(boardMod.readSelection(board, { getSelection: () => null }), { row: 5, col: 5 });
 }
 
 {
-  const { handleEditAction } = await import("./menu.js");
+  const { handleEditAction } = await import("./menus/menu.js");
   const game = await loadGame();
   startNewGame(game);
   const session = { state: game.getState(), legend: game.getLegend() };
   const board = makeMockBoard();
-  applySelection(board, 1, 2);
+  boardMod.applySelection(board, 1, 2);
   const status = { textContent: "", className: "" };
   const outcome = handleEditAction(
     "hint",
@@ -378,7 +356,7 @@ function makeMockBoard() {
 
 {
   const board = makeMockBoard();
-  const controller = wireSelection(board);
+  const controller = boardMod.wireSelection(board);
   assert.equal(board.tabIndex, 0);
   assert.equal(controller.getSelection(), null);
   assert.equal(
@@ -393,7 +371,7 @@ function makeMockBoard() {
   });
   assert.equal(controller.getSelection(), null);
 
-  const target = findCellElement(board, 5, 5);
+  const target = boardMod.findCellElement(board, 5, 5);
   const clickCell = (cell) => {
     const event = { target: { closest: () => cell } };
     board.play._listeners.pointerdown?.(event);
@@ -407,8 +385,8 @@ function makeMockBoard() {
   assert.equal(controller.getSelection(), null);
   assert.ok(!target.classList.contains("selected"));
 
-  const c1 = findCellElement(board, 0, 2);
-  const c2 = findCellElement(board, 1, 2);
+  const c1 = boardMod.findCellElement(board, 0, 2);
+  const c2 = boardMod.findCellElement(board, 1, 2);
   board.play._listeners.pointerdown?.({ target: { closest: () => c1 } });
   board.play._listeners.click?.({ target: { closest: () => c2 } });
   assert.deepEqual(controller.getSelection(), { row: 1, col: 2 });
@@ -424,19 +402,19 @@ function makeMockBoard() {
 
 {
   const board = makeMockBoard();
-  const controller = wireSelection(board, { row: 0, col: 0 });
+  const controller = boardMod.wireSelection(board, { row: 0, col: 0 });
   assert.deepEqual(controller.getSelection(), { row: 0, col: 0 });
 }
 
 // ── play loop ──
 
-assert.deepEqual(parsePlayKey("5"), { type: "fill", digit: 5 });
-assert.equal(parsePlayKey("ArrowUp"), null);
-assert.deepEqual(parsePlayKey("Backspace"), { type: "clear" });
-assert.deepEqual(parsePlayKey(" "), { type: "clear" });
-assert.deepEqual(parsePlayKey("", "Space"), { type: "clear" });
-assert.deepEqual(parsePlayKey("", "Backspace"), { type: "clear" });
-assert.deepEqual(parsePlayKey("", "Delete"), { type: "clear" });
+assert.deepEqual(boardMod.parsePlayKey("5"), { type: "fill", digit: 5 });
+assert.equal(boardMod.parsePlayKey("ArrowUp"), null);
+assert.deepEqual(boardMod.parsePlayKey("Backspace"), { type: "clear" });
+assert.deepEqual(boardMod.parsePlayKey(" "), { type: "clear" });
+assert.deepEqual(boardMod.parsePlayKey("", "Space"), { type: "clear" });
+assert.deepEqual(boardMod.parsePlayKey("", "Backspace"), { type: "clear" });
+assert.deepEqual(boardMod.parsePlayKey("", "Delete"), { type: "clear" });
 
 const errorModalStub = () => ({ el: { hidden: true }, msgEl: { textContent: "" } });
 const statusStub = () => ({ textContent: "", className: "" });
@@ -456,19 +434,19 @@ async function playGame(config = {}) {
 }
 
 function selectedAt(board, row, col) {
-  return { getSelection: () => ({ row, col }), select(r, c) { applySelection(board, r, c); } };
+  return { getSelection: () => ({ row, col }), select(r, c) { boardMod.applySelection(board, r, c); } };
 }
 
 {
   const board = makeMockBoard();
   const status = statusStub();
   const { game, session } = await playGame();
-  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 2), status, errorModalStub(), "4", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), status, errorModalStub(), "4", session, makeRenderElement());
   assert.equal(outcome.handled, true);
   await outcome.done;
-  assert.equal(session.state.cells[cellIndex(0, 2)].value, 4);
-  assert.equal(findCellElement(board, 0, 2).textContent, "4");
-  assert.ok(findCellElement(board, 0, 2).classList.contains("selected"));
+  assert.equal(session.state.cells[boardMod.cellIndex(0, 2)].value, 4);
+  assert.equal(boardMod.findCellElement(board, 0, 2).textContent, "4");
+  assert.ok(boardMod.findCellElement(board, 0, 2).classList.contains("selected"));
   assert.equal(session.legend.undo, true);
 }
 
@@ -478,7 +456,7 @@ function selectedAt(board, row, col) {
   const errorModal = errorModalStub();
   const { game, session } = await playGame();
   status.textContent = "before";
-  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 0), status, errorModal, "5", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 0), status, errorModal, "5", session, makeRenderElement());
   assert.equal(outcome.handled, true);
   await outcome.done;
   assert.equal(status.textContent, "before");
@@ -488,7 +466,7 @@ function selectedAt(board, row, col) {
 
 {
   const { game, session } = await playGame();
-  const outcome = handlePlayKey(
+  const outcome = boardMod.handlePlayKey(
     game,
     makeMockBoard(),
     { getSelection: () => null, select() {} },
@@ -508,7 +486,7 @@ function selectedAt(board, row, col) {
   const host = hostFetch({ exists: false });
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
-  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
   await outcome.done;
   globalThis.fetch = prevFetch;
   assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST", "first autosave with nothing on disk writes the host file");
@@ -528,7 +506,7 @@ function selectedAt(board, row, col) {
     questions.push({ message, labels });
     return false;
   };
-  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
   await outcome.done;
   globalThis.fetch = prevFetch;
   globalThis.__sudokuChoose = prevChoose;
@@ -557,7 +535,7 @@ function selectedAt(board, row, col) {
     },
   };
   let shownLegend = null;
-  wirePlayLoop(board, game, selectedAt(board, 0, 2), statusStub(), errorModalStub(), session, {
+  boardMod.wirePlayLoop(board, game, selectedAt(board, 0, 2), statusStub(), errorModalStub(), session, {
     playPadEl: pad,
     createElement: makeRenderElement(),
     onLegendChange: (legend) => {
@@ -566,7 +544,7 @@ function selectedAt(board, row, col) {
   });
   digitBtnHandlers.click?.();
   await settleFlow();
-  assert.equal(game.getState().cells[cellIndex(0, 2)].value, 4);
+  assert.equal(game.getState().cells[boardMod.cellIndex(0, 2)].value, 4);
   assert.equal(shownLegend?.undo, true);
 }
 

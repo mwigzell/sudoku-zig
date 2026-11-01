@@ -1,7 +1,7 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
-import * as commandFlowMod from "./command_flow.js";
-import * as errorModalMod from "./error_modal.js";
+import * as commandFlowMod from "./flows/command_flow.js";
+import * as errorModalMod from "./dialogs/error_modal.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
@@ -338,7 +338,7 @@ export function parsePlayKey(key, code = "") {
  * Run a board command through core and redraw from the game core shows; the selection survives.
  * @param {GameApi} game
  * @param {import("./types").ExecAction} action
- * @param {{ boardEl: any, selection: any, createElement?: any, commandFlow: FlowHandlers, onShown?: (step: FlowStep) => void }} options
+ * @param {{ boardEl: HTMLElement, selection: import("./types").BoardSelection, createElement?: (tag: string) => HTMLElement, commandFlow: FlowHandlers, onShown?: (step: FlowStep) => void }} options
  */
 export function runBoardCommand(game, action, { boardEl, selection, createElement, commandFlow, onShown }) {
   return commandFlowMod.runSessionCommand(game, action, commandFlow, (step) => {

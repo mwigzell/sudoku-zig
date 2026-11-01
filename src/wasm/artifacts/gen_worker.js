@@ -1,6 +1,6 @@
 // gen_worker.js — puzzle generation in a Web Worker (same wasm + glue as the page).
 
-import { loadArtifact } from "./glue.js";
+import * as glue from "./glue.js";
 
 let game = null;
 
@@ -13,7 +13,7 @@ self.onmessage = async (event) => {
   if (msg?.type !== "run") return;
 
   try {
-    if (!game) game = await loadArtifact(msg.wasmBytes);
+    if (!game) game = await glue.loadArtifact(msg.wasmBytes);
     game.setGenProgressListener((phase, a, b) => {
       self.postMessage({ type: "progress", phase, a, b });
     });

@@ -3,7 +3,7 @@
 Native and web front ends call core differently, but must produce the same **semantic** outcomes. Each scenario in the fixture `src/test/fixtures/parity_scenarios.json` runs through the real entry paths on both sides and is checked against one shared set of expectations. Each runner is a test in the module it drives:
 
 - **Native:** the `parity scenarios` test in `src/native/shell/shell.zig` drives `Sudoku` (`runStartupFlow`, then `turn()` per step) with a scripted renderer and an in-memory transport.
-- **Web:** the parity block at the end of `src/wasm/startup.test.mjs` drives the real wasm through `startup.js` (`runStartupFlow`), `board.js` (`handlePlayKey`), `menu.js` (`handleEditAction`) and `file_menu.js` (the File menu listeners) against a fake host.
+- **Web:** the parity block at the end of `src/wasm/flows/startup.test.mjs` drives the real wasm through `startup.js` (`runStartupFlow`), `board.js` (`handlePlayKey`), `menu.js` (`handleEditAction`) and `file_menu.js` (the File menu listeners) against a fake host.
 
 `zig build parity` (part of `zig build verify`) fails when a scenario is not run by both runners, is missing from this table, or skips an entry without naming the gap and an open issue.
 

@@ -9,7 +9,7 @@ cd "$ROOT"
 
 SCENARIOS="src/test/fixtures/parity_scenarios.json"
 NATIVE_RUNNER="src/native/shell/shell.zig"
-WEB_RUNNER="src/wasm/startup.test.mjs"
+WEB_RUNNER="src/wasm/flows/startup.test.mjs"
 MATRIX="docs/parity-matrix.md"
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -56,7 +56,7 @@ while IFS=$'\t' read -r name entry gap issue; do
 done < <(jq -r '.scenarios[] | select(.skip != null) | [.name, .skip.entry, (.skip.gap // ""), (.skip.issue // "" | tostring)] | @tsv' "$SCENARIOS")
 
 STEP_ZIG="src/core/flow/step.zig"
-STEP_RUNNER="src/wasm/step_runner.js"
+STEP_RUNNER="src/wasm/flows/step_runner.js"
 step_kinds="$(awk '/^pub const Step = union\(enum\) \{/ {on=1; next} on && /^\};/ {exit} on && /^    [a-z_]+[,:]/ {sub(/^    /, ""); sub(/[,:].*/, ""); print}' "$STEP_ZIG")"
 [[ -n "$step_kinds" ]] || violation "no step kinds found in $STEP_ZIG"
 while IFS= read -r kind; do

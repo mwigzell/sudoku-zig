@@ -3,17 +3,17 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadArtifact } from "./artifacts/glue.js";
-import * as autosave from "./autosave.js";
-import { wireGeneratingModal } from "./generating.js";
-import { runCommand } from "./step_runner.js";
+import * as glue from "./artifacts/glue.js";
+import * as autosave from "./flows/autosave.js";
+import * as generating from "./dialogs/generating.js";
+import * as stepRunner from "./flows/step_runner.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifacts/artifact.wasm"));
 
 /** A real wasm game bootstrapped like the host does; `config` overrides the defaults. */
 export async function loadGame(config = {}) {
-  const game = await loadArtifact(wasmBytes);
+  const game = await glue.loadArtifact(wasmBytes);
   const boot = game.bootstrapHostConfig({
     difficulty: 1,
     logLevel: 1,
@@ -116,7 +116,7 @@ export function generatingModalStub({ progressRowsEl } = {}) {
   const el = { hidden: true };
   const continueBtn = makeContinueBtn();
   const cancelBtn = makeContinueBtn();
-  return wireGeneratingModal({
+  return generating.wireGeneratingModal({
     el,
     continueBtn,
     cancelBtn,
@@ -142,7 +142,7 @@ export const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
 
 /** One move through the core command flow with the web autosave handlers; core decides what is written. */
 export function moveWithAutosave(game, session, { fetchFn, onError } = {}, move = FILL_MOVE) {
-  return runCommand(game, move, { ...autosave.autosaveHandlers(game, session, { fetchFn, onError }), showGame() {} });
+  return stepRunner.runCommand(game, move, { ...autosave.autosaveHandlers(game, session, { fetchFn, onError }), showGame() {} });
 }
 
 function makeContinueBtn() {

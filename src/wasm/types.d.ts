@@ -16,11 +16,11 @@ export type ExecAction =
   | { action: "open" | "import" | "paste" }
   | { action: "save" | "save_as" | "export" | "copy" };
 
-export type WebSession = ReturnType<typeof import("./session.js").createWebSessionFromStartup>;
+export type WebSession = ReturnType<typeof import("./flows/session.js").createWebSessionFromStartup>;
 /** Menubar item elements resolved from the page shell. */
-export type MenuBarControls = ReturnType<typeof import("./menu_bar.js").collectMenuBarControls>;
+export type MenuBarControls = ReturnType<typeof import("./menus/menu_bar.js").collectMenuBarControls>;
 /** Wired menubar: `sync()` re-applies legend/config enablement and labels; `closeAll()` closes open dropdowns. */
-export type MenuBar = ReturnType<typeof import("./menu_bar.js").wireMenuBar>;
+export type MenuBar = ReturnType<typeof import("./menus/menu_bar.js").wireMenuBar>;
 /** Board cell selection: `getSelection()`, `deselect()`. */
 export type BoardSelection = ReturnType<typeof import("./board.js").wireSelection>;
 /** File menu items `wireFileMenu` wires; a missing item is skipped. */
@@ -36,15 +36,15 @@ export type FileMenuWiring = {
   errorModal: ErrorModal;
   session: WebSession;
   menuBar: MenuBar;
-  download: typeof import("./file_menu.js").downloadBytes;
-  pick: (session: WebSession, options?: Parameters<typeof import("./file_menu.js").pickBytes>[2]) => ReturnType<typeof import("./file_menu.js").pickBytes>;
-  exportText: typeof import("./file_menu.js").persistPuzzleText;
+  download: typeof import("./menus/file_menu.js").downloadBytes;
+  pick: (session: WebSession, options?: Parameters<typeof import("./menus/file_menu.js").pickBytes>[2]) => ReturnType<typeof import("./menus/file_menu.js").pickBytes>;
+  exportText: typeof import("./menus/file_menu.js").persistPuzzleText;
   createElement?: (tag: string) => HTMLElement;
   onViewRefresh?: () => void;
   commandFlow?: FlowHandlers;
 };
-export type GeneratingModal = ReturnType<typeof import("./generating.js").wireGeneratingModal>;
-export type ErrorModal = ReturnType<typeof import("./error_modal.js").wireErrorModal>;
+export type GeneratingModal = ReturnType<typeof import("./dialogs/generating.js").wireGeneratingModal>;
+export type ErrorModal = ReturnType<typeof import("./dialogs/error_modal.js").wireErrorModal>;
 export type GenWorker =
   | {
       workerUrl: string;

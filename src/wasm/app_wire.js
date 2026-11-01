@@ -1,17 +1,17 @@
 // app_wire.js — DOM wiring for the web shell once startup/session are ready.
 
-import * as commandFlowMod from "./command_flow.js";
-import * as errorModalMod from "./error_modal.js";
-import * as sessionMod from "./session.js";
+import * as commandFlowMod from "./flows/command_flow.js";
+import * as errorModalMod from "./dialogs/error_modal.js";
+import * as sessionMod from "./flows/session.js";
 import * as statusBarMod from "./status_bar.js";
-import { getPlayGrid, renderBoard, setStatus, wireSelection, wirePlayLoop } from "./board.js";
-import { wireEditMenu } from "./menu.js";
-import { collectMenuBarControls, wireMenuBar } from "./menu_bar.js";
-import { wireThemeMenu } from "./theme.js";
-import { wireFileMenu } from "./file_menu.js";
-import { wireRegionMenu } from "./region.js";
-import { wireHelpAbout, wireAboutModal } from "./help.js";
-import { wireSettingsMenu } from "./settings.js";
+import * as board from "./board.js";
+import * as menu from "./menus/menu.js";
+import * as menuBarMod from "./menus/menu_bar.js";
+import * as theme from "./menus/theme.js";
+import * as fileMenu from "./menus/file_menu.js";
+import * as region from "./menus/region.js";
+import * as help from "./menus/help.js";
+import * as settings from "./menus/settings.js";
 
 /**
  * @typedef {import("./types").GameApi} GameApi
@@ -113,7 +113,7 @@ export function wireSudokuApp({
   const boardEl = root.getElementById("board");
   const playPadEl = root.getElementById("play-pad");
   const useTouchPlayPad = isTouchPlayPadPlatform(win);
-  const menuControls = collectMenuBarControls(root);
+  const menuControls = menuBarMod.collectMenuBarControls(root);
 
   installReplaceConfirm(root, win);
 
@@ -123,12 +123,12 @@ export function wireSudokuApp({
     summaryEl: root.getElementById("about-summary"),
     copyrightEl: root.getElementById("about-copyright"),
   };
-  wireAboutModal(aboutModal.el, root.getElementById("about-modal-dismiss"));
+  help.wireAboutModal(aboutModal.el, root.getElementById("about-modal-dismiss"));
   const settingsModal = settingsModalFromDom(root);
 
-  setStatus(statusBar, "");
+  board.setStatus(statusBar, "");
 
-  const menuBar = wireMenuBar(menuControls, session, root);
+  const menuBar = menuBarMod.wireMenuBar(menuControls, session, root);
   const syncPlayPadVisibility = (sel) => {
     if (!playPadEl) return;
     if (!useTouchPlayPad) {
@@ -147,14 +147,14 @@ export function wireSudokuApp({
     genWorker,
   });
 
-  const themeMenu = wireThemeMenu(menuControls, game, session, {
+  const themeMenu = theme.wireThemeMenu(menuControls, game, session, {
     root,
     onChange: () => menuBar.sync(),
     commandFlow,
   });
 
   let editMenu;
-  const selection = wireSelection(boardEl, {
+  const selection = board.wireSelection(boardEl, {
     regionEnabled: () => session.config.show_region === true,
     onSelect: (sel) => {
       syncPlayPadVisibility(sel);
@@ -163,7 +163,7 @@ export function wireSudokuApp({
   });
   syncPlayPadVisibility(selection.getSelection());
 
-  const regionMenu = wireRegionMenu(
+  const regionMenu = region.wireRegionMenu(
     menuControls,
     game,
     session,
@@ -181,7 +181,7 @@ export function wireSudokuApp({
     cancelBtn: root.getElementById("new-difficulty-cancel"),
   };
 
-  wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
+  fileMenu.wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
     difficultyDialog,
     onViewRefresh: () => {
       themeMenu.sync();
@@ -190,7 +190,7 @@ export function wireSudokuApp({
     commandFlow,
   });
 
-  editMenu = wireEditMenu(
+  editMenu = menu.wireEditMenu(
     menuControls.undo,
     menuControls.redo,
     menuControls.deselect,
@@ -211,24 +211,24 @@ export function wireSudokuApp({
     },
   );
 
-  wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
+  board.wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
     onLegendChange: () => menuBar.sync(),
     playPadEl,
     commandFlow,
   });
-  wireHelpAbout(menuControls.about, game, aboutModal);
-  wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
+  help.wireHelpAbout(menuControls.about, game, aboutModal);
+  settings.wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
     closeMenus: () => menuBar.closeAll?.(),
     commandFlow,
   });
 
   if (win.matchMedia?.("(pointer: fine)")?.matches === true) {
-    getPlayGrid(boardEl).focus();
+    board.getPlayGrid(boardEl).focus();
   }
 
   return {
     showGame: (step) => {
-      renderBoard(boardEl, session.state);
+      board.renderBoard(boardEl, session.state);
       selection.deselect();
       menuBar.sync();
       editMenu.sync();

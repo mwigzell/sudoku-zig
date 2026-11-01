@@ -971,9 +971,9 @@
   </script>
 
   <script type="module">
-    import { bootSudokuWebApp } from "../app_boot.js";
+    import * as appBoot from "../app_boot.js";
 
-    await bootSudokuWebApp(document);
+    await appBoot.bootSudokuWebApp(document);
   </script>
 </body>
 </html>

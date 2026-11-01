@@ -1,16 +1,16 @@
 // app_boot.js — startup phases for web shell, delegates UI wiring to app_wire.js.
 
-import { loadArtifact } from "./glue.js";
-import * as autosave from "./autosave.js";
+import * as glue from "./glue.js";
+import * as autosave from "./flows/autosave.js";
 import * as clientLog from "./client_log.js";
-import * as errorModalMod from "./error_modal.js";
-import * as sessionMod from "./session.js";
-import * as startupMod from "./startup.js";
-import { canUseGenWorker } from "./gen_client.js";
-import { wireGeneratingModal } from "./generating.js";
-import { renderBoard, setStatus } from "./board.js";
-import { primeWebBootChrome } from "./theme.js";
-import { createErrorModal, wireSudokuApp } from "./app_wire.js";
+import * as errorModalMod from "./dialogs/error_modal.js";
+import * as sessionMod from "./flows/session.js";
+import * as startupMod from "./flows/startup.js";
+import * as genClient from "./gen/gen_client.js";
+import * as generating from "./dialogs/generating.js";
+import * as board from "./board.js";
+import * as theme from "./menus/theme.js";
+import * as appWire from "./app_wire.js";
 
 /**
  * Entry point used by `page.html` module script.
@@ -24,7 +24,7 @@ export async function bootSudokuWebApp(root = document) {
 
   const statusBar = root.getElementById("status-bar");
   const boardEl = root.getElementById("board");
-  const errorModal = createErrorModal(root);
+  const errorModal = appWire.createErrorModal(root);
 
   try {
     clientLog.clientLog("startup", "debug", "module_start");
@@ -39,11 +39,11 @@ export async function bootSudokuWebApp(root = document) {
     const bytes = new Uint8Array(await res.arrayBuffer());
     clientLog.clientLog("startup", "debug", "artifact_bytes", { bytes: bytes.length });
 
-    const game = await loadArtifact(bytes);
+    const game = await glue.loadArtifact(bytes);
     clientLog.clientLog("startup", "debug", "wasm_loaded");
 
     // Boot phase 3: wire generation modal and optional worker generation context.
-    const generatingModal = wireGeneratingModal({
+    const generatingModal = generating.wireGeneratingModal({
       el: root.getElementById("generating-modal"),
       continueBtn: root.getElementById("generating-modal-continue"),
       cancelBtn: root.getElementById("generating-modal-cancel"),
@@ -51,7 +51,7 @@ export async function bootSudokuWebApp(root = document) {
       msgEl: root.getElementById("generating-modal-msg"),
       progressRowsEl: root.getElementById("generating-progress-rows"),
     });
-    const genWorker = canUseGenWorker()
+    const genWorker = genClient.canUseGenWorker()
       ? { workerUrl: new URL("./gen_worker.js", import.meta.url).href, wasmBytes: bytes }
       : undefined;
 
@@ -59,14 +59,14 @@ export async function bootSudokuWebApp(root = document) {
     const boot = await startupMod.initializeWebSession(game);
     clientLog.clientLog("startup", "info", "host_config_loaded", { log_level: boot?.config?.log_level ?? null });
     if (!boot.ok) throw new Error(boot.error ?? "session init failed");
-    primeWebBootChrome(boot, root);
+    theme.primeWebBootChrome(boot, root);
 
     // Boot phase 5: wire the UI around the idle session.
     const session = sessionMod.createWebSessionFromStartup(boot);
     autosave.wireFinalSnapshotOnPageHide(game, session);
     sessionMod.syncCurrentFileLabels(session, root);
-    renderBoard(boardEl, session.state);
-    const app = wireSudokuApp({
+    board.renderBoard(boardEl, session.state);
+    const app = appWire.wireSudokuApp({
       game,
       session,
       generatingModal,
@@ -97,7 +97,7 @@ export async function bootSudokuWebApp(root = document) {
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
     const msg = `failed to load wasm: ${err && err.message ? err.message : err}`;
-    setStatus(statusBar, msg, { error: true });
+    board.setStatus(statusBar, msg, { error: true });
     errorModalMod.showErrorModal(errorModal, msg);
   }
 }

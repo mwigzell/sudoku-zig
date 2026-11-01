@@ -4,13 +4,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
-import { loadArtifact } from "./glue.js";
+import * as glue from "./glue.js";
 import { openBytes, startNewGame } from "../test_support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifact.wasm"));
 
-const game = await loadArtifact(wasmBytes);
+const game = await glue.loadArtifact(wasmBytes);
 
 /** Fixed easy grid — live `init` gen is non-deterministic; unsolvable-move tests need this. */
 const EASY_FIXTURE =
@@ -20,7 +20,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── host startup config (CLI / disk analogue) drives GameEngine.cfg ──
 {
-  const hostGame = await loadArtifact(wasmBytes);
+  const hostGame = await glue.loadArtifact(wasmBytes);
   const boot = hostGame.bootstrapHostConfig({
     difficulty: 3,
     logLevel: 2,
@@ -45,7 +45,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── host build info marks the About version on Debug hosts only ──
 {
-  const buildGame = await loadArtifact(wasmBytes);
+  const buildGame = await glue.loadArtifact(wasmBytes);
   assert.match(buildGame.getAbout().version, /^\d+\.\d+\.\d+$/, "no host build info shows the bare version");
   buildGame.setHostBuildInfo({ debug_build: true });
   assert.match(buildGame.getAbout().version, /^\d+\.\d+\.\d+ debug$/, "a Debug host marks the About version");
@@ -56,7 +56,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── bootstrapHostConfig + generatePuzzle (worker handoff) ──
 {
-  const handoff = await loadArtifact(wasmBytes);
+  const handoff = await glue.loadArtifact(wasmBytes);
   const boot = handoff.bootstrapHostConfig({
     difficulty: 2,
     logLevel: 1,
@@ -93,7 +93,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── clear dead-end cell then targeted hint → placement on restored grid ──
 {
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
   assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
   assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
@@ -105,7 +105,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── hint (engine-pick placement must show ASCII digit, not control char) ──
 {
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
   const res = fresh.exec({ action: "hint" });
   assert.equal(res.ok, true, `hint failed: ${JSON.stringify(res)}`);
@@ -116,7 +116,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── hint on dead board: ok msg with no-solution tag (not error) ──
 {
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
   assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
   assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
@@ -237,7 +237,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── serialize errors ──
 {
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   const res = fresh.serialize();
   assert.equal(res.ok, false, `expected error before init: ${JSON.stringify(res)}`);
   assert.ok(res.error);
@@ -250,7 +250,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(saved.ok, true, `serialize failed: ${JSON.stringify(saved)}`);
   assert.ok(saved.bytes.length > 16, "SUD0 blob too small");
 
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
 
   const loaded = openBytes(fresh, saved.bytes);
@@ -260,7 +260,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── open warns on dead puzzle (same as native open) ──
 {
-  const dead = await loadArtifact(wasmBytes);
+  const dead = await glue.loadArtifact(wasmBytes);
   assert.equal(dead.init({ difficulty: 1 }).ok, true);
   assert.equal(dead.exec({ action: "toggle_warn_solvability" }).ok, true);
   assert.equal(startNewGame(dead, EASY_FIXTURE).loaded, true);
@@ -271,13 +271,13 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const saved = dead.serialize();
   assert.equal(saved.ok, true);
 
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
   assert.equal(fresh.exec({ action: "toggle_warn_solvability" }).ok, true);
   const loaded = openBytes(fresh, saved.bytes);
   assert.match(loaded.text ?? "", /no solution/i);
 
-  const named = await loadArtifact(wasmBytes);
+  const named = await glue.loadArtifact(wasmBytes);
   assert.equal(named.init({ difficulty: 1 }).ok, true);
   assert.equal(named.exec({ action: "toggle_warn_solvability" }).ok, true);
   const opened = openBytes(named, saved.bytes, "dead.sud");
@@ -321,7 +321,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.deepEqual(game.getState(), before);
   assert.deepEqual(game.getConfig(), configBefore, "view config survives open on same instance");
 
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 2, logLevel: 1 }).ok, true);
   const started = startNewGame(fresh, EASY_FIXTURE, "medium");
   assert.equal(started.config.theme, "system");
@@ -340,7 +340,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
 // ── exportPuzzle ──
 {
-  const fresh = await loadArtifact(wasmBytes);
+  const fresh = await glue.loadArtifact(wasmBytes);
   const res = fresh.exportPuzzle();
   assert.equal(res.ok, false, "export before init should fail");
   assert.ok(res.error);

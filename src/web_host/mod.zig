@@ -570,6 +570,38 @@ fn runBlockingForTest(io: std.Io, bind: BindFn) ServeError!void {
     return runBlocking(io, bind, config.Config.default(), ".", ".", recordReady);
 }
 
+/// Resolves a relative import `spec` against the served URL of the importing module; `..` stops at the root.
+fn resolveImportUrl(buf: []u8, base_path: []const u8, spec: []const u8) ![]const u8 {
+    var segs: [16][]const u8 = undefined;
+    var n: usize = 0;
+    var base_it = std.mem.splitScalar(u8, base_path, '/');
+    while (base_it.next()) |seg| {
+        if (base_it.peek() == null) break;
+        segs[n] = seg;
+        n += 1;
+    }
+    var spec_it = std.mem.splitScalar(u8, spec, '/');
+    while (spec_it.next()) |seg| {
+        if (seg.len == 0 or std.mem.eql(u8, seg, ".")) continue;
+        if (std.mem.eql(u8, seg, "..")) {
+            n -|= 1;
+            continue;
+        }
+        segs[n] = seg;
+        n += 1;
+    }
+    var w: std.Io.Writer = .fixed(buf);
+    for (segs[0..n]) |seg| try w.print("/{s}", .{seg});
+    return w.buffered();
+}
+
+test "web_host: resolveImportUrl resolves from the importing module's folder" {
+    var buf: [128]u8 = undefined;
+    try std.testing.expectEqualStrings("/flows/session.js", try resolveImportUrl(&buf, "menus/file_menu.js", "../flows/session.js"));
+    try std.testing.expectEqualStrings("/menus/menu.js", try resolveImportUrl(&buf, "menus/file_menu.js", "./menu.js"));
+    try std.testing.expectEqualStrings("/app_boot.js", try resolveImportUrl(&buf, "page.html", "../app_boot.js"));
+}
+
 fn expectJsImportsServed(source: []const u8, base_path: []const u8) !void {
     var i: usize = 0;
     while (std.mem.indexOfPos(u8, source, i, "from \"")) |start| {
@@ -580,12 +612,8 @@ fn expectJsImportsServed(source: []const u8, base_path: []const u8) !void {
             i = spec_end + 1;
             continue;
         }
-        const path = if (std.mem.startsWith(u8, spec, "./"))
-            spec[1..]
-        else if (std.mem.startsWith(u8, spec, "../"))
-            spec[2..]
-        else
-            spec;
+        var buf: [128]u8 = undefined;
+        const path = try resolveImportUrl(&buf, base_path, spec);
         const route = Router.route(path) catch {
             std.debug.print("{s} import {s} -> {s} is not served\n", .{ base_path, spec, path });
             return error.TestFailed;
@@ -604,23 +632,30 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "app_boot.js", .body = embed.app_boot_js },
         .{ .name = "app_wire.js", .body = embed.app_wire_js },
         .{ .name = "status_bar.js", .body = embed.status_bar_js },
-        .{ .name = "error_modal.js", .body = embed.error_modal_js },
+        .{ .name = "dialogs/error_modal.js", .body = embed.error_modal_js },
         .{ .name = "client_log.js", .body = embed.client_log_js },
-        .{ .name = "session.js", .body = embed.session_js },
+        .{ .name = "flows/session.js", .body = embed.session_js },
         .{ .name = "host_api.js", .body = embed.host_api_js },
-        .{ .name = "generate.js", .body = embed.generate_js },
+        .{ .name = "gen/generate.js", .body = embed.generate_js },
         .{ .name = "clipboard.js", .body = embed.clipboard_js },
-        .{ .name = "autosave.js", .body = embed.autosave_js },
-        .{ .name = "command_flow.js", .body = embed.command_flow_js },
-        .{ .name = "startup.js", .body = embed.startup_js },
+        .{ .name = "flows/autosave.js", .body = embed.autosave_js },
+        .{ .name = "flows/command_flow.js", .body = embed.command_flow_js },
+        .{ .name = "flows/startup.js", .body = embed.startup_js },
         .{ .name = "board.js", .body = embed.board_js },
-        .{ .name = "menu.js", .body = embed.menu_js },
-        .{ .name = "file_menu.js", .body = embed.file_menu_js },
-        .{ .name = "step_runner.js", .body = embed.step_runner_js },
+        .{ .name = "menus/menu.js", .body = embed.menu_js },
+        .{ .name = "menus/file_menu.js", .body = embed.file_menu_js },
+        .{ .name = "flows/step_runner.js", .body = embed.step_runner_js },
         .{ .name = "gen_worker.js", .body = embed.gen_worker_js },
-        .{ .name = "generating.js", .body = embed.generating_js },
-        .{ .name = "gen_progress_rows.js", .body = embed.gen_progress_rows_js },
-        .{ .name = "gen_progress_format.js", .body = embed.gen_progress_format_js },
+        .{ .name = "dialogs/generating.js", .body = embed.generating_js },
+        .{ .name = "gen/gen_progress_rows.js", .body = embed.gen_progress_rows_js },
+        .{ .name = "gen/gen_progress_format.js", .body = embed.gen_progress_format_js },
+        .{ .name = "gen/gen_client.js", .body = embed.gen_client_js },
+        .{ .name = "menus/menu_bar.js", .body = embed.menu_bar_js },
+        .{ .name = "menus/theme.js", .body = embed.theme_js },
+        .{ .name = "menus/region.js", .body = embed.region_js },
+        .{ .name = "menus/help.js", .body = embed.help_js },
+        .{ .name = "menus/settings.js", .body = embed.settings_js },
+        .{ .name = "android_bridge.js", .body = embed.android_bridge_js },
     };
     for (modules) |m| {
         try expectJsImportsServed(m.body, m.name);
@@ -697,33 +732,33 @@ test "web_host: route map resolves every served path" {
     const cases = [_]struct { path: []const u8, expected: RouteResult }{
         .{ .path = "/", .expected = .page },
         .{ .path = "/glue.js", .expected = .glue },
-        .{ .path = "/gen_client.js", .expected = .gen_client },
+        .{ .path = "/gen/gen_client.js", .expected = .gen_client },
         .{ .path = "/gen_worker.js", .expected = .gen_worker },
         .{ .path = "/app_boot.js", .expected = .app_boot },
         .{ .path = "/app_wire.js", .expected = .app_wire },
         .{ .path = "/status_bar.js", .expected = .status_bar },
-        .{ .path = "/error_modal.js", .expected = .error_modal },
+        .{ .path = "/dialogs/error_modal.js", .expected = .error_modal },
         .{ .path = "/client_log.js", .expected = .client_log },
-        .{ .path = "/session.js", .expected = .session },
+        .{ .path = "/flows/session.js", .expected = .session },
         .{ .path = "/host_api.js", .expected = .host_api },
-        .{ .path = "/generate.js", .expected = .generate },
+        .{ .path = "/gen/generate.js", .expected = .generate },
         .{ .path = "/clipboard.js", .expected = .clipboard },
-        .{ .path = "/autosave.js", .expected = .autosave },
-        .{ .path = "/command_flow.js", .expected = .command_flow },
-        .{ .path = "/startup.js", .expected = .startup },
+        .{ .path = "/flows/autosave.js", .expected = .autosave },
+        .{ .path = "/flows/command_flow.js", .expected = .command_flow },
+        .{ .path = "/flows/startup.js", .expected = .startup },
         .{ .path = "/board.js", .expected = .board },
-        .{ .path = "/menu.js", .expected = .menu },
-        .{ .path = "/menu_bar.js", .expected = .menu_bar },
-        .{ .path = "/theme.js", .expected = .theme },
-        .{ .path = "/file_menu.js", .expected = .file_menu },
-        .{ .path = "/step_runner.js", .expected = .step_runner },
+        .{ .path = "/menus/menu.js", .expected = .menu },
+        .{ .path = "/menus/menu_bar.js", .expected = .menu_bar },
+        .{ .path = "/menus/theme.js", .expected = .theme },
+        .{ .path = "/menus/file_menu.js", .expected = .file_menu },
+        .{ .path = "/flows/step_runner.js", .expected = .step_runner },
         .{ .path = "/android_bridge.js", .expected = .android_bridge },
-        .{ .path = "/generating.js", .expected = .generating },
-        .{ .path = "/gen_progress_rows.js", .expected = .gen_progress_rows },
-        .{ .path = "/gen_progress_format.js", .expected = .gen_progress_format },
-        .{ .path = "/region.js", .expected = .region },
-        .{ .path = "/help.js", .expected = .help },
-        .{ .path = "/settings.js", .expected = .settings },
+        .{ .path = "/dialogs/generating.js", .expected = .generating },
+        .{ .path = "/gen/gen_progress_rows.js", .expected = .gen_progress_rows },
+        .{ .path = "/gen/gen_progress_format.js", .expected = .gen_progress_format },
+        .{ .path = "/menus/region.js", .expected = .region },
+        .{ .path = "/menus/help.js", .expected = .help },
+        .{ .path = "/menus/settings.js", .expected = .settings },
         .{ .path = "/site.webmanifest", .expected = .site_webmanifest },
         .{ .path = "/branding/favicon-16x16.png", .expected = .brand_favicon_16 },
         .{ .path = "/branding/favicon-32x32.png", .expected = .brand_favicon_32 },

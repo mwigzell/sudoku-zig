@@ -44,11 +44,11 @@ Rules from `AGENTS.md`, `CONTEXT.md`, and `docs/coding-standards.md` that grep c
 | Test fixture DRY | No local `WRITE_CONTEXT_EVENTS` map literals in wasm tests; build from shell contract keys |
 | Status ownership (web) | No adapter-authored `msg: x ?? "literal"` fallback copy in `src/wasm/` JS modules |
 | Status ownership (native) | No `.ok.msg` string literals minted in `src/native/shell/*` adapters (except core-owned engine helpers) |
-| Restore lane contract | No startup restore routing through named-open copy (`name: restorePath`) in `src/wasm/startup.js` |
+| Restore lane contract | No startup restore routing through named-open copy (`name: restorePath`) in `src/wasm/flows/startup.js` |
 
 ## Cross-entry parity (`zig build parity`)
 
-`scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/fixtures/parity_scenarios.json` is missing from `docs/parity-matrix.md`, when either runner (the `parity scenarios` test in `src/native/shell/shell.zig`, the parity block in `src/wasm/startup.test.mjs`) stops loading the scenarios or drops out of its test list, when a scenario `skip` lacks a gap or an open issue, or when a step kind in `src/core/flow/step.zig` has no `STEP_*` constant and `case` in `src/wasm/step_runner.js` (native gets that check from the Zig compiler). It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
+`scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/fixtures/parity_scenarios.json` is missing from `docs/parity-matrix.md`, when either runner (the `parity scenarios` test in `src/native/shell/shell.zig`, the parity block in `src/wasm/flows/startup.test.mjs`) stops loading the scenarios or drops out of its test list, when a scenario `skip` lacks a gap or an open issue, or when a step kind in `src/core/flow/step.zig` has no `STEP_*` constant and `case` in `src/wasm/flows/step_runner.js` (native gets that check from the Zig compiler). It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
 
 ## What it does not enforce
 
