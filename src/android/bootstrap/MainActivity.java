@@ -68,6 +68,11 @@ public final class MainActivity extends Activity {
     private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
     private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/Sudoku";
     private static final String REASON_DEFAULT_TAKEN = "default_taken";
+    /** Failure kinds the bridge reports to JS; core words what the user sees, the kind and detail are logged. */
+    private static final String FAILED_SAVE = "save_failed";
+    private static final String FAILED_OPEN = "open_failed";
+    private static final String FAILED_INTERRUPTED = "interrupted";
+    private static final String FAILED_PAYLOAD = "invalid_payload";
     private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents";
     private static final String PRIMARY_VOLUME_DOC_PREFIX = "primary:";
     private static final String FILE_BIND_PREFS = "sudoku_file_binding";
@@ -362,12 +367,16 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private static String jsonError(String message) {
+    private static String jsonFailed(String reason) {
         try {
-            return new JSONObject().put("ok", false).put("error", message).toString();
+            return new JSONObject().put("ok", false).put("error", reason).toString();
         } catch (JSONException err) {
-            return "{\"ok\":false,\"error\":\"internal error\"}";
+            return "{\"ok\":false}";
         }
+    }
+
+    private static String jsonFailed(String kind, Throwable cause) {
+        return jsonFailed(kind + ": " + cause);
     }
 
     private static String jsonDefaultTaken(String name) {
@@ -379,7 +388,7 @@ public final class MainActivity extends Activity {
                 .put("dir", DEFAULT_VISIBLE_SAVE_DIR)
                 .toString();
         } catch (JSONException err) {
-            return jsonError("save failed");
+            return jsonFailed(FAILED_SAVE, err);
         }
     }
 
@@ -523,7 +532,7 @@ public final class MainActivity extends Activity {
             result = awaitResultIntent(REQUEST_OPEN_DOCUMENT, pick);
         } catch (InterruptedException err) {
             Thread.currentThread().interrupt();
-            return jsonError("open interrupted");
+            return jsonFailed(FAILED_INTERRUPTED, err);
         }
         if (result == null || result.getData() == null) return jsonCancelled();
         rememberPersistedPermission(result);
@@ -531,7 +540,7 @@ public final class MainActivity extends Activity {
         final String name = displayNameOf(uri, "opened.sud");
 
         try (InputStream in = getContentResolver().openInputStream(uri)) {
-            if (in == null) return jsonError("open failed");
+            if (in == null) return jsonFailed(FAILED_OPEN);
             final ByteArrayOutputStream out = new ByteArrayOutputStream();
             final byte[] buf = new byte[8192];
             int read;
@@ -540,19 +549,19 @@ public final class MainActivity extends Activity {
             final String base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
             return jsonOpenOk(name, base64);
         } catch (IOException err) {
-            return jsonError("open failed");
+            return jsonFailed(FAILED_OPEN, err);
         }
     }
 
     private String saveBytesTo(Uri uri, byte[] bytes, String fallbackName) {
         try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
-            if (out == null) return jsonError("save failed");
+            if (out == null) return jsonFailed(FAILED_SAVE);
             out.write(bytes);
             out.flush();
             rememberCurrentFile(uri, fallbackName);
             return jsonSaveOk(currentNameOr(fallbackName));
         } catch (IOException err) {
-            return jsonError("save failed");
+            return jsonFailed(FAILED_SAVE, err);
         }
     }
 
@@ -573,7 +582,7 @@ public final class MainActivity extends Activity {
             result = awaitResultIntent(REQUEST_CREATE_DOCUMENT, createDocumentIntent(suggestedName));
         } catch (InterruptedException err) {
             Thread.currentThread().interrupt();
-            return jsonError("save interrupted");
+            return jsonFailed(FAILED_INTERRUPTED, err);
         }
         if (result == null || result.getData() == null) return jsonCancelled();
         rememberPersistedPermission(result);
@@ -600,9 +609,9 @@ public final class MainActivity extends Activity {
         try {
             uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
         } catch (RuntimeException err) {
-            return jsonError("save failed");
+            return jsonFailed(FAILED_SAVE, err);
         }
-        if (uri == null) return jsonError("save failed");
+        if (uri == null) return jsonFailed(FAILED_SAVE);
         if (name.equals(displayNameOf(uri, name))) return saveBytesTo(uri, bytes, name);
 
         try {
@@ -619,7 +628,7 @@ public final class MainActivity extends Activity {
             result = awaitResultIntent(REQUEST_OPEN_DOCUMENT, pickExistingIntent());
         } catch (InterruptedException err) {
             Thread.currentThread().interrupt();
-            return jsonError("save interrupted");
+            return jsonFailed(FAILED_INTERRUPTED, err);
         }
         if (result == null || result.getData() == null) return jsonCancelled();
         rememberPersistedPermission(result);
@@ -663,7 +672,7 @@ public final class MainActivity extends Activity {
             try {
                 bytes = Base64.decode(base64, Base64.DEFAULT);
             } catch (IllegalArgumentException err) {
-                return jsonError("invalid save payload");
+                return jsonFailed(FAILED_PAYLOAD, err);
             }
 
             if (!saveAs) {
@@ -685,7 +694,7 @@ public final class MainActivity extends Activity {
             try {
                 bytes = Base64.decode(base64, Base64.DEFAULT);
             } catch (IllegalArgumentException err) {
-                return jsonError("invalid save payload");
+                return jsonFailed(FAILED_PAYLOAD, err);
             }
             return saveViaPickExisting(bytes);
         }
@@ -696,7 +705,7 @@ public final class MainActivity extends Activity {
             try {
                 bytes = Base64.decode(base64, Base64.DEFAULT);
             } catch (IllegalArgumentException err) {
-                return jsonError("invalid save payload");
+                return jsonFailed(FAILED_PAYLOAD, err);
             }
             final Uri uri = currentUri();
             if (uri == null) return saveToDefaultVisible(bytes, suggestedName);
