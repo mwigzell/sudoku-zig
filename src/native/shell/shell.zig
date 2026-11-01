@@ -8,12 +8,10 @@ const file_transport = @import("file_transport.zig");
 const config = @import("../../core/config.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 const command = @import("../../core/command.zig");
-const settings_store = @import("../../core/settings_store.zig");
 const startup_policy = @import("../../core/startup/policy.zig");
 const startup_engine = @import("../../core/startup/engine.zig");
 const file_policy = @import("../../core/file_policy.zig");
 const flow_mod = @import("../../core/flow/mod.zig");
-const path_mod = @import("path.zig");
 
 const disambiguate = @import("../ascii/disambiguate.zig");
 const legend = @import("../../core/renderer/legend.zig");
@@ -21,39 +19,25 @@ const legend = @import("../../core/renderer/legend.zig");
 const host_mod = @import("../host.zig");
 const save_command = @import("save.zig");
 const export_command = @import("export.zig");
-const save_as_command = @import("save_as.zig");
 const read_path = @import("read_path.zig");
 const gen_progress = @import("gen_progress.zig");
+const storage_mod = @import("storage.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 const COPY_WRITE_FAILED_MSG: []const u8 = "copy: write failed";
-const OPEN_NO_FILE_MSG: []const u8 = "open: no file specified";
-const IMPORT_NO_FILE_MSG: []const u8 = "import: no file specified";
 const PASTE_NO_LINE_MSG: []const u8 = "paste: no puzzle line specified";
 
 /// One running game: engine + renderer; each entry shows the game, then turns it.
-pub const SettingsPersist = struct {
-    io: std.Io,
-    data_dir: []const u8,
-    /// User-visible folder for the default autosave file when there is no working file.
-    visible_save_dir: []const u8,
-};
-
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
     cfg: config.Config,
     renderer: facade_mod.Facade,
-    transport: file_transport.FileTransport,
+    storage: storage_mod.Storage,
     out: *std.Io.Writer,
-    settings_persist: ?SettingsPersist = null,
     last_cell: ?facade_mod.Selection = null,
     file_session: flow_mod.FileSession = .{},
     /// The one flow in progress; terminal step text points into it until the next flow starts.
     flow: flow_mod.Flow = undefined,
-
-    /// How a flow's `write` step is carried out: Save records its status in the game, autosave does not,
-    /// and Export writes only the puzzle line without making it the working file.
-    const WriteMode = enum { save, autosave, export_line };
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
@@ -62,7 +46,7 @@ pub const Sudoku = struct {
         facade: facade_mod.Facade,
         transport: file_transport.FileTransport,
         out: *std.Io.Writer,
-        settings_persist: ?SettingsPersist,
+        settings_persist: ?storage_mod.SettingsPersist,
     ) Error!@This() {
         // Startup policy owns if/when puzzle generation occurs.
         var renderer_facade = facade;
@@ -71,156 +55,40 @@ pub const Sudoku = struct {
         var sudoku = @This(){
             .cfg = cfg,
             .renderer = facade,
-            .transport = transport,
+            .storage = .{ .transport = transport, .settings_persist = settings_persist },
             .out = out,
-            .settings_persist = settings_persist,
             .engine = try startup_engine.initEngineFromStartup(cfg),
         };
-        if (settings_persist) |sp| {
-            const current = settings_store.loadCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir) catch null;
-            defer if (current) |p| std.heap.page_allocator.free(p);
-            sudoku.file_session.setWorkingFile(current);
-        }
+        const current = sudoku.storage.loadCurrentFile(std.heap.page_allocator);
+        defer if (current) |p| std.heap.page_allocator.free(p);
+        sudoku.file_session.setWorkingFile(current);
         return sudoku;
     }
 
-    /// Carry out a `persist_settings` step; without settings persistence there is nowhere to write.
-    fn persistSettings(self: *@This(), cfg: config.Config) flow_mod.step.Outcome {
-        self.cfg = cfg;
-        const sp = self.settings_persist orelse return .ok;
-        settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
-        return .ok;
-    }
-
-    fn pathExists(self: *@This(), path: []const u8) bool {
-        const resolved = self.transport.resolve(self.transport.context, path) catch return false;
-        defer self.transport.free(self.transport.context, resolved);
-        const bytes = self.transport.readAll(self.transport.context, resolved) catch |err| switch (err) {
-            file_transport.TransportError.FileNotFound => return false,
-            file_transport.TransportError.AccessDenied => return true,
-            else => return false,
-        };
-        self.transport.free(self.transport.context, bytes);
-        return true;
-    }
-
-    /// Owned `<visible_save_dir>/sudoku.sud`; null without settings persistence.
-    /// Only the default folder is created on demand; a missing working-file folder must still fail the write.
-    fn defaultVisibleSavePath(self: *@This()) ?[]u8 {
-        const sp = self.settings_persist orelse return null;
-        std.Io.Dir.cwd().createDirPath(sp.io, sp.visible_save_dir) catch {};
-        return path_mod.resolveSavePath(std.heap.page_allocator, sp.visible_save_dir, save_command.DEFAULT_SAVE_FILE) catch null;
-    }
-
-    fn persistCurrentFile(self: *@This(), path: ?[]const u8) void {
-        const sp = self.settings_persist orelse return;
-        settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch {};
-    }
-
-    /// Carry out a `write` step; `scratch` holds the reported name or error text.
-    fn writeTarget(self: *@This(), mode: WriteMode, name: []const u8, scratch: []u8) flow_mod.Wrote {
-        const resolved = self.transport.resolve(self.transport.context, name) catch |err| {
-            return .{ .failed = std.fmt.bufPrint(scratch, "resolve: {s}", .{@errorName(err)}) catch "system error" };
-        };
-        defer self.transport.free(self.transport.context, resolved);
-
-        switch (mode) {
-            .save => switch (save_as_command.execute(&self.engine, self.transport, resolved)) {
-                .ok => {},
-                .error_msg => |msg| return .{ .failed = copyInto(scratch, msg) },
-            },
-            .autosave => {
-                const save_buf = self.engine.toSaveFormat(std.heap.page_allocator) catch |err| return .{ .failed = @errorName(err) };
-                defer std.heap.page_allocator.free(save_buf);
-                self.transport.write(self.transport.context, resolved, save_buf) catch |err| return .{ .failed = @errorName(err) };
-            },
-            .export_line => {
-                const line = export_command.currentPuzzleLine(&self.engine);
-                self.transport.write(self.transport.context, resolved, &line) catch |err| return .{ .failed = @errorName(err) };
-                return .{ .ok = copyInto(scratch, resolved) };
-            },
-        }
-        self.persistCurrentFile(resolved);
-        return .{ .ok = copyInto(scratch, resolved) };
-    }
-
-    fn copyInto(scratch: []u8, text: []const u8) []const u8 {
-        const len = @min(text.len, scratch.len);
-        std.mem.copyForwards(u8, scratch[0..len], text[0..len]);
-        return scratch[0..len];
-    }
-
-    /// Carry out a `read_file` step; on success the bytes are owned by the caller.
-    fn readFile(self: *@This(), path: []const u8, scratch: []u8) flow_mod.step.FileRead {
-        var stage: read_path.Stage = .resolve;
-        const read = read_path.readFileBytes(self.transport, path, &stage) catch |err| {
-            const label: []const u8 = switch (stage) {
-                .resolve => "resolve",
-                .read => "readAll",
-            };
-            return .{ .failed = std.fmt.bufPrint(scratch, "{s}: {s}", .{ label, @errorName(err) }) catch "system error" };
-        };
-        self.transport.free(self.transport.context, read.resolved);
-        return .{ .bytes = read.bytes };
-    }
-
-    /// Carry out a `pick_open` step: the terminal has no picker, so read the path typed with the command.
-    /// On success `read` owns the bytes and resolved path until the flow takes the next step.
-    fn pickOpen(self: *@This(), pick: flow_mod.step.PickOpen, scratch: []u8, read: *?read_path.ReadResult) flow_mod.step.Picked {
-        const path = pick.path orelse return .{ .failed = switch (pick.kind) {
-            .game => OPEN_NO_FILE_MSG,
-            .puzzle => IMPORT_NO_FILE_MSG,
-        } };
-        var stage: read_path.Stage = .resolve;
-        const got = read_path.readFileBytes(self.transport, path, &stage) catch |err| {
-            const label: []const u8 = switch (stage) {
-                .resolve => "resolve",
-                .read => "readAll",
-            };
-            return .{ .failed = std.fmt.bufPrint(scratch, "{s}: {s}", .{ label, @errorName(err) }) catch "system error" };
-        };
-        read.* = got;
-        return .{ .file = .{ .bytes = got.bytes, .name = got.resolved } };
-    }
-
-    /// Carry out a `forget_current_file` step: stop restoring it, and delete it when asked.
-    fn forgetCurrentFile(self: *@This(), forget: flow_mod.step.ForgetCurrentFile) void {
-        const sp = self.settings_persist orelse return;
-        if (forget.delete) delete: {
-            const resolved = self.transport.resolve(self.transport.context, forget.path) catch break :delete;
-            defer self.transport.free(self.transport.context, resolved);
-            std.Io.Dir.deleteFileAbsolute(sp.io, resolved) catch {};
-        }
-        self.persistCurrentFile(null);
-    }
-
     /// Drive `self.flow` to its terminal step, carrying out each step on this platform.
-    fn runFlow(self: *@This(), mode: WriteMode) Error!flow_mod.Step {
+    fn runFlow(self: *@This(), mode: storage_mod.WriteMode) Error!flow_mod.Step {
         var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
         var step = self.flow.next(.start);
         while (!flow_mod.isTerminal(step)) {
             var read_bytes: ?[]u8 = null;
-            defer if (read_bytes) |b| self.transport.free(self.transport.context, b);
+            const transport = self.storage.transport;
+            defer if (read_bytes) |b| transport.free(transport.context, b);
             var opened: ?read_path.ReadResult = null;
             defer if (opened) |o| {
-                self.transport.free(self.transport.context, o.resolved);
-                self.transport.free(self.transport.context, o.bytes);
+                transport.free(transport.context, o.resolved);
+                transport.free(transport.context, o.bytes);
             };
             const input: flow_mod.Input = switch (step) {
-                .resolve_default_target => blk: {
-                    const default_visible = self.defaultVisibleSavePath();
-                    defer if (default_visible) |p| std.heap.page_allocator.free(p);
-                    break :blk .{ .default_target = copyInto(&scratch, default_visible orelse save_command.DEFAULT_SAVE_FILE) };
-                },
-                .check_target => |name| .{ .target_checked = self.pathExists(name) },
+                .resolve_default_target => .{ .default_target = self.storage.defaultTarget(&scratch) },
+                .check_target => |name| .{ .target_checked = self.storage.exists(name) },
                 .ask => |question| .{ .answered = try self.renderer.ask(question) },
-                .write => |name| .{ .wrote = self.writeTarget(mode, name, &scratch) },
+                .write => |name| .{ .wrote = self.storage.write(mode, &self.engine, name, &scratch) },
                 .read_file => |path| blk: {
-                    const read = self.readFile(path, &scratch);
+                    const read = self.storage.readFile(path, &scratch);
                     if (read == .bytes) read_bytes = @constCast(read.bytes);
                     break :blk .{ .file_read = read };
                 },
-                .pick_open => |pick| .{ .picked = self.pickOpen(pick, &scratch, &opened) },
+                .pick_open => |pick| .{ .picked = self.storage.pickOpen(pick, &scratch, &opened) },
                 // The terminal has no clipboard; Paste takes its line with the command.
                 .read_clipboard => .{ .file_read = .{ .failed = PASTE_NO_LINE_MSG } },
                 .show_game => |game| blk: {
@@ -229,10 +97,13 @@ pub const Sudoku = struct {
                 },
                 .generate => |difficulty| .{ .generated = .{ .line = self.generate(difficulty) } },
                 .forget_current_file => |forget| blk: {
-                    self.forgetCurrentFile(forget);
+                    self.storage.forgetCurrentFile(forget);
                     break :blk .ack;
                 },
-                .persist_settings => |cfg| .{ .persisted = self.persistSettings(cfg) },
+                .persist_settings => |cfg| blk: {
+                    self.cfg = cfg;
+                    break :blk .{ .persisted = self.storage.persistSettings(cfg) };
+                },
                 .copy_line => .{ .copied = self.printPuzzleLine() },
                 // Pickers follow only a `taken` write, which native writes never report.
                 .pick_existing, .pick_new => unreachable,
@@ -261,7 +132,7 @@ pub const Sudoku = struct {
     /// Run one player command through the core command flow; its writes are a save, an export, or an autosave.
     fn runCommandFlow(self: *@This(), cmd: command.Command) Error!void {
         self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, cmd) };
-        const mode: WriteMode = switch (cmd) {
+        const mode: storage_mod.WriteMode = switch (cmd) {
             .save, .save_as => .save,
             .@"export" => .export_line,
             else => .autosave,
@@ -278,7 +149,7 @@ pub const Sudoku = struct {
     fn showStep(self: *@This(), game: flow_mod.step.ShowGame) Error!void {
         if (game.loaded) {
             self.last_cell = null;
-            if (game.file) |file| self.persistCurrentFile(file);
+            if (game.file) |file| self.storage.persistCurrentFile(file);
         }
         if (game.cell) |c| self.last_cell = c;
         const region: ?facade_mod.Selection = if (game.config.show_region) self.last_cell else null;
@@ -390,9 +261,165 @@ const logger = @import("../../core/logger.zig");
 const styler_t = @import("../ascii/styler.zig");
 const ascii_renderer = @import("../ascii/renderer.zig");
 
-const test_doubles = @import("test_doubles.zig");
-const DeterministicFacade = test_doubles.DeterministicFacade;
-const MemoryTransport = test_doubles.MemoryTransport;
+const settings_store = @import("../../core/settings_store.zig");
+
+/// Scripted renderer: feeds preset commands and yes/no answers, records what the shell showed.
+const DeterministicFacade = struct {
+    steps: []const command.ParseCommandResult,
+    idx: usize = 0,
+    render_calls: usize = 0,
+    legend_calls: usize = 0,
+    error_calls: usize = 0,
+    replace_prompts: usize = 0,
+    last_render_msg: ?[]const u8 = null,
+    replace_answers: []const bool = &[_]bool{},
+    replace_idx: usize = 0,
+
+    /// Renderer seam backed by this scripted facade.
+    pub fn asFacade(self: *@This()) facade_mod.Facade {
+        return facade_mod.Make(@This()).make(self);
+    }
+
+    /// Records render calls from Sudoku.handleEvent for deterministic branch tests.
+    pub fn render(self: *@This(), _: board.Board.BoardView, msg: ?[]const u8, _: ?facade_mod.Selection) !void {
+        self.render_calls += 1;
+        self.last_render_msg = msg;
+    }
+
+    /// Records legend refreshes from successful event handling.
+    pub fn showLegend(self: *@This(), _: legend.Legend) !void {
+        self.legend_calls += 1;
+    }
+
+    /// Records error-message display calls from Sudoku.handleEvent.
+    pub fn showError(self: *@This(), _: []const u8) !void {
+        self.error_calls += 1;
+    }
+
+    /// Records questions and returns scripted yes/no answers.
+    pub fn ask(self: *@This(), _: flow_mod.Ask) !bool {
+        self.replace_prompts += 1;
+        if (self.replace_idx >= self.replace_answers.len) return true;
+        const answer = self.replace_answers[self.replace_idx];
+        self.replace_idx += 1;
+        return answer;
+    }
+
+    /// Feeds pre-scripted command results into Sudoku.turn for deterministic flow tests.
+    pub fn getCommandInput(
+        self: *@This(),
+        _: []const []const u8,
+        _: bool,
+        _: bool,
+        _: config.Difficulty,
+        _: logger.Severity,
+        _: config.ViewTheme,
+        _: bool,
+        _: bool,
+        _: bool,
+        _: ?facade_mod.Selection,
+    ) !command.ParseCommandResult {
+        if (self.idx >= self.steps.len) return .{ .valid = .{ .quit = {} } };
+        const step = self.steps[self.idx];
+        self.idx += 1;
+        return step;
+    }
+
+    /// No-op progress sink for deterministic tests that do not assert gen progress output.
+    pub fn reportGenProgress(_: *@This(), _: puzzle_gen.GenProgressEvent) !void {}
+
+    /// No-op lifecycle hook to satisfy the Facade contract in tests.
+    pub fn deinit(_: *@This()) void {}
+};
+
+/// In-memory file transport: bare names resolve under `DIR`, absolute paths stay as given.
+const MemoryTransport = struct {
+    gpa: std.mem.Allocator,
+    files: std.StringHashMap([]u8),
+    /// Paths written through the transport, in order (setup `put`s are not recorded).
+    written: std.ArrayListUnmanaged([]u8) = .empty,
+
+    /// Folder bare names resolve into.
+    pub const DIR = "/virtual";
+
+    /// Empty store; files are owned copies.
+    pub fn init(gpa: std.mem.Allocator) @This() {
+        return .{ .gpa = gpa, .files = std.StringHashMap([]u8).init(gpa) };
+    }
+
+    /// Frees every stored file and recorded write path.
+    pub fn deinit(self: *@This()) void {
+        var it = self.files.iterator();
+        while (it.next()) |entry| {
+            self.gpa.free(entry.key_ptr.*);
+            self.gpa.free(entry.value_ptr.*);
+        }
+        self.files.deinit();
+        for (self.written.items) |path| self.gpa.free(path);
+        self.written.deinit(self.gpa);
+    }
+
+    /// Seeds a file at `path` (an owned copy) without recording a write.
+    pub fn put(self: *@This(), path: []const u8, bytes: []const u8) !void {
+        const key = try self.gpa.dupe(u8, path);
+        errdefer self.gpa.free(key);
+        const value = try self.gpa.dupe(u8, bytes);
+        errdefer self.gpa.free(value);
+        const found = self.files.getEntry(path);
+        if (found) |existing| {
+            self.gpa.free(existing.key_ptr.*);
+            self.gpa.free(existing.value_ptr.*);
+            existing.key_ptr.* = key;
+            existing.value_ptr.* = value;
+            return;
+        }
+        try self.files.put(key, value);
+    }
+
+    /// Transport seam backed by this store.
+    pub fn asTransport(self: *@This()) file_transport.FileTransport {
+        return .{
+            .context = @ptrCast(@alignCast(self)),
+            .write = write,
+            .readAll = readAll,
+            .resolve = resolve,
+            .free = free,
+        };
+    }
+
+    fn asSelf(ctx: *anyopaque) *@This() {
+        return @ptrCast(@alignCast(ctx));
+    }
+
+    fn write(ctx: *anyopaque, path: []const u8, bytes: []const u8) file_transport.TransportError!void {
+        const self = asSelf(ctx);
+        self.put(path, bytes) catch return file_transport.TransportError.OutOfMemory;
+        const logged = self.gpa.dupe(u8, path) catch return file_transport.TransportError.OutOfMemory;
+        self.written.append(self.gpa, logged) catch {
+            self.gpa.free(logged);
+            return file_transport.TransportError.OutOfMemory;
+        };
+    }
+
+    fn readAll(ctx: *anyopaque, path: []const u8) file_transport.TransportError![]u8 {
+        const self = asSelf(ctx);
+        const bytes = self.files.get(path) orelse return file_transport.TransportError.FileNotFound;
+        return self.gpa.dupe(u8, bytes) catch return file_transport.TransportError.OutOfMemory;
+    }
+
+    fn resolve(ctx: *anyopaque, name: []const u8) file_transport.TransportError![]u8 {
+        const self = asSelf(ctx);
+        if (std.mem.startsWith(u8, name, "/")) {
+            return self.gpa.dupe(u8, name) catch return file_transport.TransportError.OutOfMemory;
+        }
+        return std.fmt.allocPrint(self.gpa, DIR ++ "/{s}", .{name}) catch return file_transport.TransportError.OutOfMemory;
+    }
+
+    fn free(ctx: *anyopaque, buf: []u8) void {
+        const self = asSelf(ctx);
+        self.gpa.free(buf);
+    }
+};
 
 test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer
@@ -1450,8 +1477,8 @@ test "autosave: first autosave with no working file writes the visible save fold
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expectEqualStrings(expected, current orelse return error.TestFailed);
 
-    const bytes = app.transport.readAll(app.transport.context, expected) catch return error.TestFailed;
-    defer app.transport.free(app.transport.context, bytes);
+    const bytes = app.storage.transport.readAll(app.storage.transport.context, expected) catch return error.TestFailed;
+    defer app.storage.transport.free(app.storage.transport.context, bytes);
     try std.testing.expect(bytes.len > 0);
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
