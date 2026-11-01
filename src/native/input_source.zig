@@ -2,31 +2,23 @@ const std = @import("std");
 const Io = std.Io;
 
 // --- Stdin input source (production) ---
+/// One reader for the whole run, so lines that arrive together (piped input) are kept for later reads.
 pub const StdinSource = struct {
     allocator: std.mem.Allocator,
     io: Io,
+    file: Io.File,
+    buf: [512]u8 = undefined,
+    /// Created on the first read: it points into `buf`, and the source is copied by value until then.
+    reader: ?Io.File.Reader = null,
 
     pub fn initStdin(allocator: std.mem.Allocator, io: Io) StdinSource {
-        return .{ .allocator = allocator, .io = io };
+        return .{ .allocator = allocator, .io = io, .file = Io.File.stdin() };
     }
 
     pub fn readLine(self: *StdinSource) ![]u8 {
-        var buf: [512]u8 = undefined;
-        var in_ = Io.File.stdin().reader(self.io, &buf);
-        var aw = Io.Writer.Allocating.init(self.allocator);
-
-        errdefer aw.deinit();
-
-        _ = in_.interface.streamDelimiter(&aw.writer, '\n') catch return error.ReadFailed;
-
-        const raw = aw.toOwnedSlice() catch return error.OutOfMemory;
-        const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
-        if (trimmed.len != raw.len) {
-            self.allocator.free(raw);
-            const duped = self.allocator.dupe(u8, trimmed) catch return error.OutOfMemory;
-            return duped;
-        }
-        return raw;
+        if (self.reader == null) self.reader = self.file.reader(self.io, &self.buf);
+        const line = (self.reader.?.interface.takeDelimiter('\n') catch return error.ReadFailed) orelse return error.ReadEOF;
+        return self.allocator.dupe(u8, std.mem.trim(u8, line, &std.ascii.whitespace)) catch return error.OutOfMemory;
     }
 };
 
@@ -115,6 +107,26 @@ test "StdinSource.initStdin creates instance with allocator" {
     const alloc = std.testing.allocator;
     const io = std.testing.io;
     _ = StdinSource.initStdin(alloc, io);
+}
+
+test "StdinSource.readLine returns each line when several arrive in one read" {
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "input.txt", .data = "m\n q \n" });
+    const file = try tmp.dir.openFile(io, "input.txt", .{});
+    defer file.close(io);
+
+    var src = StdinSource.initStdin(alloc, io);
+    src.file = file;
+    const first = try src.readLine();
+    defer alloc.free(first);
+    try std.testing.expectEqualStrings("m", first);
+    const second = try src.readLine();
+    defer alloc.free(second);
+    try std.testing.expectEqualStrings("q", second);
+    try std.testing.expectError(error.ReadEOF, src.readLine());
 }
 
 test "ReaderSource stdin dispatch with initStdin" {
