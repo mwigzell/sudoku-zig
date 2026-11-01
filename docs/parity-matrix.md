@@ -20,7 +20,7 @@ Native and web front ends call core differently, but must produce the same **sem
 | `legend` | Whether Undo / Redo are offered after the steps. |
 | `probes` | Cell value and given flag after the steps. |
 
-Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `hint`, `solve` (Edit menu items), `paste` (clipboard text), `open` (a saved game picked by name), `import` (a picked puzzle file's text), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
+Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `hint`, `solve` (Edit menu items), `paste` (clipboard text), `open` (a saved game picked by name), `import` (a picked puzzle file's text), `save`, `copy` (File and Edit menu items), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
 
 Write context (core's `continuation` / `detached`) is checked by what follows it: under `continuation` the next autosave writes the working file without asking; under `detached` it asks before overwriting an existing file.
 
@@ -41,6 +41,8 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `open_then_move_continues_file` | Open and the next move both write `game.sud` without asking; saved moves stay non-givens | same | same |
 | `import_starts_unsaved_game` | Imported line becomes the givens; status `import: puzzle loaded`; autosave writes `sudoku.sud`; Undo not offered | same | same |
 | `import_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
+| `save_names_default_then_continues` | First Save writes `sudoku.sud` without asking; the next Save continues it; status `saved to: sudoku.sud` | same (full path, compared relative to the data folder) | same |
+| `copy_reports_and_writes_nothing` | Status `copy: puzzle line copied`; no file written | prints the line | same |
 
 ## Adding a scenario
 

@@ -247,6 +247,39 @@
         "legend": { "undo": true },
         "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
       }
+    },
+    {
+      "name": "save_names_default_then_continues",
+      "summary": "With Auto Save off, the first Save names the default file and writes it without asking; the next Save continues that file.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        { "fill": { "row": 0, "col": 0, "digit": 4 } },
+        { "save": true },
+        { "fill": { "row": 0, "col": 1, "digit": 8 } },
+        { "save": true }
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud"],
+        "status": "saved to: sudoku.sud",
+        "probes": [{ "row": 0, "col": 1, "value": 8, "given": false }]
+      }
+    },
+    {
+      "name": "copy_reports_and_writes_nothing",
+      "summary": "Copy hands the puzzle line over, reports it, and writes no file even with Auto Save on.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{ "copy": true }],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "status": "copy: puzzle line copied",
+        "probes": []
+      }
     }
   ]
 }

@@ -12,7 +12,7 @@ import {
 } from "./file_menu.js";
 import { autosaveHandlers, commandHandlers, showErrorModal } from "./shell.js";
 import { runCommand } from "./step_runner.js";
-import { PUZZLE_LINE, hostFetch, loadGame, postedCurrentFile, startNewGame, withCoreFlow } from "./test_support.mjs";
+import { PUZZLE_LINE, hostFetch, loadGame, openAs, postedCurrentFile, startNewGame, withCoreFlow } from "./test_support.mjs";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 
 const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
@@ -155,87 +155,61 @@ function easyDialog() {
 }
 
 {
-  const board = makeBoard();
-  const session = {
-    legend: { save_as: true },
-    state: { cells: [] },
-  };
+  // Without a host default name there is nothing to suggest, so Save As writes nothing.
+  const game = await loadGame();
+  const session = { legend: { save_as: true }, state: { cells: [] } };
   let downloaded = null;
-  const game = {
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
+  const errorModal = makeErrorModal();
+  const controls = { saveAs: makeBtn() };
+  wireLoads(controls, game, session, {
+    errorModal,
+    download(bytes, name) {
+      downloaded = { bytes, name };
     },
-  };
-  const controls = {
-    saveAs: makeBtn(),
-  };
-  await withCoreFlow(game);
-  wireFileMenu(
-    controls,
-    game,
-    board,
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download(bytes, name) {
-        downloaded = { bytes, name };
-      },
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: makeRenderElement(),
-    },
-  );
+  });
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, status: 204 });
   await controls.saveAs.click();
   globalThis.fetch = prevFetch;
   assert.equal(downloaded, null, "save-as requires host-provided default filename");
+  assert.equal(errorModal.el.hidden, false);
 }
 
 {
-  const board = makeBoard();
-  const session = {
-    legend: { save_as: true },
-    state: { cells: [] },
-    default_save_filename: "host-default.sud",
-  };
+  // Save As with no working file suggests the host default; the host copy is filed under it.
+  const game = await loadGame();
+  const session = { legend: { save_as: true }, state: { cells: [] }, default_save_filename: "host-default.sud" };
   const controls = { saveAs: makeBtn() };
-  const game = await withCoreFlow({
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([7, 7, 7]) };
-    },
-  });
-  let fetchCalls = [];
+  const fetchCalls = [];
   const prevFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     fetchCalls.push({ url, init });
     return { ok: true, status: 204 };
   };
-  await withCoreFlow(game);
-  wireFileMenu(
-    controls,
-    game,
-    board,
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: makeRenderElement(),
-      exportText: async () => ({ ok: false }),
-    },
-  );
+  wireLoads(controls, game, session);
   await controls.saveAs.click();
   globalThis.fetch = prevFetch;
   const currentFilePost = fetchCalls.find((c) => c.url === "./current-file");
   assert.equal(currentFilePost?.init?.headers?.["X-Sudoku-Filename"], "host-default.sud");
+}
+
+{
+  // Save after Open suggests the opened file, not the host default.
+  const game = await loadGame();
+  openAs(game, "opened.sud");
+  const session = { legend: { save: true }, state: { cells: [] }, default_save_filename: "host-default.sud" };
+  let downloaded = null;
+  const controls = { save: makeBtn() };
+  wireLoads(controls, game, session, {
+    download(bytes, name) {
+      downloaded = { bytes, name };
+    },
+  });
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = hostFetch().fetchFn;
+  await controls.save.click();
+  globalThis.fetch = prevFetch;
+  assert.equal(downloaded?.name, "opened.sud");
 }
 
 {

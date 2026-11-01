@@ -26,12 +26,8 @@ export const STEP_SHOW_STATUS = "show_status";
 export const STEP_SHOW_ERROR = "show_error";
 export const STEP_DONE = "done";
 
-export const FLOW_SAVE = "save";
-export const FLOW_SAVE_AS = "save_as";
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
-export const FLOW_EXPORT = "export";
-export const FLOW_COPY = "copy";
 
 const FLOW_LANE = Symbol("flowLane");
 const UNKNOWN_STEP_PREFIX = "unknown flow step: ";

@@ -23,24 +23,32 @@ pub const SaveFlow = struct {
     refused: bool = false,
     taken_text_len: usize = 0,
 
-    const Phase = enum { start, checking, asking, writing, asking_taken, picking, finished };
+    const Phase = enum { start, naming, checking, asking, writing, asking_taken, picking, finished };
 
     /// A flow writing `name`; the first `next(.start)` checks the target.
     pub fn init(session: *FileSession, intent: file_policy.WriteIntent, name: []const u8) SaveFlow {
         var flow = SaveFlow{ .session = session, .intent = intent };
-        if (name.len <= flow.name_buf.len) {
-            std.mem.copyForwards(u8, flow.name_buf[0..name.len], name);
-            flow.name_len = name.len;
+        flow.setName(name);
+        return flow;
+    }
+
+    /// The Save or Save As the player asked for, to `path`, else the working file, else the
+    /// platform's default target. A manual Save while autosave is on is refused, since every
+    /// change is already written.
+    pub fn forCommand(session: *FileSession, intent: file_policy.WriteIntent, path: ?[]const u8, auto_save: bool) SaveFlow {
+        var flow = SaveFlow{ .session = session, .intent = intent, .refused = intent == .save and auto_save };
+        if (path orelse session.workingFile()) |name| {
+            flow.setName(name);
+        } else {
+            flow.phase = .naming;
         }
         return flow;
     }
 
-    /// The Save or Save As the player asked for; a manual Save while autosave is on is refused,
-    /// since every change is already written.
-    pub fn forCommand(session: *FileSession, intent: file_policy.WriteIntent, name: []const u8, auto_save: bool) SaveFlow {
-        var flow = init(session, intent, name);
-        flow.refused = intent == .save and auto_save;
-        return flow;
+    fn setName(self: *SaveFlow, name: []const u8) void {
+        if (name.len > self.name_buf.len) return;
+        std.mem.copyForwards(u8, self.name_buf[0..name.len], name);
+        self.name_len = name.len;
     }
 
     fn targetName(self: *const SaveFlow) []const u8 {
@@ -59,9 +67,19 @@ pub const SaveFlow = struct {
             .start => {
                 if (input != .start) return self.fail(step_mod.UNEXPECTED_INPUT_MSG);
                 if (self.refused) return self.finish(.{ .show_status = file_policy.SAVE_WHILE_AUTO_SAVE_MSG });
-                if (self.name_len == 0) return self.fail(NAME_TOO_LONG_MSG);
-                self.phase = .checking;
-                return .{ .check_target = self.targetName() };
+                return self.check();
+            },
+            .naming => {
+                if (input == .start) {
+                    if (self.refused) return self.finish(.{ .show_status = file_policy.SAVE_WHILE_AUTO_SAVE_MSG });
+                    return .resolve_default_target;
+                }
+                const name = switch (input) {
+                    .default_target => |n| n,
+                    else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
+                };
+                self.setName(name);
+                return self.check();
             },
             .checking => {
                 const exists = switch (input) {
@@ -120,6 +138,12 @@ pub const SaveFlow = struct {
             },
             .finished => return .done,
         }
+    }
+
+    fn check(self: *SaveFlow) Step {
+        if (self.name_len == 0) return self.fail(NAME_TOO_LONG_MSG);
+        self.phase = .checking;
+        return .{ .check_target = self.targetName() };
     }
 
     /// The platform's file belongs to an earlier install: ask whether to pick it or choose a new name.
@@ -221,6 +245,23 @@ test "save as while autosave is on still writes" {
     var session = FileSession{};
     var flow = SaveFlow.forCommand(&session, .save_as, "game.sud", true);
     try expectCheck(flow.next(.start), "game.sud");
+}
+
+test "a save with no path writes the working file, else asks for the default target" {
+    var session = FileSession{};
+    var fresh = SaveFlow.forCommand(&session, .save, null, false);
+    try testing.expect(fresh.next(.start) == .resolve_default_target);
+    try expectCheck(fresh.next(.{ .default_target = "sudoku.sud" }), "sudoku.sud");
+
+    session.setWorkingFile("game.sud");
+    var continued = SaveFlow.forCommand(&session, .save_as, null, false);
+    try expectCheck(continued.next(.start), "game.sud");
+}
+
+test "a refused save does not ask for a target" {
+    var session = FileSession{};
+    var flow = SaveFlow.forCommand(&session, .save, null, true);
+    try testing.expectEqualStrings(file_policy.SAVE_WHILE_AUTO_SAVE_MSG, flow.next(.start).show_status);
 }
 
 const taken_ask_text = "sudoku.sud in Documents was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";

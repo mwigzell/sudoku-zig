@@ -11,12 +11,13 @@ import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 import { boardCommandFlow, readSelection, renderBoard, runBoardCommand } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
-import { FLOW_COPY, runFlow, STEP_SHOW_STATUS } from "./step_runner.js";
+import { runCommand, STEP_SHOW_STATUS } from "./step_runner.js";
 import { bindLoadedGame } from "./file_menu.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 
 const PASTE_COMMAND = "paste";
+const COPY_COMMAND = "copy";
 
 /** Mirror legend flags and deselect enablement (active only when a cell is selected). */
 export function syncEditMenu(legend, controls, selection, boardEl) {
@@ -42,7 +43,7 @@ export function anyMenuOpen(root) {
   return [...root.querySelectorAll("#menu-bar .menu")].some((menu) => menu.dataset.open === "true");
 }
 
-/** Edit → Copy: the core copy flow puts the puzzle line on the clipboard; denied leaves the board intact. */
+/** Edit → Copy: core has the puzzle line put on the clipboard; denied leaves the board intact. */
 /** @param {GameApi} game */
 export async function handleCopyPuzzle(
   game,
@@ -52,7 +53,7 @@ export async function handleCopyPuzzle(
   { clipboard, doc } = {},
 ) {
   if (!session.legend[LEGEND_WIRE_COPY]) return { handled: false };
-  const outcome = await runFlow(game, { flow: FLOW_COPY }, {
+  const outcome = await runCommand(game, { action: COPY_COMMAND }, {
     copyLine: () => startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document }),
     showStatus: (text) => applyEventStatus(statusEl, { ok: true, msg: text }),
     showError: (text) => showErrorModal(errorModal, text),

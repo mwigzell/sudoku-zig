@@ -15,7 +15,7 @@ import {
 } from "./shell.js";
 import { renderBoard } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
-import { askWithDialog, FLOW_EXPORT, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAILED_MSG } from "./step_runner.js";
+import { askWithDialog, runCommand, SAVE_FAILED_MSG } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 /** @typedef {import("./types").FileMenuControls} FileMenuControls */
@@ -28,13 +28,15 @@ import { askWithDialog, FLOW_EXPORT, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAIL
 /** @typedef {import("./types").AndroidBridgeResult} AndroidBridgeResult */
 /** @typedef {import("./types").WriteResult} WriteResult */
 
-export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
 const TOGGLE_AUTO_SAVE = "toggle_auto_save";
 const NEW_COMMAND = "new";
 const OPEN_COMMAND = "open";
 const IMPORT_COMMAND = "import";
+const SAVE_COMMAND = "save";
+const SAVE_AS_COMMAND = "save_as";
+const EXPORT_COMMAND = "export";
 /** `pick_open` kinds: a saved game becomes the save target; puzzle text does not. */
 const PICK_KIND_GAME = "game";
 const PICK_KIND_PUZZLE = "puzzle";
@@ -73,13 +75,6 @@ function base64ToBytes(base64) {
 /** Picker start location follows the bound file handle when available. */
 export function filePickerStartIn(session) {
   return session?.fileHandle ?? FILE_PICKER_START_IN;
-}
-
-/** Save target label priority: bound runtime name first, host default as fallback. */
-function suggestedSaveFilename(session) {
-  const name = session?.boundFilename ?? session?.default_save_filename;
-  if (typeof name === "string" && name.length > 0) return name;
-  return null;
 }
 
 export const sudFilePickerTypes = [
@@ -308,7 +303,7 @@ export async function persistBytes(
 export async function persistPuzzleText(
   bytes,
   session,
-  suggestedName = DEFAULT_PUZZLE_EXPORT_FILENAME,
+  suggestedName,
   { win = globalThis, download = downloadBytes } = {},
 ) {
   if (win.showSaveFilePicker) {
@@ -454,8 +449,6 @@ export function wireFileMenu(
     if (result.error) showErrorModal(errorModal, result.error);
   };
 
-  const MISSING_DEFAULT_SAVE_FILENAME = "missing default_save_filename in session";
-
   /**
    * Platform work for the core Save / Save As flow. The user's file is written by the bound
    * handle, the Android bridge, a picker or a download; the host keeps the restore copy.
@@ -483,14 +476,9 @@ export function wireFileMenu(
     showError: (text) => fail({ ok: false, error: text }),
   });
 
-  const runSave = async (saveAsMode) => {
-    const suggested = suggestedSaveFilename(session);
-    if (!suggested) {
-      fail({ ok: false, error: MISSING_DEFAULT_SAVE_FILENAME });
-      return;
-    }
-    await runFlow(game, { flow: saveAsMode ? FLOW_SAVE_AS : FLOW_SAVE, name: suggested }, saveHandlers(saveAsMode));
-  };
+  /** Save / Save As: core names the target (working file, else the host default) and asks before replacing. */
+  const runSave = (saveAsMode) =>
+    runCommand(game, { action: saveAsMode ? SAVE_AS_COMMAND : SAVE_COMMAND }, { ...commandFlow, ...saveHandlers(saveAsMode) });
 
   if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, globalThis);
 
@@ -558,10 +546,11 @@ export function wireFileMenu(
     await runLoad({ action: IMPORT_COMMAND });
   });
 
-  // Phase H: Export runs the core export flow; the one-line text leaves the save binding untouched.
+  // Phase H: Export runs through core, which names the file; the one-line text leaves the save binding untouched.
   controls.export?.addEventListener("click", async () => {
     if (!session.legend[LEGEND_WIRE_EXPORT]) return;
-    await runFlow(game, { flow: FLOW_EXPORT, name: DEFAULT_PUZZLE_EXPORT_FILENAME }, {
+    await runCommand(game, { action: EXPORT_COMMAND }, {
+      ...commandFlow,
       write: async (name) => {
         const result = exportPuzzle(game);
         if (!result.ok) return result;

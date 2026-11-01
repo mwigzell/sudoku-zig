@@ -383,7 +383,7 @@ pub const GameEngine = struct {
             },
             .settings => @panic("settings routed in Sudoku"),
             .menu => @panic("menu routed in renderer"),
-            .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => @panic("session command routed in Sudoku"),
+            .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => @panic("load and write commands run in the core command flow"),
         }
     }
 

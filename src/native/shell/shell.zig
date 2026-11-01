@@ -50,8 +50,6 @@ pub const Sudoku = struct {
     file_session: flow_mod.FileSession = .{},
     /// The one flow in progress; terminal step text points into it until the next flow starts.
     flow: flow_mod.Flow = undefined,
-    /// Holds a flow's terminal text once it becomes an event, so later flows cannot overwrite it.
-    flow_text: [256]u8 = undefined,
 
     /// How a flow's `write` step is carried out: Save records its status in the game, autosave does not,
     /// and Export writes only the puzzle line without making it the working file.
@@ -253,42 +251,15 @@ pub const Sudoku = struct {
         return .ok;
     }
 
-    /// Map a flow's terminal step to the event the loop shows; `done` shows `otherwise`.
-    fn flowEvent(self: *@This(), terminal: flow_mod.Step, otherwise: game_engine.Event) game_engine.Event {
-        return switch (terminal) {
-            .show_status => |text| .{ .ok = .{
-                .board_view = self.engine.eventBoard(),
-                .msg = copyInto(&self.flow_text, text),
-                .is_quit = false,
-            } },
-            .show_error => |msg| .{ .error_msg = copyInto(&self.flow_text, msg) },
-            else => otherwise,
-        };
-    }
-
-    fn runSaveFlow(self: *@This(), intent: file_policy.WriteIntent, path: []const u8) Error!game_engine.Event {
-        self.flow = .{ .save = flow_mod.SaveFlow.forCommand(&self.file_session, intent, path, self.engine.cfg.auto_save) };
-        const terminal = try self.runFlow(.save);
-        return self.flowEvent(terminal, .{ .ok = .{
-            .board_view = self.engine.eventBoard(),
-            .msg = null,
-            .is_quit = false,
-        } });
-    }
-
-    fn runExportFlow(self: *@This(), export_flow: flow_mod.ExportFlow) Error!game_engine.Event {
-        self.flow = .{ .@"export" = export_flow };
-        const terminal = try self.runFlow(.export_line);
-        return self.flowEvent(terminal, .{ .ok = .{
-            .board_view = self.engine.eventBoard(),
-            .msg = null,
-            .is_quit = false,
-        } });
-    }
-
+    /// Run one player command through the core command flow; its writes are a save, an export, or an autosave.
     fn runCommandFlow(self: *@This(), cmd: command.Command) Error!void {
         self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, cmd) };
-        switch (try self.runFlow(.autosave)) {
+        const mode: WriteMode = switch (cmd) {
+            .save, .save_as => .save,
+            .@"export" => .export_line,
+            else => .autosave,
+        };
+        switch (try self.runFlow(mode)) {
             .show_status => |text| try self.showGameWithStatus(text),
             .show_error => |msg| try self.renderer.showError(msg),
             else => {},
@@ -341,18 +312,9 @@ pub const Sudoku = struct {
                 return false;
             },
             .valid => |cmd| {
-                const event = switch (cmd) {
-                    .save => |data| try self.runSaveFlow(.save, data.path orelse save_command.DEFAULT_SAVE_FILE),
-                    .save_as => |data| try self.runSaveFlow(.save_as, data.path orelse save_command.DEFAULT_SAVE_FILE),
-                    .@"export" => |data| try self.runExportFlow(flow_mod.ExportFlow.toFile(data.path)),
-                    .copy => try self.runExportFlow(flow_mod.ExportFlow.toClipboard()),
-                    .quit => self.engine.exec(cmd),
-                    else => {
-                        try self.runCommandFlow(cmd);
-                        return false;
-                    },
-                };
-                return try self.handleEvent(event);
+                if (cmd == .quit) return try self.handleEvent(self.engine.exec(cmd));
+                try self.runCommandFlow(cmd);
+                return false;
             },
         }
     }

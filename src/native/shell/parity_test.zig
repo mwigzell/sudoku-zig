@@ -35,6 +35,8 @@ const Step = struct {
     paste: ?[]const u8 = null,
     open: ?CurrentFile = null,
     import: ?[]const u8 = null,
+    save: ?bool = null,
+    copy: ?bool = null,
 };
 
 const ScenarioConfig = struct {
@@ -137,6 +139,8 @@ fn putPicked(cfg: config.Config, transport: *test_doubles.MemoryTransport, step:
 fn stepCommand(app: *shell.Sudoku, step: Step, picked: ?[]const u8) !command.Command {
     if (step.open != null) return .{ .open = .{ .path = picked } };
     if (step.import != null) return .{ .import = .{ .path = picked } };
+    if (step.save != null) return .{ .save = .{ .path = null } };
+    if (step.copy != null) return .{ .copy = {} };
     if (step.fill) |m| return .{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
     if (step.clear) |at| return .{ .clear = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
     if (step.toggle_auto_save != null) return .{ .toggle_auto_save = {} };
@@ -198,7 +202,11 @@ fn runScenario(io: std.Io, data_dir: []const u8, scenario: Scenario) !void {
     }
     const status: ?[]const u8 = facade_impl.last_render_msg;
     if (scenario.expect.status) |want| {
-        try std.testing.expectEqualStrings(want, status orelse "");
+        const dir_prefix = try std.fmt.allocPrint(std.testing.allocator, "{s}/", .{data_dir});
+        defer std.testing.allocator.free(dir_prefix);
+        const relative = try std.mem.replaceOwned(u8, std.testing.allocator, status orelse "", dir_prefix, "");
+        defer std.testing.allocator.free(relative);
+        try std.testing.expectEqualStrings(want, relative);
     } else {
         try std.testing.expect(status == null or status.?.len == 0);
     }

@@ -8,7 +8,7 @@ import { loadGame, settleFlow, startNewGame } from "./test_support.mjs";
 import { commandHandlers, createWebSessionFromStartup, runStartupFlow, showErrorModal, startupHandlers } from "./shell.js";
 import { handlePlayKey } from "./board.js";
 import { wireFileMenu } from "./file_menu.js";
-import { handleEditAction, handlePastePuzzle } from "./menu.js";
+import { handleCopyPuzzle, handleEditAction, handlePastePuzzle } from "./menu.js";
 import { wireRegionMenu } from "./region.js";
 import { wireThemeMenu } from "./theme.js";
 
@@ -28,6 +28,7 @@ import { wireThemeMenu } from "./theme.js";
  *     fill_first_empty?: boolean,
  *     undo?: boolean, redo?: boolean, paste?: string,
  *     open?: { name: string, puzzle_line: string, moves?: Move[] }, import?: string,
+ *     save?: boolean, copy?: boolean,
  *   }>,
  *   expect: {
  *     questions: number,
@@ -207,7 +208,7 @@ async function runScenario(scenario) {
 
     /** @type {import("./types").PickResult | null} */
     let picked = null;
-    const controls = { open: makeBtn(), import: makeBtn(), autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() };
+    const controls = { open: makeBtn(), import: makeBtn(), save: makeBtn(), autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() };
     const commandFlow = commandHandlers(game, session, { fetchFn: host.fetchFn, statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) });
     wireRegionMenu(controls, game, session, boardEl, () => null, { commandFlow });
     wireThemeMenu(controls, game, session, { root: themeRoot(), commandFlow });
@@ -215,6 +216,7 @@ async function runScenario(scenario) {
       createElement,
       difficultyDialog: { el: { hidden: true }, buttons: [] },
       pick: async () => picked,
+      download() {},
       commandFlow,
     });
 
@@ -248,6 +250,15 @@ async function runScenario(scenario) {
       if (step.open) {
         picked = { ok: true, name: step.open.name, bytes: await savedGame(step.open) };
         await controls.open.click();
+        continue;
+      }
+      if (step.save) {
+        await controls.save.click();
+        continue;
+      }
+      if (step.copy) {
+        const clipboard = { writeText: async () => {} };
+        await handleCopyPuzzle(game, session, statusEl, errorModal, { clipboard });
         continue;
       }
       if (step.import !== undefined) {

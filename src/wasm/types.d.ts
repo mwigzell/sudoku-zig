@@ -11,7 +11,10 @@ export type ExecAction =
   | { action: "set_theme"; theme: "light" | "dark" | "system" }
   | { action: "toggle_region" | "toggle_warn_solvability" | "toggle_auto_restore" | "toggle_auto_new" | "toggle_auto_save" }
   | { action: "set_difficulty"; difficulty: "easy" | "medium" | "hard" }
-  | { action: "set_log_level"; log_level: "debug" | "info" | "warn" | "err" | "fatal" };
+  | { action: "set_log_level"; log_level: "debug" | "info" | "warn" | "err" | "fatal" }
+  | { action: "new"; difficulty?: "easy" | "medium" | "hard" }
+  | { action: "open" | "import" | "paste" }
+  | { action: "save" | "save_as" | "export" | "copy" };
 
 export type WebSession = ReturnType<typeof import("./shell.js").createWebSessionFromStartup>;
 /** Menubar item elements resolved from the page shell. */
@@ -37,11 +40,8 @@ export type GenWorker =
 
 /** `flowStart` payload: which core flow to run. */
 export type FlowStart =
-  | { flow: "save" | "save_as"; name: string }
   | { flow: "autosave_flush" }
-  | { flow: "startup"; path?: string; name?: string }
-  | { flow: "export"; name: string | null }
-  | { flow: "copy" };
+  | { flow: "startup"; path?: string; name?: string };
 
 /** Board snapshot as wasm `getState` and `show_game` report it. */
 export type GameState = { cells: Array<{ value: number; given: boolean; conflict: boolean }> };

@@ -153,6 +153,10 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "open")) return .{ .open = .{ .path = null } };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "import")) return .{ .import = .{ .path = null } };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "paste")) return .{ .paste = .{ .line = null } };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "save")) return .{ .save = .{ .path = null } };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "save_as")) return .{ .save_as = .{ .path = null } };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "export")) return .{ .@"export" = .{ .path = null } };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "copy")) return .{ .copy = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_log_level")) {
         const name = parsed.value.log_level orelse return error.MissingField;
         if (std.ascii.eqlIgnoreCase(name, "debug")) return .{ .set_log_level = .debug };
@@ -244,16 +248,11 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
     try std.Io.Writer.flush(&jw.writer);
 }
 
-/// Flow a web handler asks core to run (`flowStart` payload).
+/// Flow the web runs outside a player command (`flowStart` payload): startup and the final snapshot.
 pub const FlowStart = union(enum) {
-    save: []const u8,
-    save_as: []const u8,
     autosave_flush,
     /// The host's current file, or null when it has none.
     startup: ?StartupFile,
-    /// The file to export to, or null when there is none.
-    @"export": ?[]const u8,
-    copy,
 };
 
 /// Where the host serves its current file, and the name to label and save it under.
@@ -273,12 +272,8 @@ pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStar
     const v = try std.json.parseFromSliceLeaky(JsonFlowStart, arena, json_text, .{});
     const kind = std.meta.stringToEnum(std.meta.Tag(FlowStart), v.flow) orelse return error.UnknownFlow;
     return switch (kind) {
-        .save => .{ .save = v.name orelse return error.MissingField },
-        .save_as => .{ .save_as = v.name orelse return error.MissingField },
         .autosave_flush => .autosave_flush,
         .startup => .{ .startup = if (v.path) |path| .{ .path = path, .name = v.name orelse return error.MissingField } else null },
-        .@"export" => .{ .@"export" = v.name },
-        .copy => .copy,
     };
 }
 
@@ -543,6 +538,13 @@ test "parseAction hint maps optional row col" {
     const d1 = try parseAction("{\"action\":\"hint\",\"row\":0,\"col\":3}");
     try std.testing.expectEqual(@as(?u4, 0), d1.hint.row);
     try std.testing.expectEqual(@as(?u4, 3), d1.hint.col);
+}
+
+test "parseAction writes carry no path; core chooses the name" {
+    try std.testing.expect((try parseAction("{\"action\":\"save\"}")).save.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"save_as\"}")).save_as.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"export\"}")).@"export".path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"copy\"}")) == .copy);
 }
 
 test "parseAction loads carry no path or line; new takes an optional difficulty" {
@@ -831,7 +833,7 @@ test "flow start parses each web flow" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    try std.testing.expectEqualStrings("game.sud", (try parseFlowStart(a, "{\"flow\":\"save\",\"name\":\"game.sud\"}")).save);
+    try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"save\",\"name\":\"game.sud\"}"));
     try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"autosave\"}"));
     try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"autosave_flush\"}")) == .autosave_flush);
     try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"startup\"}")).startup == null);
@@ -839,9 +841,7 @@ test "flow start parses each web flow" {
     try std.testing.expectEqualStrings("/current-file", startup.path);
     try std.testing.expectEqualStrings("g.sud", startup.name);
     try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"startup\",\"path\":\"/current-file\"}"));
-    try std.testing.expectEqualStrings("p.txt", (try parseFlowStart(a, "{\"flow\":\"export\",\"name\":\"p.txt\"}")).@"export".?);
-    try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"export\"}")).@"export" == null);
-    try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"copy\"}")) == .copy);
+    try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"copy\"}"));
     try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"nope\"}"));
 }
 

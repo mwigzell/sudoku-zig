@@ -11,8 +11,8 @@ const Input = step_mod.Input;
 pub const EXPORTED_TO_FMT = "exported to: {s}";
 /// Status after Copy.
 pub const COPIED_MSG: []const u8 = "copy: puzzle line copied";
-/// Error when Export has no file to write.
-pub const NO_EXPORT_TARGET_MSG: []const u8 = "export: no file specified";
+/// Export target when the player names none.
+pub const DEFAULT_EXPORT_FILE: []const u8 = "puzzle.txt";
 
 pub const ExportFlow = struct {
     target: Target,
@@ -24,14 +24,13 @@ pub const ExportFlow = struct {
     const Target = enum { file, clipboard };
     const Phase = enum { start, exporting, finished };
 
-    /// Export the puzzle line to `name`; a null name has nowhere to go.
-    pub fn toFile(name: ?[]const u8) ExportFlow {
+    /// Export the puzzle line to `path`, else to the default file.
+    pub fn toFile(path: ?[]const u8) ExportFlow {
         var flow = ExportFlow{ .target = .file };
-        const n = name orelse return flow;
-        if (n.len <= flow.name_buf.len) {
-            std.mem.copyForwards(u8, flow.name_buf[0..n.len], n);
-            flow.name_len = n.len;
-        }
+        const name = path orelse DEFAULT_EXPORT_FILE;
+        const len = @min(name.len, flow.name_buf.len);
+        std.mem.copyForwards(u8, flow.name_buf[0..len], name[0..len]);
+        flow.name_len = len;
         return flow;
     }
 
@@ -47,7 +46,7 @@ pub const ExportFlow = struct {
                 if (input != .start) return self.fail(step_mod.UNEXPECTED_INPUT_MSG);
                 self.phase = .exporting;
                 return switch (self.target) {
-                    .file => if (self.name_len == 0) self.fail(NO_EXPORT_TARGET_MSG) else .{ .write = self.name_buf[0..self.name_len] },
+                    .file => .{ .write = self.name_buf[0..self.name_len] },
                     .clipboard => .copy_line,
                 };
             },
@@ -99,9 +98,9 @@ test "export writes the named file and reports where" {
     try testing.expect(flow.next(.start) == .done);
 }
 
-test "export with no file is an error" {
+test "export with no file writes the default file" {
     var flow = ExportFlow.toFile(null);
-    try testing.expectEqualStrings(NO_EXPORT_TARGET_MSG, flow.next(.start).show_error);
+    try testing.expectEqualStrings(DEFAULT_EXPORT_FILE, flow.next(.start).write);
 }
 
 test "a closed export picker ends quietly; a failed write shows the error" {

@@ -1,5 +1,6 @@
 // CommandFlow: one player command end to end — gather what a load needs, apply it, show
 // the result, then persist settings and autosave as the command needs, in that order on every platform.
+// Save, Save As, Export and Copy run their write flow instead.
 const std = @import("std");
 const command = @import("../command.zig");
 const config = @import("../config.zig");
@@ -8,12 +9,16 @@ const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
 const settings_mod = @import("settings.zig");
 const autosave_mod = @import("autosave.zig");
+const save_mod = @import("save.zig");
+const export_mod = @import("export.zig");
 
 const Step = step_mod.Step;
 const Input = step_mod.Input;
 const FileSession = file_session_mod.FileSession;
 const SettingsFlow = settings_mod.SettingsFlow;
 const AutosaveFlow = autosave_mod.AutosaveFlow;
+const SaveFlow = save_mod.SaveFlow;
+const ExportFlow = export_mod.ExportFlow;
 
 pub const CommandFlow = struct {
     engine: *game_engine.GameEngine,
@@ -22,8 +27,10 @@ pub const CommandFlow = struct {
     phase: Phase = .start,
     settings: SettingsFlow = undefined,
     autosave: AutosaveFlow = undefined,
+    write: Write = undefined,
 
-    const Phase = enum { start, gathering, showing, persisting, autosaving, finished };
+    const Phase = enum { start, gathering, writing, showing, persisting, autosaving, finished };
+    const Write = union(enum) { save: SaveFlow, @"export": ExportFlow };
 
     /// Run `cmd` on `engine`; `session` is the file the follow-up autosave writes.
     pub fn init(engine: *game_engine.GameEngine, session: *FileSession, cmd: command.Command) CommandFlow {
@@ -38,6 +45,7 @@ pub const CommandFlow = struct {
                 return self.gather();
             },
             .gathering => return self.gathered(input),
+            .writing => return self.continueWrite(input),
             .showing => {
                 if (input != .ack) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
                 self.settings = SettingsFlow.afterCommand(self.engine.getConfig(), @tagName(self.cmd));
@@ -60,6 +68,10 @@ pub const CommandFlow = struct {
             .open => |data| .{ .pick_open = .{ .kind = .game, .path = data.path } },
             .import => |data| .{ .pick_open = .{ .kind = .puzzle, .path = data.path } },
             .paste => |data| if (data.line) |line| return self.load(.paste, line) else .read_clipboard,
+            .save => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save, data.path, self.engine.cfg.auto_save) }),
+            .save_as => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save_as, data.path, self.engine.cfg.auto_save) }),
+            .@"export" => |data| return self.startWrite(.{ .@"export" = ExportFlow.toFile(data.path) }),
+            .copy => return self.startWrite(.{ .@"export" = ExportFlow.toClipboard() }),
             else => return self.show(self.engine.exec(self.cmd)),
         };
         self.phase = .gathering;
@@ -129,6 +141,23 @@ pub const CommandFlow = struct {
                 return shown;
             },
         }
+    }
+
+    fn startWrite(self: *CommandFlow, write: Write) Step {
+        self.write = write;
+        self.phase = .writing;
+        return self.continueWrite(.start);
+    }
+
+    fn continueWrite(self: *CommandFlow, input: Input) Step {
+        const step = switch (self.write) {
+            .save => |*f| f.next(input),
+            .@"export" => |*f| f.next(input),
+        };
+        return switch (step) {
+            .show_status, .show_error, .done => self.finish(step),
+            else => step,
+        };
     }
 
     fn continueSettings(self: *CommandFlow, input: Input) Step {
@@ -289,6 +318,37 @@ test "new generates at the chosen difficulty, which the game then keeps" {
     try testing.expect(shown.loaded);
     try testing.expectEqual(puzzle_gen.Difficulty.easy, shown.config.difficulty);
     try testing.expectEqual(@import("../file_policy.zig").WriteContext.detached, session.write_context);
+}
+
+test "save with no working file asks for the default target, writes it and reports where" {
+    var engine = try testEngine(config.Config.default());
+    defer engine.deinit();
+    var session = FileSession{};
+    var flow = CommandFlow.init(&engine, &session, .{ .save = .{ .path = null } });
+    try testing.expect(flow.next(.start) == .resolve_default_target);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write);
+    try testing.expectEqualStrings("saved to: sudoku.sud", flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }).show_status);
+    try testing.expect(flow.next(.ack) == .done);
+    try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
+}
+
+test "save as suggests the working file; export and copy hand over the line" {
+    var engine = try testEngine(config.Config.default());
+    defer engine.deinit();
+    var session = FileSession{};
+    session.setWorkingFile("game.sud");
+    var save_as = CommandFlow.init(&engine, &session, .{ .save_as = .{ .path = null } });
+    try testing.expectEqualStrings("game.sud", save_as.next(.start).check_target);
+
+    var exported = CommandFlow.init(&engine, &session, .{ .@"export" = .{ .path = null } });
+    try testing.expectEqualStrings(export_mod.DEFAULT_EXPORT_FILE, exported.next(.start).write);
+    try testing.expectEqualStrings("exported to: puzzle.txt", exported.next(.{ .wrote = .{ .ok = "puzzle.txt" } }).show_status);
+
+    var copied = CommandFlow.init(&engine, &session, .{ .copy = {} });
+    try testing.expect(copied.next(.start) == .copy_line);
+    try testing.expectEqualStrings(export_mod.COPIED_MSG, copied.next(.{ .copied = .ok }).show_status);
+    try testing.expectEqualStrings("game.sud", session.workingFile().?);
 }
 
 test "stopping generation ends New quietly; a wrong answer is an error" {

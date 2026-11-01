@@ -281,7 +281,7 @@ fn returnStep(out: boundary.OutBuffer, step: flow.Step) u32 {
     return returnJson(out);
 }
 
-/// Start a core flow from `{flow, name?, path?}`; returns the first step JSON.
+/// Start the startup or final-snapshot flow from `{flow, name?, path?}`; returns the first step JSON.
 export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
@@ -290,16 +290,12 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     const start = boundary.parseFlowStart(arena.allocator(), json) catch return exportError(out, "invalid flow start");
     active_flow = switch (start) {
-        .save => |name| .{ .save = flow.SaveFlow.forCommand(&file_session, .save, name, eng.cfg.auto_save) },
-        .save_as => |name| .{ .save = flow.SaveFlow.forCommand(&file_session, .save_as, name, eng.cfg.auto_save) },
         .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, eng.cfg.auto_save) },
         .startup => |file| .{ .startup = flow.StartupFlow.init(eng, &file_session, .{
             .auto_restore = eng.cfg.auto_restore,
             .auto_new = eng.cfg.auto_new,
             .difficulty = eng.cfg.difficulty,
         }, if (file) |f| .{ .path = f.path, .name = f.name, .working = f.name } else null) },
-        .@"export" => |name| .{ .@"export" = flow.ExportFlow.toFile(name) },
-        .copy => .{ .@"export" = flow.ExportFlow.toClipboard() },
     };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));

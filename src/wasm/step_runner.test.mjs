@@ -3,8 +3,6 @@
 import assert from "node:assert/strict";
 import {
   askWithDialog,
-  FLOW_SAVE,
-  FLOW_SAVE_AS,
   FLOW_STARTUP,
   runCommand,
   runFlow,
@@ -12,13 +10,13 @@ import {
 import { loadCoreFlow, loadGame, openAs, PUZZLE_LINE, startNewGame } from "./test_support.mjs";
 
 /** Handlers that record every step and answer from `answers`. */
-function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }) } = {}) {
+function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }), defaultName = "sudoku.sud" } = {}) {
   const log = [];
   return {
     log,
     resolveDefaultTarget: () => {
       log.push(["default"]);
-      return "sudoku.sud";
+      return defaultName;
     },
     checkTarget: (name) => {
       log.push(["check", name]);
@@ -39,15 +37,21 @@ function recordingHandlers({ exists = false, yes = false, write = (name) => ({ o
 }
 
 const FILL = { action: "fill", row: 0, col: 2, digit: 4 };
+const SAVE = { action: "save" };
+const SAVE_AS = { action: "save_as" };
+const DEFAULT = ["default"];
+
+/** Recording handlers whose default target is `game.sud`. */
+const saveHandlers = (options = {}) => recordingHandlers({ defaultName: "game.sud", ...options });
 
 const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you want to replace it?", "Replace", "Cancel"];
 
-// Save onto a new name writes and reports the core status text.
+// Save with no working file names the default target, writes and reports the core status text.
 {
   const core = await loadCoreFlow();
-  const handlers = recordingHandlers({ exists: false });
-  const outcome = await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, handlers);
-  assert.deepEqual(handlers.log, [["check", "game.sud"], ["write", "game.sud"], ["status", "saved to: game.sud"]]);
+  const handlers = saveHandlers({ exists: false });
+  const outcome = await runCommand(core, SAVE, handlers);
+  assert.deepEqual(handlers.log, [DEFAULT, ["check", "game.sud"], ["write", "game.sud"], ["status", "saved to: game.sud"]]);
   assert.deepEqual(outcome, { kind: "show_status", text: "saved to: game.sud" });
 }
 
@@ -55,41 +59,41 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
 {
   const core = await loadCoreFlow();
   startNewGame(core);
-  const handlers = recordingHandlers({ exists: true, yes: false });
-  const outcome = await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, handlers);
-  assert.deepEqual(handlers.log, [["check", "game.sud"], REPLACE_ASK, ["status", "cancelled"]]);
+  const handlers = saveHandlers({ exists: true, yes: false });
+  const outcome = await runCommand(core, SAVE, handlers);
+  assert.deepEqual(handlers.log, [DEFAULT, ["check", "game.sud"], REPLACE_ASK, ["status", "cancelled"]]);
   assert.equal(outcome.kind, "show_status");
 }
 
 // Accepting the replace question writes; the next Save continues the file without asking.
 {
   const core = await loadCoreFlow();
-  const accept = recordingHandlers({ exists: true, yes: true });
-  await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, accept);
-  assert.deepEqual(accept.log, [["check", "game.sud"], REPLACE_ASK, ["write", "game.sud"], ["status", "saved to: game.sud"]]);
-  const again = recordingHandlers({ exists: true });
-  await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, again);
+  const accept = saveHandlers({ exists: true, yes: true });
+  await runCommand(core, SAVE, accept);
+  assert.deepEqual(accept.log, [DEFAULT, ["check", "game.sud"], REPLACE_ASK, ["write", "game.sud"], ["status", "saved to: game.sud"]]);
+  const again = saveHandlers({ exists: true });
+  await runCommand(core, SAVE, again);
   assert.deepEqual(again.log, [["check", "game.sud"], ["write", "game.sud"], ["status", "saved to: game.sud"]]);
 }
 
-// Save As onto the opened file continues it; after New the same Save As asks.
+// Save As suggests the opened file and continues it; after New the same Save As asks.
 {
   const core = await loadCoreFlow();
   openAs(core, "game.sud");
-  const continuing = recordingHandlers({ exists: true });
-  await runFlow(core, { flow: FLOW_SAVE_AS, name: "game.sud" }, continuing);
+  const continuing = saveHandlers({ exists: true });
+  await runCommand(core, SAVE_AS, continuing);
   assert.deepEqual(continuing.log, [["check", "game.sud"], ["write", "game.sud"], ["status", "saved to: game.sud"]]);
   startNewGame(core);
-  const detached = recordingHandlers({ exists: true, yes: false });
-  await runFlow(core, { flow: FLOW_SAVE_AS, name: "game.sud" }, detached);
+  const detached = saveHandlers({ exists: true, yes: false });
+  await runCommand(core, SAVE_AS, detached);
   assert.deepEqual(detached.log, [["check", "game.sud"], REPLACE_ASK, ["status", "cancelled"]]);
 }
 
 // The name the platform actually wrote becomes the status and the working file.
 {
   const core = await loadCoreFlow({ autoSave: true });
-  const handlers = recordingHandlers({ write: () => ({ ok: true, name: "picked.sud" }) });
-  await runFlow(core, { flow: FLOW_SAVE_AS, name: "game.sud" }, handlers);
+  const handlers = saveHandlers({ write: () => ({ ok: true, name: "picked.sud" }) });
+  await runCommand(core, SAVE_AS, handlers);
   assert.deepEqual(handlers.log.at(-1), ["status", "saved to: picked.sud"]);
   const autosave = recordingHandlers({ exists: true });
   await runCommand(core, FILL, autosave);
@@ -100,8 +104,8 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
 {
   const core = await loadCoreFlow({ autoSave: true });
   assert.equal(core.getLegend().save, false);
-  const handlers = recordingHandlers();
-  const outcome = await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, handlers);
+  const handlers = saveHandlers();
+  const outcome = await runCommand(core, SAVE, handlers);
   assert.deepEqual(handlers.log, [["status", "Auto Save is on, so your game is already saved."]]);
   assert.equal(outcome.kind, "show_status");
 }
@@ -109,14 +113,14 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
 // A picker the user closed ends quietly; a failed write shows the error.
 {
   const core = await loadCoreFlow();
-  const closed = recordingHandlers({ write: () => ({ ok: false, cancelled: true }) });
-  assert.deepEqual(await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, closed), { kind: "done" });
-  const failed = recordingHandlers({
+  const closed = saveHandlers({ write: () => ({ ok: false, cancelled: true }) });
+  assert.deepEqual(await runCommand(core, SAVE, closed), { kind: "done" });
+  const failed = saveHandlers({
     write: () => {
       throw new Error("disk full");
     },
   });
-  await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, failed);
+  await runCommand(core, SAVE, failed);
   assert.deepEqual(failed.log.at(-1), ["error", "disk full"]);
 }
 
@@ -144,13 +148,13 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
 // A handler that throws outside write ends the flow with its message; the next flow still runs.
 {
   const core = await loadCoreFlow();
-  const broken = recordingHandlers();
+  const broken = saveHandlers();
   broken.checkTarget = () => {
     throw new Error("host unreachable");
   };
-  assert.deepEqual(await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, broken), { kind: "show_error", text: "host unreachable" });
-  const next = recordingHandlers();
-  await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, next);
+  assert.deepEqual(await runCommand(core, SAVE, broken), { kind: "show_error", text: "host unreachable" });
+  const next = saveHandlers();
+  await runCommand(core, SAVE, next);
   assert.deepEqual(next.log.at(-1), ["status", "saved to: game.sud"]);
 }
 
