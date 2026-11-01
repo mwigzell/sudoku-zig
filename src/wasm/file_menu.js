@@ -31,6 +31,9 @@ import { askWithDialog, FLOW_EXPORT, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAIL
 /** @typedef {import("./types").WebSession} WebSession */
 /** @typedef {import("./types").ErrorModal} ErrorModal */
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
+/** @typedef {import("./types").AndroidFileBridge} AndroidFileBridge */
+/** @typedef {import("./types").AndroidBridgeResult} AndroidBridgeResult */
+/** @typedef {import("./types").WriteResult} WriteResult */
 
 export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
@@ -45,11 +48,13 @@ const BRIDGE_DEFAULT_TAKEN = "default_taken";
 const BINDING_KIND_FILE_HANDLE = "file_handle";
 const BINDING_KIND_ANDROID_BRIDGE = "android_bridge";
 /** Android bridge capability check for Save/Save As path selection. */
+/** @param {AndroidFileBridge | undefined} bridge */
 function bridgeSupportsSave(bridge) {
   return bridge != null && typeof bridge.saveSudokuFile === "function";
 }
 
 /** Android bridge capability check for Open/Import picker path selection. */
+/** @param {AndroidFileBridge | undefined} bridge */
 function bridgeSupportsOpen(bridge) {
   return bridge != null && typeof bridge.openSudokuFile === "function";
 }
@@ -177,6 +182,10 @@ function clearBoundSnapshotWriter(session) {
   session.boundPickNew = null;
 }
 
+/**
+ * @param {AndroidBridgeResult} out
+ * @returns {WriteResult}
+ */
 function androidSaveOutcome(out) {
   if (!out || out.ok !== true) {
     if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
@@ -185,6 +194,13 @@ function androidSaveOutcome(out) {
   return typeof out.name === "string" && out.name.length > 0 ? { ok: true, name: out.name } : { ok: true };
 }
 
+/**
+ * Write the bound Android file; reports `taken` when the default file belongs to an earlier install.
+ * @param {AndroidFileBridge | undefined} bridge
+ * @param {Uint8Array} bytes
+ * @param {string} suggestedName
+ * @returns {Promise<WriteResult>}
+ */
 async function saveToAndroidBoundTarget(bridge, bytes, suggestedName) {
   if (!bridge) return { ok: false, error: "no Android bridge" };
   const saveCurrent = bridge.saveCurrentSudokuFile;

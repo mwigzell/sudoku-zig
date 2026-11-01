@@ -112,3 +112,29 @@ export type FlowHandlers = {
 
 /** How a flow ended. */
 export type FlowOutcome = { kind: "show_status" | "show_error"; text: string } | { kind: "done" };
+
+/** What an Android bridge save or open reports; `default_taken` means the default file belongs to an earlier install. */
+export type AndroidBridgeResult =
+  | { ok: true; name?: string; base64?: string }
+  | { ok: false; cancelled?: boolean; reason?: "cancelled" | "default_taken"; name?: string; dir?: string; error?: string };
+
+/** Android WebView file bridge (`android_bridge.js` over the Java `__SudokuAndroidBridge`); absent elsewhere. */
+export type AndroidFileBridge = {
+  /** Save via the create-document picker when `saveAs`, else to the bound file. */
+  saveSudokuFile: (base64: string, suggestedName: string, saveAs: boolean) => AndroidBridgeResult;
+  /** Pick an existing file and write to it. */
+  saveSudokuFileToExisting: (base64: string) => AndroidBridgeResult;
+  /** Write the bound file, or the default visible file when none is bound. */
+  saveCurrentSudokuFile: (base64: string, suggestedName: string) => AndroidBridgeResult;
+  /** Bound file name, or "" when none. */
+  currentSudokuFileName: () => string;
+  openSudokuFile: () => AndroidBridgeResult;
+  setSystemBars: (themeName: string) => void;
+  notifyWebBootReady: () => void;
+};
+
+declare global {
+  interface Window {
+    AndroidFileBridge?: AndroidFileBridge;
+  }
+}

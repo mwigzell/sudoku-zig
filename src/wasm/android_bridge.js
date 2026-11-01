@@ -6,6 +6,7 @@
   if (!native) return;
   const text = (value) => String(value || "");
 
+  /** @type {import("./types").AndroidFileBridge} */
   win.AndroidFileBridge = {
     saveSudokuFile: (base64, suggestedName, saveAs) =>
       JSON.parse(native.saveSudokuFile(text(base64), text(suggestedName), !!saveAs)),
