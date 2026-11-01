@@ -1015,6 +1015,31 @@ test "getCommandInput: save as carries the typed path, or none for core's sugges
     try std.testing.expect(suggested.valid.save_as.path == null);
 }
 
+test "getCommandInput: open carries the typed path" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "2\n", "game.sud\n" });
+    defer renderer.deinit();
+    var names: [7][]const u8 = undefined;
+    const count = save_legend.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    try std.testing.expectEqualStrings("game.sud", result.valid.open.path.?);
+}
+
+test "getCommandInput: paste carries the typed puzzle line" {
+    const line = "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "13\n", line ++ "\n" });
+    defer renderer.deinit();
+    var names: [7][]const u8 = undefined;
+    const count = save_legend.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    try std.testing.expectEqualStrings(line, result.valid.paste.line.?);
+}
+
 test "showAbout: writes name version commit build date and licence" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();

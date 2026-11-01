@@ -528,57 +528,6 @@ test "deterministic major path: new without a puzzle generates one at the chosen
     try std.testing.expectEqualStrings(game_engine.NEW_GAME_STARTED_MSG, app.engine.state.status.optional().?);
 }
 
-// Full round-trip: save known state → mutate → open the saved file → verify restore
-// Uses the host-built facade to exercise the full dialog/caching path.
-test "integrated e2e - full seam: open loads saved game" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-
-    // 1. Create a save file with known state (no MockRenderer - real path through renderer)
-    const io = std.testing.io;
-    const tmp_path = "/tmp/sudoku_full_seam_open_test.sud";
-
-    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-
-    // Save known state to disk before running through the renderer
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), config.Config.default());
-    defer original.deinit();
-    const setup_transport = file_transport.NativeTransport.make(io);
-    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
-    defer std.heap.page_allocator.free(save_buf);
-    try setup_transport.write(setup_transport.context, tmp_path, save_buf);
-
-    // Record B2 value in saved state for later verification
-    const saved_b2 = original.eventBoard().get(1, 1);
-
-    // Canned responses: fill a cell -> open dialog -> filename -> quit
-    const responses = [_][]const u8{
-        "fill B2 7", // Mutate B2 (diverges from saved)
-        "m", // Menu → Open
-        "2",
-        tmp_path ++ "\n", // Filename response for the dialog prompt
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku_instance.deinit();
-
-    // Run full loop: open dialog -> filename prompt -> load file -> quit.
-    try sudoku_instance.showGame();
-    while (true) if (try sudoku_instance.turn()) break;
-
-    // After opening saved file: B2 restored to original saved value (not seven)
-    try std.testing.expectEqual(saved_b2, sudoku_instance.engine.eventBoard().get(1, 1));
-}
-
 test "integrated e2e - run: open then save reuses opened path without filename prompt" {
     const cfg: config.Config = .{
         .difficulty = .hard,
@@ -622,63 +571,6 @@ test "integrated e2e - run: open then save reuses opened path without filename p
     try std.testing.expect(on_disk.len > 0);
 }
 
-test "integrated e2e - run: save uses default filename and returns success" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-    const io = std.testing.io;
-    const tmp_path = "/tmp/sudoku_save_default_test.sud";
-    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-
-    // Canned responses: save -> filename prompt -> quit
-    const responses = [_][]const u8{
-        "m",
-        "1",
-        tmp_path ++ "\n",
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku.deinit();
-
-    // Act: run full loop - save prompts for filename, writes file, re-renders
-    try sudoku.showGame();
-    while (true) if (try sudoku.turn()) break;
-}
-// First save prompts for a filename; a follow-up save reuses it without prompting
-
-test "integrated e2e - run: fill → save → quit" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-
-    const responses = [_][]const u8{
-        "fill A3 7",
-        "m",
-        "1", // save (triggers dialog for first use)
-        "sudoku_save.sud\n", // answer to save As dialog prompt
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku_instance.deinit();
-    try sudoku_instance.showGame();
-    while (true) if (try sudoku_instance.turn()) break;
-}
 // save_as writes the file through the dialog and re-renders
 test "integrated e2e - run: save_as writes file and re-renders" {
     const cfg: config.Config = .{
@@ -1019,69 +911,6 @@ test "integrated e2e - run: copy via menu prints one-line puzzle; history untouc
     try std.testing.expectEqual(cell.CellValue.seven, sudoku_instance.engine.state.board.getCellValue(2, 0));
 }
 
-test "integrated e2e - run: paste via menu loads puzzle and clears history" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-
-    const board_mod = @import("../../core/board/board.zig");
-    const puzzle_line = puzzle_gen.PuzzleGen.hard();
-    const responses = [_][]const u8{
-        "fill A3 7",
-        "m",
-        "13",
-        puzzle_line,
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku_instance.deinit();
-    try sudoku_instance.showGame();
-    while (true) if (try sudoku_instance.turn()) break;
-
-    const expected = board_mod.fromOneLineString(puzzle_line) catch unreachable;
-    try std.testing.expect(board_mod.equal(sudoku_instance.engine.state.board, expected));
-    try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
-}
-
-test "integrated e2e - run: paste failure leaves board and history intact" {
-    const cfg: config.Config = .{
-        .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-
-    var bad_line: [81]u8 = undefined;
-    @memset(&bad_line, 'x');
-    const responses = [_][]const u8{
-        "fill A3 7",
-        "m",
-        "13",
-        &bad_line,
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku_instance.deinit();
-    try sudoku_instance.showGame();
-    while (true) if (try sudoku_instance.turn()) break;
-
-    try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
-    try std.testing.expectEqual(cell.CellValue.seven, sudoku_instance.engine.state.board.getCellValue(2, 0));
-}
-
 // export failure: board and history must be left untouched
 test "integrated e2e - run: export failure leaves board and history intact" {
     const cfg: config.Config = .{
@@ -1287,33 +1116,6 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
         rest = rest[i + "Press Enter to continue...".len ..];
     }
     try std.testing.expectEqual(@as(usize, 1), ack_count);
-}
-
-test "integrated e2e - menu hint returns placement status without mutating board" {
-    const cfg: config.Config = .{
-        .difficulty = .easy,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
-        .log_level = .info,
-    };
-
-    const responses = [_][]const u8{ "m", "8", "quit" };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer(), null);
-    defer sudoku_instance.deinit();
-    const before = export_command.currentPuzzleLine(&sudoku_instance.engine);
-
-    try sudoku_instance.showGame();
-    while (true) if (try sudoku_instance.turn()) break;
-
-    const after = export_command.currentPuzzleLine(&sudoku_instance.engine);
-    try std.testing.expectEqualSlices(u8, &before, &after);
-    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "(placement)") != null);
 }
 
 test "integrated e2e - fill does not shade region until show_region enabled" {
@@ -1559,103 +1361,6 @@ test "win state stays manual: no automatic transition after You win" {
     try std.testing.expectEqualSlices(u8, expected, &solved);
 }
 
-test "startup policy: auto_restore true restores from current_file path" {
-    const test_defaults = @import("../../test/config_defaults.zig");
-    const io = std.testing.io;
-    const tmp_path = "/tmp/sudoku_startup_restore_ok.sud";
-    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
-
-    var cfg = test_defaults.testConfigDefaults();
-    cfg.difficulty = .hard;
-    cfg.auto_restore = true;
-
-    var original = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), test_defaults.testConfigDefaults());
-    defer original.deinit();
-    const transport = file_transport.NativeTransport.make(io);
-    const save_buf = try original.toSaveFormat(std.heap.page_allocator);
-    defer std.heap.page_allocator.free(save_buf);
-    try transport.write(transport.context, tmp_path, save_buf);
-    const saved_b2 = original.eventBoard().get(1, 1);
-
-    var host = host_mod.Host.createForTest(cfg, &[0][]const u8{});
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), null);
-    defer app.deinit();
-    _ = app.engine.exec(.{ .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.seven } });
-
-    try app.runStartupFlow(tmp_path);
-    try std.testing.expectEqualStrings(tmp_path, app.file_session.workingFile().?);
-    try std.testing.expectEqual(saved_b2, app.engine.eventBoard().get(1, 1));
-}
-
-test "startup policy: solved restore prompt cancel keeps restored solved board" {
-    const test_defaults = @import("../../test/config_defaults.zig");
-    var cfg = test_defaults.testConfigDefaults();
-    cfg.auto_restore = true;
-    cfg.auto_new = true;
-
-    const solved = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
-    var saved_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
-    defer saved_engine.deinit();
-    _ = saved_engine.newFromOneLinePuzzle(solved);
-    const save_buf = try saved_engine.toSaveFormat(std.testing.allocator);
-    defer std.testing.allocator.free(save_buf);
-
-    var facade_impl = DeterministicFacade{
-        .steps = &[_]command.ParseCommandResult{},
-        .replace_answers = &[_]bool{false},
-    };
-    var transport_impl = MemoryTransport.init(std.testing.allocator);
-    defer transport_impl.deinit();
-    try transport_impl.put("/startup.sud", save_buf);
-    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
-    defer out.deinit();
-
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
-    defer app.deinit();
-
-    try app.runStartupFlow("/startup.sud");
-    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
-    try std.testing.expect(app.engine.state.board.isSolved());
-    try std.testing.expectEqual(file_policy.WriteContext.continuation, app.file_session.write_context);
-}
-
-test "startup policy: solved restore prompt confirm starts fresh game" {
-    const test_defaults = @import("../../test/config_defaults.zig");
-    var cfg = test_defaults.testConfigDefaults();
-    cfg.auto_restore = true;
-    cfg.auto_new = true;
-    cfg.difficulty = .easy;
-
-    const solved = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
-    var saved_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
-    defer saved_engine.deinit();
-    _ = saved_engine.newFromOneLinePuzzle(solved);
-    const save_buf = try saved_engine.toSaveFormat(std.testing.allocator);
-    defer std.testing.allocator.free(save_buf);
-
-    var facade_impl = DeterministicFacade{
-        .steps = &[_]command.ParseCommandResult{},
-        .replace_answers = &[_]bool{true},
-    };
-    var transport_impl = MemoryTransport.init(std.testing.allocator);
-    defer transport_impl.deinit();
-    try transport_impl.put("/startup.sud", save_buf);
-    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
-    defer out.deinit();
-
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
-    defer app.deinit();
-
-    try app.runStartupFlow("/startup.sud");
-    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
-    try std.testing.expect(!app.engine.state.board.isSolved());
-    try std.testing.expectEqual(file_policy.WriteContext.detached, app.file_session.write_context);
-}
-
 fn restoreFailureScenario(delete: bool) !void {
     const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
@@ -1751,85 +1456,6 @@ test "autosave: first autosave with no working file writes the visible save fold
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, output, file_policy.REPLACE_CONFIRM_TITLE) == null);
-}
-
-test "autosave: persisted SUD0 restores exact board given_bits and history pointer" {
-    const test_defaults = @import("../../test/config_defaults.zig");
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const data_path_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
-    defer std.testing.allocator.free(data_path_rel);
-    const data_path_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_path_rel, std.testing.allocator);
-    defer std.testing.allocator.free(data_path_abs_z);
-    const data_path = data_path_abs_z[0 .. data_path_abs_z.len - 1];
-
-    var cfg = test_defaults.testConfigDefaults();
-    cfg.auto_save = true;
-    const seed_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/autosave-roundtrip.sud", .{data_path});
-    defer std.testing.allocator.free(seed_path);
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, seed_path);
-
-    const responses = [_][]const u8{
-        "fill A3 7",
-        "fill A4 8",
-        "undo",
-        "quit",
-    };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
-    defer app.deinit();
-    try app.showGame();
-    while (true) if (try app.turn()) break;
-
-    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
-    defer if (current) |p| std.testing.allocator.free(p);
-    try std.testing.expect(current != null);
-
-    const resolved_current = app.transport.resolve(app.transport.context, current.?) catch return error.TestFailed;
-    defer app.transport.free(app.transport.context, resolved_current);
-
-    const bytes = app.transport.readAll(app.transport.context, resolved_current) catch return error.TestFailed;
-    defer app.transport.free(app.transport.context, bytes);
-
-    var restored = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
-    defer restored.deinit();
-    try restored.loadSaveFormat(bytes);
-
-    try std.testing.expect(board.equal(app.engine.state.board, restored.state.board));
-    try std.testing.expectEqual(app.engine.state.history.pointer, restored.state.history.pointer);
-    try std.testing.expectEqual(app.engine.state.history.entries.items.len, restored.state.history.entries.items.len);
-}
-
-test "autosave: non-state settings command does not bootstrap current_file" {
-    const test_defaults = @import("../../test/config_defaults.zig");
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
-    defer std.testing.allocator.free(data_path);
-
-    var cfg = test_defaults.testConfigDefaults();
-    cfg.auto_save = true;
-
-    const responses = [_][]const u8{ "menu\n", "14\n", "4\n", "2\n", "quit\n" };
-    var host = host_mod.Host.createForTest(cfg, &responses);
-    defer host.deinit();
-    var facade = try host.facade();
-    defer facade.deinit();
-
-    var app = try Sudoku.init(cfg, facade, file_transport.NativeTransport.make(io), host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
-    defer app.deinit();
-    try app.showGame();
-    while (true) if (try app.turn()) break;
-
-    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
-    defer if (current) |p| std.testing.allocator.free(p);
-    try std.testing.expect(current == null);
 }
 
 test "autosave: successful open updates current_file pointer" {
@@ -2095,44 +1721,6 @@ test "replace confirm: save_as cancel leaves existing target unchanged" {
 
     const bytes = transport_impl.files.get("/virtual/existing.sud") orelse return error.TestFailed;
     try std.testing.expectEqualSlices(u8, "OLD", bytes);
-    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
-}
-
-test "new triggers replace confirm before autosave can overwrite restored file" {
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
-    defer std.testing.allocator.free(data_path);
-
-    const steps = [_]command.ParseCommandResult{
-        .{ .valid = .{ .new = .{ .puzzle = null } } },
-        .{ .valid = .{ .paste = .{ .line = puzzle_gen.PuzzleGen.easy() } } },
-        .{ .valid = .{ .quit = {} } },
-    };
-    const replace_answers = [_]bool{false};
-    var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
-    var transport_impl = MemoryTransport.init(std.testing.allocator);
-    defer transport_impl.deinit();
-    try transport_impl.put("/virtual/old.sud", "OLD");
-
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, "/virtual/old.sud");
-
-    var cfg = config.Config.default();
-    cfg.auto_save = true;
-    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
-    defer out.deinit();
-    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
-    defer app.deinit();
-
-    try app.showGame();
-    while (true) if (try app.turn()) break;
-
-    const old_bytes = transport_impl.files.get("/virtual/old.sud") orelse return error.TestFailed;
-    try std.testing.expectEqualSlices(u8, "OLD", old_bytes);
-    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
-    defer std.testing.allocator.free(default_virtual);
-    try std.testing.expect(!transport_impl.files.contains(default_virtual));
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
 }
 

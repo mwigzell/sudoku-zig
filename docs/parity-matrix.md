@@ -32,12 +32,12 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `restore_solved_new_game` | 2 questions (restore choice, then replace); unsolved after startup; nothing written after declining replace (`detached`) | same | same |
 | `auto_save_toggle_then_autosave` | `auto_save: true` persisted; next move writes `sudoku.sud` without asking and makes it the working file; filled cell not given | same | same |
 | `restore_unsolved_moves` | No question; moves restored as non-givens, givens intact; Undo offered | same | same |
-| `autosave_then_relaunch_restores_moves` | Three autosaved moves write `sudoku.sud`; the next launch restores them as non-givens, givens intact; Undo offered | relaunch: new `Sudoku` on the same transport, startup on the last written path | relaunch: new game and session, startup on the host's last written file |
+| `autosave_then_relaunch_restores_moves` | Three moves and an Undo autosave `sudoku.sud`; the next launch restores the moves as non-givens, givens intact, the undone move still undone; Undo and Redo offered | relaunch: new `Sudoku` on the same transport, startup on the last written path | relaunch: new game and session, startup on the host's last written file |
 | `history_branch_discards_redo` | A move after Undo discards the undone move; Redo not offered | same | same |
 | `paste_valid_resets_history` | Pasted line becomes the givens; status `paste: puzzle loaded`; Undo not offered | same | same |
 | `paste_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
 | `settings_change_does_not_autosave` | With Auto Save on, Region and Theme changes persist settings and write no game file; the status line keeps the last message | same | same |
-| `hint_reports_and_autosaves` | Status shows the hint text; the hint autosaves `sudoku.sud` without asking | same | same |
+| `hint_reports_and_autosaves` | Status shows the hint text; the hinted cell stays empty; the hint autosaves `sudoku.sud` without asking | same | same |
 | `solve_then_rejected_fill` | Status `You win!`; a fill on a given cell shows one error and leaves the board solved | same | same |
 | `open_then_move_continues_file` | Open and the next move both write `game.sud` without asking; saved moves stay non-givens | same | same |
 | `import_starts_unsaved_game` | Imported line becomes the givens; status `import: puzzle loaded`; autosave writes `sudoku.sud`; Undo not offered | same | same |

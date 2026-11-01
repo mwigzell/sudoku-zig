@@ -85,7 +85,7 @@
     },
     {
       "name": "autosave_then_relaunch_restores_moves",
-      "summary": "Moves autosaved with Auto Save on come back on the next launch: givens stay givens, the player's moves stay moves, and Undo is still offered.",
+      "summary": "Moves autosaved with Auto Save on come back on the next launch: givens stay givens, the player's moves stay moves, an undone move stays undone, and both Undo and Redo are still offered.",
       "config": { "auto_restore": true, "auto_new": false, "auto_save": true },
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
@@ -93,18 +93,19 @@
         { "fill": { "row": 0, "col": 0, "digit": 4 } },
         { "fill": { "row": 0, "col": 1, "digit": 8 } },
         { "fill": { "row": 8, "col": 8, "digit": 2 } },
+        { "undo": true },
         { "relaunch": true }
       ],
       "expect": {
         "questions": 0,
-        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud"],
         "status": null,
-        "legend": { "undo": true, "redo": false },
+        "legend": { "undo": true, "redo": true },
         "probes": [
           { "row": 0, "col": 2, "value": 3, "given": true },
           { "row": 0, "col": 0, "value": 4, "given": false },
           { "row": 0, "col": 1, "value": 8, "given": false },
-          { "row": 8, "col": 8, "value": 2, "given": false }
+          { "row": 8, "col": 8, "value": 0, "given": false }
         ]
       }
     },
@@ -193,7 +194,7 @@
     },
     {
       "name": "hint_reports_and_autosaves",
-      "summary": "A hint shows its text in the status line and autosaves like any other command.",
+      "summary": "A hint shows its text in the status line, leaves the hinted cell empty, and autosaves like any other command.",
       "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
@@ -202,7 +203,7 @@
         "questions": 0,
         "written": ["sudoku.sud"],
         "status": "F5 takes 4 (placement)",
-        "probes": []
+        "probes": [{ "row": 4, "col": 5, "value": 0, "given": false }]
       }
     },
     {
