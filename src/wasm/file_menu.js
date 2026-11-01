@@ -14,6 +14,7 @@ import {
   applySessionOutcomeStatus,
   clearEventStatus,
   persistCurrentFileBytes,
+  persistSettingsAfter,
   startAutoSavePolicy,
   WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
   WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
@@ -27,10 +28,17 @@ import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 import { askWithDialog, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAILED_MSG } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
+/** @typedef {import("./types").FileMenuControls} FileMenuControls */
+/** @typedef {import("./types").MenuBar} MenuBar */
+/** @typedef {import("./types").BoardSelection} BoardSelection */
+/** @typedef {import("./types").WebSession} WebSession */
+/** @typedef {import("./types").ErrorModal} ErrorModal */
+/** @typedef {import("./types").FlowHandlers} FlowHandlers */
 
 export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
+const SET_AUTO_SAVE = "set_auto_save";
 const BRIDGE_CANCELLED = "cancelled";
 /** Android bridge reason: the default visible file belongs to an earlier install. */
 const BRIDGE_DEFAULT_TAKEN = "default_taken";
@@ -434,7 +442,16 @@ export function wireDifficultyDialog(dialog, onChoose) {
   };
 }
 
-/** @param {GameApi} game */
+/**
+ * @param {FileMenuControls} controls
+ * @param {GameApi} game
+ * @param {HTMLElement} boardEl
+ * @param {BoardSelection} selection
+ * @param {HTMLElement} statusEl
+ * @param {ErrorModal} errorModal
+ * @param {WebSession} session
+ * @param {MenuBar} menuBar
+ */
 export function wireFileMenu(
   controls,
   game,
@@ -453,7 +470,7 @@ export function wireFileMenu(
     exportText = persistPuzzleText,
     createElement,
     onViewRefresh,
-    onPersist,
+    settingsFlow,
   } = {},
 ) {
   const fail = (result) => {
@@ -614,23 +631,17 @@ export function wireFileMenu(
     await runSave(true);
   });
 
-  // Phase E: settings-only path (toggle autosave), no board replacement.
+  // Settings-only path (toggle autosave), no board replacement.
   controls.autoSave?.addEventListener("click", async () => {
     const enabled = session.config?.auto_save !== true;
-    const result = game.exec({ action: "set_auto_save", enabled });
+    const result = game.exec({ action: SET_AUTO_SAVE, enabled });
     if (!applyConfigOutcomeStatus(session, game, null, result)) {
       fail(result);
       return;
     }
     menuBar.sync();
     onViewRefresh?.();
-    if (onPersist) {
-      try {
-        await onPersist(session.config);
-      } catch (err) {
-        showErrorModal(errorModal, err?.message ?? String(err));
-      }
-    }
+    await persistSettingsAfter(game, SET_AUTO_SAVE, settingsFlow);
   });
 
   // Phase F: Open path (SUD0 bytes) -> canonical loaded-session completion -> autosave kick.

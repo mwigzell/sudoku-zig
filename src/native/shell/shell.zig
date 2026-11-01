@@ -50,6 +50,8 @@ pub const Sudoku = struct {
     file_session: flow_mod.FileSession = .{},
     /// The one flow in progress; terminal step text points into it until the next flow starts.
     flow: flow_mod.Flow = undefined,
+    /// Holds a flow's terminal text once it becomes an event, so later flows cannot overwrite it.
+    flow_text: [256]u8 = undefined,
 
     /// How a flow's `write` step is carried out: Save records its status in the game, autosave does not.
     const WriteMode = enum { save, autosave };
@@ -83,10 +85,12 @@ pub const Sudoku = struct {
         return sudoku;
     }
 
-    fn persistSettingsIfNeeded(self: *@This()) void {
-        const sp = self.settings_persist orelse return;
-        self.cfg = self.engine.getConfig();
-        settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, self.cfg) catch {};
+    /// Carry out a `persist_settings` step; without settings persistence there is nowhere to write.
+    fn persistSettings(self: *@This(), cfg: config.Config) flow_mod.step.Persisted {
+        self.cfg = cfg;
+        const sp = self.settings_persist orelse return .ok;
+        settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
+        return .ok;
     }
 
     fn pathExists(self: *@This(), path: []const u8) bool {
@@ -206,6 +210,7 @@ pub const Sudoku = struct {
                     self.forgetCurrentFile(forget);
                     break :blk .ack;
                 },
+                .persist_settings => |cfg| .{ .persisted = self.persistSettings(cfg) },
                 .show_status, .show_error, .done => unreachable,
             };
             step = self.flow.next(input);
@@ -218,10 +223,10 @@ pub const Sudoku = struct {
         return switch (terminal) {
             .show_status => |text| .{ .ok = .{
                 .board_view = self.engine.eventBoard(),
-                .msg = text,
+                .msg = copyInto(&self.flow_text, text),
                 .is_quit = false,
             } },
-            .show_error => |msg| .{ .error_msg = msg },
+            .show_error => |msg| .{ .error_msg = copyInto(&self.flow_text, msg) },
             else => otherwise,
         };
     }
@@ -242,6 +247,16 @@ pub const Sudoku = struct {
             .ok => {},
         }
         self.flow = .{ .autosave = flow_mod.AutosaveFlow.afterCommand(&self.file_session, self.engine.cfg.auto_save, @tagName(cmd)) };
+        const terminal = self.runFlow(.autosave) catch return event;
+        return self.flowEvent(terminal, event);
+    }
+
+    fn persistSettingsAfter(self: *@This(), cmd: command.Command, event: game_engine.Event) game_engine.Event {
+        switch (event) {
+            .error_msg => return event,
+            .ok => {},
+        }
+        self.flow = .{ .settings = flow_mod.SettingsFlow.afterCommand(self.engine.getConfig(), @tagName(cmd)) };
         const terminal = self.runFlow(.autosave) catch return event;
         return self.flowEvent(terminal, event);
     }
@@ -279,18 +294,6 @@ pub const Sudoku = struct {
                 return false;
             },
             .valid => |cmd| {
-                const persist_after = switch (cmd) {
-                    .set_region,
-                    .set_warn_solvability,
-                    .set_theme,
-                    .set_difficulty,
-                    .set_log_level,
-                    .set_auto_restore,
-                    .set_auto_new,
-                    .set_auto_save,
-                    => true,
-                    else => false,
-                };
                 switch (cmd) {
                     .new => {
                         self.last_cell = null;
@@ -316,10 +319,8 @@ pub const Sudoku = struct {
                     .paste => self.file_session.apply(.paste_success),
                     else => {},
                 };
-                const final_event = self.applyAutoSavePolicyIfNeeded(cmd, event);
-                const quit = try self.handleEvent(final_event);
-                if (persist_after) self.persistSettingsIfNeeded();
-                return quit;
+                const persisted = self.persistSettingsAfter(cmd, event);
+                return try self.handleEvent(self.applyAutoSavePolicyIfNeeded(cmd, persisted));
             },
         }
     }
@@ -911,6 +912,28 @@ test "new command with auto_save enabled does not print saved-to status" {
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, output, "saved to:") == null);
+}
+
+test "save shows its saved-to status after the later flows run" {
+    const io = std.testing.io;
+    const tmp_path = "/tmp/sudoku_save_status_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+
+    const cfg = config.Config.default();
+    const responses = [_][]const u8{ "m", "1", tmp_path ++ "\n", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(io);
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, "saved to: " ++ tmp_path) != null);
 }
 
 test "autosave does not clobber undo win status with saved-to message" {

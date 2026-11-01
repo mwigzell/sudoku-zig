@@ -2,7 +2,7 @@
 
 import {
   applyEventStatus,
-  persistHostSettings,
+  settingsHandlers,
   showErrorModal,
   syncCurrentFileLabels,
   wireErrorModal,
@@ -142,19 +142,13 @@ export function wireSudokuApp({
   };
   syncPlayPadVisibility(null);
 
-  const persistViewSettings = async (cfg) => {
-    try {
-      await persistHostSettings(cfg);
-    } catch (err) {
-      showErrorModal(errorModal, err?.message ?? String(err));
-    }
-  };
+  const settingsFlow = settingsHandlers({ onError: (text) => showErrorModal(errorModal, text) });
 
   const themeMenu = wireThemeMenu(menuControls, game, session, {
     root,
     statusEl: statusBar,
     onChange: () => menuBar.sync(),
-    onPersist: persistViewSettings,
+    settingsFlow,
   });
 
   let editMenu;
@@ -173,7 +167,7 @@ export function wireSudokuApp({
     session,
     boardEl,
     () => selection.getSelection(),
-    { onChange: () => menuBar.sync(), onPersist: persistViewSettings, statusEl: statusBar },
+    { onChange: () => menuBar.sync(), settingsFlow, statusEl: statusBar },
   );
   const difficultyDialog = {
     el: root.getElementById("new-difficulty-modal"),
@@ -193,7 +187,7 @@ export function wireSudokuApp({
       themeMenu.sync();
       regionMenu.sync();
     },
-    onPersist: persistViewSettings,
+    settingsFlow,
   });
 
   editMenu = wireEditMenu(
@@ -223,7 +217,7 @@ export function wireSudokuApp({
   wireHelpAbout(menuControls.about, game, aboutModal);
   wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
     closeMenus: () => menuBar.closeAll?.(),
-    onPersist: persistViewSettings,
+    settingsFlow,
   });
 
   if (win.matchMedia?.("(pointer: fine)")?.matches === true) {

@@ -345,6 +345,7 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
             .auto_new = eng.cfg.auto_new,
             .difficulty = eng.cfg.difficulty,
         }, if (file) |f| .{ .path = f.path, .name = f.name, .working = f.name } else null) },
+        .settings => |command_name| .{ .settings = flow.SettingsFlow.afterCommand(eng.cfg, command_name) },
     };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));

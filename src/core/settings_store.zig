@@ -101,6 +101,11 @@ fn jsonPlayerFromConfig(cfg: config.Config) JsonPlayerSettings {
     };
 }
 
+/// The player settings as a JSON object without `current_file` (the web host's `POST /settings.json` body).
+pub fn writePlayerSettingsJson(w: *std.Io.Writer, cfg: config.Config) std.Io.Writer.Error!void {
+    try std.json.Stringify.value(jsonPlayerFromConfig(cfg), .{ .emit_null_optional_fields = false }, w);
+}
+
 fn writePlayerJson(gpa: std.mem.Allocator, cfg: config.Config, current_file: ?[]const u8) Error![]u8 {
     var payload = jsonPlayerFromConfig(cfg);
     payload.current_file = current_file;
@@ -293,6 +298,28 @@ test "settings round-trip preserves player fields" {
     try std.testing.expectEqual(original.auto_new, restored.auto_new);
     try std.testing.expectEqual(original.auto_save, restored.auto_save);
     try std.testing.expectEqual(config.RendererKind.ansi, restored.preferred_renderer);
+}
+
+test "player settings JSON carries every player field and no current_file" {
+    const cfg = config.Config{
+        .difficulty = .hard,
+        .preferred_renderer = .web,
+        .fallback_renderer = null,
+        .log_level = .warn,
+        .theme = .light,
+        .show_region = false,
+        .warn_solvability = false,
+        .auto_restore = false,
+        .auto_new = false,
+        .auto_save = true,
+    };
+    var buf: [256]u8 = undefined;
+    var w = std.Io.Writer.fixed(&buf);
+    try writePlayerSettingsJson(&w, cfg);
+    try std.testing.expectEqualStrings(
+        "{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"theme\":\"light\",\"show_region\":false,\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":true}",
+        w.buffered(),
+    );
 }
 
 test "settings round-trip preserves warn_solvability" {

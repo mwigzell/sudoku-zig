@@ -9,6 +9,7 @@ import {
   applyBootTheme,
   wireThemeMenu,
 } from "./theme.js";
+import { withCoreFlow } from "./test_support.mjs";
 
 function makeThemeBtn() {
   return {
@@ -70,7 +71,7 @@ function makeThemeBtn() {
   const session = {
     config: { theme: "dark", show_region: false },
   };
-  const game = {
+  const game = await withCoreFlow({
     exec(action) {
       if (action.action === "set_theme" && action.theme === "light") {
         session.config = { theme: "light", show_region: false };
@@ -81,7 +82,7 @@ function makeThemeBtn() {
     getConfig() {
       return session.config;
     },
-  };
+  });
   const controls = {
     viewSystem: { ...makeThemeBtn(), addEventListener() {} },
     viewLight: { ...makeThemeBtn(), addEventListener(_, fn) { this.click = fn; } },
@@ -93,8 +94,11 @@ function makeThemeBtn() {
       documentElement: html,
       defaultView: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
     },
-    onPersist: async (cfg) => {
-      persistCalls.push(cfg);
+    settingsFlow: {
+      persistSettings: (settings) => {
+        persistCalls.push(settings);
+        return { ok: true };
+      },
     },
   });
   assert.equal(themeFromConfig(session.config), "dark");
@@ -102,8 +106,7 @@ function makeThemeBtn() {
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(themeFromConfig(session.config), "light");
   assert.equal(html.dataset.theme, "light");
-  assert.equal(persistCalls.length, 1);
-  assert.equal(persistCalls[0].theme, "light");
+  assert.equal(persistCalls.length, 1, "core asks to persist after the theme change");
 }
 
 console.log("theme.test.mjs OK");

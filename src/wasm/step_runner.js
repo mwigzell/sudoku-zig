@@ -15,6 +15,7 @@ export const STEP_READ_FILE = "read_file";
 export const STEP_SHOW_GAME = "show_game";
 export const STEP_GENERATE = "generate";
 export const STEP_FORGET_CURRENT_FILE = "forget_current_file";
+export const STEP_PERSIST_SETTINGS = "persist_settings";
 export const STEP_SHOW_STATUS = "show_status";
 export const STEP_SHOW_ERROR = "show_error";
 export const STEP_DONE = "done";
@@ -24,6 +25,7 @@ export const FLOW_SAVE_AS = "save_as";
 export const FLOW_AUTOSAVE = "autosave";
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
+export const FLOW_SETTINGS = "settings";
 
 const FLOW_LANE = Symbol("flowLane");
 const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
@@ -31,6 +33,7 @@ const FLOW_FAILED_MSG = "flow failed";
 export const SAVE_FAILED_MSG = "save failed";
 const READ_FAILED_MSG = "read failed";
 const GENERATE_FAILED_MSG = "generation failed";
+const PERSIST_FAILED_MSG = "settings write failed";
 
 /**
  * Normalize a handler's write outcome to the wasm `wrote` input.
@@ -50,6 +53,15 @@ function generatedInput(result) {
   if (result?.ok === true && typeof result.line === "string") return { input: "generated", ok: true, line: result.line };
   if (result?.cancelled === true) return { input: "generated", ok: false, cancelled: true };
   return { input: "generated", ok: false, error: result?.error ?? GENERATE_FAILED_MSG };
+}
+
+/**
+ * Normalize a handler's settings write outcome to the wasm `persisted` input.
+ * @param {{ ok?: boolean, error?: string }} result
+ */
+function persistedInput(result) {
+  if (result?.ok === true) return { input: "persisted", ok: true };
+  return { input: "persisted", ok: false, error: result?.error ?? PERSIST_FAILED_MSG };
 }
 
 /** Run a handler, turning a throw into a failed result. */
@@ -142,6 +154,11 @@ async function stepThrough(game, start, handlers) {
         const forget = { path: step.path, delete: step.delete === true };
         await settle(() => handlers.forgetCurrentFile(forget));
         step = game.flowNext({ input: "ack" });
+        break;
+      }
+      case STEP_PERSIST_SETTINGS: {
+        const settings = step.settings;
+        step = game.flowNext(persistedInput(await settle(() => handlers.persistSettings(settings))));
         break;
       }
       case STEP_SHOW_STATUS:

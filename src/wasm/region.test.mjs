@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { syncRegionMenu, wireRegionMenu } from "./region.js";
 import { applyRegionHighlight, cellsInRegion } from "./board.js";
+import { withCoreFlow } from "./test_support.mjs";
 
 function makeToggleBtn() {
   return {
@@ -64,7 +65,7 @@ function makeMockCell(row, col) {
   const session = {
     config: { theme: "dark", show_region: false },
   };
-  const game = {
+  const game = await withCoreFlow({
     exec(action) {
       if (action.action === "set_region") {
         session.config = { ...session.config, show_region: action.enabled };
@@ -75,7 +76,7 @@ function makeMockCell(row, col) {
     getConfig() {
       return session.config;
     },
-  };
+  });
   const controls = {
     viewRegion: {
       ...makeToggleBtn(),
@@ -92,8 +93,11 @@ function makeMockCell(row, col) {
     board,
     () => ({ row: 1, col: 1 }),
     {
-      onPersist: async (cfg) => {
-        persistCalls.push(cfg);
+      settingsFlow: {
+        persistSettings: (settings) => {
+          persistCalls.push(settings);
+          return { ok: true };
+        },
       },
     },
   );
@@ -102,8 +106,7 @@ function makeMockCell(row, col) {
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(menu.isEnabled(), true);
   assert.ok(board.children.find((c) => c.dataset.row === "1" && c.dataset.col === "1").classList.contains("region"));
-  assert.equal(persistCalls.length, 1);
-  assert.equal(persistCalls[0].show_region, true);
+  assert.equal(persistCalls.length, 1, "core asks to persist after the region toggle");
 }
 
 console.log("region.test.mjs OK");

@@ -12,6 +12,7 @@ const legend_mod = @import("../core/renderer/legend.zig");
 const wire = @import("wire.zig");
 const flow = @import("../core/flow/mod.zig");
 const file_policy = @import("../core/file_policy.zig");
+const settings_store = @import("../core/settings_store.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
 
@@ -269,6 +270,8 @@ pub const FlowStart = union(enum) {
     autosave_flush,
     /// The host's current file, or null when it has none.
     startup: ?StartupFile,
+    /// The command that just ran.
+    settings: []const u8,
 };
 
 /// Where the host serves its current file, and the name to label and save it under.
@@ -294,6 +297,7 @@ pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStar
         .autosave => .{ .autosave = v.command orelse return error.MissingField },
         .autosave_flush => .autosave_flush,
         .startup => .{ .startup = if (v.path) |path| .{ .path = path, .name = v.name orelse return error.MissingField } else null },
+        .settings => .{ .settings = v.command orelse return error.MissingField },
     };
 }
 
@@ -331,6 +335,10 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .{ .line = v.line orelse return error.MissingField }
         else if (v.cancelled == true)
             .cancelled
+        else
+            .{ .failed = v.@"error" orelse return error.MissingField } },
+        .persisted => .{ .persisted = if (v.ok == true)
+            .ok
         else
             .{ .failed = v.@"error" orelse return error.MissingField } },
         .ack => .ack,
@@ -381,6 +389,10 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"path\":");
             try writeJsonString(w, f.path);
             try std.Io.Writer.print(w, ",\"delete\":{any}", .{f.delete});
+        },
+        .persist_settings => |cfg| {
+            try std.Io.Writer.writeAll(w, ",\"settings\":");
+            try settings_store.writePlayerSettingsJson(w, cfg);
         },
     }
     try std.Io.Writer.writeAll(w, "}");
@@ -832,6 +844,8 @@ test "flow start parses each web flow" {
     try std.testing.expectEqualStrings("/current-file", startup.path);
     try std.testing.expectEqualStrings("g.sud", startup.name);
     try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"startup\",\"path\":\"/current-file\"}"));
+    try std.testing.expectEqualStrings("set_theme", (try parseFlowStart(a, "{\"flow\":\"settings\",\"command\":\"set_theme\"}")).settings);
+    try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"settings\"}"));
     try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"nope\"}"));
 }
 
@@ -850,6 +864,8 @@ test "flow input parses every step result" {
     try std.testing.expectEqualStrings("123", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":true,\"line\":\"123\"}")).generated.line);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"cancelled\":true}")).generated == .cancelled);
     try std.testing.expectEqualStrings("x", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"error\":\"x\"}")).generated.failed);
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"persisted\",\"ok\":true}")).persisted == .ok);
+    try std.testing.expectEqualStrings("503", (try parseFlowInput(a, "{\"input\":\"persisted\",\"ok\":false,\"error\":\"503\"}")).persisted.failed);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"ack\"}")) == .ack);
 }
 
@@ -871,6 +887,13 @@ test "step JSON carries the tag and its payload" {
     try std.testing.expectEqualStrings("{\"step\":\"generate\",\"difficulty\":3}", out.finishJson());
     try writeStepJson(out, .{ .forget_current_file = .{ .path = "/current-file", .delete = true } });
     try std.testing.expectEqualStrings("{\"step\":\"forget_current_file\",\"path\":\"/current-file\",\"delete\":true}", out.finishJson());
+    var cfg = config.Config.default();
+    cfg.theme = .light;
+    try writeStepJson(out, .{ .persist_settings = cfg });
+    const json = out.finishJson();
+    try std.testing.expect(std.mem.startsWith(u8, json, "{\"step\":\"persist_settings\",\"settings\":{\"difficulty\":"));
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"theme\":\"light\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "current_file") == null);
 }
 
 test "file session event parses the event and optional name" {

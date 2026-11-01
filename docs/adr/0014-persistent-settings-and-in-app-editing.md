@@ -41,8 +41,9 @@ Web session boot (**#62**): fetch host config → bootstrap engine → optional 
 
 - **Path:** `settings.json` under the platform data directory (`settings_store`; paths documented in README).
 - **Keys (stable JSON):** `difficulty`, `log_level`, `theme`, `show_region`, `warn_solvability` only. **`preferred_renderer` / `fallback_renderer` are not part of this file** — choose deployment with CLI `-r` each run; stale renderer keys in old files are ignored on load.
-- **Native in-session save:** `Sudoku` persists after view/settings commands when a data dir is configured (`settings_store.save`).
-- **Web in-session save:** menubar actions **`POST /settings.json`**; **`web_host`** merges partial JSON into host `Config` and writes disk (same nominal fields as native save).
+- **In-session save is core-driven:** after any command, the platform runs core's settings flow (`src/core/flow/settings.zig`). Core decides whether the command changed a persisted setting and, if so, issues a `persist_settings` step carrying the settings.
+- **Native:** `Sudoku` carries out the step with `settings_store.save` when a data dir is configured.
+- **Web / Android:** the step JSON carries the body `settings_store` writes; the page posts it as-is to **`POST /settings.json`**, and **`web_host`** merges it into host `Config` and writes disk. A failed write comes back to core, which shows the error.
 
 **Session bytes** (in-progress puzzle) remain separate: native save files / web `localStorage` SUD0 — not mixed into `settings.json`.
 
@@ -70,7 +71,7 @@ Single toggle **`warn_solvability`** (default **off**) drives proactive move/loa
 
 ## Consequences
 
-- New persisted prefs require: `Config` + `settings.json` schema, engine `exec`/command handler, **both** persistence paths (native save + web POST), and **UI on each supported platform**. Renderer choice is not a persisted pref until product explicitly adds it.
+- New persisted prefs require: `Config` + `settings.json` schema, engine `exec`/command handler, the command in `SettingsFlow`'s persisted list, and **UI on each supported platform**. Renderer choice is not a persisted pref until product explicitly adds it.
 - **`CONTEXT.md`** WireConfig / glossary should stay aligned with fields JS may read/write; renderer kinds stay off the wasm wire.
 - Contract tests: `settings_store`, `startup/config.zig`, `web_host` POST merge, `host_settings.test.mjs`, glue host bootstrap — extend when adding fields.
 - ADR-0010 wasm boundary remains JSON `init`/`exec`/`getConfig`; this ADR owns **where config comes from at boot** and **how changes return to disk**, not the REPL-shaped shell.
@@ -78,7 +79,7 @@ Single toggle **`warn_solvability`** (default **off**) drives proactive move/loa
 
 ## References
 
-- `src/core/config.zig`, `src/core/settings_store.zig`, `src/core/startup/config.zig`
+- `src/core/config.zig`, `src/core/settings_store.zig`, `src/core/startup/config.zig`, `src/core/flow/settings.zig`
 - `src/native/shell/shell.zig`, `src/native/desktop_web.zig`, `src/web_host/mod.zig`
-- `src/wasm/shell.js` (`initializeWebSession`, `hostSettingsForPersist`, `persistHostSettings`)
+- `src/wasm/shell.js` (`initializeWebSession`, `settingsHandlers`, `persistSettingsAfter`)
 - README — Settings section (data-dir paths)

@@ -1,8 +1,8 @@
 // settings.test.mjs — Settings dialog contract.
 
 import assert from "node:assert/strict";
-import { hostViewPrefsForPersist } from "./shell.js";
 import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settings.js";
+import { withCoreFlow } from "./test_support.mjs";
 
 {
   const modal = {
@@ -38,7 +38,7 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
 {
   const execCalls = [];
   const persistCalls = [];
-  const game = {
+  const game = await withCoreFlow({
     getConfig() {
       return {
         theme: "dark",
@@ -53,7 +53,7 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
       execCalls.push(action);
       return { ok: true };
     },
-  };
+  });
   const session = { config: { warn_solvability: false } };
   const modal = {
     el: { hidden: true },
@@ -76,8 +76,11 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
   };
 
   wireSettingsMenu(btn, game, session, modal, {
-    onPersist: async (cfg) => {
-      persistCalls.push(cfg);
+    settingsFlow: {
+      persistSettings: (settings) => {
+        persistCalls.push(settings);
+        return { ok: true };
+      },
     },
   });
 
@@ -88,17 +91,7 @@ import { syncSettingsModal, showSettingsModal, wireSettingsMenu } from "./settin
   await onCheckboxChange();
   assert.deepEqual(execCalls[0], { action: "set_warn_solvability", enabled: true });
   assert.equal(session.config.warn_solvability, true);
-  assert.equal(persistCalls.length, 1);
-  assert.deepEqual(hostViewPrefsForPersist(persistCalls[0]), {
-    difficulty: "easy",
-    log_level: "info",
-    theme: "dark",
-    show_region: false,
-    warn_solvability: true,
-    auto_restore: false,
-    auto_new: false,
-    auto_save: false,
-  });
+  assert.equal(persistCalls.length, 1, "core asks to persist after the settings change");
 
   dismissSettings();
   assert.equal(modal.el.hidden, true);

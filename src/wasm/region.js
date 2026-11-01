@@ -1,7 +1,11 @@
 // region.js — View menu region highlight via engine config.
 
 import { applyRegionHighlight } from "./board.js";
-import { applyConfigOutcomeStatus } from "./shell.js";
+import { applyConfigOutcomeStatus, persistSettingsAfter } from "./shell.js";
+
+/** @typedef {import("./types").FlowHandlers} FlowHandlers */
+
+const SET_REGION = "set_region";
 
 export function syncRegionMenu(controls, config) {
   if (!controls.viewRegion) return;
@@ -10,13 +14,16 @@ export function syncRegionMenu(controls, config) {
   controls.viewRegion.classList.toggle("selected", enabled);
 }
 
+/**
+ * @param {{ onChange?: () => void, settingsFlow?: FlowHandlers, statusEl?: HTMLElement }} [options]
+ */
 export function wireRegionMenu(
   controls,
   game,
   session,
   boardEl,
   getSelection,
-  { onChange, onPersist, statusEl } = {},
+  { onChange, settingsFlow, statusEl } = {},
 ) {
   const syncBoard = () => {
     syncRegionMenu(controls, session.config);
@@ -31,11 +38,11 @@ export function wireRegionMenu(
   controls.viewRegion?.addEventListener("click", () => {
     void (async () => {
       const next = !session.config.show_region;
-      const result = game.exec({ action: "set_region", enabled: next });
+      const result = game.exec({ action: SET_REGION, enabled: next });
       if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
       syncBoard();
       onChange?.();
-      if (onPersist) await onPersist(session.config);
+      await persistSettingsAfter(game, SET_REGION, settingsFlow);
     })();
   });
 

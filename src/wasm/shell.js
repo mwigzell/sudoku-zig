@@ -8,6 +8,7 @@ import {
   askWithDialog,
   FLOW_AUTOSAVE,
   FLOW_AUTOSAVE_FLUSH,
+  FLOW_SETTINGS,
   FLOW_STARTUP,
   runFlow,
   SAVE_FAILED_MSG,
@@ -15,6 +16,9 @@ import {
 } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
+/** @typedef {import("./types").FlowHandlers} FlowHandlers */
+/** @typedef {import("./types").PlayerSettings} PlayerSettings */
+/** @typedef {import("./types").PersistResult} PersistResult */
 
 /** Apply `.ok.msg` to the status bar. */
 export function applyOkStatus(statusEl, result) {
@@ -465,34 +469,43 @@ export function logLevelName(config) {
   return LOG_WIRE[config.log_level] ?? "info";
 }
 
-/** User-editable settings.json fields (excludes renderer choice). */
-export function hostSettingsForPersist(config) {
-  const theme = config.theme === "light" || config.theme === "system" ? config.theme : "dark";
+const HOST_SETTINGS_URL = "./settings.json";
+
+/**
+ * Hand core's player settings to the host, which stores them in `settings.json`.
+ * @param {PlayerSettings} settings
+ * @returns {Promise<PersistResult>}
+ */
+async function postHostSettings(settings, fetchFn) {
+  const res = await fetchFn(HOST_SETTINGS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+  return { ok: true };
+}
+
+/**
+ * Platform work for the core settings flow.
+ * @param {{ fetchFn?: typeof fetch, onError?: (text: string) => void }} [options]
+ * @returns {FlowHandlers}
+ */
+export function settingsHandlers({ fetchFn = globalThis.fetch, onError } = {}) {
   return {
-    difficulty: difficultyName(config),
-    log_level: logLevelName(config),
-    theme,
-    show_region: config.show_region === true,
-    warn_solvability: config.warn_solvability === true,
-    auto_restore: config.auto_restore === true,
-    auto_new: config.auto_new === true,
-    auto_save: config.auto_save === true,
+    persistSettings: (settings) => postHostSettings(settings, fetchFn),
+    showError: onError,
   };
 }
 
-/** @deprecated use hostSettingsForPersist */
-export function hostViewPrefsForPersist(config) {
-  return hostSettingsForPersist(config);
-}
-
-/** Persist player prefs to host settings.json (web serve POST). */
-export async function persistHostSettings(config, fetchFn = globalThis.fetch) {
-  const res = await fetchFn("./settings.json", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(hostSettingsForPersist(config)),
-  });
-  if (!res.ok) throw new Error(`settings persist failed: ${res.status}`);
+/**
+ * Run the core settings flow after `commandName`; core decides whether settings are persisted.
+ * @param {GameApi} game
+ * @param {string} commandName
+ * @param {FlowHandlers} [handlers]
+ */
+export function persistSettingsAfter(game, commandName, handlers = settingsHandlers()) {
+  return runFlow(game, { flow: FLOW_SETTINGS, command: commandName }, handlers);
 }
 
 /** Write SUD0 bytes as the host copy (`/current-file`); `restoreCopy` keeps it out of the visible folder. */

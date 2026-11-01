@@ -11,7 +11,6 @@ import {
   WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
   applySessionOutcome,
   applySessionOutcomeStatus,
-  hostViewPrefsForPersist,
   initializeWebSession,
   runStartupFlow,
   startupHandlers,
@@ -492,29 +491,6 @@ function makePageHideWin() {
   };
   syncCurrentFileLabels({ boundFilename: "alpha.sud" }, root);
   assert.equal(nodes[CURRENT_FILE_DESKTOP_ID].textContent, "alpha.sud");
-}
-
-{
-  assert.deepEqual(
-    hostViewPrefsForPersist({
-      theme: "light",
-      show_region: true,
-      warn_solvability: false,
-      auto_restore: true,
-      auto_new: true,
-      auto_save: true,
-    }),
-    {
-      difficulty: "easy",
-      log_level: "info",
-      theme: "light",
-      show_region: true,
-      warn_solvability: false,
-      auto_restore: true,
-      auto_new: true,
-      auto_save: true,
-    },
-  );
 }
 
 // ── initializeWebSession: host config boot + host startup policy payload ──

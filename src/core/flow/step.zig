@@ -1,6 +1,7 @@
 // Flow protocol: core issues steps, adapters carry each one out on their
 // platform and report the result back as the next input.
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
+const config = @import("../config.zig");
 
 /// A two-button question; `yes` in the answer means the user picked `ok_label`.
 pub const Ask = struct {
@@ -27,6 +28,8 @@ pub const Step = union(enum) {
     generate: puzzle_gen.Difficulty,
     /// Stop restoring this current file at startup; answered with `ack`.
     forget_current_file: ForgetCurrentFile,
+    /// Store these player settings in `settings.json`.
+    persist_settings: config.Config,
     show_status: []const u8,
     show_error: []const u8,
     done,
@@ -59,6 +62,12 @@ pub const Generated = union(enum) {
     failed: []const u8,
 };
 
+/// Outcome of a `persist_settings` step.
+pub const Persisted = union(enum) {
+    ok,
+    failed: []const u8,
+};
+
 /// Outcome of a `write` step.
 pub const Wrote = union(enum) {
     /// Name of the target actually written (the platform may rename it).
@@ -77,6 +86,7 @@ pub const Input = union(enum) {
     wrote: Wrote,
     file_read: FileRead,
     generated: Generated,
+    persisted: Persisted,
     /// The adapter finished a step that has no result.
     ack,
 };

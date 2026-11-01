@@ -1,6 +1,9 @@
 // settings.js — File → Settings: warn, default difficulty, log level.
 
-import { applyConfigOutcomeStatus, difficultyName, logLevelName } from "./shell.js";
+import { applyConfigOutcomeStatus, difficultyName, logLevelName, persistSettingsAfter } from "./shell.js";
+
+/** @typedef {import("./types").ExecAction} ExecAction */
+/** @typedef {import("./types").FlowHandlers} FlowHandlers */
 
 /** Sync controls from wasm getConfig(). */
 export function syncSettingsModal(modal, config) {
@@ -18,22 +21,30 @@ export function showSettingsModal(modal, config) {
   modal.el.hidden = false;
 }
 
-async function applySettingChange(game, session, modal, onPersist, execFn) {
-  const result = execFn();
+/**
+ * Run one settings command, then the core settings flow for it.
+ * @param {ExecAction} action
+ * @param {FlowHandlers} [settingsFlow]
+ */
+async function applySettingChange(game, session, modal, settingsFlow, action) {
+  const result = game.exec(action);
   if (!applyConfigOutcomeStatus(session, game, null, result)) {
     syncSettingsModal(modal, session.config ?? game.getConfig());
     return;
   }
-  if (onPersist) await onPersist(session.config);
+  await persistSettingsAfter(game, action.action, settingsFlow);
 }
 
-/** File → Settings: prefs and persist via host. */
+/**
+ * File → Settings dialog.
+ * @param {{ settingsFlow?: FlowHandlers, onDismiss?: () => void, closeMenus?: () => void }} [options]
+ */
 export function wireSettingsMenu(
   settingsBtn,
   game,
   session,
   modal,
-  { onPersist, onDismiss, closeMenus } = {},
+  { settingsFlow, onDismiss, closeMenus } = {},
 ) {
   if (!settingsBtn || !modal?.el) return;
   settingsBtn.addEventListener("click", () => {
@@ -41,46 +52,30 @@ export function wireSettingsMenu(
     showSettingsModal(modal, session.config ?? game.getConfig());
   });
 
+  const change = (action) => applySettingChange(game, session, modal, settingsFlow, action);
+
   modal.checkbox?.addEventListener("change", async () => {
-    const enabled = modal.checkbox.checked;
-    await applySettingChange(game, session, modal, onPersist, () =>
-      game.exec({ action: "set_warn_solvability", enabled }),
-    );
+    await change({ action: "set_warn_solvability", enabled: modal.checkbox.checked });
   });
 
   modal.difficultySelect?.addEventListener("change", async () => {
-    const difficulty = modal.difficultySelect.value;
-    await applySettingChange(game, session, modal, onPersist, () =>
-      game.exec({ action: "set_difficulty", difficulty }),
-    );
+    await change({ action: "set_difficulty", difficulty: modal.difficultySelect.value });
   });
 
   modal.logLevelSelect?.addEventListener("change", async () => {
-    const log_level = modal.logLevelSelect.value;
-    await applySettingChange(game, session, modal, onPersist, () =>
-      game.exec({ action: "set_log_level", log_level }),
-    );
+    await change({ action: "set_log_level", log_level: modal.logLevelSelect.value });
   });
 
   modal.autoRestoreCheckbox?.addEventListener("change", async () => {
-    const enabled = modal.autoRestoreCheckbox.checked;
-    await applySettingChange(game, session, modal, onPersist, () =>
-      game.exec({ action: "set_auto_restore", enabled }),
-    );
+    await change({ action: "set_auto_restore", enabled: modal.autoRestoreCheckbox.checked });
   });
 
   modal.autoNewCheckbox?.addEventListener("change", async () => {
-    const enabled = modal.autoNewCheckbox.checked;
-    await applySettingChange(game, session, modal, onPersist, () =>
-      game.exec({ action: "set_auto_new", enabled }),
-    );
+    await change({ action: "set_auto_new", enabled: modal.autoNewCheckbox.checked });
   });
 
   modal.autoSaveCheckbox?.addEventListener("change", async () => {
-    const enabled = modal.autoSaveCheckbox.checked;
-    await applySettingChange(game, session, modal, onPersist, () =>
-      game.exec({ action: "set_auto_save", enabled }),
-    );
+    await change({ action: "set_auto_save", enabled: modal.autoSaveCheckbox.checked });
   });
 
   modal.dismissEl?.addEventListener("click", () => {

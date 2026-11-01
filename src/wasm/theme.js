@@ -1,7 +1,10 @@
 // theme.js — View menu light/dark theme via engine config.
 
-import { applyConfigOutcomeStatus, assertWebBootConfig } from "./shell.js";
+import { applyConfigOutcomeStatus, assertWebBootConfig, persistSettingsAfter } from "./shell.js";
 
+/** @typedef {import("./types").FlowHandlers} FlowHandlers */
+
+const SET_THEME = "set_theme";
 const THEME_LIGHT = "light";
 const THEME_DARK = "dark";
 const THEME_SYSTEM = "system";
@@ -69,11 +72,14 @@ export function syncThemeMenu(controls, config) {
   }
 }
 
+/**
+ * @param {{ root?: Document, onChange?: () => void, settingsFlow?: FlowHandlers, statusEl?: HTMLElement }} [options]
+ */
 export function wireThemeMenu(
   controls,
   game,
   session,
-  { root = document, onChange, onPersist, statusEl } = {},
+  { root = document, onChange, settingsFlow, statusEl } = {},
 ) {
   const win = root.defaultView ?? globalThis;
   const mediaQuery = typeof win.matchMedia === "function" ? win.matchMedia(MEDIA_DARK) : null;
@@ -88,38 +94,18 @@ export function wireThemeMenu(
 
   sync();
 
-  controls.viewSystem?.addEventListener("click", () => {
-    void (async () => {
-      if (session.config.theme === THEME_SYSTEM) return;
-      const result = game.exec({ action: "set_theme", theme: THEME_SYSTEM });
-      if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
-      sync();
-      onChange?.();
-      if (onPersist) await onPersist(session.config);
-    })();
-  });
+  const chooseTheme = async (theme) => {
+    if (session.config.theme === theme) return;
+    const result = game.exec({ action: SET_THEME, theme });
+    if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
+    sync();
+    onChange?.();
+    await persistSettingsAfter(game, SET_THEME, settingsFlow);
+  };
 
-  controls.viewLight?.addEventListener("click", () => {
-    void (async () => {
-      if (session.config.theme === THEME_LIGHT) return;
-      const result = game.exec({ action: "set_theme", theme: THEME_LIGHT });
-      if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
-      sync();
-      onChange?.();
-      if (onPersist) await onPersist(session.config);
-    })();
-  });
-
-  controls.viewDark?.addEventListener("click", () => {
-    void (async () => {
-      if (session.config.theme === THEME_DARK) return;
-      const result = game.exec({ action: "set_theme", theme: THEME_DARK });
-      if (!applyConfigOutcomeStatus(session, game, statusEl, result)) return;
-      sync();
-      onChange?.();
-      if (onPersist) await onPersist(session.config);
-    })();
-  });
+  controls.viewSystem?.addEventListener("click", () => void chooseTheme(THEME_SYSTEM));
+  controls.viewLight?.addEventListener("click", () => void chooseTheme(THEME_LIGHT));
+  controls.viewDark?.addEventListener("click", () => void chooseTheme(THEME_DARK));
 
   mediaQuery?.addEventListener?.("change", onSystemThemeChanged);
 

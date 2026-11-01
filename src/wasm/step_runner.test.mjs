@@ -1,7 +1,15 @@
-// step_runner.test.mjs — core save/autosave/startup flows driven through the web step runner (real wasm).
+// step_runner.test.mjs — core save/autosave/startup/settings flows driven through the web step runner (real wasm).
 
 import assert from "node:assert/strict";
-import { askWithDialog, FLOW_AUTOSAVE, FLOW_SAVE, FLOW_SAVE_AS, FLOW_STARTUP, runFlow } from "./step_runner.js";
+import {
+  askWithDialog,
+  FLOW_AUTOSAVE,
+  FLOW_SAVE,
+  FLOW_SAVE_AS,
+  FLOW_SETTINGS,
+  FLOW_STARTUP,
+  runFlow,
+} from "./step_runner.js";
 import { WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, WRITE_CONTEXT_EVENT_OPEN_SUCCESS } from "./shell.js";
 import { loadCoreFlow, loadGame } from "./test_support.mjs";
 
@@ -218,6 +226,37 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
   const outcome = await runFlow(await loadGame({ auto_new: true }), { flow: FLOW_STARTUP }, failed);
   assert.equal(outcome.kind, "show_error");
   assert.deepEqual(failed.log.at(-1), ["error", "A new game could not be generated (generation failed)."]);
+}
+
+// persist_settings hands core's settings to the platform; failures and throws come back as core's sentence.
+{
+  const game = await loadGame({ theme: "light" });
+  const persisted = [];
+  const errors = [];
+  const handlers = {
+    persistSettings: (settings) => {
+      persisted.push(settings.theme);
+      return { ok: true };
+    },
+    showError: (text) => errors.push(text),
+  };
+  assert.deepEqual(await runFlow(game, { flow: FLOW_SETTINGS, command: "set_theme" }, handlers), { kind: "done" });
+  assert.deepEqual(persisted, ["light"]);
+
+  const failed = await runFlow(game, { flow: FLOW_SETTINGS, command: "set_region" }, {
+    ...handlers,
+    persistSettings: () => ({ ok: false }),
+  });
+  assert.deepEqual(failed, { kind: "show_error", text: "Your settings could not be saved (settings write failed)." });
+
+  const thrown = await runFlow(game, { flow: FLOW_SETTINGS, command: "set_region" }, {
+    ...handlers,
+    persistSettings: () => {
+      throw new Error("offline");
+    },
+  });
+  assert.equal(thrown.text, "Your settings could not be saved (offline).");
+  assert.equal(errors.length, 2);
 }
 
 console.log("step_runner.test.mjs OK");

@@ -38,7 +38,7 @@ Placement decisions cite a sibling entry before they invent a new home. Ownershi
 | Session lifecycle (`new`/`open`/`save`/`save_as`) | driver (native) / JS app (web) | renderers |
 | `io: std.Io` | host + transport arms, capability-injected (ADR-0010) | engine, facade, board, `event` |
 | Rendering (paint, shade, borders) | renderer, **stateless painter** over `(view, status, selection/args)` | any concern state; see #46 AC |
-| Nominal user prefs (`Config`, `settings.json`) | **`GameEngine.cfg`**; load/save via **`settings_store`** (native **`Sudoku`**) or **`web_host`** POST (web) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
+| Nominal user prefs (`Config`, `settings.json`) | **`GameEngine.cfg`**; core **`SettingsFlow`** decides when to persist (`persist_settings` step); load/save via **`settings_store`** (native **`Sudoku`**, or **`web_host`** for the web POST) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
 | Settings / view pref **UI** | Native **Menu** (+ **`getCommandInput`** scalars from driver); web **menubar** + modals + **`exec`** | disk or CLI as the **only** way to change a persisted player-facing field (ADR-0014) |
 
 Rules:
