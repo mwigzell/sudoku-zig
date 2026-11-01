@@ -7,9 +7,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-SCENARIOS="src/test/parity/scenarios.json"
-NATIVE_RUNNER="src/native/shell/parity_test.zig"
-WEB_RUNNER="src/wasm/parity.test.mjs"
+SCENARIOS="src/test/fixtures/parity_scenarios.json"
+NATIVE_RUNNER="src/native/shell/shell.zig"
+WEB_RUNNER="src/wasm/shell.test.mjs"
 MATRIX="docs/parity-matrix.md"
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -28,9 +28,9 @@ for f in "$SCENARIOS" "$NATIVE_RUNNER" "$WEB_RUNNER" "$MATRIX"; do
 done
 [[ $FAIL -eq 0 ]] || { echo "✗ parity drift check failed" >&2; exit 1; }
 
-grep -q "test/parity/scenarios.json" "$NATIVE_RUNNER" || violation "$NATIVE_RUNNER does not load $SCENARIOS"
-grep -q "test/parity/scenarios.json" "$WEB_RUNNER" || violation "$WEB_RUNNER does not load $SCENARIOS"
-grep -q '@import("parity_test.zig")' src/native/shell/shell.zig || violation "$NATIVE_RUNNER is not in the native test graph"
+grep -q "test/fixtures/parity_scenarios.json" "$NATIVE_RUNNER" || violation "$NATIVE_RUNNER does not load $SCENARIOS"
+grep -q "test/fixtures/parity_scenarios.json" "$WEB_RUNNER" || violation "$WEB_RUNNER does not load $SCENARIOS"
+grep -q '^test "parity scenarios: ' "$NATIVE_RUNNER" || violation "$NATIVE_RUNNER has no parity scenarios test"
 grep -q "node $WEB_RUNNER" build.zig || violation "$WEB_RUNNER is not in the glue test list"
 
 if ! jq -e '.scenarios | length > 0' "$SCENARIOS" >/dev/null; then

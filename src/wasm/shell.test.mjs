@@ -25,10 +25,17 @@ import {
   clientLog,
   setClientLogLevel,
   CURRENT_FILE_UNSAVED_LABEL,
+  commandHandlers,
+  showErrorModal,
 } from "./shell.js";
 import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, withCoreFlow } from "./test_support.mjs";
 import { wireGeneratingModal } from "./generating.js";
 import { runCommand } from "./step_runner.js";
+import { handlePlayKey } from "./board.js";
+import { wireFileMenu } from "./file_menu.js";
+import { handleCopyPuzzle, handleEditAction, handlePastePuzzle } from "./menu.js";
+import { wireRegionMenu } from "./region.js";
+import { wireThemeMenu } from "./theme.js";
 
 const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
 
@@ -36,10 +43,6 @@ const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
 function moveWithAutosave(game, session, { fetchFn, onError } = {}, move = FILL_MOVE) {
   return runCommand(game, move, { ...autosaveHandlers(game, session, { fetchFn, onError }), showGame() {} });
 }
-
-const AUTOSAVE_RESTORE_PARITY_FIXTURE = JSON.parse(
-  readFileSync(new URL("../test/fixtures/autosave_restore_parity.json", import.meta.url), "utf8"),
-);
 
 function makeContinueBtn() {
   return {
@@ -907,44 +910,6 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
 }
 
 {
-  // Full-cycle regression guard: an autosave snapshot survives restart with
-  // player-entered cells still marked as non-givens.
-  const idx = (row, col) => row * 9 + col;
-  const fixture = AUTOSAVE_RESTORE_PARITY_FIXTURE;
-  let savedBytes = null;
-  const fetchFn = async (url, init) => {
-    if (url === "./current-file" && init?.method === "POST") {
-      savedBytes = new Uint8Array(init.body);
-      return { ok: true, status: 204 };
-    }
-    if (url === "./current-file-exists") return { ok: true, json: async () => ({ exists: savedBytes != null }) };
-    throw new Error(`unexpected fetch url: ${url}`);
-  };
-
-  const launchA = await loadGame({ auto_restore: true, auto_save: true });
-  startNewGame(launchA, fixture.puzzle_line);
-  const sessionA = { config: launchA.getConfig(), default_save_filename: "sudoku.sud", boundFilename: null };
-  for (const move of fixture.moves) {
-    const outcome = await moveWithAutosave(launchA, sessionA, { fetchFn }, { action: "fill", ...move });
-    assert.equal(outcome.kind, "done");
-  }
-  assert.ok(savedBytes && savedBytes.length > 0, "autosave should persist a startup snapshot");
-
-  const run = await runStartupScenario({
-    config: { auto_restore: true, auto_save: true },
-    currentFile: { name: "sudoku.sud", bytes: savedBytes },
-  });
-  assert.equal(run.outcome.kind, "done");
-  const restored = run.session.state.cells;
-  assert.equal(restored[idx(fixture.given_probe.row, fixture.given_probe.col)].value, fixture.given_probe.value);
-  assert.equal(restored[idx(fixture.given_probe.row, fixture.given_probe.col)].given, true);
-  for (const probe of fixture.move_probes) {
-    assert.equal(restored[idx(probe.row, probe.col)].value, probe.value);
-    assert.equal(restored[idx(probe.row, probe.col)].given, false);
-  }
-}
-
-{
   for (const key of REQUIRED_WEB_BOOT_CONFIG_KEYS) {
     const cfg = {
       difficulty: 1,
@@ -1002,3 +967,359 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   );
 }
 
+
+// ── Cross-entry parity: every shared scenario runs through the real wasm and web shell entry paths
+// (startup flow, board keys, File menu) against a fake host, held to the same expectations as native.
+
+/** @typedef {{ row: number, col: number }} CellAt */
+/** @typedef {{ row: number, col: number, digit: number }} Move */
+/** @typedef {{ name: string, puzzle_line: string, moves?: Move[] }} ScenarioFile */
+/**
+ * @typedef {{
+ *   name: string,
+ *   skip?: { entry: "native" | "web", gap: string, issue: number },
+ *   config: { auto_restore?: boolean, auto_new?: boolean, auto_save?: boolean, difficulty?: string },
+ *   current_file?: ScenarioFile,
+ *   puzzle_line?: string,
+ *   generated_line?: string,
+ *   answers: boolean[],
+ *   steps: Array<{
+ *     fill?: Move, clear?: CellAt, toggle_auto_save?: boolean, toggle_region?: boolean, set_theme?: string,
+ *     fill_first_empty?: boolean,
+ *     undo?: boolean, redo?: boolean, paste?: string,
+ *     open?: ScenarioFile, import?: string,
+ *     save?: boolean, copy?: boolean, new?: string, export?: boolean, relaunch?: boolean,
+ *   }>,
+ *   expect: {
+ *     questions: number,
+ *     solved_after_startup?: boolean,
+ *     written: string[],
+ *     status: string | null,
+ *     errors?: number,
+ *     settings?: { auto_save?: boolean, show_region?: boolean, theme?: string },
+ *     legend?: { undo?: boolean, redo?: boolean },
+ *     probes: Array<{ row: number, col: number, value: number, given: boolean }>,
+ *   },
+ * }} Scenario
+ */
+
+const PARITY_SCENARIOS = JSON.parse(readFileSync(new URL("../test/fixtures/parity_scenarios.json", import.meta.url), "utf8"));
+const DIFFICULTY_WIRE = { easy: 1, medium: 2, hard: 3 };
+const PARITY_CURRENT_FILE = "./current-file";
+const PARITY_CURRENT_FILE_EXISTS = "./current-file-exists";
+const PARITY_SETTINGS = "./settings.json";
+const FILENAME_HEADER = "X-Sudoku-Filename";
+const WEB_ENTRY = "web";
+const DEFAULT_SAVE_NAME = "sudoku.sud";
+
+/** Host fake: files by name, the current file served at `/current-file`, writes and settings recorded. */
+function parityHost() {
+  /** @type {Map<string, Uint8Array>} */
+  const files = new Map();
+  /** @type {string[]} */
+  const written = [];
+  /** @type {object | null} */
+  let settings = null;
+  const host = {
+    files,
+    written,
+    /** @type {string | null} */
+    current: null,
+    settings: () => settings,
+    fetchFn: async (url, init = {}) => {
+      const name = init.headers?.[FILENAME_HEADER];
+      if (url === PARITY_CURRENT_FILE_EXISTS) return { ok: true, json: async () => ({ exists: files.has(name) }) };
+      if (url === PARITY_CURRENT_FILE && init.method === "POST") {
+        files.set(name, new Uint8Array(init.body));
+        written.push(name);
+        return { ok: true, status: 204 };
+      }
+      if (url === PARITY_CURRENT_FILE && init.method === "DELETE") return { ok: true, status: 204 };
+      if (url === PARITY_CURRENT_FILE) {
+        const bytes = files.get(host.current);
+        if (!bytes) return { ok: false, status: 404 };
+        return { ok: true, arrayBuffer: async () => bytes.slice().buffer };
+      }
+      if (url === PARITY_SETTINGS && init.method === "POST") {
+        settings = JSON.parse(init.body);
+        return { ok: true, status: 204 };
+      }
+      throw new Error(`unexpected host request: ${init.method ?? "GET"} ${url}`);
+    },
+  };
+  return host;
+}
+
+function makeBtn() {
+  return {
+    handlers: {},
+    addEventListener(type, fn) {
+      this.handlers[type] = fn;
+    },
+    async click() {
+      await this.handlers.click?.();
+    },
+  };
+}
+
+/** A View menu item: records its click listener and accepts checked-state updates. */
+const makeMenuItem = () => ({
+  ...makeBtn(),
+  setAttribute() {},
+  classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
+  click() {
+    return this.handlers.click?.();
+  },
+});
+
+const themeRoot = () => ({
+  documentElement: { dataset: {} },
+  defaultView: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
+});
+
+const makeBoard = () => ({ children: [], replaceChildren(...nodes) { this.children = nodes; } });
+const createElement = (tag) => ({ tag, classList: { add() {}, remove() {} }, textContent: "", dataset: {}, setAttribute() {} });
+
+/** Bytes of a saved game: `puzzle_line` with the player's `moves` on top. */
+async function savedGame(file) {
+  const game = await loadGame();
+  startNewGame(game, file.puzzle_line);
+  for (const m of file.moves ?? []) {
+    assert.equal(game.exec({ action: "fill", row: m.row, col: m.col, digit: m.digit }).ok, true);
+  }
+  const saved = game.serialize();
+  assert.equal(saved.ok, true);
+  return saved.bytes;
+}
+
+const isSolved = (state) => state.cells.every((c) => c.value !== 0 && !c.conflict);
+
+/** First empty cell and the lowest digit that does not repeat in its row, column or box. */
+function firstEmptyLegalFill(state) {
+  const at = (r, c) => state.cells[r * 9 + c].value;
+  for (let r = 0; r < 9; r += 1) {
+    for (let c = 0; c < 9; c += 1) {
+      if (at(r, c) !== 0) continue;
+      for (let d = 1; d <= 9; d += 1) {
+        let clash = false;
+        for (let i = 0; i < 9 && !clash; i += 1) {
+          const br = Math.floor(r / 3) * 3 + Math.floor(i / 3);
+          const bc = Math.floor(c / 3) * 3 + (i % 3);
+          clash = at(r, i) === d || at(i, c) === d || at(br, bc) === d;
+        }
+        if (!clash) return { row: r, col: c, digit: d };
+      }
+    }
+  }
+  throw new Error("no legal fill");
+}
+
+/**
+ * One launch of the web shell: a fresh game and session, the startup flow on the host's current
+ * file (if any), and the menus wired to it. A relaunch calls this again against the same host.
+ */
+async function launchWeb(cfg, host, ui, { generatedLine, expectSolved } = {}) {
+  const game = await loadGame(cfg);
+  const boot = {
+    state: game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    default_save_filename: host.current ?? DEFAULT_SAVE_NAME,
+    startup_save_path: host.current ? PARITY_CURRENT_FILE : null,
+  };
+  const session = createWebSessionFromStartup(boot);
+  if (host.current) {
+    const startupErrors = [];
+    await runStartupFlow(game, boot, {
+      ...startupHandlers(game, session, { fetchFn: host.fetchFn, win: globalThis, showError: (t) => startupErrors.push(t) }),
+      generate: async () => ({ ok: true, line: generatedLine }),
+    });
+    assert.deepEqual(startupErrors, []);
+    if (expectSolved !== undefined) assert.equal(isSolved(game.getState()), expectSolved, "solved after startup");
+  }
+
+  const run = {
+    game,
+    session,
+    /** @type {import("./types").PickResult | null} */
+    picked: null,
+    /** @type {string | null} */
+    newLine: null,
+    controls: { new: makeBtn(), open: makeBtn(), import: makeBtn(), save: makeBtn(), export: makeBtn(), autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() },
+    easyButton: { el: makeBtn(), difficulty: "easy" },
+    commandFlow: null,
+  };
+  run.commandFlow = {
+    ...commandHandlers(game, session, { fetchFn: host.fetchFn, statusEl: ui.statusEl, onError: (failed) => showErrorModal(ui.errorModal, failed.error) }),
+    generate: async () => ({ ok: true, line: run.newLine }),
+  };
+  const { controls, commandFlow } = run;
+  wireRegionMenu(controls, game, session, ui.boardEl, () => null, { commandFlow });
+  wireThemeMenu(controls, game, session, { root: themeRoot(), commandFlow });
+  wireFileMenu(controls, game, ui.boardEl, { select() {}, deselect() {} }, ui.statusEl, ui.errorModal, session, { sync() {} }, {
+    createElement,
+    difficultyDialog: { el: { hidden: true }, buttons: [run.easyButton] },
+    pick: async () => run.picked,
+    download() {},
+    exportText: async (_bytes, _session, name) => {
+      host.written.push(name);
+      return { ok: true, filename: name };
+    },
+    commandFlow,
+  });
+  return run;
+}
+
+/** @param {Scenario} scenario */
+async function runParityScenario(scenario) {
+  const cfg = { ...scenario.config };
+  if (typeof cfg.difficulty === "string") cfg.difficulty = DIFFICULTY_WIRE[cfg.difficulty];
+  const host = parityHost();
+  const answers = [...scenario.answers];
+  let questions = 0;
+  const prevChoose = globalThis.__sudokuChoose;
+  const prevFetch = globalThis.fetch;
+  globalThis.__sudokuChoose = async () => {
+    questions += 1;
+    return answers.shift() ?? true;
+  };
+  globalThis.fetch = host.fetchFn;
+  let errors = 0;
+  let lastError = "";
+  const ui = {
+    statusEl: { textContent: "", className: "" },
+    errorModal: {
+      el: { hidden: true },
+      msgEl: {
+        get textContent() {
+          return lastError;
+        },
+        set textContent(text) {
+          errors += 1;
+          lastError = text;
+        },
+      },
+    },
+    boardEl: makeBoard(),
+  };
+  const { statusEl, errorModal, boardEl } = ui;
+  try {
+    if (scenario.current_file) {
+      host.files.set(scenario.current_file.name, await savedGame(scenario.current_file));
+      host.current = scenario.current_file.name;
+    }
+    let run = await launchWeb(cfg, host, ui, {
+      generatedLine: scenario.generated_line,
+      expectSolved: scenario.expect.solved_after_startup,
+    });
+    if (scenario.puzzle_line) {
+      startNewGame(run.game, scenario.puzzle_line);
+      run.session.state = run.game.getState();
+      run.session.legend = run.game.getLegend();
+    }
+
+    for (const step of scenario.steps) {
+      const { game, session, controls, commandFlow } = run;
+      if (step.relaunch) {
+        assert.ok(host.written.length > 0, "relaunch needs a written file");
+        host.current = host.written[host.written.length - 1];
+        run = await launchWeb(game.getConfig(), host, ui);
+        continue;
+      }
+      if (step.toggle_auto_save) {
+        await controls.autoSave.click();
+        continue;
+      }
+      if (step.toggle_region) {
+        controls.viewRegion.click();
+        await settleFlow();
+        continue;
+      }
+      if (step.set_theme) {
+        const item = { light: controls.viewLight, dark: controls.viewDark, system: controls.viewSystem }[step.set_theme];
+        item.click();
+        await settleFlow();
+        continue;
+      }
+      const edit = step.undo ? "undo" : step.redo ? "redo" : step.hint ? "hint" : step.solve ? "solve" : null;
+      if (edit) {
+        const selection = { getSelection: () => null, select() {}, deselect() {} };
+        await handleEditAction(edit, game, boardEl, selection, statusEl, errorModal, session, createElement).done;
+        continue;
+      }
+      if (step.paste !== undefined) {
+        const clipboard = { readText: async () => step.paste };
+        await handlePastePuzzle(game, session, statusEl, errorModal, { clipboard, commandFlow }).done;
+        continue;
+      }
+      if (step.open) {
+        run.picked = { ok: true, name: step.open.name, bytes: await savedGame(step.open) };
+        await controls.open.click();
+        continue;
+      }
+      if (step.save) {
+        await controls.save.click();
+        continue;
+      }
+      if (step.new) {
+        run.newLine = step.new;
+        await controls.new.click();
+        await run.easyButton.el.click();
+        continue;
+      }
+      if (step.export) {
+        await controls.export.click();
+        continue;
+      }
+      if (step.copy) {
+        const clipboard = { writeText: async () => {} };
+        await handleCopyPuzzle(game, session, statusEl, errorModal, { clipboard });
+        continue;
+      }
+      if (step.import !== undefined) {
+        run.picked = { ok: true, name: "puzzle.txt", bytes: new TextEncoder().encode(step.import) };
+        await controls.import.click();
+        continue;
+      }
+      const move = step.fill ?? step.clear ?? (step.fill_first_empty ? firstEmptyLegalFill(game.getState()) : null);
+      if (!move) throw new Error(`unknown scenario step: ${JSON.stringify(step)}`);
+      const selection = { getSelection: () => ({ row: move.row, col: move.col }), select() {} };
+      const key = step.clear ? "Delete" : String(move.digit);
+      const outcome = handlePlayKey(game, boardEl, selection, statusEl, errorModal, key, session, createElement);
+      assert.equal(outcome.handled, true);
+      await outcome.done;
+    }
+
+    const e = scenario.expect;
+    assert.equal(questions, e.questions, "questions asked");
+    assert.deepEqual(host.written, e.written, "files written");
+    assert.equal(statusEl.textContent === "" ? null : statusEl.textContent, e.status, "status");
+    assert.equal(errors, e.errors ?? 0, `errors shown (last: ${lastError})`);
+    for (const [key, want] of Object.entries(e.settings ?? {})) {
+      assert.equal(host.settings()?.[key], want, `persisted ${key}`);
+    }
+    const legend = run.game.getLegend();
+    if (e.legend?.undo !== undefined) assert.equal(legend.undo, e.legend.undo, "legend undo");
+    if (e.legend?.redo !== undefined) assert.equal(legend.redo, e.legend.redo, "legend redo");
+    const cells = run.game.getState().cells;
+    for (const p of e.probes) {
+      const c = cells[p.row * 9 + p.col];
+      assert.equal(c.value, p.value, `probe ${p.row},${p.col} value`);
+      assert.equal(c.given, p.given, `probe ${p.row},${p.col} given`);
+    }
+  } finally {
+    globalThis.__sudokuChoose = prevChoose;
+    globalThis.fetch = prevFetch;
+  }
+}
+
+assert.ok(PARITY_SCENARIOS.scenarios.length > 0);
+for (const scenario of PARITY_SCENARIOS.scenarios) {
+  if (scenario.skip?.entry === WEB_ENTRY) continue;
+  try {
+    await runParityScenario(scenario);
+  } catch (err) {
+    console.error(`parity scenario failed: ${scenario.name}`);
+    throw err;
+  }
+}

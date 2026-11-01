@@ -394,10 +394,6 @@ const test_doubles = @import("test_doubles.zig");
 const DeterministicFacade = test_doubles.DeterministicFacade;
 const MemoryTransport = test_doubles.MemoryTransport;
 
-test {
-    _ = @import("parity_test.zig");
-}
-
 test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer
     const cfg: config.Config = .{
@@ -1660,127 +1656,6 @@ test "startup policy: solved restore prompt confirm starts fresh game" {
     try std.testing.expectEqual(file_policy.WriteContext.detached, app.file_session.write_context);
 }
 
-test "startup policy: relaunch restores latest autosave without rewriting givens" {
-    const test_defaults = @import("../../test/config_defaults.zig");
-    const io = std.testing.io;
-    const FixtureMove = struct {
-        row: u8,
-        col: u8,
-        digit: u8,
-    };
-    const FixtureProbe = struct {
-        row: u8,
-        col: u8,
-        value: u8,
-    };
-    const AutosaveRestoreParityFixture = struct {
-        puzzle_line: []const u8,
-        moves: []const FixtureMove,
-        given_probe: FixtureProbe,
-        move_probes: []const FixtureProbe,
-    };
-
-    const fixture_path = "src/test/fixtures/autosave_restore_parity.json";
-    const fixture_bytes = try std.Io.Dir.readFileAlloc(
-        std.Io.Dir.cwd(),
-        io,
-        fixture_path,
-        std.testing.allocator,
-        std.Io.Limit.unlimited,
-    );
-    defer std.testing.allocator.free(fixture_bytes);
-    const fixture_json = try std.json.parseFromSlice(
-        AutosaveRestoreParityFixture,
-        std.testing.allocator,
-        fixture_bytes,
-        .{},
-    );
-    defer fixture_json.deinit();
-    const fixture = fixture_json.value;
-
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const data_path_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
-    defer std.testing.allocator.free(data_path_rel);
-    const data_path_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_path_rel, std.testing.allocator);
-    defer std.testing.allocator.free(data_path_abs_z);
-    const data_path = data_path_abs_z[0 .. data_path_abs_z.len - 1];
-
-    const seed_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/autosave-relaunch.sud", .{data_path});
-    defer std.testing.allocator.free(seed_path);
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, seed_path);
-
-    var first_cfg = test_defaults.testConfigDefaults();
-    first_cfg.auto_save = true;
-    const first_responses = [_][]const u8{};
-    var first_host = host_mod.Host.createForTest(first_cfg, &first_responses);
-    defer first_host.deinit();
-    var first_facade = try first_host.facade();
-    defer first_facade.deinit();
-
-    var first_app = try Sudoku.init(first_cfg, first_facade, file_transport.NativeTransport.make(io), first_host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
-    defer first_app.deinit();
-    _ = first_app.engine.newFromOneLinePuzzle(fixture.puzzle_line);
-    for (fixture.moves) |move| {
-        const row: u4 = @intCast(move.row);
-        const col: u4 = @intCast(move.col);
-        const fill_cmd: command.Command = .{
-            .fill = .{
-                .row = row,
-                .col = col,
-                .digit = cell.rawToCellValue(move.digit),
-            },
-        };
-        try first_app.runCommandFlow(fill_cmd);
-    }
-
-    const expected_board = first_app.engine.state.board;
-    const expected_history_pointer = first_app.engine.state.history.pointer;
-    const expected_history_len = first_app.engine.state.history.entries.items.len;
-    const expected_save = try first_app.engine.toSaveFormat(std.testing.allocator);
-    defer std.testing.allocator.free(expected_save);
-
-    var second_cfg = test_defaults.testConfigDefaults();
-    second_cfg.auto_restore = true;
-    const second_responses = [_][]const u8{};
-    var second_host = host_mod.Host.createForTest(second_cfg, &second_responses);
-    defer second_host.deinit();
-    var second_facade = try second_host.facade();
-    defer second_facade.deinit();
-
-    var second_app = try Sudoku.init(second_cfg, second_facade, file_transport.NativeTransport.make(io), second_host.writer(), .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
-    defer second_app.deinit();
-
-    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
-    defer if (current) |p| std.testing.allocator.free(p);
-    try std.testing.expect(current != null);
-
-    try second_app.runStartupFlow(current.?);
-
-    try std.testing.expect(board.equal(expected_board, second_app.engine.state.board));
-    try std.testing.expectEqual(expected_history_pointer, second_app.engine.state.history.pointer);
-    try std.testing.expectEqual(expected_history_len, second_app.engine.state.history.entries.items.len);
-    const given_row: u4 = @intCast(fixture.given_probe.row);
-    const given_col: u4 = @intCast(fixture.given_probe.col);
-    try std.testing.expectEqual(
-        cell.rawToCellValue(fixture.given_probe.value),
-        second_app.engine.state.board.getCellValue(given_row, given_col),
-    );
-    try std.testing.expect(second_app.engine.state.board.isGiven(given_row, given_col));
-    for (fixture.move_probes) |probe| {
-        const probe_row: u4 = @intCast(probe.row);
-        const probe_col: u4 = @intCast(probe.col);
-        try std.testing.expectEqual(
-            cell.rawToCellValue(probe.value),
-            second_app.engine.state.board.getCellValue(probe_row, probe_col),
-        );
-        try std.testing.expect(!second_app.engine.state.board.isGiven(probe_row, probe_col));
-    }
-    const restored_save = try second_app.engine.toSaveFormat(std.testing.allocator);
-    defer std.testing.allocator.free(restored_save);
-    try std.testing.expectEqualSlices(u8, expected_save, restored_save);
-}
-
 fn restoreFailureScenario(delete: bool) !void {
     const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
@@ -2259,4 +2134,289 @@ test "new triggers replace confirm before autosave can overwrite restored file" 
     defer std.testing.allocator.free(default_virtual);
     try std.testing.expect(!transport_impl.files.contains(default_virtual));
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+/// Cross-entry parity: each scenario in the shared fixture runs through the real `Sudoku` loop
+/// (startup flow + `turn`) and must meet the expectations the web shell is held to as well.
+const parity = struct {
+    const test_defaults = @import("../../test/config_defaults.zig");
+
+    const SCENARIOS_PATH = "src/test/fixtures/parity_scenarios.json";
+    const STARTUP_PATH_DIR = "/";
+    const IMPORT_PATH = "/puzzle.txt";
+    const TRANSPORT_DIR_PREFIX = MemoryTransport.DIR ++ "/";
+    const NATIVE_ENTRY = "native";
+
+    const CellAt = struct { row: u8, col: u8 };
+    const Move = struct { row: u8, col: u8, digit: u8 };
+    const Probe = struct { row: u8, col: u8, value: u8, given: bool };
+    const CurrentFile = struct { name: []const u8, puzzle_line: []const u8, moves: []const Move = &.{} };
+
+    const Step = struct {
+        fill: ?Move = null,
+        clear: ?CellAt = null,
+        toggle_auto_save: ?bool = null,
+        toggle_region: ?bool = null,
+        set_theme: ?[]const u8 = null,
+        fill_first_empty: ?bool = null,
+        undo: ?bool = null,
+        redo: ?bool = null,
+        hint: ?bool = null,
+        solve: ?bool = null,
+        paste: ?[]const u8 = null,
+        open: ?CurrentFile = null,
+        import: ?[]const u8 = null,
+        save: ?bool = null,
+        copy: ?bool = null,
+        new: ?[]const u8 = null,
+        @"export": ?bool = null,
+        relaunch: ?bool = null,
+    };
+
+    const ScenarioConfig = struct {
+        auto_restore: bool = false,
+        auto_new: bool = false,
+        auto_save: bool = false,
+        difficulty: ?[]const u8 = null,
+    };
+
+    const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null };
+
+    const Legend = struct { undo: ?bool = null, redo: ?bool = null };
+
+    const Expect = struct {
+        questions: usize,
+        solved_after_startup: ?bool = null,
+        written: []const []const u8,
+        status: ?[]const u8,
+        errors: usize = 0,
+        settings: ?Settings = null,
+        legend: ?Legend = null,
+        probes: []const Probe,
+    };
+
+    /// An entry that cannot run the scenario yet; the drift check requires the gap and an open issue.
+    const Skip = struct { entry: []const u8, gap: []const u8, issue: u32 };
+
+    const Scenario = struct {
+        name: []const u8,
+        skip: ?Skip = null,
+        config: ScenarioConfig,
+        current_file: ?CurrentFile = null,
+        puzzle_line: ?[]const u8 = null,
+        answers: []const bool,
+        steps: []const Step,
+        expect: Expect,
+    };
+
+    const Scenarios = struct { scenarios: []const Scenario };
+
+    /// What one launch of the shell runs against; a relaunch keeps all of it.
+    const Rig = struct {
+        io: std.Io,
+        data_dir: []const u8,
+        facade: *DeterministicFacade,
+        transport: *MemoryTransport,
+        out: *std.Io.Writer,
+
+        fn launch(self: Rig, cfg: config.Config) !Sudoku {
+            return Sudoku.init(cfg, self.facade.asFacade(), self.transport.asTransport(), self.out, .{
+                .io = self.io,
+                .data_dir = self.data_dir,
+                .visible_save_dir = self.data_dir,
+            });
+        }
+    };
+
+    fn scenarioConfig(sc: ScenarioConfig) !config.Config {
+        var cfg = test_defaults.testConfigDefaults();
+        cfg.auto_restore = sc.auto_restore;
+        cfg.auto_new = sc.auto_new;
+        cfg.auto_save = sc.auto_save;
+        if (sc.difficulty) |name| cfg.difficulty = std.meta.stringToEnum(config.Difficulty, name) orelse return error.UnknownDifficulty;
+        return cfg;
+    }
+
+    /// Bytes of a saved game: `puzzle_line` with the player's `moves` on top.
+    fn savedGame(cfg: config.Config, file: CurrentFile) ![]u8 {
+        var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+        defer engine.deinit();
+        _ = engine.newFromOneLinePuzzle(file.puzzle_line);
+        for (file.moves) |m| {
+            const event = engine.exec(.{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } });
+            if (event != .ok) return error.SetupMoveRejected;
+        }
+        return engine.toSaveFormat(std.testing.allocator);
+    }
+
+    /// First empty cell and the lowest digit that does not repeat in its row, column or box.
+    fn firstEmptyLegalFill(view: board.Board.BoardView) !command.FillData {
+        for (0..9) |r| for (0..9) |c| {
+            const row: u4 = @intCast(r);
+            const col: u4 = @intCast(c);
+            if (view.get(row, col) != .zero) continue;
+            digit: for (1..10) |d| {
+                const value = cell.rawToCellValue(@intCast(d));
+                for (0..9) |i| {
+                    const k: u4 = @intCast(i);
+                    const box_row: u4 = @intCast(r / 3 * 3 + i / 3);
+                    const box_col: u4 = @intCast(c / 3 * 3 + i % 3);
+                    if (view.get(row, k) == value or view.get(k, col) == value or view.get(box_row, box_col) == value) continue :digit;
+                }
+                return .{ .row = row, .col = col, .digit = value };
+            }
+        };
+        return error.NoLegalFill;
+    }
+
+    /// Put the step's picked file where the native shell reads it; returns its owned path.
+    fn putPicked(cfg: config.Config, transport: *MemoryTransport, step: Step) !?[]u8 {
+        if (step.open) |file| {
+            const bytes = try savedGame(cfg, file);
+            defer std.testing.allocator.free(bytes);
+            const path = try std.fs.path.join(std.testing.allocator, &.{ STARTUP_PATH_DIR, file.name });
+            try transport.put(path, bytes);
+            return path;
+        }
+        if (step.import) |line| {
+            try transport.put(IMPORT_PATH, line);
+            return try std.testing.allocator.dupe(u8, IMPORT_PATH);
+        }
+        return null;
+    }
+
+    fn stepCommand(app: *Sudoku, step: Step, picked: ?[]const u8) !command.Command {
+        if (step.open != null) return .{ .open = .{ .path = picked } };
+        if (step.import != null) return .{ .import = .{ .path = picked } };
+        if (step.save != null) return .{ .save = .{ .path = null } };
+        if (step.copy != null) return .{ .copy = {} };
+        if (step.new) |line| return .{ .new = .{ .puzzle = line } };
+        if (step.@"export" != null) return .{ .@"export" = .{ .path = null } };
+        if (step.fill) |m| return .{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
+        if (step.clear) |at| return .{ .clear = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
+        if (step.toggle_auto_save != null) return .{ .toggle_auto_save = {} };
+        if (step.toggle_region != null) return .{ .toggle_region = {} };
+        if (step.set_theme) |name| return .{ .set_theme = std.meta.stringToEnum(config.ViewTheme, name) orelse return error.UnknownTheme };
+        if (step.fill_first_empty != null) return .{ .fill = try firstEmptyLegalFill(app.engine.eventBoard()) };
+        if (step.undo != null) return .{ .undo = {} };
+        if (step.redo != null) return .{ .redo = {} };
+        if (step.hint != null) return .{ .hint = .{} };
+        if (step.solve != null) return .{ .solve_for_me = {} };
+        if (step.paste) |line| return .{ .paste = .{ .line = line } };
+        return error.UnknownScenarioStep;
+    }
+
+    /// Restart on the file last written, the way the next launch restores the current file.
+    fn relaunch(rig: Rig, app: *Sudoku) !void {
+        const written = rig.transport.written.items;
+        if (written.len == 0) return error.NothingToRelaunch;
+        const path = try std.testing.allocator.dupe(u8, written[written.len - 1]);
+        defer std.testing.allocator.free(path);
+        const next = try rig.launch(app.engine.getConfig());
+        app.deinit();
+        app.* = next;
+        try app.runStartupFlow(path);
+    }
+
+    fn runScenario(io: std.Io, data_dir: []const u8, scenario: Scenario) !void {
+        const cfg = try scenarioConfig(scenario.config);
+        var facade_impl = DeterministicFacade{ .steps = &.{}, .replace_answers = scenario.answers };
+        var transport_impl = MemoryTransport.init(std.testing.allocator);
+        defer transport_impl.deinit();
+        var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+        defer out.deinit();
+        const rig = Rig{ .io = io, .data_dir = data_dir, .facade = &facade_impl, .transport = &transport_impl, .out = &out.writer };
+
+        var app = try rig.launch(cfg);
+        defer app.deinit();
+
+        if (scenario.current_file) |file| {
+            const bytes = try savedGame(cfg, file);
+            defer std.testing.allocator.free(bytes);
+            const path = try std.fs.path.join(std.testing.allocator, &.{ STARTUP_PATH_DIR, file.name });
+            defer std.testing.allocator.free(path);
+            try transport_impl.put(path, bytes);
+            try app.runStartupFlow(path);
+            if (scenario.expect.solved_after_startup) |solved| {
+                try std.testing.expectEqual(solved, app.engine.state.board.isSolved());
+            }
+        }
+        if (scenario.puzzle_line) |line| {
+            if (app.engine.newFromOneLinePuzzle(line) != .ok) return error.SetupPuzzleRejected;
+            app.file_session.noteLoad(.new_game);
+        }
+
+        for (scenario.steps) |step| {
+            if (step.relaunch != null) {
+                try relaunch(rig, &app);
+                continue;
+            }
+            const picked = try putPicked(cfg, &transport_impl, step);
+            defer if (picked) |p| std.testing.allocator.free(p);
+            const one = [_]command.ParseCommandResult{.{ .valid = try stepCommand(&app, step, picked) }};
+            facade_impl.steps = &one;
+            facade_impl.idx = 0;
+            _ = try app.turn();
+        }
+
+        try std.testing.expectEqual(scenario.expect.questions, facade_impl.replace_prompts);
+        try std.testing.expectEqual(scenario.expect.written.len, transport_impl.written.items.len);
+        for (scenario.expect.written, transport_impl.written.items) |want, got| {
+            try std.testing.expectEqualStrings(want, std.fs.path.basename(got));
+        }
+        const status: ?[]const u8 = facade_impl.last_render_msg;
+        if (scenario.expect.status) |want| {
+            const dir_prefix = try std.fmt.allocPrint(std.testing.allocator, "{s}/", .{data_dir});
+            defer std.testing.allocator.free(dir_prefix);
+            const in_data_dir = try std.mem.replaceOwned(u8, std.testing.allocator, status orelse "", dir_prefix, "");
+            defer std.testing.allocator.free(in_data_dir);
+            const relative = try std.mem.replaceOwned(u8, std.testing.allocator, in_data_dir, TRANSPORT_DIR_PREFIX, "");
+            defer std.testing.allocator.free(relative);
+            try std.testing.expectEqualStrings(want, relative);
+        } else {
+            try std.testing.expect(status == null or status.?.len == 0);
+        }
+        try std.testing.expectEqual(scenario.expect.errors, facade_impl.error_calls);
+        if (scenario.expect.settings) |want| {
+            const saved = try settings_store.loadOrDefault(std.testing.allocator, io, data_dir);
+            if (want.auto_save) |on| try std.testing.expectEqual(on, saved.auto_save);
+            if (want.show_region) |on| try std.testing.expectEqual(on, saved.show_region);
+            if (want.theme) |name| try std.testing.expectEqualStrings(name, @tagName(saved.theme));
+        }
+        if (scenario.expect.legend) |want| {
+            const got = app.engine.getLegend();
+            if (want.undo) |on| try std.testing.expectEqual(on, got.undo);
+            if (want.redo) |on| try std.testing.expectEqual(on, got.redo);
+        }
+        const view = app.engine.eventBoard();
+        for (scenario.expect.probes) |p| {
+            const row: u4 = @intCast(p.row);
+            const col: u4 = @intCast(p.col);
+            try std.testing.expectEqual(cell.rawToCellValue(p.value), view.get(row, col));
+            try std.testing.expectEqual(p.given, view.isGiven(row, col));
+        }
+    }
+};
+
+test "parity scenarios: native shell meets every shared scenario expectation" {
+    const io = std.testing.io;
+    const bytes = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, parity.SCENARIOS_PATH, std.testing.allocator, .unlimited);
+    defer std.testing.allocator.free(bytes);
+    const parsed = try std.json.parseFromSlice(parity.Scenarios, std.testing.allocator, bytes, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.scenarios.len > 0);
+
+    for (parsed.value.scenarios) |scenario| {
+        if (scenario.skip) |skip| if (std.mem.eql(u8, skip.entry, parity.NATIVE_ENTRY)) continue;
+        var tmp = std.testing.tmpDir(.{});
+        defer tmp.cleanup();
+        const rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+        defer std.testing.allocator.free(rel);
+        const abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, rel, std.testing.allocator);
+        defer std.testing.allocator.free(abs_z);
+        parity.runScenario(io, abs_z[0 .. abs_z.len - 1], scenario) catch |err| {
+            std.debug.print("parity scenario failed: {s}\n", .{scenario.name});
+            return err;
+        };
+    }
 }
