@@ -5,8 +5,8 @@ import * as errorModalMod from "./error_modal.js";
 
 {
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  errorModalMod.showErrorModal(errorModal, "cannot modify a puzzle cell");
-  assert.equal(errorModal.msgEl.textContent, "cannot modify a puzzle cell");
+  errorModalMod.showErrorModal(errorModal, "That cell is part of the puzzle, so it can't be changed.");
+  assert.equal(errorModal.msgEl.textContent, "That cell is part of the puzzle, so it can't be changed.");
   assert.equal(errorModal.el.hidden, false);
 }
 

@@ -264,7 +264,7 @@ test "a refused save does not ask for a target" {
     try testing.expectEqualStrings(file_policy.SAVE_WHILE_AUTO_SAVE_MSG, flow.next(.start).show_status);
 }
 
-const taken_ask_text = "sudoku.sud in Documents was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
+const taken_ask_text = "The file sudoku.sud in Documents was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
 
 fn takenAsk(flow: *SaveFlow) !void {
     _ = flow.next(.start);
@@ -312,7 +312,7 @@ test "save onto an existing file while detached asks before writing" {
     _ = flow.next(.start);
     const ask = flow.next(.{ .target_checked = true }).ask;
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_TITLE, ask.title);
-    try testing.expectEqualStrings("game.sud already exists. Do you want to replace it?", ask.text);
+    try testing.expectEqualStrings("The file game.sud already exists. Do you want to replace it?", ask.text);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_OK_LABEL, ask.ok_label);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_CANCEL_LABEL, ask.cancel_label);
     try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .answered = true }).write);

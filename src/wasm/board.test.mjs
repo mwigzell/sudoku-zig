@@ -511,7 +511,7 @@ function selectedAt(board, row, col) {
   globalThis.fetch = prevFetch;
   globalThis.__sudokuChoose = prevChoose;
   assert.equal(questions.length, 1, "detached autosave onto an existing file asks once");
-  assert.equal(questions[0].message, "sudoku.sud already exists. Do you want to replace it?");
+  assert.equal(questions[0].message, "The file sudoku.sud already exists. Do you want to replace it?");
   assert.deepEqual(questions[0].labels, { title: "Replace file?", okLabel: "Replace", cancelLabel: "Cancel" });
   assert.equal(postedCurrentFile(host.calls), undefined, "declined question writes nothing");
   assert.equal(errorModal.el.hidden, true, "declining is not an error");

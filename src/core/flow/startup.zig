@@ -7,6 +7,9 @@ const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const config = @import("../config.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
+const logger = @import("../logger.zig");
+
+const log = logger.Logger(.startup);
 
 const Step = step_mod.Step;
 const Input = step_mod.Input;
@@ -15,7 +18,7 @@ const MAX_NAME_LEN = file_session_mod.MAX_NAME_LEN;
 
 pub const UNEXPECTED_INPUT_MSG = "Startup could not finish because the app sent an unexpected answer.";
 pub const RESTORE_FAILED_TITLE = "Restore failed";
-pub const RESTORE_FAILED_FMT = "{s} could not be restored ({s}). Do you want to delete it?";
+pub const RESTORE_FAILED_FMT = "The file {s} could not be restored. Do you want to delete it?";
 pub const RESTORE_FAILED_OK_LABEL = "Delete";
 pub const RESTORE_FAILED_CANCEL_LABEL = "Keep";
 pub const GENERATE_FAILED_FMT = "A new game could not be generated ({s}).";
@@ -222,7 +225,8 @@ pub const StartupFlow = struct {
     }
 
     fn restoreFailed(self: *StartupFlow, reason: []const u8) Step {
-        const text = std.fmt.bufPrint(&self.text.buf, RESTORE_FAILED_FMT, .{ self.name.get(), reason }) catch RESTORE_FAILED_TITLE;
+        log.info("restore of {s} failed: {s}", .{ self.name.get(), reason });
+        const text = std.fmt.bufPrint(&self.text.buf, RESTORE_FAILED_FMT, .{self.name.get()}) catch RESTORE_FAILED_TITLE;
         if (text.ptr == &self.text.buf) self.text.len = text.len else self.text.set(text);
         return self.showIdle(.showing_idle_then_ask_delete);
     }
@@ -344,7 +348,7 @@ test "startup restore failure shows idle, asks to delete, then forgets the file"
         try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.status.?);
         const asked = f.next(.ack);
         try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, asked.ask.title);
-        try std.testing.expectEqualStrings("game.sud could not be restored (readAll: FileNotFound). Do you want to delete it?", asked.ask.text);
+        try std.testing.expectEqualStrings("The file game.sud could not be restored. Do you want to delete it?", asked.ask.text);
         const forget = f.next(.{ .answered = delete });
         try std.testing.expectEqualStrings("/data/game.sud", forget.forget_current_file.path);
         try std.testing.expectEqual(delete, forget.forget_current_file.delete);
@@ -406,4 +410,11 @@ test "startup ends with an error on an unexpected answer" {
     var f = h.flow(restore_opts, test_file);
     _ = f.next(.start);
     try std.testing.expectEqualStrings(UNEXPECTED_INPUT_MSG, f.next(.ack).show_error);
+}
+
+test "startup prompts read as sentences that start with words, not the file name" {
+    const sentence = @import("../../test/sentence.zig");
+    var buf: [256]u8 = undefined;
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, RESTORE_FAILED_FMT, .{"game.sud"}));
+    try sentence.expectSentence(UNEXPECTED_INPUT_MSG);
 }

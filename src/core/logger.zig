@@ -93,6 +93,8 @@ fn emit(
     comptime fmt: []const u8,
     args: anytype,
 ) void {
+    // wasm has no stderr; on the web the JS shell logs its own failures.
+    if (comptime builtin.os.tag == .freestanding) return;
     if (comptime builtin.abi == .android) {
         var line_buf: [android_line_cap]u8 = undefined;
         const line = formatAndroidLine(scope_name, fmt, args, &line_buf) orelse return;

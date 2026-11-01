@@ -6,7 +6,7 @@ const board = @import("../board/board.zig");
 /// Execute an undo command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     if (engine.state.history.pointer == 0) {
-        return game_engine.Event{ .error_msg = "nothing to undo" };
+        return game_engine.Event{ .error_msg = game_engine.NOTHING_TO_UNDO_MSG };
     }
     engine.state.history.pointer -= 1;
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
@@ -19,7 +19,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         },
         .solve_batch => |snap| {
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
-                return engine.errorEvent("could not restore board");
+                return engine.errorEvent(game_engine.UNDO_FAILED_MSG);
             };
             engine.state.board.validate();
             engine.beginEventMsg();
@@ -40,7 +40,7 @@ test "command.undo.execute fails when no history" {
 
     const event = execute(&engine);
     switch (event) {
-        .error_msg => |msg| try std.testing.expectEqualStrings(msg, "nothing to undo"),
+        .error_msg => |msg| try std.testing.expectEqualStrings(msg, game_engine.NOTHING_TO_UNDO_MSG),
         .ok => return error.TestFailed,
     }
 }

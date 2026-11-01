@@ -7,7 +7,7 @@ const solver = @import("../solver.zig");
 /// Execute a redo command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     if (engine.state.history.pointer >= engine.state.history.entries.items.len) {
-        return game_engine.Event{ .error_msg = "nothing to redo" };
+        return game_engine.Event{ .error_msg = game_engine.NOTHING_TO_REDO_MSG };
     }
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
@@ -20,13 +20,13 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         },
         .solve_batch => |snap| {
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
-                return engine.errorEvent("could not restore board");
+                return engine.errorEvent(game_engine.REDO_FAILED_MSG);
             };
             const solved = solver.solve(engine.state.board) catch {
-                return engine.errorEvent("could not redo solve");
+                return engine.errorEvent(game_engine.REDO_FAILED_MSG);
             };
             switch (solved) {
-                .none => return engine.errorEvent("could not redo solve"),
+                .none => return engine.errorEvent(game_engine.REDO_FAILED_MSG),
                 .solution => |grid| {
                     for (grid, 0..) |digit, i| {
                         const row: u4 = @intCast(i / 9);
@@ -65,7 +65,7 @@ test "command.redo.execute fails when nothing to redo" {
 
     const event = execute(&engine);
     switch (event) {
-        .error_msg => |msg| try std.testing.expectEqualStrings(msg, "nothing to redo"),
+        .error_msg => |msg| try std.testing.expectEqualStrings(msg, game_engine.NOTHING_TO_REDO_MSG),
         .ok => return error.TestFailed,
     }
 }

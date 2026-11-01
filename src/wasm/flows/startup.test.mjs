@@ -219,7 +219,7 @@ for (const deleteIt of [true, false]) {
   assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
   assert.equal(run.asked.length, 1);
   assert.equal(run.asked[0].title, "Restore failed");
-  assert.equal(run.asked[0].text, "game.sud could not be restored (fetch failed: 404). Do you want to delete it?");
+  assert.equal(run.asked[0].text, "The file game.sud could not be restored. Do you want to delete it?");
   assert.equal(run.asked[0].okLabel, "Delete");
   assert.equal(run.asked[0].cancelLabel, "Keep");
   const forget = run.calls.find((c) => c.init.method === "DELETE");

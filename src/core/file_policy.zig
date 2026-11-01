@@ -51,7 +51,7 @@ pub const AUTO_SAVE_TRIGGER_COMMANDS = [_][]const u8{
 
 /// Replace question asked before overwriting an existing file; `{s}` is the file name.
 pub const REPLACE_CONFIRM_TITLE: []const u8 = "Replace file?";
-pub const REPLACE_CONFIRM_FMT = "{s} already exists. Do you want to replace it?";
+pub const REPLACE_CONFIRM_FMT = "The file {s} already exists. Do you want to replace it?";
 pub const REPLACE_CONFIRM_OK_LABEL: []const u8 = "Replace";
 pub const REPLACE_CONFIRM_CANCEL_LABEL: []const u8 = "Cancel";
 
@@ -61,7 +61,7 @@ pub const WRITE_CANCELLED_MSG: []const u8 = "cancelled";
 pub const SAVED_TO_FMT = "saved to: {s}";
 /// Question when the platform's autosave file was created by an earlier install; `{s}` are the file and its folder.
 pub const TAKEN_TITLE: []const u8 = "Autosave file";
-pub const TAKEN_FMT = "{s} in {s} was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
+pub const TAKEN_FMT = "The file {s} in {s} was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
 pub const TAKEN_PICK_LABEL: []const u8 = "Pick it";
 pub const TAKEN_NEW_NAME_LABEL: []const u8 = "New name";
 
@@ -192,4 +192,12 @@ test "commandTriggersAutoSaveByName follows shared trigger set" {
         try std.testing.expect(commandTriggersAutoSaveByName(name));
     }
     try std.testing.expect(!commandTriggersAutoSaveByName("save_as"));
+}
+
+test "file prompts read as sentences that start with words, not the file name" {
+    const sentence = @import("../test/sentence.zig");
+    var buf: [256]u8 = undefined;
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, REPLACE_CONFIRM_FMT, .{"game.sud"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, TAKEN_FMT, .{ "sudoku.sud", "Documents" }));
+    try sentence.expectSentence(SAVE_WHILE_AUTO_SAVE_MSG);
 }

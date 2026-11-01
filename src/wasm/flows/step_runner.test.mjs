@@ -39,7 +39,7 @@ const DEFAULT = ["default"];
 /** Recording handlers whose default target is `game.sud`. */
 const saveHandlers = (options = {}) => recordingHandlers({ defaultName: "game.sud", ...options });
 
-const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you want to replace it?", "Replace", "Cancel"];
+const REPLACE_ASK = ["ask", "Replace file?", "The file game.sud already exists. Do you want to replace it?", "Replace", "Cancel"];
 
 // Save with no working file names the default target, writes and reports the core status text.
 {
@@ -127,7 +127,7 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
   assert.deepEqual(handlers.log, [
     ["default"],
     ["check", "sudoku.sud"],
-    ["ask", "Replace file?", "sudoku.sud already exists. Do you want to replace it?", "Replace", "Cancel"],
+    ["ask", "Replace file?", "The file sudoku.sud already exists. Do you want to replace it?", "Replace", "Cancel"],
   ]);
   assert.deepEqual(outcome, { kind: "done" }, "declined autosave ends without a status");
 }

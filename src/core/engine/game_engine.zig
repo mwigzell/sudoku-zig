@@ -41,6 +41,22 @@ pub const Error = error{System};
 pub const NEW_GAME_STARTED_MSG = "new game started";
 pub const WIN_STATUS_MSG = "You win!";
 
+/// Error sentences a command shows in a dialog; technical detail goes to the log.
+pub const PUZZLE_CELL_MSG = "That cell is part of the puzzle, so it can't be changed.";
+pub const CELL_CHANGE_FAILED_MSG = "The cell could not be changed.";
+pub const MOVE_NOT_RECORDED_MSG = "The move could not be recorded, so it was not made.";
+pub const SOLVE_CONFLICT_MSG = "The board has a conflict, so it can't be solved. Clear the conflicting cells and try again.";
+pub const NOT_A_SAVED_GAME_MSG = "The file is not a saved Sudoku game, or it is damaged.";
+pub const LINE_LENGTH_MSG = "A puzzle line must have exactly 81 characters.";
+pub const LINE_CHARACTER_MSG = "A puzzle line can only contain the digits 1 to 9, with 0 or . for an empty cell.";
+pub const NEW_GAME_FAILED_MSG = "A new game could not be started.";
+pub const NOTHING_TO_UNDO_MSG = "There is nothing to undo.";
+pub const NOTHING_TO_REDO_MSG = "There is nothing to redo.";
+pub const UNDO_FAILED_MSG = "The last move could not be undone.";
+pub const REDO_FAILED_MSG = "The move could not be redone.";
+
+const log = logger.Logger(.engine);
+
 /// Owns portable game state. No file transport or I/O here.
 const SolvabilityProbe = enum { move, load };
 const LoadStatusMode = enum {
@@ -153,13 +169,19 @@ pub const GameEngine = struct {
 
     /// Open from SUD0 bytes — the core open command calls this on every platform.
     pub fn openFromSave(self: *@This(), buf: []const u8, opened_label: ?[]const u8) Event {
-        self.loadSaveFormat(buf) catch |err| return self.errorEvent(@errorName(err));
+        self.loadSaveFormat(buf) catch |err| {
+            log.info("open: not a saved game ({s})", .{@errorName(err)});
+            return self.errorEvent(NOT_A_SAVED_GAME_MSG);
+        };
         return self.finishLoadEvent(opened_label, .open);
     }
 
     /// Startup restore path: rehydrate state and surface only persisted status.
     pub fn restoreFromSave(self: *@This(), buf: []const u8) Event {
-        self.loadSaveFormat(buf) catch |err| return self.errorEvent(@errorName(err));
+        self.loadSaveFormat(buf) catch |err| {
+            log.info("restore: not a saved game ({s})", .{@errorName(err)});
+            return self.errorEvent(NOT_A_SAVED_GAME_MSG);
+        };
         return self.finishLoadEvent(null, .startup_restore);
     }
 
@@ -186,8 +208,8 @@ pub const GameEngine = struct {
 
     fn loadOneLine(self: *@This(), line: []const u8, comptime source: []const u8) Event {
         self.applyOneLinePuzzle(line) catch |err| switch (err) {
-            board.Error.WrongLength => return self.errorEvent(source ++ ": expected exactly 81 characters"),
-            else => return self.errorEvent(source ++ ": invalid character in puzzle line"),
+            board.Error.WrongLength => return self.errorEvent(LINE_LENGTH_MSG),
+            else => return self.errorEvent(LINE_CHARACTER_MSG),
         };
         self.beginEventMsg();
         self.appendEventMsg(source ++ ": puzzle loaded");
@@ -197,7 +219,7 @@ pub const GameEngine = struct {
     /// New game from a one-line puzzle string (generate dialog or fallback fixture).
     pub fn newFromOneLinePuzzle(self: *@This(), line: []const u8) Event {
         self.applyOneLinePuzzle(line) catch {
-            return .{ .error_msg = "could not create new game" };
+            return .{ .error_msg = NEW_GAME_FAILED_MSG };
         };
         self.state.status.reset();
         self.state.status.append(NEW_GAME_STARTED_MSG);
@@ -291,18 +313,14 @@ pub const GameEngine = struct {
         return .{ .error_msg = self.event_msg.slice() };
     }
 
-    /// Build `.error_msg` from a formatted string in engine scratch memory.
-    pub fn errorEventFmt(self: *@This(), comptime fmt: []const u8, args: anytype) Event {
-        self.event_msg.reset();
-        self.event_msg.appendFmt(fmt, args);
-        return .{ .error_msg = self.event_msg.slice() };
-    }
-
     /// Map low-level set-cell errors into user-facing command errors.
     pub fn eventFromSetCellError(self: *@This(), row: u4, col: u4, err: anyerror) Event {
         return switch (err) {
-            error.IsGiven => self.errorEvent("cannot modify a puzzle cell"),
-            else => self.errorEventFmt("set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) }),
+            error.IsGiven => self.errorEvent(PUZZLE_CELL_MSG),
+            else => blk: {
+                log.info("set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) });
+                break :blk self.errorEvent(CELL_CHANGE_FAILED_MSG);
+            },
         };
     }
 
@@ -398,7 +416,8 @@ pub const GameEngine = struct {
         // First discard stale future entries from any earlier undo branch
         self.state.history.truncateFuture();
         self.state.history.push(row, col, old_value, digit) catch |err| {
-            return self.errorEventFmt("history push failed: {s}", .{@errorName(err)});
+            log.info("history push failed: {s}", .{@errorName(err)});
+            return self.errorEvent(MOVE_NOT_RECORDED_MSG);
         };
         return self.finishOkAfterCellEdit(row, col);
     }
@@ -408,7 +427,7 @@ pub const GameEngine = struct {
         const before_flat = board.toFlat(self.state.board);
         const before_given = self.state.board.given_bits;
         const solved = solver.solve(self.state.board) catch |err| switch (err) {
-            error.Conflict => return self.errorEvent("board has a conflict"),
+            error.Conflict => return self.errorEvent(SOLVE_CONFLICT_MSG),
         };
         switch (solved) {
             .none => return self.finishOkEvent(self.state.board.asView(), false, null, false),
@@ -423,7 +442,8 @@ pub const GameEngine = struct {
                 }
                 self.state.history.truncateFuture();
                 self.state.history.pushSolve(.{ .given_bits = before_given, .flat = before_flat }) catch |push_err| {
-                    return self.errorEventFmt("history push failed: {s}", .{@errorName(push_err)});
+                    log.info("history push failed: {s}", .{@errorName(push_err)});
+                    return self.errorEvent(MOVE_NOT_RECORDED_MSG);
                 };
                 self.state.board.validate();
                 self.beginEventMsg();
@@ -631,7 +651,7 @@ test "importFromLine rejects a short line and leaves board and history intact" {
 
     const ev = engine.importFromLine("12345");
     try std.testing.expect(ev == .error_msg);
-    try std.testing.expectEqualStrings("import: expected exactly 81 characters", ev.error_msg);
+    try std.testing.expectEqualStrings(LINE_LENGTH_MSG, ev.error_msg);
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
 }
@@ -657,7 +677,7 @@ test "importFromLine rejects invalid characters without touching state" {
     for (&bad) |*c| c.* = 'z';
     const ev = engine.importFromLine(bad[0..]);
     try std.testing.expect(ev == .error_msg);
-    try std.testing.expectEqualStrings("import: invalid character in puzzle line", ev.error_msg);
+    try std.testing.expectEqualStrings(LINE_CHARACTER_MSG, ev.error_msg);
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
 }
 
@@ -992,7 +1012,7 @@ test "Event.ok can carry a message" {
 
 test "Event.error_msg carries an error string" {
     _ = Event{
-        .error_msg = "cannot modify a puzzle cell",
+        .error_msg = PUZZLE_CELL_MSG,
     };
 }
 
@@ -1072,7 +1092,7 @@ test "exec undo on empty history returns .error_msg" {
         .ok => return error.TestFailed,
         .error_msg => |msg| msg,
     };
-    try std.testing.expectEqualStrings(result, "nothing to undo");
+    try std.testing.expectEqualStrings(result, NOTHING_TO_UNDO_MSG);
 }
 
 test "exec then undo reverses a fill back to zero" {
@@ -1564,4 +1584,13 @@ test "loadSaveFormat preserves view config" {
     const cfg = engine.getConfig();
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
     try std.testing.expect(cfg.show_region);
+}
+
+test "every engine error message reads as a sentence" {
+    const sentence = @import("../../test/sentence.zig");
+    inline for (.{
+        PUZZLE_CELL_MSG,      CELL_CHANGE_FAILED_MSG, MOVE_NOT_RECORDED_MSG, SOLVE_CONFLICT_MSG,
+        NOT_A_SAVED_GAME_MSG, LINE_LENGTH_MSG,        LINE_CHARACTER_MSG,    NEW_GAME_FAILED_MSG,
+        NOTHING_TO_UNDO_MSG,  NOTHING_TO_REDO_MSG,    UNDO_FAILED_MSG,       REDO_FAILED_MSG,
+    }) |msg| try sentence.expectSentence(msg);
 }
