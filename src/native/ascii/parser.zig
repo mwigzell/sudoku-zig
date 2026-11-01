@@ -25,9 +25,20 @@ pub const getName = cm.getName;
 
 // ---------------------------------------------------------------------------
 
-const coordError: ParseCommandResult = .{
-    .error_msg = "coordinate must be a letter (A-I) followed by a number (1-9)",
-};
+/// Sentences the terminal's error box shows for input it can't run.
+pub const EMPTY_INPUT_MSG = "Type a command, then press Enter.";
+pub const UNKNOWN_COMMAND_MSG = "That command is not available right now.";
+pub const FILL_USAGE_MSG = "Fill needs a cell and a digit, for example: fill A1 5.";
+pub const CLEAR_USAGE_MSG = "Clear needs a cell, for example: clear A1.";
+pub const HINT_USAGE_MSG = "Hint takes at most one cell, for example: hint A1.";
+pub const CELL_FORMAT_MSG = "A cell is a letter from A to I followed by a number from 1 to 9, for example A1.";
+pub const DIGIT_FORMAT_MSG = "The digit must be a number from 1 to 9.";
+const AMBIGUOUS_FMT = "That could mean {s}. Type more of the command to choose one.";
+
+const coordError: ParseCommandResult = .{ .error_msg = CELL_FORMAT_MSG };
+
+/// Holds the one formatted message; it stays valid until the next parse.
+var ambiguity_buf: [256]u8 = undefined;
 
 /// Trim → tokenize → re-dispatch through prefix dispatch (backward compat).
 pub fn parse(input_line: []const u8) ParseCommandResult {
@@ -54,12 +65,12 @@ fn prefixMatch(a: []const u8, b: []const u8, len: usize) bool {
 /// Dispatch resolved command name to its argument parser.
 fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "fill")) {
-        const coord_str = it.next() orelse return .{ .error_msg = "fill requires coordinate" };
-        const digit_s = it.next() orelse return .{ .error_msg = "fill requires digit" };
+        const coord_str = it.next() orelse return .{ .error_msg = FILL_USAGE_MSG };
+        const digit_s = it.next() orelse return .{ .error_msg = FILL_USAGE_MSG };
         return parseFill(coord_str, digit_s);
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "clear")) {
-        const coord_s = it.next() orelse return .{ .error_msg = "clear requires coordinate" };
+        const coord_s = it.next() orelse return .{ .error_msg = CLEAR_USAGE_MSG };
         return parseClear(coord_s);
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "quit")) return parseQuit();
@@ -76,9 +87,7 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "Hint")) return parseHint(it);
     if (std.ascii.eqlIgnoreCase(cmd_name, "Solve")) return .{ .valid = Command.solve_for_me };
 
-    var buf: [32]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, "unknown command: {s}", .{cmd_name}) catch unreachable;
-    return .{ .error_msg = msg };
+    return .{ .error_msg = UNKNOWN_COMMAND_MSG };
 }
 
 const MaxMatchedCommands = 32;
@@ -101,10 +110,10 @@ fn acronymOf(name: []const u8, buf: []u8) []u8 {
 /// Public entry point — accepts available command names for prefix dispatch.
 pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) ParseCommandResult {
     const trimmed = std.mem.trim(u8, input_line, &std.ascii.whitespace);
-    if (trimmed.len == 0) return .{ .error_msg = "empty input" };
+    if (trimmed.len == 0) return .{ .error_msg = EMPTY_INPUT_MSG };
 
     var it = std.mem.tokenizeAny(u8, trimmed, &std.ascii.whitespace);
-    const verb = it.next() orelse return .{ .error_msg = "missing verb" };
+    const verb = it.next() orelse return .{ .error_msg = EMPTY_INPUT_MSG };
 
     // Check each command for prefix match — collect matches to report ambiguity
     var matched_cmds: [MaxMatchedCommands][]const u8 = undefined;
@@ -122,11 +131,7 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
             return dispatchToParser(exact, &it);
     }
     switch (match_count) {
-        0 => {
-            var buf: [32]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "unknown command \"{s}\"", .{verb}) catch unreachable;
-            return .{ .error_msg = msg };
-        },
+        0 => return .{ .error_msg = UNKNOWN_COMMAND_MSG },
         1 => return dispatchToParser(matched_cmds[0], &it),
         else => {
             // Tiebreaker: CamelCase acronym match. "sa" -> SaveAs (SA).
@@ -137,7 +142,7 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
                     return dispatchToParser(candidate, &it);
             }
             // Ambiguous — list matched commands
-            return buildAmbiguityMessage(verb, matched_cmds[0..match_count]);
+            return buildAmbiguityMessage(matched_cmds[0..match_count]);
         },
     }
 }
@@ -151,7 +156,7 @@ fn parseQuit() ParseCommandResult {
 fn parseFill(coord_str: []const u8, digit_s: []const u8) ParseCommandResult {
     const pos = parseCoordinate(coord_str) orelse return coordError;
     const dch = digit_s[0];
-    if (dch < '1' or dch > '9') return errorBadDigit(digit_s);
+    if (dch < '1' or dch > '9') return .{ .error_msg = DIGIT_FORMAT_MSG };
 
     return .{ .valid = Command{
         .fill = FillData{
@@ -167,7 +172,7 @@ fn parseHint(it: anytype) ParseCommandResult {
     const coord_s = it.next();
     if (coord_s == null) return .{ .valid = Command{ .hint = .{} } };
     const pos = parseCoordinate(coord_s.?) orelse return coordError;
-    if (it.next() != null) return .{ .error_msg = "hint takes at most one coordinate" };
+    if (it.next() != null) return .{ .error_msg = HINT_USAGE_MSG };
     return .{ .valid = Command{ .hint = .{ .row = pos.row, .col = pos.col } } };
 }
 
@@ -189,31 +194,16 @@ fn parseCoordinate(s: []const u8) ?ClearData {
     return .{ .row = @intCast(row_d - '1'), .col = @intCast(col_l - 'a') };
 }
 
-/// Build an error result for a bad digit token.
-fn errorBadDigit(val: []const u8) ParseCommandResult {
-    var buf: [40]u8 = undefined;
-    const msg = std.fmt.bufPrint(&buf, "invalid digit: '{s}'", .{val}) catch unreachable;
-    return .{ .error_msg = msg };
-}
-
-/// Build an ambiguity message listing which commands matched the typed prefix.
-fn buildAmbiguityMessage(verb: []const u8, matched: []const []const u8) ParseCommandResult {
-    var buf: [256]u8 = undefined;
-    var offset: usize = 0;
-
-    const prefix_msg = std.fmt.bufPrint(buf[offset..], "ambiguous command \"{s}\" — matches: ", .{verb}) catch unreachable;
-    offset += prefix_msg.len;
-
+/// "That could mean Save, SaveAs. …" for a prefix several commands share.
+fn buildAmbiguityMessage(matched: []const []const u8) ParseCommandResult {
+    var names_buf: [192]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&names_buf);
     for (matched, 0..) |name, i| {
-        if (i > 0) {
-            const comma = std.fmt.bufPrint(buf[offset..], ", ", .{}) catch unreachable;
-            offset += comma.len;
-        }
-        const name_msg = std.fmt.bufPrint(buf[offset..], "{s}", .{name}) catch unreachable;
-        offset += name_msg.len;
+        if (i > 0) w.writeAll(", ") catch break;
+        w.writeAll(name) catch break;
     }
-
-    return .{ .error_msg = buf[0..offset] };
+    const msg = std.fmt.bufPrint(&ambiguity_buf, AMBIGUOUS_FMT, .{w.buffered()}) catch return .{ .error_msg = UNKNOWN_COMMAND_MSG };
+    return .{ .error_msg = msg };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +233,7 @@ test "parse quit → .valid quit" {
 test "parse empty line → .error_msg" {
     const res = parse("   ");
     if (res == .error_msg) {
-        try std.testing.expectEqualStrings(res.error_msg, "empty input");
+        try std.testing.expectEqualStrings(EMPTY_INPUT_MSG, res.error_msg);
     } else {
         return error.TestFailed;
     }
@@ -374,6 +364,16 @@ test "parseWithCommands: ambiguous prefix returns error_msg listing matched comm
     try std.testing.expect(res == .error_msg);
     try std.testing.expect(std.mem.indexOf(u8, res.error_msg, getName(.redo)) != null);
     try std.testing.expect(std.mem.indexOf(u8, res.error_msg, "Repeat") != null);
+}
+
+test "parser error messages read as sentences, including a formatted ambiguous one" {
+    const sentence = @import("../../test/sentence.zig");
+    inline for (.{ EMPTY_INPUT_MSG, UNKNOWN_COMMAND_MSG, FILL_USAGE_MSG, CLEAR_USAGE_MSG, HINT_USAGE_MSG, CELL_FORMAT_MSG, DIGIT_FORMAT_MSG }) |msg|
+        try sentence.expectSentence(msg);
+    const cmds = [_][]const u8{ getName(.save), getName(.save_as), getName(.quit) };
+    const res = parseWithCommands("sav", &cmds);
+    try std.testing.expectEqualStrings("That could mean Save, SaveAs. Type more of the command to choose one.", res.error_msg);
+    try sentence.expectSentence(res.error_msg);
 }
 
 test "parseWithCommands: Fi A1 3 resolves to Fill (mixed case prefix)" {

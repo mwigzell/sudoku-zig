@@ -5,6 +5,9 @@ const about_format = @import("about_format.zig");
 const board = @import("../../core/board/board.zig");
 const cell = @import("../../core/board/cell.zig");
 const parser = @import("parser.zig");
+
+/// Shown when no command can be typed at the prompt.
+const NO_COMMANDS_MSG = "No commands are available right now.";
 const _command = @import("../../core/command.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
@@ -445,99 +448,99 @@ pub fn AsciiRenderer(StylerType: type) type {
             auto_save: bool,
             hint_target: ?facade.Selection,
         ) facade.Error!_command.ParseCommandResult {
-            self.writer.writeAll(">") catch return facade.Error.System;
-            self.writer.writeAll(" ") catch return facade.Error.System;
+            while (true) {
+                self.writer.writeAll("> ") catch return facade.Error.System;
+                const raw = self.inputSource.readline() catch return .{ .valid = _command.Command.quit };
+                defer self.allocator.free(raw);
+                if (names.len == 0) return .{ .error_msg = NO_COMMANDS_MSG };
 
-            const raw = self.inputSource.readline() catch return .{ .valid = _command.Command.quit };
-
-            defer self.allocator.free(raw);
-
-            if (names.len == 0) {
-                return .{ .error_msg = "no commands available" };
+                var rsl = parser.parseWithCommands(raw, names);
+                if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .menu) {
+                    rsl = try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+                }
+                // A cancelled dialog goes back to the command prompt quietly.
+                if (self.completeFromDialog(&rsl)) return rsl;
             }
+        }
 
-            var rsl = parser.parseWithCommands(raw, names);
-
-            if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .menu) {
-                rsl = try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
-            }
-
+        /// Ask the dialog a command needs (path, puzzle line, difficulty); false when the player cancels.
+        fn completeFromDialog(self: *@This(), rsl: *_command.ParseCommandResult) bool {
             // Intercept save_as: the typed path, or null for core's suggestion.
-            if (std.meta.activeTag(rsl) == .valid and
-                std.meta.activeTag(rsl.valid) == .save_as)
+            if (std.meta.activeTag(rsl.*) == .valid and
+                std.meta.activeTag(rsl.*.valid) == .save_as)
             {
-                const path = self.saveAsDialog() catch return .{ .error_msg = "cancelled" };
+                const path = self.saveAsDialog() catch return false;
                 if (self.save_as_path) |old| self.allocator.free(old);
                 self.save_as_path = path;
-                rsl.valid.save_as.path = path;
+                rsl.*.valid.save_as.path = path;
             }
 
             // Intercept open: always prompt for the file.
-            if (std.meta.activeTag(rsl) == .valid and
-                std.meta.activeTag(rsl.valid) == .open)
+            if (std.meta.activeTag(rsl.*) == .valid and
+                std.meta.activeTag(rsl.*.valid) == .open)
             {
-                const file_result = self.pathDialog("Open file: ") catch return .{ .error_msg = "cancelled" };
+                const file_result = self.pathDialog("Open file: ") catch return false;
                 switch (file_result) {
                     .FileName => |new_path| {
                         if (self.open_path) |old| self.allocator.free(old);
                         self.open_path = new_path;
-                        rsl.valid.open.path = new_path;
+                        rsl.*.valid.open.path = new_path;
                     },
-                    .Cancelled => return .{ .error_msg = "cancelled" },
+                    .Cancelled => return false,
                 }
             }
 
             // Intercept import: prompt for a text file; no filename cache — import does not change the save target
-            if (std.meta.activeTag(rsl) == .valid and
-                std.meta.activeTag(rsl.valid) == .import)
+            if (std.meta.activeTag(rsl.*) == .valid and
+                std.meta.activeTag(rsl.*.valid) == .import)
             {
-                const file_result = self.pathDialog("Import file: ") catch return .{ .error_msg = "cancelled" };
+                const file_result = self.pathDialog("Import file: ") catch return false;
                 switch (file_result) {
                     .FileName => |path| {
                         // Renderer owns the import dialog path; ImportData.path borrows it
                         if (self.import_path) |old| self.allocator.free(old);
                         self.import_path = path;
-                        rsl.valid.import.path = path;
+                        rsl.*.valid.import.path = path;
                     },
-                    .Cancelled => return .{ .error_msg = "cancelled" },
+                    .Cancelled => return false,
                 }
             }
             // Intercept paste: prompt for a one-line puzzle; engine owns parse/validate.
-            if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .paste) {
-                const line_result = self.puzzleLineDialog() catch return .{ .error_msg = "cancelled" };
+            if (std.meta.activeTag(rsl.*) == .valid and std.meta.activeTag(rsl.*.valid) == .paste) {
+                const line_result = self.puzzleLineDialog() catch return false;
                 switch (line_result) {
                     .FileName => |line| {
                         if (self.paste_line) |old| self.allocator.free(old);
                         self.paste_line = line;
-                        rsl.valid.paste.line = line;
+                        rsl.*.valid.paste.line = line;
                     },
-                    .Cancelled => return .{ .error_msg = "cancelled" },
+                    .Cancelled => return false,
                 }
             }
             // Intercept export: prompt for a destination file; no filename cache — like import
-            if (std.meta.activeTag(rsl) == .valid and
-                std.meta.activeTag(rsl.valid) == .@"export")
+            if (std.meta.activeTag(rsl.*) == .valid and
+                std.meta.activeTag(rsl.*.valid) == .@"export")
             {
-                const file_result = self.pathDialog("Export file: ") catch return .{ .error_msg = "cancelled" };
+                const file_result = self.pathDialog("Export file: ") catch return false;
                 switch (file_result) {
                     .FileName => |path| {
                         // Renderer owns the export dialog path; ExportData.path borrows it
                         if (self.export_path) |old| self.allocator.free(old);
                         self.export_path = path;
-                        rsl.valid.@"export".path = path;
+                        rsl.*.valid.@"export".path = path;
                     },
-                    .Cancelled => return .{ .error_msg = "cancelled" },
+                    .Cancelled => return false,
                 }
             }
             // Intercept new: the chosen difficulty rides the command; core generates.
-            if (std.meta.activeTag(rsl) == .valid and
-                std.meta.activeTag(rsl.valid) == .new)
+            if (std.meta.activeTag(rsl.*) == .valid and
+                std.meta.activeTag(rsl.*.valid) == .new)
             {
-                const picked = (self.newGameDialog() catch null) orelse return .{ .error_msg = "cancelled" };
-                rsl.valid.new.difficulty = picked;
+                const picked = (self.newGameDialog() catch null) orelse return false;
+                rsl.*.valid.new.difficulty = picked;
             }
 
-            return rsl;
+            return true;
         }
     };
 }
@@ -876,12 +879,9 @@ test "getCommandInput: New dialog rejects retired pick slots beyond the three di
     var names: [7][]const u8 = undefined;
     const count = avail.getNames(&names);
     const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
-    switch (result) {
-        .error_msg => |msg| {
-            try std.testing.expectEqualStrings("cancelled", msg);
-        },
-        else => return error.TestFailed,
-    }
+    // The rejected pick cancels New quietly; the prompt reads again and the input has ended.
+    try std.testing.expect(result == .valid and result.valid == .quit);
+    try std.testing.expect(std.mem.indexOf(u8, aw.written(), "cancelled") == null);
 }
 
 test "getCommandInput: fill A1 5 returns valid Fill" {
@@ -1409,4 +1409,9 @@ test "render: region shading when selection provided" {
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);
+}
+
+test "renderer prompt messages read as sentences" {
+    const sentence = @import("../../test/sentence.zig");
+    try sentence.expectSentence(NO_COMMANDS_MSG);
 }

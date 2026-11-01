@@ -1102,6 +1102,7 @@ test "integrated e2e - .ok.msg status is non-blocking; next line is a command" {
 // RED: a .error_msg still acks — Press Enter shown, and the ack Enter
 // is consumed by the ack (does not leak back to the parser as a command).
 test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command" {
+    const parser = @import("../ascii/parser.zig");
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ansi,
@@ -1129,11 +1130,11 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
     try std.testing.expect(terminated);
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     // routed through showError: the error text is in the output
-    try std.testing.expect(std.mem.indexOf(u8, contents, "fill requires coordinate") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, parser.FILL_USAGE_MSG) != null);
     // interactive ack prompt present
     try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);
     // the ack Enter was consumed by the ack, not re-parsed as a command
-    try std.testing.expect(std.mem.indexOf(u8, contents, "empty input") == null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, parser.EMPTY_INPUT_MSG) == null);
     // exactly one ack — the ack line did not re-enter the parser loop
     var ack_count: usize = 0;
     var rest = contents;
