@@ -72,7 +72,7 @@ Open issues and triage live on **GitHub** (`gh issue list`, `gh issue view N`). 
 
 Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
-- **Issue lifecycle**: triage labels above are pre-work roles only. When acceptance criteria are verified, close the GitHub issue.
+- **Issue lifecycle**: triage labels above are pre-work roles only. When acceptance criteria are verified, tick the boxes and close the GitHub issue — on the working branch, without waiting for a merge to `main` and without asking. If something blocks closing, state the blocker in one line.
 
 ### Closed issues are historical
 
