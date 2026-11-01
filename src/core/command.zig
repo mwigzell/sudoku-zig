@@ -146,11 +146,6 @@ pub const OpenFileResult = SaveFileResult;
 pub const ImportFileResult = SaveFileResult;
 /// Result of an export dialog interaction.
 pub const ExportFileResult = SaveFileResult;
-/// The outcome of a difficulty dialog at New — the user picks a level and the engine generates.
-pub const PuzzleResult = union(enum) {
-    PuzzleString: []u8, // Owned puzzle string for the chosen difficulty
-    Cancelled,
-};
 
 // ---------------------------------------------------------------------------
 // Tests — types are correct and getName works

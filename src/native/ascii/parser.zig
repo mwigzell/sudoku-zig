@@ -18,7 +18,6 @@ pub const ParseResultTag = cm.ParseResultTag;
 pub const ParseCommandResult = cm.ParseCommandResult;
 pub const SaveFileResult = cm.SaveFileResult;
 pub const OpenFileResult = cm.OpenFileResult;
-pub const PuzzleResult = cm.PuzzleResult;
 pub const CommandTableEntry = cm.CommandTableEntry;
 pub const Commands = cm.Commands;
 pub const SessionCommands = cm.SessionCommands;

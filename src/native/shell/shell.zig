@@ -227,7 +227,7 @@ pub const Sudoku = struct {
                     try self.showStep(game);
                     break :blk .ack;
                 },
-                .generate => |difficulty| .{ .generated = .{ .line = puzzle_gen.PuzzleGen.generate(difficulty) } },
+                .generate => |difficulty| .{ .generated = .{ .line = self.generate(difficulty) } },
                 .forget_current_file => |forget| blk: {
                     self.forgetCurrentFile(forget);
                     break :blk .ack;
@@ -241,6 +241,13 @@ pub const Sudoku = struct {
             step = self.flow.next(input);
         }
         return step;
+    }
+
+    /// Carry out a `generate` step, reporting progress through the renderer.
+    fn generate(self: *@This(), difficulty: puzzle_gen.Difficulty) []const u8 {
+        puzzle_gen.PuzzleGen.setPlayProgress(gen_progress.playProgressToFacade, @ptrCast(&self.renderer));
+        defer puzzle_gen.PuzzleGen.setPlayProgress(null, null);
+        return puzzle_gen.PuzzleGen.generate(difficulty);
     }
 
     /// Carry out a `copy_line` step: the terminal has no clipboard, so print the line for the player to copy.
@@ -799,13 +806,13 @@ test "new command with auto_save enabled does not print saved-to status" {
     try std.testing.expect(std.mem.indexOf(u8, output, "saved to:") == null);
 }
 
-test "save shows its saved-to status after the later flows run" {
+test "save as to a typed path shows its saved-to status after the later flows run" {
     const io = std.testing.io;
     const tmp_path = "/tmp/sudoku_save_status_test.sud";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
 
     const cfg = config.Config.default();
-    const responses = [_][]const u8{ "m", "1", tmp_path ++ "\n", "quit" };
+    const responses = [_][]const u8{ "m", "6", tmp_path ++ "\n", "quit" };
     var host = host_mod.Host.createForTest(cfg, &responses);
     defer host.deinit();
     var facade = try host.facade();

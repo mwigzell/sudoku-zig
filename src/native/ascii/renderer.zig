@@ -13,7 +13,6 @@ const Io = std.Io;
 const facade = @import("../../core/renderer/facade.zig");
 const input_source = @import("../../native/input_source.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
-const PuzzleGen = puzzle_gen.PuzzleGen;
 
 const config = @import("../../core/config.zig");
 const logger = @import("../../core/logger.zig");
@@ -48,6 +47,7 @@ pub fn bottomBorder() []const u8 {
 /// Minimum visible width (columns) for status/error message boxes. Message
 /// lines and the legend can push it wider — never narrower than this.
 const box_min_width: usize = 80;
+const SAVE_AS_PROMPT = "Save as (Enter keeps the current file): ";
 
 fn menuPickIsQuit(pick: []const u8) bool {
     return std.mem.eql(u8, pick, "10") or
@@ -73,7 +73,9 @@ pub fn AsciiRenderer(StylerType: type) type {
         writer: *Io.Writer,
         styler: *StylerType,
         inputSource: input_source.ReaderSource,
-        last_filename: ?[]u8,
+        // Owned dialog paths for open and save-as; ImportData/SaveData/OpenData borrow them.
+        open_path: ?[]u8 = null,
+        save_as_path: ?[]u8 = null,
         // Owned dialog path for the import command; not part of the save-target cache.
         import_path: ?[]u8 = null,
         // Owned dialog path for the export command; not part of the save-target cache.
@@ -84,12 +86,15 @@ pub fn AsciiRenderer(StylerType: type) type {
 
         /// Construct with writer (all output), styler pointer, and input source.
         pub fn init(allocator: std.mem.Allocator, writer: *Io.Writer, styler_ptr: *StylerType, inputSource: input_source.ReaderSource) @This() {
-            return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource, .last_filename = null };
+            return .{ .allocator = allocator, .writer = writer, .styler = styler_ptr, .inputSource = inputSource };
         }
 
-        /// Destroy writer + styler heap pointers; keep last_filename free.
+        /// Free the owned dialog paths.
         pub fn deinit(self: *@This()) void {
-            if (self.last_filename) |name| {
+            if (self.open_path) |name| {
+                self.allocator.free(name);
+            }
+            if (self.save_as_path) |name| {
                 self.allocator.free(name);
             }
             if (self.import_path) |name| {
@@ -199,18 +204,15 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Internal — prompt for filename with default, return owned string.
-        fn saveAsDialog(self: *@This(), default_name: []const u8) facade.Error!_command.SaveFileResult {
-            self.writer.print("Save to [{s}]: ", .{default_name}) catch return facade.Error.System;
-
-            const line = self.readLine() catch return .Cancelled;
-
+        /// Prompt for a Save As path; an empty answer returns null so core suggests the name.
+        fn saveAsDialog(self: *@This()) facade.Error!?[]u8 {
+            self.writer.writeAll(SAVE_AS_PROMPT) catch return facade.Error.System;
+            const line = try self.readLine();
             if (line.len == 0) {
-                defer self.allocator.free(line);
-                const owned = self.allocator.dupe(u8, default_name) catch return facade.Error.System;
-                return .{ .FileName = owned };
+                self.allocator.free(line);
+                return null;
             }
-            // Caller owns `line` — no free needed when returned directly.
-            return .{ .FileName = line };
+            return line;
         }
 
         /// Prompt for a file path; empty input means cancelled.
@@ -414,7 +416,8 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// New = generate — choose a difficulty; returns an owned puzzle string.
-        pub fn newGameDialog(self: *@This()) facade.Error!_command.PuzzleResult {
+        /// Ask for New's difficulty; null when the pick is not one of the levels.
+        pub fn newGameDialog(self: *@This()) facade.Error!?Difficulty {
             self.writer.writeAll("Difficulty:\n") catch return facade.Error.System;
             const levels = [_][]const u8{ "Easy", "Medium", "Hard" };
             for (levels, 0..) |name, i| {
@@ -423,19 +426,10 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.writeAll("> ") catch return facade.Error.System;
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
-            const diff = if (std.mem.eql(u8, pick, "1")) Difficulty.easy else if (std.mem.eql(u8, pick, "2")) Difficulty.medium else if (std.mem.eql(u8, pick, "3")) Difficulty.hard else return .Cancelled;
-            const Self = @This();
-            const progress_ctx = struct {
-                fn sink(event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {
-                    const renderer: *Self = @ptrCast(@alignCast(ctx.?));
-                    renderer.reportGenProgress(event) catch {};
-                }
-            };
-            puzzle_gen.PuzzleGen.setPlayProgress(progress_ctx.sink, self);
-            defer puzzle_gen.PuzzleGen.setPlayProgress(null, null);
-            const puzzle = PuzzleGen.generate(diff);
-            const owned = std.heap.page_allocator.dupe(u8, puzzle) catch return facade.Error.System;
-            return .{ .PuzzleString = owned };
+            if (std.mem.eql(u8, pick, "1")) return .easy;
+            if (std.mem.eql(u8, pick, "2")) return .medium;
+            if (std.mem.eql(u8, pick, "3")) return .hard;
+            return null;
         }
 
         /// Implement Facade getCommandInput_fn. Reads a line, parses it.
@@ -469,51 +463,25 @@ pub fn AsciiRenderer(StylerType: type) type {
                 rsl = try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
             }
 
-            // Intercept save_as: get real filename from dialog, cache for future .save
+            // Intercept save_as: the typed path, or null for core's suggestion.
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .save_as)
             {
-                const file_result = self.saveAsDialog(save.DEFAULT_SAVE_FILE) catch return .{ .error_msg = "cancelled" };
-                switch (file_result) {
-                    .FileName => |path| {
-                        // Cache owns the path string; SaveData.path points to it as const (no extra dupe)
-                        if (self.last_filename) |old| self.allocator.free(old);
-                        self.last_filename = path;
-                        rsl.valid.save_as.path = self.last_filename.?;
-                    },
-                    .Cancelled => return .{ .error_msg = "cancelled" },
-                }
+                const path = self.saveAsDialog() catch return .{ .error_msg = "cancelled" };
+                if (self.save_as_path) |old| self.allocator.free(old);
+                self.save_as_path = path;
+                rsl.valid.save_as.path = path;
             }
 
-            // Intercept save: use cached filename or prompt via dialog
-            if (std.meta.activeTag(rsl) == .valid and
-                std.meta.activeTag(rsl.valid) == .save)
-            {
-                if (self.last_filename) |cached| {
-                    rsl.valid.save.path = cached;
-                } else {
-                    const file_result = self.saveAsDialog(save.DEFAULT_SAVE_FILE) catch return .{ .error_msg = "cancelled" };
-                    switch (file_result) {
-                        .FileName => |new_path| {
-                            // Cache owns the path string; SaveData.path points to it as const
-                            if (self.last_filename) |old| self.allocator.free(old);
-                            self.last_filename = new_path;
-                            rsl.valid.save.path = new_path;
-                        },
-                        .Cancelled => return .{ .error_msg = "cancelled" },
-                    }
-                }
-            }
-
-            // Intercept open: always prompt; cache path for the next .save
+            // Intercept open: always prompt for the file.
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .open)
             {
                 const file_result = self.pathDialog("Open file: ") catch return .{ .error_msg = "cancelled" };
                 switch (file_result) {
                     .FileName => |new_path| {
-                        if (self.last_filename) |old| self.allocator.free(old);
-                        self.last_filename = new_path;
+                        if (self.open_path) |old| self.allocator.free(old);
+                        self.open_path = new_path;
                         rsl.valid.open.path = new_path;
                     },
                     .Cancelled => return .{ .error_msg = "cancelled" },
@@ -562,17 +530,12 @@ pub fn AsciiRenderer(StylerType: type) type {
                     .Cancelled => return .{ .error_msg = "cancelled" },
                 }
             }
-            // Intercept new: clear puzzle data, game engine handles it
+            // Intercept new: the chosen difficulty rides the command; core generates.
             if (std.meta.activeTag(rsl) == .valid and
                 std.meta.activeTag(rsl.valid) == .new)
             {
-                const choice_result = self.newGameDialog() catch return .{ .error_msg = "cancelled" };
-                switch (choice_result) {
-                    .PuzzleString => |puzzle_str| {
-                        rsl.valid.new.puzzle = puzzle_str;
-                    },
-                    .Cancelled => return .{ .error_msg = "cancelled" },
-                }
+                const picked = (self.newGameDialog() catch null) orelse return .{ .error_msg = "cancelled" };
+                rsl.valid.new.difficulty = picked;
             }
 
             return rsl;
@@ -718,90 +681,37 @@ test "showError: reads from MockSource and does not panic" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);
 }
 
-test "saveAsDialog: empty input returns default filename" {
+/// Renderer over scripted input lines, writing into `aw`.
+fn scriptedRenderer(aw: *Io.Writer.Allocating, s: *styler.PlainStyler, responses: []const []const u8) AsciiRenderer(styler.PlainStyler) {
+    const source: input_source.ReaderSource = .{ .mock = input_source.MockSource.init(std.testing.allocator, responses) };
+    return AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, s, source);
+}
+
+test "saveAsDialog: empty input leaves the name to core" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
-
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"\n"};
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-
-    const result = try renderer.saveAsDialog("test.sud");
-
-    switch (result) {
-        .FileName => |name| {
-            defer std.testing.allocator.free(name);
-            try std.testing.expectEqualStrings("test.sud", name);
-        },
-        .Cancelled => {
-            try std.testing.expect(false);
-        },
-    }
-
-    const contents = aw.writer.buffered();
-    try std.testing.expectEqualStrings("Save to [test.sud]: ", contents);
+    var renderer = scriptedRenderer(&aw, &s, &.{"\n"});
+    try std.testing.expect((try renderer.saveAsDialog()) == null);
+    try std.testing.expectEqualStrings(SAVE_AS_PROMPT, aw.writer.buffered());
 }
 
 test "saveAsDialog: custom input returns user filename" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
-
     var s = styler.PlainStyler{};
-    const responses = [_][]const u8{"my_puzzle.sud\n"};
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-
-    const result = try renderer.saveAsDialog("default.sud");
-
-    switch (result) {
-        .FileName => |name| {
-            defer std.testing.allocator.free(name);
-            try std.testing.expectEqualStrings("my_puzzle.sud", name);
-        },
-        .Cancelled => {
-            try std.testing.expect(false);
-        },
-    }
+    var renderer = scriptedRenderer(&aw, &s, &.{"my_puzzle.sud\n"});
+    const name = (try renderer.saveAsDialog()).?;
+    defer std.testing.allocator.free(name);
+    try std.testing.expectEqualStrings("my_puzzle.sud", name);
 }
 
-test "saveAsDialog: EOF returns Cancelled" {
+test "saveAsDialog: EOF is an input failure" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
-
     var s = styler.PlainStyler{};
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &[0][]const u8{}),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-
-    const result = try renderer.saveAsDialog("test.sud");
-    switch (result) {
-        .Cancelled => try std.testing.expect(true),
-        .FileName => |name| {
-            defer std.testing.allocator.free(name);
-            try std.testing.expect(false);
-        },
-    }
+    var renderer = scriptedRenderer(&aw, &s, &.{});
+    try std.testing.expectError(facade.Error.System, renderer.saveAsDialog());
 }
 
 test "openDialog: user enters a file path" {
@@ -887,7 +797,7 @@ test "openDialog: empty input returns Cancelled" {
     }
 }
 
-test "getCommandInput: New opens difficulty dialog; pick easy loads easy puzzle" {
+test "getCommandInput: New opens the difficulty dialog; the pick rides the command" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
     var s = styler.PlainStyler{};
@@ -920,10 +830,8 @@ test "getCommandInput: New opens difficulty dialog; pick easy loads easy puzzle"
         .valid => |cmd| {
             switch (cmd) {
                 .new => |data| {
-                    if (data.puzzle) |puzzle| {
-                        defer std.heap.page_allocator.free(puzzle);
-                        try std.testing.expectEqualStrings(PuzzleGen.easy(), puzzle);
-                    } else return error.TestFailed;
+                    try std.testing.expect(data.puzzle == null);
+                    try std.testing.expectEqual(Difficulty.easy, data.difficulty.?);
                 },
                 else => return error.TestFailed,
             }
@@ -1065,180 +973,46 @@ test "getCommandInput: EOF returns Quit" {
         },
     }
 }
-test "AsciiRenderer init last_filename is null" {
-    const io = std.testing.io;
+const save_legend = legend.Legend{
+    .fill = true,
+    .clear = true,
+    .quit = true,
+    .undo = false,
+    .redo = false,
+    .menu = true,
+    .save = true,
+    .open = true,
+    .new = true,
+    .save_as = true,
+};
+
+test "getCommandInput: save never prompts; core names the target" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
     var s = styler.PlainStyler{};
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) },
-    );
+    var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "1\n", "m\n", "1\n" });
     defer renderer.deinit();
-
-    try std.testing.expect(renderer.last_filename == null);
+    var names: [7][]const u8 = undefined;
+    const count = save_legend.getNames(&names);
+    for (0..2) |_| {
+        const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+        try std.testing.expect(result.valid.save.path == null);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, aw.writer.buffered(), SAVE_AS_PROMPT) == null);
 }
 
-// Test 1: save with last_filename set dupe's the cached path, no dialog prompt.
-test "getCommandInput: save with last_filename set uses cached path" {
+test "getCommandInput: save as carries the typed path, or none for core's suggestion" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
-
     var s = styler.PlainStyler{};
-    // Only one mock response: the command itself. Save intercept uses cached filename, no dialog.
-    const responses = [_][]const u8{ "m\n", "1\n" };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
+    var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "6\n", "mine.sud\n", "m\n", "6\n", "\n" });
     defer renderer.deinit();
-
-    // Pre-set last_filename (simulating a previous save/save_as)
-    renderer.last_filename = std.testing.allocator.dupe(u8, "cached.sud") catch unreachable;
-
-    const avail = legend.Legend{
-        .fill = true,
-        .clear = true,
-        .quit = true,
-        .undo = false,
-        .redo = false,
-        .menu = true,
-        .save = true,
-        .open = true,
-        .new = true,
-        .save_as = true,
-    };
-
     var names: [7][]const u8 = undefined;
-    const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
-
-    switch (result) {
-        .valid => |cmd| {
-            try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("cached.sud", cmd.save.path.?);
-        },
-        .error_msg => |msg| {
-            _ = msg;
-            try std.testing.expect(false);
-        },
-    }
-}
-
-test "getCommandInput: save with last_filename null prompts and caches" {
-    var aw = Io.Writer.Allocating.init(std.testing.allocator);
-    defer aw.deinit();
-
-    var s = styler.PlainStyler{};
-    // First response: command "s", second response: filename from save dialog
-    const responses = [_][]const u8{ "m\n", "1\n", "my_save.sud\n" };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
-
-    const avail = legend.Legend{
-        .fill = true,
-        .clear = true,
-        .quit = true,
-        .undo = false,
-        .redo = false,
-        .menu = true,
-        .save = true,
-        .open = true,
-        .new = true,
-        .save_as = true,
-    };
-
-    var names: [7][]const u8 = undefined;
-    const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
-
-    switch (result) {
-        .valid => |cmd| {
-            try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("my_save.sud", cmd.save.path.?);
-        },
-        .error_msg => |msg| {
-            try std.testing.expect(std.ascii.eqlIgnoreCase(msg, ""));
-        },
-    }
-
-    // last_filename should now be cached
-    try std.testing.expect(renderer.last_filename != null);
-    try std.testing.expectEqualStrings("my_save.sud", renderer.last_filename.?);
-}
-
-test "getCommandInput: save then save reuses cached filename without prompting" {
-    var aw = Io.Writer.Allocating.init(std.testing.allocator);
-    defer aw.deinit();
-
-    var s = styler.PlainStyler{};
-    // First save: command + dialog response; second save: only command (no dialog)
-    const responses = [_][]const u8{ "m\n", "1\n", "first.sud\n", "m\n", "1\n" };
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
-    defer renderer.deinit();
-
-    const avail = legend.Legend{
-        .fill = true,
-        .clear = true,
-        .quit = true,
-        .undo = false,
-        .redo = false,
-        .menu = true,
-        .save = true,
-        .open = true,
-        .new = true,
-        .save_as = true,
-    };
-
-    var names: [7][]const u8 = undefined;
-    const count = avail.getNames(&names);
-
-    // First save — should prompt and cache
-    const result1 = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
-    switch (result1) {
-        .valid => |cmd| {
-            try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("first.sud", cmd.save.path.?);
-        },
-        .error_msg => {
-            try std.testing.expect(false);
-        },
-    }
-
-    // Second save — should use cached, no prompt
-    const result2 = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
-    switch (result2) {
-        .valid => |cmd| {
-            try std.testing.expectEqualStrings(@tagName(cmd), "save");
-            try std.testing.expectEqualStrings("first.sud", cmd.save.path.?);
-        },
-        .error_msg => {
-            try std.testing.expect(false);
-        },
-    }
+    const count = save_legend.getNames(&names);
+    const typed = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    try std.testing.expectEqualStrings("mine.sud", typed.valid.save_as.path.?);
+    const suggested = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    try std.testing.expect(suggested.valid.save_as.path == null);
 }
 
 test "showAbout: writes name version commit build date and licence" {
