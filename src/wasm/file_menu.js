@@ -12,6 +12,7 @@ import { askWithDialog, runCommand, SAVE_FAILED_MSG } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 /** @typedef {import("./types").FileMenuControls} FileMenuControls */
+/** @typedef {import("./types").FileMenuWiring} FileMenuWiring */
 /** @typedef {import("./types").MenuBar} MenuBar */
 /** @typedef {import("./types").BoardSelection} BoardSelection */
 /** @typedef {import("./types").WebSession} WebSession */
@@ -409,7 +410,140 @@ export function wireDifficultyDialog(dialog, onChoose) {
   };
 }
 
+/** Show a failed result's error in the error dialog. */
+/** @param {FileMenuWiring} wiring */
+function showFailure(wiring, result) {
+  if (result.error) errorModalMod.showErrorModal(wiring.errorModal, result.error);
+}
+
 /**
+ * Platform work for the core Save / Save As flow. The user's file is written by the bound
+ * handle, the Android bridge, a picker or a download; the host keeps the restore copy.
+ * Without a bound file the picker asks its own overwrite question, so the target is new to core.
+ * @param {FileMenuWiring} wiring
+ */
+function saveHandlers(wiring, saveAsMode) {
+  const { game, session, statusEl, download } = wiring;
+  return {
+    checkTarget: () =>
+      !saveAsMode && (session.fileHandle != null || androidCurrentTargetName(globalThis) != null),
+    ask: (step) => askWithDialog(step, globalThis),
+    write: async (name) => {
+      const result = game.serialize();
+      if (!result.ok) return result;
+      const saved = await persistBytes(result.bytes, session, name, { saveAs: saveAsMode, download });
+      if (!saved.ok) return saved;
+      session.boundFilename = saved.filename;
+      bindSnapshotWriter(session, saved.binding, globalThis);
+      const hosted = await hostApi.persistCurrentFileBytes(result.bytes, globalThis.fetch, saved.filename, { restoreCopy: true });
+      if (!hosted.ok) return hosted;
+      return { ok: true, name: saved.filename };
+    },
+    showStatus: (text) => {
+      sessionMod.syncCurrentFileLabels(session);
+      statusBar.applyEventStatus(statusEl, { ok: true, msg: text });
+    },
+    showError: (text) => showFailure(wiring, { ok: false, error: text }),
+  };
+}
+
+/** Save / Save As: core names the target (working file, else the host default) and asks before replacing. */
+/** @param {FileMenuWiring} wiring */
+function runSave(wiring, saveAsMode) {
+  const action = { action: saveAsMode ? SAVE_AS_COMMAND : SAVE_COMMAND };
+  return runCommand(wiring.game, action, { ...wiring.commandFlow, ...saveHandlers(wiring, saveAsMode) });
+}
+
+/**
+ * New, Open and Import: core asks for the generated puzzle or the picked file, loads it and
+ * runs autosave; the view follows the game core shows.
+ * @param {FileMenuWiring} wiring
+ */
+function runLoad(wiring, action) {
+  const { game, session, boardEl, selection, menuBar, createElement, onViewRefresh, pick } = wiring;
+  let pickedGame = null;
+  const handlers = {
+    ...wiring.commandFlow,
+    pickOpen: async (step) => {
+      const options = step.kind === PICK_KIND_PUZZLE ? { types: puzzleTextPickerTypes, accept: PUZZLE_TEXT_ACCEPT } : undefined;
+      const picked = await pick(session, options);
+      if (step.kind === PICK_KIND_GAME && picked.ok) pickedGame = picked;
+      return picked;
+    },
+  };
+  return commandFlowMod.runSessionCommand(game, action, handlers, (step) => {
+    if (step.loaded) bindLoadedGame(session, pickedGame);
+    refreshSessionView(boardEl, selection, menuBar, session.state, createElement, onViewRefresh);
+  });
+}
+
+/** New opens the difficulty chooser; generation starts only after a pick. */
+/** @param {FileMenuWiring} wiring */
+function wireNew(button, wiring, difficultyDialog) {
+  const { session, menuBar, statusEl } = wiring;
+  const startNewGame = (difficulty) =>
+    runLoad(wiring, { action: NEW_COMMAND, difficulty: settings.difficultyName({ difficulty }) });
+  const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
+  button?.addEventListener("click", () => {
+    if (!session.legend.new) return;
+    menuBar.closeAll?.();
+    statusBar.clearEventStatus(statusEl);
+    newDialog.open();
+  });
+}
+
+/** Open and Import pick a file and hand it to core. */
+/** @param {FileMenuWiring} wiring */
+function wireLoad(button, wiring, legendKey, command) {
+  button?.addEventListener("click", async () => {
+    if (!wiring.session.legend[legendKey]) return;
+    statusBar.clearEventStatus(wiring.statusEl);
+    await runLoad(wiring, { action: command });
+  });
+}
+
+/** Save writes the working file; Save As chooses a fresh target. */
+/** @param {FileMenuWiring} wiring */
+function wireSave(button, wiring, legendKey, saveAsMode) {
+  button?.addEventListener("click", async () => {
+    if (!wiring.session.legend[legendKey]) return;
+    await runSave(wiring, saveAsMode);
+  });
+}
+
+/** Auto Save toggles through core, then the menu re-syncs its check mark. */
+/** @param {FileMenuWiring} wiring */
+function wireAutoSave(button, wiring) {
+  button?.addEventListener("click", async () => {
+    await commandFlowMod.runSessionCommand(wiring.game, { action: TOGGLE_AUTO_SAVE }, wiring.commandFlow, () => {
+      wiring.menuBar.sync();
+      wiring.onViewRefresh?.();
+    });
+  });
+}
+
+/** Export runs through core, which names the file; the one-line text leaves the save binding untouched. */
+/** @param {FileMenuWiring} wiring */
+function wireExport(button, wiring) {
+  const { game, session, statusEl, download, exportText } = wiring;
+  button?.addEventListener("click", async () => {
+    if (!session.legend[LEGEND_WIRE_EXPORT]) return;
+    await runCommand(game, { action: EXPORT_COMMAND }, {
+      ...wiring.commandFlow,
+      write: async (name) => {
+        const result = game.exportPuzzle();
+        if (!result.ok) return result;
+        const saved = await exportText(result.bytes, session, name, { download });
+        return saved.ok ? { ok: true, name: saved.filename } : saved;
+      },
+      showStatus: (text) => statusBar.applyEventStatus(statusEl, { ok: true, msg: text }),
+      showError: (text) => showFailure(wiring, { ok: false, error: text }),
+    });
+  });
+}
+
+/**
+ * Wire every File item present in `controls`.
  * @param {FileMenuControls} controls
  * @param {GameApi} game
  * @param {HTMLElement} boardEl
@@ -438,122 +572,20 @@ export function wireFileMenu(
     commandFlow,
   } = {},
 ) {
-  const fail = (result) => {
-    if (result.error) errorModalMod.showErrorModal(errorModal, result.error);
+  /** @type {FileMenuWiring} */
+  const wiring = {
+    game, boardEl, selection, statusEl, errorModal, session, menuBar,
+    download, pick, exportText, createElement, onViewRefresh, commandFlow,
   };
-
-  /**
-   * Platform work for the core Save / Save As flow. The user's file is written by the bound
-   * handle, the Android bridge, a picker or a download; the host keeps the restore copy.
-   * Without a bound file the picker asks its own overwrite question, so the target is new to core.
-   */
-  const saveHandlers = (saveAsMode) => ({
-    checkTarget: () =>
-      !saveAsMode && (session.fileHandle != null || androidCurrentTargetName(globalThis) != null),
-    ask: (step) => askWithDialog(step, globalThis),
-    write: async (name) => {
-      const result = game.serialize();
-      if (!result.ok) return result;
-      const saved = await persistBytes(result.bytes, session, name, { saveAs: saveAsMode, download });
-      if (!saved.ok) return saved;
-      session.boundFilename = saved.filename;
-      bindSnapshotWriter(session, saved.binding, globalThis);
-      const hosted = await hostApi.persistCurrentFileBytes(result.bytes, globalThis.fetch, saved.filename, { restoreCopy: true });
-      if (!hosted.ok) return hosted;
-      return { ok: true, name: saved.filename };
-    },
-    showStatus: (text) => {
-      sessionMod.syncCurrentFileLabels(session);
-      statusBar.applyEventStatus(statusEl, { ok: true, msg: text });
-    },
-    showError: (text) => fail({ ok: false, error: text }),
-  });
-
-  /** Save / Save As: core names the target (working file, else the host default) and asks before replacing. */
-  const runSave = (saveAsMode) =>
-    runCommand(game, { action: saveAsMode ? SAVE_AS_COMMAND : SAVE_COMMAND }, { ...commandFlow, ...saveHandlers(saveAsMode) });
-
   if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, globalThis);
 
-  /**
-   * New, Open and Import: core asks for the generated puzzle or the picked file, loads it and
-   * runs autosave; the view follows the game core shows.
-   */
-  const runLoad = (action) => {
-    let pickedGame = null;
-    const handlers = {
-      ...commandFlow,
-      pickOpen: async (step) => {
-        const options = step.kind === PICK_KIND_PUZZLE ? { types: puzzleTextPickerTypes, accept: PUZZLE_TEXT_ACCEPT } : undefined;
-        const picked = await pick(session, options);
-        if (step.kind === PICK_KIND_GAME && picked.ok) pickedGame = picked;
-        return picked;
-      },
-    };
-    return commandFlowMod.runSessionCommand(game, action, handlers, (step) => {
-      if (step.loaded) bindLoadedGame(session, pickedGame);
-      refreshSessionView(boardEl, selection, menuBar, session.state, createElement, onViewRefresh);
-    });
-  };
-
-  const startNewGame = (difficulty) => runLoad({ action: NEW_COMMAND, difficulty: settings.difficultyName({ difficulty }) });
-  const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
-
-  // Phase B: open New difficulty chooser (generation starts only after a pick).
-  const openNewGameDialog = () => {
-    if (!session.legend.new) return;
-    menuBar.closeAll?.();
-    statusBar.clearEventStatus(statusEl);
-    newDialog.open();
-  };
-  controls.new?.addEventListener("click", openNewGameDialog);
-
-  // Phase C: manual Save runs the core save flow.
-  controls.save?.addEventListener("click", async () => {
-    if (!session.legend.save) return;
-    await runSave(false);
-  });
-
-  // Phase D: Save As runs the same flow with a fresh target choice.
-  controls.saveAs?.addEventListener("click", async () => {
-    if (!session.legend.save_as) return;
-    await runSave(true);
-  });
-
-  controls.autoSave?.addEventListener("click", async () => {
-    await commandFlowMod.runSessionCommand(game, { action: TOGGLE_AUTO_SAVE }, commandFlow, () => {
-      menuBar.sync();
-      onViewRefresh?.();
-    });
-  });
-
-  controls.open?.addEventListener("click", async () => {
-    if (!session.legend.open) return;
-    statusBar.clearEventStatus(statusEl);
-    await runLoad({ action: OPEN_COMMAND });
-  });
-
-  controls.import?.addEventListener("click", async () => {
-    if (!session.legend.import) return;
-    statusBar.clearEventStatus(statusEl);
-    await runLoad({ action: IMPORT_COMMAND });
-  });
-
-  // Phase H: Export runs through core, which names the file; the one-line text leaves the save binding untouched.
-  controls.export?.addEventListener("click", async () => {
-    if (!session.legend[LEGEND_WIRE_EXPORT]) return;
-    await runCommand(game, { action: EXPORT_COMMAND }, {
-      ...commandFlow,
-      write: async (name) => {
-        const result = game.exportPuzzle();
-        if (!result.ok) return result;
-        const saved = await exportText(result.bytes, session, name, { download });
-        return saved.ok ? { ok: true, name: saved.filename } : saved;
-      },
-      showStatus: (text) => statusBar.applyEventStatus(statusEl, { ok: true, msg: text }),
-      showError: (text) => fail({ ok: false, error: text }),
-    });
-  });
+  wireNew(controls.new, wiring, difficultyDialog);
+  wireLoad(controls.open, wiring, "open", OPEN_COMMAND);
+  wireLoad(controls.import, wiring, "import", IMPORT_COMMAND);
+  wireSave(controls.save, wiring, "save", false);
+  wireSave(controls.saveAs, wiring, "save_as", true);
+  wireAutoSave(controls.autoSave, wiring);
+  wireExport(controls.export, wiring);
 
   sessionMod.syncCurrentFileLabels(session);
 }

@@ -27,6 +27,22 @@ export type BoardSelection = ReturnType<typeof import("./board.js").wireSelectio
 export type FileMenuControls = Partial<
   Pick<MenuBarControls, "new" | "open" | "import" | "export" | "save" | "saveAs" | "autoSave">
 >;
+/** What each File item's wiring needs: the game and session, the views it refreshes, and the file APIs it writes through. */
+export type FileMenuWiring = {
+  game: GameApi;
+  boardEl: HTMLElement;
+  selection: BoardSelection;
+  statusEl: HTMLElement;
+  errorModal: ErrorModal;
+  session: WebSession;
+  menuBar: MenuBar;
+  download: typeof import("./file_menu.js").downloadBytes;
+  pick: (session: WebSession, options?: Parameters<typeof import("./file_menu.js").pickBytes>[2]) => ReturnType<typeof import("./file_menu.js").pickBytes>;
+  exportText: typeof import("./file_menu.js").persistPuzzleText;
+  createElement?: (tag: string) => HTMLElement;
+  onViewRefresh?: () => void;
+  commandFlow?: FlowHandlers;
+};
 export type GeneratingModal = ReturnType<typeof import("./generating.js").wireGeneratingModal>;
 export type ErrorModal = ReturnType<typeof import("./error_modal.js").wireErrorModal>;
 export type GenWorker =
