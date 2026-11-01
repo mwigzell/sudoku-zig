@@ -621,7 +621,7 @@ public final class MainActivity extends Activity {
     /**
      * Writes the default autosave file in shared Downloads/Sudoku (no picker) and makes it the working file.
      * A same-named file this install does not own (left by an earlier install) is never shadowed by a renamed copy;
-     * the result reports it so the web dialog can ask the user to pick it or choose a new name.
+     * the result reports it so core can ask the user to pick it or choose a new name.
      */
     private String saveToDefaultVisible(byte[] bytes, String suggestedName) {
         final String name = (suggestedName == null || suggestedName.isEmpty()) ? DEFAULT_SAVE_FILENAME : suggestedName;

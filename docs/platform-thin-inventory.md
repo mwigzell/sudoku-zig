@@ -1,41 +1,36 @@
 # Platform Thinness Inventory
 
-Purpose: implement Issue #72 step 2 by cataloging behavior currently implemented in platform adapters and tagging each item as:
+What each front end (web JS, Android WebView + bridge, native terminal) still does, and why it is adapter work rather than policy. Core decides; adapters carry out steps and report facts (`src/core/flow/`, ADR-0011, ADR-0014).
 
-- `KEEP` - adapter concern (I/O, lifecycle, presentation wiring).
-- `EXTRACT` - shared semantic concern that should live in shared seams.
+- `CORE` - decided in shared code; adapters only call it.
+- `KEEP` - adapter mechanics (I/O, lifecycle, presentation), with the reason it cannot live in core.
 
-Scope: `src/wasm/`, Android bootstrap/bridge, and native UI-session layers.
+## Commands
 
-## Legend
+| Command | Core owns | Adapter does | Tag |
+|---|---|---|---|
+| New | Generation, board swap, status text, `FileSession.noteLoad(.new_game)`, then the autosave flow | Difficulty dialog, generating modal / worker, render | `CORE` |
+| Open | Decode, board swap, status text, `noteLoad(.open)` (working file), then the autosave flow | File picker or Android open bridge; binding the picked handle so later writes reach it | `CORE` |
+| Import / Paste | `importFromLine` / `pasteFromLine` codec and status text, `noteLoad(.import / .paste)`, then the autosave flow | Text file picker; clipboard read (or native `paste` line input) | `CORE` |
+| Save / Save As | `SaveFlow`: target choice, overwrite question, refusing Save while Auto Save is on, status text, working file | Picker, bound handle, Android bridge or download; host restore copy | `CORE` |
+| Autosave | `AutosaveFlow` after every command; Android "earlier install" question and retry (`Wrote.taken` → `pick_existing` / `pick_new`) | Writing the bound file; the two Android pickers | `CORE` |
+| Export | `ExportFlow` (`write` step, "exported to:" status, errors) | Text picker or download; native writes through the file transport | `CORE` |
+| Copy | `ExportFlow.toClipboard` (`copy_line` step, status, errors) | Clipboard write (web) or printing the line (native: no clipboard) | `CORE` |
+| Undo / Redo / Hint / Solve / fill | Engine command, status text, win detection ("You win!"), then the autosave flow | Key and menu wiring, render | `CORE` |
+| Settings edits | `SettingsFlow` decides whether `settings.json` is written | Settings dialog; host POST or native `settings_store` write | `CORE` |
+| Startup | `StartupFlow`: restore, auto-new, first board | Fetching host config and the current file | `CORE` |
+| Menu enablement | `GameEngine.getLegend()` (Save off while Auto Save is on) | Disabling items from the legend | `CORE` |
 
-- `Adapter` = entry/UI layer (`wasm` shell + page wiring, Android WebView bootstrap, native terminal driver/renderer wiring).
-- `Shared seam` = domain/policy modules consumed by adapters.
+## Adapter mechanics
 
-## Inventory
-
-| Area | File/symbols | Current behavior | Tag | Target home |
-|---|---|---|---|---|
-| Web status rendering | `src/wasm/shell.js` (`applyOkStatus`, `applyEventStatus`, `showErrorModal`, `wireErrorModal`) | Maps engine/host responses to status bar/modal UI | `KEEP` | wasm adapter |
-| Web board rendering/selection | `src/wasm/board.js` (`renderBoard`, `wireSelection`, `parsePlayKey`) | DOM rendering and selection/input wiring | `KEEP` | wasm adapter |
-| Web menu/pointer wiring | `src/wasm/menu.js` (`wireEditMenu`, `handleCopyPuzzle`, `handlePastePuzzle`) | Binds DOM controls to existing commands | `KEEP` | wasm adapter |
-| Web file picker wiring | `src/wasm/file_menu.js` (`persistBytes`, `pickBytes`, `downloadBytes`) | Browser/bridge file picker and download plumbing | `KEEP` | wasm adapter |
-| Android WebView bootstrap | `src/android/bootstrap/MainActivity.java` (`onCreate`, `injectBridgeShim`) | Starts WebView, injects JS bridge, boot splash/error UX | `KEEP` | Android adapter |
-| Android URI I/O bridge | `src/android/bootstrap/MainActivity.java` (`saveSudokuFile`, `openSudokuFile`) | Marshals bytes to/from Android document providers | `KEEP` | Android adapter |
-| Android host lifecycle | `src/android/jni_host.zig` (`startHost`, `readyPort`, `stopHost`) | Starts/stops loopback host thread and reports bound port | `KEEP` | Android adapter entry |
-| Native renderer lifecycle | `src/native/host.zig` (`facade`, `writer`, session init) | Constructs terminal substrate and renderer facade | `KEEP` | native adapter |
-| Native command/session loop | `src/native/shell/shell.zig` (`turn`, renderer dispatch) | Reads command input and presents output | `KEEP` | native adapter |
-| Startup in web adapter | `src/wasm/shell.js` (`assertHostStartupConfig`, `initializeWebSession`, `startupHandlers`) | Validates host config; carries out core startup steps | `KEEP` | core `StartupFlow` decides |
-| Session policy branching in web adapter | `src/wasm/shell.js` (session orchestration helpers) | Adapter encodes semantic session decisions | `EXTRACT` | shared policy seam |
-| Session policy branching in native adapter | `src/native/shell/shell.zig` (session-side behavior decisions) | Native entry carries behavior semantics not shared | `EXTRACT` | shared policy seam consumed by entries |
-| Semantic event-name mapping in adapters | `src/wasm/shell.js` + UI callers | Adapter defines behavior transition vocabulary | `EXTRACT` | shared contract module |
-| Duplicate decision paths across adapters | `src/wasm/*` + `src/native/shell/*` + host wiring | Same behavior class decided in multiple entry layers | `EXTRACT` | single authority module + thin adapter calls |
-| Contract-shape literals in page wiring | `src/wasm/artifacts/page.html` (boot flow + session orchestration) | Entry page carries behavior sequencing details | `EXTRACT` | wasm adapter should call thin helper API only |
-
-## Step-2 Output: extraction backlog
-
-1. Introduce thin adapter-facing APIs that accept intent and return outcome payloads from shared seams.
-2. Replace adapter-side behavior branching with calls into shared authority modules.
-3. Leave adapter-only responsibilities (I/O bridges, rendering, lifecycle callbacks, DOM/terminal wiring) in place.
-
-This inventory intentionally separates transport/presentation concerns from behavior semantics so Step 3 can move only the `EXTRACT` rows.
+| Area | File/symbols | Why it stays in the adapter | Tag |
+|---|---|---|---|
+| Web status and modals | `src/wasm/shell.js` (`applyEventStatus`, `showErrorModal`) | DOM presentation of core text | `KEEP` |
+| Web board and selection | `src/wasm/board.js` | DOM rendering and pointer/key input | `KEEP` |
+| Web step handlers | `src/wasm/step_runner.js`, `autosaveHandlers`, `saveHandlers` | Carry out one step each with browser APIs; no branching on outcomes | `KEEP` |
+| Web pickers, download, clipboard | `src/wasm/file_menu.js` (`persistBytes`, `pickBytes`, `persistPuzzleText`), `shell.js` (`writeClipboardText`) | Browser and Android bridge APIs exist only in the page | `KEEP` |
+| Menubar drag-release | `src/wasm/menu_bar.js` | DOM event mechanics | `KEEP` |
+| Android WebView bootstrap | `MainActivity.java` (`onCreate`, `injectBridgeShim`), `page.html` boot-ready signal | WebView lifecycle | `KEEP` |
+| Android URI bridge | `MainActivity.java` (`saveCurrentSudokuFile`, `saveSudokuFileToExisting`, `openSudokuFile`) | Storage Access Framework and MediaStore; reports `default_taken` as a fact for core | `KEEP` |
+| Android host lifecycle | `src/android/jni_host.zig` | Loopback host thread start/stop | `KEEP` |
+| Native renderer and loop | `src/native/host.zig`, `src/native/shell/shell.zig` (`turn`, `runFlow` step execution) | Terminal substrate and step execution against the file transport | `KEEP` |

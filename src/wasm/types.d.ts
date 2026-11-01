@@ -45,7 +45,9 @@ export type FlowStart =
   | { flow: "autosave"; command: string }
   | { flow: "autosave_flush" }
   | { flow: "startup"; path?: string; name?: string }
-  | { flow: "settings"; command: string };
+  | { flow: "settings"; command: string }
+  | { flow: "export"; name: string | null }
+  | { flow: "copy" };
 
 /** Player settings as core writes them to `settings.json` (no renderer choice, no current file). */
 export type PlayerSettings = {
@@ -62,7 +64,8 @@ export type PlayerSettings = {
 /** One core step (wasm `flowStart` / `flowNext` result). */
 export type FlowStep =
   | { step: "resolve_default_target" }
-  | { step: "check_target" | "write"; name: string }
+  | { step: "check_target" | "write" | "pick_new"; name: string }
+  | { step: "pick_existing" | "copy_line" }
   | { step: "ask"; title: string; text: string; ok_label: string; cancel_label: string }
   | { step: "read_file"; path: string }
   | { step: "show_game"; text: string | null; file: string | null }
@@ -73,13 +76,15 @@ export type FlowStep =
   | { step: "done" }
   | { ok: false; error: string; step?: undefined };
 
-/** Platform result of a `write` step. */
-export type WriteResult = { ok: true; name?: string } | { ok: false; cancelled?: boolean; error?: string };
+/** Platform result of a `write` or pick step; `taken` means the file belongs to an earlier install. */
+export type WriteResult =
+  | { ok: true; name?: string }
+  | { ok: false; cancelled?: boolean; taken?: { name: string; dir: string }; error?: string };
 
 /** Platform result of a `read_file` step. */
 export type ReadResult = { ok: true; bytes: Uint8Array } | { ok: false; error?: string };
 
-/** Platform result of a `persist_settings` step. */
+/** Platform result of a `persist_settings` or `copy_line` step. */
 export type PersistResult = { ok: true } | { ok: false; error?: string };
 
 /** Platform result of a `generate` step. */
@@ -93,6 +98,9 @@ export type FlowHandlers = {
   checkTarget?: (name: string) => boolean | Promise<boolean>;
   ask?: (step: { title: string; text: string; ok_label: string; cancel_label: string }) => boolean | Promise<boolean>;
   write?: (name: string) => WriteResult | Promise<WriteResult>;
+  pickExisting?: () => WriteResult | Promise<WriteResult>;
+  pickNew?: (name: string) => WriteResult | Promise<WriteResult>;
+  copyLine?: () => PersistResult | Promise<PersistResult>;
   readFile?: (path: string) => ReadResult | Promise<ReadResult>;
   showGame?: (step: { text: string | null; file: string | null }) => void | Promise<void>;
   generate?: (difficulty: number) => GenerateResult | Promise<GenerateResult>;

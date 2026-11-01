@@ -63,7 +63,6 @@ export function syncMenuBar(legend, controls, config = {}) {
   if (controls.about) controls.about.disabled = false;
   if (controls.settings) controls.settings.disabled = false;
   const autoSaveOn = config.auto_save === true;
-  if (controls.save) controls.save.disabled = controls.save.disabled || autoSaveOn;
   if (controls.autoSave) {
     controls.autoSave.disabled = false;
     controls.autoSave.setAttribute("aria-checked", autoSaveOn ? "true" : "false");

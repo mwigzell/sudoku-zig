@@ -59,6 +59,14 @@ pub const REPLACE_CONFIRM_CANCEL_LABEL: []const u8 = "Cancel";
 pub const WRITE_CANCELLED_MSG: []const u8 = "cancelled";
 /// Status after a successful Save / Save As; `{s}` is the written target.
 pub const SAVED_TO_FMT = "saved to: {s}";
+/// Question when the platform's autosave file was created by an earlier install; `{s}` are the file and its folder.
+pub const TAKEN_TITLE: []const u8 = "Autosave file";
+pub const TAKEN_FMT = "{s} in {s} was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
+pub const TAKEN_PICK_LABEL: []const u8 = "Pick it";
+pub const TAKEN_NEW_NAME_LABEL: []const u8 = "New name";
+
+/// Status when the player asks to Save while autosave is on.
+pub const SAVE_WHILE_AUTO_SAVE_MSG: []const u8 = "Auto Save is on, so your game is already saved.";
 
 /// Shared overwrite-policy inputs:
 pub const OverwriteInput = struct {
@@ -84,37 +92,6 @@ pub fn nextWriteContext(current: WriteContext, event: WriteContextEvent) WriteCo
     return switch (event) {
         .startup_restore, .open_success, .save_success, .save_as_success, .auto_save_success => .continuation,
         .startup_new, .startup_idle, .new_game_success, .import_success, .paste_success => .detached,
-    };
-}
-
-/// Parses a text event name from host/web adapters into a write-context event.
-pub fn parseWriteContextEvent(name: []const u8) ?WriteContextEvent {
-    if (std.mem.eql(u8, name, "startup_restore")) return .startup_restore;
-    if (std.mem.eql(u8, name, "startup_new")) return .startup_new;
-    if (std.mem.eql(u8, name, "startup_idle")) return .startup_idle;
-    if (std.mem.eql(u8, name, "open_success")) return .open_success;
-    if (std.mem.eql(u8, name, "save_success")) return .save_success;
-    if (std.mem.eql(u8, name, "save_as_success")) return .save_as_success;
-    if (std.mem.eql(u8, name, "auto_save_success")) return .auto_save_success;
-    if (std.mem.eql(u8, name, "new_game_success")) return .new_game_success;
-    if (std.mem.eql(u8, name, "import_success")) return .import_success;
-    if (std.mem.eql(u8, name, "paste_success")) return .paste_success;
-    return null;
-}
-
-/// Formats a write-context event name for wire payloads.
-pub fn writeContextEventName(event: WriteContextEvent) []const u8 {
-    return switch (event) {
-        .startup_restore => "startup_restore",
-        .startup_new => "startup_new",
-        .startup_idle => "startup_idle",
-        .open_success => "open_success",
-        .save_success => "save_success",
-        .save_as_success => "save_as_success",
-        .auto_save_success => "auto_save_success",
-        .new_game_success => "new_game_success",
-        .import_success => "import_success",
-        .paste_success => "paste_success",
     };
 }
 
@@ -215,11 +192,4 @@ test "commandTriggersAutoSaveByName follows shared trigger set" {
         try std.testing.expect(commandTriggersAutoSaveByName(name));
     }
     try std.testing.expect(!commandTriggersAutoSaveByName("save_as"));
-}
-
-test "writeContextEventName formats startup and mutation events" {
-    try std.testing.expectEqualStrings("startup_restore", writeContextEventName(.startup_restore));
-    try std.testing.expectEqualStrings("startup_new", writeContextEventName(.startup_new));
-    try std.testing.expectEqualStrings("startup_idle", writeContextEventName(.startup_idle));
-    try std.testing.expectEqualStrings("auto_save_success", writeContextEventName(.auto_save_success));
 }

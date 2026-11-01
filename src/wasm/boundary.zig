@@ -11,7 +11,6 @@ const about = @import("../core/about.zig");
 const legend_mod = @import("../core/renderer/legend.zig");
 const wire = @import("wire.zig");
 const flow = @import("../core/flow/mod.zig");
-const file_policy = @import("../core/file_policy.zig");
 const settings_store = @import("../core/settings_store.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
@@ -184,11 +183,6 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     return error.UnknownAction;
 }
 
-pub fn writeOkJson(out: OutBuffer) !void {
-    var mutable = out;
-    try writeJson(&mutable, "{{\"ok\":true}}", .{});
-}
-
 /// Success JSON with an 81-char puzzle line (`generatePuzzle` worker handoff).
 pub fn writeOkLineJson(out: OutBuffer, line: []const u8) !void {
     var mutable = out;
@@ -272,6 +266,9 @@ pub const FlowStart = union(enum) {
     startup: ?StartupFile,
     /// The command that just ran.
     settings: []const u8,
+    /// The file to export to, or null when there is none.
+    @"export": ?[]const u8,
+    copy,
 };
 
 /// Where the host serves its current file, and the name to label and save it under.
@@ -298,6 +295,8 @@ pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStar
         .autosave_flush => .autosave_flush,
         .startup => .{ .startup = if (v.path) |path| .{ .path = path, .name = v.name orelse return error.MissingField } else null },
         .settings => .{ .settings = v.command orelse return error.MissingField },
+        .@"export" => .{ .@"export" = v.name },
+        .copy => .copy,
     };
 }
 
@@ -308,6 +307,8 @@ const JsonFlowInput = struct {
     yes: ?bool = null,
     ok: ?bool = null,
     cancelled: ?bool = null,
+    taken: ?bool = null,
+    dir: ?[]const u8 = null,
     line: ?[]const u8 = null,
     @"error": ?[]const u8 = null,
 };
@@ -325,6 +326,8 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .{ .ok = v.name orelse return error.MissingField }
         else if (v.cancelled == true)
             .cancelled
+        else if (v.taken == true)
+            .{ .taken = .{ .name = v.name orelse return error.MissingField, .dir = v.dir orelse return error.MissingField } }
         else
             .{ .failed = v.@"error" orelse return error.MissingField } },
         .file_read => if (v.ok == false)
@@ -337,12 +340,15 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .cancelled
         else
             .{ .failed = v.@"error" orelse return error.MissingField } },
-        .persisted => .{ .persisted = if (v.ok == true)
-            .ok
-        else
-            .{ .failed = v.@"error" orelse return error.MissingField } },
+        .persisted => .{ .persisted = try parseOutcome(v) },
+        .copied => .{ .copied = try parseOutcome(v) },
         .ack => .ack,
     };
+}
+
+fn parseOutcome(v: JsonFlowInput) !flow.step.Outcome {
+    if (v.ok == true) return .ok;
+    return .{ .failed = v.@"error" orelse return error.MissingField };
 }
 
 /// Step JSON: `{"step": <tag>, ...payload}`.
@@ -355,8 +361,8 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
     try std.Io.Writer.writeAll(w, "{\"step\":");
     try writeJsonString(w, @tagName(step));
     switch (step) {
-        .resolve_default_target, .done => {},
-        .check_target, .write => |name| {
+        .resolve_default_target, .done, .pick_existing, .copy_line => {},
+        .check_target, .write, .pick_new => |name| {
             try std.Io.Writer.writeAll(w, ",\"name\":");
             try writeJsonString(w, name);
         },
@@ -401,24 +407,6 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
 
 fn writeOptionalJsonString(w: *std.Io.Writer, value: ?[]const u8) !void {
     if (value) |v| try writeJsonString(w, v) else try std.Io.Writer.writeAll(w, "null");
-}
-
-/// Lifecycle event a web handler reports to the wasm FileSession (`fileSessionEvent` payload).
-pub const FileSessionEvent = struct {
-    event: file_policy.WriteContextEvent,
-    name: ?[]const u8,
-};
-
-const JsonFileSessionEvent = struct {
-    event: []const u8,
-    name: ?[]const u8 = null,
-};
-
-/// Parse `{event, name?}`; slices live in `arena`.
-pub fn parseFileSessionEvent(arena: std.mem.Allocator, json_text: []const u8) !FileSessionEvent {
-    const v = try std.json.parseFromSliceLeaky(JsonFileSessionEvent, arena, json_text, .{});
-    const event = file_policy.parseWriteContextEvent(v.event) orelse return error.UnknownEvent;
-    return .{ .event = event, .name = v.name };
 }
 
 pub fn writeAboutJson(out: OutBuffer) !void {
@@ -846,6 +834,9 @@ test "flow start parses each web flow" {
     try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"startup\",\"path\":\"/current-file\"}"));
     try std.testing.expectEqualStrings("set_theme", (try parseFlowStart(a, "{\"flow\":\"settings\",\"command\":\"set_theme\"}")).settings);
     try std.testing.expectError(error.MissingField, parseFlowStart(a, "{\"flow\":\"settings\"}"));
+    try std.testing.expectEqualStrings("p.txt", (try parseFlowStart(a, "{\"flow\":\"export\",\"name\":\"p.txt\"}")).@"export".?);
+    try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"export\"}")).@"export" == null);
+    try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"copy\"}")) == .copy);
     try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"nope\"}"));
 }
 
@@ -866,6 +857,11 @@ test "flow input parses every step result" {
     try std.testing.expectEqualStrings("x", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"error\":\"x\"}")).generated.failed);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"persisted\",\"ok\":true}")).persisted == .ok);
     try std.testing.expectEqualStrings("503", (try parseFlowInput(a, "{\"input\":\"persisted\",\"ok\":false,\"error\":\"503\"}")).persisted.failed);
+    const taken = (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"taken\":true,\"name\":\"sudoku.sud\",\"dir\":\"Documents\"}")).wrote.taken;
+    try std.testing.expectEqualStrings("sudoku.sud", taken.name);
+    try std.testing.expectEqualStrings("Documents", taken.dir);
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":true}")).copied == .ok);
+    try std.testing.expectEqualStrings("denied", (try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":false,\"error\":\"denied\"}")).copied.failed);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"ack\"}")) == .ack);
 }
 
@@ -877,6 +873,12 @@ test "step JSON carries the tag and its payload" {
     try std.testing.expectEqualStrings("{\"step\":\"ask\",\"title\":\"T\",\"text\":\"Q?\",\"ok_label\":\"Yes\",\"cancel_label\":\"No\"}", out.finishJson());
     try writeStepJson(out, .{ .write = "a.sud" });
     try std.testing.expectEqualStrings("{\"step\":\"write\",\"name\":\"a.sud\"}", out.finishJson());
+    try writeStepJson(out, .{ .pick_new = "sudoku.sud" });
+    try std.testing.expectEqualStrings("{\"step\":\"pick_new\",\"name\":\"sudoku.sud\"}", out.finishJson());
+    try writeStepJson(out, .pick_existing);
+    try std.testing.expectEqualStrings("{\"step\":\"pick_existing\"}", out.finishJson());
+    try writeStepJson(out, .copy_line);
+    try std.testing.expectEqualStrings("{\"step\":\"copy_line\"}", out.finishJson());
     try writeStepJson(out, .done);
     try std.testing.expectEqualStrings("{\"step\":\"done\"}", out.finishJson());
     try writeStepJson(out, .{ .read_file = "/current-file" });
@@ -894,12 +896,4 @@ test "step JSON carries the tag and its payload" {
     try std.testing.expect(std.mem.startsWith(u8, json, "{\"step\":\"persist_settings\",\"settings\":{\"difficulty\":"));
     try std.testing.expect(std.mem.indexOf(u8, json, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "current_file") == null);
-}
-
-test "file session event parses the event and optional name" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const ev = try parseFileSessionEvent(arena.allocator(), "{\"event\":\"open_success\",\"name\":\"o.sud\"}");
-    try std.testing.expectEqual(file_policy.WriteContextEvent.open_success, ev.event);
-    try std.testing.expectEqualStrings("o.sud", ev.name.?);
 }

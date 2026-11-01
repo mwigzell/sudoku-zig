@@ -10,8 +10,7 @@ import {
   FLOW_STARTUP,
   runFlow,
 } from "./step_runner.js";
-import { WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, WRITE_CONTEXT_EVENT_OPEN_SUCCESS } from "./shell.js";
-import { loadCoreFlow, loadGame } from "./test_support.mjs";
+import { loadCoreFlow, loadGame, openAs, startNewGame } from "./test_support.mjs";
 
 /** Handlers that record every step and answer from `answers`. */
 function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }) } = {}) {
@@ -53,7 +52,7 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
 // Save after New onto an existing file asks once; declining writes nothing.
 {
   const core = await loadCoreFlow();
-  assert.equal(core.fileSessionEvent(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS).ok, true);
+  startNewGame(core);
   const handlers = recordingHandlers({ exists: true, yes: false });
   const outcome = await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, handlers);
   assert.deepEqual(handlers.log, [["check", "game.sud"], REPLACE_ASK, ["status", "cancelled"]]);
@@ -74,11 +73,11 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
 // Save As onto the opened file continues it; after New the same Save As asks.
 {
   const core = await loadCoreFlow();
-  assert.equal(core.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "game.sud").ok, true);
+  openAs(core, "game.sud");
   const continuing = recordingHandlers({ exists: true });
   await runFlow(core, { flow: FLOW_SAVE_AS, name: "game.sud" }, continuing);
   assert.deepEqual(continuing.log, [["check", "game.sud"], ["write", "game.sud"], ["status", "saved to: game.sud"]]);
-  assert.equal(core.fileSessionEvent(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS).ok, true);
+  startNewGame(core);
   const detached = recordingHandlers({ exists: true, yes: false });
   await runFlow(core, { flow: FLOW_SAVE_AS, name: "game.sud" }, detached);
   assert.deepEqual(detached.log, [["check", "game.sud"], REPLACE_ASK, ["status", "cancelled"]]);
@@ -88,11 +87,21 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
 {
   const core = await loadCoreFlow({ autoSave: true });
   const handlers = recordingHandlers({ write: () => ({ ok: true, name: "picked.sud" }) });
-  await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, handlers);
+  await runFlow(core, { flow: FLOW_SAVE_AS, name: "game.sud" }, handlers);
   assert.deepEqual(handlers.log.at(-1), ["status", "saved to: picked.sud"]);
   const autosave = recordingHandlers({ exists: true });
   await runFlow(core, { flow: FLOW_AUTOSAVE, command: "fill" }, autosave);
   assert.deepEqual(autosave.log, [["check", "picked.sud"], ["write", "picked.sud"]], "autosave continues the saved file");
+}
+
+// A manual Save while Auto Save is on writes nothing and says why; the legend offers no Save.
+{
+  const core = await loadCoreFlow({ autoSave: true });
+  assert.equal(core.getLegend().save, false);
+  const handlers = recordingHandlers();
+  const outcome = await runFlow(core, { flow: FLOW_SAVE, name: "game.sud" }, handlers);
+  assert.deepEqual(handlers.log, [["status", "Auto Save is on, so your game is already saved."]]);
+  assert.equal(outcome.kind, "show_status");
 }
 
 // A picker the user closed ends quietly; a failed write shows the error.

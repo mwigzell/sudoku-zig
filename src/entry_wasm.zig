@@ -182,6 +182,7 @@ export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
         return exportError(out, "engine init failed");
     };
     have_engine = true;
+    file_session.noteLoad(.new_game);
 
     boundary.writeOkMsgJson(out, game_engine.NEW_GAME_STARTED_MSG) catch return exportWriteFailed(out);
     return returnJson(out);
@@ -271,6 +272,24 @@ export fn deserialize(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) ca
         .error_msg => |msg| return exportError(out, msg),
         .ok => {},
     }
+    file_session.noteLoad(.{ .open = opened_label });
+    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
+fn loadOneLinePuzzle(in_ptr: u32, in_len: u32, load: flow.file_session.Load) u32 {
+    const out = outBuffer();
+    const eng = engineOrError(out) orelse return returnJson(out);
+    const line = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const ev = switch (load) {
+        .paste => eng.pasteFromLine(line),
+        else => eng.importFromLine(line),
+    };
+    switch (ev) {
+        .error_msg => |msg| return exportError(out, msg),
+        .ok => {},
+    }
+    file_session.noteLoad(load);
     boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
     return returnJson(out);
 }
@@ -278,16 +297,12 @@ export fn deserialize(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) ca
 /// Import a one-line puzzle from a page-read file; codec is the engine's job.
 /// Returns Event JSON (same shape as exec / deserialize).
 export fn importPuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
-    const out = outBuffer();
-    const eng = engineOrError(out) orelse return returnJson(out);
-    const line = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const ev = eng.newFromOneLinePuzzle(line);
-    switch (ev) {
-        .error_msg => |msg| return exportError(out, msg),
-        .ok => {},
-    }
-    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
-    return returnJson(out);
+    return loadOneLinePuzzle(in_ptr, in_len, .import);
+}
+
+/// Paste a one-line puzzle read from the clipboard; returns Event JSON.
+export fn pastePuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
+    return loadOneLinePuzzle(in_ptr, in_len, .paste);
 }
 
 /// Import a generated puzzle line and set nominal difficulty for this New game.
@@ -304,6 +319,7 @@ export fn importPuzzleNewGame(in_ptr: u32, in_len: u32, difficulty: u32) callcon
         .ok => {},
     }
     eng.cfg.difficulty = pd.toPuzzleDifficulty();
+    file_session.noteLoad(.new_game);
     boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
     return returnJson(out);
 }
@@ -336,8 +352,8 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     const start = boundary.parseFlowStart(arena.allocator(), json) catch return exportError(out, "invalid flow start");
     active_flow = switch (start) {
-        .save => |name| .{ .save = flow.SaveFlow.init(&file_session, .save, name) },
-        .save_as => |name| .{ .save = flow.SaveFlow.init(&file_session, .save_as, name) },
+        .save => |name| .{ .save = flow.SaveFlow.forCommand(&file_session, .save, name, eng.cfg.auto_save) },
+        .save_as => |name| .{ .save = flow.SaveFlow.forCommand(&file_session, .save_as, name, eng.cfg.auto_save) },
         .autosave => |command_name| .{ .autosave = flow.AutosaveFlow.afterCommand(&file_session, eng.cfg.auto_save, command_name) },
         .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, eng.cfg.auto_save) },
         .startup => |file| .{ .startup = flow.StartupFlow.init(eng, &file_session, .{
@@ -346,6 +362,8 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
             .difficulty = eng.cfg.difficulty,
         }, if (file) |f| .{ .path = f.path, .name = f.name, .working = f.name } else null) },
         .settings => |command_name| .{ .settings = flow.SettingsFlow.afterCommand(eng.cfg, command_name) },
+        .@"export" => |name| .{ .@"export" = flow.ExportFlow.toFile(name) },
+        .copy => .{ .@"export" = flow.ExportFlow.toClipboard() },
     };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
@@ -368,19 +386,6 @@ export fn flowFileRead(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
     const bytes = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     return returnStep(out, active_flow.next(.{ .file_read = .{ .bytes = bytes } }));
-}
-
-/// Record a lifecycle event `{event, name?}` (open, new, import, paste, startup) in the web FileSession.
-export fn fileSessionEvent(in_ptr: u32, in_len: u32) callconv(.c) u32 {
-    const out = outBuffer();
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const ev = boundary.parseFileSessionEvent(arena.allocator(), json) catch return exportError(out, "invalid file session event");
-    file_session.apply(ev.event);
-    if (ev.name) |name| file_session.setWorkingFile(name);
-    boundary.writeOkJson(out) catch return exportWriteFailed(out);
-    return returnJson(out);
 }
 
 /// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from serialize).

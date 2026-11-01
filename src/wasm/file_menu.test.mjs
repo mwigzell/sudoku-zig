@@ -11,7 +11,7 @@ import {
   DIFFICULTIES,
   filePickerStartIn,
 } from "./file_menu.js";
-import { WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS, startAutoSavePolicy } from "./shell.js";
+import { startAutoSavePolicy } from "./shell.js";
 import { hostFetch, postedCurrentFile, withCoreFlow } from "./test_support.mjs";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 import { wireGeneratingModal } from "./generating.js";
@@ -142,12 +142,6 @@ function makeRenderElement() {
       return { ok: true, bytes: new Uint8Array([9, 9, 9]) };
     },
   });
-  const fileSessionEvents = [];
-  const recordEvent = game.fileSessionEvent;
-  game.fileSessionEvent = (event, name) => {
-    fileSessionEvents.push(event);
-    return recordEvent(event, name);
-  };
   const status = { textContent: "", className: "" };
   const controls = {
     new: makeBtn(),
@@ -194,7 +188,6 @@ function makeRenderElement() {
   await pickPromise;
   assert.equal(genEl.hidden, true);
   assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
-  assert.deepEqual(fileSessionEvents, [WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS]);
   const host = hostFetch();
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
@@ -850,13 +843,14 @@ function makeRenderElement() {
     },
   };
   const exportBtn = makeBtn();
+  const statusEl = { textContent: "", className: "" };
   await withCoreFlow(game);
   wireFileMenu(
     { export: exportBtn },
     game,
     makeBoard(),
     { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
+    statusEl,
     { el: { hidden: true }, msgEl: { textContent: "" } },
     session,
     { sync() {} },
@@ -875,6 +869,7 @@ function makeRenderElement() {
   );
   await exportBtn.click();
   assert.deepEqual([...saved], [...lineBytes], "save receives exportPuzzle bytes");
+  assert.equal(statusEl.textContent, "exported to: puzzle.txt", "core owns the export status");
   assert.equal(session.fileHandle.name, "game.sud", "export must not bind SUD0 file handle");
   assert.equal(session.boundFilename, "game.sud");
 }
@@ -1102,7 +1097,7 @@ function makeRenderElement() {
   }
 }
 
-// Android default file taken by an earlier install: the web dialog asks pick-or-rename until a file is written.
+// Android default file taken by an earlier install: core asks pick-or-rename until a picker writes a file.
 {
   const prevBridge = globalThis.AndroidFileBridge;
   const prevChoose = globalThis.__sudokuChoose;

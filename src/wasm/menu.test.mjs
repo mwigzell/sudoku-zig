@@ -471,11 +471,11 @@ assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
     legend: { [LEGEND_WIRE_COPY]: true },
     state: { cells: [{ value: 3, given: false, conflict: false }] },
   };
-  const game = {
+  const game = await withCoreFlow({
     exportPuzzle() {
       return { ok: true, bytes: new TextEncoder().encode(line) };
     },
-  };
+  });
   const status = { textContent: "", className: "" };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const result = await handleCopyPuzzle(game, session, status, errorModal, {
@@ -483,7 +483,7 @@ assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
   });
   assert.equal(result.ok, true);
   assert.equal(written, line, "clipboard gets exportPuzzle one-line string");
-  assert.match(status.textContent, /copied puzzle/i);
+  assert.equal(status.textContent, "copy: puzzle line copied", "core owns the copy status");
   assert.equal(errorModal.el.hidden, true);
 }
 
@@ -495,11 +495,11 @@ assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
   };
   const before = JSON.stringify(session.state);
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const game = {
+  const game = await withCoreFlow({
     exportPuzzle() {
       return { ok: true, bytes: new TextEncoder().encode("2".repeat(81)) };
     },
-  };
+  });
   const result = await handleCopyPuzzle(
     game,
     session,
@@ -557,11 +557,11 @@ assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
     makeBtn(),
     makeBtn(),
     makeBtn(),
-    {
+    await withCoreFlow({
       exportPuzzle() {
         return { ok: true, bytes: lineBytes };
       },
-    },
+    }),
     makeMockBoard(),
     { getSelection: () => null, deselect() {}, select() {} },
     { textContent: "", className: "" },
@@ -575,16 +575,16 @@ assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
     },
   );
   copyBtn.click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await settleFlow();
   assert.equal(written, "1".repeat(81));
 }
 
 const GOLDEN_PUZZLE_LINE =
   "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
 
-// ── Paste reads clipboard → importPuzzle; session updates ──
+// ── Paste reads clipboard → pastePuzzle; session updates ──
 {
-  let importedWith = null;
+  let pastedWith = null;
   const session = {
     legend: { [LEGEND_WIRE_PASTE]: true },
     state: { cells: [{ value: 1, given: true, conflict: false }] },
@@ -593,8 +593,8 @@ const GOLDEN_PUZZLE_LINE =
   };
   const nextState = { cells: [{ value: 3, given: false, conflict: false }] };
   const game = await withCoreFlow({
-    importPuzzle(text) {
-      importedWith = text;
+    pastePuzzle(text) {
+      pastedWith = text;
       return { ok: true, msg: "imported puzzle" };
     },
     getState() {
@@ -613,7 +613,7 @@ const GOLDEN_PUZZLE_LINE =
     clipboard: { readText: async () => GOLDEN_PUZZLE_LINE },
   });
   assert.equal(result.ok, true);
-  assert.equal(importedWith, GOLDEN_PUZZLE_LINE);
+  assert.equal(pastedWith, GOLDEN_PUZZLE_LINE);
   assert.equal(session.state, nextState);
   assert.equal(session.fileHandle, null);
   assert.equal(session.boundFilename, null);
@@ -630,7 +630,7 @@ const GOLDEN_PUZZLE_LINE =
   const before = JSON.stringify(session.state);
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const game = {
-    importPuzzle() {
+    pastePuzzle() {
       return { ok: false, error: "import: invalid character in puzzle line" };
     },
   };
@@ -655,9 +655,9 @@ const GOLDEN_PUZZLE_LINE =
   };
   const before = JSON.stringify(session.state);
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  let importCalled = false;
+  let pasteCalled = false;
   const result = await handlePastePuzzle(
-    { importPuzzle() { importCalled = true; return { ok: true }; } },
+    { pastePuzzle() { pasteCalled = true; return { ok: true }; } },
     session,
     { textContent: "", className: "" },
     errorModal,
@@ -670,7 +670,7 @@ const GOLDEN_PUZZLE_LINE =
     },
   );
   assert.equal(result.ok, false);
-  assert.equal(importCalled, false);
+  assert.equal(pasteCalled, false);
   assert.equal(errorModal.el.hidden, false);
   assert.match(errorModal.msgEl.textContent, /clipboard/i);
   assert.equal(JSON.stringify(session.state), before);
@@ -681,7 +681,7 @@ const GOLDEN_PUZZLE_LINE =
   let readCalled = false;
   const session = { legend: {}, state: { cells: [] } };
   const result = await handlePastePuzzle(
-    { importPuzzle() { return { ok: true }; } },
+    { pastePuzzle() { return { ok: true }; } },
     session,
     { textContent: "", className: "" },
     { el: { hidden: true }, msgEl: { textContent: "" } },
@@ -710,7 +710,7 @@ const GOLDEN_PUZZLE_LINE =
   nextState.cells[0] = { value: 5, given: true, conflict: false };
   const boardEl = makeMockBoard();
   const game = await withCoreFlow({
-    importPuzzle(text) {
+    pastePuzzle(text) {
       assert.equal(text, GOLDEN_PUZZLE_LINE);
       return { ok: true };
     },
@@ -762,7 +762,7 @@ const GOLDEN_PUZZLE_LINE =
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
   const game = await withCoreFlow({
-      importPuzzle() {
+      pastePuzzle() {
         return { ok: true };
       },
       getState() {

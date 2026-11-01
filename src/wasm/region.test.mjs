@@ -73,6 +73,7 @@ function makeMockCell(row, col) {
       }
       return { ok: false };
     },
+    getLegend: () => ({}),
     getConfig() {
       return session.config;
     },

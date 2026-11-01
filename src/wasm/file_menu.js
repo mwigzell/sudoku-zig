@@ -16,16 +16,13 @@ import {
   persistCurrentFileBytes,
   persistSettingsAfter,
   startAutoSavePolicy,
-  WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
-  WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
-  WRITE_CONTEXT_EVENT_IMPORT_SUCCESS,
   syncCurrentFileLabels,
   showErrorModal,
   waitForStatusPaint,
 } from "./shell.js";
 import { renderBoard, setStatus } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
-import { askWithDialog, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAILED_MSG } from "./step_runner.js";
+import { askWithDialog, FLOW_EXPORT, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAILED_MSG } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 /** @typedef {import("./types").FileMenuControls} FileMenuControls */
@@ -39,12 +36,12 @@ export const DEFAULT_PUZZLE_EXPORT_FILENAME = "puzzle.txt";
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
 const SET_AUTO_SAVE = "set_auto_save";
+const NEW_COMMAND = "new";
+const OPEN_COMMAND = "open";
+const IMPORT_COMMAND = "import";
 const BRIDGE_CANCELLED = "cancelled";
 /** Android bridge reason: the default visible file belongs to an earlier install. */
 const BRIDGE_DEFAULT_TAKEN = "default_taken";
-const ANDROID_TAKEN_TITLE = "Autosave file";
-const ANDROID_TAKEN_PICK_LABEL = "Pick it";
-const ANDROID_TAKEN_RENAME_LABEL = "New name";
 const BINDING_KIND_FILE_HANDLE = "file_handle";
 const BINDING_KIND_ANDROID_BRIDGE = "android_bridge";
 /** Android bridge capability check for Save/Save As path selection. */
@@ -176,6 +173,8 @@ function clearBoundSnapshotWriter(session) {
   session.boundSnapshotWriter = null;
   session.boundSnapshotWriterKind = null;
   session.boundTargetExists = null;
+  session.boundPickExisting = null;
+  session.boundPickNew = null;
 }
 
 function androidSaveOutcome(out) {
@@ -186,37 +185,13 @@ function androidSaveOutcome(out) {
   return typeof out.name === "string" && out.name.length > 0 ? { ok: true, name: out.name } : { ok: true };
 }
 
-/** Earlier-install default file: ask pick-or-rename in the web dialog until one picker writes a file. */
-async function resolveAndroidDefaultTaken(bridge, base64, name, dir, win) {
-  const choose = win?.__sudokuChoose;
-  if (typeof choose !== "function") return { ok: false, error: "save dialog unavailable" };
-  const message =
-    `${name} in ${dir} was saved by an earlier install. ` +
-    "Pick it to keep autosaving there, or choose a new name.";
-  while (true) {
-    const pickExisting = await choose(message, {
-      title: ANDROID_TAKEN_TITLE,
-      okLabel: ANDROID_TAKEN_PICK_LABEL,
-      cancelLabel: ANDROID_TAKEN_RENAME_LABEL,
-    });
-    const out = pickExisting
-      ? await bridge.saveSudokuFileToExisting(base64)
-      : await bridge.saveSudokuFile(base64, name, true);
-    const outcome = androidSaveOutcome(out);
-    if (outcome.cancelled) continue;
-    return outcome;
-  }
-}
-
-async function saveToAndroidBoundTarget(bridge, bytes, suggestedName, win = globalThis) {
+async function saveToAndroidBoundTarget(bridge, bytes, suggestedName) {
   if (!bridge) return { ok: false, error: "no Android bridge" };
   const saveCurrent = bridge.saveCurrentSudokuFile;
   if (typeof saveCurrent === "function") {
     const base64 = bytesToBase64(bytes);
     const out = await saveCurrent(base64, suggestedName);
-    if (out?.reason === BRIDGE_DEFAULT_TAKEN) {
-      return resolveAndroidDefaultTaken(bridge, base64, out.name ?? suggestedName, out.dir, win);
-    }
+    if (out?.reason === BRIDGE_DEFAULT_TAKEN) return { ok: false, taken: { name: out.name ?? suggestedName, dir: out.dir } };
     return androidSaveOutcome(out);
   }
   const saveLegacy = bridge.saveSudokuFile;
@@ -230,6 +205,8 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
   if (!binding) return;
   if (binding.kind === BINDING_KIND_FILE_HANDLE && binding.handle) {
     session.fileHandle = binding.handle;
+    session.boundPickExisting = null;
+    session.boundPickNew = null;
     session.boundSnapshotWriterKind = BINDING_KIND_FILE_HANDLE;
     session.boundTargetExists = () => true;
     session.boundSnapshotWriter = async (bytes) => {
@@ -251,11 +228,16 @@ function bindSnapshotWriter(session, binding, win = globalThis) {
     session.boundTargetExists = () => androidCurrentTargetName(win) != null;
     session.boundSnapshotWriter = async (bytes, suggestedName) => {
       try {
-        return await saveToAndroidBoundTarget(bridge, bytes, suggestedName, win);
+        return await saveToAndroidBoundTarget(bridge, bytes, suggestedName);
       } catch (err) {
         return { ok: false, error: err?.message ?? SAVE_FAILED_MSG };
       }
     };
+    // Pickers for when the default file belongs to an earlier install; core decides which one runs.
+    session.boundPickExisting = async (bytes) =>
+      androidSaveOutcome(await bridge.saveSudokuFileToExisting(bytesToBase64(bytes)));
+    session.boundPickNew = async (bytes, name) =>
+      androidSaveOutcome(await bridge.saveSudokuFile(bytesToBase64(bytes), name, true));
   }
 }
 
@@ -524,27 +506,12 @@ export function wireFileMenu(
       fileHandle,
       boundFilename,
       binding = null,
-      writeContextEventName,
       legend,
       config,
-      commandName = null,
+      commandName,
     },
   ) => {
-    const finalized = applyLoadedSessionOutcome(
-      game,
-      session,
-      statusEl,
-      result,
-      {
-        writeContextEventName,
-        fileHandle,
-        boundFilename,
-        workingFile: writeContextEventName === WRITE_CONTEXT_EVENT_OPEN_SUCCESS ? boundFilename : null,
-        legend,
-        config,
-      },
-    );
-    if (!finalized.ok) fail(finalized);
+    applyLoadedSessionOutcome(session, statusEl, result, { fileHandle, boundFilename, legend, config });
     if (binding) {
       bindSnapshotWriter(session, binding, globalThis);
     } else if (fileHandle == null && boundFilename == null) {
@@ -560,7 +527,7 @@ export function wireFileMenu(
       createElement,
       onViewRefresh,
     );
-    if (commandName) startAutoSavePolicy(game, session, commandName, { onError: fail });
+    startAutoSavePolicy(game, session, commandName, { onError: fail });
   };
 
   /** New-game completion follows same loaded-session helper path as other board swaps. */
@@ -568,9 +535,9 @@ export function wireFileMenu(
     await finalizeLoadedSession(result, {
       fileHandle: null,
       boundFilename: session.boundFilename ?? null,
-      writeContextEventName: WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
       legend: result.legend,
       config: result.config,
+      commandName: NEW_COMMAND,
     });
   };
 
@@ -620,8 +587,6 @@ export function wireFileMenu(
   // Phase C: manual Save runs the core save flow.
   controls.save?.addEventListener("click", async () => {
     if (!session.legend.save) return;
-    // Auto-save mode keeps manual Save inert; explicit state lives in File menu.
-    if (session.config?.auto_save === true) return;
     await runSave(false);
   });
 
@@ -659,10 +624,9 @@ export function wireFileMenu(
       fileHandle: picked.handle ?? null,
       boundFilename: picked.name,
       binding: picked.binding ?? null,
-      writeContextEventName: WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
       legend: game.getLegend(),
       config: game.getConfig(),
-      commandName: "open",
+      commandName: OPEN_COMMAND,
     });
   });
 
@@ -681,27 +645,25 @@ export function wireFileMenu(
     await finalizeLoadedSession(result, {
       fileHandle: null,
       boundFilename: null,
-      writeContextEventName: WRITE_CONTEXT_EVENT_IMPORT_SUCCESS,
       legend: result.legend,
       config: result.config,
-      commandName: "import",
+      commandName: IMPORT_COMMAND,
     });
   });
 
-  // Phase H: Export path writes one-line text only and leaves current save binding untouched.
+  // Phase H: Export runs the core export flow; the one-line text leaves the save binding untouched.
   controls.export?.addEventListener("click", async () => {
     if (!session.legend[LEGEND_WIRE_EXPORT]) return;
-    const result = exportPuzzle(game);
-    if (!result.ok) {
-      fail(result);
-      return;
-    }
-    const saved = await exportText(result.bytes, session, DEFAULT_PUZZLE_EXPORT_FILENAME, { download });
-    if (saved.ok) {
-      applyEventStatus(statusEl, { ok: true, msg: `exported: ${saved.filename}` });
-    } else if (!saved.ok && !saved.cancelled) {
-      fail(saved);
-    }
+    await runFlow(game, { flow: FLOW_EXPORT, name: DEFAULT_PUZZLE_EXPORT_FILENAME }, {
+      write: async (name) => {
+        const result = exportPuzzle(game);
+        if (!result.ok) return result;
+        const saved = await exportText(result.bytes, session, name, { download });
+        return saved.ok ? { ok: true, name: saved.filename } : saved;
+      },
+      showStatus: (text) => applyEventStatus(statusEl, { ok: true, msg: text }),
+      showError: (text) => fail({ ok: false, error: text }),
+    });
   });
 
   syncCurrentFileLabels(session);

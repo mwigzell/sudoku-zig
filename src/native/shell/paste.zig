@@ -1,4 +1,4 @@
-// Edit → Paste (native): prompt-supplied one-line string → engine `importFromLine`.
+// Edit → Paste (native): prompt-supplied one-line string → engine `pasteFromLine`.
 const game_engine = @import("../../core/engine/game_engine.zig");
 const board = @import("../../core/board/board.zig");
 const config = @import("../../core/config.zig");
@@ -8,7 +8,7 @@ const PuzzleGen = @import("../../core/puzzle_gen/mod.zig").PuzzleGen;
 
 pub fn execute(engine: *game_engine.GameEngine, line: ?[]const u8) game_engine.Event {
     if (line == null) return .{ .error_msg = "paste: no puzzle line specified" };
-    return engine.importFromLine(line.?);
+    return engine.pasteFromLine(line.?);
 }
 
 test "paste: valid line loads board and clears history" {

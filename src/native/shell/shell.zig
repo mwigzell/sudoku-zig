@@ -23,13 +23,14 @@ const save_command = @import("save.zig");
 const open_command = @import("open.zig");
 const import_command = @import("import.zig");
 const export_command = @import("export.zig");
-const copy_command = @import("copy.zig");
 const paste_command = @import("paste.zig");
 const new_command = @import("new.zig");
 const save_as_command = @import("save_as.zig");
 const read_path = @import("read_path.zig");
 const gen_progress = @import("gen_progress.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
+
+const COPY_WRITE_FAILED_MSG: []const u8 = "copy: write failed";
 
 /// One running game: engine + renderer; each entry shows the game, then turns it.
 pub const SettingsPersist = struct {
@@ -53,8 +54,9 @@ pub const Sudoku = struct {
     /// Holds a flow's terminal text once it becomes an event, so later flows cannot overwrite it.
     flow_text: [256]u8 = undefined,
 
-    /// How a flow's `write` step is carried out: Save records its status in the game, autosave does not.
-    const WriteMode = enum { save, autosave };
+    /// How a flow's `write` step is carried out: Save records its status in the game, autosave does not,
+    /// and Export writes only the puzzle line without making it the working file.
+    const WriteMode = enum { save, autosave, export_line };
 
     /// Assemble a fresh game from the shared user-choices, a renderer facade,
     /// and the file transport arm the deployment selected.
@@ -86,7 +88,7 @@ pub const Sudoku = struct {
     }
 
     /// Carry out a `persist_settings` step; without settings persistence there is nowhere to write.
-    fn persistSettings(self: *@This(), cfg: config.Config) flow_mod.step.Persisted {
+    fn persistSettings(self: *@This(), cfg: config.Config) flow_mod.step.Outcome {
         self.cfg = cfg;
         const sp = self.settings_persist orelse return .ok;
         settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
@@ -118,13 +120,12 @@ pub const Sudoku = struct {
         settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch {};
     }
 
-    /// Successful Open: the opened file becomes the working file.
+    /// Successful Open: core records it; the resolved path is also remembered for the next launch.
     fn noteOpened(self: *@This(), path: []const u8) void {
         const resolved = self.transport.resolve(self.transport.context, path) catch return;
         defer self.transport.free(self.transport.context, resolved);
         self.persistCurrentFile(resolved);
-        self.file_session.setWorkingFile(resolved);
-        self.file_session.apply(.open_success);
+        self.file_session.noteLoad(.{ .open = resolved });
     }
 
     /// Carry out a `write` step; `scratch` holds the reported name or error text.
@@ -143,6 +144,11 @@ pub const Sudoku = struct {
                 const save_buf = self.engine.toSaveFormat(std.heap.page_allocator) catch |err| return .{ .failed = @errorName(err) };
                 defer std.heap.page_allocator.free(save_buf);
                 self.transport.write(self.transport.context, resolved, save_buf) catch |err| return .{ .failed = @errorName(err) };
+            },
+            .export_line => {
+                const line = export_command.currentPuzzleLine(&self.engine);
+                self.transport.write(self.transport.context, resolved, &line) catch |err| return .{ .failed = @errorName(err) };
+                return .{ .ok = copyInto(scratch, resolved) };
             },
         }
         self.persistCurrentFile(resolved);
@@ -211,11 +217,22 @@ pub const Sudoku = struct {
                     break :blk .ack;
                 },
                 .persist_settings => |cfg| .{ .persisted = self.persistSettings(cfg) },
+                .copy_line => .{ .copied = self.printPuzzleLine() },
+                // Pickers follow only a `taken` write, which native writes never report.
+                .pick_existing, .pick_new => unreachable,
                 .show_status, .show_error, .done => unreachable,
             };
             step = self.flow.next(input);
         }
         return step;
+    }
+
+    /// Carry out a `copy_line` step: the terminal has no clipboard, so print the line for the player to copy.
+    fn printPuzzleLine(self: *@This()) flow_mod.step.Outcome {
+        const line = export_command.currentPuzzleLine(&self.engine);
+        self.out.writeAll(&line) catch return .{ .failed = COPY_WRITE_FAILED_MSG };
+        self.out.writeAll("\n") catch return .{ .failed = COPY_WRITE_FAILED_MSG };
+        return .ok;
     }
 
     /// Map a flow's terminal step to the event the loop shows; `done` shows `otherwise`.
@@ -232,8 +249,18 @@ pub const Sudoku = struct {
     }
 
     fn runSaveFlow(self: *@This(), intent: file_policy.WriteIntent, path: []const u8) Error!game_engine.Event {
-        self.flow = .{ .save = flow_mod.SaveFlow.init(&self.file_session, intent, path) };
+        self.flow = .{ .save = flow_mod.SaveFlow.forCommand(&self.file_session, intent, path, self.engine.cfg.auto_save) };
         const terminal = try self.runFlow(.save);
+        return self.flowEvent(terminal, .{ .ok = .{
+            .board_view = self.engine.eventBoard(),
+            .msg = null,
+            .is_quit = false,
+        } });
+    }
+
+    fn runExportFlow(self: *@This(), export_flow: flow_mod.ExportFlow) Error!game_engine.Event {
+        self.flow = .{ .@"export" = export_flow };
+        const terminal = try self.runFlow(.export_line);
         return self.flowEvent(terminal, .{ .ok = .{
             .board_view = self.engine.eventBoard(),
             .msg = null,
@@ -305,8 +332,8 @@ pub const Sudoku = struct {
                     .save => |data| try self.runSaveFlow(.save, data.path orelse save_command.DEFAULT_SAVE_FILE),
                     .open => |data| open_command.execute(&self.engine, self.transport, data.path),
                     .import => |data| import_command.execute(&self.engine, self.transport, data.path),
-                    .@"export" => |data| export_command.execute(&self.engine, self.transport, data.path),
-                    .copy => copy_command.execute(&self.engine, self.out),
+                    .@"export" => |data| try self.runExportFlow(flow_mod.ExportFlow.toFile(data.path)),
+                    .copy => try self.runExportFlow(flow_mod.ExportFlow.toClipboard()),
                     .paste => |data| paste_command.execute(&self.engine, data.line),
                     .new => |data| new_command.execute(&self.engine, data),
                     .save_as => |data| try self.runSaveFlow(.save_as, data.path orelse save_command.DEFAULT_SAVE_FILE),
@@ -314,9 +341,9 @@ pub const Sudoku = struct {
                 };
                 if (event == .ok) switch (cmd) {
                     .open => |data| if (data.path) |path| self.noteOpened(path),
-                    .new => self.file_session.apply(.new_game_success),
-                    .import => self.file_session.apply(.import_success),
-                    .paste => self.file_session.apply(.paste_success),
+                    .new => self.file_session.noteLoad(.new_game),
+                    .import => self.file_session.noteLoad(.import),
+                    .paste => self.file_session.noteLoad(.paste),
                     else => {},
                 };
                 const persisted = self.persistSettingsAfter(cmd, event);
@@ -934,6 +961,26 @@ test "save shows its saved-to status after the later flows run" {
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, output, "saved to: " ++ tmp_path) != null);
+}
+
+test "menu save while autosave is on writes nothing and says why" {
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    const responses = [_][]const u8{ "m", "1", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var app = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, output, file_policy.SAVE_WHILE_AUTO_SAVE_MSG) != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "saved to:") == null);
 }
 
 test "autosave does not clobber undo win status with saved-to message" {

@@ -82,8 +82,8 @@ function makeControls() {
 
 {
   const controls = makeControls();
-  syncMenuBar({ save: true }, controls, { auto_save: true });
-  assert.equal(controls.save.disabled, true);
+  syncMenuBar({ save: false }, controls, { auto_save: true });
+  assert.equal(controls.save.disabled, true, "core's legend turns Save off while Auto Save is on");
   assert.equal(controls.autoSave.textContent, "Auto Save (On)");
 }
 

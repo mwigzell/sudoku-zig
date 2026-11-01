@@ -158,11 +158,18 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
     },
 
-    // One-line import path used by Paste and File -> Import.
+    // One-line import path used by File -> Import.
     importPuzzle(text) {
       const bytes = new TextEncoder().encode(text);
       writeBytes(memory, SCRATCH, bytes);
       return readJson(exports.importPuzzle(SCRATCH, bytes.length));
+    },
+
+    // One-line clipboard path used by Edit -> Paste.
+    pastePuzzle(text) {
+      const bytes = new TextEncoder().encode(text);
+      writeBytes(memory, SCRATCH, bytes);
+      return readJson(exports.pastePuzzle(SCRATCH, bytes.length));
     },
 
     // New-game import variant used by worker/sync generation handoff.
@@ -195,12 +202,6 @@ export async function loadArtifact(wasmBytes) {
       writeBytes(memory, SCRATCH, bytes);
       return readJson(exports.flowFileRead(SCRATCH, bytes.length));
     },
-
-    /** Record an open/new/import/paste/startup event in the web FileSession. */
-    fileSessionEvent(event, name = null) {
-      return callJsonPayload(exports.fileSessionEvent, name ? { event, name } : { event });
-    },
-
     get exports() {
       return exports;
     },

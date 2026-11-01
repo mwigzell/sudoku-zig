@@ -20,8 +20,10 @@ pub const SaveFlow = struct {
     name_len: usize = 0,
     text_buf: [MAX_NAME_LEN + 128]u8 = undefined,
     phase: Phase = .start,
+    refused: bool = false,
+    taken_text_len: usize = 0,
 
-    const Phase = enum { start, checking, asking, writing, finished };
+    const Phase = enum { start, checking, asking, writing, asking_taken, picking, finished };
 
     /// A flow writing `name`; the first `next(.start)` checks the target.
     pub fn init(session: *FileSession, intent: file_policy.WriteIntent, name: []const u8) SaveFlow {
@@ -30,6 +32,14 @@ pub const SaveFlow = struct {
             std.mem.copyForwards(u8, flow.name_buf[0..name.len], name);
             flow.name_len = name.len;
         }
+        return flow;
+    }
+
+    /// The Save or Save As the player asked for; a manual Save while autosave is on is refused,
+    /// since every change is already written.
+    pub fn forCommand(session: *FileSession, intent: file_policy.WriteIntent, name: []const u8, auto_save: bool) SaveFlow {
+        var flow = init(session, intent, name);
+        flow.refused = intent == .save and auto_save;
         return flow;
     }
 
@@ -48,6 +58,7 @@ pub const SaveFlow = struct {
         switch (self.phase) {
             .start => {
                 if (input != .start) return self.fail(step_mod.UNEXPECTED_INPUT_MSG);
+                if (self.refused) return self.finish(.{ .show_status = file_policy.SAVE_WHILE_AUTO_SAVE_MSG });
                 if (self.name_len == 0) return self.fail(NAME_TOO_LONG_MSG);
                 self.phase = .checking;
                 return .{ .check_target = self.targetName() };
@@ -83,11 +94,55 @@ pub const SaveFlow = struct {
                 return switch (wrote) {
                     .ok => |written| self.succeeded(written),
                     .cancelled => self.finish(.done),
+                    .taken => |taken| self.askTaken(taken),
+                    .failed => |msg| self.fail(msg),
+                };
+            },
+            .asking_taken => {
+                const pick_existing = switch (input) {
+                    .answered => |a| a,
+                    else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
+                };
+                self.phase = .picking;
+                if (pick_existing) return .pick_existing;
+                return .{ .pick_new = self.targetName() };
+            },
+            .picking => {
+                const wrote = switch (input) {
+                    .wrote => |w| w,
+                    else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
+                };
+                return switch (wrote) {
+                    .ok => |written| self.succeeded(written),
+                    .cancelled, .taken => self.repeatTakenAsk(),
                     .failed => |msg| self.fail(msg),
                 };
             },
             .finished => return .done,
         }
+    }
+
+    /// The platform's file belongs to an earlier install: ask whether to pick it or choose a new name.
+    fn askTaken(self: *SaveFlow, taken: step_mod.Taken) Step {
+        if (taken.name.len > 0 and taken.name.len <= self.name_buf.len) {
+            std.mem.copyForwards(u8, self.name_buf[0..taken.name.len], taken.name);
+            self.name_len = taken.name.len;
+        }
+        const text = std.fmt.bufPrint(&self.text_buf, file_policy.TAKEN_FMT, .{ self.targetName(), taken.dir }) catch
+            return self.fail(NAME_TOO_LONG_MSG);
+        self.taken_text_len = text.len;
+        return self.repeatTakenAsk();
+    }
+
+    /// Until a picker writes a file there is nowhere to autosave, so a closed picker asks again.
+    fn repeatTakenAsk(self: *SaveFlow) Step {
+        self.phase = .asking_taken;
+        return .{ .ask = .{
+            .title = file_policy.TAKEN_TITLE,
+            .text = self.text_buf[0..self.taken_text_len],
+            .ok_label = file_policy.TAKEN_PICK_LABEL,
+            .cancel_label = file_policy.TAKEN_NEW_NAME_LABEL,
+        } };
     }
 
     fn askReplace(self: *SaveFlow) Step {
@@ -153,6 +208,61 @@ test "save to a new file writes without asking and reports where it saved" {
     try testing.expectEqualStrings("saved to: /docs/game.sud", end.show_status);
     try testing.expectEqualStrings("/docs/game.sud", session.workingFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+}
+
+test "a manual save while autosave is on writes nothing and says why" {
+    var session = FileSession{};
+    var flow = SaveFlow.forCommand(&session, .save, "game.sud", true);
+    try testing.expectEqualStrings(file_policy.SAVE_WHILE_AUTO_SAVE_MSG, flow.next(.start).show_status);
+    try testing.expect(session.workingFile() == null);
+}
+
+test "save as while autosave is on still writes" {
+    var session = FileSession{};
+    var flow = SaveFlow.forCommand(&session, .save_as, "game.sud", true);
+    try expectCheck(flow.next(.start), "game.sud");
+}
+
+const taken_ask_text = "sudoku.sud in Documents was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
+
+fn takenAsk(flow: *SaveFlow) !void {
+    _ = flow.next(.start);
+    _ = flow.next(.{ .target_checked = false });
+    const ask = flow.next(.{ .wrote = .{ .taken = .{ .name = "sudoku.sud", .dir = "Documents" } } }).ask;
+    try testing.expectEqualStrings(file_policy.TAKEN_TITLE, ask.title);
+    try testing.expectEqualStrings(taken_ask_text, ask.text);
+    try testing.expectEqualStrings(file_policy.TAKEN_PICK_LABEL, ask.ok_label);
+    try testing.expectEqualStrings(file_policy.TAKEN_NEW_NAME_LABEL, ask.cancel_label);
+}
+
+test "a file taken by an earlier install asks, and Pick it writes the picked file" {
+    var session = FileSession{};
+    var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
+    try takenAsk(&flow);
+    try testing.expect(flow.next(.{ .answered = true }) == .pick_existing);
+    try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
+    try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
+    try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+}
+
+test "New name suggests the taken file's name, and the new file becomes the working file" {
+    var session = FileSession{};
+    var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
+    try takenAsk(&flow);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).pick_new);
+    try testing.expect(flow.next(.{ .wrote = .{ .ok = "mine.sud" } }) == .done);
+    try testing.expectEqualStrings("mine.sud", session.workingFile().?);
+}
+
+test "closing the picker asks again, since there is nowhere else to autosave" {
+    var session = FileSession{};
+    var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
+    try takenAsk(&flow);
+    _ = flow.next(.{ .answered = true });
+    try testing.expectEqualStrings(taken_ask_text, flow.next(.{ .wrote = .cancelled }).ask.text);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).pick_new);
+    try testing.expectEqualStrings("disk full", flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
+    try testing.expect(session.workingFile() == null);
 }
 
 test "save onto an existing file while detached asks before writing" {

@@ -8,15 +8,15 @@ import {
   applyLoadedSessionOutcome,
   showErrorModal,
   startAutoSavePolicy,
-  WRITE_CONTEXT_EVENT_PASTE_SUCCESS,
   startCopyPuzzleOnClick,
   readClipboardText,
-  importPuzzle,
+  pastePuzzle,
 } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 import { applySuccessfulExec, readSelection, renderBoard } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
+import { FLOW_COPY, runFlow, STEP_SHOW_STATUS } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 
@@ -44,7 +44,7 @@ export function anyMenuOpen(root) {
   return [...root.querySelectorAll("#menu-bar .menu")].some((menu) => menu.dataset.open === "true");
 }
 
-/** Edit → Copy: wasm `exportPuzzle` bytes only; clipboard denied leaves board intact. */
+/** Edit → Copy: the core copy flow puts the puzzle line on the clipboard; denied leaves the board intact. */
 /** @param {GameApi} game */
 export async function handleCopyPuzzle(
   game,
@@ -54,13 +54,12 @@ export async function handleCopyPuzzle(
   { clipboard, doc } = {},
 ) {
   if (!session.legend[LEGEND_WIRE_COPY]) return { handled: false };
-  const result = await startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document });
-  if (!result.ok) {
-    if (result.error) showErrorModal(errorModal, result.error);
-    return { handled: true, ok: false };
-  }
-  applyEventStatus(statusEl, { ok: true, msg: "copied puzzle to clipboard" });
-  return { handled: true, ok: true };
+  const outcome = await runFlow(game, { flow: FLOW_COPY }, {
+    copyLine: () => startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document }),
+    showStatus: (text) => applyEventStatus(statusEl, { ok: true, msg: text }),
+    showError: (text) => showErrorModal(errorModal, text),
+  });
+  return { handled: true, ok: outcome.kind === STEP_SHOW_STATUS };
 }
 
 /** Edit → Paste: clipboard `readText` → wasm `importPuzzle` only; fail closed on read/import errors. */
@@ -78,21 +77,12 @@ export async function handlePastePuzzle(
     if (read.error) showErrorModal(errorModal, read.error);
     return { handled: true, ok: false };
   }
-  const result = importPuzzle(game, read.text);
+  const result = pastePuzzle(game, read.text);
   if (!result.ok) {
     if (result.error) showErrorModal(errorModal, result.error);
     return { handled: true, ok: false };
   }
-  const finalized = applyLoadedSessionOutcome(game, session, statusEl, result, {
-    writeContextEventName: WRITE_CONTEXT_EVENT_PASTE_SUCCESS,
-    fileHandle: null,
-    boundFilename: null,
-    msg: result.msg ?? "pasted puzzle from clipboard",
-  });
-  if (!finalized.ok) {
-    if (finalized.error) showErrorModal(errorModal, finalized.error);
-    return { handled: true, ok: false };
-  }
+  applyLoadedSessionOutcome(session, statusEl, result, { fileHandle: null, boundFilename: null });
   return { handled: true, ok: true };
 }
 

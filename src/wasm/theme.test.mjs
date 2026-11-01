@@ -79,6 +79,7 @@ function makeThemeBtn() {
       }
       return { ok: false };
     },
+    getLegend: () => ({}),
     getConfig() {
       return session.config;
     },

@@ -35,6 +35,28 @@ pub const FileSession = struct {
     pub fn apply(self: *FileSession, event: file_policy.WriteContextEvent) void {
         self.write_context = file_policy.nextWriteContext(self.write_context, event);
     }
+
+    /// Record a load that replaced the game: an opened file becomes the working file and later
+    /// writes continue it; anything else detaches, so the next write onto an existing file asks first.
+    pub fn noteLoad(self: *FileSession, load: Load) void {
+        switch (load) {
+            .new_game => self.apply(.new_game_success),
+            .open => |name| {
+                if (name) |n| self.setWorkingFile(n);
+                self.apply(.open_success);
+            },
+            .import => self.apply(.import_success),
+            .paste => self.apply(.paste_success),
+        }
+    }
+};
+
+/// What replaced the game; `open` carries the opened file's name when the platform knows it.
+pub const Load = union(enum) {
+    new_game,
+    open: ?[]const u8,
+    import,
+    paste,
 };
 
 test "file session starts detached with no working file" {
@@ -49,6 +71,31 @@ test "file session keeps and clears the working file" {
     try std.testing.expectEqualStrings("game.sud", session.workingFile().?);
     session.setWorkingFile(null);
     try std.testing.expect(session.workingFile() == null);
+}
+
+test "opening a file makes it the working file and continues it" {
+    var session = FileSession{};
+    session.noteLoad(.{ .open = "game.sud" });
+    try std.testing.expectEqualStrings("game.sud", session.workingFile().?);
+    try std.testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+}
+
+test "an unnamed open keeps the working file and still continues it" {
+    var session = FileSession{};
+    session.setWorkingFile("old.sud");
+    session.noteLoad(.{ .open = null });
+    try std.testing.expectEqualStrings("old.sud", session.workingFile().?);
+    try std.testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+}
+
+test "new, import and paste keep the working file but detach from it" {
+    for ([_]Load{ .new_game, .import, .paste }) |load| {
+        var session = FileSession{};
+        session.noteLoad(.{ .open = "game.sud" });
+        session.noteLoad(load);
+        try std.testing.expectEqualStrings("game.sud", session.workingFile().?);
+        try std.testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
+    }
 }
 
 test "file session follows write context events" {

@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
         "--export=deserialize",         "--export=importPuzzle",   "--export=exportPuzzle",
         "--export=bootstrapHostConfig", "--export=generatePuzzle", "--export=importPuzzleNewGame",
         "--export=requestGenAbort",     "--export=getAbout",       "--export=outPtr",
-        "--export=flowStart",           "--export=flowNext",       "--export=fileSessionEvent",
+        "--export=flowStart",           "--export=flowNext",       "--export=pastePuzzle",
         "--export=flowFileRead",
     });
     const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });

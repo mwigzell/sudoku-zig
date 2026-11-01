@@ -16,6 +16,9 @@ export const STEP_SHOW_GAME = "show_game";
 export const STEP_GENERATE = "generate";
 export const STEP_FORGET_CURRENT_FILE = "forget_current_file";
 export const STEP_PERSIST_SETTINGS = "persist_settings";
+export const STEP_PICK_EXISTING = "pick_existing";
+export const STEP_PICK_NEW = "pick_new";
+export const STEP_COPY_LINE = "copy_line";
 export const STEP_SHOW_STATUS = "show_status";
 export const STEP_SHOW_ERROR = "show_error";
 export const STEP_DONE = "done";
@@ -26,6 +29,8 @@ export const FLOW_AUTOSAVE = "autosave";
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
 export const FLOW_SETTINGS = "settings";
+export const FLOW_EXPORT = "export";
+export const FLOW_COPY = "copy";
 
 const FLOW_LANE = Symbol("flowLane");
 const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
@@ -34,14 +39,16 @@ export const SAVE_FAILED_MSG = "save failed";
 const READ_FAILED_MSG = "read failed";
 const GENERATE_FAILED_MSG = "generation failed";
 const PERSIST_FAILED_MSG = "settings write failed";
+const COPY_FAILED_MSG = "copy failed";
 
 /**
  * Normalize a handler's write outcome to the wasm `wrote` input.
- * @param {{ ok?: boolean, name?: string, cancelled?: boolean, error?: string }} result
+ * @param {import("./types").WriteResult} result
  */
 function wroteInput(result, name) {
   if (result?.ok === true) return { input: "wrote", ok: true, name: result.name ?? name };
   if (result?.cancelled === true) return { input: "wrote", ok: false, cancelled: true };
+  if (result?.taken) return { input: "wrote", ok: false, taken: true, name: result.taken.name, dir: result.taken.dir };
   return { input: "wrote", ok: false, error: result?.error ?? SAVE_FAILED_MSG };
 }
 
@@ -60,8 +67,13 @@ function generatedInput(result) {
  * @param {{ ok?: boolean, error?: string }} result
  */
 function persistedInput(result) {
-  if (result?.ok === true) return { input: "persisted", ok: true };
-  return { input: "persisted", ok: false, error: result?.error ?? PERSIST_FAILED_MSG };
+  return outcomeInput("persisted", result, PERSIST_FAILED_MSG);
+}
+
+/** Normalize an ok-or-error outcome to the wasm `input` named `input`. */
+function outcomeInput(input, result, fallbackError) {
+  if (result?.ok === true) return { input, ok: true };
+  return { input, ok: false, error: result?.error ?? fallbackError };
 }
 
 /** Run a handler, turning a throw into a failed result. */
@@ -133,6 +145,17 @@ async function stepThrough(game, start, handlers) {
         step = game.flowNext(wroteInput(await settle(() => handlers.write(name)), name));
         break;
       }
+      case STEP_PICK_EXISTING:
+        step = game.flowNext(wroteInput(await settle(() => handlers.pickExisting()), null));
+        break;
+      case STEP_PICK_NEW: {
+        const name = step.name;
+        step = game.flowNext(wroteInput(await settle(() => handlers.pickNew(name)), name));
+        break;
+      }
+      case STEP_COPY_LINE:
+        step = game.flowNext(outcomeInput("copied", await settle(() => handlers.copyLine()), COPY_FAILED_MSG));
+        break;
       case STEP_READ_FILE: {
         const path = step.path;
         const read = await settle(() => handlers.readFile(path));

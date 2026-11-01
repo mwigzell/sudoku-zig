@@ -19,6 +19,7 @@ import {
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
 /** @typedef {import("./types").PlayerSettings} PlayerSettings */
 /** @typedef {import("./types").PersistResult} PersistResult */
+/** @typedef {import("./types").WriteResult} WriteResult */
 
 /** Apply `.ok.msg` to the status bar. */
 export function applyOkStatus(statusEl, result) {
@@ -45,10 +46,6 @@ export function clearEventStatus(statusEl) {
 
 export const CURRENT_FILE_DESKTOP_ID = "current-file-desktop";
 export const CURRENT_FILE_UNSAVED_LABEL = "unsaved";
-export const WRITE_CONTEXT_EVENT_OPEN_SUCCESS = "open_success";
-export const WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS = "new_game_success";
-export const WRITE_CONTEXT_EVENT_IMPORT_SUCCESS = "import_success";
-export const WRITE_CONTEXT_EVENT_PASTE_SUCCESS = "paste_success";
 
 export const REQUIRED_STARTUP_READY_KEYS = ["default_save_filename"];
 
@@ -231,6 +228,7 @@ export function applyConfigOutcomeStatus(
 ) {
   if (!result?.ok) return false;
   applySessionOutcomeStatus(session, statusEl, {
+    legend: game.getLegend(),
     config: game.getConfig(),
     msg: result.msg ?? null,
   });
@@ -349,39 +347,10 @@ export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = 
   }
 }
 
-/** Load a one-line puzzle via `importPuzzle` (paste, file import, export round-trip). */
-/** @param {GameApi} game */
-export function applyImportedLine(game, line) {
-  const result = game.importPuzzle(line);
-  if (!result.ok) return result;
-  return {
-    ok: true,
-    state: game.getState(),
-    legend: game.getLegend(),
-    config: game.getConfig(),
-    msg: result.msg ?? null,
-  };
-}
-
-/** Worker/sync gen handoff: same codec as import; status reflects New, not Import. */
+/** Worker/sync gen handoff: same codec as import; core records it as a new game. */
 /** @param {GameApi} game */
 export function applyGeneratedLineAsNewGame(game, line, { difficulty } = {}) {
-  const result =
-    difficulty != null && typeof game.importPuzzleNewGame === "function"
-      ? (() => {
-          const importResult = game.importPuzzleNewGame(line, difficulty);
-          if (!importResult.ok) return importResult;
-          return {
-            ok: true,
-            state: game.getState(),
-            legend: game.getLegend(),
-            config: game.getConfig(),
-            msg: importResult.msg ?? null,
-          };
-        })()
-      : applyImportedLine(game, line);
-  if (!result.ok) return result;
-  return { ...result, msg: result.msg ?? null };
+  return loadedLine(game, game.importPuzzleNewGame(line, difficulty));
 }
 
 /** Keys the web shell requires on `boot.config` after `initializeWebSession`. */
@@ -537,12 +506,6 @@ export async function hostCurrentFileExists(saveName, fetchFn = globalThis.fetch
   return payload?.exists === true;
 }
 
-/** Record a lifecycle event (open/new/import/paste/startup) in the core FileSession. */
-/** @param {GameApi} game */
-export function recordFileSessionEvent(game, eventName, name = null) {
-  return game.fileSessionEvent(eventName, name);
-}
-
 /**
  * Platform work for the core autosave flow: a bound file (handle or Android bridge) is the
  * user's file and the host keeps a restore copy; otherwise the host copy is the user's file.
@@ -554,6 +517,27 @@ export function autosaveHandlers(
   { fetchFn = globalThis.fetch, win = globalThis, onError, hostOnly = false } = {},
 ) {
   const bound = () => typeof session.boundSnapshotWriter === "function";
+  /**
+   * Serialize, let `writeUserFile` (when given) write the user's file, then keep the host copy.
+   * @param {((bytes: Uint8Array) => Promise<WriteResult>) | null} writeUserFile
+   * @param {string} name
+   * @returns {Promise<WriteResult>}
+   */
+  const writeGame = async (writeUserFile, name) => {
+    const serialized = game.serialize();
+    if (!serialized.ok) return serialized;
+    let written = name;
+    if (writeUserFile) {
+      const saved = await writeUserFile(serialized.bytes);
+      if (!saved?.ok) return saved ?? { ok: false, error: SAVE_FAILED_MSG };
+      if (typeof saved.name === "string" && saved.name.length > 0) written = saved.name;
+    }
+    const hosted = await persistCurrentFileBytes(serialized.bytes, fetchFn, written, { restoreCopy: bound() });
+    if (!hosted.ok) return hosted;
+    session.boundFilename = written;
+    syncCurrentFileLabels(session);
+    return { ok: true, name: written };
+  };
   return {
     resolveDefaultTarget: () => session.default_save_filename,
     checkTarget: (name) => {
@@ -561,21 +545,10 @@ export function autosaveHandlers(
       return hostCurrentFileExists(name, fetchFn);
     },
     ask: (step) => askWithDialog(step, win),
-    write: async (name) => {
-      const serialized = game.serialize();
-      if (!serialized.ok) return serialized;
-      let written = name;
-      if (bound() && !hostOnly) {
-        const boundSaved = await session.boundSnapshotWriter(serialized.bytes, name);
-        if (!boundSaved?.ok) return boundSaved ?? { ok: false, error: SAVE_FAILED_MSG };
-        if (typeof boundSaved.name === "string" && boundSaved.name.length > 0) written = boundSaved.name;
-      }
-      const hosted = await persistCurrentFileBytes(serialized.bytes, fetchFn, written, { restoreCopy: bound() });
-      if (!hosted.ok) return hosted;
-      session.boundFilename = written;
-      syncCurrentFileLabels(session);
-      return { ok: true, name: written };
-    },
+    write: (name) =>
+      writeGame(bound() && !hostOnly ? (bytes) => session.boundSnapshotWriter(bytes, name) : null, name),
+    pickExisting: () => writeGame((bytes) => session.boundPickExisting(bytes), session.default_save_filename),
+    pickNew: (name) => writeGame((bytes) => session.boundPickNew(bytes, name), name),
     showError: (text) => onError?.({ ok: false, error: text }),
   };
 }
@@ -618,21 +591,19 @@ export function createWebSessionFromStartup(boot) {
     boundFilename: null,
     boundSnapshotWriter: null,
     boundTargetExists: null,
+    boundPickExisting: null,
+    boundPickNew: null,
   };
 }
 
-/** Canonical load/import/paste outcome path: bind session, record the event in core, apply outcome+status. */
-/** @param {GameApi} game */
+/** Canonical load/import/paste outcome path: bind the session to the loaded file, apply outcome+status. */
 export function applyLoadedSessionOutcome(
-  game,
   session,
   statusEl,
   result,
   {
-    writeContextEventName,
     fileHandle = null,
     boundFilename = null,
-    workingFile = null,
     legend = result?.legend,
     config = result?.config,
     msg = result?.msg ?? null,
@@ -640,15 +611,12 @@ export function applyLoadedSessionOutcome(
 ) {
   session.fileHandle = fileHandle;
   session.boundFilename = boundFilename;
-  const recorded = recordFileSessionEvent(game, writeContextEventName, workingFile);
-  if (!recorded.ok) return recorded;
   applySessionOutcomeStatus(session, statusEl, {
     state: result?.state,
     legend,
     config,
     msg,
   });
-  return { ok: true };
 }
 
 /** Run the core autosave flow after `commandName`; core decides whether anything is written. */
@@ -890,6 +858,7 @@ export function copyTextWithExecCommand(text, doc) {
 }
 
 export const CLIPBOARD_READ_DENIED_MSG = "paste: clipboard read denied";
+const CLIPBOARD_WRITE_DENIED_MSG = "copy: clipboard write denied";
 
 export async function readClipboardText({ clipboard = globalThis.navigator?.clipboard } = {}) {
   if (!clipboard?.readText) return { ok: false, error: CLIPBOARD_READ_DENIED_MSG };
@@ -903,7 +872,7 @@ export async function readClipboardText({ clipboard = globalThis.navigator?.clip
 
 export async function writeClipboardText(text, { clipboard = globalThis.navigator?.clipboard, doc } = {}) {
   const document = doc ?? globalThis.document;
-  if (!document) return { ok: false, error: "copy: clipboard write denied" };
+  if (!document) return { ok: false, error: CLIPBOARD_WRITE_DENIED_MSG };
   if (clipboard?.writeText) {
     try {
       await clipboard.writeText(text);
@@ -913,7 +882,7 @@ export async function writeClipboardText(text, { clipboard = globalThis.navigato
     }
   }
   if (copyTextWithExecCommand(text, document)) return { ok: true };
-  return { ok: false, error: "copy: clipboard write denied" };
+  return { ok: false, error: CLIPBOARD_WRITE_DENIED_MSG };
 }
 
 /** One-line puzzle string from wasm, or an error result. */
@@ -953,7 +922,17 @@ export function startCopyPuzzleOnClick(game, { clipboard = globalThis.navigator?
 /** Import a one-line puzzle from page-read file text; engine owns the codec. */
 /** @param {GameApi} game */
 export function importPuzzle(game, text) {
-  const result = game.importPuzzle(text);
+  return loadedLine(game, game.importPuzzle(text));
+}
+
+/** Paste a one-line puzzle read from the clipboard. */
+/** @param {GameApi} game */
+export function pastePuzzle(game, text) {
+  return loadedLine(game, game.pastePuzzle(text));
+}
+
+/** @param {GameApi} game */
+function loadedLine(game, result) {
   if (!result.ok) return result;
   return {
     ok: true,

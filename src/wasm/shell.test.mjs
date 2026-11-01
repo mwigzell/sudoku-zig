@@ -7,8 +7,6 @@ import {
   persistCurrentFileBytes,
   hostCurrentFileExists,
   startAutoSavePolicy,
-  WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS,
-  WRITE_CONTEXT_EVENT_OPEN_SUCCESS,
   applySessionOutcome,
   applySessionOutcomeStatus,
   initializeWebSession,
@@ -394,8 +392,7 @@ function makePageHideWin() {
 {
   const win = makePageHideWin();
   const host = hostFetch();
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([5, 6, 7]) }) }, { autoSave: true });
-  assert.equal(game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud").ok, true);
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([5, 6, 7]) }) }, { autoSave: true, opened: "autosave.sud" });
   const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
   wireFinalSnapshotOnPageHide(game, session, { win, fetchFn: host.fetchFn });
   win.listeners.get("pagehide")?.();
@@ -410,8 +407,7 @@ function makePageHideWin() {
 {
   const win = makePageHideWin();
   const host = hostFetch();
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true });
-  assert.equal(game.fileSessionEvent(WRITE_CONTEXT_EVENT_NEW_GAME_SUCCESS).ok, true);
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true, newGame: true });
   wireFinalSnapshotOnPageHide(game, { config: { auto_save: true } }, { win, fetchFn: host.fetchFn });
   win.listeners.get("pagehide")?.();
   await settleFlow();
@@ -427,8 +423,7 @@ function makePageHideWin() {
       called = true;
       return { ok: true, bytes: new Uint8Array([1]) };
     },
-  });
-  game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud");
+  }, { opened: "autosave.sud" });
   wireFinalSnapshotOnPageHide(game, { config: { auto_save: false }, boundFilename: "autosave.sud" }, {
     win,
     fetchFn: async () => ({ ok: true, status: 204 }),
@@ -853,8 +848,7 @@ for (const deleteIt of [true, false]) {
 
 /** Session continuing `bound.sud` through a bound writer that records into `writes`. */
 async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true });
-  assert.equal(game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "bound.sud").ok, true);
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true, opened: "bound.sud" });
   const session = {
     config: { auto_save: true },
     boundFilename: "bound.sud",
@@ -906,8 +900,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
 
 {
   // An opened game continues its file: the first autosave writes without a replace question.
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([9]) }) }, { autoSave: true });
-  game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud");
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([9]) }) }, { autoSave: true, opened: "autosave.sud" });
   const host = hostFetch({ exists: true });
   const prevChoose = globalThis.__sudokuChoose;
   globalThis.__sudokuChoose = async () => assert.fail("continued file must not ask");
@@ -921,8 +914,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   const writes = [];
   let firstWriteResolve = null;
   let currentSnapshot = new Uint8Array([1]);
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: currentSnapshot }) }, { autoSave: true });
-  game.fileSessionEvent(WRITE_CONTEXT_EVENT_OPEN_SUCCESS, "autosave.sud");
+  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: currentSnapshot }) }, { autoSave: true, opened: "autosave.sud" });
   const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
   const fetchFn = async (url, init) => {
     if (url === "./current-file-exists") return { ok: true, json: async () => ({ exists: true }) };

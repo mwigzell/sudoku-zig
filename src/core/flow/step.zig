@@ -18,8 +18,14 @@ pub const Step = union(enum) {
     /// Report whether the named target already exists for the user.
     check_target: []const u8,
     ask: Ask,
-    /// Write the current game to the named target.
+    /// Write the current game (or, in an export flow, its puzzle line) to the named target.
     write: []const u8,
+    /// Let the user pick the existing file the platform reported as taken, and write the game there; answered with `wrote`.
+    pick_existing,
+    /// Let the user choose a new file, suggesting this name, and write the game there; answered with `wrote`.
+    pick_new: []const u8,
+    /// Copy the current puzzle line where the user can paste it; answered with `copied`.
+    copy_line,
     /// Read the saved game at this path and report its bytes.
     read_file: []const u8,
     /// Draw the current game with this status line; answered with `ack`.
@@ -62,19 +68,27 @@ pub const Generated = union(enum) {
     failed: []const u8,
 };
 
-/// Outcome of a `persist_settings` step.
-pub const Persisted = union(enum) {
+/// Outcome of a step that either worked or failed with a reason (`persist_settings`, `copy_line`).
+pub const Outcome = union(enum) {
     ok,
     failed: []const u8,
 };
 
-/// Outcome of a `write` step.
+/// Outcome of a `write`, `pick_existing` or `pick_new` step.
 pub const Wrote = union(enum) {
     /// Name of the target actually written (the platform may rename it).
     ok: []const u8,
     /// The user backed out of a platform picker.
     cancelled,
+    /// The target exists but this install may not write it (an earlier install created it).
+    taken: Taken,
     failed: []const u8,
+};
+
+/// The file a write could not use, and the folder it is in.
+pub const Taken = struct {
+    name: []const u8,
+    dir: []const u8,
 };
 
 /// Adapter report for the step it just carried out.
@@ -86,7 +100,8 @@ pub const Input = union(enum) {
     wrote: Wrote,
     file_read: FileRead,
     generated: Generated,
-    persisted: Persisted,
+    persisted: Outcome,
+    copied: Outcome,
     /// The adapter finished a step that has no result.
     ack,
 };

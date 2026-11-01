@@ -31,14 +31,35 @@ export function loadCoreFlow({ autoSave = false } = {}) {
   return loadGame({ auto_save: autoSave });
 }
 
-/** Attach real `flowStart` / `flowNext` / `fileSessionEvent` to a fake game once; returns the game. */
-export async function withCoreFlow(game, options = {}) {
+/**
+ * Attach real `flowStart` / `flowNext` to a fake game once; returns the game.
+ * `opened` opens a file under that name in the core first; `newGame` starts a New game there.
+ */
+export async function withCoreFlow(game, { opened = null, newGame = false, ...options } = {}) {
   if (typeof game.flowStart === "function") return game;
   const core = await loadCoreFlow(options);
+  if (opened) openAs(core, opened);
+  if (newGame) startNewGame(core);
   game.flowStart = (start) => core.flowStart(start);
   game.flowNext = (input) => core.flowNext(input);
-  game.fileSessionEvent = (event, name) => core.fileSessionEvent(event, name);
   return game;
+}
+
+/** A valid one-line puzzle for loads in tests. */
+export const PUZZLE_LINE = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+
+/** Start a New game on a real wasm game, as File -> New does. */
+export function startNewGame(game) {
+  const result = game.importPuzzleNewGame(PUZZLE_LINE, 1);
+  if (!result.ok) throw new Error(`new game failed: ${result.error}`);
+}
+
+/** Open the game's own bytes under `name` on a real wasm game, as File -> Open does. */
+export function openAs(game, name) {
+  const saved = game.serialize();
+  if (!saved.ok) throw new Error(`serialize failed: ${saved.error}`);
+  const result = game.deserialize(saved.bytes, { name });
+  if (!result.ok) throw new Error(`open failed: ${result.error}`);
 }
 
 /** Fetch fake answering `/current-file-exists` with `exists` and recording every call. */

@@ -98,7 +98,7 @@ pub const GameEngine = struct {
             .undo = self.state.history.pointer > 0,
             .redo = self.state.history.pointer < self.state.history.entries.items.len,
             .menu = true,
-            .save = true,
+            .save = !self.cfg.auto_save,
             .open = true,
             .new = true,
             .import = true,
@@ -175,14 +175,23 @@ pub const GameEngine = struct {
         self.state.board = imported;
     }
 
-    /// Import a one-line puzzle (81 digits/blanks) from a page-read file.
+    /// Import a one-line puzzle (81 digits/blanks) from a file.
     pub fn importFromLine(self: *@This(), line: []const u8) Event {
+        return self.loadOneLine(line, "import");
+    }
+
+    /// Paste a one-line puzzle (81 digits/blanks) from the clipboard or a prompt.
+    pub fn pasteFromLine(self: *@This(), line: []const u8) Event {
+        return self.loadOneLine(line, "paste");
+    }
+
+    fn loadOneLine(self: *@This(), line: []const u8, comptime source: []const u8) Event {
         self.applyOneLinePuzzle(line) catch |err| switch (err) {
-            board.Error.WrongLength => return self.errorEvent("import: expected exactly 81 characters"),
-            else => return self.errorEvent("import: invalid character in puzzle line"),
+            board.Error.WrongLength => return self.errorEvent(source ++ ": expected exactly 81 characters"),
+            else => return self.errorEvent(source ++ ": invalid character in puzzle line"),
         };
         self.beginEventMsg();
-        self.appendEventMsg("import: puzzle loaded");
+        self.appendEventMsg(source ++ ": puzzle loaded");
         return self.finishOkEvent(self.state.board.asView(), false, null, false);
     }
 

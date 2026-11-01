@@ -39,6 +39,7 @@ import { withCoreFlow } from "./test_support.mjs";
   const execCalls = [];
   const persistCalls = [];
   const game = await withCoreFlow({
+    getLegend: () => ({}),
     getConfig() {
       return {
         theme: "dark",
@@ -100,6 +101,7 @@ import { withCoreFlow } from "./test_support.mjs";
 {
   const execCalls = [];
   const game = {
+    getLegend: () => ({}),
     getConfig() {
       const last = execCalls.at(-1);
       return {
@@ -137,6 +139,7 @@ import { withCoreFlow } from "./test_support.mjs";
 {
   const execCalls = [];
   const game = {
+    getLegend: () => ({}),
     getConfig() {
       return { auto_save: execCalls.at(-1)?.enabled === true };
     },
