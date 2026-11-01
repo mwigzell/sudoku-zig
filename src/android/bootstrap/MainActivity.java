@@ -114,7 +114,6 @@ public final class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectBridgeShim();
                 if (url != null && url.startsWith("http://127.0.0.1:")) {
                     dismissLaunchSplash();
                 }
@@ -276,41 +275,6 @@ public final class MainActivity extends Activity {
                 saveWaiter = null;
             }
         }
-    }
-
-    private void injectBridgeShim() {
-        final String shim = "window.AndroidFileBridge = {" +
-            "saveSudokuFile:function(base64,suggestedName,saveAs){" +
-            "return JSON.parse(window.__SudokuAndroidBridge.saveSudokuFile(String(base64||\"\"),String(suggestedName||\"\"),!!saveAs));" +
-            "}," +
-            "saveSudokuFileToExisting:function(base64){" +
-            "return JSON.parse(window.__SudokuAndroidBridge.saveSudokuFileToExisting(String(base64||\"\")));" +
-            "}," +
-            "saveCurrentSudokuFile:function(base64,suggestedName){" +
-            "return JSON.parse(window.__SudokuAndroidBridge.saveCurrentSudokuFile(String(base64||\"\"),String(suggestedName||\"\")));" +
-            "}," +
-            "currentSudokuFileName:function(){" +
-            "return String(window.__SudokuAndroidBridge.currentSudokuFileName()||\"\");" +
-            "}," +
-            "openSudokuFile:function(){" +
-            "return JSON.parse(window.__SudokuAndroidBridge.openSudokuFile());" +
-            "}," +
-            "setSystemBars:function(themeName){" +
-            "window.__SudokuAndroidBridge.setSystemBars(String(themeName||\"dark\"));" +
-            "}," +
-            "notifyWebBootReady:function(){" +
-            "window.__SudokuAndroidBridge.notifyWebBootReady();" +
-            "}" +
-            "};" +
-            "window.addEventListener('error',function(e){" +
-            "window.__SudokuAndroidBridge.logJsError(String((e&&e.message)||'unknown js error'),String((e&&e.filename)||''),Number((e&&e.lineno)||0),Number((e&&e.colno)||0));" +
-            "});" +
-            "window.addEventListener('unhandledrejection',function(e){" +
-            "var reason=(e&&e.reason!=null)?String(e.reason):'unhandled rejection';" +
-            "window.__SudokuAndroidBridge.logJsError(reason,'promise',0,0);" +
-            "});" +
-            "if(window.__sudokuBootReady===true){window.__SudokuAndroidBridge.notifyWebBootReady();}";
-        webView.evaluateJavascript(shim, null);
     }
 
     private int dpToPx(int dp) {

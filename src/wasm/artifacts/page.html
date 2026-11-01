@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>sudoku</title>
+  <script src="/android_bridge.js"></script>
   <link rel="icon" type="image/png" sizes="32x32" href="/branding/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/branding/favicon-16x16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/branding/apple-touch-icon.png">
@@ -954,17 +955,7 @@
       window.__sudokuSignalAndroidBootReady = function () {
         window.__sudokuBootReady = true;
         try {
-          if (
-            window.__SudokuAndroidBridge &&
-            typeof window.__SudokuAndroidBridge.notifyWebBootReady === "function"
-          ) {
-            window.__SudokuAndroidBridge.notifyWebBootReady();
-          }
-        } catch (_) {}
-        try {
-          if (window.AndroidFileBridge && typeof window.AndroidFileBridge.notifyWebBootReady === "function") {
-            window.AndroidFileBridge.notifyWebBootReady();
-          }
+          window.AndroidFileBridge?.notifyWebBootReady();
         } catch (_) {}
       };
       // Android already shows a native launch splash; suppress the HTML splash

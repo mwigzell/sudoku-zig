@@ -17,6 +17,7 @@ pub const RouteResult = enum {
     theme,
     file_menu,
     step_runner,
+    android_bridge,
     generating,
     gen_progress_rows,
     gen_progress_format,
@@ -66,6 +67,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/theme.js")) return .theme;
         if (std.mem.eql(u8, path, "/file_menu.js")) return .file_menu;
         if (std.mem.eql(u8, path, "/step_runner.js")) return .step_runner;
+        if (std.mem.eql(u8, path, "/android_bridge.js")) return .android_bridge;
         if (std.mem.eql(u8, path, "/generating.js")) return .generating;
         if (std.mem.eql(u8, path, "/gen_progress_rows.js")) return .gen_progress_rows;
         if (std.mem.eql(u8, path, "/gen_progress_format.js")) return .gen_progress_format;
@@ -114,6 +116,7 @@ pub const Router = struct {
             .theme => embed.theme_js,
             .file_menu => embed.file_menu_js,
             .step_runner => embed.step_runner_js,
+            .android_bridge => embed.android_bridge_js,
             .generating => embed.generating_js,
             .gen_progress_rows => embed.gen_progress_rows_js,
             .gen_progress_format => embed.gen_progress_format_js,
@@ -141,7 +144,7 @@ pub const Router = struct {
             .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
-            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
+            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .shell, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
         };
     }
 };

@@ -27,6 +27,8 @@ pub const menu_bar_js: []const u8 = @embedFile("../wasm/menu_bar.js");
 pub const theme_js: []const u8 = @embedFile("../wasm/theme.js");
 /// File menu (`/file_menu.js`).
 pub const file_menu_js: []const u8 = @embedFile("../wasm/file_menu.js");
+/// Android WebView bridge wrapper, loaded in the page head (`/android_bridge.js`).
+pub const android_bridge_js: []const u8 = @embedFile("../wasm/android_bridge.js");
 /// Core flow step runner (`/step_runner.js`).
 pub const step_runner_js: []const u8 = @embedFile("../wasm/step_runner.js");
 /// New-game / generating modal (`/generating.js`).
@@ -104,6 +106,10 @@ test "embedded theme.js is non-empty" {
 
 test "embedded file_menu.js is non-empty" {
     try std.testing.expect(file_menu_js.len > 0);
+}
+
+test "embedded android_bridge.js is non-empty" {
+    try std.testing.expect(android_bridge_js.len > 0);
 }
 
 test "embedded step_runner.js is non-empty" {

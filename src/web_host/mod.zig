@@ -618,6 +618,15 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
     }
 }
 
+test "web_host: page.html loads the Android bridge in its head, before the app module" {
+    const bridge = std.mem.indexOf(u8, embed.page_html, "<script src=\"/android_bridge.js\"></script>") orelse return error.TestUnexpectedResult;
+    const head_end = std.mem.indexOf(u8, embed.page_html, "</head>") orelse return error.TestUnexpectedResult;
+    const app = std.mem.indexOf(u8, embed.page_html, "<script type=\"module\">") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(bridge < head_end and bridge < app);
+    const route = try Router.route("/android_bridge.js");
+    try std.testing.expect(Router.body(route).len > 0);
+}
+
 test "web_host: page.html wasm fetch path is served" {
     try std.testing.expect(std.mem.indexOf(u8, embed.app_boot_js, "fetch(\"./artifact.wasm\")") != null);
     const route = try Router.route("/artifact.wasm");
@@ -690,6 +699,7 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/theme.js", .expected = .theme },
         .{ .path = "/file_menu.js", .expected = .file_menu },
         .{ .path = "/step_runner.js", .expected = .step_runner },
+        .{ .path = "/android_bridge.js", .expected = .android_bridge },
         .{ .path = "/generating.js", .expected = .generating },
         .{ .path = "/gen_progress_rows.js", .expected = .gen_progress_rows },
         .{ .path = "/gen_progress_format.js", .expected = .gen_progress_format },
@@ -1249,6 +1259,9 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.step_runner);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.android_bridge);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.generating);
