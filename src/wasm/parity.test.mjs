@@ -28,7 +28,7 @@ import { wireThemeMenu } from "./theme.js";
  *     fill_first_empty?: boolean,
  *     undo?: boolean, redo?: boolean, paste?: string,
  *     open?: { name: string, puzzle_line: string, moves?: Move[] }, import?: string,
- *     save?: boolean, copy?: boolean,
+ *     save?: boolean, copy?: boolean, new?: string, export?: boolean,
  *   }>,
  *   expect: {
  *     questions: number,
@@ -208,15 +208,25 @@ async function runScenario(scenario) {
 
     /** @type {import("./types").PickResult | null} */
     let picked = null;
-    const controls = { open: makeBtn(), import: makeBtn(), save: makeBtn(), autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() };
-    const commandFlow = commandHandlers(game, session, { fetchFn: host.fetchFn, statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) });
+    /** @type {string | null} */
+    let newLine = null;
+    const controls = { new: makeBtn(), open: makeBtn(), import: makeBtn(), save: makeBtn(), export: makeBtn(), autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() };
+    const easyButton = { el: makeBtn(), difficulty: "easy" };
+    const commandFlow = {
+      ...commandHandlers(game, session, { fetchFn: host.fetchFn, statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) }),
+      generate: async () => ({ ok: true, line: newLine }),
+    };
     wireRegionMenu(controls, game, session, boardEl, () => null, { commandFlow });
     wireThemeMenu(controls, game, session, { root: themeRoot(), commandFlow });
     wireFileMenu(controls, game, boardEl, { select() {}, deselect() {} }, statusEl, errorModal, session, { sync() {} }, {
       createElement,
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
+      difficultyDialog: { el: { hidden: true }, buttons: [easyButton] },
       pick: async () => picked,
       download() {},
+      exportText: async (_bytes, _session, name) => {
+        host.written.push(name);
+        return { ok: true, filename: name };
+      },
       commandFlow,
     });
 
@@ -254,6 +264,16 @@ async function runScenario(scenario) {
       }
       if (step.save) {
         await controls.save.click();
+        continue;
+      }
+      if (step.new) {
+        newLine = step.new;
+        await controls.new.click();
+        await easyButton.el.click();
+        continue;
+      }
+      if (step.export) {
+        await controls.export.click();
         continue;
       }
       if (step.copy) {

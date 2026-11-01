@@ -15,6 +15,7 @@ const test_defaults = @import("../../test/config_defaults.zig");
 const SCENARIOS_PATH = "src/test/parity/scenarios.json";
 const STARTUP_PATH_DIR = "/";
 const IMPORT_PATH = "/puzzle.txt";
+const TRANSPORT_DIR_PREFIX = test_doubles.MemoryTransport.DIR ++ "/";
 
 const CellAt = struct { row: u8, col: u8 };
 const Move = struct { row: u8, col: u8, digit: u8 };
@@ -37,6 +38,8 @@ const Step = struct {
     import: ?[]const u8 = null,
     save: ?bool = null,
     copy: ?bool = null,
+    new: ?[]const u8 = null,
+    @"export": ?bool = null,
 };
 
 const ScenarioConfig = struct {
@@ -141,6 +144,8 @@ fn stepCommand(app: *shell.Sudoku, step: Step, picked: ?[]const u8) !command.Com
     if (step.import != null) return .{ .import = .{ .path = picked } };
     if (step.save != null) return .{ .save = .{ .path = null } };
     if (step.copy != null) return .{ .copy = {} };
+    if (step.new) |line| return .{ .new = .{ .puzzle = line } };
+    if (step.@"export" != null) return .{ .@"export" = .{ .path = null } };
     if (step.fill) |m| return .{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
     if (step.clear) |at| return .{ .clear = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
     if (step.toggle_auto_save != null) return .{ .toggle_auto_save = {} };
@@ -204,7 +209,9 @@ fn runScenario(io: std.Io, data_dir: []const u8, scenario: Scenario) !void {
     if (scenario.expect.status) |want| {
         const dir_prefix = try std.fmt.allocPrint(std.testing.allocator, "{s}/", .{data_dir});
         defer std.testing.allocator.free(dir_prefix);
-        const relative = try std.mem.replaceOwned(u8, std.testing.allocator, status orelse "", dir_prefix, "");
+        const in_data_dir = try std.mem.replaceOwned(u8, std.testing.allocator, status orelse "", dir_prefix, "");
+        defer std.testing.allocator.free(in_data_dir);
+        const relative = try std.mem.replaceOwned(u8, std.testing.allocator, in_data_dir, TRANSPORT_DIR_PREFIX, "");
         defer std.testing.allocator.free(relative);
         try std.testing.expectEqualStrings(want, relative);
     } else {

@@ -280,6 +280,42 @@
         "status": "copy: puzzle line copied",
         "probes": []
       }
+    },
+    {
+      "name": "new_after_open_asks_before_replacing",
+      "summary": "New after Open replaces the board and detaches the opened file: the next autosave asks before overwriting it.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "answers": [true],
+      "steps": [
+        { "open": { "name": "game.sud", "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079", "moves": [{ "row": 0, "col": 3, "digit": 6 }] } },
+        { "new": "003020600900305001001806400008102900700000008006708200002609500800203009005010300" },
+        { "fill": { "row": 0, "col": 0, "digit": 4 } }
+      ],
+      "expect": {
+        "questions": 1,
+        "written": ["game.sud", "game.sud"],
+        "status": null,
+        "legend": { "undo": true },
+        "probes": [
+          { "row": 0, "col": 2, "value": 3, "given": true },
+          { "row": 0, "col": 3, "value": 0, "given": false },
+          { "row": 0, "col": 0, "value": 4, "given": false }
+        ]
+      }
+    },
+    {
+      "name": "export_names_default_and_reports",
+      "summary": "Export writes the puzzle text to the default export file and reports it; the game file is only written by autosave.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{ "fill": { "row": 0, "col": 0, "digit": 4 } }, { "export": true }],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "puzzle.txt"],
+        "status": "exported to: puzzle.txt",
+        "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
+      }
     }
   ]
 }

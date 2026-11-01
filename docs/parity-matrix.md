@@ -43,6 +43,8 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `import_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
 | `save_names_default_then_continues` | First Save writes `sudoku.sud` without asking; the next Save continues it; status `saved to: sudoku.sud` | same (full path, compared relative to the data folder) | same |
 | `copy_reports_and_writes_nothing` | Status `copy: puzzle line copied`; no file written | prints the line | same |
+| `new_after_open_asks_before_replacing` | New replaces the opened board; the next autosave asks once, then overwrites `game.sud` | puzzle line carried by the command | scripted `generate` answer |
+| `export_names_default_and_reports` | Export writes `puzzle.txt` and reports `exported to: puzzle.txt`; the game file is written only by autosave | same (full path, compared relative to its folder) | export writer faked; counts as a write |
 
 ## Adding a scenario
 
