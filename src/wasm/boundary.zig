@@ -91,6 +91,14 @@ const JsonAction = struct {
     log_level: ?[]const u8 = null,
 };
 
+fn parseDifficulty(name: []const u8) !config.Difficulty {
+    if (std.ascii.eqlIgnoreCase(name, "easy")) return .easy;
+    if (std.ascii.eqlIgnoreCase(name, "medium")) return .medium;
+    if (std.ascii.eqlIgnoreCase(name, "hard")) return .hard;
+    return error.InvalidDifficulty;
+}
+
+/// Load actions carry no path or line: core asks the page for the file or clipboard text.
 pub fn parseAction(json_text: []const u8) !command.Command {
     const parsed = try std.json.parseFromSlice(JsonAction, std.heap.page_allocator, json_text, .{});
     defer parsed.deinit();
@@ -136,12 +144,15 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_new")) return .{ .toggle_auto_new = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_save")) return .{ .toggle_auto_save = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_difficulty")) {
-        const name = parsed.value.difficulty orelse return error.MissingField;
-        if (std.ascii.eqlIgnoreCase(name, "easy")) return .{ .set_difficulty = .easy };
-        if (std.ascii.eqlIgnoreCase(name, "medium")) return .{ .set_difficulty = .medium };
-        if (std.ascii.eqlIgnoreCase(name, "hard")) return .{ .set_difficulty = .hard };
-        return error.InvalidDifficulty;
+        return .{ .set_difficulty = try parseDifficulty(parsed.value.difficulty orelse return error.MissingField) };
     }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "new")) {
+        const difficulty = if (parsed.value.difficulty) |name| try parseDifficulty(name) else null;
+        return .{ .new = .{ .difficulty = difficulty } };
+    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "open")) return .{ .open = .{ .path = null } };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "import")) return .{ .import = .{ .path = null } };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "paste")) return .{ .paste = .{ .line = null } };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_log_level")) {
         const name = parsed.value.log_level orelse return error.MissingField;
         if (std.ascii.eqlIgnoreCase(name, "debug")) return .{ .set_log_level = .debug };
@@ -237,7 +248,6 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
 pub const FlowStart = union(enum) {
     save: []const u8,
     save_as: []const u8,
-    autosave: []const u8,
     autosave_flush,
     /// The host's current file, or null when it has none.
     startup: ?StartupFile,
@@ -255,18 +265,16 @@ pub const StartupFile = struct {
 const JsonFlowStart = struct {
     flow: []const u8,
     name: ?[]const u8 = null,
-    command: ?[]const u8 = null,
     path: ?[]const u8 = null,
 };
 
-/// Parse `{flow, name?, command?, path?}`; slices live in `arena`.
+/// Parse `{flow, name?, path?}`; slices live in `arena`.
 pub fn parseFlowStart(arena: std.mem.Allocator, json_text: []const u8) !FlowStart {
     const v = try std.json.parseFromSliceLeaky(JsonFlowStart, arena, json_text, .{});
     const kind = std.meta.stringToEnum(std.meta.Tag(FlowStart), v.flow) orelse return error.UnknownFlow;
     return switch (kind) {
         .save => .{ .save = v.name orelse return error.MissingField },
         .save_as => .{ .save_as = v.name orelse return error.MissingField },
-        .autosave => .{ .autosave = v.command orelse return error.MissingField },
         .autosave_flush => .autosave_flush,
         .startup => .{ .startup = if (v.path) |path| .{ .path = path, .name = v.name orelse return error.MissingField } else null },
         .@"export" => .{ .@"export" = v.name },
@@ -308,6 +316,12 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .{ .file_read = .{ .failed = v.@"error" orelse return error.MissingField } }
         else
             error.MissingField,
+        .picked => if (v.cancelled == true)
+            .{ .picked = .cancelled }
+        else if (v.ok == false)
+            .{ .picked = .{ .failed = v.@"error" orelse return error.MissingField } }
+        else
+            error.MissingField,
         .generated => .{ .generated = if (v.ok == true)
             .{ .line = v.line orelse return error.MissingField }
         else if (v.cancelled == true)
@@ -335,7 +349,7 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
     try std.Io.Writer.writeAll(w, "{\"step\":");
     try writeJsonString(w, @tagName(step));
     switch (step) {
-        .resolve_default_target, .done, .pick_existing, .copy_line => {},
+        .resolve_default_target, .done, .pick_existing, .copy_line, .read_clipboard => {},
         .check_target, .write, .pick_new => |name| {
             try std.Io.Writer.writeAll(w, ",\"name\":");
             try writeJsonString(w, name);
@@ -358,6 +372,12 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"path\":");
             try writeJsonString(w, path);
         },
+        .pick_open => |pick| {
+            try std.Io.Writer.writeAll(w, ",\"kind\":");
+            try writeJsonString(w, @tagName(pick.kind));
+            try std.Io.Writer.writeAll(w, ",\"path\":");
+            try writeOptionalJsonString(w, pick.path);
+        },
         .show_game => |g| {
             try std.Io.Writer.writeAll(w, ",\"text\":");
             try writeOptionalJsonString(w, g.status);
@@ -370,6 +390,7 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"config\":");
             try writeWireConfigTo(w, wire.WireConfig.fromConfig(g.config));
             if (g.cell) |c| try std.Io.Writer.print(w, ",\"cell\":{{\"row\":{d},\"col\":{d}}}", .{ c.row, c.col });
+            if (g.loaded) try std.Io.Writer.writeAll(w, ",\"loaded\":true");
         },
         .generate => |d| try std.Io.Writer.print(w, ",\"difficulty\":{d}", .{@backingInt(wire.PlayerDifficulty.fromPuzzleDifficulty(d))}),
         .forget_current_file => |f| {
@@ -522,6 +543,15 @@ test "parseAction hint maps optional row col" {
     const d1 = try parseAction("{\"action\":\"hint\",\"row\":0,\"col\":3}");
     try std.testing.expectEqual(@as(?u4, 0), d1.hint.row);
     try std.testing.expectEqual(@as(?u4, 3), d1.hint.col);
+}
+
+test "parseAction loads carry no path or line; new takes an optional difficulty" {
+    try std.testing.expect((try parseAction("{\"action\":\"open\"}")).open.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"import\"}")).import.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"paste\"}")).paste.line == null);
+    try std.testing.expect((try parseAction("{\"action\":\"new\"}")).new.difficulty == null);
+    try std.testing.expectEqual(config.Difficulty.hard, (try parseAction("{\"action\":\"new\",\"difficulty\":\"hard\"}")).new.difficulty.?);
+    try std.testing.expectError(error.InvalidDifficulty, parseAction("{\"action\":\"new\",\"difficulty\":\"wild\"}"));
 }
 
 test "parseAction solve maps to solve_for_me" {
@@ -802,7 +832,7 @@ test "flow start parses each web flow" {
     defer arena.deinit();
     const a = arena.allocator();
     try std.testing.expectEqualStrings("game.sud", (try parseFlowStart(a, "{\"flow\":\"save\",\"name\":\"game.sud\"}")).save);
-    try std.testing.expectEqualStrings("fill", (try parseFlowStart(a, "{\"flow\":\"autosave\",\"command\":\"fill\"}")).autosave);
+    try std.testing.expectError(error.UnknownFlow, parseFlowStart(a, "{\"flow\":\"autosave\"}"));
     try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"autosave_flush\"}")) == .autosave_flush);
     try std.testing.expect((try parseFlowStart(a, "{\"flow\":\"startup\"}")).startup == null);
     const startup = (try parseFlowStart(a, "{\"flow\":\"startup\",\"path\":\"/current-file\",\"name\":\"g.sud\"}")).startup.?;
@@ -838,6 +868,9 @@ test "flow input parses every step result" {
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":true}")).copied == .ok);
     try std.testing.expectEqualStrings("denied", (try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":false,\"error\":\"denied\"}")).copied.failed);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"ack\"}")) == .ack);
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"picked\",\"ok\":false,\"cancelled\":true}")).picked == .cancelled);
+    try std.testing.expectEqualStrings("no", (try parseFlowInput(a, "{\"input\":\"picked\",\"ok\":false,\"error\":\"no\"}")).picked.failed);
+    try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"picked\",\"ok\":true}"));
 }
 
 test "step JSON carries the tag and its payload" {
@@ -868,6 +901,14 @@ test "step JSON carries the tag and its payload" {
     try std.testing.expect(std.mem.indexOf(u8, shown_json, ",\"legend\":{\"fill\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, shown_json, ",\"config\":{\"difficulty\":") != null);
     try std.testing.expect(std.mem.endsWith(u8, shown_json, ",\"cell\":{\"row\":1,\"col\":2}}"));
+    shown.show_game.cell = null;
+    shown.show_game.loaded = true;
+    try writeStepJson(out, shown);
+    try std.testing.expect(std.mem.endsWith(u8, out.finishJson(), ",\"loaded\":true}"));
+    try writeStepJson(out, .{ .pick_open = .{ .kind = .puzzle, .path = null } });
+    try std.testing.expectEqualStrings("{\"step\":\"pick_open\",\"kind\":\"puzzle\",\"path\":null}", out.finishJson());
+    try writeStepJson(out, .read_clipboard);
+    try std.testing.expectEqualStrings("{\"step\":\"read_clipboard\"}", out.finishJson());
     try writeStepJson(out, .{ .generate = .hard });
     try std.testing.expectEqualStrings("{\"step\":\"generate\",\"difficulty\":3}", out.finishJson());
     try writeStepJson(out, .{ .forget_current_file = .{ .path = "/current-file", .delete = true } });

@@ -24,7 +24,7 @@ import {
   GUTTER_FR,
   PLAY_FR,
 } from "./board.js";
-import { applyEventStatus, applyExecResult, showErrorModal, formatGenProgress } from "./shell.js";
+import { applyEventStatus, showErrorModal, formatGenProgress } from "./shell.js";
 import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame } from "./test_support.mjs";
 
 
@@ -580,8 +580,6 @@ function selectedAt(board, row, col) {
   assert.equal(status.className, "");
 
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  applyExecResult(status, errorModal, { ok: false, error: "cannot modify a puzzle cell" });
-  assert.equal(status.textContent, "opened: bar");
   showErrorModal(errorModal, "cannot modify a puzzle cell");
   assert.equal(errorModal.msgEl.textContent, "cannot modify a puzzle cell");
   assert.equal(errorModal.el.hidden, false);

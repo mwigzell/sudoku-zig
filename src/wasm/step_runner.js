@@ -13,6 +13,8 @@ export const STEP_CHECK_TARGET = "check_target";
 export const STEP_ASK = "ask";
 export const STEP_WRITE = "write";
 export const STEP_READ_FILE = "read_file";
+export const STEP_PICK_OPEN = "pick_open";
+export const STEP_READ_CLIPBOARD = "read_clipboard";
 export const STEP_SHOW_GAME = "show_game";
 export const STEP_GENERATE = "generate";
 export const STEP_FORGET_CURRENT_FILE = "forget_current_file";
@@ -26,7 +28,6 @@ export const STEP_DONE = "done";
 
 export const FLOW_SAVE = "save";
 export const FLOW_SAVE_AS = "save_as";
-export const FLOW_AUTOSAVE = "autosave";
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
 export const FLOW_EXPORT = "export";
@@ -37,6 +38,8 @@ const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
 const FLOW_FAILED_MSG = "flow failed";
 export const SAVE_FAILED_MSG = "save failed";
 const READ_FAILED_MSG = "read failed";
+const OPEN_FAILED_MSG = "open failed";
+const CLIPBOARD_FAILED_MSG = "clipboard read failed";
 const GENERATE_FAILED_MSG = "generation failed";
 const PERSIST_FAILED_MSG = "settings write failed";
 const COPY_FAILED_MSG = "copy failed";
@@ -182,6 +185,20 @@ async function stepThrough(game, first, handlers) {
         step = read?.ok === true
           ? game.flowFileRead(read.bytes)
           : game.flowNext({ input: "file_read", ok: false, error: read?.error ?? READ_FAILED_MSG });
+        break;
+      }
+      case STEP_PICK_OPEN: {
+        const picked = await settle(() => handlers.pickOpen(step));
+        if (picked?.ok === true) step = game.flowPicked(picked.bytes, picked.name ?? null);
+        else if (picked?.cancelled === true) step = game.flowNext({ input: "picked", ok: false, cancelled: true });
+        else step = game.flowNext({ input: "picked", ok: false, error: picked?.error ?? OPEN_FAILED_MSG });
+        break;
+      }
+      case STEP_READ_CLIPBOARD: {
+        const read = await settle(() => handlers.readClipboard());
+        step = read?.ok === true
+          ? game.flowFileRead(new TextEncoder().encode(read.text))
+          : game.flowNext({ input: "file_read", ok: false, error: read?.error ?? CLIPBOARD_FAILED_MSG });
         break;
       }
       case STEP_SHOW_GAME:

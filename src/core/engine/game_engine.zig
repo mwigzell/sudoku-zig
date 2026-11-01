@@ -39,7 +39,6 @@ pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
 pub const NEW_GAME_STARTED_MSG = "new game started";
-pub const OPEN_NO_FILE_MSG = "open: no file specified";
 pub const WIN_STATUS_MSG = "You win!";
 
 /// Owns portable game state. No file transport or I/O here.
@@ -152,7 +151,7 @@ pub const GameEngine = struct {
         }
     }
 
-    /// Open from SUD0 bytes — native shell and wasm deserialize both call this.
+    /// Open from SUD0 bytes — the core open command calls this on every platform.
     pub fn openFromSave(self: *@This(), buf: []const u8, opened_label: ?[]const u8) Event {
         self.loadSaveFormat(buf) catch |err| return self.errorEvent(@errorName(err));
         return self.finishLoadEvent(opened_label, .open);
@@ -276,13 +275,6 @@ pub const GameEngine = struct {
             .is_quit = is_quit,
             .cell = edited_cell,
         } };
-    }
-
-    /// Shared adapter-facing event for "Open" with no selected file.
-    pub fn openNoFileEvent(self: *@This()) Event {
-        self.beginEventMsg();
-        self.appendEventMsg(OPEN_NO_FILE_MSG);
-        return self.finishOkEvent(self.state.board.asView(), false, null, false);
     }
 
     /// Shared adapter-facing event for successful save target writes.
@@ -444,8 +436,6 @@ pub const GameEngine = struct {
 
 // ────────────────────── co-located tests ──────────────────────
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
-const file_transport = @import("../../native/shell/file_transport.zig");
-const open_command = @import("../../native/shell/open.zig");
 
 fn expectOk(e: Event) !board.Board.BoardView {
     return switch (e) {
@@ -1574,31 +1564,4 @@ test "loadSaveFormat preserves view config" {
     const cfg = engine.getConfig();
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
     try std.testing.expect(cfg.show_region);
-}
-
-test "open handler loads save file via transport" {
-    const transport = file_transport.NativeTransport.make(std.testing.io);
-    const tmp_path = "/tmp/sudoku_open_test.sud";
-    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, tmp_path) catch {};
-
-    var original = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer original.deinit();
-    _ = try expectOk(execTest(&original, command.Command{
-        .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
-    }));
-
-    const save_buf = try original.toSaveFormat(std.testing.allocator);
-    defer std.testing.allocator.free(save_buf);
-    try transport.write(transport.context, tmp_path, save_buf);
-
-    var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer loaded.deinit();
-
-    const result = open_command.execute(&loaded, transport, tmp_path);
-    switch (result) {
-        .ok => |data| {
-            try std.testing.expectEqual(cell.CellValue.seven, data.board_view.get(0, 2));
-        },
-        .error_msg => return error.TestFailed,
-    }
 }

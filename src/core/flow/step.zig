@@ -32,6 +32,10 @@ pub const Step = union(enum) {
     copy_line,
     /// Read the saved game at this path and report its bytes.
     read_file: []const u8,
+    /// Let the user choose a file to load, or read the path the command named; answered with `picked`.
+    pick_open: PickOpen,
+    /// Read the clipboard's text; answered with `file_read`.
+    read_clipboard,
     /// Draw the current game with this status line; answered with `ack`.
     show_game: ShowGame,
     /// Generate a puzzle at this difficulty and report its one-line form.
@@ -55,6 +59,8 @@ pub const ShowGame = struct {
     config: config.Config,
     /// The cell the command edited, if any.
     cell: ?event.CellCoord = null,
+    /// The game was replaced (new, open, import, paste): drop the selection and rebind to `file`.
+    loaded: bool = false,
 };
 
 /// The `show_game` step for the engine's current game.
@@ -67,6 +73,29 @@ pub fn showGame(engine: *game_engine.GameEngine, status: ?[]const u8, file: ?[]c
         .config = engine.getConfig(),
     } };
 }
+
+/// What `pick_open` loads, and the path the command named (null: the user chooses).
+pub const PickOpen = struct {
+    kind: OpenKind,
+    path: ?[]const u8,
+};
+
+/// A saved game (`.sud`) or a one-line puzzle text file.
+pub const OpenKind = enum { game, puzzle };
+
+/// Outcome of a `pick_open` step.
+pub const Picked = union(enum) {
+    file: PickedFile,
+    /// The user backed out of the picker.
+    cancelled,
+    failed: []const u8,
+};
+
+/// A chosen file's contents; `name` labels the game when it is a saved game.
+pub const PickedFile = struct {
+    bytes: []const u8,
+    name: ?[]const u8,
+};
 
 /// The current file to forget, and whether to delete it from disk too.
 pub const ForgetCurrentFile = struct {
@@ -119,6 +148,7 @@ pub const Input = union(enum) {
     answered: bool,
     wrote: Wrote,
     file_read: FileRead,
+    picked: Picked,
     generated: Generated,
     persisted: Outcome,
     copied: Outcome,

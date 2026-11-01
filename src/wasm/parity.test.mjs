@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadGame, settleFlow } from "./test_support.mjs";
+import { loadGame, settleFlow, startNewGame } from "./test_support.mjs";
 import { commandHandlers, createWebSessionFromStartup, runStartupFlow, showErrorModal, startupHandlers } from "./shell.js";
 import { handlePlayKey } from "./board.js";
 import { wireFileMenu } from "./file_menu.js";
@@ -27,6 +27,7 @@ import { wireThemeMenu } from "./theme.js";
  *     fill?: Move, clear?: CellAt, toggle_auto_save?: boolean, toggle_region?: boolean, set_theme?: string,
  *     fill_first_empty?: boolean,
  *     undo?: boolean, redo?: boolean, paste?: string,
+ *     open?: { name: string, puzzle_line: string, moves?: Move[] }, import?: string,
  *   }>,
  *   expect: {
  *     questions: number,
@@ -113,7 +114,7 @@ const createElement = (tag) => ({ tag, classList: { add() {}, remove() {} }, tex
 /** Bytes of a saved game: `puzzle_line` with the player's `moves` on top. */
 async function savedGame(file) {
   const game = await loadGame();
-  assert.equal(game.importPuzzle(file.puzzle_line).ok, true);
+  startNewGame(game, file.puzzle_line);
   for (const m of file.moves ?? []) {
     assert.equal(game.exec({ action: "fill", row: m.row, col: m.col, digit: m.digit }).ok, true);
   }
@@ -199,18 +200,21 @@ async function runScenario(scenario) {
       }
     }
     if (scenario.puzzle_line) {
-      assert.equal(game.importPuzzleNewGame(scenario.puzzle_line, DIFFICULTY_WIRE.easy).ok, true);
+      startNewGame(game, scenario.puzzle_line);
       session.state = game.getState();
       session.legend = game.getLegend();
     }
 
-    const controls = { autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() };
+    /** @type {import("./types").PickResult | null} */
+    let picked = null;
+    const controls = { open: makeBtn(), import: makeBtn(), autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() };
     const commandFlow = commandHandlers(game, session, { fetchFn: host.fetchFn, statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) });
     wireRegionMenu(controls, game, session, boardEl, () => null, { commandFlow });
     wireThemeMenu(controls, game, session, { root: themeRoot(), commandFlow });
     wireFileMenu(controls, game, boardEl, { select() {}, deselect() {} }, statusEl, errorModal, session, { sync() {} }, {
       createElement,
       difficultyDialog: { el: { hidden: true }, buttons: [] },
+      pick: async () => picked,
       commandFlow,
     });
 
@@ -238,8 +242,17 @@ async function runScenario(scenario) {
       }
       if (step.paste !== undefined) {
         const clipboard = { readText: async () => step.paste };
-        await handlePastePuzzle(game, session, statusEl, errorModal, { clipboard });
-        await settleFlow();
+        await handlePastePuzzle(game, session, statusEl, errorModal, { clipboard, commandFlow }).done;
+        continue;
+      }
+      if (step.open) {
+        picked = { ok: true, name: step.open.name, bytes: await savedGame(step.open) };
+        await controls.open.click();
+        continue;
+      }
+      if (step.import !== undefined) {
+        picked = { ok: true, name: "puzzle.txt", bytes: new TextEncoder().encode(step.import) };
+        await controls.import.click();
         continue;
       }
       const move = step.fill ?? step.clear ?? (step.fill_first_empty ? firstEmptyLegalFill(game.getState()) : null);

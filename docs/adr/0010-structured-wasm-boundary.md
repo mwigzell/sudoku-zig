@@ -28,7 +28,7 @@ Replace REPL imports (`page_line_in`, `page_bytes_out`, `page_picker`, `file_rea
 - `exec(action_json)` → `Event` JSON (`.ok` / `.error_msg`).
 - `getLegend()` → JSON flags (separate from turn outcome).
 - `getState()` or state embedded in exec response — board + given/conflict markers for DOM.
-- `serialize()` / `deserialize(bytes)` — **SUD0 only**; JS reads/writes opaque files; no SaveFormat logic in JS.
+- `serialize()` out, picked bytes in through the core open flow (`flowPicked`) — **SUD0 only**; JS reads/writes opaque files; no SaveFormat logic in JS.
 
 Wire format for slice B: **length-prefixed or NUL-terminated JSON strings** in wasm linear memory (debuggable). Binary layouts are a later optimisation, not slice B.
 

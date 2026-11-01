@@ -262,75 +262,6 @@ export fn serialize() callconv(.c) u32 {
     return @intCast(bytes.len);
 }
 
-/// Replace game state from SUD0 bytes in wasm memory; returns Event JSON (same shape as exec).
-/// Optional name_ptr/name_len supply the opened label (web file picker filename).
-export fn deserialize(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) callconv(.c) u32 {
-    const out = outBuffer();
-    const eng = engineOrError(out) orelse return returnJson(out);
-
-    const bytes = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const opened_label: ?[]const u8 = if (name_len > 0)
-        @as([*]const u8, @ptrFromInt(name_ptr))[0..name_len]
-    else
-        null;
-
-    const ev = eng.openFromSave(bytes, opened_label);
-    switch (ev) {
-        .error_msg => |msg| return exportError(out, msg),
-        .ok => {},
-    }
-    file_session.noteLoad(.{ .open = opened_label });
-    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
-    return returnJson(out);
-}
-
-fn loadOneLinePuzzle(in_ptr: u32, in_len: u32, load: flow.file_session.Load) u32 {
-    const out = outBuffer();
-    const eng = engineOrError(out) orelse return returnJson(out);
-    const line = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const ev = switch (load) {
-        .paste => eng.pasteFromLine(line),
-        else => eng.importFromLine(line),
-    };
-    switch (ev) {
-        .error_msg => |msg| return exportError(out, msg),
-        .ok => {},
-    }
-    file_session.noteLoad(load);
-    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
-    return returnJson(out);
-}
-
-/// Import a one-line puzzle from a page-read file; codec is the engine's job.
-/// Returns Event JSON (same shape as exec / deserialize).
-export fn importPuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
-    return loadOneLinePuzzle(in_ptr, in_len, .import);
-}
-
-/// Paste a one-line puzzle read from the clipboard; returns Event JSON.
-export fn pastePuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
-    return loadOneLinePuzzle(in_ptr, in_len, .paste);
-}
-
-/// Import a generated puzzle line and set nominal difficulty for this New game.
-export fn importPuzzleNewGame(in_ptr: u32, in_len: u32, difficulty: u32) callconv(.c) u32 {
-    const out = outBuffer();
-    const eng = engineOrError(out) orelse return returnJson(out);
-    const pd = wire.PlayerDifficulty.fromWire(@intCast(difficulty)) orelse {
-        return exportError(out, "invalid difficulty");
-    };
-    const line = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const ev = eng.newFromOneLinePuzzle(line);
-    switch (ev) {
-        .error_msg => |msg| return exportError(out, msg),
-        .ok => {},
-    }
-    eng.cfg.difficulty = pd.toPuzzleDifficulty();
-    file_session.noteLoad(.new_game);
-    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
-    return returnJson(out);
-}
-
 /// Export the current board as an 81-byte one-line puzzle string (same codec as native export).
 /// Success: byte length at outPtr. Failure: JSON error (same convention as serialize).
 export fn exportPuzzle() callconv(.c) u32 {
@@ -350,7 +281,7 @@ fn returnStep(out: boundary.OutBuffer, step: flow.Step) u32 {
     return returnJson(out);
 }
 
-/// Start a core flow from `{flow, name?, command?, path?}`; returns the first step JSON.
+/// Start a core flow from `{flow, name?, path?}`; returns the first step JSON.
 export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
@@ -361,7 +292,6 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     active_flow = switch (start) {
         .save => |name| .{ .save = flow.SaveFlow.forCommand(&file_session, .save, name, eng.cfg.auto_save) },
         .save_as => |name| .{ .save = flow.SaveFlow.forCommand(&file_session, .save_as, name, eng.cfg.auto_save) },
-        .autosave => |command_name| .{ .autosave = flow.AutosaveFlow.afterCommand(&file_session, eng.cfg.auto_save, command_name) },
         .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, eng.cfg.auto_save) },
         .startup => |file| .{ .startup = flow.StartupFlow.init(eng, &file_session, .{
             .auto_restore = eng.cfg.auto_restore,
@@ -403,6 +333,15 @@ export fn flowFileRead(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
     const bytes = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     return returnStep(out, active_flow.next(.{ .file_read = .{ .bytes = bytes } }));
+}
+
+/// Answer a `pick_open` step with the chosen file's bytes and name; returns the next step JSON.
+export fn flowPicked(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) callconv(.c) u32 {
+    const out = outBuffer();
+    if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+    const bytes = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const name: ?[]const u8 = if (name_len > 0) @as([*]const u8, @ptrFromInt(name_ptr))[0..name_len] else null;
+    return returnStep(out, active_flow.next(.{ .picked = .{ .file = .{ .bytes = bytes, .name = name } } }));
 }
 
 /// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from serialize).

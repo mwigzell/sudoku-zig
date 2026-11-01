@@ -38,7 +38,6 @@ export type GenWorker =
 /** `flowStart` payload: which core flow to run. */
 export type FlowStart =
   | { flow: "save" | "save_as"; name: string }
-  | { flow: "autosave"; command: string }
   | { flow: "autosave_flush" }
   | { flow: "startup"; path?: string; name?: string }
   | { flow: "export"; name: string | null }
@@ -71,6 +70,8 @@ export type FlowStep =
   | { step: "pick_existing" | "copy_line" }
   | { step: "ask"; title: string; text: string; ok_label: string; cancel_label: string }
   | { step: "read_file"; path: string }
+  | { step: "pick_open"; kind: "game" | "puzzle"; path: string | null }
+  | { step: "read_clipboard" }
   | {
       step: "show_game";
       text: string | null;
@@ -79,6 +80,7 @@ export type FlowStep =
       legend: Record<string, boolean>;
       config: Record<string, unknown>;
       cell?: { row: number; col: number };
+      loaded?: true;
     }
   | { step: "generate"; difficulty: number }
   | { step: "forget_current_file"; path: string; delete: boolean }
@@ -94,6 +96,14 @@ export type WriteResult =
 
 /** Platform result of a `read_file` step. */
 export type ReadResult = { ok: true; bytes: Uint8Array } | { ok: false; error?: string };
+
+/** Platform result of a `pick_open` step; `handle` / `binding` let later saves write the picked file. */
+export type PickResult =
+  | { ok: true; bytes: Uint8Array; name: string; handle?: unknown; binding?: unknown }
+  | { ok: false; cancelled?: boolean; error?: string };
+
+/** Platform result of a `read_clipboard` step. */
+export type ClipboardResult = { ok: true; text: string } | { ok: false; error?: string };
 
 /** Platform result of a `persist_settings` or `copy_line` step. */
 export type PersistResult = { ok: true } | { ok: false; error?: string };
@@ -113,6 +123,8 @@ export type FlowHandlers = {
   pickNew?: (name: string) => WriteResult | Promise<WriteResult>;
   copyLine?: () => PersistResult | Promise<PersistResult>;
   readFile?: (path: string) => ReadResult | Promise<ReadResult>;
+  pickOpen?: (step: { kind: "game" | "puzzle"; path: string | null }) => PickResult | Promise<PickResult>;
+  readClipboard?: () => ClipboardResult | Promise<ClipboardResult>;
   showGame?: (step: { text: string | null; file: string | null }) => void | Promise<void>;
   generate?: (difficulty: number) => GenerateResult | Promise<GenerateResult>;
   forgetCurrentFile?: (forget: { path: string; delete: boolean }) => void | Promise<void>;

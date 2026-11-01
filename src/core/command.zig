@@ -16,7 +16,8 @@ pub const HintData = struct {
 pub const SaveData = struct { path: ?[]const u8 };
 
 pub const OpenData = struct { path: ?[]const u8 };
-pub const NewData = struct { puzzle: ?[]const u8 };
+/// New game: `puzzle` skips generation; `difficulty` (default: the configured one) becomes the game's difficulty.
+pub const NewData = struct { puzzle: ?[]const u8 = null, difficulty: ?config.Difficulty = null };
 pub const ImportData = struct { path: ?[]const u8 };
 pub const ExportData = struct { path: ?[]const u8 };
 pub const PasteData = struct { line: ?[]const u8 };

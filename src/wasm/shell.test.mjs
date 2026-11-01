@@ -1,4 +1,4 @@
-// shell.test.mjs — worker gen handoff: import on success, no import on cancel.
+// shell.test.mjs — web shell: generation handoff, startup, host files and autosave.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -6,14 +6,14 @@ import {
   CURRENT_FILE_DESKTOP_ID,
   persistCurrentFileBytes,
   hostCurrentFileExists,
-  startAutoSavePolicy,
+  autosaveHandlers,
   applySessionOutcome,
   applySessionOutcomeStatus,
   initializeWebSession,
   runStartupFlow,
   startupHandlers,
-  newGameWithGeneratingModal,
-  newGameWithWorkerGen,
+  generateWithModal,
+  generateWithWorker,
   currentFileLabel,
   syncCurrentFileLabels,
   createWebSessionFromStartup,
@@ -26,8 +26,16 @@ import {
   setClientLogLevel,
   CURRENT_FILE_UNSAVED_LABEL,
 } from "./shell.js";
-import { hostFetch, loadGame, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, withCoreFlow } from "./test_support.mjs";
 import { wireGeneratingModal } from "./generating.js";
+import { runCommand } from "./step_runner.js";
+
+const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
+
+/** One move through the core command flow with the web autosave handlers; core decides what is written. */
+function moveWithAutosave(game, session, { fetchFn, onError } = {}, move = FILL_MOVE) {
+  return runCommand(game, move, { ...autosaveHandlers(game, session, { fetchFn, onError }), showGame() {} });
+}
 
 const AUTOSAVE_RESTORE_PARITY_FIXTURE = JSON.parse(
   readFileSync(new URL("../test/fixtures/autosave_restore_parity.json", import.meta.url), "utf8"),
@@ -152,31 +160,13 @@ async function flushDialogPaint() {
 {
   const line = "1".repeat(81);
   const MockWorker = makeWorkerGenMock({ line });
-  const importCalls = [];
   const game = {
-    importPuzzle(text) {
-      importCalls.push(text);
-      return {
-        ok: true,
-        msg: "import: puzzle loaded",
-      };
-    },
-    getState() {
-      return { cells: [] };
-    },
-    getLegend() {
-      return {};
-    },
     getConfig() {
       return { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
     },
-    importPuzzleNewGame(text, difficulty) {
-      importCalls.push(text);
-      return { ok: true, msg: "new game started" };
-    },
   };
   const modal = makeModal();
-  const running = newGameWithWorkerGen(game, modal, {
+  const running = generateWithWorker(game, modal, {
     genWorker: {
       workerUrl: "/gen_worker.js",
       wasmBytes: new Uint8Array([0]),
@@ -186,10 +176,7 @@ async function flushDialogPaint() {
   await new Promise((r) => setTimeout(r, 0));
   modal.continueBtn.click();
   const out = await running;
-  assert.equal(out.ok, true);
-  assert.equal(out.msg, "new game started");
-  assert.equal(importCalls.length, 1);
-  assert.equal(importCalls[0], line);
+  assert.deepEqual(out, { ok: true, line }, "the worker's line goes to core unapplied");
 }
 
 {
@@ -216,24 +203,13 @@ async function flushDialogPaint() {
       this.handlers.error = fn;
     }
   }
-  const importCalls = [];
   const game = {
-    importPuzzle(text) {
-      importCalls.push(text);
-      return { ok: true };
-    },
-    getState() {
-      return { cells: [{ value: 0, given: false, conflict: false }] };
-    },
-    getLegend() {
-      return {};
-    },
     getConfig() {
       return { difficulty: 1, log_level: 1 };
     },
   };
   const modal = makeModal();
-  const running = newGameWithWorkerGen(game, modal, {
+  const running = generateWithWorker(game, modal, {
     genWorker: {
       workerUrl: "/gen_worker.js",
       wasmBytes: new Uint8Array([0]),
@@ -244,7 +220,6 @@ async function flushDialogPaint() {
   modal.cancelBtn.click();
   const out = await running;
   assert.equal(out.cancelled, true);
-  assert.equal(importCalls.length, 0, "cancel must not import puzzle on main");
   assert.equal(modal.el.hidden, true);
 }
 
@@ -261,24 +236,13 @@ async function flushDialogPaint() {
       progressCb?.(2, 7, 256);
       return { ok: true, line };
     },
-    importPuzzleNewGame(text, difficulty) {
-      assert.equal(text, line);
-      assert.equal(difficulty, 2);
-      return { ok: true, msg: "new game started" };
-    },
-    getState() {
-      return { cells: [] };
-    },
-    getLegend() {
-      return {};
-    },
     getConfig() {
       return { difficulty: 2, log_level: 1 };
     },
   };
   const progressRowsEl = makeProgressRowsEl();
   const modal = makeModal({ progressRowsEl });
-  const running = newGameWithGeneratingModal(game, modal, { difficulty: 2 });
+  const running = generateWithModal(game, modal, { difficulty: 2 });
   await flushDialogPaint();
   assert.equal(progressRowsEl._children[0].textContent, "Generating: new attempt…");
   assert.equal(progressRowsEl._children[0].hidden, false);
@@ -289,8 +253,7 @@ async function flushDialogPaint() {
   assert.equal(rowII.hidden, false);
   modal.continueBtn.click();
   const out = await running;
-  assert.equal(out.ok, true);
-  assert.equal(out.msg, "new game started");
+  assert.deepEqual(out, { ok: true, line });
 }
 
 {
@@ -572,9 +535,6 @@ function makePageHideWin() {
         auto_save: false,
       };
     },
-    deserialize() {
-      return { ok: false };
-    },
   };
   const out = await initializeWebSession(game, {
     fetchFn: async (url) => ({
@@ -633,7 +593,7 @@ const HOST_CURRENT_FILE = "/current-file";
 /** Bytes of a saved game holding `line`. */
 async function savedGameBytes(line) {
   const source = await loadGame();
-  assert.equal(source.importPuzzle(line).ok, true);
+  startNewGame(source, line);
   return source.serialize().bytes;
 }
 
@@ -711,11 +671,10 @@ async function runStartupScenario({ config = {}, currentFile = null, answers = [
   assert.equal(run.asked.length, 0);
   assert.equal(run.generateCalls.length, 0);
 
-  run.game.exec({ action: "fill", row: 0, col: 2, digit: 4 });
   const host = hostFetch({ exists: true });
   const prevChoose = globalThis.__sudokuChoose;
   globalThis.__sudokuChoose = async () => assert.fail("a restored game continues its file");
-  await startAutoSavePolicy(run.game, run.session, "fill", { fetchFn: host.fetchFn });
+  await moveWithAutosave(run.game, run.session, { fetchFn: host.fetchFn });
   globalThis.__sudokuChoose = prevChoose;
   assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Filename"], "game.sud");
 }
@@ -807,15 +766,10 @@ for (const deleteIt of [true, false]) {
 }
 
 {
-  // The web generate step hands core the line and does not import it; Continue still closes the modal.
-  let imported = 0;
+  // The web generate step hands core the line; Continue still closes the modal.
   const game = {
     getConfig: () => ({ difficulty: 1, log_level: 1 }),
     generatePuzzle: ({ difficulty }) => ({ ok: true, line: `${difficulty}`.repeat(81) }),
-    importPuzzleNewGame: () => {
-      imported += 1;
-      return { ok: true };
-    },
   };
   const modal = makeModal();
   const handlers = startupHandlers(game, {}, { generatingModal: modal });
@@ -826,7 +780,6 @@ for (const deleteIt of [true, false]) {
   const out = await running;
   assert.equal(out.ok, true);
   assert.equal(out.line, "2".repeat(81));
-  assert.equal(imported, 0);
 }
 
 {
@@ -834,7 +787,7 @@ for (const deleteIt of [true, false]) {
   const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1, 2, 3]) }) }, { autoSave: true });
   const session = { config: { auto_save: true }, default_save_filename: "sudoku.sud", boundFilename: null };
   const host = hostFetch({ exists: false });
-  const outcome = await startAutoSavePolicy(game, session, "fill", { fetchFn: host.fetchFn });
+  const outcome = await moveWithAutosave(game, session, { fetchFn: host.fetchFn });
   assert.equal(outcome.kind, "done");
   assert.equal(session.boundFilename, "sudoku.sud");
   assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Restore-Copy"], undefined, "host file is the user's file");
@@ -844,7 +797,12 @@ for (const deleteIt of [true, false]) {
   // Commands outside the core trigger list write nothing.
   const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true });
   const host = hostFetch();
-  const outcome = await startAutoSavePolicy(game, { default_save_filename: "sudoku.sud" }, "new", { fetchFn: host.fetchFn });
+  const session = { default_save_filename: "sudoku.sud" };
+  const outcome = await runCommand(game, { action: "toggle_region" }, {
+    ...autosaveHandlers(game, session, { fetchFn: host.fetchFn }),
+    showGame() {},
+    persistSettings: () => ({ ok: true }),
+  });
   assert.equal(outcome.kind, "done");
   assert.equal(host.calls.length, 0);
 }
@@ -877,7 +835,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   const { game, session, fetchFn } = await boundAutosaveSetup(writes);
   const prevChoose = globalThis.__sudokuChoose;
   globalThis.__sudokuChoose = async () => assert.fail("continuation must not ask");
-  await startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await moveWithAutosave(game, session, { fetchFn });
   globalThis.__sudokuChoose = prevChoose;
   assert.deepEqual(writes, [
     { lane: "bound", bytes: [4, 2] },
@@ -890,7 +848,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   const writes = [];
   const { game, session, fetchFn } = await boundAutosaveSetup(writes, { ok: false, error: "bound write failed" });
   let surfaced = null;
-  const outcome = await startAutoSavePolicy(game, session, "fill", {
+  const outcome = await moveWithAutosave(game, session, {
     fetchFn,
     onError: (err) => {
       surfaced = err;
@@ -907,7 +865,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   const host = hostFetch({ exists: true });
   const prevChoose = globalThis.__sudokuChoose;
   globalThis.__sudokuChoose = async () => assert.fail("continued file must not ask");
-  await startAutoSavePolicy(game, { config: { auto_save: true }, boundFilename: "autosave.sud" }, "fill", { fetchFn: host.fetchFn });
+  await moveWithAutosave(game, { config: { auto_save: true }, boundFilename: "autosave.sud" }, { fetchFn: host.fetchFn });
   globalThis.__sudokuChoose = prevChoose;
   assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Filename"], "autosave.sud");
 }
@@ -937,10 +895,10 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
     throw new Error(`unexpected fetch url: ${url}`);
   };
 
-  const first = startAutoSavePolicy(game, session, "fill", { fetchFn });
+  const first = moveWithAutosave(game, session, { fetchFn });
   await settleFlow();
   currentSnapshot = new Uint8Array([2]);
-  const second = startAutoSavePolicy(game, session, "fill", { fetchFn });
+  const second = moveWithAutosave(game, session, { fetchFn }, { action: "fill", row: 0, col: 3, digit: 5 });
   await settleFlow();
   assert.equal(writes.length, 0, "second autosave waits for the first");
   firstWriteResolve?.();
@@ -964,11 +922,11 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   };
 
   const launchA = await loadGame({ auto_restore: true, auto_save: true });
-  assert.equal(launchA.importPuzzle(fixture.puzzle_line).ok, true);
+  startNewGame(launchA, fixture.puzzle_line);
   const sessionA = { config: launchA.getConfig(), default_save_filename: "sudoku.sud", boundFilename: null };
   for (const move of fixture.moves) {
-    assert.equal(launchA.exec({ action: "fill", row: move.row, col: move.col, digit: move.digit }).ok, true);
-    await startAutoSavePolicy(launchA, sessionA, "fill", { fetchFn });
+    const outcome = await moveWithAutosave(launchA, sessionA, { fetchFn }, { action: "fill", ...move });
+    assert.equal(outcome.kind, "done");
   }
   assert.ok(savedBytes && savedBytes.length > 0, "autosave should persist a startup snapshot");
 

@@ -2,7 +2,6 @@
 
 import assert from "node:assert/strict";
 import {
-  refreshSession,
   downloadBytes,
   persistBytes,
   pickBytes,
@@ -11,10 +10,17 @@ import {
   DIFFICULTIES,
   filePickerStartIn,
 } from "./file_menu.js";
-import { startAutoSavePolicy } from "./shell.js";
-import { hostFetch, postedCurrentFile, withCoreFlow } from "./test_support.mjs";
+import { autosaveHandlers, commandHandlers, showErrorModal } from "./shell.js";
+import { runCommand } from "./step_runner.js";
+import { PUZZLE_LINE, hostFetch, loadGame, postedCurrentFile, startNewGame, withCoreFlow } from "./test_support.mjs";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
-import { wireGeneratingModal } from "./generating.js";
+
+const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
+
+/** One move through the core command flow with the web autosave handlers. */
+function moveWithAutosave(game, session, options = {}) {
+  return runCommand(game, FILL_MOVE, { ...autosaveHandlers(game, session, options), showGame() {} });
+}
 
 async function flushDialogPaint() {
   if (typeof requestAnimationFrame === "function") {
@@ -49,46 +55,6 @@ function makeRenderElement() {
 }
 
 {
-  const board = makeBoard();
-  const session = { state: { cells: [] }, legend: { save: true }, config: { theme: "dark", show_region: false } };
-  let synced = false;
-  refreshSession(
-    board,
-    { select: () => {}, deselect: () => {} },
-    { textContent: "old", className: "" },
-    session,
-    { sync: () => { synced = true; } },
-    { cells: [{ value: 1, given: true, conflict: false }] },
-    { save: true, undo: false },
-    { theme: "light", show_region: true },
-    makeRenderElement(),
-  );
-  assert.equal(session.state.cells[0].value, 1);
-  assert.equal(session.legend.undo, false);
-  assert.equal(session.config.theme, "light");
-  assert.equal(synced, true);
-}
-
-{
-  const board = makeBoard();
-  const status = { textContent: "old", className: "" };
-  refreshSession(
-    board,
-    { select: () => {}, deselect: () => {} },
-    status,
-    { state: { cells: [] }, legend: {}, config: {} },
-    { sync() {} },
-    { cells: [] },
-    {},
-    {},
-    makeRenderElement(),
-    undefined,
-    "opened: game.sud; this puzzle has no solution (no-solution)",
-  );
-  assert.match(status.textContent, /no solution/i);
-}
-
-{
   assert.equal(filePickerStartIn({}), "documents");
   assert.equal(filePickerStartIn({ fileHandle: { name: "game.sud" } }).name, "game.sud");
 }
@@ -117,86 +83,73 @@ function makeRenderElement() {
   assert.equal(links[0].download, "game.sud");
 }
 
-{
-  const board = makeBoard();
-  const session = {
-    legend: { new: true, open: true, save: true, save_as: true },
-    state: { cells: [] },
-    default_save_filename: "host-default.sud",
+
+/** Web command handlers on a real game; `generate` answers New from `generated` and records the difficulty. */
+function loadFlow(game, session, { statusEl = null, errorModal = makeErrorModal(), fetchFn = hostFetch().fetchFn, generated = [] } = {}) {
+  const difficulties = [];
+  const flow = {
+    ...commandHandlers(game, session, { fetchFn, statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) }),
+    generate: async (difficulty) => {
+      difficulties.push(difficulty);
+      return generated.shift() ?? { ok: true, line: PUZZLE_LINE };
+    },
   };
+  return { flow, difficulties };
+}
+
+function makeErrorModal(text = "") {
+  return { el: { hidden: true }, msgEl: { textContent: text } };
+}
+
+/** File menu over a real game; options reach `wireFileMenu`. */
+function wireLoads(controls, game, session, { statusEl = makeStatus(), errorModal = makeErrorModal(), commandFlow, ...options } = {}) {
+  wireFileMenu(controls, game, makeBoard(), { select: () => {}, deselect: () => {} }, statusEl, errorModal, session, { sync() {} }, {
+    difficultyDialog: { el: { hidden: true }, buttons: [] },
+    download() {},
+    pick: async () => ({ ok: false, cancelled: true }),
+    createElement: makeRenderElement(),
+    commandFlow: commandFlow ?? loadFlow(game, session, { statusEl, errorModal }).flow,
+    ...options,
+  });
+}
+
+function makeStatus() {
+  return { textContent: "", className: "" };
+}
+
+function easyDialog() {
+  return { el: { hidden: true }, buttons: DIFFICULTIES.map((d) => ({ ...d, el: makeBtn() })) };
+}
+
+{
+  // New then Save: the generated game downloads under the host default name and keeps a host copy.
+  const game = await loadGame();
+  const session = { legend: { new: true, save: true }, state: { cells: [] }, default_save_filename: "host-default.sud" };
   let downloaded = null;
-  const game = await withCoreFlow({
-    init() {
-      return { ok: true };
-    },
-    getState() {
-      return { cells: [{ value: 0, given: false, conflict: false }] };
-    },
-    getLegend() {
-      return { new: true, save: true, open: true, save_as: true, undo: false, redo: false };
-    },
-    getConfig() {
-      return { theme: "dark", show_region: false };
-    },
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([9, 9, 9]) };
+  const statusEl = makeStatus();
+  const controls = { new: makeBtn(), save: makeBtn() };
+  const difficultyDialog = easyDialog();
+  wireLoads(controls, game, session, {
+    statusEl,
+    difficultyDialog,
+    download(bytes, name) {
+      downloaded = { bytes, name };
     },
   });
-  const status = { textContent: "", className: "" };
-  const controls = {
-    new: makeBtn(),
-    open: makeBtn(),
-    save: makeBtn(),
-    saveAs: makeBtn(),
-  };
-  const renderElement = makeRenderElement();
-
-  const newDialog = { el: { hidden: true }, buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }] };
-  const genEl = { hidden: true };
-  const genContinue = makeBtn();
-  const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
-  await withCoreFlow(game);
-  wireFileMenu(
-    controls,
-    game,
-    board,
-    { select: () => {}, deselect: () => {} },
-    status,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: newDialog,
-      generatingModal,
-      download(bytes, name) {
-        downloaded = { bytes, name };
-      },
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: renderElement,
-    },
-  );
-
   controls.new.click();
-  assert.equal(newDialog.el.hidden, false);
-  const pickPromise = newDialog.buttons[0].el.click();
-  await flushDialogPaint();
-  await flushDialogPaint();
-  assert.equal(newDialog.el.hidden, true, "difficulty dismissed before generating");
-  assert.equal(genEl.hidden, false, "generating modal visible during gen");
-  assert.equal(genContinue.disabled, false, "sync init finishes before Continue");
-  genContinue.click();
-  await pickPromise;
-  assert.equal(genEl.hidden, true);
-  assert.equal(session.state.cells.length, 1, "board reset from fresh puzzle");
+  assert.equal(difficultyDialog.el.hidden, false);
+  await difficultyDialog.buttons[0].el.click();
+  assert.equal(difficultyDialog.el.hidden, true, "difficulty dismissed after the pick");
+  assert.equal(session.state.cells[0].value, 5, "board shows the generated puzzle");
   const host = hostFetch();
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
   await controls.save.click();
   globalThis.fetch = prevFetch;
-  assert.deepEqual([...downloaded.bytes], [9, 9, 9]);
+  assert.deepEqual([...downloaded.bytes], [...game.serialize().bytes]);
   assert.equal(downloaded.name, "host-default.sud");
   assert.equal(session.boundFilename, "host-default.sud");
-  assert.equal(status.textContent, "saved to: host-default.sud", "core composes the save status");
+  assert.equal(statusEl.textContent, "saved to: host-default.sud", "core composes the save status");
   const hosted = postedCurrentFile(host.calls);
   assert.equal(hosted?.init?.headers?.["X-Sudoku-Restore-Copy"], "true", "downloaded save keeps a hidden host copy");
 }
@@ -286,246 +239,57 @@ function makeRenderElement() {
 }
 
 {
-  // New is a sub-dialog: it opens a difficulty picker instead of generating immediately;
-  // the picked difficulty drives generation, then the board resets.
-  const session = { state: { cells: [] }, legend: { new: true, save: false, open: false, save_as: false } };
-  const initCalls = [];
-  const game = {
-    init(opts) {
-      initCalls.push(opts);
-      return { ok: true };
-    },
-    getState() {
-      return { cells: [{ value: 1, given: true, conflict: false }] };
-    },
-    getLegend() {
-      return { new: true, save: true, open: true, save_as: true, undo: false, redo: false };
-    },
-    getConfig() {
-      return { theme: "light", show_region: false };
-    },
-  };
-  const difficultyDialog = {
-    el: { hidden: true },
-    buttons: [
-      { label: "Easy", difficulty: 1, el: makeBtn() },
-      { label: "Medium", difficulty: 2, el: makeBtn() },
-      { label: "Hard", difficulty: 3, el: makeBtn() },
-    ],
-  };
+  // New opens the difficulty dialog; the picked difficulty reaches core's generate step.
+  const game = await loadGame();
+  const session = { state: { cells: [] }, legend: { new: true } };
+  const { flow, difficulties } = loadFlow(game, session);
+  const difficultyDialog = easyDialog();
   const controls = { new: makeBtn() };
-  const genEl = { hidden: true };
-  const genContinue = makeBtn();
-  const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
-
-  await withCoreFlow(game);
-
-  await withCoreFlow(game);
-
-  wireFileMenu(
-    controls,
-    game,
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog,
-      generatingModal,
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: makeRenderElement(),
-    },
-  );
-
+  wireLoads(controls, game, session, { difficultyDialog, commandFlow: flow });
   controls.new.click();
   assert.equal(difficultyDialog.el.hidden, false, "New opens the difficulty dialog");
-  assert.equal(initCalls.length, 0, "no puzzle generated until a difficulty is picked");
-
-  const pickPromise = difficultyDialog.buttons[1].el.click(); // Medium
-  await flushDialogPaint();
-  await flushDialogPaint();
+  assert.equal(difficulties.length, 0, "no puzzle generated until a difficulty is picked");
+  await difficultyDialog.buttons[1].el.click();
   assert.equal(difficultyDialog.el.hidden, true, "dialog closes after a pick");
-  assert.equal(genEl.hidden, false, "generating modal opens");
-  assert.equal(genContinue.disabled, false, "Continue enabled when gen done");
-  assert.equal(initCalls.length, 1, "pick drives generation");
-  assert.equal(initCalls[0].difficulty, 2, "the picked difficulty is used");
-  genContinue.click();
-  await pickPromise;
-  assert.equal(session.state.cells.length, 1, "board resets after Continue applies the game");
-  assert.equal(genEl.hidden, true, "Continue closes generating modal");
+  assert.deepEqual(difficulties, [2], "the picked difficulty is generated");
+  assert.equal(session.state.cells[0].value, 5, "board resets to the generated game");
 }
 
 {
-  const genEl = { hidden: true };
-  const genContinue = makeBtn();
-  const generatingModal = wireGeneratingModal({ el: genEl, continueBtn: genContinue });
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const difficultyDialog = {
-    el: { hidden: true },
-    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
-  };
-  wireFileMenu(
-    { new: makeBtn() },
-    await withCoreFlow({
-      init() {
-        return { ok: false, error: "gen failed" };
-      },
-      getConfig() {
-        return { difficulty: 1, log_level: 1, theme: "dark", show_region: false };
-      },
-    }),
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    errorModal,
-    { state: { cells: [] }, legend: { new: true } },
-    { sync() {} },
-    {
-      difficultyDialog,
-      generatingModal,
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: makeRenderElement(),
-    },
-  );
-  const pickPromise = difficultyDialog.buttons[0].el.click();
-  await flushDialogPaint();
-  await flushDialogPaint();
-  await pickPromise;
-  assert.equal(genEl.hidden, true, "generating modal closes on failure");
+  // A failed generation surfaces core's error; the board stays.
+  const game = await loadGame();
+  const session = { state: { cells: [] }, legend: { new: true } };
+  const errorModal = makeErrorModal();
+  const { flow } = loadFlow(game, session, { errorModal, generated: [{ ok: false, error: "gen failed" }] });
+  const difficultyDialog = easyDialog();
+  wireLoads({ new: makeBtn() }, game, session, { difficultyDialog, errorModal, commandFlow: flow });
+  await difficultyDialog.buttons[0].el.click();
   assert.equal(errorModal.el.hidden, false, "error modal shown");
   assert.match(errorModal.msgEl.textContent, /gen failed/i);
+  assert.deepEqual(session.state.cells, []);
 }
 
 {
-  const status = { textContent: "", className: "" };
-  const session = { state: { cells: [] }, legend: { new: true } };
-  const difficultyDialog = {
-    el: { hidden: true },
-    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
-  };
-  wireFileMenu(
-    { new: makeBtn() },
-    await withCoreFlow({
-      init() {
-        return { ok: true, msg: "new game started" };
-      },
-      getState() {
-        return { cells: [{ value: 2, given: false, conflict: false }] };
-      },
-      getLegend() {
-        return { new: true };
-      },
-      getConfig() {
-        return { show_region: false };
-      },
-    }),
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    status,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog,
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: makeRenderElement(),
-    },
-  );
-  await difficultyDialog.buttons[0].el.click();
-  assert.match(status.textContent, /new game started/i);
-}
-
-{
-  const session = {
-    state: { cells: [] },
-    legend: { new: true },
-    fileHandle: { name: "bound.sud" },
-    boundFilename: "bound.sud",
-  };
-  const difficultyDialog = {
-    el: { hidden: true },
-    buttons: [{ label: "Hard", difficulty: 3, el: makeBtn() }],
-  };
-  wireFileMenu(
-    { new: makeBtn() },
-    await withCoreFlow({
-      init() {
-        return { ok: true };
-      },
-      getState() {
-        return { cells: [{ value: 9, given: true, conflict: false }] };
-      },
-      getLegend() {
-        return { new: true };
-      },
-      getConfig() {
-        return { show_region: false };
-      },
-    }),
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog,
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: makeRenderElement(),
-    },
-  );
-  await difficultyDialog.buttons[0].el.click();
+  // New drops the picked save handle; the file label follows the game core shows.
+  const game = await loadGame();
+  const session = { state: { cells: [] }, legend: { new: true }, fileHandle: { name: "bound.sud" }, boundFilename: "bound.sud" };
+  const difficultyDialog = easyDialog();
+  wireLoads({ new: makeBtn() }, game, session, { difficultyDialog });
+  await difficultyDialog.buttons[2].el.click();
   assert.equal(session.fileHandle, null, "save target unbound after New");
-  assert.equal(session.boundFilename, "bound.sud", "bound filename stays visible after New");
+  assert.equal(session.boundFilename, null, "a new game has no file");
 }
 
 {
-  let initCalled = false;
   const session = { state: { cells: [] }, legend: {} };
+  const game = await loadGame();
+  const { flow, difficulties } = loadFlow(game, session);
   const newBtn = makeBtn();
-  const difficultyDialog = {
-    el: { hidden: true },
-    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
-  };
-  wireFileMenu(
-    { new: newBtn },
-    await withCoreFlow({
-      init() {
-        initCalled = true;
-        return { ok: true };
-      },
-      getState() {
-        return { cells: [] };
-      },
-      getLegend() {
-        return {};
-      },
-      getConfig() {
-        return {};
-      },
-    }),
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog,
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      createElement: makeRenderElement(),
-    },
-  );
+  const difficultyDialog = easyDialog();
+  wireLoads({ new: newBtn }, game, session, { difficultyDialog, commandFlow: flow });
   newBtn.click();
   assert.equal(difficultyDialog.el.hidden, true, "legend.new off → dialog stays closed");
-  assert.equal(initCalled, false, "legend.new off → no generation");
+  assert.equal(difficulties.length, 0, "legend.new off → no generation");
 }
 
 {
@@ -705,127 +469,86 @@ function makeRenderElement() {
 
 // Import loads a valid one-line puzzle file, resets the board, and unbinds the save target
 {
-  const line = "123456789".repeat(9);
+  const game = await loadGame();
   const session = {
     legend: { import: true },
-    state: { cells: [{ value: 1, given: true, conflict: false }] },
+    state: { cells: [] },
     fileHandle: { name: "game.sud" },
     boundFilename: "game.sud",
   };
-  let imported = null;
-  const game = {
-    importPuzzle(text) {
-      imported = text;
-      return { ok: true, msg: "import: puzzle loaded" };
-    },
-    getState() {
-      return { cells: [{ value: 9, given: false, conflict: false }] };
-    },
-    getLegend() {
-      return { import: true, undo: false };
-    },
-    getConfig() {
-      return { theme: "dark", show_region: false };
-    },
-  };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "old" } };
+  const errorModal = makeErrorModal("old");
   const importBtn = makeBtn();
-  await withCoreFlow(game);
-  wireFileMenu(
-    { import: importBtn },
-    game,
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
+  wireLoads({ import: importBtn }, game, session, {
     errorModal,
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {},
-      pick: async (sessionArg, opts) => {
-        assert.equal(opts.accept, ".txt,text/plain", "puzzle picker targets text files");
-        assert.equal(sessionArg, session);
-        return { ok: true, name: "puzzle.txt", bytes: new TextEncoder().encode(line) };
-      },
-      createElement: makeRenderElement(),
+    pick: async (sessionArg, opts) => {
+      assert.equal(opts.accept, ".txt,text/plain", "puzzle picker targets text files");
+      assert.equal(sessionArg, session);
+      return { ok: true, name: "puzzle.txt", bytes: new TextEncoder().encode(PUZZLE_LINE) };
     },
-  );
+  });
   await importBtn.click();
-  assert.equal(imported, line, "picked file text reaches the engine");
-  assert.equal(session.state.cells.length, 1, "board resets from the imported puzzle");
+  assert.equal(session.state.cells[0].value, 5, "board resets from the imported puzzle");
   assert.equal(session.fileHandle, null, "save target unbound after import");
   assert.equal(session.boundFilename, null, "bound filename cleared after import");
   assert.equal(errorModal.el.hidden, true, "no error modal on success");
-  assert.match(errorModal.msgEl.textContent, /old/, "status not clobbered");
 }
 
-// Import with an invalid file surfaces the engine error; board and save target stay intact
+// Import with an invalid file surfaces core's error; board and save target stay intact
 {
+  const game = await loadGame();
   const session = {
     legend: { import: true },
     state: { cells: [{ value: 2, given: true, conflict: false }] },
     fileHandle: { name: "game.sud" },
     boundFilename: "game.sud",
   };
-  const game = {
-    importPuzzle() {
-      return { ok: false, error: "import: expected exactly 81 characters" };
-    },
-  };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "old" } };
+  const errorModal = makeErrorModal("old");
   const before = JSON.stringify(session.state);
   const importBtn = makeBtn();
-  await withCoreFlow(game);
-  wireFileMenu(
-    { import: importBtn },
-    game,
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
+  wireLoads({ import: importBtn }, game, session, {
     errorModal,
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {},
-      pick: async () => ({ ok: true, name: "bad.txt", bytes: new TextEncoder().encode("oops") }),
-      createElement: makeRenderElement(),
-    },
-  );
+    pick: async () => ({ ok: true, name: "bad.txt", bytes: new TextEncoder().encode("oops") }),
+  });
   await importBtn.click();
   assert.equal(errorModal.el.hidden, false, "error modal opens on invalid import");
-  assert.match(errorModal.msgEl.textContent, /expected exactly 81 characters/);
+  assert.match(errorModal.msgEl.textContent, /81/);
   assert.equal(JSON.stringify(session.state), before, "board untouched after failed import");
   assert.equal(session.fileHandle.name, "game.sud", "save target kept after failed import");
   assert.equal(session.boundFilename, "game.sud", "bound filename kept after failed import");
+}
+
+// Open binds the picked file: its handle becomes the save target and its name the label
+{
+  const game = await loadGame();
+  const source = await loadGame();
+  startNewGame(source);
+  const handle = { name: "picked.sud" };
+  const session = { legend: { open: true }, state: { cells: [] } };
+  const openBtn = makeBtn();
+  wireLoads({ open: openBtn }, game, session, {
+    pick: async () => ({ ok: true, name: "picked.sud", handle, bytes: source.serialize().bytes }),
+  });
+  await openBtn.click();
+  assert.equal(session.state.cells[0].value, 5);
+  assert.equal(session.fileHandle, handle);
+  assert.equal(session.boundFilename, "picked.sud");
 }
 
 // Import is a no-op when the legend does not offer it
 {
   let picked = false;
   const session = { legend: {}, state: { cells: [] } };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const importBtn = makeBtn();
-  wireFileMenu(
-    { import: importBtn },
-    { importPuzzle() { throw new Error("must not run"); } },
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    errorModal,
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {},
-      pick: async () => { picked = true; return { ok: true }; },
-      createElement: makeRenderElement(),
+  wireLoads({ import: importBtn }, await loadGame(), session, {
+    pick: async () => {
+      picked = true;
+      return { ok: true };
     },
-  );
+  });
   await importBtn.click();
   assert.equal(picked, false, "no picker when legend.import is off");
 }
+
 
 // Export writes bytes from exportPuzzle via the text save path; save target stays bound
 {
@@ -979,7 +702,7 @@ function makeRenderElement() {
     if (url === "./current-file") hostWrites.push([...new Uint8Array(init.body)]);
     return host.fetchFn(url, init);
   };
-  await startAutoSavePolicy(game, session, "fill", { fetchFn });
+  await moveWithAutosave(game, session, { fetchFn });
   assert.equal(downloads, 0, "autosave must not download");
   assert.equal(picks, 0, "autosave must not open a picker");
   assert.deepEqual(hostWrites, [[4, 2]]);
@@ -1004,47 +727,13 @@ function makeRenderElement() {
     config: { auto_save: true },
     default_save_filename: "sudoku.sud",
   };
-  const game = {
-    init: () => ({ ok: true }),
-    getState: () => ({ cells: [{ value: 1, given: true, conflict: false }] }),
-    getLegend: () => ({ new: true }),
-    getConfig: () => ({ theme: "light", show_region: false, auto_save: true }),
-    serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }),
-  };
-  const difficultyDialog = {
-    el: { hidden: true },
-    buttons: [{ label: "Easy", difficulty: 1, el: makeBtn() }],
-  };
-  const controls = { new: makeBtn() };
-  const genContinue = makeBtn();
-  const generatingModal = wireGeneratingModal({ el: { hidden: true }, continueBtn: genContinue });
+  const game = await loadGame({ auto_save: true });
+  const difficultyDialog = easyDialog();
   try {
-    await withCoreFlow(game, { autoSave: true });
-    wireFileMenu(
-      controls,
-      game,
-      makeBoard(),
-      { select: () => {}, deselect: () => {} },
-      { textContent: "", className: "" },
-      { el: { hidden: true }, msgEl: { textContent: "" } },
-      session,
-      { sync() {} },
-      {
-        difficultyDialog,
-        generatingModal,
-        download() {},
-        pick: async () => ({ ok: false, cancelled: true }),
-        createElement: makeRenderElement(),
-      },
-    );
-    controls.new.click();
-    const picked = difficultyDialog.buttons[0].el.click();
-    await flushDialogPaint();
-    await flushDialogPaint();
-    genContinue.click();
-    await picked;
+    wireLoads({ new: makeBtn() }, game, session, { difficultyDialog });
+    await difficultyDialog.buttons[0].el.click();
     bridgeWrites.length = 0;
-    await startAutoSavePolicy(game, session, "fill", { fetchFn: globalThis.fetch });
+    await moveWithAutosave(game, session, { fetchFn: globalThis.fetch });
     assert.deepEqual(bridgeWrites, ["sudoku.sud"]);
   } finally {
     globalThis.AndroidFileBridge = prevBridge;
@@ -1089,7 +778,7 @@ function makeRenderElement() {
       if (url === "./current-file") hostNames.push(init.headers?.["X-Sudoku-Filename"]);
       return { ok: true, status: 204 };
     };
-    await startAutoSavePolicy(game, session, "fill", { fetchFn });
+    await moveWithAutosave(game, session, { fetchFn });
     assert.equal(session.boundFilename, "game2.sud");
     assert.deepEqual(hostNames, ["game2.sud"]);
   } finally {
@@ -1150,7 +839,7 @@ function makeRenderElement() {
       },
     );
     let errors = 0;
-    await startAutoSavePolicy(game, session, "fill", {
+    await moveWithAutosave(game, session, {
       fetchFn: async () => ({ ok: true, status: 204 }),
       onError: () => { errors += 1; },
     });

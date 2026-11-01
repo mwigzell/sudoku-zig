@@ -197,6 +197,56 @@
           { "row": 0, "col": 2, "value": 3, "given": true }
         ]
       }
+    },
+    {
+      "name": "open_then_move_continues_file",
+      "summary": "Opening a saved game with Auto Save on continues that file: the load and the next move both write it without asking.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "answers": [],
+      "steps": [
+        { "open": { "name": "game.sud", "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079", "moves": [{ "row": 0, "col": 3, "digit": 6 }] } },
+        { "fill": { "row": 0, "col": 2, "digit": 4 } }
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["game.sud", "game.sud"],
+        "status": null,
+        "probes": [
+          { "row": 0, "col": 0, "value": 5, "given": true },
+          { "row": 0, "col": 3, "value": 6, "given": false },
+          { "row": 0, "col": 2, "value": 4, "given": false }
+        ]
+      }
+    },
+    {
+      "name": "import_starts_unsaved_game",
+      "summary": "Importing a puzzle file with Auto Save on makes its line the givens and autosaves to the default file.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "answers": [],
+      "steps": [{ "import": "003020600900305001001806400008102900700000008006708200002609500800203009005010300" }],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud"],
+        "status": "import: puzzle loaded",
+        "legend": { "undo": false },
+        "probes": [{ "row": 0, "col": 2, "value": 3, "given": true }]
+      }
+    },
+    {
+      "name": "import_invalid_keeps_board",
+      "summary": "Importing a file that is not a puzzle shows one error and leaves the board and its history alone.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{ "fill": { "row": 0, "col": 0, "digit": 4 } }, { "import": "oops" }],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud"],
+        "status": null,
+        "errors": 1,
+        "legend": { "undo": true },
+        "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
+      }
     }
   ]
 }

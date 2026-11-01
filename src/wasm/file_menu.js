@@ -1,25 +1,19 @@
 // file_menu.js — File menu session actions via shell.js.
 
 import {
-  newGame,
-  newGameWithGeneratingModal,
-  open,
   save,
   saveAs,
-  importPuzzle,
   exportPuzzle,
   applyEventStatus,
-  applyLoadedSessionOutcome,
-  applySessionOutcomeStatus,
   clearEventStatus,
+  difficultyName,
   persistCurrentFileBytes,
   runSessionCommand,
-  startAutoSavePolicy,
   syncCurrentFileLabels,
   showErrorModal,
   waitForStatusPaint,
 } from "./shell.js";
-import { renderBoard, setStatus } from "./board.js";
+import { renderBoard } from "./board.js";
 import { LEGEND_WIRE_EXPORT } from "./menu_bar.js";
 import { askWithDialog, FLOW_EXPORT, FLOW_SAVE, FLOW_SAVE_AS, runFlow, SAVE_FAILED_MSG } from "./step_runner.js";
 
@@ -41,6 +35,9 @@ const TOGGLE_AUTO_SAVE = "toggle_auto_save";
 const NEW_COMMAND = "new";
 const OPEN_COMMAND = "open";
 const IMPORT_COMMAND = "import";
+/** `pick_open` kinds: a saved game becomes the save target; puzzle text does not. */
+const PICK_KIND_GAME = "game";
+const PICK_KIND_PUZZLE = "puzzle";
 const BRIDGE_CANCELLED = "cancelled";
 /** Android bridge reason: the default visible file belongs to an earlier install. */
 const BRIDGE_DEFAULT_TAKEN = "default_taken";
@@ -99,36 +96,6 @@ export const puzzleTextPickerTypes = [
   },
 ];
 export const PUZZLE_TEXT_ACCEPT = ".txt,text/plain";
-
-/** Canonical render+session update path after commands that replace board/config snapshots. */
-export function refreshSession(
-  boardEl,
-  selection,
-  statusEl,
-  session,
-  menuBar,
-  state,
-  legend,
-  config,
-  createElement,
-  onViewRefresh,
-  eventMsg = null,
-) {
-  refreshSessionView(
-    boardEl,
-    selection,
-    menuBar,
-    state,
-    createElement,
-    onViewRefresh,
-  );
-  applySessionOutcomeStatus(session, statusEl, {
-    state,
-    legend,
-    config,
-    msg: eventMsg,
-  });
-}
 
 /** View-only refresh used after session has already been updated through shell helpers. */
 export function refreshSessionView(
@@ -271,6 +238,21 @@ function primeAndroidBoundTarget(session, win = globalThis) {
   if (typeof session.boundFilename === "string" && session.boundFilename.length > 0) return;
   const name = androidCurrentTargetName(win);
   if (name) session.boundFilename = name;
+}
+
+/**
+ * After a load: a picked saved game becomes the save target; any other load drops it. Without a
+ * bound file Android primes its default one.
+ * @param {WebSession} session
+ * @param {import("./types").PickResult | null} pickedGame
+ */
+export function bindLoadedGame(session, pickedGame, win = globalThis) {
+  session.fileHandle = pickedGame?.handle ?? null;
+  if (pickedGame?.binding) bindSnapshotWriter(session, pickedGame.binding, win);
+  else clearBoundSnapshotWriter(session);
+  if (typeof session.boundSnapshotWriter !== "function" && androidCurrentTargetName(win) == null) {
+    primeAndroidBoundTarget(session, win);
+  }
 }
 
 /** Persist SUD0 bytes through current handle, Android bridge, picker, or download fallback. */
@@ -460,8 +442,6 @@ export function wireFileMenu(
   menuBar,
   {
     difficultyDialog,
-    generatingModal,
-    genWorker,
     download = downloadBytes,
     pick = (session, opts) => pickBytes(document, session, opts),
     exportText = persistPuzzleText,
@@ -514,80 +494,28 @@ export function wireFileMenu(
 
   if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, globalThis);
 
-  /** Shared tail for successful board-replacing loads (new/open/import) before autosave kick. */
-  const finalizeLoadedSession = async (
-    result,
-    {
-      fileHandle,
-      boundFilename,
-      binding = null,
-      legend,
-      config,
-      commandName,
-    },
-  ) => {
-    applyLoadedSessionOutcome(session, statusEl, result, { fileHandle, boundFilename, legend, config });
-    if (binding) {
-      bindSnapshotWriter(session, binding, globalThis);
-    } else if (fileHandle == null && boundFilename == null) {
-      clearBoundSnapshotWriter(session);
-      // With no Android file bound there is nothing to detach from; the bridge writes its default visible file.
-      if (androidCurrentTargetName(globalThis) == null) primeAndroidBoundTarget(session, globalThis);
-    }
-    refreshSessionView(
-      boardEl,
-      selection,
-      menuBar,
-      session.state,
-      createElement,
-      onViewRefresh,
-    );
-    startAutoSavePolicy(game, session, commandName, { onError: fail });
-  };
-
-  /** New-game completion follows same loaded-session helper path as other board swaps. */
-  const applyNewGame = async (result) => {
-    await finalizeLoadedSession(result, {
-      fileHandle: null,
-      boundFilename: session.boundFilename ?? null,
-      legend: result.legend,
-      config: result.config,
-      commandName: NEW_COMMAND,
+  /**
+   * New, Open and Import: core asks for the generated puzzle or the picked file, loads it and
+   * runs autosave; the view follows the game core shows.
+   */
+  const runLoad = (action) => {
+    let pickedGame = null;
+    const handlers = {
+      ...commandFlow,
+      pickOpen: async (step) => {
+        const options = step.kind === PICK_KIND_PUZZLE ? { types: puzzleTextPickerTypes, accept: PUZZLE_TEXT_ACCEPT } : undefined;
+        const picked = await pick(session, options);
+        if (step.kind === PICK_KIND_GAME && picked.ok) pickedGame = picked;
+        return picked;
+      },
+    };
+    return runSessionCommand(game, action, handlers, (step) => {
+      if (step.loaded) bindLoadedGame(session, pickedGame);
+      refreshSessionView(boardEl, selection, menuBar, session.state, createElement, onViewRefresh);
     });
   };
 
-  /** Legacy non-modal new-game path (kept for environments without generating modal). */
-  const runNewGame = async (difficulty) => {
-    const result = newGame(game, { difficulty });
-    if (!result.ok) return result;
-    await applyNewGame(result);
-    return result;
-  };
-
-  /** File -> New orchestration (status clear, modal/new path, canonical completion). */
-  const startNewGame = async (difficulty) => {
-    clearEventStatus(statusEl);
-    try {
-      if (generatingModal) {
-        const result = await newGameWithGeneratingModal(game, generatingModal, {
-          difficulty,
-          genWorker,
-        });
-        if (result.cancelled) return;
-        if (!result.ok) {
-          fail(result);
-          return;
-        }
-        await applyNewGame(result);
-        return;
-      }
-      await waitForStatusPaint();
-      const result = await runNewGame(difficulty);
-      if (!result.ok) fail(result);
-    } catch (err) {
-      fail({ ok: false, error: err?.message ?? String(err) });
-    }
-  };
+  const startNewGame = (difficulty) => runLoad({ action: NEW_COMMAND, difficulty: difficultyName({ difficulty }) });
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
 
   // Phase B: open New difficulty chooser (generation starts only after a pick).
@@ -618,46 +546,16 @@ export function wireFileMenu(
     });
   });
 
-  // Phase F: Open path (SUD0 bytes) -> canonical loaded-session completion -> autosave kick.
   controls.open?.addEventListener("click", async () => {
     if (!session.legend.open) return;
     clearEventStatus(statusEl);
-    const picked = await pick(session);
-    if (!picked.ok || picked.cancelled) return;
-    const result = open(game, picked.bytes, { name: picked.name });
-    if (!result.ok) {
-      fail(result);
-      return;
-    }
-    await finalizeLoadedSession(result, {
-      fileHandle: picked.handle ?? null,
-      boundFilename: picked.name,
-      binding: picked.binding ?? null,
-      legend: game.getLegend(),
-      config: game.getConfig(),
-      commandName: OPEN_COMMAND,
-    });
+    await runLoad({ action: OPEN_COMMAND });
   });
 
-  // Phase G: Import path (one-line text) -> canonical loaded-session completion -> autosave kick.
   controls.import?.addEventListener("click", async () => {
     if (!session.legend.import) return;
     clearEventStatus(statusEl);
-    const picked = await pick(session, { types: puzzleTextPickerTypes, accept: PUZZLE_TEXT_ACCEPT });
-    if (!picked.ok || picked.cancelled) return;
-    const text = new TextDecoder().decode(picked.bytes);
-    const result = importPuzzle(game, text);
-    if (!result.ok) {
-      fail(result);
-      return;
-    }
-    await finalizeLoadedSession(result, {
-      fileHandle: null,
-      boundFilename: null,
-      legend: result.legend,
-      config: result.config,
-      commandName: IMPORT_COMMAND,
-    });
+    await runLoad({ action: IMPORT_COMMAND });
   });
 
   // Phase H: Export runs the core export flow; the one-line text leaves the save binding untouched.

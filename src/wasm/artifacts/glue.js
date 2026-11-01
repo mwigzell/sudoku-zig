@@ -155,38 +155,6 @@ export async function loadArtifact(wasmBytes) {
       return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };
     },
 
-    // Startup/open restore path: optional name feeds host-visible status copy.
-    deserialize(bytes, { name } = {}) {
-      writeBytes(memory, SCRATCH, bytes);
-      if (name) {
-        const nameBytes = new TextEncoder().encode(name);
-        writeBytes(memory, NAME_SCRATCH, nameBytes);
-        return readJson(exports.deserialize(SCRATCH, bytes.length, NAME_SCRATCH, nameBytes.length));
-      }
-      return readJson(exports.deserialize(SCRATCH, bytes.length, 0, 0));
-    },
-
-    // One-line import path used by File -> Import.
-    importPuzzle(text) {
-      const bytes = new TextEncoder().encode(text);
-      writeBytes(memory, SCRATCH, bytes);
-      return readJson(exports.importPuzzle(SCRATCH, bytes.length));
-    },
-
-    // One-line clipboard path used by Edit -> Paste.
-    pastePuzzle(text) {
-      const bytes = new TextEncoder().encode(text);
-      writeBytes(memory, SCRATCH, bytes);
-      return readJson(exports.pastePuzzle(SCRATCH, bytes.length));
-    },
-
-    // New-game import variant used by worker/sync generation handoff.
-    importPuzzleNewGame(text, difficulty) {
-      const bytes = new TextEncoder().encode(text);
-      writeBytes(memory, SCRATCH, bytes);
-      return readJson(exports.importPuzzleNewGame(SCRATCH, bytes.length, difficulty));
-    },
-
     // One-line export path used by copy/export UI actions.
     exportPuzzle() {
       const ret = exports.exportPuzzle();
@@ -214,6 +182,14 @@ export async function loadArtifact(wasmBytes) {
     flowFileRead(bytes) {
       writeBytes(memory, SCRATCH, bytes);
       return readJson(exports.flowFileRead(SCRATCH, bytes.length));
+    },
+
+    /** Answer a `pick_open` step with the chosen file's bytes and name; returns the next step. */
+    flowPicked(bytes, name) {
+      writeBytes(memory, SCRATCH, bytes);
+      const nameBytes = new TextEncoder().encode(name ?? "");
+      writeBytes(memory, NAME_SCRATCH, nameBytes);
+      return readJson(exports.flowPicked(SCRATCH, bytes.length, NAME_SCRATCH, nameBytes.length));
     },
     get exports() {
       return exports;

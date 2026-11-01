@@ -6,13 +6,11 @@ import { canUseGenWorker, startGenInWorker } from "./gen_client.js";
 import { createGenProgressModalSink } from "./gen_progress_rows.js";
 import {
   askWithDialog,
-  FLOW_AUTOSAVE,
   FLOW_AUTOSAVE_FLUSH,
   FLOW_STARTUP,
   runCommand,
   runFlow,
   SAVE_FAILED_MSG,
-  STEP_DONE,
 } from "./step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
@@ -236,15 +234,6 @@ export function wireErrorModal(el, msgEl, dismissEl) {
   return { el, msgEl, close };
 }
 
-/** Route one exec result to status bar or error modal; never invent copy. */
-export function applyExecResult(statusEl, errorModal, result) {
-  if (!result.ok) {
-    if (result.error) showErrorModal(errorModal, result.error);
-    return;
-  }
-  applyEventStatus(statusEl, result);
-}
-
 /** Save current game — returns opaque SUD0 bytes or `{ ok: false, error }`. */
 /** @param {GameApi} game */
 export function save(game) {
@@ -255,14 +244,6 @@ export function save(game) {
 /** @param {GameApi} game */
 export function saveAs(game) {
   return game.serialize();
-}
-
-/** Restore game state from opaque SUD0 bytes. */
-/** @param {GameApi} game */
-export function open(game, bytes, { name } = {}) {
-  const result = name ? game.deserialize(bytes, { name }) : game.deserialize(bytes);
-  if (!result.ok) return result;
-  return { ok: true, state: result.state, msg: result.msg ?? null };
 }
 
 export { formatGenProgress } from "./gen_progress_format.js";
@@ -283,33 +264,6 @@ export function waitForStatusPaint() {
   return new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   });
-}
-
-/** Start a fresh game at the given difficulty (PlayerDifficulty wire values). */
-/** @param {GameApi} game */
-export function newGame(game, { difficulty = 1, logLevel = 1, onGenProgress } = {}) {
-  game.setGenProgressListener?.(
-    onGenProgress ? (phase, a, b) => onGenProgress(formatGenProgress(phase, a, b)) : null,
-  );
-  try {
-    const result = game.init({ difficulty, logLevel });
-    if (!result.ok) return result;
-    return {
-      ok: true,
-      state: game.getState(),
-      legend: game.getLegend(),
-      config: game.getConfig(),
-      msg: result.msg ?? null,
-    };
-  } finally {
-    game.setGenProgressListener?.(null);
-  }
-}
-
-/** Worker/sync gen handoff: same codec as import; core records it as a new game. */
-/** @param {GameApi} game */
-export function applyGeneratedLineAsNewGame(game, line, { difficulty } = {}) {
-  return loadedLine(game, game.importPuzzleNewGame(line, difficulty));
 }
 
 /** Keys the web shell requires on `boot.config` after `initializeWebSession`. */
@@ -508,17 +462,25 @@ export function autosaveHandlers(
  * @param {{ fetchFn?: typeof fetch, win?: Window & typeof globalThis, statusEl?: HTMLElement | null, onError?: (failed: { ok: false, error: string }) => void }} [options]
  * @returns {FlowHandlers}
  */
-export function commandHandlers(game, session, { fetchFn = globalThis.fetch, win = globalThis, statusEl = null, onError } = {}) {
+export function commandHandlers(
+  game,
+  session,
+  { fetchFn = globalThis.fetch, win = globalThis, statusEl = null, onError, generatingModal, genWorker } = {},
+) {
   return {
     ...autosaveHandlers(game, session, { fetchFn, win, onError }),
     persistSettings: (settings) => postHostSettings(settings, fetchFn),
-    showGame: (step) =>
+    generate: (difficulty) => generateWithModal(game, generatingModal, { difficulty, genWorker }),
+    showGame: (step) => {
+      session.boundFilename = step.file ?? null;
+      syncCurrentFileLabels(session);
       applySessionOutcomeStatus(session, statusEl, {
         state: step.state,
         legend: step.legend,
         config: step.config,
         msg: step.text ?? null,
-      }),
+      });
+    },
     showStatus: (text) => {
       if (statusEl) applyEventStatus(statusEl, { ok: true, msg: text });
     },
@@ -585,60 +547,6 @@ export function createWebSessionFromStartup(boot) {
   };
 }
 
-/** Canonical load/import/paste outcome path: bind the session to the loaded file, apply outcome+status. */
-export function applyLoadedSessionOutcome(
-  session,
-  statusEl,
-  result,
-  {
-    fileHandle = null,
-    boundFilename = null,
-    legend = result?.legend,
-    config = result?.config,
-    msg = result?.msg ?? null,
-  } = {},
-) {
-  session.fileHandle = fileHandle;
-  session.boundFilename = boundFilename;
-  applySessionOutcomeStatus(session, statusEl, {
-    state: result?.state,
-    legend,
-    config,
-    msg,
-  });
-}
-
-/** Run the core autosave flow after `commandName`; core decides whether anything is written. */
-/** @param {GameApi} game */
-export function startAutoSavePolicy(
-  game,
-  session,
-  commandName,
-  {
-    fetchFn = globalThis.fetch,
-    win = globalThis,
-    onError,
-    commandMeta = null,
-  } = {},
-) {
-  const commandText =
-    typeof commandMeta?.command_text === "string" && commandMeta.command_text.length > 0
-      ? commandMeta.command_text
-      : commandName;
-  const handlers = autosaveHandlers(game, session, {
-    fetchFn,
-    win,
-    onError: (failed) => {
-      logAutosave("persist_failed", { command: commandName, command_text: commandText, error: failed?.error ?? null });
-      onError?.(failed);
-    },
-  });
-  return runFlow(game, { flow: FLOW_AUTOSAVE, command: commandName }, handlers).then((outcome) => {
-    if (outcome.kind === STEP_DONE) logAutosave("persist_ok", { command: commandName, command_text: commandText });
-    return outcome;
-  });
-}
-
 /**
  * Host config bootstrap + startup policy payload from /host-config.json.
  */
@@ -683,8 +591,7 @@ export function startupHandlers(
       showGame?.(step);
     },
     ask: (step) => askWithDialog(step, win),
-    generate: (difficulty) =>
-      newGameWithGeneratingModal(game, generatingModal, { difficulty, genWorker, applyLine: generatedLineOnly }),
+    generate: (difficulty) => generateWithModal(game, generatingModal, { difficulty, genWorker }),
     forgetCurrentFile: (forget) => forgetHostCurrentFile(forget.delete, fetchFn),
     showError,
   };
@@ -699,11 +606,6 @@ export function runStartupFlow(game, boot, handlers) {
   return runFlow(game, start, handlers);
 }
 
-/** Generation result for core to import itself (the startup flow owns the new game). */
-function generatedLineOnly(_game, line) {
-  return { ok: true, line };
-}
-
 /** Resolve effective difficulty/log level for generation from call options or live engine config. */
 function genWireFromEngine(game, options) {
   const cfg = game.getConfig();
@@ -713,20 +615,9 @@ function genWireFromEngine(game, options) {
   };
 }
 
-/** Worker gen → import on main; modal + optional Cancel. */
+/** Generate a puzzle line in a Web Worker; modal + optional Cancel. Core applies the line. */
 /** @param {GameApi} game */
-export async function newGameWithWorkerGen(
-  game,
-  modal,
-  {
-    difficulty,
-    logLevel,
-    genWorker,
-    onGenProgress,
-    onProgressWire,
-    applyLine = applyGeneratedLineAsNewGame,
-  } = {},
-) {
+export async function generateWithWorker(game, modal, { difficulty, logLevel, genWorker, onGenProgress, onProgressWire } = {}) {
   const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
   return runWithGeneratingDialog(modal, async (cancelRef) => {
@@ -740,40 +631,22 @@ export async function newGameWithWorkerGen(
       fetchFn: genWorker.fetchFn,
     });
     cancelRef.fn = cancel;
-    const gen = await promise;
-    if (gen.cancelled || !gen.ok) return gen;
-    return applyLine(game, gen.line, { difficulty: wire.difficulty });
+    return promise;
   });
 }
 
-/** Main-thread `generatePuzzle` + import (modal spinner; blocks main thread). */
+/** Generate a puzzle line on the main thread (modal spinner; blocks the page). */
 /** @param {GameApi} game */
-export async function newGameWithSyncGenerate(
-  game,
-  modal,
-  {
-    difficulty,
-    logLevel,
-    onGenProgress,
-    onProgressWire,
-    applyLine = applyGeneratedLineAsNewGame,
-  } = {},
-) {
+export async function generateOnMainThread(game, modal, { difficulty, logLevel, onGenProgress, onProgressWire } = {}) {
   const wire = genWireFromEngine(game, { difficulty, logLevel });
   const onProgress = mergeGenProgressHandlers(onProgressWire, onGenProgress);
   return runWithGeneratingDialog(modal, async (cancelRef) => {
     cancelRef.fn = () => game.requestGenAbort?.();
     game.setGenProgressListener?.(onProgress ?? null);
     try {
-      if (typeof game.generatePuzzle !== "function") {
-        return newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel });
-      }
       const gen = game.generatePuzzle({ difficulty: wire.difficulty, logLevel: wire.logLevel });
-      if (!gen.ok) {
-        if (gen.error === "cancelled") return { ok: false, cancelled: true };
-        return gen;
-      }
-      return applyLine(game, gen.line, { difficulty: wire.difficulty });
+      if (!gen.ok && gen.error === "cancelled") return { ok: false, cancelled: true };
+      return gen;
     } finally {
       game.setGenProgressListener?.(null);
     }
@@ -783,43 +656,27 @@ export async function newGameWithSyncGenerate(
 function shouldFallbackFromWorker(result) {
   if (result.ok || result.cancelled) return false;
   const err = result.error ?? "";
-  // Only when Workers are missing — sync gen blocks the main thread (Cancel cannot run).
+  // Only when Workers are missing — main-thread generation blocks the page (Cancel cannot run).
   return err === "workers unavailable";
 }
 
-/** First load / New: prefer worker gen; fall back to main-thread generate or legacy `init`. */
-/** @param {GameApi} game */
-export async function newGameWithGeneratingModal(game, modal, options = {}) {
-  const { genWorker, onGenProgress, applyLine } = options;
+/**
+ * Answer a `generate` step: prefer the worker, fall back to the main thread.
+ * @param {GameApi} game
+ * @returns {Promise<import("./types").GenerateResult>}
+ */
+export async function generateWithModal(game, modal, options = {}) {
+  const { genWorker, onGenProgress } = options;
   const wire = genWireFromEngine(game, options);
   const rowSink =
     typeof modal?.renderProgressRows === "function" ? createGenProgressModalSink(modal) : null;
   const onProgressWire = rowSink ? (phase, a, b) => rowSink.push(phase, a, b) : undefined;
-  const genProgress = { onGenProgress, onProgressWire, ...(applyLine ? { applyLine } : {}) };
+  const gen = { difficulty: wire.difficulty, logLevel: wire.logLevel, onGenProgress, onProgressWire };
   if (genWorker && canUseGenWorker()) {
-    const workerResult = await newGameWithWorkerGen(game, modal, {
-      difficulty: wire.difficulty,
-      logLevel: wire.logLevel,
-      genWorker,
-      ...genProgress,
-    });
+    const workerResult = await generateWithWorker(game, modal, { ...gen, genWorker });
     if (!shouldFallbackFromWorker(workerResult)) return workerResult;
-    return newGameWithSyncGenerate(game, modal, {
-      difficulty: wire.difficulty,
-      logLevel: wire.logLevel,
-      ...genProgress,
-    });
   }
-  if (typeof game.generatePuzzle === "function") {
-    return newGameWithSyncGenerate(game, modal, {
-      difficulty: wire.difficulty,
-      logLevel: wire.logLevel,
-      ...genProgress,
-    });
-  }
-  return runWithGeneratingDialog(modal, () =>
-    Promise.resolve(newGame(game, { difficulty: wire.difficulty, logLevel: wire.logLevel })),
-  );
+  return generateOnMainThread(game, modal, gen);
 }
 
 export { canUseGenWorker };
@@ -907,28 +764,4 @@ export function startCopyPuzzleOnClick(game, { clipboard = globalThis.navigator?
       .catch(() => writeClipboardText(line.text, { clipboard: null, doc: document }));
   }
   return writeClipboardText(line.text, { clipboard: null, doc: document });
-}
-
-/** Import a one-line puzzle from page-read file text; engine owns the codec. */
-/** @param {GameApi} game */
-export function importPuzzle(game, text) {
-  return loadedLine(game, game.importPuzzle(text));
-}
-
-/** Paste a one-line puzzle read from the clipboard. */
-/** @param {GameApi} game */
-export function pastePuzzle(game, text) {
-  return loadedLine(game, game.pastePuzzle(text));
-}
-
-/** @param {GameApi} game */
-function loadedLine(game, result) {
-  if (!result.ok) return result;
-  return {
-    ok: true,
-    state: game.getState(),
-    legend: game.getLegend(),
-    config: game.getConfig(),
-    msg: result.msg ?? null,
-  };
 }

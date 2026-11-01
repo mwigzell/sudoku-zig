@@ -3,14 +3,13 @@
 import assert from "node:assert/strict";
 import {
   askWithDialog,
-  FLOW_AUTOSAVE,
   FLOW_SAVE,
   FLOW_SAVE_AS,
   FLOW_STARTUP,
   runCommand,
   runFlow,
 } from "./step_runner.js";
-import { loadCoreFlow, loadGame, openAs, startNewGame } from "./test_support.mjs";
+import { loadCoreFlow, loadGame, openAs, PUZZLE_LINE, startNewGame } from "./test_support.mjs";
 
 /** Handlers that record every step and answer from `answers`. */
 function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }) } = {}) {
@@ -33,10 +32,13 @@ function recordingHandlers({ exists = false, yes = false, write = (name) => ({ o
       log.push(["write", name]);
       return write(name);
     },
+    showGame: () => {},
     showStatus: (text) => log.push(["status", text]),
     showError: (text) => log.push(["error", text]),
   };
 }
+
+const FILL = { action: "fill", row: 0, col: 2, digit: 4 };
 
 const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you want to replace it?", "Replace", "Cancel"];
 
@@ -90,7 +92,7 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
   await runFlow(core, { flow: FLOW_SAVE_AS, name: "game.sud" }, handlers);
   assert.deepEqual(handlers.log.at(-1), ["status", "saved to: picked.sud"]);
   const autosave = recordingHandlers({ exists: true });
-  await runFlow(core, { flow: FLOW_AUTOSAVE, command: "fill" }, autosave);
+  await runCommand(core, FILL, autosave);
   assert.deepEqual(autosave.log, [["check", "picked.sud"], ["write", "picked.sud"]], "autosave continues the saved file");
 }
 
@@ -118,11 +120,11 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
   assert.deepEqual(failed.log.at(-1), ["error", "disk full"]);
 }
 
-// First autosave with no working file resolves the default target, then asks if it exists.
+// A move's first autosave with no working file resolves the default target, then asks if it exists.
 {
   const core = await loadCoreFlow({ autoSave: true });
   const handlers = recordingHandlers({ exists: true, yes: false });
-  const outcome = await runFlow(core, { flow: FLOW_AUTOSAVE, command: "fill" }, handlers);
+  const outcome = await runCommand(core, FILL, handlers);
   assert.deepEqual(handlers.log, [
     ["default"],
     ["check", "sudoku.sud"],
@@ -131,11 +133,11 @@ const REPLACE_ASK = ["ask", "Replace file?", "game.sud already exists. Do you wa
   assert.deepEqual(outcome, { kind: "done" }, "declined autosave ends without a status");
 }
 
-// Autosave off: core ends the flow before any platform work.
+// Autosave off: after showing the move core ends the command before any platform work.
 {
   const core = await loadCoreFlow({ autoSave: false });
   const handlers = recordingHandlers();
-  assert.deepEqual(await runFlow(core, { flow: FLOW_AUTOSAVE, command: "fill" }, handlers), { kind: "done" });
+  assert.deepEqual(await runCommand(core, FILL, handlers), { kind: "done" });
   assert.deepEqual(handlers.log, []);
 }
 
@@ -196,7 +198,7 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
 // read_file bytes go to core through flowFileRead; the restored game is shown with its file name.
 {
   const source = await loadGame();
-  source.importPuzzle("530070000600195000098000060800060003400803001700020006060000280000419005000080079");
+  startNewGame(source);
   const game = await loadGame({ auto_restore: true });
   const handlers = startupRecorder({ read: { ok: true, bytes: source.serialize().bytes } });
   const outcome = await runFlow(game, { flow: FLOW_STARTUP, path: "/current-file", name: "game.sud" }, handlers);
@@ -282,6 +284,48 @@ const WELCOME = "Welcome to sudoku-zig! Choose New or Open to play";
   const outcome = await runCommand(game, { action: "undo" }, { showGame: (step) => shown.push(step), showError() {} });
   assert.equal(outcome.kind, "show_error");
   assert.equal(shown.length, 0);
+}
+
+// pick_open hands core the picked bytes and name; closing the picker ends quietly; a failed pick is core's error.
+{
+  const source = await loadGame();
+  startNewGame(source);
+  const bytes = source.serialize().bytes;
+  const game = await loadGame();
+  const shown = [];
+  const picks = [];
+  const handlers = (pickOpen) => ({ pickOpen, showGame: (step) => shown.push(step), showError() {} });
+
+  const opened = await runCommand(game, { action: "open" }, handlers((step) => {
+    picks.push([step.kind, step.path]);
+    return { ok: true, bytes, name: "game.sud" };
+  }));
+  assert.deepEqual(opened, { kind: "done" });
+  assert.deepEqual(picks, [["game", null]]);
+  assert.equal(shown[0].loaded, true);
+  assert.equal(shown[0].file, "game.sud");
+  assert.equal(shown[0].text, "opened: game.sud");
+
+  assert.deepEqual(await runCommand(game, { action: "import" }, handlers(() => ({ ok: false, cancelled: true }))), { kind: "done" });
+  const failed = await runCommand(game, { action: "import" }, handlers(() => ({ ok: false, error: "unreadable" })));
+  assert.deepEqual(failed, { kind: "show_error", text: "unreadable" });
+  assert.equal(shown.length, 1, "a cancelled or failed pick shows nothing");
+}
+
+// read_clipboard hands core the text; a denied read is core's error and keeps the board.
+{
+  const game = await loadGame();
+  const shown = [];
+  const pasted = await runCommand(game, { action: "paste" }, {
+    readClipboard: () => ({ ok: true, text: PUZZLE_LINE }),
+    showGame: (step) => shown.push(step),
+  });
+  assert.deepEqual(pasted, { kind: "done" });
+  assert.equal(shown[0].text, "paste: puzzle loaded");
+  const before = game.getState();
+  const denied = await runCommand(game, { action: "paste" }, { readClipboard: () => ({ ok: false, error: "denied" }), showError() {} });
+  assert.deepEqual(denied, { kind: "show_error", text: "denied" });
+  assert.deepEqual(game.getState(), before);
 }
 
 console.log("step_runner.test.mjs OK");

@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { loadArtifact } from "./glue.js";
-import { save, open, newGame } from "../shell.js";
+import { save } from "../shell.js";
+import { openBytes, startNewGame } from "../test_support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifact.wasm"));
@@ -73,9 +74,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const gen = handoff.generatePuzzle({ difficulty: 2, logLevel: 1 });
   assert.equal(gen.ok, true, `generatePuzzle failed: ${JSON.stringify(gen)}`);
   assert.equal(gen.line.length, 81);
-  const imported = handoff.importPuzzleNewGame(gen.line, 2);
-  assert.equal(imported.ok, true, `import after generate failed: ${JSON.stringify(imported)}`);
-  assert.equal(handoff.getConfig().difficulty, 2, "New game import sets engine difficulty");
+  startNewGame(handoff, gen.line, "medium");
+  assert.equal(handoff.getConfig().difficulty, 2, "New takes the chosen difficulty");
 }
 
 // ── init (sync main-thread path; glue contract) ──
@@ -96,7 +96,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const fresh = await loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
-  assert.equal(fresh.importPuzzle(EASY_FIXTURE).ok, true);
+  assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
   assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
   assert.equal(fresh.exec({ action: "clear", row: 1, col: 1 }).ok, true);
   const hint = fresh.exec({ action: "hint", row: 1, col: 1 });
@@ -119,7 +119,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const fresh = await loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
-  assert.equal(fresh.importPuzzle(EASY_FIXTURE).ok, true);
+  assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
   assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
   const pick = fresh.exec({ action: "hint" });
   assert.equal(pick.ok, true, JSON.stringify(pick));
@@ -254,18 +254,17 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const fresh = await loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
 
-  const loaded = fresh.deserialize(saved.bytes);
-  assert.equal(loaded.ok, true, `deserialize failed: ${JSON.stringify(loaded)}`);
-  assert.equal(loaded.msg, null, "solvable load should not warn");
-  assert.deepEqual(fresh.getState(), before, "deserialize did not restore state");
+  const loaded = openBytes(fresh, saved.bytes);
+  assert.equal(loaded.text, null, "solvable load should not warn");
+  assert.deepEqual(fresh.getState(), before, "open did not restore state");
 }
 
-// ── deserialize warns on dead puzzle (same as native open) ──
+// ── open warns on dead puzzle (same as native open) ──
 {
   const dead = await loadArtifact(wasmBytes);
   assert.equal(dead.init({ difficulty: 1 }).ok, true);
   assert.equal(dead.exec({ action: "toggle_warn_solvability" }).ok, true);
-  assert.equal(dead.importPuzzle(EASY_FIXTURE).ok, true);
+  assert.equal(startNewGame(dead, EASY_FIXTURE).loaded, true);
   const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(bad.ok, true);
   assert.match(bad.msg ?? "", /no solution/i);
@@ -276,24 +275,19 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const fresh = await loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
   assert.equal(fresh.exec({ action: "toggle_warn_solvability" }).ok, true);
-  const loaded = fresh.deserialize(saved.bytes);
-  assert.equal(loaded.ok, true);
-  assert.match(loaded.msg ?? "", /no solution/i);
+  const loaded = openBytes(fresh, saved.bytes);
+  assert.match(loaded.text ?? "", /no solution/i);
 
   const named = await loadArtifact(wasmBytes);
   assert.equal(named.init({ difficulty: 1 }).ok, true);
   assert.equal(named.exec({ action: "toggle_warn_solvability" }).ok, true);
-  const opened = named.deserialize(saved.bytes, { name: "dead.sud" });
-  assert.equal(opened.ok, true);
-  assert.match(opened.msg ?? "", /opened: dead\.sud/i);
-  assert.match(opened.msg ?? "", /no solution/i);
-
-  const shellResult = open(named, saved.bytes, { name: "dead.sud" });
-  assert.equal(shellResult.ok, true);
-  assert.match(shellResult.msg ?? "", /no solution/i);
+  const opened = openBytes(named, saved.bytes, "dead.sud");
+  assert.match(opened.text ?? "", /opened: dead\.sud/i);
+  assert.match(opened.text ?? "", /no solution/i);
+  assert.equal(opened.file, "dead.sud");
 }
 
-// ── newGame returns fresh state for re-render ──
+// ── New shows the fresh game for re-render ──
 {
   const before = game.getState();
   const idx = before.cells.findIndex((c) => c.value === 0 && !c.given);
@@ -305,8 +299,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(fill.ok, true);
   assert.equal(fill.state.cells[idx].value, 7);
 
-  const result = newGame(game, { difficulty: 2, logLevel: 1 });
-  assert.equal(result.ok, true, `newGame failed: ${JSON.stringify(result)}`);
+  const result = startNewGame(game, EASY_FIXTURE, "medium");
+  assert.equal(result.loaded, true);
   assert.deepEqual(result.state, game.getState());
   assert.deepEqual(result.legend, game.getLegend());
   assert.deepEqual(result.config, game.getConfig());
@@ -324,18 +318,16 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(saved.ok, true);
   assert.ok(saved.bytes.length > 16);
 
-  const restored = open(game, saved.bytes);
-  assert.equal(restored.ok, true);
+  openBytes(game, saved.bytes);
   assert.deepEqual(game.getState(), before);
   assert.deepEqual(game.getConfig(), configBefore, "view config survives open on same instance");
 
   const fresh = await loadArtifact(wasmBytes);
-  const started = newGame(fresh, { difficulty: 2 });
-  assert.equal(started.ok, true);
+  assert.equal(fresh.init({ difficulty: 2, logLevel: 1 }).ok, true);
+  const started = startNewGame(fresh, EASY_FIXTURE, "medium");
   assert.equal(started.config.theme, "system");
   assert.equal(started.config.difficulty, 2);
-  const freshOpen = open(fresh, saved.bytes);
-  assert.equal(freshOpen.ok, true);
+  openBytes(fresh, saved.bytes);
   assert.deepEqual(fresh.getState(), before);
   assert.equal(fresh.getConfig().theme, "system", "SUD0 does not carry view config");
 }
@@ -359,7 +351,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(exported.ok, true, `exportPuzzle failed: ${JSON.stringify(exported)}`);
   assert.equal(exported.bytes.length, 81);
 
-  assert.equal(fresh.importPuzzle(EASY_FIXTURE).ok, true);
+  assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
   exported = fresh.exportPuzzle();
   assert.equal(new TextDecoder().decode(exported.bytes), EASY_FIXTURE);
 
@@ -372,7 +364,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(afterFill.ok, true);
   const line = new TextDecoder().decode(afterFill.bytes);
   assert.notEqual(line, EASY_FIXTURE);
-  assert.equal(fresh.importPuzzle(line).ok, true);
+  assert.equal(startNewGame(fresh, line).loaded, true);
 }
 
 console.log("glue.test.mjs OK");

@@ -146,6 +146,8 @@ export function wireSudokuApp({
     win,
     statusEl: statusBar,
     onError: (failed) => showErrorModal(errorModal, failed.error),
+    generatingModal,
+    genWorker,
   });
 
   const themeMenu = wireThemeMenu(menuControls, game, session, {
@@ -184,8 +186,6 @@ export function wireSudokuApp({
 
   wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
     difficultyDialog,
-    generatingModal,
-    genWorker,
     onViewRefresh: () => {
       themeMenu.sync();
       regionMenu.sync();

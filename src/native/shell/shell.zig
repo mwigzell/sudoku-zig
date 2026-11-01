@@ -20,17 +20,16 @@ const legend = @import("../../core/renderer/legend.zig");
 
 const host_mod = @import("../host.zig");
 const save_command = @import("save.zig");
-const open_command = @import("open.zig");
-const import_command = @import("import.zig");
 const export_command = @import("export.zig");
-const paste_command = @import("paste.zig");
-const new_command = @import("new.zig");
 const save_as_command = @import("save_as.zig");
 const read_path = @import("read_path.zig");
 const gen_progress = @import("gen_progress.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 const COPY_WRITE_FAILED_MSG: []const u8 = "copy: write failed";
+const OPEN_NO_FILE_MSG: []const u8 = "open: no file specified";
+const IMPORT_NO_FILE_MSG: []const u8 = "import: no file specified";
+const PASTE_NO_LINE_MSG: []const u8 = "paste: no puzzle line specified";
 
 /// One running game: engine + renderer; each entry shows the game, then turns it.
 pub const SettingsPersist = struct {
@@ -120,14 +119,6 @@ pub const Sudoku = struct {
         settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch {};
     }
 
-    /// Successful Open: core records it; the resolved path is also remembered for the next launch.
-    fn noteOpened(self: *@This(), path: []const u8) void {
-        const resolved = self.transport.resolve(self.transport.context, path) catch return;
-        defer self.transport.free(self.transport.context, resolved);
-        self.persistCurrentFile(resolved);
-        self.file_session.noteLoad(.{ .open = resolved });
-    }
-
     /// Carry out a `write` step; `scratch` holds the reported name or error text.
     fn writeTarget(self: *@This(), mode: WriteMode, name: []const u8, scratch: []u8) flow_mod.Wrote {
         const resolved = self.transport.resolve(self.transport.context, name) catch |err| {
@@ -175,6 +166,25 @@ pub const Sudoku = struct {
         return .{ .bytes = read.bytes };
     }
 
+    /// Carry out a `pick_open` step: the terminal has no picker, so read the path typed with the command.
+    /// On success `read` owns the bytes and resolved path until the flow takes the next step.
+    fn pickOpen(self: *@This(), pick: flow_mod.step.PickOpen, scratch: []u8, read: *?read_path.ReadResult) flow_mod.step.Picked {
+        const path = pick.path orelse return .{ .failed = switch (pick.kind) {
+            .game => OPEN_NO_FILE_MSG,
+            .puzzle => IMPORT_NO_FILE_MSG,
+        } };
+        var stage: read_path.Stage = .resolve;
+        const got = read_path.readFileBytes(self.transport, path, &stage) catch |err| {
+            const label: []const u8 = switch (stage) {
+                .resolve => "resolve",
+                .read => "readAll",
+            };
+            return .{ .failed = std.fmt.bufPrint(scratch, "{s}: {s}", .{ label, @errorName(err) }) catch "system error" };
+        };
+        read.* = got;
+        return .{ .file = .{ .bytes = got.bytes, .name = got.resolved } };
+    }
+
     /// Carry out a `forget_current_file` step: stop restoring it, and delete it when asked.
     fn forgetCurrentFile(self: *@This(), forget: flow_mod.step.ForgetCurrentFile) void {
         const sp = self.settings_persist orelse return;
@@ -193,6 +203,11 @@ pub const Sudoku = struct {
         while (!flow_mod.isTerminal(step)) {
             var read_bytes: ?[]u8 = null;
             defer if (read_bytes) |b| self.transport.free(self.transport.context, b);
+            var opened: ?read_path.ReadResult = null;
+            defer if (opened) |o| {
+                self.transport.free(self.transport.context, o.resolved);
+                self.transport.free(self.transport.context, o.bytes);
+            };
             const input: flow_mod.Input = switch (step) {
                 .resolve_default_target => blk: {
                     const default_visible = self.defaultVisibleSavePath();
@@ -207,6 +222,9 @@ pub const Sudoku = struct {
                     if (read == .bytes) read_bytes = @constCast(read.bytes);
                     break :blk .{ .file_read = read };
                 },
+                .pick_open => |pick| .{ .picked = self.pickOpen(pick, &scratch, &opened) },
+                // The terminal has no clipboard; Paste takes its line with the command.
+                .read_clipboard => .{ .file_read = .{ .failed = PASTE_NO_LINE_MSG } },
                 .show_game => |game| blk: {
                     try self.showStep(game);
                     break :blk .ack;
@@ -268,17 +286,6 @@ pub const Sudoku = struct {
         } });
     }
 
-    fn applyAutoSavePolicyIfNeeded(self: *@This(), cmd: command.Command, event: game_engine.Event) game_engine.Event {
-        switch (event) {
-            .error_msg => return event,
-            .ok => {},
-        }
-        self.flow = .{ .autosave = flow_mod.AutosaveFlow.afterCommand(&self.file_session, self.engine.cfg.auto_save, @tagName(cmd)) };
-        const terminal = self.runFlow(.autosave) catch return event;
-        return self.flowEvent(terminal, event);
-    }
-
-    /// Run one command through the core command flow: apply, show, persist settings, autosave.
     fn runCommandFlow(self: *@This(), cmd: command.Command) Error!void {
         self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, cmd) };
         switch (try self.runFlow(.autosave)) {
@@ -289,7 +296,12 @@ pub const Sudoku = struct {
     }
 
     /// Carry out a `show_game` step: draw what core reports, remembering the edited cell for region shading.
+    /// A loaded game's file is also remembered for the next launch.
     fn showStep(self: *@This(), game: flow_mod.step.ShowGame) Error!void {
+        if (game.loaded) {
+            self.last_cell = null;
+            if (game.file) |file| self.persistCurrentFile(file);
+        }
         if (game.cell) |c| self.last_cell = c;
         const region: ?facade_mod.Selection = if (game.config.show_region) self.last_cell else null;
         try self.renderer.render(game.board, game.status, region);
@@ -329,39 +341,18 @@ pub const Sudoku = struct {
                 return false;
             },
             .valid => |cmd| {
-                switch (cmd) {
-                    .quit, .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => {},
+                const event = switch (cmd) {
+                    .save => |data| try self.runSaveFlow(.save, data.path orelse save_command.DEFAULT_SAVE_FILE),
+                    .save_as => |data| try self.runSaveFlow(.save_as, data.path orelse save_command.DEFAULT_SAVE_FILE),
+                    .@"export" => |data| try self.runExportFlow(flow_mod.ExportFlow.toFile(data.path)),
+                    .copy => try self.runExportFlow(flow_mod.ExportFlow.toClipboard()),
+                    .quit => self.engine.exec(cmd),
                     else => {
                         try self.runCommandFlow(cmd);
                         return false;
                     },
-                }
-                switch (cmd) {
-                    .new => {
-                        self.last_cell = null;
-                    },
-                    .open, .import, .paste => self.last_cell = null,
-                    else => {},
-                }
-                const event = switch (cmd) {
-                    .save => |data| try self.runSaveFlow(.save, data.path orelse save_command.DEFAULT_SAVE_FILE),
-                    .open => |data| open_command.execute(&self.engine, self.transport, data.path),
-                    .import => |data| import_command.execute(&self.engine, self.transport, data.path),
-                    .@"export" => |data| try self.runExportFlow(flow_mod.ExportFlow.toFile(data.path)),
-                    .copy => try self.runExportFlow(flow_mod.ExportFlow.toClipboard()),
-                    .paste => |data| paste_command.execute(&self.engine, data.line),
-                    .new => |data| new_command.execute(&self.engine, data),
-                    .save_as => |data| try self.runSaveFlow(.save_as, data.path orelse save_command.DEFAULT_SAVE_FILE),
-                    else => self.engine.exec(cmd),
                 };
-                if (event == .ok) switch (cmd) {
-                    .open => |data| if (data.path) |path| self.noteOpened(path),
-                    .new => self.file_session.noteLoad(.new_game),
-                    .import => self.file_session.noteLoad(.import),
-                    .paste => self.file_session.noteLoad(.paste),
-                    else => {},
-                };
-                return try self.handleEvent(self.applyAutoSavePolicyIfNeeded(cmd, event));
+                return try self.handleEvent(event);
             },
         }
     }
@@ -527,7 +518,7 @@ test "deterministic major path: import then export round-trips through command l
 test "deterministic major path: explicit new puzzle replaces board and clears history" {
     const steps = [_]command.ParseCommandResult{
         .{ .valid = .{ .fill = .{ .row = 2, .col = 0, .digit = .seven } } },
-        .{ .valid = .{ .new = .{ .puzzle = null } } },
+        .{ .valid = .{ .new = .{ .puzzle = puzzle_gen.PuzzleGen.medium() } } },
         .{ .valid = .{ .quit = {} } },
     };
     var facade_impl = DeterministicFacade{ .steps = &steps };
@@ -545,6 +536,31 @@ test "deterministic major path: explicit new puzzle replaces board and clears hi
     const expected = try board.fromOneLineString(puzzle_gen.PuzzleGen.medium());
     try std.testing.expect(board.equal(app.engine.state.board, expected));
     try std.testing.expectEqual(@as(usize, 0), app.engine.state.history.entries.items.len);
+}
+
+test "deterministic major path: new without a puzzle generates one at the chosen difficulty" {
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .fill = .{ .row = 2, .col = 0, .digit = .seven } } },
+        .{ .valid = .{ .new = .{ .difficulty = .easy } } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    var facade_impl = DeterministicFacade{ .steps = &steps };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var cfg = config.Config.default();
+    cfg.difficulty = .hard;
+
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    try app.showGame();
+    while (true) if (try app.turn()) break;
+
+    try std.testing.expectEqual(@as(usize, 0), app.engine.state.history.entries.items.len);
+    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, app.engine.cfg.difficulty);
+    try std.testing.expectEqualStrings(game_engine.NEW_GAME_STARTED_MSG, app.engine.state.status.optional().?);
 }
 
 // Full round-trip: save known state → mutate → open the saved file → verify restore
@@ -1746,8 +1762,7 @@ test "startup policy: relaunch restores latest autosave without rewriting givens
                 .digit = cell.rawToCellValue(move.digit),
             },
         };
-        const fill_event = first_app.engine.exec(fill_cmd);
-        _ = first_app.applyAutoSavePolicyIfNeeded(fill_cmd, fill_event);
+        try first_app.runCommandFlow(fill_cmd);
     }
 
     const expected_board = first_app.engine.state.board;

@@ -41,6 +41,7 @@ export async function withCoreFlow(game, { opened = null, newGame = false, ...op
   if (opened) openAs(core, opened);
   if (newGame) startNewGame(core);
   game.flowStart = (start) => core.flowStart(start);
+  game.commandStart = (action) => core.commandStart(action);
   game.flowNext = (input) => core.flowNext(input);
   return game;
 }
@@ -48,18 +49,43 @@ export async function withCoreFlow(game, { opened = null, newGame = false, ...op
 /** A valid one-line puzzle for loads in tests. */
 export const PUZZLE_LINE = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
 
-/** Start a New game on a real wasm game, as File -> New does. */
-export function startNewGame(game) {
-  const result = game.importPuzzleNewGame(PUZZLE_LINE, 1);
-  if (!result.ok) throw new Error(`new game failed: ${result.error}`);
+/**
+ * Run a load command on a real wasm game, answering its gather step with `answer(step)`.
+ * An autosave the load triggers is answered as a write onto a new file that worked.
+ */
+function loadNow(game, action, answer) {
+  let step = answer(game.commandStart(action));
+  let shown = null;
+  while (step.step !== "done" && step.step !== "show_status" && step.step !== "show_error") {
+    if (step.step === "show_game") shown = step;
+    const input = {
+      show_game: { input: "ack" },
+      resolve_default_target: { input: "default_target", name: "sudoku.sud" },
+      check_target: { input: "target_checked", exists: false },
+      write: { input: "wrote", ok: true, name: step.name },
+    }[step.step];
+    if (!input) break;
+    step = game.flowNext(input);
+  }
+  if (step.step !== "done") throw new Error(`${action.action} ended with ${JSON.stringify(step)}`);
+  return shown;
+}
+
+/** Start a New game from `line` on a real wasm game, as File -> New does once generation finishes. */
+export function startNewGame(game, line = PUZZLE_LINE, difficulty = "easy") {
+  return loadNow(game, { action: "new", difficulty }, () => game.flowNext({ input: "generated", ok: true, line }));
+}
+
+/** Open saved-game `bytes` picked as `name` on a real wasm game; returns the `show_game` step. */
+export function openBytes(game, bytes, name = null) {
+  return loadNow(game, { action: "open" }, () => game.flowPicked(bytes, name));
 }
 
 /** Open the game's own bytes under `name` on a real wasm game, as File -> Open does. */
 export function openAs(game, name) {
   const saved = game.serialize();
   if (!saved.ok) throw new Error(`serialize failed: ${saved.error}`);
-  const result = game.deserialize(saved.bytes, { name });
-  if (!result.ok) throw new Error(`open failed: ${result.error}`);
+  return openBytes(game, saved.bytes, name);
 }
 
 /** Fetch fake answering `/current-file-exists` with `exists` and recording every call. */

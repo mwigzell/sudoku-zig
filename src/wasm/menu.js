@@ -2,21 +2,21 @@
 
 import {
   applyEventStatus,
-  applyExecResult,
-  applyLoadedSessionOutcome,
   showErrorModal,
-  startAutoSavePolicy,
+  runSessionCommand,
   startCopyPuzzleOnClick,
   readClipboardText,
-  pastePuzzle,
 } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
 import { boardCommandFlow, readSelection, renderBoard, runBoardCommand } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
 import { FLOW_COPY, runFlow, STEP_SHOW_STATUS } from "./step_runner.js";
+import { bindLoadedGame } from "./file_menu.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
+
+const PASTE_COMMAND = "paste";
 
 /** Mirror legend flags and deselect enablement (active only when a cell is selected). */
 export function syncEditMenu(legend, controls, selection, boardEl) {
@@ -60,28 +60,25 @@ export async function handleCopyPuzzle(
   return { handled: true, ok: outcome.kind === STEP_SHOW_STATUS };
 }
 
-/** Edit → Paste: clipboard `readText` → wasm `importPuzzle` only; fail closed on read/import errors. */
-/** @param {GameApi} game */
-export async function handlePastePuzzle(
+/**
+ * Edit → Paste: core asks for the clipboard text and loads it; a read or load failure keeps the board.
+ * @param {GameApi} game
+ * @param {{ clipboard?: any, commandFlow?: import("./types").FlowHandlers, onShown?: (step: import("./types").FlowStep) => void }} [options]
+ */
+export function handlePastePuzzle(
   game,
   session,
   statusEl,
   errorModal,
-  { clipboard } = {},
+  { clipboard, commandFlow = boardCommandFlow(game, session, statusEl, errorModal), onShown } = {},
 ) {
   if (!session.legend[LEGEND_WIRE_PASTE]) return { handled: false };
-  const read = await readClipboardText({ clipboard });
-  if (!read.ok) {
-    if (read.error) showErrorModal(errorModal, read.error);
-    return { handled: true, ok: false };
-  }
-  const result = pastePuzzle(game, read.text);
-  if (!result.ok) {
-    if (result.error) showErrorModal(errorModal, result.error);
-    return { handled: true, ok: false };
-  }
-  applyLoadedSessionOutcome(session, statusEl, result, { fileHandle: null, boundFilename: null });
-  return { handled: true, ok: true };
+  const handlers = { ...commandFlow, readClipboard: () => readClipboardText({ clipboard }) };
+  const shown = (step) => {
+    if (step.loaded) bindLoadedGame(session, null);
+    onShown?.(step);
+  };
+  return { handled: true, done: runSessionCommand(game, { action: PASTE_COMMAND }, handlers, shown) };
 }
 
 export function handleDeselect(selection) {
@@ -192,14 +189,14 @@ export function wireEditMenu(
   pasteBtn?.addEventListener("click", (event) => {
     closeMenus?.();
     event?.stopPropagation?.();
-    void handlePastePuzzle(game, session, statusEl, errorModal, { clipboard }).then((outcome) => {
-      if (!outcome.handled || !outcome.ok) return;
-      startAutoSavePolicy(game, session, "paste", {
-        onError: (saved) => applyExecResult(statusEl, errorModal, saved),
-      });
-      renderBoard(boardEl, session.state, createElement);
-      selection.deselect();
-      syncEdit();
+    handlePastePuzzle(game, session, statusEl, errorModal, {
+      clipboard,
+      commandFlow,
+      onShown: (step) => {
+        renderBoard(boardEl, step.state, createElement);
+        selection.deselect();
+        syncEdit();
+      },
     });
   });
   if (typeof root.querySelector === "function") {

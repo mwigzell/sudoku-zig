@@ -20,7 +20,7 @@ Native and web front ends call core differently, but must produce the same **sem
 | `legend` | Whether Undo / Redo are offered after the steps. |
 | `probes` | Cell value and given flag after the steps. |
 
-Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `hint`, `solve` (Edit menu items), `paste` (clipboard text), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
+Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `hint`, `solve` (Edit menu items), `paste` (clipboard text), `open` (a saved game picked by name), `import` (a picked puzzle file's text), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
 
 Write context (core's `continuation` / `detached`) is checked by what follows it: under `continuation` the next autosave writes the working file without asking; under `detached` it asks before overwriting an existing file.
 
@@ -38,6 +38,9 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `settings_change_does_not_autosave` | With Auto Save on, Region and Theme changes persist settings and write no game file; the status line keeps the last message | same | same |
 | `hint_reports_and_autosaves` | Status shows the hint text; the hint autosaves `sudoku.sud` without asking | same | same |
 | `solve_then_rejected_fill` | Status `You win!`; a fill on a given cell shows one error and leaves the board solved | same | same |
+| `open_then_move_continues_file` | Open and the next move both write `game.sud` without asking; saved moves stay non-givens | same | same |
+| `import_starts_unsaved_game` | Imported line becomes the givens; status `import: puzzle loaded`; autosave writes `sudoku.sud`; Undo not offered | same | same |
+| `import_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
 
 ## Adding a scenario
 

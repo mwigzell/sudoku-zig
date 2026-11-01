@@ -426,202 +426,52 @@ assert.equal(anyMenuOpen({ querySelectorAll: () => [] }), false);
 const GOLDEN_PUZZLE_LINE =
   "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
 
-// ── Paste reads clipboard → pastePuzzle; session updates ──
+const clipboardWith = (text) => ({ readText: async () => text });
+
+// ── Paste: core reads the clipboard and loads the line; the session follows ──
 {
-  let pastedWith = null;
-  const session = {
-    legend: { [LEGEND_WIRE_PASTE]: true },
-    state: { cells: [{ value: 1, given: true, conflict: false }] },
-    fileHandle: { name: "bound.sud" },
-    boundFilename: "bound.sud",
-  };
-  const nextState = { cells: [{ value: 3, given: false, conflict: false }] };
-  const game = await withCoreFlow({
-    pastePuzzle(text) {
-      pastedWith = text;
-      return { ok: true, msg: "imported puzzle" };
-    },
-    getState() {
-      return nextState;
-    },
-    getLegend() {
-      return { [LEGEND_WIRE_PASTE]: true };
-    },
-    getConfig() {
-      return { theme: "dark" };
-    },
-  });
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const result = await handlePastePuzzle(game, session, status, errorModal, {
-    clipboard: { readText: async () => GOLDEN_PUZZLE_LINE },
-  });
-  assert.equal(result.ok, true);
-  assert.equal(pastedWith, GOLDEN_PUZZLE_LINE);
-  assert.equal(session.state, nextState);
-  assert.equal(session.fileHandle, null);
-  assert.equal(session.boundFilename, null);
-  assert.match(status.textContent, /imported puzzle/i);
+  const { game, session } = await editGame();
+  const status = statusStub();
+  const errorModal = errorModalStub();
+  const result = handlePastePuzzle(game, session, status, errorModal, { clipboard: clipboardWith(GOLDEN_PUZZLE_LINE) });
+  assert.equal(result.handled, true);
+  await result.done;
+  assert.equal(session.state.cells[2].value, 3);
+  assert.equal(session.state.cells[2].given, true);
+  assert.equal(status.textContent, "paste: puzzle loaded");
   assert.equal(errorModal.el.hidden, true);
 }
 
-// ── Paste invalid line → error modal; board unchanged ──
-{
-  const session = {
-    legend: { [LEGEND_WIRE_PASTE]: true },
-    state: { cells: [{ value: 2, given: true, conflict: false }] },
-  };
-  const before = JSON.stringify(session.state);
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const game = {
-    pastePuzzle() {
-      return { ok: false, error: "import: invalid character in puzzle line" };
-    },
-  };
-  const result = await handlePastePuzzle(
-    game,
-    session,
-    { textContent: "", className: "" },
-    errorModal,
-    { clipboard: { readText: async () => "x".repeat(81) } },
-  );
-  assert.equal(result.ok, false);
+// ── Paste invalid line or denied clipboard → error modal; board unchanged ──
+for (const clipboard of [clipboardWith("x".repeat(81)), { readText: async () => { throw new Error("denied"); } }]) {
+  const { game, session } = await editGame();
+  const before = JSON.stringify(game.getState());
+  const errorModal = errorModalStub();
+  await handlePastePuzzle(game, session, statusStub(), errorModal, { clipboard }).done;
   assert.equal(errorModal.el.hidden, false);
-  assert.match(errorModal.msgEl.textContent, /invalid/i);
-  assert.equal(JSON.stringify(session.state), before);
-}
-
-// ── Paste clipboard denied → error; state unchanged ──
-{
-  const session = {
-    legend: { [LEGEND_WIRE_PASTE]: true },
-    state: { cells: [{ value: 4, given: false, conflict: false }] },
-  };
-  const before = JSON.stringify(session.state);
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  let pasteCalled = false;
-  const result = await handlePastePuzzle(
-    { pastePuzzle() { pasteCalled = true; return { ok: true }; } },
-    session,
-    { textContent: "", className: "" },
-    errorModal,
-    {
-      clipboard: {
-        readText: async () => {
-          throw new Error("denied");
-        },
-      },
-    },
-  );
-  assert.equal(result.ok, false);
-  assert.equal(pasteCalled, false);
-  assert.equal(errorModal.el.hidden, false);
-  assert.match(errorModal.msgEl.textContent, /clipboard/i);
-  assert.equal(JSON.stringify(session.state), before);
+  assert.match(errorModal.msgEl.textContent, /invalid|clipboard/i);
+  assert.equal(JSON.stringify(game.getState()), before);
 }
 
 // ── Paste no-op when legend.paste is off ──
 {
   let readCalled = false;
-  const session = { legend: {}, state: { cells: [] } };
-  const result = await handlePastePuzzle(
-    { pastePuzzle() { return { ok: true }; } },
-    session,
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    {
-      clipboard: {
-        readText: async () => {
-          readCalled = true;
-          return GOLDEN_PUZZLE_LINE;
-        },
-      },
-    },
-  );
+  const { game } = await editGame();
+  const result = handlePastePuzzle(game, { legend: {} }, statusStub(), errorModalStub(), {
+    clipboard: { readText: async () => { readCalled = true; return GOLDEN_PUZZLE_LINE; } },
+  });
   assert.equal(result.handled, false);
   assert.equal(readCalled, false);
 }
 
-// ── wireEditMenu Paste click refreshes board ──
+// ── wireEditMenu Paste click redraws the board; with Auto Save on it writes the default file ──
 {
   const pasteBtn = makeBtn();
-  const session = {
-    state: emptyState(),
-    legend: { [LEGEND_WIRE_PASTE]: true },
-    config: { show_region: false },
-  };
-  const nextState = emptyState();
-  nextState.cells[0] = { value: 5, given: true, conflict: false };
-  const boardEl = makeMockBoard();
-  const game = await withCoreFlow({
-    pastePuzzle(text) {
-      assert.equal(text, GOLDEN_PUZZLE_LINE);
-      return { ok: true };
-    },
-    getState() {
-      return nextState;
-    },
-    getLegend() {
-      return session.legend;
-    },
-    getConfig() {
-      return session.config;
-    },
-  });
-  wireEditMenu(
-    makeBtn(),
-    makeBtn(),
-    makeBtn(),
-    game,
-    boardEl,
-    { getSelection: () => null, deselect() {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    makeRenderElement(),
-    { querySelectorAll: () => [], addEventListener() {} },
-    {
-      pasteBtn,
-      clipboard: { readText: async () => GOLDEN_PUZZLE_LINE },
-    },
-  );
-  pasteBtn.click();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(session.state, nextState);
-  assert.equal(boardEl.children.length, 81, "board re-rendered after paste");
-}
-
-// ── wireEditMenu Paste click persists when auto-save is enabled ──
-{
-  const pasteBtn = makeBtn();
-  const session = {
-    state: emptyState(),
-    legend: { [LEGEND_WIRE_PASTE]: true },
-    config: { show_region: false, auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
-  const nextState = emptyState();
+  const { game, session } = await editGame({ auto_save: true });
   const boardEl = makeMockBoard();
   const host = hostFetch();
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
-  const game = await withCoreFlow({
-      pastePuzzle() {
-        return { ok: true };
-      },
-      getState() {
-        return nextState;
-      },
-      getLegend() {
-        return session.legend;
-      },
-      getConfig() {
-        return session.config;
-      },
-      serialize() {
-        return { ok: true, bytes: new Uint8Array([9, 9, 9]) };
-      },
-  }, { autoSave: true });
   wireEditMenu(
     makeBtn(),
     makeBtn(),
@@ -629,19 +479,18 @@ const GOLDEN_PUZZLE_LINE =
     game,
     boardEl,
     { getSelection: () => null, deselect() {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
+    statusStub(),
+    errorModalStub(),
     session,
     makeRenderElement(),
     { querySelectorAll: () => [], addEventListener() {} },
-    {
-      pasteBtn,
-      clipboard: { readText: async () => GOLDEN_PUZZLE_LINE },
-    },
+    { pasteBtn, clipboard: clipboardWith(GOLDEN_PUZZLE_LINE) },
   );
   pasteBtn.click();
   await settleFlow();
   globalThis.fetch = prevFetch;
+  assert.equal(boardEl.children.length, 81, "board re-rendered after paste");
+  assert.equal(session.state.cells[2].value, 3);
   assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST");
 }
 

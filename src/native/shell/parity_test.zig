@@ -14,10 +14,12 @@ const test_defaults = @import("../../test/config_defaults.zig");
 
 const SCENARIOS_PATH = "src/test/parity/scenarios.json";
 const STARTUP_PATH_DIR = "/";
+const IMPORT_PATH = "/puzzle.txt";
 
 const CellAt = struct { row: u8, col: u8 };
 const Move = struct { row: u8, col: u8, digit: u8 };
 const Probe = struct { row: u8, col: u8, value: u8, given: bool };
+const CurrentFile = struct { name: []const u8, puzzle_line: []const u8, moves: []const Move = &.{} };
 
 const Step = struct {
     fill: ?Move = null,
@@ -31,6 +33,8 @@ const Step = struct {
     hint: ?bool = null,
     solve: ?bool = null,
     paste: ?[]const u8 = null,
+    open: ?CurrentFile = null,
+    import: ?[]const u8 = null,
 };
 
 const ScenarioConfig = struct {
@@ -39,8 +43,6 @@ const ScenarioConfig = struct {
     auto_save: bool = false,
     difficulty: ?[]const u8 = null,
 };
-
-const CurrentFile = struct { name: []const u8, puzzle_line: []const u8, moves: []const Move = &.{} };
 
 const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null };
 
@@ -116,7 +118,25 @@ fn firstEmptyLegalFill(view: board.Board.BoardView) !command.FillData {
     return error.NoLegalFill;
 }
 
-fn stepCommand(app: *shell.Sudoku, step: Step) !command.Command {
+/// Put the step's picked file where the native shell reads it; returns its owned path.
+fn putPicked(cfg: config.Config, transport: *test_doubles.MemoryTransport, step: Step) !?[]u8 {
+    if (step.open) |file| {
+        const bytes = try savedGame(cfg, file);
+        defer std.testing.allocator.free(bytes);
+        const path = try std.fs.path.join(std.testing.allocator, &.{ STARTUP_PATH_DIR, file.name });
+        try transport.put(path, bytes);
+        return path;
+    }
+    if (step.import) |line| {
+        try transport.put(IMPORT_PATH, line);
+        return try std.testing.allocator.dupe(u8, IMPORT_PATH);
+    }
+    return null;
+}
+
+fn stepCommand(app: *shell.Sudoku, step: Step, picked: ?[]const u8) !command.Command {
+    if (step.open != null) return .{ .open = .{ .path = picked } };
+    if (step.import != null) return .{ .import = .{ .path = picked } };
     if (step.fill) |m| return .{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
     if (step.clear) |at| return .{ .clear = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
     if (step.toggle_auto_save != null) return .{ .toggle_auto_save = {} };
@@ -163,7 +183,9 @@ fn runScenario(io: std.Io, data_dir: []const u8, scenario: Scenario) !void {
     }
 
     for (scenario.steps) |step| {
-        const one = [_]command.ParseCommandResult{.{ .valid = try stepCommand(&app, step) }};
+        const picked = try putPicked(cfg, &transport_impl, step);
+        defer if (picked) |p| std.testing.allocator.free(p);
+        const one = [_]command.ParseCommandResult{.{ .valid = try stepCommand(&app, step, picked) }};
         facade_impl.steps = &one;
         facade_impl.idx = 0;
         _ = try app.turn();
