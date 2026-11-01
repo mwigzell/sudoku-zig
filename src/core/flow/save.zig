@@ -237,7 +237,7 @@ test "save to a new file writes without asking and reports where it saved" {
     try expectCheck(flow.next(.start), "/docs/game.sud");
     try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .target_checked = false }).write);
     const end = flow.next(.{ .wrote = .{ .ok = "/docs/game.sud" } });
-    try testing.expectEqualStrings("saved to: /docs/game.sud", end.show_status);
+    try testing.expectEqualStrings("The game was saved to /docs/game.sud.", end.show_status);
     try testing.expectEqualStrings("/docs/game.sud", session.workingFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
@@ -366,7 +366,7 @@ test "the platform's written name becomes the working file" {
     var flow = SaveFlow.init(&session, .save_as, "game.sud");
     _ = flow.next(.start);
     _ = flow.next(.{ .target_checked = false });
-    try testing.expectEqualStrings("saved to: game (1).sud", flow.next(.{ .wrote = .{ .ok = "game (1).sud" } }).show_status);
+    try testing.expectEqualStrings("The game was saved to game (1).sud.", flow.next(.{ .wrote = .{ .ok = "game (1).sud" } }).show_status);
     try testing.expectEqualStrings("game (1).sud", session.workingFile().?);
 }
 

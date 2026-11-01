@@ -100,7 +100,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(fresh.exec({ action: "clear", row: 1, col: 1 }).ok, true);
   const hint = fresh.exec({ action: "hint", row: 1, col: 1 });
   assert.equal(hint.ok, true, JSON.stringify(hint));
-  assert.match(hint.msg ?? "", /B2 takes [1-9] \(placement\)/);
+  assert.match(hint.msg ?? "", /B2 takes [1-9]\./);
 }
 
 // ── hint (engine-pick placement must show ASCII digit, not control char) ──
@@ -109,7 +109,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
   const res = fresh.exec({ action: "hint" });
   assert.equal(res.ok, true, `hint failed: ${JSON.stringify(res)}`);
-  assert.match(res.msg ?? "", /\(placement\)/);
+  assert.match(res.msg ?? "", / takes [1-9]\./);
   assert.match(res.msg ?? "", /[1-9]/);
   assert.doesNotMatch(res.msg ?? "", /\x08/);
 }
@@ -122,11 +122,11 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
   const pick = fresh.exec({ action: "hint" });
   assert.equal(pick.ok, true, JSON.stringify(pick));
-  assert.match(pick.msg ?? "", /\(no-solution\)/);
+  assert.match(pick.msg ?? "", /no solution/i);
   assert.equal(pick.error, undefined);
   const targeted = fresh.exec({ action: "hint", row: 1, col: 1 });
   assert.equal(targeted.ok, true, JSON.stringify(targeted));
-  assert.match(targeted.msg ?? "", /\(no-solution\)/);
+  assert.match(targeted.msg ?? "", /no solution/i);
   assert.match(targeted.msg ?? "", /B2/);
 }
 
@@ -267,7 +267,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(bad.ok, true);
   assert.match(bad.msg ?? "", /no solution/i);
-  assert.doesNotMatch(bad.msg ?? "", /\(blocker\)/);
+  assert.doesNotMatch(bad.msg ?? "", / should be /);
   const saved = dead.serialize();
   assert.equal(saved.ok, true);
 
@@ -281,7 +281,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(named.init({ difficulty: 1 }).ok, true);
   assert.equal(named.exec({ action: "toggle_warn_solvability" }).ok, true);
   const opened = openBytes(named, saved.bytes, "dead.sud");
-  assert.match(opened.text ?? "", /opened: dead\.sud/i);
+  assert.match(opened.text ?? "", /The file dead\.sud is open\./);
   assert.match(opened.text ?? "", /no solution/i);
   assert.equal(opened.file, "dead.sud");
 }

@@ -311,7 +311,7 @@ test "paste with a line skips the clipboard; without one it reads the clipboard"
     var typed = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = line } });
     const shown = typed.next(.start).show_game;
     try testing.expect(shown.loaded);
-    try testing.expectEqualStrings("paste: puzzle loaded", shown.status.?);
+    try testing.expectEqualStrings("The puzzle was pasted.", shown.status.?);
 
     var clipboard = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = null } });
     try testing.expect(clipboard.next(.start) == .read_clipboard);
@@ -343,7 +343,7 @@ test "save with no working file asks for the default target, writes it and repor
     try testing.expect(flow.next(.start) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write);
-    try testing.expectEqualStrings("saved to: sudoku.sud", flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }).show_status);
+    try testing.expectEqualStrings("The game was saved to sudoku.sud.", flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }).show_status);
     try testing.expect(flow.next(.ack) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
 }
@@ -358,7 +358,7 @@ test "save as suggests the working file; export and copy hand over the line" {
 
     var exported = CommandFlow.init(&engine, &session, .{ .@"export" = .{ .path = null } });
     try testing.expectEqualStrings(export_mod.DEFAULT_EXPORT_FILE, exported.next(.start).write);
-    try testing.expectEqualStrings("exported to: puzzle.txt", exported.next(.{ .wrote = .{ .ok = "puzzle.txt" } }).show_status);
+    try testing.expectEqualStrings("The puzzle was exported to puzzle.txt.", exported.next(.{ .wrote = .{ .ok = "puzzle.txt" } }).show_status);
 
     var copied = CommandFlow.init(&engine, &session, .{ .copy = {} });
     try testing.expect(copied.next(.start) == .copy_line);

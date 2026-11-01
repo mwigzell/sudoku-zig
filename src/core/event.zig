@@ -12,11 +12,11 @@ pub const EventMsg = struct {
         self.len = 0;
     }
 
-    /// Append one message fragment, joining multiple parts with `; `.
+    /// Append one sentence, joining multiple sentences with a space.
     pub fn append(self: *EventMsg, part: []const u8) void {
         if (part.len == 0) return;
         if (self.len > 0) {
-            const sep = "; ";
+            const sep = " ";
             const sep_take = @min(sep.len, self.buf.len - self.len);
             if (sep_take == 0) return;
             @memcpy(self.buf[self.len..][0..sep_take], sep[0..sep_take]);
@@ -65,12 +65,12 @@ pub const Event = union(enum) {
 };
 const puzzle_gen = @import("puzzle_gen/mod.zig");
 
-test "EventMsg append joins multiple parts" {
+test "EventMsg append joins sentences with a space" {
     var msg: EventMsg = .{};
-    msg.append("saved to: foo");
-    msg.append("conflict in row, column, or box");
-    try std.testing.expectEqualStrings("saved to: foo; conflict in row, column, or box", msg.slice());
-    try std.testing.expectEqualStrings("saved to: foo; conflict in row, column, or box", msg.optional().?);
+    msg.append("The game was saved to foo.");
+    msg.append("That digit clashes with another in the same row, column or box.");
+    try std.testing.expectEqualStrings("The game was saved to foo. That digit clashes with another in the same row, column or box.", msg.slice());
+    try std.testing.expectEqualStrings("The game was saved to foo. That digit clashes with another in the same row, column or box.", msg.optional().?);
 }
 
 test "EventMsg optional is null when empty" {

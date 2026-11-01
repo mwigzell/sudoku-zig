@@ -739,7 +739,7 @@ test "save as to a typed path shows its saved-to status after the later flows ru
     while (true) if (try app.turn()) break;
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
-    try std.testing.expect(std.mem.indexOf(u8, output, "saved to: " ++ tmp_path) != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "The game was saved to " ++ tmp_path ++ ".") != null);
 }
 
 test "menu save while autosave is on writes nothing and says why" {
@@ -1078,8 +1078,9 @@ test "integrated e2e - .ok.msg status is non-blocking; next line is a command" {
     try sudoku.showGame();
     while (true) if (try sudoku.turn()) break;
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    const opened_status = " is open.";
     // 1. Status message is displayed ...
-    try std.testing.expect(std.mem.indexOf(u8, contents, "opened:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, opened_status) != null);
     // 2. ... without the interactive ack prompt ...
     try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") == null);
     // 3. ... inside a line-graphics frame (side border, or a top edge on the line above).
@@ -1087,7 +1088,7 @@ test "integrated e2e - .ok.msg status is non-blocking; next line is a command" {
     var prev: ?[]const u8 = null;
     var framed = false;
     while (lines.next()) |line| {
-        if (std.mem.indexOf(u8, line, "opened:") != null) {
+        if (std.mem.indexOf(u8, line, opened_status) != null) {
             framed = std.mem.indexOf(u8, line, "│") != null or
                 (prev != null and std.mem.indexOf(u8, prev.?, "┌") != null);
             break;

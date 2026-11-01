@@ -11,9 +11,9 @@ const Step = step_mod.Step;
 const Input = step_mod.Input;
 
 /// Status after Export; `{s}` is the written file.
-pub const EXPORTED_TO_FMT = "exported to: {s}";
+pub const EXPORTED_TO_FMT = "The puzzle was exported to {s}.";
 /// Status after Copy.
-pub const COPIED_MSG: []const u8 = "copy: puzzle line copied";
+pub const COPIED_MSG: []const u8 = "The puzzle line was copied.";
 /// Export target when the player names none.
 pub const DEFAULT_EXPORT_FILE: []const u8 = "puzzle.txt";
 /// Shown when the platform could not write the puzzle file; its reason goes to the log.
@@ -104,7 +104,7 @@ const testing = std.testing;
 test "export writes the named file and reports where" {
     var flow = ExportFlow.toFile("puzzle.txt");
     try testing.expectEqualStrings("puzzle.txt", flow.next(.start).write);
-    try testing.expectEqualStrings("exported to: /docs/puzzle.txt", flow.next(.{ .wrote = .{ .ok = "/docs/puzzle.txt" } }).show_status);
+    try testing.expectEqualStrings("The puzzle was exported to /docs/puzzle.txt.", flow.next(.{ .wrote = .{ .ok = "/docs/puzzle.txt" } }).show_status);
     try testing.expect(flow.next(.start) == .done);
 }
 

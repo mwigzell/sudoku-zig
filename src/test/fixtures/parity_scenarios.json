@@ -147,7 +147,7 @@
       "expect": {
         "questions": 0,
         "written": [],
-        "status": "paste: puzzle loaded",
+        "status": "The puzzle was pasted.",
         "legend": { "undo": false, "redo": false },
         "probes": [
           { "row": 0, "col": 0, "value": 4, "given": true },
@@ -187,7 +187,7 @@
       "expect": {
         "questions": 0,
         "written": [],
-        "status": "new game started",
+        "status": "A new game has started.",
         "settings": { "auto_save": true, "show_region": true, "theme": "light" },
         "probes": []
       }
@@ -202,7 +202,7 @@
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud"],
-        "status": "F5 takes 4 (placement)",
+        "status": "F5 takes 4.",
         "probes": [{ "row": 4, "col": 5, "value": 0, "given": false }]
       }
     },
@@ -253,7 +253,7 @@
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud"],
-        "status": "import: puzzle loaded",
+        "status": "The puzzle was imported.",
         "legend": { "undo": false },
         "probes": [{ "row": 0, "col": 2, "value": 3, "given": true }]
       }
@@ -289,7 +289,7 @@
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud", "sudoku.sud"],
-        "status": "saved to: sudoku.sud",
+        "status": "The game was saved to sudoku.sud.",
         "probes": [{ "row": 0, "col": 1, "value": 8, "given": false }]
       }
     },
@@ -303,7 +303,7 @@
       "expect": {
         "questions": 0,
         "written": [],
-        "status": "copy: puzzle line copied",
+        "status": "The puzzle line was copied.",
         "probes": []
       }
     },
@@ -339,7 +339,7 @@
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud", "puzzle.txt"],
-        "status": "exported to: puzzle.txt",
+        "status": "The puzzle was exported to puzzle.txt.",
         "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
       }
     }

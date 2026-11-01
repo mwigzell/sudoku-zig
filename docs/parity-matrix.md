@@ -34,18 +34,18 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `restore_unsolved_moves` | No question; moves restored as non-givens, givens intact; Undo offered | same | same |
 | `autosave_then_relaunch_restores_moves` | Three moves and an Undo autosave `sudoku.sud`; the next launch restores the moves as non-givens, givens intact, the undone move still undone; Undo and Redo offered | relaunch: new `Sudoku` on the same transport, startup on the last written path | relaunch: new game and session, startup on the host's last written file |
 | `history_branch_discards_redo` | A move after Undo discards the undone move; Redo not offered | same | same |
-| `paste_valid_resets_history` | Pasted line becomes the givens; status `paste: puzzle loaded`; Undo not offered | same | same |
+| `paste_valid_resets_history` | Pasted line becomes the givens; status `The puzzle was pasted.`; Undo not offered | same | same |
 | `paste_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
 | `settings_change_does_not_autosave` | With Auto Save on, Region and Theme changes persist settings and write no game file; the status line keeps the last message | same | same |
 | `hint_reports_and_autosaves` | Status shows the hint text; the hinted cell stays empty; the hint autosaves `sudoku.sud` without asking | same | same |
 | `solve_then_rejected_fill` | Status `You win!`; Solve autosaves `sudoku.sud`; a fill on a given cell shows one error, leaves the board solved and writes nothing | same | same |
 | `open_then_move_continues_file` | Open and the next move both write `game.sud` without asking; saved moves stay non-givens | same | same |
-| `import_starts_unsaved_game` | Imported line becomes the givens; status `import: puzzle loaded`; autosave writes `sudoku.sud`; Undo not offered | same | same |
+| `import_starts_unsaved_game` | Imported line becomes the givens; status `The puzzle was imported.`; autosave writes `sudoku.sud`; Undo not offered | same | same |
 | `import_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
-| `save_names_default_then_continues` | First Save writes `sudoku.sud` without asking; the next Save continues it; status `saved to: sudoku.sud` | same (full path, compared relative to the data folder) | same |
-| `copy_reports_and_writes_nothing` | Status `copy: puzzle line copied`; no file written | prints the line | same |
+| `save_names_default_then_continues` | First Save writes `sudoku.sud` without asking; the next Save continues it; status `The game was saved to sudoku.sud.` | same (full path, compared relative to the data folder) | same |
+| `copy_reports_and_writes_nothing` | Status `The puzzle line was copied.`; no file written | prints the line | same |
 | `new_after_open_asks_before_replacing` | New replaces the opened board; the next autosave asks once, then overwrites `game.sud` | puzzle line carried by the command | scripted `generate` answer |
-| `export_names_default_and_reports` | Export writes `puzzle.txt` and reports `exported to: puzzle.txt`; the game file is written only by autosave | same (full path, compared relative to its folder) | export writer faked; counts as a write |
+| `export_names_default_and_reports` | Export writes `puzzle.txt` and reports `The puzzle was exported to puzzle.txt.`; the game file is written only by autosave | same (full path, compared relative to its folder) | export writer faked; counts as a write |
 
 ## Adding a scenario
 

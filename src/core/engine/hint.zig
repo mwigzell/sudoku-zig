@@ -1,4 +1,4 @@
-// hint.zig — solver-backed hint: one solve, reason tags on `.ok.msg`, display-only.
+// hint.zig — solver-backed hint: one solve, the hint as a sentence on `.ok.msg`, display-only.
 
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
@@ -7,13 +7,31 @@ const board = @import("../board/board.zig");
 const cell = @import("../board/cell.zig");
 const solver = @import("../solver.zig");
 
-pub const no_solution_msg = "no solution from here — try undo (no-solution)";
-pub const load_no_solution_msg = "this puzzle has no solution (no-solution)";
-pub const puzzle_complete_msg = "puzzle complete (consistent)";
+pub const no_solution_msg = "There is no solution from here. Try Undo.";
+pub const load_no_solution_msg = "This puzzle has no solution.";
+pub const puzzle_complete_msg = "The puzzle is complete.";
+/// Targeted hint when the board has no solution; `{s}` is the cell.
+pub const NO_SOLUTION_AT_FMT = "{s} has no solution from here. Try Undo.";
+/// Hint for a cell whose digit matches the solution; `{c}` is the digit, `{s}` the cell.
+pub const CONSISTENT_FMT = "The {c} in {s} is right.";
+/// Hint for a cell whose digit is wrong: cell, solution digit, played digit.
+pub const BLOCKER_FMT = "{s} should be {c}, not {c}.";
+/// Hint for an empty cell: cell, solution digit.
+pub const PLACEMENT_FMT = "{s} takes {c}.";
 
 /// Append play-loop dead-end copy after a move that leaves no completion (`.ok.msg` fragment).
 pub fn appendNoSolutionMsg(engine: *game_engine.GameEngine) void {
     engine.appendEventMsg(no_solution_msg);
+}
+
+/// The no-solution sentence, naming the cell when the hint targeted one.
+fn appendNoSolutionFor(engine: *game_engine.GameEngine, hint: command.HintData) void {
+    if (hint.row != null and hint.col != null) {
+        var label: [2]u8 = undefined;
+        engine.appendEventMsgFmt(NO_SOLUTION_AT_FMT, .{board.formatCellLabel(&label, hint.row.?, hint.col.?)});
+    } else {
+        appendNoSolutionMsg(engine);
+    }
 }
 
 /// Append load/import dead-puzzle copy when the opened grid has no solution (`.ok.msg` fragment).
@@ -52,12 +70,12 @@ fn appendTargetedMsg(
     const sol_digit = flatDigitDisplay(solutionDigitAt(solution, row, col));
     if (playerDigitChar(view, row, col)) |played| {
         if (played == sol_digit) {
-            engine.appendEventMsgFmt("{s}: {c} is consistent (consistent)", .{ coord, sol_digit });
+            engine.appendEventMsgFmt(CONSISTENT_FMT, .{ sol_digit, coord });
         } else {
-            engine.appendEventMsgFmt("{s} should be {c}, not {c} (blocker)", .{ coord, sol_digit, played });
+            engine.appendEventMsgFmt(BLOCKER_FMT, .{ coord, sol_digit, played });
         }
     } else {
-        engine.appendEventMsgFmt("{s} takes {c} (placement)", .{ coord, sol_digit });
+        engine.appendEventMsgFmt(PLACEMENT_FMT, .{ coord, sol_digit });
     }
 }
 
@@ -108,27 +126,13 @@ fn appendEnginePickMsg(engine: *game_engine.GameEngine, solution: [81]u8) void {
 pub fn execute(engine: *game_engine.GameEngine, hint: command.HintData) game_engine.Event {
     const solved = solver.solve(engine.state.board) catch |err| switch (err) {
         error.Conflict => {
-            if (hint.row != null and hint.col != null) {
-                var label: [2]u8 = undefined;
-                const coord = board.formatCellLabel(&label, hint.row.?, hint.col.?);
-                engine.appendEventMsgFmt("{s}: {s}", .{ coord, no_solution_msg });
-            } else {
-                appendNoSolutionMsg(engine);
-            }
-            if (engine.event_msg.optional() == null) appendNoSolutionMsg(engine);
+            appendNoSolutionFor(engine, hint);
             return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
     };
     switch (solved) {
         .none => {
-            if (hint.row != null and hint.col != null) {
-                var label: [2]u8 = undefined;
-                const coord = board.formatCellLabel(&label, hint.row.?, hint.col.?);
-                engine.appendEventMsgFmt("{s}: {s}", .{ coord, no_solution_msg });
-            } else {
-                appendNoSolutionMsg(engine);
-            }
-            if (engine.event_msg.optional() == null) appendNoSolutionMsg(engine);
+            appendNoSolutionFor(engine, hint);
             return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
         .solution => |solution| {
@@ -143,7 +147,7 @@ pub fn execute(engine: *game_engine.GameEngine, hint: command.HintData) game_eng
     }
 }
 
-test "hint: unsolvable board returns no-solution tag" {
+test "hint: unsolvable board returns the no-solution sentence" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
     engine.warn_dead_moves = true;
@@ -155,7 +159,7 @@ test "hint: unsolvable board returns no-solution tag" {
     const ev = engine.exec(command.Command{ .hint = .{} });
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(no-solution)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
 }
 
 fn firstEmptyPlayerCell(engine: *game_engine.GameEngine) ?struct { row: u4, col: u4, idx: usize } {
@@ -170,7 +174,7 @@ fn firstEmptyPlayerCell(engine: *game_engine.GameEngine) ?struct { row: u4, col:
     return null;
 }
 
-test "hint: targeted consistent tag" {
+test "hint: targeted consistent sentence" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
@@ -191,11 +195,11 @@ test "hint: targeted consistent tag" {
     });
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(consistent)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(blocker)") == null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " is right.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") == null);
 }
 
-test "hint: targeted blocker tag when completion disagrees with cell" {
+test "hint: targeted blocker sentence when completion disagrees with cell" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
@@ -216,7 +220,7 @@ test "hint: targeted blocker tag when completion disagrees with cell" {
     engine.beginEventMsg();
     appendTargetedMsg(&engine, slot.row, slot.col, solution, engine.state.board.asView());
     const msg = engine.event_msg.optional() orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(blocker)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "should be") != null);
 }
 
@@ -241,11 +245,11 @@ test "hint: engine-pick surfaces blocker before placement" {
     engine.beginEventMsg();
     appendEnginePickMsg(&engine, solution);
     const msg = engine.event_msg.optional() orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(blocker)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(placement)") == null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " takes ") == null);
 }
 
-test "hint: targeted empty cell returns placement tag" {
+test "hint: targeted empty cell returns placement sentence" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
 
@@ -254,7 +258,7 @@ test "hint: targeted empty cell returns placement tag" {
     });
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(placement)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " takes ") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "A1") != null);
     try std.testing.expect(msg.len > 0 and msg[0] != 0x08);
     var has_digit = false;
@@ -279,9 +283,9 @@ test "hint: targeted on dead board returns no-solution not blocker" {
     });
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(no-solution)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "B2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(blocker)") == null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") == null);
 }
 
 test "hint: engine-pick on complete puzzle reports complete" {
@@ -303,7 +307,7 @@ test "hint: engine-pick on solvable board returns placement" {
     const ev = engine.exec(command.Command{ .hint = .{} });
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(placement)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " takes ") != null);
 }
 
 test "fill on dead board uses no-solution hint copy only" {
@@ -316,7 +320,7 @@ test "fill on dead board uses no-solution hint copy only" {
     });
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(no-solution)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(blocker)") == null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") == null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "unsolvable") == null);
 }

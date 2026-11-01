@@ -38,7 +38,11 @@ const solver = @import("../solver.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
 pub const Error = error{System};
-pub const NEW_GAME_STARTED_MSG = "new game started";
+pub const NEW_GAME_STARTED_MSG = "A new game has started.";
+pub const OPENED_FMT = "The file {s} is open.";
+pub const IMPORTED_MSG = "The puzzle was imported.";
+pub const PASTED_MSG = "The puzzle was pasted.";
+pub const CONFLICT_MSG = "That digit clashes with another in the same row, column or box.";
 pub const WIN_STATUS_MSG = "You win!";
 
 /// Error sentences a command shows in a dialog; technical detail goes to the log.
@@ -198,21 +202,21 @@ pub const GameEngine = struct {
 
     /// Import a one-line puzzle (81 digits/blanks) from a file.
     pub fn importFromLine(self: *@This(), line: []const u8) Event {
-        return self.loadOneLine(line, "import");
+        return self.loadOneLine(line, IMPORTED_MSG);
     }
 
     /// Paste a one-line puzzle (81 digits/blanks) from the clipboard or a prompt.
     pub fn pasteFromLine(self: *@This(), line: []const u8) Event {
-        return self.loadOneLine(line, "paste");
+        return self.loadOneLine(line, PASTED_MSG);
     }
 
-    fn loadOneLine(self: *@This(), line: []const u8, comptime source: []const u8) Event {
+    fn loadOneLine(self: *@This(), line: []const u8, loaded_msg: []const u8) Event {
         self.applyOneLinePuzzle(line) catch |err| switch (err) {
             board.Error.WrongLength => return self.errorEvent(LINE_LENGTH_MSG),
             else => return self.errorEvent(LINE_CHARACTER_MSG),
         };
         self.beginEventMsg();
-        self.appendEventMsg(source ++ ": puzzle loaded");
+        self.appendEventMsg(loaded_msg);
         return self.finishOkEvent(self.state.board.asView(), false, null, false);
     }
 
@@ -266,7 +270,7 @@ pub const GameEngine = struct {
         self.beginEventMsg();
         switch (mode) {
             .open => {
-                if (opened_label) |label| self.appendEventMsgFmt("opened: {s}", .{label});
+                if (opened_label) |label| self.appendEventMsgFmt(OPENED_FMT, .{label});
                 self.appendUnsolvableLoadWarningIfNeeded();
                 return self.finishOkEvent(self.state.board.asView(), false, null, true);
             },
@@ -329,7 +333,7 @@ pub const GameEngine = struct {
         self.state.board.refreshConflictsForCell(row, col);
         const view = self.state.board.asView();
         if (view.isConflictingRowCol(row, col)) {
-            self.appendEventMsg("conflict in row, column, or box");
+            self.appendEventMsg(CONFLICT_MSG);
         } else if (self.probeSolvability(.move)) |solved| {
             if (solved == .none) hint_command.appendNoSolutionMsg(self);
         }
@@ -575,11 +579,11 @@ test "openFromSave warns when SUD0 bytes encode an unsolvable grid" {
     try std.testing.expect(ev == .ok);
     try std.testing.expect(ev.ok.msg != null);
     const msg = ev.ok.msg.?;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "opened: dead.sud") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "The file dead.sud is open.") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
 }
 
-test "openFromSave joins competing status producers with '; '" {
+test "openFromSave joins competing status sentences with a space" {
     const flat: [81]u8 = .{
         0, 0, 3, 4, 2, 1, 6, 0, 0, 9, 0, 0, 3, 7, 5, 0, 0, 1, 0, 0, 1, 8, 9, 6, 4, 0, 0,
         0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
@@ -601,9 +605,9 @@ test "openFromSave joins competing status producers with '; '" {
     const ev = openFromSaveProbeTest(&engine, buf, "dead.sud");
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg.?;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "opened: dead.sud") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "The file dead.sud is open.") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, hint_command.load_no_solution_msg) != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, "; ") != null);
+    try std.testing.expectEqualStrings("The file dead.sud is open. " ++ hint_command.load_no_solution_msg, msg);
 }
 
 test "loadSaveFormat replaces board and history from SUD0 bytes" {
@@ -634,7 +638,7 @@ test "importFromLine loads a one-line puzzle and clears history" {
     const line = puzzle_gen.PuzzleGen.hard();
     const ev = engine.importFromLine(line);
     try std.testing.expect(ev == .ok);
-    try std.testing.expectEqualStrings("import: puzzle loaded", ev.ok.msg.?);
+    try std.testing.expectEqualStrings("The puzzle was imported.", ev.ok.msg.?);
 
     const expected = try board.fromOneLineString(line);
     try std.testing.expect(board.equal(engine.state.board, expected));
@@ -808,7 +812,7 @@ test "exec quit → .ok" {
 // Integration chain: exec → board mutation → conflict refresh → event emission
 // Check conflict bits through the returned Event board_view
 
-test "exec fill on dead board emits no-solution tag on ok msg" {
+test "exec fill on dead board emits the no-solution sentence on ok msg" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
 
@@ -818,7 +822,7 @@ test "exec fill on dead board emits no-solution tag on ok msg" {
     try std.testing.expect(ev == .ok);
     try std.testing.expect(ev.ok.msg != null);
     const msg = ev.ok.msg.?;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "(no-solution)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "(blocker)") == null);
     try std.testing.expect(!ev.ok.board_view.isConflictingRowCol(1, 1));
 }
@@ -844,14 +848,14 @@ test "inline unsolvable grid: fill warns and clear restores same dead board" {
     });
     try std.testing.expect(filled == .ok);
     try std.testing.expect(filled.ok.msg != null);
-    try std.testing.expect(std.mem.indexOf(u8, filled.ok.msg.?, "(no-solution)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, filled.ok.msg.?, "no solution") != null);
 
     const cleared = execMoveTest(&engine, command.Command{
         .clear = command.ClearData{ .row = 7, .col = 6 },
     });
     try std.testing.expect(cleared == .ok);
     try std.testing.expect(cleared.ok.msg != null);
-    try std.testing.expect(std.mem.indexOf(u8, cleared.ok.msg.?, "(no-solution)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, cleared.ok.msg.?, "no solution") != null);
     try std.testing.expect(board.equal(
         engine.state.board,
         try board.fromFlat(flat, .{ .given_bits = given_bits }),
@@ -908,7 +912,7 @@ test "exec fill creates conflict → cell marked and status msg set" {
     });
     try std.testing.expect(second == .ok);
     const view = second.ok.board_view;
-    try std.testing.expectEqualStrings("conflict in row, column, or box", second.ok.msg.?);
+    try std.testing.expectEqualStrings("That digit clashes with another in the same row, column or box.", second.ok.msg.?);
 
     // Both cells in row 0 must now be flagged as conflicting
     try std.testing.expect(view.isConflictingRowCol(0, 2));
@@ -1593,4 +1597,24 @@ test "every engine error message reads as a sentence" {
         NOT_A_SAVED_GAME_MSG, LINE_LENGTH_MSG,        LINE_CHARACTER_MSG,    NEW_GAME_FAILED_MSG,
         NOTHING_TO_UNDO_MSG,  NOTHING_TO_REDO_MSG,    UNDO_FAILED_MSG,       REDO_FAILED_MSG,
     }) |msg| try sentence.expectSentence(msg);
+}
+
+test "every status message reads as a sentence, including formatted ones" {
+    const sentence = @import("../../test/sentence.zig");
+    const startup_policy = @import("../startup/policy.zig");
+    const export_flow = @import("../flow/export.zig");
+    inline for (.{
+        NEW_GAME_STARTED_MSG,               WIN_STATUS_MSG,                   IMPORTED_MSG,
+        PASTED_MSG,                         CONFLICT_MSG,                     hint_command.no_solution_msg,
+        hint_command.load_no_solution_msg,  hint_command.puzzle_complete_msg, export_flow.COPIED_MSG,
+        startup_policy.IDLE_STARTUP_STATUS, file_policy.WRITE_CANCELLED_MSG,  file_policy.SAVE_WHILE_AUTO_SAVE_MSG,
+    }) |msg| try sentence.expectSentence(msg);
+    var buf: [128]u8 = undefined;
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, OPENED_FMT, .{"game.sud"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, file_policy.SAVED_TO_FMT, .{"game.sud"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, export_flow.EXPORTED_TO_FMT, .{"puzzle.txt"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.CONSISTENT_FMT, .{ '5', "C2" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.BLOCKER_FMT, .{ "C2", '5', '3' }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.PLACEMENT_FMT, .{ "C2", '5' }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.NO_SOLUTION_AT_FMT, .{"C2"}));
 }

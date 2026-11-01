@@ -150,19 +150,19 @@ async function runHint(game, board, selection, session, status) {
     state: game.getState(),
     legend: game.getLegend(),
   };
-  const status = { textContent: "new game started", className: "" };
+  const status = { textContent: "A new game has started.", className: "" };
   const selection = boardMod.wireSelection(board);
 
   clickCell(board, 0, 2);
   assert.deepEqual(selection.getSelection(), { row: 0, col: 2 });
   await runHint(game, board, selection, session, status);
-  assert.match(status.textContent, /C1 takes [1-9] \(placement\)/);
+  assert.match(status.textContent, /C1 takes [1-9]\./);
   const msgC1 = status.textContent;
 
   clickCell(board, 1, 2);
   assert.deepEqual(selection.getSelection(), { row: 1, col: 2 });
   await runHint(game, board, selection, session, status);
-  assert.match(status.textContent, /C2 takes [1-9] \(placement\)/);
+  assert.match(status.textContent, /C2 takes [1-9]\./);
   assert.notEqual(status.textContent, msgC1);
 }
 
@@ -185,7 +185,7 @@ async function runHint(game, board, selection, session, status) {
   session.state = deadFill.state;
 
   await runHint(game, board, selection, session, status);
-  assert.match(status.textContent, /\(no-solution\)/);
+  assert.match(status.textContent, /no solution/i);
   assert.equal(modal.el.hidden, true);
 }
 

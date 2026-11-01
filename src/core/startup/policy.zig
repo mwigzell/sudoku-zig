@@ -22,7 +22,7 @@ pub const Decision = struct {
 
 /// Idle startup status shown by all frontends when startup policy selects
 /// manual/idle mode.
-pub const IDLE_STARTUP_STATUS: []const u8 = "Welcome to sudoku-zig! Choose New or Open to play";
+pub const IDLE_STARTUP_STATUS: []const u8 = "Welcome to sudoku-zig! Choose New or Open to play.";
 
 /// Resolves startup precedence once:
 /// restore (when requested + possible) -> new (when requested) -> idle.

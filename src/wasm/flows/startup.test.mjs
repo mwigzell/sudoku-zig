@@ -116,7 +116,7 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
 // ── startup flow: core decides restore / new / idle; the web only fetches, draws and asks ──
 const SOLVED_LINE = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
 const OPEN_LINE = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
-const WELCOME_STATUS = "Welcome to sudoku-zig! Choose New or Open to play";
+const WELCOME_STATUS = "Welcome to sudoku-zig! Choose New or Open to play.";
 const HOST_CURRENT_FILE = "/current-file";
 
 /** Bytes of a saved game holding `line`. */

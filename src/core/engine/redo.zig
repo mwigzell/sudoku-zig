@@ -41,7 +41,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             engine.state.history.pointer += 1;
             engine.state.board.validate();
             engine.beginEventMsg();
-            engine.appendEventMsg("You win!");
+            engine.appendEventMsg(game_engine.WIN_STATUS_MSG);
             return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
         },
     }

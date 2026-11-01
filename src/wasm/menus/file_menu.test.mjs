@@ -134,7 +134,7 @@ function easyDialog() {
   assert.deepEqual([...downloaded.bytes], [...game.serialize().bytes]);
   assert.equal(downloaded.name, "host-default.sud");
   assert.equal(session.boundFilename, "host-default.sud");
-  assert.equal(statusEl.textContent, "saved to: host-default.sud", "core composes the save status");
+  assert.equal(statusEl.textContent, "The game was saved to host-default.sud.", "core composes the save status");
   const hosted = postedCurrentFile(host.calls);
   assert.equal(hosted?.init?.headers?.["X-Sudoku-Restore-Copy"], "true", "downloaded save keeps a hidden host copy");
 }
@@ -551,7 +551,7 @@ function easyDialog() {
   );
   await exportBtn.click();
   assert.deepEqual([...saved], [...lineBytes], "save receives exportPuzzle bytes");
-  assert.equal(statusEl.textContent, "exported to: puzzle.txt", "core owns the export status");
+  assert.equal(statusEl.textContent, "The puzzle was exported to puzzle.txt.", "core owns the export status");
   assert.equal(session.fileHandle.name, "game.sud", "export must not bind SUD0 file handle");
   assert.equal(session.boundFilename, "game.sud");
 }

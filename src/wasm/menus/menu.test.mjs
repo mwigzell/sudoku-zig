@@ -123,9 +123,9 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
   const { game, session } = await editGame();
   const status = statusStub();
   await runEdit("hint", game, session, { status }).done;
-  assert.match(status.textContent, /takes [1-9] \(placement\)/);
+  assert.match(status.textContent, /takes [1-9]\./);
   await runEdit("hint", game, session, { status, selection: { getSelection: () => ({ row: 1, col: 2 }), select() {} } }).done;
-  assert.match(status.textContent, /^C2 takes [1-9] \(placement\)/);
+  assert.match(status.textContent, /^C2 takes [1-9]\./);
 }
 
 // ── wireEditMenu Hint menuitem click shows status ──
@@ -161,7 +161,7 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
   );
   hintBtn.click();
   await settleFlow();
-  assert.match(status.textContent, /^D3 takes [1-9] \(placement\)/);
+  assert.match(status.textContent, /^D3 takes [1-9]\./);
   assert.equal(closedMenus, 1);
 }
 
@@ -293,7 +293,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   });
   assert.equal(result.ok, true);
   assert.equal(written, line, "clipboard gets exportPuzzle one-line string");
-  assert.equal(status.textContent, "copy: puzzle line copied", "core owns the copy status");
+  assert.equal(status.textContent, "The puzzle line was copied.", "core owns the copy status");
   assert.equal(errorModal.el.hidden, true);
 }
 
