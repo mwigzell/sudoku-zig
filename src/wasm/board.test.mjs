@@ -25,7 +25,7 @@ import {
   PLAY_FR,
 } from "./board.js";
 import { applyEventStatus, applyExecResult, showErrorModal, formatGenProgress } from "./shell.js";
-import { hostFetch, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame } from "./test_support.mjs";
 
 
 assert.equal(formatGenProgress(4, 71, 36), "Generating: 71 givens → ≤36");
@@ -356,32 +356,24 @@ function makeMockBoard() {
 
 {
   const { handleEditAction } = await import("./menu.js");
-  const session = {
-    state: {
-      cells: Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false })),
-    },
-    legend: { undo: false, redo: false },
-  };
+  const game = await loadGame();
+  startNewGame(game);
+  const session = { state: game.getState(), legend: game.getLegend() };
   const board = makeMockBoard();
   applySelection(board, 1, 2);
-  const status = { textContent: "D1 takes 9 (placement)", className: "" };
-  handleEditAction(
+  const status = { textContent: "", className: "" };
+  const outcome = handleEditAction(
     "hint",
-    {
-      exec(action) {
-        assert.deepEqual(action, { action: "hint", row: 1, col: 2 });
-        return { ok: true, state: session.state, msg: "C2 takes 4 (placement)", is_quit: false };
-      },
-      getLegend: () => session.legend,
-    },
+    game,
     board,
     { getSelection: () => ({ row: 0, col: 3 }), select() {} },
     status,
     { el: { hidden: true }, msgEl: { textContent: "" } },
     session,
-    (tag) => ({ tag, classList: { _set: new Set(), add() {}, remove() {} }, dataset: {} }),
+    makeRenderElement(),
   );
-  assert.match(status.textContent, /C2 takes 4/);
+  await outcome.done;
+  assert.match(status.textContent, /^C2 /, "hint targets the cell selected on the board");
 }
 
 {
@@ -446,142 +438,87 @@ assert.deepEqual(parsePlayKey("", "Space"), { type: "clear" });
 assert.deepEqual(parsePlayKey("", "Backspace"), { type: "clear" });
 assert.deepEqual(parsePlayKey("", "Delete"), { type: "clear" });
 
-function emptyState() {
+const errorModalStub = () => ({ el: { hidden: true }, msgEl: { textContent: "" } });
+const statusStub = () => ({ textContent: "", className: "" });
+
+async function playGame(config = {}) {
+  const game = await loadGame(config);
+  startNewGame(game);
   return {
-    cells: Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false })),
+    game,
+    session: {
+      state: game.getState(),
+      legend: game.getLegend(),
+      config: game.getConfig(),
+      default_save_filename: "sudoku.sud",
+    },
   };
 }
 
-const openLegend = { fill: true, clear: true, undo: false, redo: false };
+function selectedAt(board, row, col) {
+  return { getSelection: () => ({ row, col }), select(r, c) { applySelection(board, r, c); } };
+}
 
 {
   const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  const session = { state: emptyState(), legend: openLegend };
-  const game = {
-    exec(action) {
-      assert.equal(action.action, "fill");
-      assert.equal(action.row, 0);
-      assert.equal(action.col, 2);
-      assert.equal(action.digit, 4);
-      session.state = emptyState();
-      session.state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
-      return { ok: true, state: session.state, msg: null, is_quit: false };
-    },
-    getLegend() {
-      return { fill: true, clear: true, undo: true, redo: false };
-    },
-  };
-
-  const outcome = handlePlayKey(
-    game,
-    board,
-    selection,
-    status,
-    errorModal,
-    "4",
-    session,
-    makeRenderElement(),
-  );
+  const status = statusStub();
+  const { game, session } = await playGame();
+  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 2), status, errorModalStub(), "4", session, makeRenderElement());
   assert.equal(outcome.handled, true);
+  await outcome.done;
   assert.equal(session.state.cells[cellIndex(0, 2)].value, 4);
   assert.equal(findCellElement(board, 0, 2).textContent, "4");
   assert.ok(findCellElement(board, 0, 2).classList.contains("selected"));
-  assert.equal(outcome.legend.undo, true);
+  assert.equal(session.legend.undo, true);
 }
 
 {
   const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 0 }) };
-  const session = { state: emptyState(), legend: openLegend };
-  session.state.cells[0] = { value: 1, given: true, conflict: false };
-
-  const outcome = handlePlayKey(
-    { exec: () => ({ ok: false, error: "cannot modify a puzzle cell" }) },
-    board,
-    selection,
-    status,
-    errorModal,
-    "5",
-    session,
-    makeRenderElement(),
-  );
+  const status = statusStub();
+  const errorModal = errorModalStub();
+  const { game, session } = await playGame();
+  status.textContent = "before";
+  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 0), status, errorModal, "5", session, makeRenderElement());
   assert.equal(outcome.handled, true);
-  assert.equal(status.textContent, "");
+  await outcome.done;
+  assert.equal(status.textContent, "before");
   assert.match(errorModal.msgEl.textContent, /puzzle/i);
   assert.equal(errorModal.el.hidden, false);
 }
 
 {
-  const board = makeMockBoard();
+  const { game, session } = await playGame();
   const outcome = handlePlayKey(
-    { exec: () => ({ ok: true, state: emptyState() }) },
-    board,
+    game,
+    makeMockBoard(),
     { getSelection: () => null, select() {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
+    statusStub(),
+    errorModalStub(),
     "5",
-    { state: emptyState(), legend: openLegend },
+    session,
     makeRenderElement(),
   );
   assert.equal(outcome.handled, false);
 }
 
-function makeAutosaveGame(session, bytes) {
-  return {
-    exec() {
-      session.state = emptyState();
-      session.state.cells[cellIndex(0, 2)] = { value: 4, given: false, conflict: false };
-      return { ok: true, state: session.state, msg: null, is_quit: false };
-    },
-    getLegend() {
-      return { fill: true, clear: true, undo: true, redo: false };
-    },
-    serialize() {
-      return { ok: true, bytes };
-    },
-  };
-}
-
 {
   const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  const session = {
-    state: emptyState(),
-    legend: openLegend,
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
+  const errorModal = errorModalStub();
+  const { game, session } = await playGame({ auto_save: true });
   const host = hostFetch({ exists: false });
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
-  const game = await withCoreFlow(makeAutosaveGame(session, new Uint8Array([1, 2, 3])), { autoSave: true });
-
-  const outcome = handlePlayKey(game, board, selection, status, errorModal, "4", session, makeRenderElement());
-  assert.equal(outcome.handled, true);
-  await settleFlow();
+  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
+  await outcome.done;
   globalThis.fetch = prevFetch;
   assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST", "first autosave with nothing on disk writes the host file");
-  assert.equal(session.boundFilename, "sudoku.sud");
+  assert.equal(errorModal.el.hidden, true);
 }
 
 {
   const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  const session = {
-    state: emptyState(),
-    legend: openLegend,
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
+  const errorModal = errorModalStub();
+  const { game, session } = await playGame({ auto_save: true });
   const host = hostFetch({ exists: true });
   const questions = [];
   const prevFetch = globalThis.fetch;
@@ -591,11 +528,8 @@ function makeAutosaveGame(session, bytes) {
     questions.push({ message, labels });
     return false;
   };
-  const game = await withCoreFlow(makeAutosaveGame(session, new Uint8Array([4, 5, 6])), { autoSave: true });
-
-  const outcome = handlePlayKey(game, board, selection, status, errorModal, "4", session, makeRenderElement());
-  assert.equal(outcome.handled, true);
-  await settleFlow();
+  const outcome = handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
+  await outcome.done;
   globalThis.fetch = prevFetch;
   globalThis.__sudokuChoose = prevChoose;
   assert.equal(questions.length, 1, "detached autosave onto an existing file asks once");
@@ -607,17 +541,14 @@ function makeAutosaveGame(session, bytes) {
 
 {
   const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  const session = { state: emptyState(), legend: openLegend };
+  const { game, session } = await playGame();
   const digitBtnHandlers = {};
   const pad = {
     querySelectorAll(selector) {
       if (selector !== "[data-play-key]") return [];
       return [
         {
-          dataset: { playKey: "5", playCode: "" },
+          dataset: { playKey: "4", playCode: "" },
           addEventListener(type, fn) {
             digitBtnHandlers[type] = fn;
           },
@@ -625,25 +556,18 @@ function makeAutosaveGame(session, bytes) {
       ];
     },
   };
-  wirePlayLoop(
-    board,
-    {
-      exec(action) {
-        assert.equal(action.action, "fill");
-        assert.equal(action.digit, 5);
-        return { ok: true, state: session.state, msg: null, is_quit: false };
-      },
-      getLegend() {
-        return openLegend;
-      },
+  let shownLegend = null;
+  wirePlayLoop(board, game, selectedAt(board, 0, 2), statusStub(), errorModalStub(), session, {
+    playPadEl: pad,
+    createElement: makeRenderElement(),
+    onLegendChange: (legend) => {
+      shownLegend = legend;
     },
-    selection,
-    status,
-    errorModal,
-    session,
-    { playPadEl: pad, createElement: makeRenderElement() },
-  );
+  });
   digitBtnHandlers.click?.();
+  await settleFlow();
+  assert.equal(game.getState().cells[cellIndex(0, 2)].value, 4);
+  assert.equal(shownLegend?.undo, true);
 }
 
 {

@@ -12,9 +12,8 @@ import {
   handleCopyPuzzle,
   handlePastePuzzle,
 } from "./menu.js";
-import { applyHintExecStatus } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
-import { hostFetch, postedCurrentFile, settleFlow, withCoreFlow } from "./test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, withCoreFlow } from "./test_support.mjs";
 
 
 function makeBtn() {
@@ -107,190 +106,60 @@ assert.equal(parseEditShortcut({ ctrlKey: true, altKey: false, key: "z", shiftKe
 assert.equal(parseEditShortcut({ ctrlKey: true, altKey: false, key: "z", shiftKey: true }), "redo");
 assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), null);
 
+const statusStub = (text = "") => ({ textContent: text, className: "" });
+const errorModalStub = () => ({ el: { hidden: true }, msgEl: { textContent: "" } });
+
+async function editGame(config = {}) {
+  const game = await loadGame(config);
+  startNewGame(game);
+  return {
+    game,
+    session: {
+      state: game.getState(),
+      legend: game.getLegend(),
+      config: game.getConfig(),
+      default_save_filename: "sudoku.sud",
+    },
+  };
+}
+
+function runEdit(action, game, session, { selection = { getSelection: () => null, select() {} }, status = statusStub() } = {}) {
+  return handleEditAction(action, game, makeMockBoard(), selection, status, errorModalStub(), session, makeRenderElement());
+}
+
 // ── undo exec + board refresh ──
 {
-  const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 2 }), select(r, c) { applySelection(board, r, c); } };
-  const session = {
-    state: emptyState(),
-    legend: { undo: true, redo: false },
-  };
-  session.state.cells[18] = { value: 7, given: false, conflict: false };
-
-  const game = {
-    exec(action) {
-      assert.equal(action.action, "undo");
-      session.state = emptyState();
-      return { ok: true, state: session.state, msg: null, is_quit: false };
-    },
-    getLegend() {
-      return { undo: false, redo: true };
-    },
-  };
-
-  const outcome = handleEditAction(
-    "undo",
-    game,
-    board,
-    selection,
-    status,
-    errorModal,
-    session,
-    makeRenderElement(),
-  );
+  const { game, session } = await editGame();
+  assert.equal(game.exec({ action: "fill", row: 0, col: 2, digit: 4 }).ok, true);
+  session.legend = game.getLegend();
+  const outcome = runEdit("undo", game, session);
   assert.equal(outcome.handled, true);
-  assert.equal(session.state.cells[18].value, 0);
+  await outcome.done;
+  assert.equal(session.state.cells[2].value, 0);
   assert.equal(session.legend.redo, true);
 }
 
-// ── solve with auto-save persists current snapshot ──
-{
-  const board = makeMockBoard();
-  const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const selection = { getSelection: () => ({ row: 0, col: 0 }), select() {} };
-  const session = {
-    state: emptyState(),
-    legend: { solve: true, undo: false, redo: false },
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
+// ── solve and hint with auto-save persist the current game ──
+for (const action of ["solve", "hint"]) {
+  const { game, session } = await editGame({ auto_save: true });
   const host = hostFetch();
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
-  const game = await withCoreFlow({
-    exec(action) {
-      assert.equal(action.action, "solve");
-      return { ok: true, state: session.state, msg: "Solved", is_quit: false };
-    },
-    getLegend() {
-      return { solve: true, undo: true, redo: false };
-    },
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([4, 5, 6]) };
-    },
-  }, { autoSave: true });
-
-  const outcome = handleEditAction(
-    "solve",
-    game,
-    board,
-    selection,
-    status,
-    errorModal,
-    session,
-    makeRenderElement(),
-  );
+  const outcome = runEdit(action, game, session);
   assert.equal(outcome.handled, true);
-  await settleFlow();
+  await outcome.done;
   globalThis.fetch = prevFetch;
-  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST");
+  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST", `${action} autosaves`);
 }
 
-// ── hint exec status: msg on bar; empty ok preserves bar, no modal ──
+// ── hint: core picks a cell when deselected, targets the selected cell otherwise ──
 {
-  const status = { textContent: "keep me", className: "" };
-  const modal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  applyHintExecStatus(status, modal, { ok: true, msg: null });
-  assert.equal(status.textContent, "keep me");
-  assert.equal(modal.el.hidden, true);
-  applyHintExecStatus(status, modal, { ok: true, msg: "B2 takes 6 (placement)" });
-  assert.equal(status.textContent, "B2 takes 6 (placement)");
-}
-
-// ── hint: engine-pick when deselected ──
-{
-  const session = { state: emptyState(), legend: { undo: false, redo: false } };
-  const game = {
-    exec(action) {
-      assert.deepEqual(action, { action: "hint" });
-      return { ok: true, state: session.state, msg: "A1 takes 5 (placement)", is_quit: false };
-    },
-    getLegend() {
-      return session.legend;
-    },
-  };
-  const status = { textContent: "", className: "" };
-  const outcome = handleEditAction(
-    "hint",
-    game,
-    makeMockBoard(),
-    { getSelection: () => null, select() {} },
-    status,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    makeRenderElement(),
-  );
-  assert.equal(outcome.handled, true);
-  assert.match(status.textContent, /placement/);
-}
-
-// ── hint: targeted when cell selected ──
-{
-  const session = { state: emptyState(), legend: { undo: false, redo: false } };
-  const game = {
-    exec(action) {
-      assert.deepEqual(action, { action: "hint", row: 1, col: 2 });
-      return { ok: true, state: session.state, msg: "C2 takes 3 (placement)", is_quit: false };
-    },
-    getLegend() {
-      return session.legend;
-    },
-  };
-  const outcome = handleEditAction(
-    "hint",
-    game,
-    makeMockBoard(),
-    { getSelection: () => ({ row: 1, col: 2 }), select() {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    makeRenderElement(),
-  );
-  assert.equal(outcome.handled, true);
-}
-
-// ── hint triggers autosave when auto_save is enabled ──
-{
-  const prevFetch = globalThis.fetch;
-  const host = hostFetch();
-  globalThis.fetch = host.fetchFn;
-
-  const session = {
-    state: emptyState(),
-    legend: { undo: false, redo: false },
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
-  const game = await withCoreFlow({
-    exec(action) {
-      assert.deepEqual(action, { action: "hint" });
-      return { ok: true, state: session.state, msg: "A1 takes 5 (placement)", is_quit: false };
-    },
-    getLegend() {
-      return session.legend;
-    },
-    serialize() {
-      return { ok: true, bytes: new Uint8Array([1, 2, 3]) };
-    },
-  }, { autoSave: true });
-  const status = { textContent: "", className: "" };
-  const outcome = handleEditAction(
-    "hint",
-    game,
-    makeMockBoard(),
-    { getSelection: () => null, select() {} },
-    status,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    makeRenderElement(),
-  );
-  assert.equal(outcome.handled, true);
-  await settleFlow();
-  globalThis.fetch = prevFetch;
-  assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST");
+  const { game, session } = await editGame();
+  const status = statusStub();
+  await runEdit("hint", game, session, { status }).done;
+  assert.match(status.textContent, /takes [1-9] \(placement\)/);
+  await runEdit("hint", game, session, { status, selection: { getSelection: () => ({ row: 1, col: 2 }), select() {} } }).done;
+  assert.match(status.textContent, /^C2 takes [1-9] \(placement\)/);
 }
 
 // ── wireEditMenu Hint menuitem click shows status ──
@@ -308,17 +177,8 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     },
     addEventListener() {},
   };
-  const session = { state: emptyState(), legend: { undo: false, redo: false } };
-  const status = { textContent: "keep", className: "" };
-  const game = {
-    exec(action) {
-      assert.deepEqual(action, { action: "hint", row: 2, col: 3 });
-      return { ok: true, state: session.state, msg: "D4 takes 7 (placement)", is_quit: false };
-    },
-    getLegend() {
-      return session.legend;
-    },
-  };
+  const { game, session } = await editGame();
+  const status = statusStub("keep");
   wireEditMenu(
     makeBtn(),
     makeBtn(),
@@ -327,33 +187,25 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     makeMockBoard(),
     { getSelection: () => ({ row: 2, col: 3 }), select() {} },
     status,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
+    errorModalStub(),
     session,
     makeRenderElement(),
     root,
     { closeMenus: () => { closedMenus += 1; } },
   );
   hintBtn.click();
-  assert.match(status.textContent, /D4 takes 7 \(placement\)/);
+  await settleFlow();
+  assert.match(status.textContent, /^D3 takes [1-9] \(placement\)/);
   assert.equal(closedMenus, 1);
 }
 
 // ── disabled when legend false ──
 {
-  const session = { state: emptyState(), legend: { undo: false, redo: false } };
-  let execCalls = 0;
-  const outcome = handleEditAction(
-    "undo",
-    { exec: () => { execCalls += 1; return { ok: true, state: session.state }; }, getLegend: () => session.legend },
-    makeMockBoard(),
-    { getSelection: () => ({ row: 0, col: 0 }), select() {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    makeRenderElement(),
-  );
+  const { game, session } = await editGame();
+  const before = JSON.stringify(game.getState());
+  const outcome = runEdit("undo", game, session);
   assert.equal(outcome.handled, false);
-  assert.equal(execCalls, 0);
+  assert.equal(JSON.stringify(game.getState()), before);
 }
 
 // ── wireEditMenu click updates enablement ──
@@ -364,7 +216,9 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
   redoBtn.id = "edit-redo";
   const deselectBtn = makeBtn();
   deselectBtn.id = "edit-deselect";
-  const session = { state: emptyState(), legend: { undo: true, redo: false } };
+  const { game, session } = await editGame();
+  assert.equal(game.exec({ action: "fill", row: 0, col: 2, digit: 4 }).ok, true);
+  session.legend = game.getLegend();
   const listeners = {};
   const root = {
     querySelector() {
@@ -376,17 +230,6 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     },
     addEventListener(type, fn) {
       listeners[type] = fn;
-    },
-  };
-
-  const game = {
-    exec(action) {
-      assert.equal(action.action, "undo");
-      session.legend = { undo: false, redo: true };
-      return { ok: true, state: session.state, msg: null, is_quit: false };
-    },
-    getLegend() {
-      return session.legend;
     },
   };
 
@@ -406,8 +249,8 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
     game,
     makeMockBoard(),
     selection,
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
+    statusStub(),
+    errorModalStub(),
     session,
     makeRenderElement(),
     root,
@@ -417,6 +260,7 @@ assert.equal(parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), n
   assert.equal(redoBtn.disabled, true);
   assert.equal(deselectBtn.disabled, false);
   undoBtn.click();
+  await settleFlow();
   assert.equal(undoBtn.disabled, true);
   assert.equal(redoBtn.disabled, false);
 

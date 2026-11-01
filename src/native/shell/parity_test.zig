@@ -28,6 +28,8 @@ const Step = struct {
     fill_first_empty: ?bool = null,
     undo: ?bool = null,
     redo: ?bool = null,
+    hint: ?bool = null,
+    solve: ?bool = null,
     paste: ?[]const u8 = null,
 };
 
@@ -123,6 +125,8 @@ fn stepCommand(app: *shell.Sudoku, step: Step) !command.Command {
     if (step.fill_first_empty != null) return .{ .fill = try firstEmptyLegalFill(app.engine.eventBoard()) };
     if (step.undo != null) return .{ .undo = {} };
     if (step.redo != null) return .{ .redo = {} };
+    if (step.hint != null) return .{ .hint = .{} };
+    if (step.solve != null) return .{ .solve_for_me = {} };
     if (step.paste) |line| return .{ .paste = .{ .line = line } };
     return error.UnknownScenarioStep;
 }

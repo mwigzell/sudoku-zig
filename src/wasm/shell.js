@@ -221,22 +221,6 @@ export function applySessionOutcomeStatus(
   syncCurrentFileLabels(session);
 }
 
-/** Canonical state/legend command outcome path for successful play/edit commands. */
-export function applyCommandOutcomeStatus(
-  session,
-  statusEl,
-  result,
-  { legend } = {},
-) {
-  if (!result?.ok) return false;
-  applySessionOutcome(session, {
-    state: result.state,
-    legend,
-  });
-  applyEventStatus(statusEl, result);
-  return true;
-}
-
 /** Show an Event.error_msg in the blocking error modal. */
 export function showErrorModal(modal, message) {
   modal.msgEl.textContent = message;
@@ -259,17 +243,6 @@ export function applyExecResult(statusEl, errorModal, result) {
     return;
   }
   applyEventStatus(statusEl, result);
-}
-
-/** Hint exec → status bar only; `.ok.msg` hint semantics never use the error modal. */
-export function applyHintExecStatus(statusEl, errorModal, result) {
-  if (!result.ok) {
-    applyExecResult(statusEl, errorModal, result);
-    return;
-  }
-  if (typeof result.msg === "string" && result.msg.length > 0) {
-    applyEventStatus(statusEl, result);
-  }
 }
 
 /** Save current game — returns opaque SUD0 bytes or `{ ok: false, error }`. */

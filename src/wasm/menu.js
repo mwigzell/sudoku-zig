@@ -2,8 +2,6 @@
 
 import {
   applyEventStatus,
-  applySessionOutcome,
-  applyHintExecStatus,
   applyExecResult,
   applyLoadedSessionOutcome,
   showErrorModal,
@@ -13,7 +11,7 @@ import {
   pastePuzzle,
 } from "./shell.js";
 import { LEGEND_WIRE_COPY, LEGEND_WIRE_PASTE } from "./menu_bar.js";
-import { applySuccessfulExec, readSelection, renderBoard } from "./board.js";
+import { boardCommandFlow, readSelection, renderBoard, runBoardCommand } from "./board.js";
 
 import { syncMenuBar } from "./menu_bar.js";
 import { FLOW_COPY, runFlow, STEP_SHOW_STATUS } from "./step_runner.js";
@@ -100,8 +98,11 @@ function execPayloadForEditAction(action, boardEl, selection) {
   return { action: "hint", row: sel.row, col: sel.col };
 }
 
-/** Core edit dispatcher: gate by legend, execute command, update session/render, trigger autosave. */
-/** @param {GameApi} game */
+/**
+ * Edit dispatcher: actions the legend disables are not handled; the rest run through core.
+ * @param {GameApi} game
+ * @param {{ commandFlow?: import("./types").FlowHandlers, onShown?: (step: import("./types").FlowStep) => void }} [options]
+ */
 export function handleEditAction(
   action,
   game,
@@ -111,42 +112,12 @@ export function handleEditAction(
   errorModal,
   session,
   createElement,
+  { commandFlow = boardCommandFlow(game, session, statusEl, errorModal), onShown } = {},
 ) {
-  if (action === "undo" && !session.legend.undo) return { handled: false };
-  if (action === "redo" && !session.legend.redo) return { handled: false };
-  if (action === "solve" && !session.legend.solve) return { handled: false };
-
-  // Edit phase 1: execute action payload against engine.
-  const result = game.exec(execPayloadForEditAction(action, boardEl, selection));
-  if (!result.ok) {
-    // Edit phase 2a: failure path uses common exec error routing.
-    applyExecResult(statusEl, errorModal, result);
-    return { handled: true };
-  }
-
-  // Hint is display-only — skip re-render (board unchanged).
-  if (action === "hint") {
-    // Edit phase 2b: hint success updates status/legend only.
-    applyHintExecStatus(statusEl, errorModal, result);
-    applySessionOutcome(session, {
-      state: result.state,
-      legend: game.getLegend(),
-    });
-    startAutoSavePolicy(game, session, action, {
-      onError: (saved) => applyExecResult(statusEl, errorModal, saved),
-    });
-    return { handled: true, legend: session.legend };
-  }
-
-  // Edit phase 3: board-mutating success path (render + session outcome + autosave).
-  applySuccessfulExec(boardEl, selection, statusEl, result, createElement, {
-    session,
-    legend: game.getLegend(),
-  });
-  startAutoSavePolicy(game, session, action, {
-    onError: (saved) => applyExecResult(statusEl, errorModal, saved),
-  });
-  return { handled: true, legend: session.legend };
+  if (action in session.legend && !session.legend[action]) return { handled: false };
+  const payload = execPayloadForEditAction(action, boardEl, selection);
+  const done = runBoardCommand(game, payload, { boardEl, selection, createElement, commandFlow, onShown });
+  return { handled: true, done };
 }
 
 /** Wires edit controls + keyboard shortcuts onto one shared edit action dispatcher. */
@@ -169,6 +140,7 @@ export function wireEditMenu(
     pasteBtn,
     closeMenus,
     clipboard = globalThis.navigator?.clipboard,
+    commandFlow,
   } = {},
 ) {
   const controls = {
@@ -185,20 +157,11 @@ export function wireEditMenu(
   };
   syncEdit();
 
-  const run = (action) => {
-    const outcome = handleEditAction(
-      action,
-      game,
-      boardEl,
-      selection,
-      statusEl,
-      errorModal,
-      session,
-      createElement,
-    );
-    if (outcome.handled) syncEdit();
-    return outcome;
-  };
+  const run = (action) =>
+    handleEditAction(action, game, boardEl, selection, statusEl, errorModal, session, createElement, {
+      commandFlow,
+      onShown: syncEdit,
+    });
 
   const runDeselect = () => {
     const outcome = handleDeselect(selection);
@@ -262,8 +225,6 @@ export function wireEditMenu(
     }
     const action = parseEditShortcut(event);
     if (!action) return;
-    if (action === "undo" && !session.legend.undo) return;
-    if (action === "redo" && !session.legend.redo) return;
     const outcome = run(action);
     if (!outcome.handled) return;
     event.preventDefault();

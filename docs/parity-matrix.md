@@ -3,7 +3,7 @@
 Native and web front ends call core differently, but must produce the same **semantic** outcomes. Each scenario in `src/test/parity/scenarios.json` runs through the real entry paths on both sides and is checked against one shared set of expectations:
 
 - **Native:** `src/native/shell/parity_test.zig` drives `Sudoku` (`runStartupFlow`, then `turn()` per step) with a scripted renderer and an in-memory transport.
-- **Web:** `src/wasm/parity.test.mjs` drives the real wasm through `shell.js` (`runStartupFlow`), `board.js` (`handlePlayKey`) and `file_menu.js` (the File menu listeners) against a fake host.
+- **Web:** `src/wasm/parity.test.mjs` drives the real wasm through `shell.js` (`runStartupFlow`), `board.js` (`handlePlayKey`), `menu.js` (`handleEditAction`) and `file_menu.js` (the File menu listeners) against a fake host.
 
 `zig build parity` (part of `zig build verify`) fails when a scenario is not run by both runners, is missing from this table, or skips an entry without naming the gap and an open issue.
 
@@ -20,7 +20,7 @@ Native and web front ends call core differently, but must produce the same **sem
 | `legend` | Whether Undo / Redo are offered after the steps. |
 | `probes` | Cell value and given flag after the steps. |
 
-Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `paste` (clipboard text), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
+Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `hint`, `solve` (Edit menu items), `paste` (clipboard text), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
 
 Write context (core's `continuation` / `detached`) is checked by what follows it: under `continuation` the next autosave writes the working file without asking; under `detached` it asks before overwriting an existing file.
 
@@ -36,6 +36,8 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 | `paste_valid_resets_history` | Pasted line becomes the givens; status `paste: puzzle loaded`; Undo not offered | same | same |
 | `paste_invalid_keeps_board` | One error; board and Undo unchanged | same | same |
 | `settings_change_does_not_autosave` | With Auto Save on, Region and Theme changes persist settings and write no game file; the status line keeps the last message | same | same |
+| `hint_reports_and_autosaves` | Status shows the hint text; the hint autosaves `sudoku.sud` without asking | same | same |
+| `solve_then_rejected_fill` | Status `You win!`; a fill on a given cell shows one error and leaves the board solved | same | same |
 
 ## Adding a scenario
 

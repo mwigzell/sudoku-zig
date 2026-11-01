@@ -1,13 +1,10 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
-import {
-  applyCommandOutcomeStatus,
-  applyEventStatus,
-  applyExecResult,
-  startAutoSavePolicy,
-} from "./shell.js";
+import { applyEventStatus, commandHandlers, runSessionCommand, showErrorModal } from "./shell.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
+/** @typedef {import("./types").FlowHandlers} FlowHandlers */
+/** @typedef {import("./types").FlowStep} FlowStep */
 
 export { applyEventStatus };
 
@@ -338,27 +335,31 @@ export function parsePlayKey(key, code = "") {
   return null;
 }
 
-/** Canonical successful play/edit render path; optionally updates session via shared shell helper. */
-export function applySuccessfulExec(
-  boardEl,
-  selection,
-  statusEl,
-  result,
-  createElement,
-  { session, legend } = {},
-) {
-  renderBoard(boardEl, result.state, createElement);
-  const sel = selection.getSelection();
-  if (sel) selection.select(sel.row, sel.col);
-  if (session) {
-    applyCommandOutcomeStatus(session, statusEl, result, { legend });
-    return;
-  }
-  applyEventStatus(statusEl, result);
+/**
+ * Run a board command through core and redraw from the game core shows; the selection survives.
+ * @param {GameApi} game
+ * @param {import("./types").ExecAction} action
+ * @param {{ boardEl: any, selection: any, createElement?: any, commandFlow: FlowHandlers, onShown?: (step: FlowStep) => void }} options
+ */
+export function runBoardCommand(game, action, { boardEl, selection, createElement, commandFlow, onShown }) {
+  return runSessionCommand(game, action, commandFlow, (step) => {
+    renderBoard(boardEl, step.state, createElement);
+    const sel = selection.getSelection();
+    if (sel) selection.select(sel.row, sel.col);
+    onShown?.(step);
+  });
 }
 
-/** Execute one play input against current selection and apply success/error side effects. */
-/** @param {GameApi} game */
+/** Command flow handlers for a board view: errors go to the error modal, status to the status bar. */
+export function boardCommandFlow(game, session, statusEl, errorModal) {
+  return commandHandlers(game, session, { statusEl, onError: (failed) => showErrorModal(errorModal, failed.error) });
+}
+
+/**
+ * Run one play key against the selected cell through core.
+ * @param {GameApi} game
+ * @param {{ commandFlow?: FlowHandlers, onShown?: (step: FlowStep) => void }} [options]
+ */
 export function handlePlayKey(
   game,
   boardEl,
@@ -369,43 +370,17 @@ export function handlePlayKey(
   session,
   createElement,
   code = "",
+  { commandFlow = boardCommandFlow(game, session, statusEl, errorModal), onShown } = {},
 ) {
-  // Play phase 1: parse input -> determine fill/clear intent.
   const play = parsePlayKey(key, code);
   if (!play) return { handled: false };
-
-  // Play phase 2: require a selected target cell for grid edits.
   const sel = selection.getSelection();
   if (!sel) return { handled: false };
   const { row, col } = sel;
-  const result =
-    play.type === "fill"
-      ? game.exec({ action: "fill", row, col, digit: play.digit })
-      : game.exec({ action: "clear", row, col });
-
-  // Play phase 3: on failure, surface error and stop.
-  if (!result.ok) {
-    applyExecResult(statusEl, errorModal, result);
-    return { handled: true };
-  }
-
-  // Play phase 4: on success, apply canonical outcome + autosave side-effect.
-  applySuccessfulExec(boardEl, selection, statusEl, result, createElement, {
-    session,
-    legend: game.getLegend(),
-  });
-  const coord = `${COLUMN_LETTERS[col]}${row + 1}`;
-  const commandText = play.type === "fill" ? `fill ${coord} ${play.digit}` : `clear ${coord}`;
-  startAutoSavePolicy(game, session, play.type, {
-    commandMeta: {
-      command_text: commandText,
-      row,
-      col,
-      digit: play.type === "fill" ? play.digit : null,
-    },
-    onError: (saved) => applyExecResult(statusEl, errorModal, saved),
-  });
-  return { handled: true, legend: session.legend };
+  const action =
+    play.type === "fill" ? { action: "fill", row, col, digit: play.digit } : { action: "clear", row, col };
+  const done = runBoardCommand(game, action, { boardEl, selection, createElement, commandFlow, onShown });
+  return { handled: true, done };
 }
 
 /** Board key + play-pad event loop that feeds `handlePlayKey` and syncs legend hooks. */
@@ -417,24 +392,14 @@ export function wirePlayLoop(
   statusEl,
   errorModal,
   session,
-  { onLegendChange, playPadEl = null, createElement } = {},
+  { onLegendChange, playPadEl = null, createElement, commandFlow } = {},
 ) {
   const playEl = resolvePlayGrid(frameEl);
-  const runPlayInput = (key, code = "") => {
-    const outcome = handlePlayKey(
-      game,
-      frameEl,
-      selection,
-      statusEl,
-      errorModal,
-      key,
-      session,
-      createElement,
-      code,
-    );
-    if (outcome.handled && outcome.legend) onLegendChange?.(outcome.legend);
-    return outcome;
-  };
+  const runPlayInput = (key, code = "") =>
+    handlePlayKey(game, frameEl, selection, statusEl, errorModal, key, session, createElement, code, {
+      commandFlow,
+      onShown: (step) => onLegendChange?.(step.legend),
+    });
   playEl.addEventListener("keydown", (event) => {
     const outcome = runPlayInput(event.key, event.code);
     if (!outcome.handled) return;

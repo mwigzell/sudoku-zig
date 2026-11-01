@@ -165,6 +165,38 @@
         "settings": { "auto_save": true, "show_region": true, "theme": "light" },
         "probes": []
       }
+    },
+    {
+      "name": "hint_reports_and_autosaves",
+      "summary": "A hint shows its text in the status line and autosaves like any other command.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{ "hint": true }],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud"],
+        "status": "F5 takes 4 (placement)",
+        "probes": []
+      }
+    },
+    {
+      "name": "solve_then_rejected_fill",
+      "summary": "Solve fills the board and reports the win; a move on a given cell is then rejected with an error and changes nothing.",
+      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{ "solve": true }, { "fill": { "row": 0, "col": 2, "digit": 1 } }],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "status": "You win!",
+        "errors": 1,
+        "probes": [
+          { "row": 0, "col": 0, "value": 4, "given": false },
+          { "row": 0, "col": 2, "value": 3, "given": true }
+        ]
+      }
     }
   ]
 }

@@ -125,7 +125,7 @@ function clickCell(board, row, col) {
   board.play._listeners.click?.(event);
 }
 
-function runHint(game, board, selection, session, status) {
+async function runHint(game, board, selection, session, status) {
   const outcome = handleEditAction(
     "hint",
     game,
@@ -137,6 +137,7 @@ function runHint(game, board, selection, session, status) {
     makeRenderElement(),
   );
   assert.equal(outcome.handled, true);
+  await outcome.done;
 }
 
 {
@@ -154,13 +155,13 @@ function runHint(game, board, selection, session, status) {
 
   clickCell(board, 0, 2);
   assert.deepEqual(selection.getSelection(), { row: 0, col: 2 });
-  runHint(game, board, selection, session, status);
+  await runHint(game, board, selection, session, status);
   assert.match(status.textContent, /C1 takes [1-9] \(placement\)/);
   const msgC1 = status.textContent;
 
   clickCell(board, 1, 2);
   assert.deepEqual(selection.getSelection(), { row: 1, col: 2 });
-  runHint(game, board, selection, session, status);
+  await runHint(game, board, selection, session, status);
   assert.match(status.textContent, /C2 takes [1-9] \(placement\)/);
   assert.notEqual(status.textContent, msgC1);
 }
@@ -183,7 +184,7 @@ function runHint(game, board, selection, session, status) {
   assert.equal(deadFill.ok, true);
   session.state = deadFill.state;
 
-  runHint(game, board, selection, session, status);
+  await runHint(game, board, selection, session, status);
   assert.match(status.textContent, /\(no-solution\)/);
   assert.equal(modal.el.hidden, true);
 }

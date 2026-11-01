@@ -210,12 +210,14 @@ export function wireSudokuApp({
       copyBtn: menuControls.copy,
       pasteBtn: menuControls.paste,
       closeMenus: () => menuBar.closeAll?.(),
+      commandFlow,
     },
   );
 
   wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
     onLegendChange: () => menuBar.sync(),
     playPadEl,
+    commandFlow,
   });
   wireHelpAbout(menuControls.about, game, aboutModal);
   wireSettingsMenu(menuControls.settings, game, session, settingsModal, {

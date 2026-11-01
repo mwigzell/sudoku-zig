@@ -230,11 +230,10 @@ async function runScenario(scenario) {
         await settleFlow();
         continue;
       }
-      const edit = step.undo ? "undo" : step.redo ? "redo" : null;
+      const edit = step.undo ? "undo" : step.redo ? "redo" : step.hint ? "hint" : step.solve ? "solve" : null;
       if (edit) {
         const selection = { getSelection: () => null, select() {}, deselect() {} };
-        handleEditAction(edit, game, boardEl, selection, statusEl, errorModal, session, createElement);
-        await settleFlow();
+        await handleEditAction(edit, game, boardEl, selection, statusEl, errorModal, session, createElement).done;
         continue;
       }
       if (step.paste !== undefined) {
@@ -249,7 +248,7 @@ async function runScenario(scenario) {
       const key = step.clear ? "Delete" : String(move.digit);
       const outcome = handlePlayKey(game, boardEl, selection, statusEl, errorModal, key, session, createElement);
       assert.equal(outcome.handled, true);
-      await settleFlow();
+      await outcome.done;
     }
 
     const e = scenario.expect;
