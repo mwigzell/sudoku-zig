@@ -17,9 +17,7 @@ const disambiguate = @import("../ascii/disambiguate.zig");
 const legend = @import("../../core/renderer/legend.zig");
 
 const host_mod = @import("../host.zig");
-const save_command = @import("save.zig");
 const export_command = @import("export.zig");
-const read_path = @import("read_path.zig");
 const gen_progress = @import("gen_progress.zig");
 const storage_mod = @import("storage.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
@@ -73,7 +71,7 @@ pub const Sudoku = struct {
             var read_bytes: ?[]u8 = null;
             const transport = self.storage.transport;
             defer if (read_bytes) |b| transport.free(transport.context, b);
-            var opened: ?read_path.ReadResult = null;
+            var opened: ?storage_mod.ReadResult = null;
             defer if (opened) |o| {
                 transport.free(transport.context, o.resolved);
                 transport.free(transport.context, o.bytes);
@@ -262,6 +260,7 @@ const styler_t = @import("../ascii/styler.zig");
 const ascii_renderer = @import("../ascii/renderer.zig");
 
 const settings_store = @import("../../core/settings_store.zig");
+const save_defaults = @import("../../core/save_defaults.zig");
 
 /// Scripted renderer: feeds preset commands and yes/no answers, records what the shell showed.
 const DeterministicFacade = struct {
@@ -1568,7 +1567,7 @@ test "replace confirm: autosave cancel leaves existing target unchanged" {
     var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
     var transport_impl = MemoryTransport.init(std.testing.allocator);
     defer transport_impl.deinit();
-    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_defaults.DEFAULT_SAVE_FILE});
     defer std.testing.allocator.free(default_virtual);
     try transport_impl.put(default_virtual, "OLD");
     var out = std.Io.Writer.Allocating.init(std.testing.allocator);
@@ -1603,7 +1602,7 @@ test "replace confirm: paste detaches and requires replace confirm before autosa
     var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
     var transport_impl = MemoryTransport.init(std.testing.allocator);
     defer transport_impl.deinit();
-    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_defaults.DEFAULT_SAVE_FILE});
     defer std.testing.allocator.free(default_virtual);
     try transport_impl.put(default_virtual, "OLD");
     try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
@@ -1639,7 +1638,7 @@ test "replace confirm: undo autosave in detached context requires prompt before 
     var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
     var transport_impl = MemoryTransport.init(std.testing.allocator);
     defer transport_impl.deinit();
-    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_defaults.DEFAULT_SAVE_FILE});
     defer std.testing.allocator.free(default_virtual);
     try transport_impl.put(default_virtual, "OLD");
     try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
@@ -1678,7 +1677,7 @@ test "replace confirm: redo autosave in detached context requires prompt before 
     var facade_impl = DeterministicFacade{ .steps = &steps, .replace_answers = &replace_answers };
     var transport_impl = MemoryTransport.init(std.testing.allocator);
     defer transport_impl.deinit();
-    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_command.DEFAULT_SAVE_FILE});
+    const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_defaults.DEFAULT_SAVE_FILE});
     defer std.testing.allocator.free(default_virtual);
     try transport_impl.put(default_virtual, "OLD");
     try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);

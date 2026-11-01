@@ -6,7 +6,6 @@ const board = @import("../../core/board/board.zig");
 const cell = @import("../../core/board/cell.zig");
 const parser = @import("parser.zig");
 const _command = @import("../../core/command.zig");
-const save = @import("../shell/save.zig");
 const styler = @import("styler.zig");
 const std = @import("std");
 const Io = std.Io;

@@ -7,14 +7,14 @@ const settings_store = @import("../../core/settings_store.zig");
 const flow_mod = @import("../../core/flow/mod.zig");
 const file_transport = @import("file_transport.zig");
 const path_mod = @import("path.zig");
-const save_command = @import("save.zig");
-const save_as_command = @import("save_as.zig");
+const save_defaults = @import("../../core/save_defaults.zig");
 const export_command = @import("export.zig");
-const read_path = @import("read_path.zig");
 
 const OPEN_NO_FILE_MSG: []const u8 = "open: no file specified";
 const IMPORT_NO_FILE_MSG: []const u8 = "import: no file specified";
 const SYSTEM_ERROR_MSG: []const u8 = "system error";
+const RESOLVE_STAGE: []const u8 = "resolve";
+const READ_STAGE: []const u8 = "readAll";
 
 /// Where settings and the current-file pointer live, and the folder for the default save file.
 pub const SettingsPersist = struct {
@@ -27,6 +27,13 @@ pub const SettingsPersist = struct {
 /// How a `write` step is carried out: Save records its status in the game, autosave does not,
 /// and Export writes only the puzzle line without making it the current file.
 pub const WriteMode = enum { save, autosave, export_line };
+
+/// A file read through the transport; free both buffers with the transport.
+pub const ReadResult = struct {
+    /// The path the transport resolved the name to.
+    resolved: []u8,
+    bytes: []u8,
+};
 
 pub const Storage = struct {
     transport: file_transport.FileTransport,
@@ -63,10 +70,10 @@ pub const Storage = struct {
     /// default name without settings persistence. Only the default folder is created on demand;
     /// a missing working-file folder must still fail the write.
     pub fn defaultTarget(self: *const @This(), scratch: []u8) []const u8 {
-        const sp = self.settings_persist orelse return copyInto(scratch, save_command.DEFAULT_SAVE_FILE);
+        const sp = self.settings_persist orelse return copyInto(scratch, save_defaults.DEFAULT_SAVE_FILE);
         std.Io.Dir.cwd().createDirPath(sp.io, sp.visible_save_dir) catch {};
-        const path = path_mod.resolveSavePath(std.heap.page_allocator, sp.visible_save_dir, save_command.DEFAULT_SAVE_FILE) catch
-            return copyInto(scratch, save_command.DEFAULT_SAVE_FILE);
+        const path = path_mod.resolveSavePath(std.heap.page_allocator, sp.visible_save_dir, save_defaults.DEFAULT_SAVE_FILE) catch
+            return copyInto(scratch, save_defaults.DEFAULT_SAVE_FILE);
         defer std.heap.page_allocator.free(path);
         return copyInto(scratch, path);
     }
@@ -80,16 +87,14 @@ pub const Storage = struct {
     /// Carry out a `write` step from `engine`; `scratch` holds the reported name or error text.
     pub fn write(self: *const @This(), mode: WriteMode, engine: *game_engine.GameEngine, name: []const u8, scratch: []u8) flow_mod.Wrote {
         const resolved = self.transport.resolve(self.transport.context, name) catch |err| {
-            return .{ .failed = std.fmt.bufPrint(scratch, "resolve: {s}", .{@errorName(err)}) catch SYSTEM_ERROR_MSG };
+            return .{ .failed = failedAt(scratch, RESOLVE_STAGE, err) };
         };
         defer self.transport.free(self.transport.context, resolved);
 
         switch (mode) {
-            .save => switch (save_as_command.execute(engine, self.transport, resolved)) {
-                .ok => {},
-                .error_msg => |msg| return .{ .failed = copyInto(scratch, msg) },
-            },
-            .autosave => {
+            .save, .autosave => {
+                // Save's status goes into the game before it is serialized, so a relaunch shows it.
+                if (mode == .save) _ = engine.savedToPathEvent(resolved);
                 const save_buf = engine.toSaveFormat(std.heap.page_allocator) catch |err| return .{ .failed = @errorName(err) };
                 defer std.heap.page_allocator.free(save_buf);
                 self.transport.write(self.transport.context, resolved, save_buf) catch |err| return .{ .failed = @errorName(err) };
@@ -117,7 +122,7 @@ pub const Storage = struct {
 
     /// Carry out a `pick_open` step: the terminal has no picker, so read the path typed with the command.
     /// On success `read` owns the bytes and resolved path until the flow takes the next step.
-    pub fn pickOpen(self: *const @This(), pick: flow_mod.step.PickOpen, scratch: []u8, read: *?read_path.ReadResult) flow_mod.step.Picked {
+    pub fn pickOpen(self: *const @This(), pick: flow_mod.step.PickOpen, scratch: []u8, read: *?ReadResult) flow_mod.step.Picked {
         const path = pick.path orelse return .{ .failed = switch (pick.kind) {
             .game => OPEN_NO_FILE_MSG,
             .puzzle => IMPORT_NO_FILE_MSG,
@@ -143,24 +148,27 @@ pub const Storage = struct {
     }
 
     const NamedRead = union(enum) {
-        ok: read_path.ReadResult,
+        ok: ReadResult,
         /// Text naming the stage that failed, in `scratch`.
         failed: []const u8,
     };
 
     /// Resolve and read `path`; on success the caller owns both buffers (free with the transport).
     fn readNamed(self: *const @This(), path: []const u8, scratch: []u8) NamedRead {
-        var stage: read_path.Stage = .resolve;
-        const read = read_path.readFileBytes(self.transport, path, &stage) catch |err| {
-            const label: []const u8 = switch (stage) {
-                .resolve => "resolve",
-                .read => "readAll",
-            };
-            return .{ .failed = std.fmt.bufPrint(scratch, "{s}: {s}", .{ label, @errorName(err) }) catch SYSTEM_ERROR_MSG };
+        const resolved = self.transport.resolve(self.transport.context, path) catch |err|
+            return .{ .failed = failedAt(scratch, RESOLVE_STAGE, err) };
+        const bytes = self.transport.readAll(self.transport.context, resolved) catch |err| {
+            self.transport.free(self.transport.context, resolved);
+            return .{ .failed = failedAt(scratch, READ_STAGE, err) };
         };
-        return .{ .ok = read };
+        return .{ .ok = .{ .resolved = resolved, .bytes = bytes } };
     }
 };
+
+/// `<stage>: <error>` in `scratch`, naming the transport call that failed.
+fn failedAt(scratch: []u8, stage: []const u8, err: anyerror) []const u8 {
+    return std.fmt.bufPrint(scratch, "{s}: {s}", .{ stage, @errorName(err) }) catch SYSTEM_ERROR_MSG;
+}
 
 fn copyInto(scratch: []u8, text: []const u8) []const u8 {
     const len = @min(text.len, scratch.len);
@@ -169,6 +177,7 @@ fn copyInto(scratch: []u8, text: []const u8) []const u8 {
 }
 
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
+const file_policy = @import("../../core/file_policy.zig");
 
 /// A temp folder with an absolute path, and a `Storage` whose settings live in it.
 const TestRoot = struct {
@@ -234,13 +243,13 @@ test "defaultTarget: the default file in the visible folder, creating the folder
     var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
 
     const target = root.storage(visible).defaultTarget(&scratch);
-    const expected = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ visible, save_command.DEFAULT_SAVE_FILE });
+    const expected = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ visible, save_defaults.DEFAULT_SAVE_FILE });
     defer std.testing.allocator.free(expected);
     try std.testing.expectEqualStrings(expected, target);
     _ = try std.Io.Dir.cwd().statFile(std.testing.io, visible, .{});
 
     const bare: Storage = .{ .transport = file_transport.NativeTransport.make(std.testing.io) };
-    try std.testing.expectEqualStrings(save_command.DEFAULT_SAVE_FILE, bare.defaultTarget(&scratch));
+    try std.testing.expectEqualStrings(save_defaults.DEFAULT_SAVE_FILE, bare.defaultTarget(&scratch));
 }
 
 test "write: save and autosave make the target the current file; export leaves it alone" {
@@ -260,6 +269,15 @@ test "write: save and autosave make the target the current file; export leaves i
         defer std.testing.allocator.free(current);
         try std.testing.expectEqualStrings(game, current);
     }
+    const saved_to = try std.fmt.allocPrint(std.testing.allocator, file_policy.SAVED_TO_FMT, .{game});
+    defer std.testing.allocator.free(saved_to);
+    try std.testing.expectEqualStrings(saved_to, engine.state.status.optional().?);
+    const saved = try store.transport.readAll(store.transport.context, game);
+    defer store.transport.free(store.transport.context, saved);
+    var reloaded = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer reloaded.deinit();
+    try reloaded.loadSaveFormat(saved);
+    try std.testing.expectEqualSlices(u8, &export_command.currentPuzzleLine(&engine), &export_command.currentPuzzleLine(&reloaded));
 
     const line = try root.path("puzzle.txt");
     defer std.testing.allocator.free(line);
@@ -285,7 +303,9 @@ test "write: a failed write reports why and keeps the current file" {
     const unwritable = try root.path("no-such-folder/game.sud");
     defer std.testing.allocator.free(unwritable);
 
-    try std.testing.expect(store.write(.autosave, &engine, unwritable, &scratch) == .failed);
+    for ([_]WriteMode{ .save, .autosave, .export_line }) |mode| {
+        try std.testing.expect(store.write(mode, &engine, unwritable, &scratch) == .failed);
+    }
     const current = (try root.currentFile()) orelse return error.TestFailed;
     defer std.testing.allocator.free(current);
     try std.testing.expectEqualStrings(kept, current);
@@ -312,7 +332,7 @@ test "pickOpen: no typed path fails with the kind's message; a missing file name
     defer root.deinit();
     const store = root.storage(root.dir);
     var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
-    var read: ?read_path.ReadResult = null;
+    var read: ?ReadResult = null;
 
     try std.testing.expectEqualStrings(OPEN_NO_FILE_MSG, store.pickOpen(.{ .kind = .game, .path = null }, &scratch, &read).failed);
     try std.testing.expectEqualStrings(IMPORT_NO_FILE_MSG, store.pickOpen(.{ .kind = .puzzle, .path = null }, &scratch, &read).failed);
@@ -320,6 +340,30 @@ test "pickOpen: no typed path fails with the kind's message; a missing file name
     defer std.testing.allocator.free(missing);
     try std.testing.expectEqualStrings("readAll: FileNotFound", store.pickOpen(.{ .kind = .puzzle, .path = missing }, &scratch, &read).failed);
     try std.testing.expect(read == null);
+}
+
+test "pickOpen and readFile: a typed path's bytes come back, with the resolved name for Open" {
+    var root = try TestRoot.init();
+    defer root.deinit();
+    const store = root.storage(root.dir);
+    var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
+    const file = try root.path("puzzle.txt");
+    defer std.testing.allocator.free(file);
+    const payload = "one-line payload";
+    try store.transport.write(store.transport.context, file, payload);
+
+    var read: ?ReadResult = null;
+    const picked = store.pickOpen(.{ .kind = .puzzle, .path = file }, &scratch, &read).file;
+    defer if (read) |r| {
+        store.transport.free(store.transport.context, r.resolved);
+        store.transport.free(store.transport.context, r.bytes);
+    };
+    try std.testing.expectEqualSlices(u8, payload, picked.bytes);
+    try std.testing.expectEqualStrings(file, picked.name.?);
+
+    const bytes = store.readFile(file, &scratch).bytes;
+    defer store.transport.free(store.transport.context, @constCast(bytes));
+    try std.testing.expectEqualSlices(u8, payload, bytes);
 }
 
 test "persistSettings: writes the settings file; without settings there is nothing to write" {
