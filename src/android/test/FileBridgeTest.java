@@ -2,6 +2,7 @@ package com.wigzell.sudoku_zig.test;
 
 // File bridge scenarios on a real device: drive the installed app's UI and the system pickers, check MediaStore and the app's files.
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -56,9 +57,10 @@ public final class FileBridgeTest {
     /** Name typed into the create picker; the picker may add " (1)" if its folder already has one. */
     private static final String CHOSEN_NAME = "bridge-test.sud";
     private static final String CHOSEN_NAME_LIKE = "bridge-test%.sud";
-    private static final String AUTO_SAVE_SETTINGS =
+    /** Auto Save on; `%b` is Auto Restore. */
+    private static final String AUTO_SAVE_SETTINGS_FMT =
         "{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"system\",\"show_region\":false,"
-            + "\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":true}";
+            + "\"warn_solvability\":false,\"auto_restore\":%b,\"auto_new\":false,\"auto_save\":true}";
     private static final Pattern MEDIA_ROW =
         Pattern.compile("_id=(\\d+), _display_name=(.*), owner_package_name=(.*)$");
     private static final Pattern MEDIA_PATH = Pattern.compile("_data=(.*)$");
@@ -170,7 +172,7 @@ public final class FileBridgeTest {
             + "pm clear " + APP + "\n"
             + "rm -f " + DEFAULT_PATH + " " + SAVE_DIR + "/sudoku\\ \\(*\\).sud\n");
         deleteChosenNameFiles();
-        writeAutoSaveSettings();
+        writeAutoSaveSettings(false);
     }
 
     @After
@@ -301,6 +303,29 @@ public final class FileBridgeTest {
         assertEquals("no default file after the restart: " + defaultOrRenamedEntries(), 0, defaultOrRenamedEntries().size());
     }
 
+    @Test
+    public void autoRestoreReopensTheBoundFileAndTheNextMoveWritesIt() throws IOException {
+        writeAutoSaveSettings(true);
+        launchApp();
+        startEasyGame();
+        need(By.text("File"), UI_WAIT_MS).click();
+        need(By.res("file-save-as"), UI_WAIT_MS).click();
+        saveInCreatePicker(CHOSEN_NAME);
+        final String chosenPath = awaitChosenNamePath();
+        final String chosenName = chosenPath.substring(chosenPath.lastIndexOf('/') + 1);
+        assertEquals(chosenName, awaitBoundName());
+        final String savedHash = fileHash(chosenPath);
+
+        sh("am force-stop " + APP + "\n");
+        launchApp();
+        assertEquals("the restored game is labelled with its file", chosenName, awaitFileLabel(chosenName));
+        tappedCells.clear();
+        fillAnEmptyCell();
+        awaitFileHashOtherThan(chosenPath, savedHash);
+        assertFalse("a restored game continues its file without asking", device.hasObject(By.res(ASK_TEXT)));
+        assertEquals("no default file after the restart: " + defaultOrRenamedEntries(), 0, defaultOrRenamedEntries().size());
+    }
+
     /** A new game's first autosave over an existing file asks first; answer Replace. */
     private void replaceWhenAsked(String name) {
         final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
@@ -330,7 +355,7 @@ public final class FileBridgeTest {
 
         final String reinstalled = sh("pm uninstall " + APP + "\n" + "pm install -t " + APP_APK_ON_DEVICE + "\n");
         assertTrue("reinstall: " + reinstalled, reinstalled.trim().endsWith("Success"));
-        writeAutoSaveSettings();
+        writeAutoSaveSettings(false);
         tappedCells.clear();
 
         launchApp();
@@ -340,9 +365,10 @@ public final class FileBridgeTest {
         return earlierHash;
     }
 
-    private void writeAutoSaveSettings() throws IOException {
+    private void writeAutoSaveSettings(boolean autoRestore) throws IOException {
+        final String settings = String.format(AUTO_SAVE_SETTINGS_FMT, autoRestore);
         sh("run-as " + APP + " mkdir -p files\n"
-            + "echo '" + AUTO_SAVE_SETTINGS + "' | run-as " + APP + " sh -c 'cat > files/settings.json'\n");
+            + "echo '" + settings + "' | run-as " + APP + " sh -c 'cat > files/settings.json'\n");
     }
 
     private void launchApp() throws IOException {
