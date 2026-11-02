@@ -112,32 +112,50 @@ fi
 # The user's default save file (and renamed copies) move aside, not delete-and-push: a move keeps their MediaStore rows.
 HOLD_DIR="/sdcard/Download/sudoku-test-hold"
 DEFAULT_FILES_GLOB="'$SAVE_DIR/sudoku.sud' '$SAVE_DIR'/sudoku\\ \\(*\\).sud"
+# The reinstall scenario installs the app from this copy; failed tests leave a screenshot and window hierarchy here.
+APP_APK_ON_DEVICE="/data/local/tmp/sudoku-app.apk"
+FAILURE_DIR="/data/local/tmp/sudoku-test-failure"
 HAD_SAVE_DIR=0
 if "$ADB" shell ls "$SAVE_DIR" >/dev/null 2>&1; then
   HAD_SAVE_DIR=1
   "$ADB" pull "$SAVE_DIR" "$OUT/backup/" >/dev/null
 fi
+# Folders removed from the shell keep their MediaStore rows; drop them so pickers do not list a missing folder.
+forget_folder() {
+  "$ADB" shell "rmdir '$1' 2>/dev/null && content delete --uri content://media/external/file --where \"_data='${1/#\/sdcard/\/storage\/emulated\/0}'\"; true"
+}
 restore_device() {
   "$ADB" shell am force-stop "$APP_PACKAGE" || true
   "$ADB" uninstall "$TEST_PACKAGE" >/dev/null 2>&1 || true
+  "$ADB" shell rm -f "$APP_APK_ON_DEVICE" || true
+  if ! "$ADB" shell pm path "$APP_PACKAGE" >/dev/null 2>&1; then
+    "$ADB" install -r "$APP_APK" >/dev/null || echo "warning: app not reinstalled" >&2
+  fi
   "$ADB" shell pm clear "$APP_PACKAGE" >/dev/null || true
   if [[ -s "$OUT/backup/appdata.tar" ]]; then
     "$ADB" exec-in run-as "$APP_PACKAGE" tar xf - < "$OUT/backup/appdata.tar" || echo "warning: app data restore failed; backup kept at $OUT/backup/appdata.tar" >&2
   fi
-  "$ADB" shell "rm -f $DEFAULT_FILES_GLOB; for f in '$HOLD_DIR'/*; do [ -e \"\$f\" ] && mv \"\$f\" '$SAVE_DIR/'; done; rmdir '$HOLD_DIR'" \
+  "$ADB" shell "rm -f $DEFAULT_FILES_GLOB; for f in '$HOLD_DIR'/*; do [ -e \"\$f\" ] && mv \"\$f\" '$SAVE_DIR/'; done; true" \
     || echo "warning: save files not moved back; they are in $HOLD_DIR (copy in $OUT/backup)" >&2
+  forget_folder "$HOLD_DIR"
   if [[ "$HAD_SAVE_DIR" -eq 0 ]]; then
-    "$ADB" shell "rmdir '$SAVE_DIR' 2>/dev/null; true"
+    forget_folder "$SAVE_DIR"
   fi
+  "$ADB" shell rm -rf "$FAILURE_DIR" || true
 }
 trap restore_device EXIT
 "$ADB" shell "mkdir -p '$HOLD_DIR' && for f in $DEFAULT_FILES_GLOB; do [ -e \"\$f\" ] && mv \"\$f\" '$HOLD_DIR/'; done; true"
 
 # ── run ──
+"$ADB" push "$APP_APK" "$APP_APK_ON_DEVICE" >/dev/null
+"$ADB" shell rm -rf "$FAILURE_DIR"
 "$ADB" install -r -t "$OUT/sudoku-test.apk" >/dev/null
 RESULT="$("$ADB" shell am instrument -w -r "$TEST_PACKAGE/$RUNNER" | tr -d '\r')"
 if ! echo "$RESULT" | grep -q '^OK ('; then
   echo "$RESULT"
+  if "$ADB" pull "$FAILURE_DIR" "$OUT/failure" >/dev/null 2>&1; then
+    echo "failure screenshots and window hierarchies: $OUT/failure" >&2
+  fi
   echo "error: Android tests failed" >&2
   exit 1
 fi

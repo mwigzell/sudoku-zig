@@ -79,7 +79,7 @@ adb devices            # exactly one device, state "device"
 zig build android-test
 ```
 
-The step builds the app APK and a separate, self-instrumenting test APK (`com.wigzell.sudoku_zig.test`, `src/android/test/`), installs both, runs `am instrument` with `AndroidJUnitRunner`, and fails on any failed test, printing the full instrumentation output.
+The step builds the app APK and a separate, self-instrumenting test APK (`com.wigzell.sudoku_zig.test`, `src/android/test/`), installs both, runs `am instrument` with `AndroidJUnitRunner`, and fails on any failed test, printing the full instrumentation output. A failed test leaves a screenshot and window hierarchy in `zig-out/android-test/failure/`. The earlier-install scenarios uninstall and reinstall the app during the run (from a copy pushed to `/data/local/tmp`); a full run takes about two minutes.
 
 **Device state is put back afterwards:** the app's private data is backed up (`run-as … tar`) and restored; the user's `Download/Sudoku/sudoku.sud` and any `sudoku (N).sud` are moved to `Download/sudoku-test-hold/` for the run and moved back (a move keeps their MediaStore rows and owners); other files in the folder are not touched. A copy of the folder is also kept in `zig-out/android-test/backup/`.
 

@@ -1,6 +1,6 @@
 package com.wigzell.sudoku_zig.test;
 
-// File bridge scenarios on a real device: drive the installed app's UI, check MediaStore and the app's files.
+// File bridge scenarios on a real device: drive the installed app's UI and the system pickers, check MediaStore and the app's files.
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -10,6 +10,7 @@ import android.app.UiAutomation;
 import android.graphics.Rect;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
+import android.util.Base64;
 import android.util.Xml;
 
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -32,26 +33,49 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
 public final class FileBridgeTest {
     private static final String APP = "com.wigzell.sudoku_zig";
+    /** Pushed by the host script so a test can reinstall the app. */
+    private static final String APP_APK_ON_DEVICE = "/data/local/tmp/sudoku-app.apk";
+    /** Screenshots and window hierarchies of failed tests; the host script pulls them. */
+    private static final String FAILURE_DIR = "/data/local/tmp/sudoku-test-failure";
     private static final String SAVE_DIR = "/sdcard/Download/Sudoku";
     private static final String SAVE_RELATIVE_PATH = "Download/Sudoku/";
     private static final String DEFAULT_NAME = "sudoku.sud";
+    private static final String DEFAULT_PATH = SAVE_DIR + "/" + DEFAULT_NAME;
     private static final Pattern DEFAULT_OR_RENAMED = Pattern.compile("sudoku( \\(\\d+\\))?\\.sud");
+    /** Name typed into the create picker; the picker may add " (1)" if its folder already has one. */
+    private static final String CHOSEN_NAME = "bridge-test.sud";
+    private static final String CHOSEN_NAME_LIKE = "bridge-test%.sud";
     private static final String AUTO_SAVE_SETTINGS =
         "{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"system\",\"show_region\":false,"
             + "\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":true}";
     private static final Pattern MEDIA_ROW =
         Pattern.compile("_id=(\\d+), _display_name=(.*), owner_package_name=(.*)$");
+    private static final Pattern MEDIA_PATH = Pattern.compile("_data=(.*)$");
     private static final Pattern BOUND_NAME = Pattern.compile("name=\"current_name\">([^<]*)<");
     private static final Pattern BOUNDS = Pattern.compile("\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]");
     private static final String COLUMN_LABELS = "ABCDEFGHI";
     private static final String FILL_DIGIT = "5";
+    // Page ids: the ask dialog (core's question with its two answers) and the file label in the menu bar.
+    private static final String ASK_TEXT = "replace-confirm-msg";
+    private static final String ASK_OK = "replace-confirm-ok";
+    private static final String ASK_CANCEL = "replace-confirm-cancel";
+    private static final String FILE_LABEL = "current-file-desktop";
+    // DocumentsUI views: a listed file's name, the create picker's name field, and its Save button.
+    private static final String PICKER_ITEM_NAME = "android:id/title";
+    private static final String PICKER_NAME_FIELD = "android:id/title";
+    private static final String PICKER_SAVE = "android:id/button1";
+    private static final int PICKER_BACK_LIMIT = 5;
     private static final long UI_WAIT_MS = 20_000;
     private static final long GENERATE_WAIT_MS = 180_000;
     private static final long POLL_MS = 250;
@@ -59,6 +83,25 @@ public final class FileBridgeTest {
     private UiDevice device;
     /** Cells this test filled; a clashing digit is not reported in the accessibility text, so track them here. */
     private final Set<String> tappedCells = new HashSet<>();
+
+    @Rule
+    public final TestWatcher keepFailureScreen = new TestWatcher() {
+        @Override
+        protected void failed(Throwable e, Description description) {
+            try {
+                final String base = FAILURE_DIR + "/" + description.getMethodName();
+                final ByteArrayOutputStream xml = new ByteArrayOutputStream();
+                device.dumpWindowHierarchy(xml);
+                sh("mkdir -p " + FAILURE_DIR + "\n"
+                    + "screencap -p " + base + ".png\n"
+                    + "base64 -d > " + base + ".xml <<'EOF'\n"
+                    + Base64.encodeToString(xml.toByteArray(), Base64.DEFAULT)
+                    + "EOF\n");
+            } catch (IOException | RuntimeException ignored) {
+                // The failure itself is what the run reports.
+            }
+        }
+    };
 
     /** One MediaStore row in the visible save folder. */
     private static final class MediaEntry {
@@ -119,15 +162,20 @@ public final class FileBridgeTest {
         }
     }
 
-    /** A cleared app with Auto Save on, and no default save file (or renamed copy) in the save folder. */
+    /** A cleared app with Auto Save on, and no default save file, renamed copy or chosen-name file. */
     @Before
     public void freshAppWithAutoSave() throws IOException {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         sh("am force-stop " + APP + "\n"
             + "pm clear " + APP + "\n"
-            + "rm -f " + SAVE_DIR + "/" + DEFAULT_NAME + " " + SAVE_DIR + "/sudoku\\ \\(*\\).sud\n"
-            + "run-as " + APP + " mkdir -p files\n"
-            + "echo '" + AUTO_SAVE_SETTINGS + "' | run-as " + APP + " sh -c 'cat > files/settings.json'\n");
+            + "rm -f " + DEFAULT_PATH + " " + SAVE_DIR + "/sudoku\\ \\(*\\).sud\n");
+        deleteChosenNameFiles();
+        writeAutoSaveSettings();
+    }
+
+    @After
+    public void removeChosenNameFiles() throws IOException {
+        deleteChosenNameFiles();
     }
 
     @Test
@@ -139,13 +187,162 @@ public final class FileBridgeTest {
         final MediaEntry created = awaitDefaultEntry();
         assertEquals(APP, created.owner);
         assertEquals(DEFAULT_NAME, awaitBoundName());
-        final String firstHash = saveFileHash();
+        assertEquals(DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
+        final String firstHash = fileHash(DEFAULT_PATH);
 
         fillAnEmptyCell();
-        awaitSaveFileHashOtherThan(firstHash);
+        awaitFileHashOtherThan(DEFAULT_PATH, firstHash);
         final List<MediaEntry> after = defaultOrRenamedEntries();
         assertEquals("one save entry after the rewrite: " + after, 1, after.size());
         assertEquals("the rewrite reuses the entry", created.id, after.get(0).id);
+    }
+
+    @Test
+    public void autosaveAfterAnotherNewGameRewritesTheBoundFile() throws IOException {
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+        final MediaEntry created = awaitDefaultEntry();
+        awaitBoundName();
+        final String firstGameHash = fileHash(DEFAULT_PATH);
+
+        startEasyGame();
+        fillAnEmptyCell();
+        replaceWhenAsked(DEFAULT_NAME);
+        awaitFileHashOtherThan(DEFAULT_PATH, firstGameHash);
+        final List<MediaEntry> after = defaultOrRenamedEntries();
+        assertEquals("one save entry after the new game: " + after, 1, after.size());
+        assertEquals("the new game is written to the same entry", created.id, after.get(0).id);
+        assertEquals(DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
+    }
+
+    @Test
+    public void reinstallWithTheDefaultFileLeftAsksInsteadOfWritingARenamedCopy() throws IOException {
+        final String earlierHash = reachTakenAskAfterReinstall();
+
+        final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
+        assertTrue("the question names the file: " + question, question.contains(DEFAULT_NAME));
+        final List<MediaEntry> entries = defaultOrRenamedEntries();
+        assertEquals("only the earlier install's file: " + entries, 1, entries.size());
+        assertEquals(DEFAULT_NAME, entries.get(0).name);
+        assertEquals("no renamed copy on disk", DEFAULT_PATH + "\n", sh("ls " + SAVE_DIR + "/*.sud\n"));
+        assertEquals("the earlier file is untouched", earlierHash, fileHash(DEFAULT_PATH));
+        assertEquals("nothing is bound before the user answers", "", boundNameNow());
+    }
+
+    @Test
+    public void pickItWritesTheEarlierFileBindsItAndKeepsAutosavingThere() throws IOException {
+        final String earlierHash = reachTakenAskAfterReinstall();
+
+        need(By.res(ASK_OK), UI_WAIT_MS).click();
+        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS).click();
+        final String pickedHash = awaitFileHashOtherThan(DEFAULT_PATH, earlierHash);
+        assertEquals(DEFAULT_NAME, awaitBoundName());
+        assertEquals(DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
+
+        fillAnEmptyCell();
+        awaitFileHashOtherThan(DEFAULT_PATH, pickedHash);
+        assertEquals("no renamed copy: " + defaultOrRenamedEntries(), 1, defaultOrRenamedEntries().size());
+    }
+
+    @Test
+    public void newNameWritesTheChosenFileBindsItAndLeavesTheEarlierFile() throws IOException {
+        final String earlierHash = reachTakenAskAfterReinstall();
+
+        need(By.res(ASK_CANCEL), UI_WAIT_MS).click();
+        saveInCreatePicker(CHOSEN_NAME);
+        final String chosenPath = awaitChosenNamePath();
+        final String chosenName = chosenPath.substring(chosenPath.lastIndexOf('/') + 1);
+        assertEquals(chosenName, awaitBoundName());
+        assertEquals(chosenName, awaitFileLabel(chosenName));
+        final String chosenHash = fileHash(chosenPath);
+
+        fillAnEmptyCell();
+        awaitFileHashOtherThan(chosenPath, chosenHash);
+        assertEquals("the earlier file is untouched", earlierHash, fileHash(DEFAULT_PATH));
+    }
+
+    @Test
+    public void backingOutOfEitherPickerAsksAgain() throws IOException {
+        reachTakenAskAfterReinstall();
+        final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
+
+        need(By.res(ASK_OK), UI_WAIT_MS).click();
+        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        backOutOfPicker();
+        assertEquals("asked again after backing out of Pick it", question, need(By.res(ASK_TEXT), UI_WAIT_MS).getText());
+
+        need(By.res(ASK_CANCEL), UI_WAIT_MS).click();
+        need(By.res(PICKER_SAVE), UI_WAIT_MS);
+        backOutOfPicker();
+        assertEquals("asked again after backing out of New name", question, need(By.res(ASK_TEXT), UI_WAIT_MS).getText());
+        assertEquals("nothing is bound", "", boundNameNow());
+    }
+
+    @Test
+    public void bindingSurvivesAnAppRestart() throws IOException {
+        launchApp();
+        startEasyGame();
+        need(By.text("File"), UI_WAIT_MS).click();
+        need(By.res("file-save-as"), UI_WAIT_MS).click();
+        saveInCreatePicker(CHOSEN_NAME);
+        final String chosenPath = awaitChosenNamePath();
+        final String chosenName = chosenPath.substring(chosenPath.lastIndexOf('/') + 1);
+        assertEquals(chosenName, awaitBoundName());
+        final String savedHash = fileHash(chosenPath);
+
+        sh("am force-stop " + APP + "\n");
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+        replaceWhenAsked(chosenName);
+        awaitFileHashOtherThan(chosenPath, savedHash);
+        assertEquals(chosenName, awaitFileLabel(chosenName));
+        assertEquals("no default file after the restart: " + defaultOrRenamedEntries(), 0, defaultOrRenamedEntries().size());
+    }
+
+    /** A new game's first autosave over an existing file asks first; answer Replace. */
+    private void replaceWhenAsked(String name) {
+        final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
+        assertTrue("the replace question names " + name + ": " + question, question.contains(name));
+        need(By.res(ASK_OK), UI_WAIT_MS).click();
+    }
+
+    /** DocumentsUI's Back first walks up the folder tree; press it until the app is in front again. */
+    private void backOutOfPicker() {
+        for (int i = 0; i < PICKER_BACK_LIMIT && !APP.equals(device.getCurrentPackageName()); i++) {
+            device.pressBack();
+            device.waitForIdle();
+        }
+        assertEquals("the picker closed", APP, device.getCurrentPackageName());
+    }
+
+    /**
+     * Play until the default file exists, reinstall the app (the file stays, owned by the earlier install), then play
+     * again until the app asks what to do. Returns the earlier file's hash.
+     */
+    private String reachTakenAskAfterReinstall() throws IOException {
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+        awaitDefaultEntry();
+        final String earlierHash = fileHash(DEFAULT_PATH);
+
+        final String reinstalled = sh("pm uninstall " + APP + "\n" + "pm install -t " + APP_APK_ON_DEVICE + "\n");
+        assertTrue("reinstall: " + reinstalled, reinstalled.trim().endsWith("Success"));
+        writeAutoSaveSettings();
+        tappedCells.clear();
+
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+        need(By.res(ASK_OK), UI_WAIT_MS);
+        return earlierHash;
+    }
+
+    private void writeAutoSaveSettings() throws IOException {
+        sh("run-as " + APP + " mkdir -p files\n"
+            + "echo '" + AUTO_SAVE_SETTINGS + "' | run-as " + APP + " sh -c 'cat > files/settings.json'\n");
     }
 
     private void launchApp() throws IOException {
@@ -160,6 +357,14 @@ public final class FileBridgeTest {
         need(By.text("Easy").clickable(true), UI_WAIT_MS).click();
         need(By.res("generating-modal-continue").enabled(true), GENERATE_WAIT_MS).click();
         device.wait(Until.gone(By.res("generating-modal-continue")), UI_WAIT_MS);
+        tappedCells.clear();
+    }
+
+    /** In DocumentsUI's create picker (whichever folder it opens in), type `name` and save. */
+    private void saveInCreatePicker(String name) {
+        need(By.res(PICKER_SAVE), UI_WAIT_MS);
+        need(By.res(PICKER_NAME_FIELD).clazz("android.widget.EditText"), UI_WAIT_MS).setText(name);
+        need(By.res(PICKER_SAVE), UI_WAIT_MS).click();
     }
 
     /** Tap the first empty cell not yet tapped (found from the row and column labels) and enter a digit on the play pad. */
@@ -223,6 +428,12 @@ public final class FileBridgeTest {
         return found;
     }
 
+    private String awaitFileLabel(String expected) {
+        final UiObject2 label = need(By.res(FILE_LABEL), UI_WAIT_MS);
+        label.wait(Until.textEquals(expected), UI_WAIT_MS);
+        return need(By.res(FILE_LABEL), UI_WAIT_MS).getText();
+    }
+
     private MediaEntry awaitDefaultEntry() throws IOException {
         final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
         List<MediaEntry> entries = defaultOrRenamedEntries();
@@ -249,28 +460,67 @@ public final class FileBridgeTest {
         return entries;
     }
 
+    /** Paths of files the create picker saved under the chosen name, wherever its folder was. */
+    private List<String> chosenNamePaths() throws IOException {
+        final String out = sh("content query --uri content://media/external/file --projection _data"
+            + " --where \"_display_name LIKE '" + CHOSEN_NAME_LIKE + "'\"\n");
+        final List<String> paths = new ArrayList<>();
+        for (String line : out.split("\n")) {
+            final Matcher m = MEDIA_PATH.matcher(line.trim());
+            if (m.find()) paths.add(m.group(1));
+        }
+        return paths;
+    }
+
+    private String awaitChosenNamePath() throws IOException {
+        final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
+        List<String> paths = chosenNamePaths();
+        while (paths.isEmpty() && SystemClock.uptimeMillis() < deadline) {
+            SystemClock.sleep(POLL_MS);
+            paths = chosenNamePaths();
+        }
+        assertEquals("one file under the chosen name: " + paths, 1, paths.size());
+        return paths.get(0);
+    }
+
+    private void deleteChosenNameFiles() throws IOException {
+        final StringBuilder script = new StringBuilder();
+        for (String path : chosenNamePaths()) script.append("rm -f '").append(path).append("'\n");
+        script.append("content delete --uri content://media/external/file --where \"_display_name LIKE '")
+            .append(CHOSEN_NAME_LIKE).append("'\"\n");
+        sh(script.toString());
+    }
+
+    private String boundNameNow() throws IOException {
+        final Matcher m = BOUND_NAME.matcher(sh("run-as " + APP + " cat shared_prefs/sudoku_file_binding.xml 2>/dev/null\n"));
+        return m.find() ? m.group(1) : "";
+    }
+
     private String awaitBoundName() throws IOException {
         final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
         while (true) {
-            final Matcher m = BOUND_NAME.matcher(sh("run-as " + APP + " cat shared_prefs/sudoku_file_binding.xml\n"));
-            if (m.find()) return m.group(1);
+            final String name = boundNameNow();
+            if (!name.isEmpty()) return name;
             if (SystemClock.uptimeMillis() > deadline) fail("the app bound no file");
             SystemClock.sleep(POLL_MS);
         }
     }
 
-    private String saveFileHash() throws IOException {
-        final String out = sh("md5sum " + SAVE_DIR + "/" + DEFAULT_NAME + "\n").trim();
-        assertTrue("cannot read " + DEFAULT_NAME + ": " + out, out.matches("[0-9a-f]{32} .*"));
+    private String fileHash(String path) throws IOException {
+        final String out = sh("md5sum '" + path + "'\n").trim();
+        assertTrue("cannot read " + path + ": " + out, out.matches("[0-9a-f]{32} .*"));
         return out.substring(0, 32);
     }
 
-    private void awaitSaveFileHashOtherThan(String previous) throws IOException {
+    /** Wait until the file at `path` changes from `previous`; returns the new hash. */
+    private String awaitFileHashOtherThan(String path, String previous) throws IOException {
         final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
-        while (saveFileHash().equals(previous)) {
-            if (SystemClock.uptimeMillis() > deadline) fail(DEFAULT_NAME + " was not rewritten after the move");
+        String hash;
+        while ((hash = fileHash(path)).equals(previous)) {
+            if (SystemClock.uptimeMillis() > deadline) fail(path + " was not rewritten");
             SystemClock.sleep(POLL_MS);
         }
+        return hash;
     }
 
     /** Run a script in the device shell (stdin-fed, so quoting and pipes work) and return its output. */
