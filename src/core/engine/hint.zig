@@ -195,8 +195,10 @@ test "hint: targeted consistent sentence" {
     });
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, " is right.") != null);
-    try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") == null);
+    var label: [2]u8 = undefined;
+    var want_buf: [64]u8 = undefined;
+    const want = try std.fmt.bufPrint(&want_buf, CONSISTENT_FMT, .{ flatDigitDisplay(solution[slot.idx]), board.formatCellLabel(&label, slot.row, slot.col) });
+    try std.testing.expectEqualStrings(want, msg);
 }
 
 test "hint: targeted blocker sentence when completion disagrees with cell" {

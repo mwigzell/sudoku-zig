@@ -237,7 +237,7 @@ test "save to a new file writes without asking and reports where it saved" {
     try expectCheck(flow.next(.start), "/docs/game.sud");
     try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .target_checked = false }).write);
     const end = flow.next(.{ .wrote = .{ .ok = "/docs/game.sud" } });
-    try testing.expectEqualStrings("The game was saved to /docs/game.sud.", end.show_status);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"/docs/game.sud"}), end.show_status);
     try testing.expectEqualStrings("/docs/game.sud", session.workingFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
@@ -320,7 +320,7 @@ test "save onto an existing file while detached asks before writing" {
     _ = flow.next(.start);
     const ask = flow.next(.{ .target_checked = true }).ask;
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_TITLE, ask.title);
-    try testing.expectEqualStrings("The file game.sud already exists. Do you want to replace it?", ask.text);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), ask.text);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_OK_LABEL, ask.ok_label);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_CANCEL_LABEL, ask.cancel_label);
     try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .answered = true }).write);
@@ -366,7 +366,7 @@ test "the platform's written name becomes the working file" {
     var flow = SaveFlow.init(&session, .save_as, "game.sud");
     _ = flow.next(.start);
     _ = flow.next(.{ .target_checked = false });
-    try testing.expectEqualStrings("The game was saved to game (1).sud.", flow.next(.{ .wrote = .{ .ok = "game (1).sud" } }).show_status);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"game (1).sud"}), flow.next(.{ .wrote = .{ .ok = "game (1).sud" } }).show_status);
     try testing.expectEqualStrings("game (1).sud", session.workingFile().?);
 }
 

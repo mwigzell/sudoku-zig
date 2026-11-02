@@ -104,7 +104,7 @@ const testing = std.testing;
 test "export writes the named file and reports where" {
     var flow = ExportFlow.toFile("puzzle.txt");
     try testing.expectEqualStrings("puzzle.txt", flow.next(.start).write);
-    try testing.expectEqualStrings("The puzzle was exported to /docs/puzzle.txt.", flow.next(.{ .wrote = .{ .ok = "/docs/puzzle.txt" } }).show_status);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(EXPORTED_TO_FMT, .{"/docs/puzzle.txt"}), flow.next(.{ .wrote = .{ .ok = "/docs/puzzle.txt" } }).show_status);
     try testing.expect(flow.next(.start) == .done);
 }
 

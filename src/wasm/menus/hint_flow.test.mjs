@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import * as glue from "../artifacts/glue.js";
 import * as menu from "./menu.js";
 import * as boardMod from "../board.js";
+import { coreText } from "../test_support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "../artifacts/artifact.wasm"));
@@ -150,7 +151,7 @@ async function runHint(game, board, selection, session, status) {
     state: game.getState(),
     legend: game.getLegend(),
   };
-  const status = { textContent: "A new game has started.", className: "" };
+  const status = { textContent: coreText.NEW_GAME_STARTED_MSG, className: "" };
   const selection = boardMod.wireSelection(board);
 
   clickCell(board, 0, 2);

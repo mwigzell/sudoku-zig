@@ -224,6 +224,13 @@ export fn getGenText() callconv(.c) u32 {
     return returnJson(out);
 }
 
+/// Core's dialog and status text by constant name as JSON.
+export fn getCoreText() callconv(.c) u32 {
+    const out = outBuffer();
+    boundary.writeCoreTextJson(out) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
 /// Current command availability flags as JSON.
 export fn getLegend() callconv(.c) u32 {
     const out = outBuffer();

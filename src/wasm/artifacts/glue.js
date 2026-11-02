@@ -146,6 +146,11 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.getGenText());
     },
 
+    /** @returns {Record<string, string>} */
+    getCoreText() {
+      return readJson(exports.getCoreText());
+    },
+
     getConfig() {
       return readJson(exports.getConfig());
     },

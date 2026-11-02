@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import * as autosave from "./autosave.js";
 import * as stepRunner from "./step_runner.js";
-import { hostFetch, moveWithAutosave, postedCurrentFile, settleFlow, withCoreFlow } from "../test_support.mjs";
+import { hostFetch, moveWithAutosave, postedCurrentFile, settleFlow, withCoreFlow, coreText } from "../test_support.mjs";
 
 function makePageHideWin() {
   const listeners = new Map();
@@ -137,7 +137,7 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   });
   assert.equal(outcome.kind, "show_error");
   assert.deepEqual(writes, [{ lane: "bound", bytes: [4, 2] }], "host copy must not run when bound autosave fails");
-  assert.equal(surfaced?.error, "The game could not be saved.");
+  assert.equal(surfaced?.error, coreText.SAVE_FAILED_MSG);
 }
 
 {

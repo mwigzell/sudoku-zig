@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as board from "../board.js";
 import * as menu from "./menu.js";
 import * as menuBar from "./menu_bar.js";
-import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, withCoreFlow } from "../test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, withCoreFlow, coreText } from "../test_support.mjs";
 
 
 function makeBtn() {
@@ -293,7 +293,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   });
   assert.equal(result.ok, true);
   assert.equal(written, line, "clipboard gets exportPuzzle one-line string");
-  assert.equal(status.textContent, "The puzzle line was copied.", "core owns the copy status");
+  assert.equal(status.textContent, coreText.COPIED_MSG, "core owns the copy status");
   assert.equal(errorModal.el.hidden, true);
 }
 
@@ -338,7 +338,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   );
   assert.equal(result.ok, false);
   assert.equal(errorModal.el.hidden, false);
-  assert.equal(errorModal.msgEl.textContent, "The puzzle could not be copied.");
+  assert.equal(errorModal.msgEl.textContent, coreText.COPY_FAILED_MSG);
   assert.equal(JSON.stringify(session.state), before);
 }
 

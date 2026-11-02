@@ -342,7 +342,7 @@ test "startup restore failure shows idle, asks to delete, then forgets the file"
         try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.status.?);
         const asked = f.next(.ack);
         try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, asked.ask.title);
-        try std.testing.expectEqualStrings("The file game.sud could not be restored. Do you want to delete it?", asked.ask.text);
+        try std.testing.expectEqualStrings(std.fmt.comptimePrint(RESTORE_FAILED_FMT, .{"game.sud"}), asked.ask.text);
         const forget = f.next(.{ .answered = delete });
         try std.testing.expectEqualStrings("/data/game.sud", forget.forget_current_file.path);
         try std.testing.expectEqual(delete, forget.forget_current_file.delete);

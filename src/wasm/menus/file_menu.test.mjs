@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as fileMenu from "./file_menu.js";
 import * as commandFlowMod from "../flows/command_flow.js";
 import * as errorModalMod from "../dialogs/error_modal.js";
-import { PUZZLE_LINE, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow } from "../test_support.mjs";
+import { PUZZLE_LINE, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow, coreText, fillText } from "../test_support.mjs";
 import * as menuBar from "./menu_bar.js";
 
 async function flushDialogPaint() {
@@ -134,7 +134,7 @@ function easyDialog() {
   assert.deepEqual([...downloaded.bytes], [...game.serialize().bytes]);
   assert.equal(downloaded.name, "host-default.sud");
   assert.equal(session.boundFilename, "host-default.sud");
-  assert.equal(statusEl.textContent, "The game was saved to host-default.sud.", "core composes the save status");
+  assert.equal(statusEl.textContent, fillText(coreText.SAVED_TO_FMT, "host-default.sud"), "core composes the save status");
   const hosted = postedCurrentFile(host.calls);
   assert.equal(hosted?.init?.headers?.["X-Sudoku-Restore-Copy"], "true", "downloaded save keeps a hidden host copy");
 }
@@ -224,7 +224,7 @@ function easyDialog() {
   wireLoads({ new: makeBtn() }, game, session, { difficultyDialog, errorModal, commandFlow: flow });
   await difficultyDialog.buttons[0].el.click();
   assert.equal(errorModal.el.hidden, false, "error modal shown");
-  assert.equal(errorModal.msgEl.textContent, "A new game could not be generated.");
+  assert.equal(errorModal.msgEl.textContent, coreText.GENERATE_FAILED_MSG);
   assert.deepEqual(session.state.cells, []);
 }
 
@@ -551,7 +551,7 @@ function easyDialog() {
   );
   await exportBtn.click();
   assert.deepEqual([...saved], [...lineBytes], "save receives exportPuzzle bytes");
-  assert.equal(statusEl.textContent, "The puzzle was exported to puzzle.txt.", "core owns the export status");
+  assert.equal(statusEl.textContent, fillText(coreText.EXPORTED_TO_FMT, "puzzle.txt"), "core owns the export status");
   assert.equal(session.fileHandle.name, "game.sud", "export must not bind SUD0 file handle");
   assert.equal(session.boundFilename, "game.sud");
 }
@@ -592,7 +592,7 @@ function easyDialog() {
   );
   await exportBtn.click();
   assert.equal(errorModal.el.hidden, false);
-  assert.equal(errorModal.msgEl.textContent, "The puzzle could not be exported.");
+  assert.equal(errorModal.msgEl.textContent, coreText.EXPORT_FAILED_MSG);
   assert.equal(JSON.stringify(session.state), before);
   assert.equal(session.fileHandle.name, "game.sud");
 }

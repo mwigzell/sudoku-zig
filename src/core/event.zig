@@ -67,10 +67,10 @@ const puzzle_gen = @import("puzzle_gen/mod.zig");
 
 test "EventMsg append joins sentences with a space" {
     var msg: EventMsg = .{};
-    msg.append("The game was saved to foo.");
-    msg.append("That digit clashes with another in the same row, column or box.");
-    try std.testing.expectEqualStrings("The game was saved to foo. That digit clashes with another in the same row, column or box.", msg.slice());
-    try std.testing.expectEqualStrings("The game was saved to foo. That digit clashes with another in the same row, column or box.", msg.optional().?);
+    msg.append("First sentence.");
+    msg.append("Second sentence.");
+    try std.testing.expectEqualStrings("First sentence. Second sentence.", msg.slice());
+    try std.testing.expectEqualStrings("First sentence. Second sentence.", msg.optional().?);
 }
 
 test "EventMsg optional is null when empty" {

@@ -6,7 +6,7 @@ import * as commandFlowMod from "../flows/command_flow.js";
 import * as themeMod from "./theme.js";
 import * as region from "./region.js";
 import * as settings from "./settings.js";
-import { loadGame, settleFlow } from "../test_support.mjs";
+import { loadGame, settleFlow, coreText } from "../test_support.mjs";
 
 const DEFAULT_SETTINGS = {
   difficulty: "easy",
@@ -122,7 +122,7 @@ const themeRoot = {
   controls.viewLight.click();
   await settleFlow();
   assert.equal(posts.length, 1);
-  assert.deepEqual(errors, ["Your settings could not be saved."]);
+  assert.deepEqual(errors, [coreText.PERSIST_FAILED_MSG]);
 }
 
 // Commands that change no setting post nothing.

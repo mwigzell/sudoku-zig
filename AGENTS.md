@@ -121,7 +121,7 @@ Caveat: a new source file with tests is only visible if it is **imported by some
 
 ### Tests use the text's constant, not a copy
 
-A test that checks user-facing text compares against the owner's constant or formatter (Zig `*_MSG`/`*_FMT`, `formatProgressEvent`; JS reads core's text through wasm, e.g. `test_support.genText`). Spell a sentence out only in the one test that pins the wording itself. Tests that only check placement or plumbing pass neutral placeholders (`"progress line 1"`), not copies of core's sentences.
+A test that checks user-facing text compares against the owner's constant or formatter (Zig `*_MSG`/`*_FMT`, `formatProgressEvent`; JS reads core's text through wasm: `test_support.coreText.X`, `fillText(coreText.X_FMT, …)`, `genText`; add a constant to `boundary.writeCoreTextJson` when a JS test needs it). Spell a sentence out only in the one test that pins the wording itself. Tests that only check placement or plumbing pass neutral placeholders (`"progress line 1"`), not copies of core's sentences.
 
 ## clean "nuke" build cache 
 zig build clean

@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import * as boardMod from "./board.js";
-import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame } from "./test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, coreText, fillText } from "./test_support.mjs";
 
 
 
@@ -508,8 +508,8 @@ function selectedAt(board, row, col) {
   globalThis.fetch = prevFetch;
   globalThis.__sudokuChoose = prevChoose;
   assert.equal(questions.length, 1, "detached autosave onto an existing file asks once");
-  assert.equal(questions[0].message, "The file sudoku.sud already exists. Do you want to replace it?");
-  assert.deepEqual(questions[0].labels, { title: "Replace file?", okLabel: "Replace", cancelLabel: "Cancel" });
+  assert.equal(questions[0].message, fillText(coreText.REPLACE_CONFIRM_FMT, "sudoku.sud"));
+  assert.deepEqual(questions[0].labels, { title: coreText.REPLACE_CONFIRM_TITLE, okLabel: coreText.REPLACE_CONFIRM_OK_LABEL, cancelLabel: coreText.REPLACE_CONFIRM_CANCEL_LABEL });
   assert.equal(postedCurrentFile(host.calls), undefined, "declined question writes nothing");
   assert.equal(errorModal.el.hidden, true, "declining is not an error");
 }

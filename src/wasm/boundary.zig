@@ -13,6 +13,11 @@ const legend_mod = @import("../core/renderer/legend.zig");
 const wire = @import("wire.zig");
 const flow = @import("../core/flow/mod.zig");
 const settings_store = @import("../core/settings_store.zig");
+const file_policy = @import("../core/file_policy.zig");
+const startup_policy = @import("../core/startup/policy.zig");
+const flow_command = @import("../core/flow/command.zig");
+const flow_settings = @import("../core/flow/settings.zig");
+const flow_export = @import("../core/flow/export.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
 
@@ -436,27 +441,61 @@ pub fn writeAboutJson(out: OutBuffer, debug_build: bool) !void {
     try std.Io.Writer.flush(&jw.writer);
 }
 
-/// Generating dialog text from core, keyed for the web dialog.
-pub fn writeGenTextJson(out: OutBuffer) !void {
+const TextEntry = struct { key: []const u8, text: []const u8 };
+
+fn writeTextTableJson(out: OutBuffer, entries: []const TextEntry) !void {
     var mutable = out;
     mutable.reset();
     var jw: JsonWriter = undefined;
     JsonWriter.init(&mutable, &jw);
-    const fields = [_]struct { key: []const u8, text: []const u8 }{
+    for (entries, 0..) |e, i| {
+        try std.Io.Writer.writeAll(&jw.writer, if (i == 0) "{" else ",");
+        try writeJsonString(&jw.writer, e.key);
+        try std.Io.Writer.writeAll(&jw.writer, ":");
+        try writeJsonString(&jw.writer, e.text);
+    }
+    try std.Io.Writer.writeAll(&jw.writer, "}");
+    try std.Io.Writer.flush(&jw.writer);
+}
+
+/// Generating dialog text from core, keyed for the web dialog.
+pub fn writeGenTextJson(out: OutBuffer) !void {
+    try writeTextTableJson(out, &.{
         .{ .key = "busy", .text = puzzle_gen.GENERATING_MSG },
         .{ .key = "done", .text = puzzle_gen.GENERATING_DONE_MSG },
         .{ .key = "cancelling", .text = puzzle_gen.GENERATING_CANCELLING_MSG },
         .{ .key = "fast_strip", .text = puzzle_gen.FAST_STRIP_MSG },
         .{ .key = "dig_hole", .text = puzzle_gen.DIG_HOLE_MSG },
-    };
-    for (fields, 0..) |f, i| {
-        try std.Io.Writer.writeAll(&jw.writer, if (i == 0) "{" else ",");
-        try writeJsonString(&jw.writer, f.key);
-        try std.Io.Writer.writeAll(&jw.writer, ":");
-        try writeJsonString(&jw.writer, f.text);
-    }
-    try std.Io.Writer.writeAll(&jw.writer, "}");
-    try std.Io.Writer.flush(&jw.writer);
+    });
+}
+
+/// Core's dialog and status text keyed by constant name, so JS tests compare against core rather than copies.
+pub fn writeCoreTextJson(out: OutBuffer) !void {
+    try writeTextTableJson(out, &.{
+        .{ .key = "SAVED_TO_FMT", .text = file_policy.SAVED_TO_FMT },
+        .{ .key = "WRITE_CANCELLED_MSG", .text = file_policy.WRITE_CANCELLED_MSG },
+        .{ .key = "REPLACE_CONFIRM_TITLE", .text = file_policy.REPLACE_CONFIRM_TITLE },
+        .{ .key = "REPLACE_CONFIRM_FMT", .text = file_policy.REPLACE_CONFIRM_FMT },
+        .{ .key = "REPLACE_CONFIRM_OK_LABEL", .text = file_policy.REPLACE_CONFIRM_OK_LABEL },
+        .{ .key = "REPLACE_CONFIRM_CANCEL_LABEL", .text = file_policy.REPLACE_CONFIRM_CANCEL_LABEL },
+        .{ .key = "SAVE_WHILE_AUTO_SAVE_MSG", .text = file_policy.SAVE_WHILE_AUTO_SAVE_MSG },
+        .{ .key = "SAVE_FAILED_MSG", .text = flow.save.SAVE_FAILED_MSG },
+        .{ .key = "RESTORE_FAILED_FMT", .text = flow.startup.RESTORE_FAILED_FMT },
+        .{ .key = "UNEXPECTED_INPUT_MSG", .text = flow.step.UNEXPECTED_INPUT_MSG },
+        .{ .key = "GENERATE_FAILED_MSG", .text = flow.step.GENERATE_FAILED_MSG },
+        .{ .key = "IMPORT_FAILED_MSG", .text = flow_command.IMPORT_FAILED_MSG },
+        .{ .key = "PASTE_FAILED_MSG", .text = flow_command.PASTE_FAILED_MSG },
+        .{ .key = "PERSIST_FAILED_MSG", .text = flow_settings.PERSIST_FAILED_MSG },
+        .{ .key = "EXPORTED_TO_FMT", .text = flow_export.EXPORTED_TO_FMT },
+        .{ .key = "EXPORT_FAILED_MSG", .text = flow_export.EXPORT_FAILED_MSG },
+        .{ .key = "COPIED_MSG", .text = flow_export.COPIED_MSG },
+        .{ .key = "COPY_FAILED_MSG", .text = flow_export.COPY_FAILED_MSG },
+        .{ .key = "IDLE_STARTUP_STATUS", .text = startup_policy.IDLE_STARTUP_STATUS },
+        .{ .key = "NEW_GAME_STARTED_MSG", .text = game_engine.NEW_GAME_STARTED_MSG },
+        .{ .key = "OPENED_FMT", .text = game_engine.OPENED_FMT },
+        .{ .key = "PASTED_MSG", .text = game_engine.PASTED_MSG },
+        .{ .key = "PUZZLE_CELL_MSG", .text = game_engine.PUZZLE_CELL_MSG },
+    });
 }
 
 pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {

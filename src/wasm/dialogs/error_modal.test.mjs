@@ -2,11 +2,12 @@
 
 import assert from "node:assert/strict";
 import * as errorModalMod from "./error_modal.js";
+import { coreText } from "../test_support.mjs";
 
 {
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  errorModalMod.showErrorModal(errorModal, "That cell is part of the puzzle, so it can't be changed.");
-  assert.equal(errorModal.msgEl.textContent, "That cell is part of the puzzle, so it can't be changed.");
+  errorModalMod.showErrorModal(errorModal, coreText.PUZZLE_CELL_MSG);
+  assert.equal(errorModal.msgEl.textContent, coreText.PUZZLE_CELL_MSG);
   assert.equal(errorModal.el.hidden, false);
 }
 

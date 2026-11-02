@@ -11,8 +11,17 @@ import * as stepRunner from "./flows/step_runner.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifacts/artifact.wasm"));
 
+const textGame = await glue.loadArtifact(wasmBytes);
 /** Core's generating dialog text, read from the real artifact. */
-export const genText = (await glue.loadArtifact(wasmBytes)).getGenText();
+export const genText = textGame.getGenText();
+/** Core's dialog and status text by constant name, read from the real artifact. */
+export const coreText = textGame.getCoreText();
+
+/** Fill a core `*_FMT` text's `{s}`/`{c}`/`{d}` placeholders in order. */
+export function fillText(fmt, ...args) {
+  let i = 0;
+  return fmt.replace(/\{[scd]\}/g, () => String(args[i++]));
+}
 
 /** A real wasm game bootstrapped like the host does; `config` overrides the defaults. */
 export async function loadGame(config = {}) {

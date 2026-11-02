@@ -133,7 +133,7 @@ test "autosave onto an existing file after New asks first and keeps it when decl
     session.apply(.new_game_success);
     var flow = AutosaveFlow.afterCommand(&session, true, "paste");
     _ = flow.next(.start);
-    try testing.expectEqualStrings("The file game.sud already exists. Do you want to replace it?", flow.next(.{ .target_checked = true }).ask.text);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), flow.next(.{ .target_checked = true }).ask.text);
     try testing.expect(flow.next(.{ .answered = false }) == .done);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }

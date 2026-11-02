@@ -739,7 +739,7 @@ test "save as to a typed path shows its saved-to status after the later flows ru
     while (true) if (try app.turn()) break;
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
-    try std.testing.expect(std.mem.indexOf(u8, output, "The game was saved to " ++ tmp_path ++ ".") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{tmp_path})) != null);
 }
 
 test "menu save while autosave is on writes nothing and says why" {

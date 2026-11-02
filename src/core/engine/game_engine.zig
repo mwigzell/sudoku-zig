@@ -579,7 +579,7 @@ test "openFromSave warns when SUD0 bytes encode an unsolvable grid" {
     try std.testing.expect(ev == .ok);
     try std.testing.expect(ev.ok.msg != null);
     const msg = ev.ok.msg.?;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "The file dead.sud is open.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, std.fmt.comptimePrint(OPENED_FMT, .{"dead.sud"})) != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
 }
 
@@ -605,9 +605,9 @@ test "openFromSave joins competing status sentences with a space" {
     const ev = openFromSaveProbeTest(&engine, buf, "dead.sud");
     try std.testing.expect(ev == .ok);
     const msg = ev.ok.msg.?;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "The file dead.sud is open.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, std.fmt.comptimePrint(OPENED_FMT, .{"dead.sud"})) != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, hint_command.load_no_solution_msg) != null);
-    try std.testing.expectEqualStrings("The file dead.sud is open. " ++ hint_command.load_no_solution_msg, msg);
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(OPENED_FMT, .{"dead.sud"}) ++ " " ++ hint_command.load_no_solution_msg, msg);
 }
 
 test "loadSaveFormat replaces board and history from SUD0 bytes" {
@@ -638,7 +638,7 @@ test "importFromLine loads a one-line puzzle and clears history" {
     const line = puzzle_gen.PuzzleGen.hard();
     const ev = engine.importFromLine(line);
     try std.testing.expect(ev == .ok);
-    try std.testing.expectEqualStrings("The puzzle was imported.", ev.ok.msg.?);
+    try std.testing.expectEqualStrings(IMPORTED_MSG, ev.ok.msg.?);
 
     const expected = try board.fromOneLineString(line);
     try std.testing.expect(board.equal(engine.state.board, expected));
@@ -912,7 +912,7 @@ test "exec fill creates conflict → cell marked and status msg set" {
     });
     try std.testing.expect(second == .ok);
     const view = second.ok.board_view;
-    try std.testing.expectEqualStrings("That digit clashes with another in the same row, column or box.", second.ok.msg.?);
+    try std.testing.expectEqualStrings(CONFLICT_MSG, second.ok.msg.?);
 
     // Both cells in row 0 must now be flagged as conflicting
     try std.testing.expect(view.isConflictingRowCol(0, 2));

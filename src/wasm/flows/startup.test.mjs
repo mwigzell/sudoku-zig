@@ -11,7 +11,7 @@ import * as fileMenu from "../menus/file_menu.js";
 import * as menu from "../menus/menu.js";
 import * as region from "../menus/region.js";
 import * as themeMod from "../menus/theme.js";
-import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAutosave, postedCurrentFile, settleFlow, startNewGame } from "../test_support.mjs";
+import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAutosave, postedCurrentFile, settleFlow, startNewGame, coreText, fillText } from "../test_support.mjs";
 
 // ── initializeWebSession: host config boot + host startup policy payload ──
 {
@@ -116,7 +116,7 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
 // ── startup flow: core decides restore / new / idle; the web only fetches, draws and asks ──
 const SOLVED_LINE = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
 const OPEN_LINE = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
-const WELCOME_STATUS = "Welcome to sudoku-zig! Choose New or Open to play.";
+const WELCOME_STATUS = coreText.IDLE_STARTUP_STATUS;
 const HOST_CURRENT_FILE = "/current-file";
 
 /** Bytes of a saved game holding `line`. */
@@ -219,7 +219,7 @@ for (const deleteIt of [true, false]) {
   assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
   assert.equal(run.asked.length, 1);
   assert.equal(run.asked[0].title, "Restore failed");
-  assert.equal(run.asked[0].text, "The file game.sud could not be restored. Do you want to delete it?");
+  assert.equal(run.asked[0].text, fillText(coreText.RESTORE_FAILED_FMT, "game.sud"));
   assert.equal(run.asked[0].okLabel, "Delete");
   assert.equal(run.asked[0].cancelLabel, "Keep");
   const forget = run.calls.find((c) => c.init.method === "DELETE");
@@ -291,7 +291,7 @@ for (const deleteIt of [true, false]) {
   const run = await runStartupScenario({ config: { auto_new: true }, generated: [{ ok: false, error: "worker crashed" }] });
   assert.equal(run.outcome.kind, "show_error");
   assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
-  assert.deepEqual(run.errors, ["A new game could not be generated."]);
+  assert.deepEqual(run.errors, [coreText.GENERATE_FAILED_MSG]);
 }
 
 {
