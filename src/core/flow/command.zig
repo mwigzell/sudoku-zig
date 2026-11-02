@@ -185,7 +185,7 @@ pub const CommandFlow = struct {
     }
 
     fn failed(self: *CommandFlow, msg: []const u8, reason: []const u8) Step {
-        log.info("{s} failed: {s}", .{ @tagName(self.cmd), reason });
+        log.err("{s} failed: {s}", .{ @tagName(self.cmd), reason });
         return self.finish(.{ .show_error = msg });
     }
 

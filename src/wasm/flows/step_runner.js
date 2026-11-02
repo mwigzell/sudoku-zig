@@ -61,7 +61,7 @@ const NO_REASON = "no reason given";
  */
 function failedInput(input, result) {
   const error = result?.error ?? NO_REASON;
-  clientLog.clientLog("flow", "info", "step_failed", { input, error });
+  clientLog.clientLog("flow", "err", "step_failed", { input, error });
   return { input, ok: false, error };
 }
 

@@ -85,7 +85,7 @@ pub const ExportFlow = struct {
     }
 
     fn failedWith(self: *ExportFlow, msg: []const u8, reason: []const u8) Step {
-        log.info("{s} failed: {s}", .{ @tagName(self.target), reason });
+        log.err("{s} failed: {s}", .{ @tagName(self.target), reason });
         return self.fail(msg);
     }
 

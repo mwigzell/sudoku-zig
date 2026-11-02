@@ -224,14 +224,14 @@ pub const StartupFlow = struct {
     }
 
     fn restoreFailed(self: *StartupFlow, reason: []const u8) Step {
-        log.info("restore of {s} failed: {s}", .{ self.name.get(), reason });
+        log.err("restore of {s} failed: {s}", .{ self.name.get(), reason });
         const text = std.fmt.bufPrint(&self.text.buf, RESTORE_FAILED_FMT, .{self.name.get()}) catch RESTORE_FAILED_TITLE;
         if (text.ptr == &self.text.buf) self.text.len = text.len else self.text.set(text);
         return self.showIdle(.showing_idle_then_ask_delete);
     }
 
     fn generateFailed(self: *StartupFlow, reason: []const u8) Step {
-        log.info("generate failed: {s}", .{reason});
+        log.err("generate failed: {s}", .{reason});
         if (self.restored) return self.finish(.{ .show_error = step_mod.GENERATE_FAILED_MSG });
         self.text.set(step_mod.GENERATE_FAILED_MSG);
         return self.showIdle(.showing_idle_then_error);

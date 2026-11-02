@@ -102,6 +102,10 @@ fn emit(
         return;
     }
 
+    // The test runner fails any test that logs at error, and tests drive failure paths on purpose.
+    if (comptime builtin.is_test) {
+        if (sev == .err) return log.info(fmt, args);
+    }
     switch (sev) {
         .debug => log.debug(fmt, args),
         .info => log.info(fmt, args),

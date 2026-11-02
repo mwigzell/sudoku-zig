@@ -47,7 +47,7 @@ pub const Error = error{
 /// Best-effort `createDirPath` for settings storage; logs and continues on failure.
 pub fn ensureSettingsDir(io: std.Io, dir_path: []const u8) void {
     std.Io.Dir.cwd().createDirPath(io, dir_path) catch |err| {
-        log.warn("could not create settings directory '{s}': {s}", .{ dir_path, @errorName(err) });
+        log.err("could not create settings directory '{s}': {s}", .{ dir_path, @errorName(err) });
     };
 }
 

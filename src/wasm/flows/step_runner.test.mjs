@@ -139,17 +139,17 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
     },
   });
   const logged = [];
-  const originalInfo = console.info;
-  console.info = (line) => logged.push(line);
+  const originalError = console.error;
+  console.error = (line) => logged.push(line);
   globalThis.__SUDOKU_LOG = true;
   try {
     await stepRunner.runCommand(core, SAVE, failed);
   } finally {
     delete globalThis.__SUDOKU_LOG;
-    console.info = originalInfo;
+    console.error = originalError;
   }
   assert.deepEqual(failed.log.at(-1), ["error", coreText.SAVE_FAILED_MSG]);
-  assert.ok(logged.some((line) => String(line).includes("disk full")), "the thrown message is logged");
+  assert.ok(logged.some((line) => String(line).includes("disk full")), "the thrown message is logged as an error");
 }
 
 // A move's first autosave with no working file resolves the default target, then asks if it exists.

@@ -49,7 +49,7 @@ pub const SettingsFlow = struct {
                 .persisted => |result| switch (result) {
                     .ok => return self.finish(.done),
                     .failed => |reason| {
-                        log.info("settings save failed: {s}", .{reason});
+                        log.err("settings save failed: {s}", .{reason});
                         return self.finish(.{ .show_error = PERSIST_FAILED_MSG });
                     },
                 },

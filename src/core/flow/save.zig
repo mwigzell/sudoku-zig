@@ -220,7 +220,7 @@ pub const SaveFlow = struct {
     }
 
     fn writeFailed(self: *SaveFlow, reason: []const u8) Step {
-        log.info("write of {s} failed: {s}", .{ self.targetName(), reason });
+        log.err("write of {s} failed: {s}", .{ self.targetName(), reason });
         return self.fail(SAVE_FAILED_MSG);
     }
 

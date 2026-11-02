@@ -174,7 +174,7 @@ pub const GameEngine = struct {
     /// Open from SUD0 bytes — the core open command calls this on every platform.
     pub fn openFromSave(self: *@This(), buf: []const u8, opened_label: ?[]const u8) Event {
         self.loadSaveFormat(buf) catch |err| {
-            log.info("open: not a saved game ({s})", .{@errorName(err)});
+            log.err("open: not a saved game ({s})", .{@errorName(err)});
             return self.errorEvent(NOT_A_SAVED_GAME_MSG);
         };
         return self.finishLoadEvent(opened_label, .open);
@@ -183,7 +183,7 @@ pub const GameEngine = struct {
     /// Startup restore path: rehydrate state and surface only persisted status.
     pub fn restoreFromSave(self: *@This(), buf: []const u8) Event {
         self.loadSaveFormat(buf) catch |err| {
-            log.info("restore: not a saved game ({s})", .{@errorName(err)});
+            log.err("restore: not a saved game ({s})", .{@errorName(err)});
             return self.errorEvent(NOT_A_SAVED_GAME_MSG);
         };
         return self.finishLoadEvent(null, .startup_restore);
@@ -315,7 +315,7 @@ pub const GameEngine = struct {
         return switch (err) {
             error.IsGiven => self.errorEvent(PUZZLE_CELL_MSG),
             else => blk: {
-                log.info("set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) });
+                log.err("set cell ({d},{d}) failed: {s}", .{ row, col, @errorName(err) });
                 break :blk self.errorEvent(CELL_CHANGE_FAILED_MSG);
             },
         };
@@ -413,7 +413,7 @@ pub const GameEngine = struct {
         // First discard stale future entries from any earlier undo branch
         self.state.history.truncateFuture();
         self.state.history.push(row, col, old_value, digit) catch |err| {
-            log.info("history push failed: {s}", .{@errorName(err)});
+            log.err("history push failed: {s}", .{@errorName(err)});
             return self.errorEvent(MOVE_NOT_RECORDED_MSG);
         };
         return self.finishOkAfterCellEdit(row, col);
@@ -439,7 +439,7 @@ pub const GameEngine = struct {
                 }
                 self.state.history.truncateFuture();
                 self.state.history.pushSolve(.{ .given_bits = before_given, .flat = before_flat }) catch |push_err| {
-                    log.info("history push failed: {s}", .{@errorName(push_err)});
+                    log.err("history push failed: {s}", .{@errorName(push_err)});
                     return self.errorEvent(MOVE_NOT_RECORDED_MSG);
                 };
                 self.state.board.validate();
