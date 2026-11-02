@@ -5,6 +5,13 @@
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="33" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- A bound file may live in another app's provider (Drive); without this the provider is hidden after a restart. -->
+    <queries>
+        <intent>
+            <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+        </intent>
+    </queries>
+
     <application
         android:label="Sudoku Zig"
         android:icon="@mipmap/ic_launcher"
