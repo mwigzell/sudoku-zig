@@ -8,18 +8,6 @@ import * as stepRunner from "./step_runner.js";
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").WriteResult} WriteResult */
 
-function autosaveLevelForStage(stage, details = {}) {
-  if (stage === "persist_failed") return "warn";
-  if (stage === "pagehide_flush_result" && details.kind === "show_error") return "warn";
-  if (stage === "persist_ok" || stage === "pagehide_flush_result") return "info";
-  return "debug";
-}
-
-function logAutosave(stage, details = {}) {
-  const level = autosaveLevelForStage(stage, details);
-  clientLog.clientLog("autosave", level, stage, details);
-}
-
 /**
  * Platform work for the core autosave flow: a bound file (handle or Android bridge) is the
  * user's file and the host keeps a restore copy; otherwise the host copy is the user's file.
@@ -84,7 +72,7 @@ export function wireFinalSnapshotOnPageHide(
       game,
       { flow: stepRunner.FLOW_AUTOSAVE_FLUSH },
       autosaveHandlers(game, session, { fetchFn: keepaliveFetch, win, hostOnly: true }),
-    ).then((outcome) => logAutosave("pagehide_flush_result", { kind: outcome.kind }));
+    ).then((outcome) => clientLog.clientLog("autosave", "info", "pagehide_flush_result", { kind: outcome.kind }));
   };
   win.addEventListener("pagehide", onPageHide);
   return () => win.removeEventListener?.("pagehide", onPageHide);
