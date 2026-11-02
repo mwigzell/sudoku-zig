@@ -2,6 +2,7 @@
 // to persist the current settings.
 const std = @import("std");
 const config = @import("../config.zig");
+const command = @import("../command.zig");
 const step_mod = @import("step.zig");
 const logger = @import("../logger.zig");
 
@@ -13,35 +14,26 @@ const Input = step_mod.Input;
 /// Shown when the platform could not store the settings; its reason goes to the log.
 pub const PERSIST_FAILED_MSG = "Your settings could not be saved.";
 
-/// Commands whose change belongs in `settings.json`.
-const persisted_commands = [_][]const u8{
-    "set_theme",
-    "toggle_region",
-    "toggle_warn_solvability",
-    "set_difficulty",
-    "set_log_level",
-    "toggle_auto_restore",
-    "toggle_auto_new",
-    "toggle_auto_save",
-};
-
-fn commandPersistsSettings(command_name: []const u8) bool {
-    for (persisted_commands) |name| {
-        if (std.mem.eql(u8, name, command_name)) return true;
-    }
-    return false;
+/// True when the command's change belongs in `settings.json`.
+fn commandPersistsSettings(tag: command.CommandTag) bool {
+    return switch (tag) {
+        .set_theme, .toggle_region, .toggle_warn_solvability, .set_difficulty, .set_log_level => true,
+        .toggle_auto_restore, .toggle_auto_new, .toggle_auto_save => true,
+        .fill, .clear, .quit, .undo, .redo, .menu, .save, .open, .import, .@"export", .copy => false,
+        .paste, .new, .save_as, .solve_for_me, .hint, .settings => false,
+    };
 }
 
 pub const SettingsFlow = struct {
     cfg: config.Config,
-    command_name: []const u8,
+    command: command.CommandTag,
     phase: Phase = .start,
 
     const Phase = enum { start, persisting, finished };
 
-    /// Persist `cfg` after `command_name` ran; skipped when the command changes no setting.
-    pub fn afterCommand(cfg: config.Config, command_name: []const u8) SettingsFlow {
-        return .{ .cfg = cfg, .command_name = command_name };
+    /// Persist `cfg` after `tag` ran; skipped when the command changes no setting.
+    pub fn afterCommand(cfg: config.Config, tag: command.CommandTag) SettingsFlow {
+        return .{ .cfg = cfg, .command = tag };
     }
 
     /// Answer the last step; returns the next step (`.start` first).
@@ -49,7 +41,7 @@ pub const SettingsFlow = struct {
         switch (self.phase) {
             .start => {
                 if (input != .start) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
-                if (!commandPersistsSettings(self.command_name)) return self.finish(.done);
+                if (!commandPersistsSettings(self.command)) return self.finish(.done);
                 self.phase = .persisting;
                 return .{ .persist_settings = self.cfg };
             },
@@ -78,8 +70,9 @@ const testing = std.testing;
 test "every settings command asks the platform to persist the current settings once" {
     var cfg = config.Config.default();
     cfg.theme = .light;
-    for (persisted_commands) |name| {
-        var flow = SettingsFlow.afterCommand(cfg, name);
+    for (std.enums.values(command.CommandTag)) |tag| {
+        if (!commandPersistsSettings(tag)) continue;
+        var flow = SettingsFlow.afterCommand(cfg, tag);
         const step = flow.next(.start);
         try testing.expectEqual(config.ViewTheme.light, step.persist_settings.theme);
         try testing.expect(flow.next(.{ .persisted = .ok }) == .done);
@@ -88,14 +81,14 @@ test "every settings command asks the platform to persist the current settings o
 }
 
 test "commands that change no setting persist nothing" {
-    for ([_][]const u8{ "fill", "undo", "new", "save", "quit" }) |name| {
-        var flow = SettingsFlow.afterCommand(config.Config.default(), name);
+    for ([_]command.CommandTag{ .fill, .undo, .new, .save, .quit }) |tag| {
+        var flow = SettingsFlow.afterCommand(config.Config.default(), tag);
         try testing.expect(flow.next(.start) == .done);
     }
 }
 
 test "a persist failure shows core's sentence, not the platform's reason" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), "set_theme");
+    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_theme);
     _ = flow.next(.start);
     try testing.expectEqualStrings(
         PERSIST_FAILED_MSG,
@@ -104,12 +97,12 @@ test "a persist failure shows core's sentence, not the platform's reason" {
 }
 
 test "a wrong answer to persist_settings ends the flow with an error" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), "toggle_region");
+    var flow = SettingsFlow.afterCommand(config.Config.default(), .toggle_region);
     _ = flow.next(.start);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).show_error);
 }
 
 test "the flow must be started with start" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), "toggle_region");
+    var flow = SettingsFlow.afterCommand(config.Config.default(), .toggle_region);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).show_error);
 }

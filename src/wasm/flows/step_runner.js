@@ -37,6 +37,18 @@ export const WRITE_EXPORT_LINE = "export_line";
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
 
+/** Input names core's `flowNext` reads (`boundary.zig` `parseFlowInput`). */
+const INPUT_DEFAULT_TARGET = "default_target";
+const INPUT_TARGET_CHECKED = "target_checked";
+const INPUT_ANSWERED = "answered";
+const INPUT_WROTE = "wrote";
+const INPUT_GENERATED = "generated";
+const INPUT_PERSISTED = "persisted";
+const INPUT_COPIED = "copied";
+const INPUT_FILE_READ = "file_read";
+const INPUT_PICKED = "picked";
+const INPUT_ACK = "ack";
+
 const FLOW_LANE = Symbol("flowLane");
 const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
 /** Logged when a handler reports failure without saying why; core words what the user sees. */
@@ -56,12 +68,13 @@ function failedInput(input, result) {
 /**
  * Normalize a handler's write outcome to the wasm `wrote` input.
  * @param {import("../types").WriteResult} result
+ * @param {string | null} name the target core named, reported when the platform names none
  */
 function wroteInput(result, name) {
-  if (result?.ok === true) return { input: "wrote", ok: true, name: result.name ?? name };
-  if (result?.cancelled === true) return { input: "wrote", ok: false, cancelled: true };
-  if (result?.taken) return { input: "wrote", ok: false, taken: true, name: result.taken.name, dir: result.taken.dir };
-  return failedInput("wrote", result);
+  if (result?.ok === true) return { input: INPUT_WROTE, ok: true, name: result.name ?? name };
+  if (result?.cancelled === true) return { input: INPUT_WROTE, ok: false, cancelled: true };
+  if (result?.taken) return { input: INPUT_WROTE, ok: false, taken: true, name: result.taken.name, dir: result.taken.dir };
+  return failedInput(INPUT_WROTE, result);
 }
 
 /**
@@ -69,9 +82,9 @@ function wroteInput(result, name) {
  * @param {{ ok?: boolean, line?: string, cancelled?: boolean, error?: string }} result
  */
 function generatedInput(result) {
-  if (result?.ok === true && typeof result.line === "string") return { input: "generated", ok: true, line: result.line };
-  if (result?.cancelled === true) return { input: "generated", ok: false, cancelled: true };
-  return failedInput("generated", result);
+  if (result?.ok === true && typeof result.line === "string") return { input: INPUT_GENERATED, ok: true, line: result.line };
+  if (result?.cancelled === true) return { input: INPUT_GENERATED, ok: false, cancelled: true };
+  return failedInput(INPUT_GENERATED, result);
 }
 
 /**
@@ -79,10 +92,14 @@ function generatedInput(result) {
  * @param {{ ok?: boolean, error?: string }} result
  */
 function persistedInput(result) {
-  return outcomeInput("persisted", result);
+  return outcomeInput(INPUT_PERSISTED, result);
 }
 
-/** Normalize an ok-or-error outcome to the wasm `input` named `input`. */
+/**
+ * Normalize an ok-or-error outcome to the wasm `input` named `input`.
+ * @param {string} input
+ * @param {{ ok?: boolean, error?: string }} result
+ */
 function outcomeInput(input, result) {
   if (result?.ok === true) return { input, ok: true };
   return failedInput(input, result);
@@ -90,13 +107,19 @@ function outcomeInput(input, result) {
 
 /**
  * The file a `check_target` or `write` step names, and the write it is for.
+ * @param {{ name: string, kind: import("../types").WriteKind }} step
  * @returns {import("../types").FlowTarget}
  */
 function targetOf(step) {
   return { name: step.name, kind: step.kind };
 }
 
-/** Run a handler, turning a throw into a failed result. */
+/**
+ * Run a handler, turning a throw into a failed result.
+ * @template T
+ * @param {() => T | Promise<T>} fn
+ * @returns {Promise<T | { ok: false, error: string }>}
+ */
 async function settle(fn) {
   try {
     return await fn();
@@ -175,13 +198,13 @@ async function stepThrough(game, first, handlers) {
     if (step?.ok === false) return failFlow(game, handlers, step.error ?? NO_REASON);
     switch (step.step) {
       case STEP_RESOLVE_DEFAULT_TARGET:
-        step = game.flowNext({ input: "default_target", name: await handlers.resolveDefaultTarget() });
+        step = game.flowNext({ input: INPUT_DEFAULT_TARGET, name: await handlers.resolveDefaultTarget() });
         break;
       case STEP_CHECK_TARGET:
-        step = game.flowNext({ input: "target_checked", exists: (await handlers.checkTarget(targetOf(step))) === true });
+        step = game.flowNext({ input: INPUT_TARGET_CHECKED, exists: (await handlers.checkTarget(targetOf(step))) === true });
         break;
       case STEP_ASK:
-        step = game.flowNext({ input: "answered", yes: (await handlers.ask(step)) === true });
+        step = game.flowNext({ input: INPUT_ANSWERED, yes: (await handlers.ask(step)) === true });
         break;
       case STEP_WRITE: {
         const target = targetOf(step);
@@ -197,33 +220,33 @@ async function stepThrough(game, first, handlers) {
         break;
       }
       case STEP_COPY_LINE:
-        step = game.flowNext(outcomeInput("copied", await settle(() => handlers.copyLine())));
+        step = game.flowNext(outcomeInput(INPUT_COPIED, await settle(() => handlers.copyLine())));
         break;
       case STEP_READ_FILE: {
         const path = step.path;
         const read = await settle(() => handlers.readFile(path));
         step = read?.ok === true
           ? game.flowFileRead(read.bytes)
-          : game.flowNext(failedInput("file_read", read));
+          : game.flowNext(failedInput(INPUT_FILE_READ, read));
         break;
       }
       case STEP_PICK_OPEN: {
         const picked = await settle(() => handlers.pickOpen(step));
         if (picked?.ok === true) step = game.flowPicked(picked.bytes, picked.name ?? null);
-        else if (picked?.cancelled === true) step = game.flowNext({ input: "picked", ok: false, cancelled: true });
-        else step = game.flowNext(failedInput("picked", picked));
+        else if (picked?.cancelled === true) step = game.flowNext({ input: INPUT_PICKED, ok: false, cancelled: true });
+        else step = game.flowNext(failedInput(INPUT_PICKED, picked));
         break;
       }
       case STEP_READ_CLIPBOARD: {
         const read = await settle(() => handlers.readClipboard());
         step = read?.ok === true
           ? game.flowFileRead(new TextEncoder().encode(read.text))
-          : game.flowNext(failedInput("file_read", read));
+          : game.flowNext(failedInput(INPUT_FILE_READ, read));
         break;
       }
       case STEP_SHOW_GAME:
         await handlers.showGame(step);
-        step = game.flowNext({ input: "ack" });
+        step = game.flowNext({ input: INPUT_ACK });
         break;
       case STEP_GENERATE: {
         const difficulty = step.difficulty;
@@ -233,7 +256,7 @@ async function stepThrough(game, first, handlers) {
       case STEP_FORGET_CURRENT_FILE: {
         const forget = { path: step.path, delete: step.delete === true };
         await settle(() => handlers.forgetCurrentFile(forget));
-        step = game.flowNext({ input: "ack" });
+        step = game.flowNext({ input: INPUT_ACK });
         break;
       }
       case STEP_PERSIST_SETTINGS: {

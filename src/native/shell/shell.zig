@@ -150,15 +150,14 @@ pub const Sudoku = struct {
         try self.renderer.showLegend(game.legend);
     }
 
-    /// Dispatch one engine event to the renderer; returns true when the loop should end.
-    /// Status passthrough (same rules as wasm shell.js applyEventStatus): silence when
-    /// `.ok.msg` is null; never invent copy. `.error_msg` rides `showError` (interactive ack);
-    /// `.ok.msg` rides the non-blocking `render` status slot.
+    /// The cell whose region is shaded, when Show Region is on.
     fn regionSelection(self: *const @This()) ?facade_mod.Selection {
         if (!self.engine.cfg.show_region) return null;
         return self.last_cell;
     }
 
+    /// Dispatch one engine event to the renderer; returns true when the loop should end.
+    /// `.ok.msg` rides the status slot (null shows none); `.error_msg` rides `showError`.
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {

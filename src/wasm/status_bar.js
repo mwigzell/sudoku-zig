@@ -8,9 +8,18 @@ export function applyEventStatus(statusEl, result) {
   statusEl.className = "";
 }
 
+/**
+ * Show core's status text; null or empty clears the bar.
+ * @param {HTMLElement} statusEl
+ * @param {string | null | undefined} text
+ */
+export function showStatusText(statusEl, text) {
+  applyEventStatus(statusEl, { ok: true, msg: text ?? null });
+}
+
 /** Clear the status bar (same as a successful exec with no message). */
 export function clearEventStatus(statusEl) {
-  applyEventStatus(statusEl, { ok: true, msg: null });
+  showStatusText(statusEl, null);
 }
 
 /** Yield so the status bar can paint before a blocking wasm `init`. */

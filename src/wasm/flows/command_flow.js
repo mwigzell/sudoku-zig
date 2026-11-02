@@ -9,12 +9,16 @@ import * as stepRunner from "./step_runner.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
+/** @typedef {import("../types").WebSession} WebSession */
+/** @typedef {import("../types").GeneratingModal} GeneratingModal */
+/** @typedef {import("../types").GenWorker} GenWorker */
 
 /**
  * Platform work for a core command flow: take the shown game into the session, persist
  * settings, autosave. Core decides which of these a command needs.
  * @param {GameApi} game
- * @param {{ fetchFn?: typeof fetch, win?: Window & typeof globalThis, statusEl?: HTMLElement | null, onError?: (failed: { ok: false, error: string }) => void }} [options]
+ * @param {WebSession} session
+ * @param {{ fetchFn?: typeof fetch, win?: Window & typeof globalThis, statusEl?: HTMLElement | null, onError?: (failed: { ok: false, error: string }) => void, generatingModal?: GeneratingModal, genWorker?: GenWorker }} [options]
  * @returns {FlowHandlers}
  */
 export function commandHandlers(
@@ -37,7 +41,7 @@ export function commandHandlers(
       });
     },
     showStatus: (text) => {
-      if (statusEl) statusBar.applyEventStatus(statusEl, { ok: true, msg: text });
+      if (statusEl) statusBar.showStatusText(statusEl, text);
     },
   };
 }

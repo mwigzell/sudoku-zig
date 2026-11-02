@@ -2,6 +2,10 @@
 
 /** Wasm legend JSON key — pairs with Zig `Legend.@"export"` / `CommandTag.@"export"` (see legend.zig). */
 export const LEGEND_WIRE_EXPORT = "export";
+export const LEGEND_WIRE_OPEN = "open";
+export const LEGEND_WIRE_IMPORT = "import";
+export const LEGEND_WIRE_SAVE = "save";
+export const LEGEND_WIRE_SAVE_AS = "save_as";
 export const LEGEND_WIRE_COPY = "copy";
 export const LEGEND_WIRE_PASTE = "paste";
 
@@ -11,11 +15,11 @@ export const MENU_BAR_MENUS = [
     label: "File",
     items: [
       { id: "new", label: "New", legendKey: "new" },
-      { id: "open", label: "Open", legendKey: "open" },
-      { id: "import", label: "Import", legendKey: "import" },
+      { id: "open", label: "Open", legendKey: LEGEND_WIRE_OPEN },
+      { id: "import", label: "Import", legendKey: LEGEND_WIRE_IMPORT },
       { id: "export", label: "Export", legendKey: LEGEND_WIRE_EXPORT },
-      { id: "save", label: "Save", legendKey: "save" },
-      { id: "saveAs", label: "Save As", legendKey: "save_as" },
+      { id: "save", label: "Save", legendKey: LEGEND_WIRE_SAVE },
+      { id: "saveAs", label: "Save As", legendKey: LEGEND_WIRE_SAVE_AS },
       { id: "autoSave", label: "Auto Save" },
       { id: "settings", label: "Settings" },
     ],

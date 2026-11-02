@@ -476,7 +476,7 @@ function fileHandlers(wiring) {
     },
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);
-      statusBar.applyEventStatus(statusEl, { ok: true, msg: text });
+      statusBar.showStatusText(statusEl, text);
     },
     showError: (text) => showFailure(wiring, { ok: false, error: text }),
   };
@@ -603,10 +603,10 @@ export function wireFileMenu(
   if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, globalThis);
 
   wireNew(controls.new, wiring, difficultyDialog);
-  wireLoad(controls.open, wiring, "open", OPEN_COMMAND);
-  wireLoad(controls.import, wiring, "import", IMPORT_COMMAND);
-  wireSave(controls.save, wiring, "save", SAVE_COMMAND);
-  wireSave(controls.saveAs, wiring, "save_as", SAVE_AS_COMMAND);
+  wireLoad(controls.open, wiring, menuBarMod.LEGEND_WIRE_OPEN, OPEN_COMMAND);
+  wireLoad(controls.import, wiring, menuBarMod.LEGEND_WIRE_IMPORT, IMPORT_COMMAND);
+  wireSave(controls.save, wiring, menuBarMod.LEGEND_WIRE_SAVE, SAVE_COMMAND);
+  wireSave(controls.saveAs, wiring, menuBarMod.LEGEND_WIRE_SAVE_AS, SAVE_AS_COMMAND);
   wireAutoSave(controls.autoSave, wiring);
   wireExport(controls.export, wiring);
 

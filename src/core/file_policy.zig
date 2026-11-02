@@ -1,4 +1,5 @@
 const std = @import("std");
+const command = @import("command.zig");
 
 /// Shared write-intent categories for save persistence paths.
 pub const WriteIntent = enum {
@@ -33,20 +34,6 @@ pub const WriteContextEvent = enum {
     new_game_success,
     import_success,
     paste_success,
-};
-
-/// Canonical command names that trigger auto-save across platform seams.
-pub const AUTO_SAVE_TRIGGER_COMMANDS = [_][]const u8{
-    "fill",
-    "clear",
-    "undo",
-    "redo",
-    "hint",
-    "solve",
-    "solve_for_me",
-    "open",
-    "import",
-    "paste",
 };
 
 /// Replace question asked before overwriting an existing file; `{s}` is the file name.
@@ -95,12 +82,14 @@ pub fn nextWriteContext(current: WriteContext, event: WriteContextEvent) WriteCo
     };
 }
 
-/// Returns true when the command name should trigger auto-save policy.
-pub fn commandTriggersAutoSaveByName(name: []const u8) bool {
-    for (AUTO_SAVE_TRIGGER_COMMANDS) |trigger| {
-        if (std.mem.eql(u8, name, trigger)) return true;
-    }
-    return false;
+/// True when the command changes the game, so autosave writes it afterwards.
+pub fn commandTriggersAutoSave(tag: command.CommandTag) bool {
+    return switch (tag) {
+        .fill, .clear, .undo, .redo, .hint, .solve_for_me, .open, .import, .paste => true,
+        .quit, .menu, .save, .@"export", .copy, .new, .save_as, .set_theme, .toggle_region => false,
+        .toggle_warn_solvability, .set_difficulty, .set_log_level, .toggle_auto_restore, .toggle_auto_new => false,
+        .toggle_auto_save, .settings => false,
+    };
 }
 
 test "overwrite policy requires confirm for every intent when target exists" {
@@ -162,12 +151,13 @@ test "nextWriteContext maps new/import/paste/idle events to detached" {
     }
 }
 
-test "commandTriggersAutoSaveByName follows shared trigger set" {
-    const should_trigger = [_][]const u8{ "fill", "undo", "hint", "solve", "open", "paste" };
-    for (should_trigger) |name| {
-        try std.testing.expect(commandTriggersAutoSaveByName(name));
+test "game-changing commands trigger autosave; saves and settings do not" {
+    for ([_]command.CommandTag{ .fill, .undo, .hint, .solve_for_me, .open, .paste }) |tag| {
+        try std.testing.expect(commandTriggersAutoSave(tag));
     }
-    try std.testing.expect(!commandTriggersAutoSaveByName("save_as"));
+    for ([_]command.CommandTag{ .save, .save_as, .@"export", .set_theme }) |tag| {
+        try std.testing.expect(!commandTriggersAutoSave(tag));
+    }
 }
 
 test "file prompts read as sentences that start with words, not the file name" {

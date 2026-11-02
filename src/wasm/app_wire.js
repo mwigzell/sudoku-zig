@@ -234,7 +234,7 @@ export function wireSudokuApp({
       editMenu.sync();
       themeMenu.sync();
       regionMenu.sync();
-      statusBarMod.applyEventStatus(statusBar, { ok: true, msg: step.text ?? null });
+      statusBarMod.showStatusText(statusBar, step.text);
       sessionMod.syncCurrentFileLabels(session, root);
     },
   };

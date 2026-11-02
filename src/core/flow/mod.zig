@@ -36,13 +36,7 @@ pub const Flow = union(enum) {
     }
 };
 
-/// True once the flow has nothing more for the adapter to do.
-pub fn isTerminal(s: Step) bool {
-    return switch (s) {
-        .show_status, .show_error, .done => true,
-        else => false,
-    };
-}
+pub const isTerminal = step.isTerminal;
 
 test {
     std.testing.refAllDecls(@This());

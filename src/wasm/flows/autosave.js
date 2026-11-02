@@ -7,11 +7,17 @@ import * as stepRunner from "./step_runner.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").WriteResult} WriteResult */
+/** @typedef {import("../types").WebSession} WebSession */
+/** @typedef {import("../types").FlowHandlers} FlowHandlers */
 
 /**
  * Platform work for the core autosave flow: a bound file (handle or Android bridge) is the
  * user's file and the host keeps a restore copy; otherwise the host copy is the user's file.
+ * `hostOnly` skips the bound file (the page-hide flush cannot wait for it).
  * @param {GameApi} game
+ * @param {WebSession} session
+ * @param {{ fetchFn?: typeof fetch, win?: Window & typeof globalThis, onError?: (failed: { ok: false, error: string }) => void, hostOnly?: boolean }} [options]
+ * @returns {FlowHandlers}
  */
 export function autosaveHandlers(
   game,

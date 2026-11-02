@@ -52,7 +52,7 @@ export async function handleCopyPuzzle(
   if (!session.legend[menuBar.LEGEND_WIRE_COPY]) return { handled: false };
   const outcome = await stepRunner.runCommand(game, { action: COPY_COMMAND }, {
     copyLine: () => clipboardMod.startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document }),
-    showStatus: (text) => statusBar.applyEventStatus(statusEl, { ok: true, msg: text }),
+    showStatus: (text) => statusBar.showStatusText(statusEl, text),
     showError: (text) => errorModalMod.showErrorModal(errorModal, text),
   });
   return { handled: true, ok: outcome.kind === stepRunner.STEP_SHOW_STATUS };

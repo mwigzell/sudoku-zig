@@ -2,6 +2,7 @@
 // file (or the platform default) through the same steps as Save.
 const std = @import("std");
 const file_policy = @import("../file_policy.zig");
+const command = @import("../command.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
 const save_mod = @import("save.zig");
@@ -14,22 +15,21 @@ const SaveFlow = save_mod.SaveFlow;
 pub const AutosaveFlow = struct {
     session: *FileSession,
     auto_save: bool,
-    command_name: []const u8,
     kind: Kind,
     phase: Phase = .start,
     save: SaveFlow = undefined,
 
-    const Kind = enum { after_command, flush };
+    const Kind = union(enum) { after_command: command.CommandTag, flush };
     const Phase = enum { start, resolving, saving, finished };
 
-    /// Autosave after `command_name` ran; skipped when autosave is off or the command does not change the game.
-    pub fn afterCommand(session: *FileSession, auto_save: bool, command_name: []const u8) AutosaveFlow {
-        return .{ .session = session, .auto_save = auto_save, .command_name = command_name, .kind = .after_command };
+    /// Autosave after `tag` ran; skipped when autosave is off or the command does not change the game.
+    pub fn afterCommand(session: *FileSession, auto_save: bool, tag: command.CommandTag) AutosaveFlow {
+        return .{ .session = session, .auto_save = auto_save, .kind = .{ .after_command = tag } };
     }
 
     /// Final write when the app is closing: only continues an existing working file, since nobody can be asked.
     pub fn flush(session: *FileSession, auto_save: bool) AutosaveFlow {
-        return .{ .session = session, .auto_save = auto_save, .command_name = "", .kind = .flush };
+        return .{ .session = session, .auto_save = auto_save, .kind = .flush };
     }
 
     /// Answer the last step; returns the next step (`.start` first).
@@ -39,7 +39,7 @@ pub const AutosaveFlow = struct {
                 if (input != .start) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
                 if (!self.auto_save) return self.finish(.done);
                 return switch (self.kind) {
-                    .after_command => self.startAfterCommand(),
+                    .after_command => |tag| self.startAfterCommand(tag),
                     .flush => self.startFlush(),
                 };
             },
@@ -52,17 +52,14 @@ pub const AutosaveFlow = struct {
             },
             .saving => {
                 const step = self.save.next(input);
-                return switch (step) {
-                    .show_status, .show_error, .done => self.finish(step),
-                    else => step,
-                };
+                return if (step_mod.isTerminal(step)) self.finish(step) else step;
             },
             .finished => return .done,
         }
     }
 
-    fn startAfterCommand(self: *AutosaveFlow) Step {
-        if (!file_policy.commandTriggersAutoSaveByName(self.command_name)) return self.finish(.done);
+    fn startAfterCommand(self: *AutosaveFlow, tag: command.CommandTag) Step {
+        if (!file_policy.commandTriggersAutoSave(tag)) return self.finish(.done);
         if (self.session.workingFile()) |working| return self.saveTo(working);
         self.phase = .resolving;
         return .resolve_default_target;
@@ -92,19 +89,19 @@ const testing = std.testing;
 
 test "autosave off does nothing" {
     var session = FileSession{};
-    var flow = AutosaveFlow.afterCommand(&session, false, "fill");
+    var flow = AutosaveFlow.afterCommand(&session, false, .fill);
     try testing.expect(flow.next(.start) == .done);
 }
 
 test "commands that do not change the game do not autosave" {
     var session = FileSession{};
-    var flow = AutosaveFlow.afterCommand(&session, true, "set_theme");
+    var flow = AutosaveFlow.afterCommand(&session, true, .set_theme);
     try testing.expect(flow.next(.start) == .done);
 }
 
 test "with no working file autosave asks the platform for its default target" {
     var session = FileSession{};
-    var flow = AutosaveFlow.afterCommand(&session, true, "fill");
+    var flow = AutosaveFlow.afterCommand(&session, true, .fill);
     try testing.expect(flow.next(.start) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target.name);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write.name);
@@ -116,7 +113,7 @@ test "with no working file autosave asks the platform for its default target" {
 test "autosave follows the working file" {
     var session = FileSession{ .write_context = .continuation };
     session.setWorkingFile("/docs/game.sud");
-    var flow = AutosaveFlow.afterCommand(&session, true, "undo");
+    var flow = AutosaveFlow.afterCommand(&session, true, .undo);
     try testing.expectEqualStrings("/docs/game.sud", flow.next(.start).check_target.name);
     const write = flow.next(.{ .target_checked = true }).write;
     try testing.expectEqualStrings("/docs/game.sud", write.name);
@@ -128,7 +125,7 @@ test "autosave onto an existing file after New asks first and keeps it when decl
     var session = FileSession{};
     session.setWorkingFile("game.sud");
     session.apply(.new_game_success);
-    var flow = AutosaveFlow.afterCommand(&session, true, "paste");
+    var flow = AutosaveFlow.afterCommand(&session, true, .paste);
     _ = flow.next(.start);
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), flow.next(.{ .target_checked = true }).ask.text);
     try testing.expect(flow.next(.{ .answered = false }) == .done);
@@ -138,7 +135,7 @@ test "autosave onto an existing file after New asks first and keeps it when decl
 test "autosave write failure is shown" {
     var session = FileSession{};
     session.setWorkingFile("game.sud");
-    var flow = AutosaveFlow.afterCommand(&session, true, "fill");
+    var flow = AutosaveFlow.afterCommand(&session, true, .fill);
     _ = flow.next(.start);
     _ = flow.next(.{ .target_checked = false });
     try testing.expectEqualStrings(save_mod.SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);

@@ -59,6 +59,6 @@ export function applySessionOutcomeStatus(
   { state, legend, config, msg } = {},
 ) {
   applySessionOutcome(session, { state, legend, config });
-  if (statusEl) statusBar.applyEventStatus(statusEl, { ok: true, msg: msg ?? null });
+  if (statusEl) statusBar.showStatusText(statusEl, msg);
   syncCurrentFileLabels(session);
 }

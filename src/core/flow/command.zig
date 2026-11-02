@@ -58,7 +58,7 @@ pub const CommandFlow = struct {
             .writing => return self.continueWrite(input),
             .showing => {
                 if (input != .ack) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
-                self.settings = SettingsFlow.afterCommand(self.engine.getConfig(), @tagName(self.cmd));
+                self.settings = SettingsFlow.afterCommand(self.engine.getConfig(), self.cmd);
                 self.phase = .persisting;
                 return self.continueSettings(.start);
             },
@@ -164,10 +164,7 @@ pub const CommandFlow = struct {
             .save => |*f| f.next(input),
             .@"export" => |*f| f.next(input),
         };
-        return switch (step) {
-            .show_status, .show_error, .done => self.finish(step),
-            else => step,
-        };
+        return if (step_mod.isTerminal(step)) self.finish(step) else step;
     }
 
     fn continueSettings(self: *CommandFlow, input: Input) Step {
@@ -177,17 +174,14 @@ pub const CommandFlow = struct {
             .show_status, .show_error => return self.finish(step),
             else => return step,
         }
-        self.autosave = AutosaveFlow.afterCommand(self.session, self.engine.cfg.auto_save, @tagName(self.cmd));
+        self.autosave = AutosaveFlow.afterCommand(self.session, self.engine.cfg.auto_save, self.cmd);
         self.phase = .autosaving;
         return self.continueAutosave(.start);
     }
 
     fn continueAutosave(self: *CommandFlow, input: Input) Step {
         const step = self.autosave.next(input);
-        return switch (step) {
-            .show_status, .show_error, .done => self.finish(step),
-            else => step,
-        };
+        return if (step_mod.isTerminal(step)) self.finish(step) else step;
     }
 
     fn failed(self: *CommandFlow, msg: []const u8, reason: []const u8) Step {

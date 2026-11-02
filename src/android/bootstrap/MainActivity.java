@@ -51,6 +51,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public final class MainActivity extends Activity {
     private static final String LOG_IDENTITY = JniHost.logIdentity();
@@ -68,6 +69,15 @@ public final class MainActivity extends Activity {
     private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
     private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/Sudoku";
     private static final String REASON_DEFAULT_TAKEN = "default_taken";
+    /** Bridge result keys, read by `file_menu.js`. */
+    private static final String KEY_OK = "ok";
+    private static final String KEY_CANCELLED = "cancelled";
+    private static final String KEY_ERROR = "error";
+    private static final String KEY_REASON = "reason";
+    private static final String KEY_NAME = "name";
+    private static final String KEY_DIR = "dir";
+    private static final String KEY_BASE64 = "base64";
+    private static final String JSON_FAILED_FALLBACK = "{\"" + KEY_OK + "\":false}";
     /** Failure kinds the bridge reports to JS; core words what the user sees, the kind and detail are logged. */
     private static final String FAILED_SAVE = "save_failed";
     private static final String FAILED_OPEN = "open_failed";
@@ -359,20 +369,23 @@ public final class MainActivity extends Activity {
         }, remaining);
     }
 
-    private static String jsonCancelled() {
+    /** One bridge result object; keys and values alternate. */
+    private static String jsonResult(Object... keysAndValues) {
+        final JSONObject out = new JSONObject();
         try {
-            return new JSONObject().put("ok", false).put("cancelled", true).toString();
+            for (int i = 0; i + 1 < keysAndValues.length; i += 2) out.put((String) keysAndValues[i], keysAndValues[i + 1]);
         } catch (JSONException err) {
-            return "{\"ok\":false,\"cancelled\":true}";
+            return JSON_FAILED_FALLBACK;
         }
+        return out.toString();
+    }
+
+    private static String jsonCancelled() {
+        return jsonResult(KEY_OK, false, KEY_CANCELLED, true);
     }
 
     private static String jsonFailed(String reason) {
-        try {
-            return new JSONObject().put("ok", false).put("error", reason).toString();
-        } catch (JSONException err) {
-            return "{\"ok\":false}";
-        }
+        return jsonResult(KEY_OK, false, KEY_ERROR, reason);
     }
 
     private static String jsonFailed(String kind, Throwable cause) {
@@ -380,32 +393,26 @@ public final class MainActivity extends Activity {
     }
 
     private static String jsonDefaultTaken(String name) {
-        try {
-            return new JSONObject()
-                .put("ok", false)
-                .put("reason", REASON_DEFAULT_TAKEN)
-                .put("name", name)
-                .put("dir", DEFAULT_VISIBLE_SAVE_DIR)
-                .toString();
-        } catch (JSONException err) {
-            return jsonFailed(FAILED_SAVE, err);
-        }
+        return jsonResult(KEY_OK, false, KEY_REASON, REASON_DEFAULT_TAKEN, KEY_NAME, name, KEY_DIR, DEFAULT_VISIBLE_SAVE_DIR);
     }
 
     private static String jsonSaveOk(String name) {
-        try {
-            return new JSONObject().put("ok", true).put("name", name).toString();
-        } catch (JSONException err) {
-            return "{\"ok\":true}";
-        }
+        return jsonResult(KEY_OK, true, KEY_NAME, name);
     }
 
     private static String jsonOpenOk(String name, String base64) {
+        return jsonResult(KEY_OK, true, KEY_NAME, name, KEY_BASE64, base64);
+    }
+
+    /** Decode the page's Base64 payload and hand the bytes to `save`; a bad payload fails the call. */
+    private static String withPayload(String base64, Function<byte[], String> save) {
+        final byte[] bytes;
         try {
-            return new JSONObject().put("ok", true).put("name", name).put("base64", base64).toString();
-        } catch (JSONException err) {
-            return "{\"ok\":false,\"error\":\"invalid Android file payload\"}";
+            bytes = Base64.decode(base64, Base64.DEFAULT);
+        } catch (IllegalArgumentException err) {
+            return jsonFailed(FAILED_PAYLOAD, err);
         }
+        return save.apply(bytes);
     }
 
     private void rememberCurrentFile(Uri uri, String fallbackName) {
@@ -668,19 +675,11 @@ public final class MainActivity extends Activity {
     private final class AndroidFileBridge {
         @JavascriptInterface
         public String saveSudokuFile(String base64, String suggestedName, boolean saveAs) {
-            final byte[] bytes;
-            try {
-                bytes = Base64.decode(base64, Base64.DEFAULT);
-            } catch (IllegalArgumentException err) {
-                return jsonFailed(FAILED_PAYLOAD, err);
-            }
-
-            if (!saveAs) {
-                final Uri uri = currentUri();
+            return withPayload(base64, bytes -> {
+                final Uri uri = saveAs ? null : currentUri();
                 if (uri != null) return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
                 return saveViaCreateDocument(bytes, suggestedName);
-            }
-            return saveViaCreateDocument(bytes, suggestedName);
+            });
         }
 
         @JavascriptInterface
@@ -690,26 +689,16 @@ public final class MainActivity extends Activity {
 
         @JavascriptInterface
         public String saveSudokuFileToExisting(String base64) {
-            final byte[] bytes;
-            try {
-                bytes = Base64.decode(base64, Base64.DEFAULT);
-            } catch (IllegalArgumentException err) {
-                return jsonFailed(FAILED_PAYLOAD, err);
-            }
-            return saveViaPickExisting(bytes);
+            return withPayload(base64, bytes -> saveViaPickExisting(bytes));
         }
 
         @JavascriptInterface
         public String saveCurrentSudokuFile(String base64, String suggestedName) {
-            final byte[] bytes;
-            try {
-                bytes = Base64.decode(base64, Base64.DEFAULT);
-            } catch (IllegalArgumentException err) {
-                return jsonFailed(FAILED_PAYLOAD, err);
-            }
-            final Uri uri = currentUri();
-            if (uri == null) return saveToDefaultVisible(bytes, suggestedName);
-            return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
+            return withPayload(base64, bytes -> {
+                final Uri uri = currentUri();
+                if (uri == null) return saveToDefaultVisible(bytes, suggestedName);
+                return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
+            });
         }
 
         @JavascriptInterface

@@ -58,6 +58,14 @@ pub const Target = struct {
     kind: WriteKind,
 };
 
+/// True once the flow has nothing more for the adapter to do.
+pub fn isTerminal(s: Step) bool {
+    return switch (s) {
+        .show_status, .show_error, .done => true,
+        else => false,
+    };
+}
+
 /// Everything the adapter draws for `show_game`, so it needs nothing else from the engine.
 pub const ShowGame = struct {
     status: ?[]const u8,
