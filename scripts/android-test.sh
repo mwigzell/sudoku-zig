@@ -53,8 +53,10 @@ if [[ ! -f "$APP_APK" ]]; then
 fi
 
 # ── libraries: verify pinned files, fetch missing ones, unpack AARs to classes jars ──
-rm -rf "$OUT"
-mkdir -p "$OUT/jars" "$OUT/classes" "$OUT/backup"
+# The device backup survives a rebuild: a run that could not restore the device leaves it for the next run.
+BACKUP="$OUT/backup"
+find "$OUT" -mindepth 1 -maxdepth 1 ! -name backup -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$OUT/jars" "$OUT/classes" "$BACKUP"
 mkdir -p "$LIBS"
 CLASSPATH_JARS=()
 for entry in "${PINNED_LIBS[@]}"; do
@@ -100,25 +102,30 @@ if [[ "$(echo "$DEVICES" | grep -c .)" -ne 1 ]]; then
   exit 1
 fi
 
-APP_INSTALLED=0
-if "$ADB" shell pm path "$APP_PACKAGE" >/dev/null 2>&1; then
-  APP_INSTALLED=1
-fi
-"$ADB" install -r "$APP_APK" >/dev/null
-"$ADB" shell am force-stop "$APP_PACKAGE"
-if [[ "$APP_INSTALLED" -eq 1 ]]; then
-  "$ADB" exec-out run-as "$APP_PACKAGE" tar cf - . > "$OUT/backup/appdata.tar"
-fi
 # The user's default save file (and renamed copies) move aside, not delete-and-push: a move keeps their MediaStore rows.
 HOLD_DIR="/sdcard/Download/sudoku-test-hold"
 DEFAULT_FILES_GLOB="'$SAVE_DIR/sudoku.sud' '$SAVE_DIR'/sudoku\\ \\(*\\).sud"
 # The reinstall scenario installs the app from this copy; failed tests leave a screenshot and window hierarchy here.
 APP_APK_ON_DEVICE="/data/local/tmp/sudoku-app.apk"
 FAILURE_DIR="/data/local/tmp/sudoku-test-failure"
-HAD_SAVE_DIR=0
-if "$ADB" shell ls "$SAVE_DIR" >/dev/null 2>&1; then
-  HAD_SAVE_DIR=1
-  "$ADB" pull "$SAVE_DIR" "$OUT/backup/" >/dev/null
+# Present from backup until a complete restore; holds whether the save folder existed before the run.
+RESTORE_PENDING="$BACKUP/restore-pending"
+RUN_LIMIT_SECONDS=600
+
+"$ADB" install -r "$APP_APK" >/dev/null
+"$ADB" shell am force-stop "$APP_PACKAGE"
+if [[ -f "$RESTORE_PENDING" ]]; then
+  echo "note: the last run did not finish restoring the device; this run restores from its backup ($BACKUP)" >&2
+  HAD_SAVE_DIR="$(cat "$RESTORE_PENDING")"
+else
+  rm -rf "$BACKUP" && mkdir -p "$BACKUP"
+  "$ADB" exec-out run-as "$APP_PACKAGE" tar cf - . > "$BACKUP/appdata.tar" 2>/dev/null || rm -f "$BACKUP/appdata.tar"
+  HAD_SAVE_DIR=0
+  if "$ADB" shell ls "$SAVE_DIR" >/dev/null 2>&1; then
+    HAD_SAVE_DIR=1
+    "$ADB" pull "$SAVE_DIR" "$BACKUP/" >/dev/null
+  fi
+  echo "$HAD_SAVE_DIR" > "$RESTORE_PENDING"
 fi
 # Folders removed from the shell keep their MediaStore rows; drop them so pickers do not list a missing folder.
 forget_folder() {
@@ -131,33 +138,63 @@ restore_device() {
   if ! "$ADB" shell pm path "$APP_PACKAGE" >/dev/null 2>&1; then
     "$ADB" install -r "$APP_APK" >/dev/null || echo "warning: app not reinstalled" >&2
   fi
-  "$ADB" shell pm clear "$APP_PACKAGE" >/dev/null || true
-  if [[ -s "$OUT/backup/appdata.tar" ]]; then
-    "$ADB" exec-in run-as "$APP_PACKAGE" tar xf - < "$OUT/backup/appdata.tar" || echo "warning: app data restore failed; backup kept at $OUT/backup/appdata.tar" >&2
+  local restored=1
+  "$ADB" shell pm clear "$APP_PACKAGE" >/dev/null || restored=0
+  if [[ -s "$BACKUP/appdata.tar" ]]; then
+    "$ADB" exec-in run-as "$APP_PACKAGE" tar xf - < "$BACKUP/appdata.tar" || restored=0
   fi
-  "$ADB" shell "rm -f $DEFAULT_FILES_GLOB; for f in '$HOLD_DIR'/*; do [ -e \"\$f\" ] && mv \"\$f\" '$SAVE_DIR/'; done; true" \
-    || echo "warning: save files not moved back; they are in $HOLD_DIR (copy in $OUT/backup)" >&2
+  "$ADB" shell "rm -f $DEFAULT_FILES_GLOB; for f in '$HOLD_DIR'/*; do [ -e \"\$f\" ] && { mv \"\$f\" '$SAVE_DIR/' || exit 1; }; done; true" || restored=0
   forget_folder "$HOLD_DIR"
   if [[ "$HAD_SAVE_DIR" -eq 0 ]]; then
     forget_folder "$SAVE_DIR"
   fi
   "$ADB" shell rm -rf "$FAILURE_DIR" || true
+  if [[ "$restored" -eq 1 ]]; then
+    rm -f "$RESTORE_PENDING"
+  else
+    echo "warning: the device was not fully restored; the next run restores it from $BACKUP (save files held in $HOLD_DIR)" >&2
+  fi
 }
 trap restore_device EXIT
-"$ADB" shell "mkdir -p '$HOLD_DIR' && for f in $DEFAULT_FILES_GLOB; do [ -e \"\$f\" ] && mv \"\$f\" '$HOLD_DIR/'; done; true"
+# Files already held belong to an unfinished run, so the default files in the save folder are test leftovers.
+"$ADB" shell "if [ -n \"\$(ls -A '$HOLD_DIR' 2>/dev/null)\" ]; then rm -f $DEFAULT_FILES_GLOB; else mkdir -p '$HOLD_DIR' && for f in $DEFAULT_FILES_GLOB; do [ -e \"\$f\" ] && mv \"\$f\" '$HOLD_DIR/'; done; fi; true"
 
 # ── run ──
 "$ADB" push "$APP_APK" "$APP_APK_ON_DEVICE" >/dev/null
 "$ADB" shell rm -rf "$FAILURE_DIR"
 "$ADB" install -r -t "$OUT/sudoku-test.apk" >/dev/null
-RESULT="$("$ADB" shell am instrument -w -r "$TEST_PACKAGE/$RUNNER" | tr -d '\r')"
-if ! echo "$RESULT" | grep -q '^OK ('; then
-  echo "$RESULT"
+# A hung device (frozen picker, restarting system) never fails a UiAutomator wait, so the run has a time limit.
+(
+  sleep "$RUN_LIMIT_SECONDS"
+  touch "$OUT/timed-out"
+  pkill -f "am instrument -w -r $TEST_PACKAGE/$RUNNER"
+) </dev/null >/dev/null 2>&1 &
+WATCHDOG=$!
+echo "running tests on $DEVICES (limit ${RUN_LIMIT_SECONDS}s)"
+"$ADB" shell am instrument -w -r "$TEST_PACKAGE/$RUNNER" | tr -d '\r' | tee "$OUT/instrument.txt" | awk '
+  /^INSTRUMENTATION_STATUS: test=/ { test = substr($0, index($0, "=") + 1) }
+  /^INSTRUMENTATION_STATUS_CODE: / {
+    code = $2
+    if (code == 1) printf "  %s ... ", test
+    else if (code == 0) print "ok"
+    else if (code == -3) print "ignored"
+    else print "FAILED"
+    fflush()
+  }' || true
+pkill -P "$WATCHDOG" 2>/dev/null || true
+kill "$WATCHDOG" 2>/dev/null || true
+wait "$WATCHDOG" 2>/dev/null || true
+if [[ -f "$OUT/timed-out" ]]; then
+  echo
+  echo "error: tests still running after ${RUN_LIMIT_SECONDS}s; stopped (is the emulator responsive?)" >&2
+fi
+if ! grep -q '^OK (' "$OUT/instrument.txt"; then
+  cat "$OUT/instrument.txt"
   if "$ADB" pull "$FAILURE_DIR" "$OUT/failure" >/dev/null 2>&1; then
     echo "failure screenshots and window hierarchies: $OUT/failure" >&2
   fi
   echo "error: Android tests failed" >&2
   exit 1
 fi
-echo "$RESULT" | grep -E '^(OK \(|Time:)' || true
+grep -E '^(OK \(|Time:)' "$OUT/instrument.txt" || true
 echo "Android tests passed"
