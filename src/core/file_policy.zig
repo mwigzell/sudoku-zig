@@ -64,11 +64,12 @@ pub const OverwriteInput = struct {
 
 /// Central overwrite policy:
 /// - writes to missing targets never prompt
-/// - continuation writes to existing targets do not prompt
+/// - Save As onto an existing target always asks
+/// - Save and autosave continuing an existing target do not prompt
 /// - detached writes to existing targets require explicit replace confirm
 pub fn evaluateOverwritePolicy(input: OverwriteInput) OverwriteDecision {
-    _ = input.intent;
     if (!input.target_exists) return .write;
+    if (input.intent == .save_as) return .require_replace_confirm;
     if (input.write_context == .continuation) return .write;
     return .require_replace_confirm;
 }
@@ -114,8 +115,16 @@ test "overwrite policy allows write for every intent when target does not exist"
     }
 }
 
-test "overwrite policy allows continuation write for existing target" {
-    const intents = [_]WriteIntent{ .save, .save_as, .auto_save };
+test "save as onto an existing file always asks, even when continuing it" {
+    try std.testing.expectEqual(OverwriteDecision.require_replace_confirm, evaluateOverwritePolicy(.{
+        .intent = .save_as,
+        .target_exists = true,
+        .write_context = .continuation,
+    }));
+}
+
+test "save and autosave continue an existing file without asking" {
+    const intents = [_]WriteIntent{ .save, .auto_save };
     for (intents) |intent| {
         try std.testing.expectEqual(OverwriteDecision.write, evaluateOverwritePolicy(.{
             .intent = intent,

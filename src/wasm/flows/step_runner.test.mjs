@@ -76,13 +76,13 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.deepEqual(again.log, [["check", "game.sud"], ["write", "game.sud"], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
 }
 
-// Save As suggests the opened file and continues it; after New the same Save As asks.
+// Save As suggests the opened file and asks before replacing it; after New it asks too.
 {
   const core = await loadCoreFlow();
   openAs(core, "game.sud");
-  const continuing = saveHandlers({ exists: true });
+  const continuing = saveHandlers({ exists: true, yes: true });
   await stepRunner.runCommand(core, SAVE_AS, continuing);
-  assert.deepEqual(continuing.log, [["check", "game.sud"], ["write", "game.sud"], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
+  assert.deepEqual(continuing.log, [["check", "game.sud"], REPLACE_ASK, ["write", "game.sud"], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
   startNewGame(core);
   const detached = saveHandlers({ exists: true, yes: false });
   await stepRunner.runCommand(core, SAVE_AS, detached);
