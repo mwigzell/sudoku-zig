@@ -909,8 +909,10 @@
           : Date.now();
       const BOOT_SPLASH_MIN_MS = 2000;
       const WEB_BOOT_TIMEOUT_MS = 12000;
+      /** Shown for any boot failure; the reason goes to the console or the client log. */
+      const BOOT_FAILED_MSG = "The game could not start. Reload the page to try again.";
       let bootSplashHidePromise = null;
-      let bootTimedOut = false;
+      let bootFailureShown = false;
       const dismiss = document.getElementById("error-modal-dismiss");
       dismiss?.addEventListener("click", () => {
         if (errorModal) errorModal.hidden = true;
@@ -932,26 +934,27 @@
         })();
         return bootSplashHidePromise;
       }
-      function showBootFailure(message) {
-        if (bootTimedOut && message === "web startup timed out") return;
+      function showBootFailure() {
+        if (bootFailureShown) return;
+        bootFailureShown = true;
         void hideBootSplash();
         if (statusBar) {
-          statusBar.textContent = message;
+          statusBar.textContent = BOOT_FAILED_MSG;
           statusBar.className = "error";
         }
         if (errorModal && errorMsg) {
-          errorMsg.textContent = message;
+          errorMsg.textContent = BOOT_FAILED_MSG;
           errorModal.hidden = false;
         }
       }
-      window.addEventListener("error", (ev) => {
-        if (ev.message) showBootFailure(String(ev.message));
-      });
-      window.addEventListener("unhandledrejection", (ev) => {
-        const r = ev.reason;
-        const msg = r && r.message ? r.message : String(r ?? "load failed");
-        showBootFailure(msg);
-      });
+      // Before boot completes an uncaught error means the game did not start; after it, app_boot logs them.
+      function failBootWith(reason) {
+        if (window.__sudokuBootReady === true) return;
+        console.error("sudoku boot failed:", reason);
+        showBootFailure();
+      }
+      window.addEventListener("error", (ev) => failBootWith(ev.error ?? ev.message));
+      window.addEventListener("unhandledrejection", (ev) => failBootWith(ev.reason));
       window.__sudokuSignalAndroidBootReady = function () {
         window.__sudokuBootReady = true;
         try {
@@ -961,12 +964,9 @@
       // Android already shows a native launch splash; suppress the HTML splash
       // there to avoid stacked overlays.
       if (isAndroidWebView && bootSplash) bootSplash.hidden = true;
-      setTimeout(() => {
-        if (window.__sudokuBootReady === true) return;
-        bootTimedOut = true;
-        showBootFailure("web startup timed out");
-      }, WEB_BOOT_TIMEOUT_MS);
+      setTimeout(() => failBootWith(`no boot after ${WEB_BOOT_TIMEOUT_MS} ms`), WEB_BOOT_TIMEOUT_MS);
       window.__hideSudokuBootSplash = hideBootSplash;
+      window.__sudokuShowBootFailure = showBootFailure;
     })();
   </script>
 

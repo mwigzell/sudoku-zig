@@ -12,8 +12,16 @@ import * as board from "./board.js";
 import * as theme from "./menus/theme.js";
 import * as appWire from "./app_wire.js";
 
-/** Shown when the game core itself failed to load, so it cannot word the error; the reason is logged. */
-const BOOT_FAILED_MSG = "The game could not start. Reload the page to try again.";
+/**
+ * After boot an uncaught error is a bug, not a failed start: log it, show nothing.
+ * @param {Window & typeof globalThis} win
+ */
+function logUncaughtErrors(win) {
+  const log = (reason) =>
+    clientLog.clientLog("page", "err", "uncaught", { error: reason?.message ?? String(reason) });
+  win.addEventListener("error", (ev) => log(ev.error ?? ev.message));
+  win.addEventListener("unhandledrejection", (ev) => log(ev.reason));
+}
 
 /**
  * Entry point used by `page.html` module script.
@@ -25,7 +33,6 @@ export async function bootSudokuWebApp(root = document) {
   if (globalThis.__SUDOKU_LOG !== true) globalThis.__SUDOKU_LOG = false;
   if (globalThis.__SUDOKU_LOG_POST !== true) globalThis.__SUDOKU_LOG_POST = false;
 
-  const statusBar = root.getElementById("status-bar");
   const boardEl = root.getElementById("board");
   const errorModal = appWire.createErrorModal(root);
 
@@ -81,6 +88,7 @@ export async function bootSudokuWebApp(root = document) {
 
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
+    logUncaughtErrors(globalThis);
     clientLog.clientLog("startup", "info", "ready");
 
     // Boot phase 6: core startup flow decides restore / new / idle; its dialogs need the splash gone.
@@ -98,9 +106,7 @@ export async function bootSudokuWebApp(root = document) {
   } catch (err) {
     const errorText = err && err.message ? err.message : String(err);
     clientLog.clientLog("startup", "err", "boot_failed", { error: errorText });
-    await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
-    board.setStatus(statusBar, BOOT_FAILED_MSG, { error: true });
-    errorModalMod.showErrorModal(errorModal, BOOT_FAILED_MSG);
+    globalThis.__sudokuShowBootFailure?.();
   }
 }

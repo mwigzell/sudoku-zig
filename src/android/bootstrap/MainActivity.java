@@ -93,11 +93,12 @@ public final class MainActivity extends Activity {
     private static final int CHROME_LIGHT = Color.parseColor("#eef0f4");
     private static final int CHROME_DARK = Color.parseColor("#16181d");
     private static final int ANDROID_UID_PER_USER_RANGE = 100000;
-    private static final String BOOT_ERROR_HTML_PREFIX =
+    /** Shown when the page never came up, so the game could not word it; the reason goes to logcat. */
+    private static final String BOOT_FAILED_MSG = "The game could not start. Close the app and open it again.";
+    private static final String BOOT_ERROR_HTML =
         "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
         "<body style=\"margin:0;padding:16px;font-family:sans-serif;background:#16181d;color:#e6e6e6;\">" +
-        "<h3 style=\"margin:0 0 8px;\">Sudoku startup failed</h3><pre style=\"white-space:pre-wrap;word-break:break-word;\">";
-    private static final String BOOT_ERROR_HTML_SUFFIX = "</pre></body></html>";
+        "<p>" + BOOT_FAILED_MSG + "</p></body></html>";
 
     private WebView webView;
     private View launchSplashView;
@@ -215,15 +216,6 @@ public final class MainActivity extends Activity {
         }, SPLASH_BOOT_TIMEOUT_MS);
     }
 
-    private static String escapeHtml(String in) {
-        if (in == null) return "";
-        return in
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;");
-    }
-
     private void logStartupIdentity() {
         final int uid = getApplicationInfo().uid;
         final int userId = uid / ANDROID_UID_PER_USER_RANGE;
@@ -252,15 +244,15 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void showBootError(String message) {
+    /** Show the boot failure sentence; `reason` goes to logcat only. */
+    private void showBootError(String reason) {
         if (bootErrorShown) return;
         bootErrorShown = true;
-        final String msg = message != null ? message : "unknown startup failure";
-        Log.e(LOG_IDENTITY, msg);
-        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        Log.e(LOG_IDENTITY, "boot failed: " + reason);
+        Toast.makeText(this, BOOT_FAILED_MSG, Toast.LENGTH_LONG).show();
         webView.loadDataWithBaseURL(
             null,
-            BOOT_ERROR_HTML_PREFIX + escapeHtml(msg) + BOOT_ERROR_HTML_SUFFIX,
+            BOOT_ERROR_HTML,
             "text/html",
             "utf-8",
             null
