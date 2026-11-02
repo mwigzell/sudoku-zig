@@ -53,7 +53,7 @@ pub const ExportFlow = struct {
                 if (input != .start) return self.fail(step_mod.UNEXPECTED_INPUT_MSG);
                 self.phase = .exporting;
                 return switch (self.target) {
-                    .file => .{ .write = self.name_buf[0..self.name_len] },
+                    .file => .{ .write = .{ .name = self.name_buf[0..self.name_len], .kind = .export_line } },
                     .clipboard => .copy_line,
                 };
             },
@@ -103,14 +103,14 @@ const testing = std.testing;
 
 test "export writes the named file and reports where" {
     var flow = ExportFlow.toFile("puzzle.txt");
-    try testing.expectEqualStrings("puzzle.txt", flow.next(.start).write);
+    try testing.expectEqualStrings("puzzle.txt", flow.next(.start).write.name);
     try testing.expectEqualStrings(std.fmt.comptimePrint(EXPORTED_TO_FMT, .{"/docs/puzzle.txt"}), flow.next(.{ .wrote = .{ .ok = "/docs/puzzle.txt" } }).show_status);
     try testing.expect(flow.next(.start) == .done);
 }
 
 test "export with no file writes the default file" {
     var flow = ExportFlow.toFile(null);
-    try testing.expectEqualStrings(DEFAULT_EXPORT_FILE, flow.next(.start).write);
+    try testing.expectEqualStrings(DEFAULT_EXPORT_FILE, flow.next(.start).write.name);
 }
 
 test "a closed export picker ends quietly; a failed write shows the error" {

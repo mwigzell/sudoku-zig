@@ -60,10 +60,19 @@ pub const SaveFlow = struct {
         return self.name_buf[0..self.name_len];
     }
 
+    fn target(self: *const SaveFlow) step_mod.Target {
+        const kind: step_mod.WriteKind = switch (self.intent) {
+            .save => .save,
+            .save_as => .save_as,
+            .auto_save => .auto_save,
+        };
+        return .{ .name = self.targetName(), .kind = kind };
+    }
+
     /// Skip the check and write now; only valid when the policy cannot ask.
     pub fn beginWrite(self: *SaveFlow) Step {
         self.phase = .writing;
-        return .{ .write = self.targetName() };
+        return .{ .write = self.target() };
     }
 
     /// Answer the last step; returns the next step (`.start` first).
@@ -148,7 +157,7 @@ pub const SaveFlow = struct {
     fn check(self: *SaveFlow) Step {
         if (self.name_len == 0) return self.fail(NAME_TOO_LONG_MSG);
         self.phase = .checking;
-        return .{ .check_target = self.targetName() };
+        return .{ .check_target = self.target() };
     }
 
     /// The platform's file belongs to an earlier install: ask whether to pick it or choose a new name.
@@ -228,14 +237,16 @@ pub const SaveFlow = struct {
 const testing = std.testing;
 
 fn expectCheck(step: Step, expected: []const u8) !void {
-    try testing.expectEqualStrings(expected, step.check_target);
+    try testing.expectEqualStrings(expected, step.check_target.name);
 }
 
 test "save to a new file writes without asking and reports where it saved" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save, "/docs/game.sud");
     try expectCheck(flow.next(.start), "/docs/game.sud");
-    try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .target_checked = false }).write);
+    const write = flow.next(.{ .target_checked = false }).write;
+    try testing.expectEqualStrings("/docs/game.sud", write.name);
+    try testing.expectEqual(step_mod.WriteKind.save, write.kind);
     const end = flow.next(.{ .wrote = .{ .ok = "/docs/game.sud" } });
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"/docs/game.sud"}), end.show_status);
     try testing.expectEqualStrings("/docs/game.sud", session.workingFile().?);
@@ -323,7 +334,7 @@ test "save onto an existing file while detached asks before writing" {
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), ask.text);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_OK_LABEL, ask.ok_label);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_CANCEL_LABEL, ask.cancel_label);
-    try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .answered = true }).write);
+    try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .answered = true }).write.name);
 }
 
 test "declining the replace question cancels the save without writing" {
@@ -340,7 +351,7 @@ test "save onto an existing file while continuing writes without asking" {
     var session = FileSession{ .write_context = .continuation };
     var flow = SaveFlow.init(&session, .save, "game.sud");
     _ = flow.next(.start);
-    try testing.expectEqualStrings("game.sud", flow.next(.{ .target_checked = true }).write);
+    try testing.expectEqualStrings("game.sud", flow.next(.{ .target_checked = true }).write.name);
 }
 
 test "write failure shows the error and leaves the session alone" {

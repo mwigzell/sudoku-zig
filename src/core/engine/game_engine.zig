@@ -303,13 +303,6 @@ pub const GameEngine = struct {
         } };
     }
 
-    /// Shared adapter-facing event for successful save target writes.
-    pub fn savedToPathEvent(self: *@This(), path: []const u8) Event {
-        self.beginEventMsg();
-        self.appendEventMsgFmt(file_policy.SAVED_TO_FMT, .{path});
-        return self.finishOkEvent(self.state.board.asView(), false, null, false);
-    }
-
     /// One error string in engine scratch — safe for wasm JSON after exec returns.
     pub fn errorEvent(self: *@This(), part: []const u8) Event {
         self.event_msg.reset();

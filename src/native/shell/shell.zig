@@ -64,7 +64,7 @@ pub const Sudoku = struct {
     }
 
     /// Drive `self.flow` to its terminal step, carrying out each step on this platform.
-    fn runFlow(self: *@This(), mode: storage_mod.WriteMode) Error!flow_mod.Step {
+    fn runFlow(self: *@This()) Error!flow_mod.Step {
         var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
         var step = self.flow.next(.start);
         while (!flow_mod.isTerminal(step)) {
@@ -78,9 +78,9 @@ pub const Sudoku = struct {
             };
             const input: flow_mod.Input = switch (step) {
                 .resolve_default_target => .{ .default_target = self.storage.defaultTarget(&scratch) },
-                .check_target => |name| .{ .target_checked = self.storage.exists(name) },
+                .check_target => |target| .{ .target_checked = self.storage.exists(target.name) },
                 .ask => |question| .{ .answered = try self.renderer.ask(question) },
-                .write => |name| .{ .wrote = self.storage.write(mode, &self.engine, name, &scratch) },
+                .write => |target| .{ .wrote = self.storage.write(&self.engine, target, &scratch) },
                 .read_file => |path| blk: {
                     const read = self.storage.readFile(path, &scratch);
                     if (read == .bytes) read_bytes = @constCast(read.bytes);
@@ -127,15 +127,10 @@ pub const Sudoku = struct {
         return .ok;
     }
 
-    /// Run one player command through the core command flow; its writes are a save, an export, or an autosave.
+    /// Run one player command through the core command flow.
     fn runCommandFlow(self: *@This(), cmd: command.Command) Error!void {
         self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, cmd) };
-        const mode: storage_mod.WriteMode = switch (cmd) {
-            .save, .save_as => .save,
-            .@"export" => .export_line,
-            else => .autosave,
-        };
-        switch (try self.runFlow(mode)) {
+        switch (try self.runFlow()) {
             .show_status => |text| try self.showGameWithStatus(text),
             .show_error => |msg| try self.renderer.showError(msg),
             else => {},
@@ -240,7 +235,7 @@ pub const Sudoku = struct {
             .auto_new = self.engine.cfg.auto_new,
             .difficulty = self.engine.cfg.difficulty,
         }, current) };
-        switch (try self.runFlow(.save)) {
+        switch (try self.runFlow()) {
             .show_error => |msg| try self.renderer.showError(msg),
             else => {},
         }

@@ -20,10 +20,10 @@ pub const Step = union(enum) {
     /// Report the platform's default save target name.
     resolve_default_target,
     /// Report whether the named target already exists for the user.
-    check_target: []const u8,
+    check_target: Target,
     ask: Ask,
-    /// Write the current game (or, in an export flow, its puzzle line) to the named target.
-    write: []const u8,
+    /// Write to the named target what its kind says: the game, or for `export_line` its puzzle line.
+    write: Target,
     /// Let the user pick the existing file the platform reported as taken, and write the game there; answered with `wrote`.
     pick_existing,
     /// Let the user choose a new file, suggesting this name, and write the game there; answered with `wrote`.
@@ -47,6 +47,15 @@ pub const Step = union(enum) {
     show_status: []const u8,
     show_error: []const u8,
     done,
+};
+
+/// Why core writes: the player's Save or Save As, an autosave, or an Export of the puzzle line.
+pub const WriteKind = enum { save, save_as, auto_save, export_line };
+
+/// A file core checks or writes, and the write it is for.
+pub const Target = struct {
+    name: []const u8,
+    kind: WriteKind,
 };
 
 /// Everything the adapter draws for `show_game`, so it needs nothing else from the engine.

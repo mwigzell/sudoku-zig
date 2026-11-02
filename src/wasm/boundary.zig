@@ -350,7 +350,13 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
     try writeJsonString(w, @tagName(step));
     switch (step) {
         .resolve_default_target, .done, .pick_existing, .copy_line, .read_clipboard => {},
-        .check_target, .write, .pick_new => |name| {
+        .check_target, .write => |target| {
+            try std.Io.Writer.writeAll(w, ",\"name\":");
+            try writeJsonString(w, target.name);
+            try std.Io.Writer.writeAll(w, ",\"kind\":");
+            try writeJsonString(w, @tagName(target.kind));
+        },
+        .pick_new => |name| {
             try std.Io.Writer.writeAll(w, ",\"name\":");
             try writeJsonString(w, name);
         },
@@ -941,8 +947,8 @@ test "step JSON carries the tag and its payload" {
     const out = OutBuffer{ .buf = &buf, .len = &len };
     try writeStepJson(out, .{ .ask = .{ .title = "T", .text = "Q?", .ok_label = "Yes", .cancel_label = "No" } });
     try std.testing.expectEqualStrings("{\"step\":\"ask\",\"title\":\"T\",\"text\":\"Q?\",\"ok_label\":\"Yes\",\"cancel_label\":\"No\"}", out.finishJson());
-    try writeStepJson(out, .{ .write = "a.sud" });
-    try std.testing.expectEqualStrings("{\"step\":\"write\",\"name\":\"a.sud\"}", out.finishJson());
+    try writeStepJson(out, .{ .write = .{ .name = "a.sud", .kind = .save_as } });
+    try std.testing.expectEqualStrings("{\"step\":\"write\",\"name\":\"a.sud\",\"kind\":\"save_as\"}", out.finishJson());
     try writeStepJson(out, .{ .pick_new = "sudoku.sud" });
     try std.testing.expectEqualStrings("{\"step\":\"pick_new\",\"name\":\"sudoku.sud\"}", out.finishJson());
     try writeStepJson(out, .pick_existing);

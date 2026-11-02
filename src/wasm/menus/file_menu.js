@@ -21,6 +21,7 @@ import * as stepRunner from "../flows/step_runner.js";
 /** @typedef {import("../types").AndroidFileBridge} AndroidFileBridge */
 /** @typedef {import("../types").AndroidBridgeResult} AndroidBridgeResult */
 /** @typedef {import("../types").WriteResult} WriteResult */
+/** @typedef {import("../types").FlowTarget} FlowTarget */
 
 /** First-time picker location when no game file is bound yet. */
 export const FILE_PICKER_START_IN = "documents";
@@ -415,27 +416,72 @@ function showFailure(wiring, result) {
 }
 
 /**
- * Platform work for the core Save / Save As flow. The user's file is written by the bound
- * handle, the Android bridge, a picker or a download; the host keeps the restore copy.
- * Without a bound file the picker asks its own overwrite question, so the target is new to core.
+ * Write the game for a Save or Save As: the bound handle, the Android bridge, a picker or a
+ * download writes the user's file, and the host keeps the restore copy.
  * @param {FileMenuWiring} wiring
+ * @param {FlowTarget} target
+ * @returns {Promise<WriteResult>}
  */
-function saveHandlers(wiring, saveAsMode) {
-  const { game, session, statusEl, download } = wiring;
+async function saveGame(wiring, target) {
+  const { game, session, download } = wiring;
+  const result = game.serialize();
+  if (!result.ok) return result;
+  const saveAs = target.kind === stepRunner.WRITE_SAVE_AS;
+  const saved = await persistBytes(result.bytes, session, target.name, { saveAs, download });
+  if (!saved.ok) return saved;
+  session.boundFilename = saved.filename;
+  bindSnapshotWriter(session, saved.binding, globalThis);
+  const hosted = await hostApi.persistCurrentFileBytes(result.bytes, globalThis.fetch, saved.filename, { restoreCopy: true });
+  if (!hosted.ok) return hosted;
+  return { ok: true, name: saved.filename };
+}
+
+/**
+ * Write the puzzle line for an Export; the save binding is left alone.
+ * @param {FileMenuWiring} wiring
+ * @param {FlowTarget} target
+ * @returns {Promise<WriteResult>}
+ */
+async function exportLine(wiring, target) {
+  const { game, session, download, exportText } = wiring;
+  const result = game.exportPuzzle();
+  if (!result.ok) return result;
+  const saved = await exportText(result.bytes, session, target.name, { download });
+  return saved.ok ? { ok: true, name: saved.filename } : saved;
+}
+
+/**
+ * Platform work for every File command flow; each write does what its core kind says.
+ * A Save or Save As without a bound file goes through a picker that asks its own replace
+ * question, so for core that target does not exist yet.
+ * @param {FileMenuWiring} wiring
+ * @returns {FlowHandlers}
+ */
+function fileHandlers(wiring) {
+  const { session, statusEl } = wiring;
+  const shared = wiring.commandFlow ?? {};
   return {
-    checkTarget: () =>
-      !saveAsMode && (session.fileHandle != null || androidCurrentTargetName(globalThis) != null),
-    ask: (step) => stepRunner.askWithDialog(step, globalThis),
-    write: async (name) => {
-      const result = game.serialize();
-      if (!result.ok) return result;
-      const saved = await persistBytes(result.bytes, session, name, { saveAs: saveAsMode, download });
-      if (!saved.ok) return saved;
-      session.boundFilename = saved.filename;
-      bindSnapshotWriter(session, saved.binding, globalThis);
-      const hosted = await hostApi.persistCurrentFileBytes(result.bytes, globalThis.fetch, saved.filename, { restoreCopy: true });
-      if (!hosted.ok) return hosted;
-      return { ok: true, name: saved.filename };
+    ...shared,
+    checkTarget: (target) => {
+      switch (target.kind) {
+        case stepRunner.WRITE_SAVE:
+          return session.fileHandle != null || androidCurrentTargetName(globalThis) != null;
+        case stepRunner.WRITE_SAVE_AS:
+          return false;
+        default:
+          return shared.checkTarget(target);
+      }
+    },
+    write: (target) => {
+      switch (target.kind) {
+        case stepRunner.WRITE_SAVE:
+        case stepRunner.WRITE_SAVE_AS:
+          return saveGame(wiring, target);
+        case stepRunner.WRITE_EXPORT_LINE:
+          return exportLine(wiring, target);
+        default:
+          return shared.write(target);
+      }
     },
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);
@@ -447,9 +493,8 @@ function saveHandlers(wiring, saveAsMode) {
 
 /** Save / Save As: core names the target (working file, else the host default) and asks before replacing. */
 /** @param {FileMenuWiring} wiring */
-function runSave(wiring, saveAsMode) {
-  const action = { action: saveAsMode ? SAVE_AS_COMMAND : SAVE_COMMAND };
-  return stepRunner.runCommand(wiring.game, action, { ...wiring.commandFlow, ...saveHandlers(wiring, saveAsMode) });
+function runSave(wiring, command) {
+  return stepRunner.runCommand(wiring.game, { action: command }, fileHandlers(wiring));
 }
 
 /**
@@ -502,10 +547,10 @@ function wireLoad(button, wiring, legendKey, command) {
 
 /** Save writes the working file; Save As chooses a fresh target. */
 /** @param {FileMenuWiring} wiring */
-function wireSave(button, wiring, legendKey, saveAsMode) {
+function wireSave(button, wiring, legendKey, command) {
   button?.addEventListener("click", async () => {
     if (!wiring.session.legend[legendKey]) return;
-    await runSave(wiring, saveAsMode);
+    await runSave(wiring, command);
   });
 }
 
@@ -520,23 +565,12 @@ function wireAutoSave(button, wiring) {
   });
 }
 
-/** Export runs through core, which names the file; the one-line text leaves the save binding untouched. */
+/** Export runs through core, which names the file. */
 /** @param {FileMenuWiring} wiring */
 function wireExport(button, wiring) {
-  const { game, session, statusEl, download, exportText } = wiring;
   button?.addEventListener("click", async () => {
-    if (!session.legend[menuBarMod.LEGEND_WIRE_EXPORT]) return;
-    await stepRunner.runCommand(game, { action: EXPORT_COMMAND }, {
-      ...wiring.commandFlow,
-      write: async (name) => {
-        const result = game.exportPuzzle();
-        if (!result.ok) return result;
-        const saved = await exportText(result.bytes, session, name, { download });
-        return saved.ok ? { ok: true, name: saved.filename } : saved;
-      },
-      showStatus: (text) => statusBar.applyEventStatus(statusEl, { ok: true, msg: text }),
-      showError: (text) => showFailure(wiring, { ok: false, error: text }),
-    });
+    if (!wiring.session.legend[menuBarMod.LEGEND_WIRE_EXPORT]) return;
+    await stepRunner.runCommand(wiring.game, { action: EXPORT_COMMAND }, fileHandlers(wiring));
   });
 }
 
@@ -580,8 +614,8 @@ export function wireFileMenu(
   wireNew(controls.new, wiring, difficultyDialog);
   wireLoad(controls.open, wiring, "open", OPEN_COMMAND);
   wireLoad(controls.import, wiring, "import", IMPORT_COMMAND);
-  wireSave(controls.save, wiring, "save", false);
-  wireSave(controls.saveAs, wiring, "save_as", true);
+  wireSave(controls.save, wiring, "save", SAVE_COMMAND);
+  wireSave(controls.saveAs, wiring, "save_as", SAVE_AS_COMMAND);
   wireAutoSave(controls.autoSave, wiring);
   wireExport(controls.export, wiring);
 

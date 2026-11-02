@@ -24,10 +24,6 @@ pub const SettingsPersist = struct {
     visible_save_dir: []const u8,
 };
 
-/// How a `write` step is carried out: Save records its status in the game, autosave does not,
-/// and Export writes only the puzzle line without making it the current file.
-pub const WriteMode = enum { save, autosave, export_line };
-
 /// A file read through the transport; free both buffers with the transport.
 pub const ReadResult = struct {
     /// The path the transport resolved the name to.
@@ -85,16 +81,15 @@ pub const Storage = struct {
     }
 
     /// Carry out a `write` step from `engine`; `scratch` holds the reported name or error text.
-    pub fn write(self: *const @This(), mode: WriteMode, engine: *game_engine.GameEngine, name: []const u8, scratch: []u8) flow_mod.Wrote {
-        const resolved = self.transport.resolve(self.transport.context, name) catch |err| {
+    /// A game write makes the target the current file; an export line leaves it alone.
+    pub fn write(self: *const @This(), engine: *game_engine.GameEngine, target: flow_mod.step.Target, scratch: []u8) flow_mod.Wrote {
+        const resolved = self.transport.resolve(self.transport.context, target.name) catch |err| {
             return .{ .failed = failedAt(scratch, RESOLVE_STAGE, err) };
         };
         defer self.transport.free(self.transport.context, resolved);
 
-        switch (mode) {
-            .save, .autosave => {
-                // Save's status goes into the game before it is serialized, so a relaunch shows it.
-                if (mode == .save) _ = engine.savedToPathEvent(resolved);
+        switch (target.kind) {
+            .save, .save_as, .auto_save => {
                 const save_buf = engine.toSaveFormat(std.heap.page_allocator) catch |err| return .{ .failed = @errorName(err) };
                 defer std.heap.page_allocator.free(save_buf);
                 self.transport.write(self.transport.context, resolved, save_buf) catch |err| return .{ .failed = @errorName(err) };
@@ -177,8 +172,6 @@ fn copyInto(scratch: []u8, text: []const u8) []const u8 {
 }
 
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
-const file_policy = @import("../../core/file_policy.zig");
-
 /// A temp folder with an absolute path, and a `Storage` whose settings live in it.
 const TestRoot = struct {
     tmp: std.testing.TmpDir,
@@ -262,26 +255,24 @@ test "write: save and autosave make the target the current file; export leaves i
 
     const game = try root.path("game.sud");
     defer std.testing.allocator.free(game);
-    for ([_]WriteMode{ .save, .autosave }) |mode| {
+    for ([_]flow_mod.step.WriteKind{ .save, .save_as, .auto_save }) |kind| {
         store.persistCurrentFile(null);
-        try std.testing.expectEqualStrings(game, store.write(mode, &engine, game, &scratch).ok);
+        try std.testing.expectEqualStrings(game, store.write(&engine, .{ .name = game, .kind = kind }, &scratch).ok);
         const current = (try root.currentFile()) orelse return error.TestFailed;
         defer std.testing.allocator.free(current);
         try std.testing.expectEqualStrings(game, current);
     }
-    const saved_to = try std.fmt.allocPrint(std.testing.allocator, file_policy.SAVED_TO_FMT, .{game});
-    defer std.testing.allocator.free(saved_to);
-    try std.testing.expectEqualStrings(saved_to, engine.state.status.optional().?);
     const saved = try store.transport.readAll(store.transport.context, game);
     defer store.transport.free(store.transport.context, saved);
     var reloaded = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer reloaded.deinit();
     try reloaded.loadSaveFormat(saved);
     try std.testing.expectEqualSlices(u8, &export_command.currentPuzzleLine(&engine), &export_command.currentPuzzleLine(&reloaded));
+    try std.testing.expectEqualDeep(engine.state.status.optional(), reloaded.state.status.optional());
 
     const line = try root.path("puzzle.txt");
     defer std.testing.allocator.free(line);
-    try std.testing.expectEqualStrings(line, store.write(.export_line, &engine, line, &scratch).ok);
+    try std.testing.expectEqualStrings(line, store.write(&engine, .{ .name = line, .kind = .export_line }, &scratch).ok);
     const bytes = try store.transport.readAll(store.transport.context, line);
     defer store.transport.free(store.transport.context, bytes);
     try std.testing.expectEqualSlices(u8, &export_command.currentPuzzleLine(&engine), bytes);
@@ -303,8 +294,8 @@ test "write: a failed write reports why and keeps the current file" {
     const unwritable = try root.path("no-such-folder/game.sud");
     defer std.testing.allocator.free(unwritable);
 
-    for ([_]WriteMode{ .save, .autosave, .export_line }) |mode| {
-        try std.testing.expect(store.write(mode, &engine, unwritable, &scratch) == .failed);
+    for (std.enums.values(flow_mod.step.WriteKind)) |kind| {
+        try std.testing.expect(store.write(&engine, .{ .name = unwritable, .kind = kind }, &scratch) == .failed);
     }
     const current = (try root.currentFile()) orelse return error.TestFailed;
     defer std.testing.allocator.free(current);

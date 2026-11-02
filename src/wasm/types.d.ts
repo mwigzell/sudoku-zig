@@ -82,10 +82,17 @@ export type HostBuildInfo = {
   debug_build: boolean;
 };
 
+/** What a core write is for (`step.zig` `WriteKind`). */
+export type WriteKind = "save" | "save_as" | "auto_save" | "export_line";
+
+/** The file a `check_target` or `write` step names, and the write it is for. */
+export type FlowTarget = { name: string; kind: WriteKind };
+
 /** One core step (wasm `flowStart` / `flowNext` result). */
 export type FlowStep =
   | { step: "resolve_default_target" }
-  | { step: "check_target" | "write" | "pick_new"; name: string }
+  | ({ step: "check_target" | "write" } & FlowTarget)
+  | { step: "pick_new"; name: string }
   | { step: "pick_existing" | "copy_line" }
   | { step: "ask"; title: string; text: string; ok_label: string; cancel_label: string }
   | { step: "read_file"; path: string }
@@ -135,9 +142,9 @@ export type GenerateResult = { ok: true; line: string } | { ok: false; cancelled
  * generation and questions; settings: `persistSettings`). */
 export type FlowHandlers = {
   resolveDefaultTarget?: () => string | Promise<string>;
-  checkTarget?: (name: string) => boolean | Promise<boolean>;
+  checkTarget?: (target: FlowTarget) => boolean | Promise<boolean>;
   ask?: (step: { title: string; text: string; ok_label: string; cancel_label: string }) => boolean | Promise<boolean>;
-  write?: (name: string) => WriteResult | Promise<WriteResult>;
+  write?: (target: FlowTarget) => WriteResult | Promise<WriteResult>;
   pickExisting?: () => WriteResult | Promise<WriteResult>;
   pickNew?: (name: string) => WriteResult | Promise<WriteResult>;
   copyLine?: () => PersistResult | Promise<PersistResult>;

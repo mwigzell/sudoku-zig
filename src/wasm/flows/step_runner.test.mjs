@@ -7,22 +7,26 @@ import { loadCoreFlow, loadGame, openAs, PUZZLE_LINE, startNewGame, coreText, fi
 /** Handlers that record every step and answer from `answers`. */
 function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }), defaultName = "sudoku.sud" } = {}) {
   const log = [];
+  const kinds = [];
   return {
     log,
+    kinds,
     resolveDefaultTarget: () => {
       log.push(["default"]);
       return defaultName;
     },
-    checkTarget: (name) => {
+    checkTarget: ({ name, kind }) => {
       log.push(["check", name]);
+      kinds.push(["check", kind]);
       return exists;
     },
     ask: (step) => {
       log.push(["ask", step.title, step.text, step.ok_label, step.cancel_label]);
       return yes;
     },
-    write: (name) => {
+    write: ({ name, kind }) => {
       log.push(["write", name]);
+      kinds.push(["write", kind]);
       return write(name);
     },
     showGame: () => {},
@@ -94,6 +98,24 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   const autosave = recordingHandlers({ exists: true });
   await stepRunner.runCommand(core, FILL, autosave);
   assert.deepEqual(autosave.log, [["check", "picked.sud"], ["write", "picked.sud"]], "autosave continues the saved file");
+}
+
+// Each check and write says what it is for, so the platform needs no knowledge of the command.
+{
+  const core = await loadCoreFlow({ autoSave: true });
+  const saveAs = saveHandlers();
+  await stepRunner.runCommand(core, SAVE_AS, saveAs);
+  assert.deepEqual(saveAs.kinds, [["check", stepRunner.WRITE_SAVE_AS], ["write", stepRunner.WRITE_SAVE_AS]]);
+  const autosave = recordingHandlers();
+  await stepRunner.runCommand(core, FILL, autosave);
+  assert.deepEqual(autosave.kinds, [["check", stepRunner.WRITE_AUTO_SAVE], ["write", stepRunner.WRITE_AUTO_SAVE]]);
+  const exported = recordingHandlers();
+  await stepRunner.runCommand(core, { action: "export" }, exported);
+  assert.deepEqual(exported.kinds, [["write", stepRunner.WRITE_EXPORT_LINE]]);
+  const core2 = await loadCoreFlow();
+  const save = saveHandlers();
+  await stepRunner.runCommand(core2, SAVE, save);
+  assert.deepEqual(save.kinds, [["check", stepRunner.WRITE_SAVE], ["write", stepRunner.WRITE_SAVE]]);
 }
 
 // A manual Save while Auto Save is on writes nothing and says why; the legend offers no Save.

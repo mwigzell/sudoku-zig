@@ -28,6 +28,12 @@ export const STEP_SHOW_STATUS = "show_status";
 export const STEP_SHOW_ERROR = "show_error";
 export const STEP_DONE = "done";
 
+/** `write` / `check_target` kinds: what core writes and why. */
+export const WRITE_SAVE = "save";
+export const WRITE_SAVE_AS = "save_as";
+export const WRITE_AUTO_SAVE = "auto_save";
+export const WRITE_EXPORT_LINE = "export_line";
+
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
 
@@ -80,6 +86,14 @@ function persistedInput(result) {
 function outcomeInput(input, result) {
   if (result?.ok === true) return { input, ok: true };
   return failedInput(input, result);
+}
+
+/**
+ * The file a `check_target` or `write` step names, and the write it is for.
+ * @returns {import("../types").FlowTarget}
+ */
+function targetOf(step) {
+  return { name: step.name, kind: step.kind };
 }
 
 /** Run a handler, turning a throw into a failed result. */
@@ -164,14 +178,14 @@ async function stepThrough(game, first, handlers) {
         step = game.flowNext({ input: "default_target", name: await handlers.resolveDefaultTarget() });
         break;
       case STEP_CHECK_TARGET:
-        step = game.flowNext({ input: "target_checked", exists: (await handlers.checkTarget(step.name)) === true });
+        step = game.flowNext({ input: "target_checked", exists: (await handlers.checkTarget(targetOf(step))) === true });
         break;
       case STEP_ASK:
         step = game.flowNext({ input: "answered", yes: (await handlers.ask(step)) === true });
         break;
       case STEP_WRITE: {
-        const name = step.name;
-        step = game.flowNext(wroteInput(await settle(() => handlers.write(name)), name));
+        const target = targetOf(step);
+        step = game.flowNext(wroteInput(await settle(() => handlers.write(target)), target.name));
         break;
       }
       case STEP_PICK_EXISTING:

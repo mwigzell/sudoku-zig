@@ -111,8 +111,8 @@ test "with no working file autosave asks the platform for its default target" {
     var session = FileSession{};
     var flow = AutosaveFlow.afterCommand(&session, true, "fill");
     try testing.expect(flow.next(.start) == .resolve_default_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target.name);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
@@ -122,8 +122,10 @@ test "autosave follows the working file" {
     var session = FileSession{ .write_context = .continuation };
     session.setWorkingFile("/docs/game.sud");
     var flow = AutosaveFlow.afterCommand(&session, true, "undo");
-    try testing.expectEqualStrings("/docs/game.sud", flow.next(.start).check_target);
-    try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .target_checked = true }).write);
+    try testing.expectEqualStrings("/docs/game.sud", flow.next(.start).check_target.name);
+    const write = flow.next(.{ .target_checked = true }).write;
+    try testing.expectEqualStrings("/docs/game.sud", write.name);
+    try testing.expectEqual(step_mod.WriteKind.auto_save, write.kind);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "/docs/game.sud" } }) == .done);
 }
 
@@ -151,7 +153,7 @@ test "flush continues the working file without checking" {
     var session = FileSession{ .write_context = .continuation };
     session.setWorkingFile("game.sud");
     var flow = AutosaveFlow.flush(&session, true);
-    try testing.expectEqualStrings("game.sud", flow.next(.start).write);
+    try testing.expectEqualStrings("game.sud", flow.next(.start).write.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "game.sud" } }) == .done);
 }
 

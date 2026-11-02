@@ -54,13 +54,13 @@ export function autosaveHandlers(
   };
   return {
     resolveDefaultTarget: () => session.default_save_filename,
-    checkTarget: (name) => {
+    checkTarget: (target) => {
       if (bound()) return session.boundTargetExists?.() === true;
-      return hostApi.hostCurrentFileExists(name, fetchFn);
+      return hostApi.hostCurrentFileExists(target.name, fetchFn);
     },
     ask: (step) => stepRunner.askWithDialog(step, win),
-    write: (name) =>
-      writeGame(bound() && !hostOnly ? (bytes) => session.boundSnapshotWriter(bytes, name) : null, name),
+    write: (target) =>
+      writeGame(bound() && !hostOnly ? (bytes) => session.boundSnapshotWriter(bytes, target.name) : null, target.name),
     pickExisting: () => writeGame((bytes) => session.boundPickExisting(bytes), session.default_save_filename),
     pickNew: (name) => writeGame((bytes) => session.boundPickNew(bytes, name), name),
     showError: (text) => onError?.({ ok: false, error: text }),

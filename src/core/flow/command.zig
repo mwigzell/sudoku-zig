@@ -234,8 +234,8 @@ test "a move shows the board and the edited cell, then autosaves to the default 
     try testing.expectEqual(@as(u4, 0), shown.cell.?.row);
     try testing.expect(shown.legend.undo);
     try testing.expect(flow.next(.ack) == .resolve_default_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target.name);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
 }
 
@@ -341,8 +341,8 @@ test "save with no working file asks for the default target, writes it and repor
     var session = FileSession{};
     var flow = CommandFlow.init(&engine, &session, .{ .save = .{ .path = null } });
     try testing.expect(flow.next(.start) == .resolve_default_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target.name);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write.name);
     try testing.expectEqualStrings(std.fmt.comptimePrint(@import("../file_policy.zig").SAVED_TO_FMT, .{"sudoku.sud"}), flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }).show_status);
     try testing.expect(flow.next(.ack) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
@@ -354,10 +354,14 @@ test "save as suggests the working file; export and copy hand over the line" {
     var session = FileSession{};
     session.setWorkingFile("game.sud");
     var save_as = CommandFlow.init(&engine, &session, .{ .save_as = .{ .path = null } });
-    try testing.expectEqualStrings("game.sud", save_as.next(.start).check_target);
+    const check = save_as.next(.start).check_target;
+    try testing.expectEqualStrings("game.sud", check.name);
+    try testing.expectEqual(step_mod.WriteKind.save_as, check.kind);
 
     var exported = CommandFlow.init(&engine, &session, .{ .@"export" = .{ .path = null } });
-    try testing.expectEqualStrings(export_mod.DEFAULT_EXPORT_FILE, exported.next(.start).write);
+    const write = exported.next(.start).write;
+    try testing.expectEqualStrings(export_mod.DEFAULT_EXPORT_FILE, write.name);
+    try testing.expectEqual(step_mod.WriteKind.export_line, write.kind);
     try testing.expectEqualStrings(std.fmt.comptimePrint(export_mod.EXPORTED_TO_FMT, .{"puzzle.txt"}), exported.next(.{ .wrote = .{ .ok = "puzzle.txt" } }).show_status);
 
     var copied = CommandFlow.init(&engine, &session, .{ .copy = {} });
