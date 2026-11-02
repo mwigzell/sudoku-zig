@@ -63,3 +63,24 @@ ls zig-out/android/sudoku.apk
 ```
 
 Expect `ELF 64-bit LSB shared object, ARM aarch64`.
+
+## Emulator tests (`zig build android-test`)
+
+UiAutomator tests that drive the real app (menus, dialogs, play pad, system pickers) and check what the file bridge did: MediaStore rows under `Download/Sudoku/`, the `sudoku_file_binding` prefs, the saved file. Not part of `zig build verify`; it needs a running emulator.
+
+**Prerequisites** (SDK Manager; Android Studio itself is not needed): build-tools, platform-tools (`adb`), an Android platform, the Android Emulator and an arm64 system image, plus the NDK and `JAVA_HOME` as above.
+
+Start an emulator, then run:
+
+```bash
+emulator -list-avds
+emulator -avd <name> &
+adb devices            # exactly one device, state "device"
+zig build android-test
+```
+
+The step builds the app APK and a separate, self-instrumenting test APK (`com.wigzell.sudoku_zig.test`, `src/android/test/`), installs both, runs `am instrument` with `AndroidJUnitRunner`, and fails on any failed test, printing the full instrumentation output.
+
+**Device state is put back afterwards:** the app's private data is backed up (`run-as … tar`) and restored; the user's `Download/Sudoku/sudoku.sud` and any `sudoku (N).sud` are moved to `Download/sudoku-test-hold/` for the run and moved back (a move keeps their MediaStore rows and owners); other files in the folder are not touched. A copy of the folder is also kept in `zig-out/android-test/backup/`.
+
+**Libraries:** the androidx test jars are committed in `third_party/androidx-test/` with their licences, pinned by version and SHA-256 in `scripts/android-test.sh`. A missing file is downloaded from Google Maven / Maven Central on the next run; a hash mismatch fails the step. The pins are the newest releases that need no Kotlin runtime (monitor 1.6.1 and later do).

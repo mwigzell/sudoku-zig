@@ -16,6 +16,9 @@ const ResourcePath = BootstrapRoot ++ "/res";
 const JavaSourceMain = BootstrapRoot ++ "/MainActivity.java";
 const JavaSourceJni = BootstrapRoot ++ "/JniHost.java";
 const JniHelpersC = "src/android/jni_helpers.c";
+const TestOutDir = "zig-out/android-test";
+const TestManifestPath = "src/android/test/AndroidManifest.xml";
+const TestJavaSource = "src/android/test/FileBridgeTest.java";
 
 pub fn addAndroidStep(b: *std.Build, deps: struct {
     wasm_emit: *std.Build.Step,
@@ -34,6 +37,8 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         android_lib_fail.dependOn(&fail.step);
         const android_fail = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
         android_fail.dependOn(&fail.step);
+        const android_test_fail = b.step("android-test", "Run the UiAutomator file bridge tests against a connected emulator");
+        android_test_fail.dependOn(&fail.step);
         return android_fail;
     };
 
@@ -140,6 +145,8 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         fail.step.dependOn(&install_debug.step);
         const step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
         step.dependOn(&fail.step);
+        const test_step = b.step("android-test", "Run the UiAutomator file bridge tests against a connected emulator");
+        test_step.dependOn(&fail.step);
         return step;
     };
 
@@ -163,6 +170,21 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
 
     const android_step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
     android_step.dependOn(&package_apk.step);
+
+    const run_tests = b.addSystemCommand(&.{
+        "bash",
+        "scripts/android-test.sh",
+        sdk_root,
+        b.fmt("{d}", .{android_api_level}),
+        OutDir ++ "/" ++ ApkName,
+        TestOutDir,
+        TestManifestPath,
+        TestJavaSource,
+    });
+    run_tests.has_side_effects = true;
+    run_tests.step.dependOn(&package_apk.step);
+    const android_test_step = b.step("android-test", "Run the UiAutomator file bridge tests against a connected emulator");
+    android_test_step.dependOn(&run_tests.step);
 
     const package_release_apk = b.addSystemCommand(&.{
         "bash",

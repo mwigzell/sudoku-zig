@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Self-instrumenting UiAutomator test APK: drives the installed app from outside its process. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.wigzell.sudoku_zig.test">
+
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="33" />
+
+    <queries>
+        <package android:name="com.wigzell.sudoku_zig" />
+    </queries>
+
+    <application android:label="Sudoku Zig tests" />
+
+    <instrumentation
+        android:name="androidx.test.runner.AndroidJUnitRunner"
+        android:targetPackage="com.wigzell.sudoku_zig.test"
+        android:label="Sudoku Zig file bridge tests" />
+</manifest>

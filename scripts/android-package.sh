@@ -23,70 +23,8 @@ VERSION_CODE="${10}"
 VERSION_NAME="${11}"
 SIGNING_MODE="${12}"
 
-pick_latest_dir() {
-  ls -1 "$1" 2>/dev/null | sort -V | awk 'NF {v=$0} END {print v}'
-}
-
-PLATFORM_DIR="$(pick_latest_dir "$SDK_ROOT/platforms")"
-case "$PLATFORM_DIR" in
-  android-*)
-    PLATFORM_API="${PLATFORM_DIR#android-}"
-    ;;
-  *)
-    echo "error: no Android platform found under $SDK_ROOT/platforms (expected android-<api>)" >&2
-    exit 1
-    ;;
-esac
-
-PLATFORM_API_INT="${PLATFORM_API%%.*}"
-if [[ "$PLATFORM_API_INT" -lt "$MIN_API" ]]; then
-  echo "error: newest Android platform api ($PLATFORM_API) is below required $MIN_API" >&2
-  exit 1
-fi
-
-ANDROID_JAR="$SDK_ROOT/platforms/$PLATFORM_DIR/android.jar"
-if [[ ! -f "$ANDROID_JAR" ]]; then
-  echo "error: missing Android platform jar: $ANDROID_JAR" >&2
-  exit 1
-fi
-
-BUILD_TOOLS_VERSION="$(pick_latest_dir "$SDK_ROOT/build-tools")"
-if [[ -z "$BUILD_TOOLS_VERSION" ]]; then
-  echo "error: no Android build-tools found under $SDK_ROOT/build-tools" >&2
-  exit 1
-fi
-
-BUILD_TOOLS="$SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION"
-AAPT="$BUILD_TOOLS/aapt"
-D8="$BUILD_TOOLS/d8"
-ZIPALIGN="$BUILD_TOOLS/zipalign"
-APKSIGNER="$BUILD_TOOLS/apksigner"
-for tool in "$AAPT" "$D8" "$ZIPALIGN" "$APKSIGNER"; do
-  if [[ ! -x "$tool" ]]; then
-    echo "error: missing executable: $tool" >&2
-    exit 1
-  fi
-done
-
-if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/javac" ]]; then
-  JAVAC="$JAVA_HOME/bin/javac"
-else
-  JAVAC="$(command -v javac || true)"
-fi
-if [[ -z "${JAVAC:-}" || ! -x "$JAVAC" ]]; then
-  echo "error: javac not found. Set JAVA_HOME to a JDK 17+ install." >&2
-  exit 1
-fi
-
-if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/keytool" ]]; then
-  KEYTOOL="$JAVA_HOME/bin/keytool"
-else
-  KEYTOOL="$(command -v keytool || true)"
-fi
-if [[ -z "${KEYTOOL:-}" || ! -x "$KEYTOOL" ]]; then
-  echo "error: keytool not found. Set JAVA_HOME to a JDK install." >&2
-  exit 1
-fi
+source "$ROOT/scripts/android-sdk-tools.sh"
+resolve_android_tools "$SDK_ROOT" "$MIN_API"
 
 OUT="$ROOT/$OUT_REL"
 APK_ROOT="$OUT/apk-root"
@@ -119,27 +57,7 @@ cp "$OUT/unsigned.apk" "$OUT/unaligned.apk"
 "$ZIPALIGN" -f 4 "$OUT/unaligned.apk" "$OUT/aligned.apk"
 
 if [[ "$SIGNING_MODE" == "debug" ]]; then
-  DEBUG_KEYSTORE="${ANDROID_DEBUG_KEYSTORE:-$HOME/.android/debug.keystore}"
-  if [[ ! -f "$DEBUG_KEYSTORE" ]]; then
-    mkdir -p "$(dirname "$DEBUG_KEYSTORE")"
-    "$KEYTOOL" -genkeypair -v \
-      -keystore "$DEBUG_KEYSTORE" \
-      -storepass android \
-      -alias androiddebugkey \
-      -keypass android \
-      -keyalg RSA \
-      -keysize 2048 \
-      -validity 10000 \
-      -dname "CN=Android Debug,O=Android,C=US"
-  fi
-
-  "$APKSIGNER" sign \
-    --ks "$DEBUG_KEYSTORE" \
-    --ks-pass pass:android \
-    --key-pass pass:android \
-    --ks-key-alias androiddebugkey \
-    --out "$OUT/$APK_NAME" \
-    "$OUT/aligned.apk"
+  sign_debug_apk "$OUT/aligned.apk" "$OUT/$APK_NAME"
 elif [[ "$SIGNING_MODE" == "release" ]]; then
   RELEASE_KEYSTORE="${ANDROID_RELEASE_KEYSTORE:-}"
   RELEASE_STORE_PASS="${ANDROID_RELEASE_STORE_PASS:-}"
