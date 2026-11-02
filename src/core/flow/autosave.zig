@@ -63,14 +63,9 @@ pub const AutosaveFlow = struct {
 
     fn startAfterCommand(self: *AutosaveFlow) Step {
         if (!file_policy.commandTriggersAutoSaveByName(self.command_name)) return self.finish(.done);
-        const working = self.session.workingFile();
-        switch (file_policy.autoSaveTarget(.{ .has_working_file = working != null })) {
-            .working_file => return self.saveTo(working.?),
-            .default_visible => {
-                self.phase = .resolving;
-                return .resolve_default_target;
-            },
-        }
+        if (self.session.workingFile()) |working| return self.saveTo(working);
+        self.phase = .resolving;
+        return .resolve_default_target;
     }
 
     fn startFlush(self: *AutosaveFlow) Step {

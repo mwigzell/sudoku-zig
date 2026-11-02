@@ -9,7 +9,6 @@ const settings_store = @import("../core/settings_store.zig");
 const file_transport = @import("../native/shell/file_transport.zig");
 const file_path = @import("../native/shell/path.zig");
 const save_defaults = @import("../core/save_defaults.zig");
-const file_policy = @import("../core/file_policy.zig");
 const router_mod = @import("router.zig");
 const embed = @import("embed.zig");
 
@@ -224,20 +223,15 @@ fn currentFileTarget(io: std.Io, session: *const Session, save_name: ?[]const u8
         const name = requested orelse startupFilename(session.current_file);
         return .{ .path = try file_path.resolveSavePath(gpa, session.data_dir, name), .restore_copy = true };
     }
-    switch (file_policy.autoSaveTarget(.{ .has_working_file = session.current_file != null })) {
-        .default_visible => {
-            std.Io.Dir.cwd().createDirPath(io, session.visible_save_dir) catch {};
-            return .{ .path = try file_path.resolveSavePath(gpa, session.visible_save_dir, requested orelse save_defaults.DEFAULT_SAVE_FILE), .restore_copy = false };
-        },
-        .working_file => {
-            const current = session.current_file.?;
-            const in_place: CurrentFileTarget = .{ .path = try gpa.dupe(u8, current), .restore_copy = isRestoreCopyPath(session, current) };
-            const name = requested orelse return in_place;
-            if (std.mem.eql(u8, name, std.fs.path.basename(current))) return in_place;
-            gpa.free(in_place.path);
-            return .{ .path = try file_path.resolveSavePath(gpa, session.data_dir, name), .restore_copy = true };
-        },
-    }
+    const current = session.current_file orelse {
+        std.Io.Dir.cwd().createDirPath(io, session.visible_save_dir) catch {};
+        return .{ .path = try file_path.resolveSavePath(gpa, session.visible_save_dir, requested orelse save_defaults.DEFAULT_SAVE_FILE), .restore_copy = false };
+    };
+    const in_place: CurrentFileTarget = .{ .path = try gpa.dupe(u8, current), .restore_copy = isRestoreCopyPath(session, current) };
+    const name = requested orelse return in_place;
+    if (std.mem.eql(u8, name, std.fs.path.basename(current))) return in_place;
+    gpa.free(in_place.path);
+    return .{ .path = try file_path.resolveSavePath(gpa, session.data_dir, name), .restore_copy = true };
 }
 
 /// A file directly in the hidden data dir, when that dir is not also the visible save folder.

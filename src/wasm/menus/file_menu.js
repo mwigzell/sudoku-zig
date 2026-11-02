@@ -159,18 +159,9 @@ function androidSaveOutcome(out) {
  */
 async function saveToAndroidBoundTarget(bridge, bytes, suggestedName) {
   if (!bridge) return { ok: false, error: "no Android bridge" };
-  const saveCurrent = bridge.saveCurrentSudokuFile;
-  if (typeof saveCurrent === "function") {
-    const base64 = bytesToBase64(bytes);
-    const out = await saveCurrent(base64, suggestedName);
-    if (out?.reason === BRIDGE_DEFAULT_TAKEN) return { ok: false, taken: { name: out.name ?? suggestedName, dir: out.dir } };
-    return androidSaveOutcome(out);
-  }
-  const saveLegacy = bridge.saveSudokuFile;
-  if (typeof saveLegacy !== "function") return { ok: false, error: "save bridge unavailable" };
-  const out = await saveLegacy(bytesToBase64(bytes), suggestedName, false);
-  const outcome = androidSaveOutcome(out);
-  return outcome.ok ? { ok: true } : outcome;
+  const out = await bridge.saveCurrentSudokuFile(bytesToBase64(bytes), suggestedName);
+  if (out?.reason === BRIDGE_DEFAULT_TAKEN) return { ok: false, taken: { name: out.name ?? suggestedName, dir: out.dir } };
+  return androidSaveOutcome(out);
 }
 
 function bindSnapshotWriter(session, binding, win = globalThis) {

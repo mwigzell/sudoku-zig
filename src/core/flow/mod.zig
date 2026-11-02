@@ -15,31 +15,22 @@ pub const Input = step.Input;
 pub const Ask = step.Ask;
 pub const Wrote = step.Wrote;
 pub const FileSession = file_session.FileSession;
-pub const SaveFlow = save_mod.SaveFlow;
 pub const AutosaveFlow = autosave_mod.AutosaveFlow;
 pub const StartupFlow = startup_mod.StartupFlow;
-pub const SettingsFlow = settings_mod.SettingsFlow;
-pub const ExportFlow = export_mod.ExportFlow;
 pub const CommandFlow = command_mod.CommandFlow;
 pub const startup = startup_mod;
 pub const save = save_mod;
 
 pub const Flow = union(enum) {
-    save: SaveFlow,
     autosave: AutosaveFlow,
     startup: StartupFlow,
-    settings: SettingsFlow,
-    @"export": ExportFlow,
     command: CommandFlow,
 
     /// Advance whichever flow is running.
     pub fn next(self: *Flow, input: Input) Step {
         return switch (self.*) {
-            .save => |*f| f.next(input),
             .autosave => |*f| f.next(input),
             .startup => |*f| f.next(input),
-            .settings => |*f| f.next(input),
-            .@"export" => |*f| f.next(input),
             .command => |*f| f.next(input),
         };
     }
