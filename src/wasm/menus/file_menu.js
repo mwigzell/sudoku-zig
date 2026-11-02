@@ -230,8 +230,8 @@ function primeAndroidBoundTarget(session, win = globalThis) {
 }
 
 /**
- * After a load: a picked saved game becomes the save target; any other load drops it. Without a
- * bound file Android primes its default one.
+ * After a load: a picked saved game becomes the save target; any other load drops it. On Android
+ * every write goes through the bridge, which writes its bound file, else its default one.
  * @param {WebSession} session
  * @param {import("../types").PickResult | null} pickedGame
  */
@@ -239,9 +239,7 @@ export function bindLoadedGame(session, pickedGame, win = globalThis) {
   session.fileHandle = pickedGame?.handle ?? null;
   if (pickedGame?.binding) bindSnapshotWriter(session, pickedGame.binding, win);
   else clearBoundSnapshotWriter(session);
-  if (typeof session.boundSnapshotWriter !== "function" && androidCurrentTargetName(win) == null) {
-    primeAndroidBoundTarget(session, win);
-  }
+  if (typeof session.boundSnapshotWriter !== "function") primeAndroidBoundTarget(session, win);
 }
 
 /** Persist SUD0 bytes through current handle, Android bridge, picker, or download fallback. */

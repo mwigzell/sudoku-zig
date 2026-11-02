@@ -700,6 +700,42 @@ function easyDialog() {
   }
 }
 
+// Android with a file bound: after File → New the replace-confirmed autosave still writes through the bridge.
+{
+  const bridgeWrites = [];
+  const prevBridge = globalThis.AndroidFileBridge;
+  const prevFetch = globalThis.fetch;
+  const prevChoose = globalThis.__sudokuChoose;
+  globalThis.AndroidFileBridge = {
+    saveCurrentSudokuFile(base64, suggestedName) {
+      bridgeWrites.push(suggestedName);
+      return { ok: true, name: "bound.sud" };
+    },
+    currentSudokuFileName: () => "bound.sud",
+  };
+  globalThis.fetch = async () => ({ ok: true, status: 204, json: async () => ({}) });
+  globalThis.__sudokuChoose = async () => true;
+  const session = {
+    legend: { new: true },
+    state: { cells: [] },
+    config: { auto_save: true },
+    default_save_filename: "sudoku.sud",
+  };
+  const game = await loadGame({ auto_save: true });
+  const difficultyDialog = easyDialog();
+  try {
+    wireLoads({ new: makeBtn() }, game, session, { difficultyDialog });
+    await difficultyDialog.buttons[0].el.click();
+    bridgeWrites.length = 0;
+    await moveWithAutosave(game, session, { fetchFn: globalThis.fetch });
+    assert.equal(bridgeWrites.length, 1, "the move after New reaches the bridge");
+  } finally {
+    globalThis.AndroidFileBridge = prevBridge;
+    globalThis.fetch = prevFetch;
+    globalThis.__sudokuChoose = prevChoose;
+  }
+}
+
 // Android autosave adopts the file name the bridge actually wrote (e.g. a new name the user picked).
 {
   const prevBridge = globalThis.AndroidFileBridge;
