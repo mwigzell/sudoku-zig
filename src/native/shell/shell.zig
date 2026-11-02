@@ -1353,7 +1353,9 @@ test "manual startup does not print generation progress when both auto flags are
     while (true) if (try app.turn()) break;
 
     const output = std.Io.Writer.buffered(&host.session.writer.mock.writer);
-    try std.testing.expect(std.mem.indexOf(u8, output, "Generating:") == null);
+    var round_buf: [96]u8 = undefined;
+    const round_line = puzzle_gen.formatProgressEvent(.round, &round_buf).?;
+    try std.testing.expect(std.mem.indexOf(u8, output, round_line) == null);
 }
 
 test "win state stays manual: no automatic transition after You win" {

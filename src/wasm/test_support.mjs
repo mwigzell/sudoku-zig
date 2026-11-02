@@ -11,6 +11,9 @@ import * as stepRunner from "./flows/step_runner.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifacts/artifact.wasm"));
 
+/** Core's generating dialog text, read from the real artifact. */
+export const genText = (await glue.loadArtifact(wasmBytes)).getGenText();
+
 /** A real wasm game bootstrapped like the host does; `config` overrides the defaults. */
 export async function loadGame(config = {}) {
   const game = await glue.loadArtifact(wasmBytes);
@@ -118,6 +121,7 @@ export function generatingModalStub({ progressRowsEl } = {}) {
   const continueBtn = makeContinueBtn();
   const cancelBtn = makeContinueBtn();
   return generating.wireGeneratingModal({
+    genText,
     el,
     continueBtn,
     cancelBtn,

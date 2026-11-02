@@ -88,7 +88,7 @@ export function startGenInWorker({
         const msg = event.data;
         if (msg?.type === "progress") {
           if (cancelling) return;
-          onProgress?.(msg.phase, msg.a, msg.b);
+          onProgress?.(msg.phase, msg.text);
           return;
         }
         if (msg?.type === "cancelled") {

@@ -1,30 +1,29 @@
-// gen_progress_rows.js — progressive generating modal rows (wire phase → slots I–V).
-
-import * as genProgressFormat from "./gen_progress_format.js";
+// gen_progress_rows.js — progressive generating modal rows: the wire phase picks slot I–V, core supplies the text.
 
 /** Row slots I–IV are live; V is reserved (model only, not mounted in DOM). */
 export const GEN_PROGRESS_ROW_COUNT = 5;
 export const GEN_PROGRESS_DOM_ROW_COUNT = 4;
 export const GEN_PROGRESS_ROW_CLASS = "gen-progress-row";
 export const GEN_PROGRESS_ATTEMPT_HINT_CLASS = "gen-progress-attempt-hint";
-export const GEN_PROGRESS_HINT_FAST = "Fast strip";
-export const GEN_PROGRESS_HINT_DIG_HOLE = "Dig-hole fallback";
+/** Which carving method is running; the dialog shows core's text for it. */
+export const GEN_METHOD_FAST = "fast_strip";
+export const GEN_METHOD_DIG_HOLE = "dig_hole";
 
 /** Empty row slots before the first progress event. */
 export function createGenProgressRowState() {
-  return { rows: ["", "", "", "", ""], attemptHint: "" };
+  return { rows: ["", "", "", "", ""], method: "" };
 }
 
-function attemptHintForPhase(phase, priorHint) {
+function methodForPhase(phase, priorMethod) {
   switch (phase) {
     case 0:
       return "";
     case 1:
-      return GEN_PROGRESS_HINT_DIG_HOLE;
+      return GEN_METHOD_DIG_HOLE;
     case 2:
-      return priorHint === GEN_PROGRESS_HINT_DIG_HOLE ? priorHint : GEN_PROGRESS_HINT_FAST;
+      return priorMethod === GEN_METHOD_DIG_HOLE ? priorMethod : GEN_METHOD_FAST;
     default:
-      return priorHint;
+      return priorMethod;
   }
 }
 
@@ -45,16 +44,16 @@ function rowIndexForPhase(phase) {
   }
 }
 
-/** Apply one `(phase, a, b)` event; update the active row and clear deeper slots. */
-export function applyGenProgressRowEvent(state, phase, a, b) {
+/** Apply one `(phase, text)` event; update the active row and clear deeper slots. */
+export function applyGenProgressRowEvent(state, phase, text) {
   const rows = state.rows.slice();
   const depth = rowIndexForPhase(phase);
-  rows[depth] = genProgressFormat.formatGenProgress(phase, a, b);
+  rows[depth] = text;
   for (let i = depth + 1; i < GEN_PROGRESS_ROW_COUNT; i += 1) {
     rows[i] = "";
   }
-  const attemptHint = attemptHintForPhase(phase, state.attemptHint ?? "");
-  return { rows, attemptHint };
+  const method = methodForPhase(phase, state.method ?? "");
+  return { rows, method };
 }
 
 function defaultCreateElement(tag) {
@@ -101,8 +100,11 @@ export function ensureProgressRowSlots(containerEl, createElement = defaultCreat
   return slots;
 }
 
-/** Paint row model state; hide slot elements with no text. */
-export function renderGenProgressRows(containerEl, state, createElement) {
+/**
+ * Paint row model state; hide slot elements with no text.
+ * @param {import("../types").GenText} genText core's text for the method label
+ */
+export function renderGenProgressRows(containerEl, state, createElement, genText) {
   const slots = ensureProgressRowSlots(containerEl, createElement);
   const hintEl = ensureAttemptHintEl(containerEl, createElement, slots[0], slots[1]);
   for (let i = 0; i < GEN_PROGRESS_DOM_ROW_COUNT; i += 1) {
@@ -110,7 +112,7 @@ export function renderGenProgressRows(containerEl, state, createElement) {
     slots[i].textContent = text;
     slots[i].hidden = text.length === 0;
   }
-  const hint = state.attemptHint ?? "";
+  const hint = state.method ? genText[state.method] : "";
   hintEl.textContent = hint;
   hintEl.hidden = hint.length === 0;
 }
@@ -122,12 +124,12 @@ export function setProgressRowsVisible(containerEl, visible) {
   }
 }
 
-/** Feed `(phase, a, b)` wire events into a modal wired with `renderProgressRows`. */
+/** Feed `(phase, text)` wire events into a modal wired with `renderProgressRows`. */
 export function createGenProgressModalSink(modal) {
   let state = createGenProgressRowState();
   return {
-    push(phase, a, b) {
-      state = applyGenProgressRowEvent(state, phase, a, b);
+    push(phase, text) {
+      state = applyGenProgressRowEvent(state, phase, text);
       modal.renderProgressRows(state);
     },
   };

@@ -7,85 +7,85 @@ import * as genProgressRows from "./gen_progress_rows.js";
   const s = genProgressRows.createGenProgressRowState();
   assert.equal(genProgressRows.GEN_PROGRESS_ROW_COUNT, 5);
   assert.deepEqual(s.rows, ["", "", "", "", ""]);
-  assert.equal(s.attemptHint, "");
+  assert.equal(s.method, "");
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 0, 0, 0);
-  assert.equal(s.rows[0], "Generating: new attempt…");
+  s = genProgressRows.applyGenProgressRowEvent(s, 0, "progress line 1");
+  assert.equal(s.rows[0], "progress line 1");
   assert.deepEqual(s.rows.slice(1), ["", "", "", ""]);
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 2, 3, 256);
-  assert.equal(s.rows[1], "Generating: try 3/256");
+  s = genProgressRows.applyGenProgressRowEvent(s, 2, "progress line 2");
+  assert.equal(s.rows[1], "progress line 2");
   assert.deepEqual(s.rows.slice(2), ["", "", ""]);
-  s = genProgressRows.applyGenProgressRowEvent(s, 2, 4, 256);
-  assert.equal(s.rows[1], "Generating: try 4/256");
+  s = genProgressRows.applyGenProgressRowEvent(s, 2, "progress line 3");
+  assert.equal(s.rows[1], "progress line 3");
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 2, 10, 256);
-  s = genProgressRows.applyGenProgressRowEvent(s, 1, 0, 0);
-  assert.equal(s.rows[1], "Generating: carving clues…");
+  s = genProgressRows.applyGenProgressRowEvent(s, 2, "progress line 4");
+  s = genProgressRows.applyGenProgressRowEvent(s, 1, "progress line 5");
+  assert.equal(s.rows[1], "progress line 5");
   assert.deepEqual(s.rows.slice(2), ["", "", ""]);
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 3, 40, 45);
-  assert.equal(s.rows[2], "Generating: 40 givens (target ≤45)");
+  s = genProgressRows.applyGenProgressRowEvent(s, 3, "progress line 6");
+  assert.equal(s.rows[2], "progress line 6");
   assert.deepEqual(s.rows.slice(3), ["", ""]);
-  s = genProgressRows.applyGenProgressRowEvent(s, 4, 32, 35);
-  assert.equal(s.rows[2], "Generating: 32 givens → ≤35");
+  s = genProgressRows.applyGenProgressRowEvent(s, 4, "progress line 7");
+  assert.equal(s.rows[2], "progress line 7");
   assert.equal(s.rows[3], "");
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 5, 28, 0);
-  assert.equal(s.rows[3], "Generating: checking uniqueness (28 givens)…");
+  s = genProgressRows.applyGenProgressRowEvent(s, 5, "progress line 8");
+  assert.equal(s.rows[3], "progress line 8");
   assert.equal(s.rows[4], "");
-  s = genProgressRows.applyGenProgressRowEvent(s, 5, 27, 0);
-  assert.equal(s.rows[3], "Generating: checking uniqueness (27 givens)…");
+  s = genProgressRows.applyGenProgressRowEvent(s, 5, "progress line 9");
+  assert.equal(s.rows[3], "progress line 9");
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 2, 1, 256);
-  s = genProgressRows.applyGenProgressRowEvent(s, 3, 36, 40);
-  s = genProgressRows.applyGenProgressRowEvent(s, 0, 0, 0);
-  assert.equal(s.rows[0], "Generating: new attempt…");
+  s = genProgressRows.applyGenProgressRowEvent(s, 2, "progress line 10");
+  s = genProgressRows.applyGenProgressRowEvent(s, 3, "progress line 11");
+  s = genProgressRows.applyGenProgressRowEvent(s, 0, "progress line 1");
+  assert.equal(s.rows[0], "progress line 1");
   assert.deepEqual(s.rows.slice(1), ["", "", "", ""]);
-  assert.equal(s.attemptHint, "");
+  assert.equal(s.method, "");
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 0, 0, 0);
-  assert.equal(s.attemptHint, "");
-  s = genProgressRows.applyGenProgressRowEvent(s, 2, 1, 256);
-  assert.equal(s.attemptHint, genProgressRows.GEN_PROGRESS_HINT_FAST);
-  s = genProgressRows.applyGenProgressRowEvent(s, 2, 2, 256);
-  assert.equal(s.attemptHint, genProgressRows.GEN_PROGRESS_HINT_FAST);
+  s = genProgressRows.applyGenProgressRowEvent(s, 0, "progress line 1");
+  assert.equal(s.method, "");
+  s = genProgressRows.applyGenProgressRowEvent(s, 2, "progress line 10");
+  assert.equal(s.method, genProgressRows.GEN_METHOD_FAST);
+  s = genProgressRows.applyGenProgressRowEvent(s, 2, "progress line 12");
+  assert.equal(s.method, genProgressRows.GEN_METHOD_FAST);
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 2, 50, 256);
-  s = genProgressRows.applyGenProgressRowEvent(s, 1, 0, 0);
-  assert.equal(s.attemptHint, genProgressRows.GEN_PROGRESS_HINT_DIG_HOLE);
-  assert.equal(s.rows[1], "Generating: carving clues…");
+  s = genProgressRows.applyGenProgressRowEvent(s, 2, "progress line 13");
+  s = genProgressRows.applyGenProgressRowEvent(s, 1, "progress line 5");
+  assert.equal(s.method, genProgressRows.GEN_METHOD_DIG_HOLE);
+  assert.equal(s.rows[1], "progress line 5");
 }
 
 {
   let s = genProgressRows.createGenProgressRowState();
-  s = genProgressRows.applyGenProgressRowEvent(s, 1, 0, 0);
-  s = genProgressRows.applyGenProgressRowEvent(s, 3, 30, 35);
-  assert.equal(s.attemptHint, genProgressRows.GEN_PROGRESS_HINT_DIG_HOLE);
-  s = genProgressRows.applyGenProgressRowEvent(s, 0, 0, 0);
-  assert.equal(s.attemptHint, "");
+  s = genProgressRows.applyGenProgressRowEvent(s, 1, "progress line 5");
+  s = genProgressRows.applyGenProgressRowEvent(s, 3, "progress line 14");
+  assert.equal(s.method, genProgressRows.GEN_METHOD_DIG_HOLE);
+  s = genProgressRows.applyGenProgressRowEvent(s, 0, "progress line 1");
+  assert.equal(s.method, "");
 }

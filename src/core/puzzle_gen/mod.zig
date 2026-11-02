@@ -288,7 +288,7 @@ fn reportProgress(progress: ?GenProgressFn, ctx: ?*anyopaque, event: GenProgress
     if (PuzzleGen.checkPlayAbort()) return error.GenAborted;
 }
 
-/// Compact `(phase, a, b)` for wasm host import — keep in sync with `formatGenProgress` in gen_progress_format.js.
+/// Compact `(phase, a, b)` for the wasm host import; the phase picks the web dialog row, the text comes from `formatProgressEvent`.
 pub fn encodeProgressWire(event: GenProgressEvent) struct { phase: u32, a: u32, b: u32 } {
     return switch (event) {
         .round => .{ .phase = 0, .a = 0, .b = 0 },
@@ -301,14 +301,21 @@ pub fn encodeProgressWire(event: GenProgressEvent) struct { phase: u32, a: u32, 
 }
 
 /// Human-readable progress text for native renderer and diagnostics.
+/// Generating dialog text around the progress lines: overall state, then which carving method is running.
+pub const GENERATING_MSG = "A new puzzle is being generated.";
+pub const GENERATING_DONE_MSG = "The new puzzle is ready.";
+pub const GENERATING_CANCELLING_MSG = "The new puzzle is being cancelled.";
+pub const FAST_STRIP_MSG = "Using the fast strip method.";
+pub const DIG_HOLE_MSG = "Using the dig-hole fallback method.";
+
 pub fn formatProgressEvent(event: GenProgressEvent, buf: []u8) ?[]const u8 {
     return switch (event) {
-        .round => std.fmt.bufPrint(buf, "Generating: new attempt…", .{}) catch null,
-        .dig_hole => std.fmt.bufPrint(buf, "Generating: carving clues…", .{}) catch null,
-        .attempt => |x| std.fmt.bufPrint(buf, "Generating: try {d}/{d}", .{ x.n, x.max }) catch null,
-        .strip => |s| std.fmt.bufPrint(buf, "Generating: {d} givens (target ≤{d})", .{ s.givens, s.target }) catch null,
-        .carve => |c| std.fmt.bufPrint(buf, "Generating: {d} givens → ≤{d}", .{ c.givens, c.target }) catch null,
-        .uniqueness_check => |u| std.fmt.bufPrint(buf, "Generating: checking uniqueness ({d} givens)…", .{u.givens}) catch null,
+        .round => std.fmt.bufPrint(buf, "Starting a new attempt.", .{}) catch null,
+        .dig_hole => std.fmt.bufPrint(buf, "Carving out clues.", .{}) catch null,
+        .attempt => |x| std.fmt.bufPrint(buf, "Trying puzzle {d} of {d}.", .{ x.n, x.max }) catch null,
+        .strip => |s| std.fmt.bufPrint(buf, "The puzzle has {d} clues; the target is {d} or fewer.", .{ s.givens, s.target }) catch null,
+        .carve => |c| std.fmt.bufPrint(buf, "Removing clues: {d} left, aiming for {d} or fewer.", .{ c.givens, c.target }) catch null,
+        .uniqueness_check => |u| std.fmt.bufPrint(buf, "Checking that the puzzle with {d} clues has only one solution.", .{u.givens}) catch null,
     };
 }
 
@@ -397,7 +404,7 @@ test "puzzle_gen: default generate stays on legacy fixture" {
 test "puzzle_gen: formatProgressEvent covers carve" {
     var buf: [64]u8 = undefined;
     const msg = formatProgressEvent(.{ .carve = .{ .givens = 42, .target = 36, .step = 3 } }, &buf).?;
-    try std.testing.expectEqualStrings("Generating: 42 givens → ≤36", msg);
+    try std.testing.expectEqualStrings("Removing clues: 42 left, aiming for 36 or fewer.", msg);
 }
 
 test "puzzle_gen: generate uses fixtures in test binary" {
@@ -433,15 +440,32 @@ test "puzzle_gen: encodeProgressWire covers all phases" {
 
 test "puzzle_gen: formatProgressEvent covers all variants" {
     var buf: [96]u8 = undefined;
-    try std.testing.expectEqualStrings("Generating: new attempt…", formatProgressEvent(.round, &buf).?);
-    try std.testing.expectEqualStrings("Generating: carving clues…", formatProgressEvent(.dig_hole, &buf).?);
-    try std.testing.expectEqualStrings("Generating: try 4/16", formatProgressEvent(.{ .attempt = .{ .n = 4, .max = 16 } }, &buf).?);
-    try std.testing.expectEqualStrings("Generating: 41 givens (target ≤36)", formatProgressEvent(.{ .strip = .{ .givens = 41, .target = 36 } }, &buf).?);
-    try std.testing.expectEqualStrings("Generating: 33 givens → ≤28", formatProgressEvent(.{ .carve = .{ .givens = 33, .target = 28, .step = 9 } }, &buf).?);
+    try std.testing.expectEqualStrings("Starting a new attempt.", formatProgressEvent(.round, &buf).?);
+    try std.testing.expectEqualStrings("Carving out clues.", formatProgressEvent(.dig_hole, &buf).?);
+    try std.testing.expectEqualStrings("Trying puzzle 4 of 16.", formatProgressEvent(.{ .attempt = .{ .n = 4, .max = 16 } }, &buf).?);
+    try std.testing.expectEqualStrings("The puzzle has 41 clues; the target is 36 or fewer.", formatProgressEvent(.{ .strip = .{ .givens = 41, .target = 36 } }, &buf).?);
+    try std.testing.expectEqualStrings("Removing clues: 33 left, aiming for 28 or fewer.", formatProgressEvent(.{ .carve = .{ .givens = 33, .target = 28, .step = 9 } }, &buf).?);
     try std.testing.expectEqualStrings(
-        "Generating: checking uniqueness (27 givens)…",
+        "Checking that the puzzle with 27 clues has only one solution.",
         formatProgressEvent(.{ .uniqueness_check = .{ .givens = 27 } }, &buf).?,
     );
+}
+
+test "puzzle_gen: every progress line reads as a sentence" {
+    const sentence = @import("../../test/sentence.zig");
+    const events = [_]GenProgressEvent{
+        .round,
+        .dig_hole,
+        .{ .attempt = .{ .n = 256, .max = 256 } },
+        .{ .strip = .{ .givens = 81, .target = 45 } },
+        .{ .carve = .{ .givens = 81, .target = 45, .step = 1 } },
+        .{ .uniqueness_check = .{ .givens = 81 } },
+    };
+    var buf: [96]u8 = undefined;
+    for (events) |ev| try sentence.expectSentence(formatProgressEvent(ev, &buf).?);
+    for ([_][]const u8{ GENERATING_MSG, GENERATING_DONE_MSG, GENERATING_CANCELLING_MSG, FAST_STRIP_MSG, DIG_HOLE_MSG }) |msg| {
+        try sentence.expectSentence(msg);
+    }
 }
 
 test "puzzle_gen: countGivens counts digits and ignores dot/zero" {

@@ -53,8 +53,6 @@ pub const step_runner_js: []const u8 = @embedFile("../wasm/flows/step_runner.js"
 pub const generating_js: []const u8 = @embedFile("../wasm/dialogs/generating.js");
 /// Gen progress UI rows (`/gen_progress_rows.js`).
 pub const gen_progress_rows_js: []const u8 = @embedFile("../wasm/gen/gen_progress_rows.js");
-/// Gen progress formatting helpers (`/gen_progress_format.js`).
-pub const gen_progress_format_js: []const u8 = @embedFile("../wasm/gen/gen_progress_format.js");
 /// Region overlay toggle (`/region.js`).
 pub const region_js: []const u8 = @embedFile("../wasm/menus/region.js");
 /// Help copy (`/help.js`).
@@ -176,10 +174,6 @@ test "embedded generating.js is non-empty" {
 
 test "embedded gen_progress_rows.js is non-empty" {
     try std.testing.expect(gen_progress_rows_js.len > 0);
-}
-
-test "embedded gen_progress_format.js is non-empty" {
-    try std.testing.expect(gen_progress_format_js.len > 0);
 }
 
 test "embedded region.js is non-empty" {

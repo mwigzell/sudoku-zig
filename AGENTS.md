@@ -37,6 +37,7 @@ For this repo's shared-core architecture, **policy centralization is mandatory**
 - Front ends (native shell, web JS, Android host/WebView) are adapters: input/output, lifecycle, presentation.
 - Shared seams (engine/startup/host contracts) own policy: rule semantics, save/restore/autosave semantics, startup decisions, and log filtering policy.
 - Do **not** duplicate or fork policy in a front end "for convenience". If a front end appears to need custom behavior, extract or extend a shared seam instead.
+- **Text ownership follows the behaviour.** Whoever implements a behaviour writes the words the user sees for it. For engine, flow and generation behaviour that is core: adapters show core's text and pass their technical reason (`err.message`, Zig error names) to core for the log, never into a dialog. A platform writes text only for what it alone implements (e.g. web boot failure before wasm loads). Dialog and status text is always full sentences.
 
 ## Zig version & stdlib notes
 
@@ -117,6 +118,10 @@ When editing web-shell JavaScript (`src/wasm/**/*.js`), maintain JSDoc typing fo
 Test discovery uses **`src/entry_native.zig`** as the entry point (there is no `src/root.zig` — it was removed in commit 02f55d8). Zig's test runner follows the **transitive import graph**: every `test {}` block in any module reachable from `entry_native.zig`'s imports is discovered and linked — no manual tuple or central registration file is needed.
 
 Caveat: a new source file with tests is only visible if it is **imported by something in entry_native.zig's graph**. If you add `src/foo.zig` with tests and it isn't imported by an existing module, its tests are silently skipped. Make sure it is reachable from the domain (e.g. imported by `native/shell/shell.zig` or another module), and verify with `zig build test` that the new tests actually run.
+
+### Tests use the text's constant, not a copy
+
+A test that checks user-facing text compares against the owner's constant or formatter (Zig `*_MSG`/`*_FMT`, `formatProgressEvent`; JS reads core's text through wasm, e.g. `test_support.genText`). Spell a sentence out only in the one test that pins the wording itself. Tests that only check placement or plumbing pass neutral placeholders (`"progress line 1"`), not copies of core's sentences.
 
 ## clean "nuke" build cache 
 zig build clean

@@ -217,6 +217,13 @@ export fn getAbout() callconv(.c) u32 {
     return returnJson(out);
 }
 
+/// Generating dialog text from core as JSON.
+export fn getGenText() callconv(.c) u32 {
+    const out = outBuffer();
+    boundary.writeGenTextJson(out) catch return exportWriteFailed(out);
+    return returnJson(out);
+}
+
 /// Current command availability flags as JSON.
 export fn getLegend() callconv(.c) u32 {
     const out = outBuffer();
@@ -351,9 +358,10 @@ export fn outPtr() callconv(.c) u32 {
 }
 
 const wasm_gen_progress_host = if (builtin.cpu.arch == .wasm32) struct {
-    extern "env" fn sudoku_gen_progress(phase: u32, a: u32, b: u32) void;
+    extern "env" fn sudoku_gen_progress(phase: u32, text_ptr: u32, text_len: u32) void;
 
     threadlocal var last_uniqueness_givens: u32 = 0;
+    threadlocal var text_buf: [96]u8 = undefined;
 
     fn callback(event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {
         _ = ctx;
@@ -365,7 +373,8 @@ const wasm_gen_progress_host = if (builtin.cpu.arch == .wasm32) struct {
         } else if (w.phase == 0) {
             last_uniqueness_givens = 0;
         }
-        sudoku_gen_progress(w.phase, w.a, w.b);
+        const text = puzzle_gen.formatProgressEvent(event, &text_buf) orelse return;
+        sudoku_gen_progress(w.phase, @intFromPtr(text.ptr), text.len);
     }
 } else struct {
     fn callback(_: puzzle_gen.GenProgressEvent, _: ?*anyopaque) void {}

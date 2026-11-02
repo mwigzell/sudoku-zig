@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import * as genProgressRows from "./gen_progress_rows.js";
+import { genText } from "../test_support.mjs";
 
 function makeElement(tag = "div") {
   const el = {
@@ -69,13 +70,13 @@ function makeCreateElement() {
 {
   const container = makeElement();
   let state = genProgressRows.createGenProgressRowState();
-  state = genProgressRows.applyGenProgressRowEvent(state, 0, 0, 0);
-  state = genProgressRows.applyGenProgressRowEvent(state, 2, 4, 256);
-  genProgressRows.renderGenProgressRows(container, state, makeCreateElement());
+  state = genProgressRows.applyGenProgressRowEvent(state, 0, "progress line 1");
+  state = genProgressRows.applyGenProgressRowEvent(state, 2, "progress line 2");
+  genProgressRows.renderGenProgressRows(container, state, makeCreateElement(), genText);
   const rows = container.querySelectorAll(`.${genProgressRows.GEN_PROGRESS_ROW_CLASS}`);
-  assert.equal(rows[0].textContent, "Generating: new attempt…");
+  assert.equal(rows[0].textContent, "progress line 1");
   assert.equal(rows[0].hidden, false);
-  assert.equal(rows[1].textContent, "Generating: try 4/256");
+  assert.equal(rows[1].textContent, "progress line 2");
   assert.equal(rows[1].hidden, false);
   assert.equal(rows[2].hidden, true);
   assert.equal(rows[3].hidden, true);
@@ -92,12 +93,12 @@ function makeCreateElement() {
 {
   const container = makeElement();
   let state = genProgressRows.createGenProgressRowState();
-  state = genProgressRows.applyGenProgressRowEvent(state, 0, 0, 0);
-  state = genProgressRows.applyGenProgressRowEvent(state, 2, 3, 256);
-  genProgressRows.renderGenProgressRows(container, state, makeCreateElement());
+  state = genProgressRows.applyGenProgressRowEvent(state, 0, "progress line 1");
+  state = genProgressRows.applyGenProgressRowEvent(state, 2, "progress line 3");
+  genProgressRows.renderGenProgressRows(container, state, makeCreateElement(), genText);
   const hint = container.querySelector(`.${genProgressRows.GEN_PROGRESS_ATTEMPT_HINT_CLASS}`);
   assert.ok(hint);
-  assert.equal(hint.textContent, genProgressRows.GEN_PROGRESS_HINT_FAST);
+  assert.equal(hint.textContent, genText.fast_strip);
   assert.equal(hint.hidden, false);
   const rows = container.querySelectorAll(`.${genProgressRows.GEN_PROGRESS_ROW_CLASS}`);
   assert.equal(container._children.indexOf(hint), container._children.indexOf(rows[0]) + 1);

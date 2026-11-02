@@ -33,7 +33,6 @@ pub const RouteResult = enum {
     android_bridge,
     generating,
     gen_progress_rows,
-    gen_progress_format,
     region,
     help,
     settings,
@@ -93,7 +92,6 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/android_bridge.js")) return .android_bridge;
         if (std.mem.eql(u8, path, "/dialogs/generating.js")) return .generating;
         if (std.mem.eql(u8, path, "/gen/gen_progress_rows.js")) return .gen_progress_rows;
-        if (std.mem.eql(u8, path, "/gen/gen_progress_format.js")) return .gen_progress_format;
         if (std.mem.eql(u8, path, "/menus/region.js")) return .region;
         if (std.mem.eql(u8, path, "/menus/help.js")) return .help;
         if (std.mem.eql(u8, path, "/menus/settings.js")) return .settings;
@@ -152,7 +150,6 @@ pub const Router = struct {
             .android_bridge => embed.android_bridge_js,
             .generating => embed.generating_js,
             .gen_progress_rows => embed.gen_progress_rows_js,
-            .gen_progress_format => embed.gen_progress_format_js,
             .region => embed.region_js,
             .help => embed.help_js,
             .settings => embed.settings_js,
@@ -178,7 +175,7 @@ pub const Router = struct {
             .build_info, .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
-            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .error_modal, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .command_flow, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .gen_progress_format, .region, .help, .settings => "text/javascript",
+            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .error_modal, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .command_flow, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .region, .help, .settings => "text/javascript",
         };
     }
 };

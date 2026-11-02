@@ -648,7 +648,6 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "gen_worker.js", .body = embed.gen_worker_js },
         .{ .name = "dialogs/generating.js", .body = embed.generating_js },
         .{ .name = "gen/gen_progress_rows.js", .body = embed.gen_progress_rows_js },
-        .{ .name = "gen/gen_progress_format.js", .body = embed.gen_progress_format_js },
         .{ .name = "gen/gen_client.js", .body = embed.gen_client_js },
         .{ .name = "menus/menu_bar.js", .body = embed.menu_bar_js },
         .{ .name = "menus/theme.js", .body = embed.theme_js },
@@ -755,7 +754,6 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/android_bridge.js", .expected = .android_bridge },
         .{ .path = "/dialogs/generating.js", .expected = .generating },
         .{ .path = "/gen/gen_progress_rows.js", .expected = .gen_progress_rows },
-        .{ .path = "/gen/gen_progress_format.js", .expected = .gen_progress_format },
         .{ .path = "/menus/region.js", .expected = .region },
         .{ .path = "/menus/help.js", .expected = .help },
         .{ .path = "/menus/settings.js", .expected = .settings },
@@ -1360,7 +1358,6 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     r.markDelivered(.gen_progress_rows);
     try std.testing.expect(!r.allDelivered());
 
-    r.markDelivered(.gen_progress_format);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.region);

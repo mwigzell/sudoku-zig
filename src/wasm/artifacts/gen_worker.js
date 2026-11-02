@@ -14,8 +14,8 @@ self.onmessage = async (event) => {
 
   try {
     if (!game) game = await glue.loadArtifact(msg.wasmBytes);
-    game.setGenProgressListener((phase, a, b) => {
-      self.postMessage({ type: "progress", phase, a, b });
+    game.setGenProgressListener((phase, text) => {
+      self.postMessage({ type: "progress", phase, text });
     });
     const result = game.generatePuzzle({
       difficulty: msg.difficulty ?? 1,

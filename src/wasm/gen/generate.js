@@ -3,16 +3,15 @@
 import * as generating from "../dialogs/generating.js";
 import * as genClient from "./gen_client.js";
 import * as genProgressRows from "./gen_progress_rows.js";
-import * as genProgressFormat from "./gen_progress_format.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 
-/** Merge raw wire progress sink + formatted UI sink for generator updates. */
+/** Merge the dialog row sink and the plain text sink for core's progress lines. */
 function mergeGenProgressHandlers(onProgressWire, onGenProgress) {
   if (!onProgressWire && !onGenProgress) return undefined;
-  return (phase, a, b) => {
-    onProgressWire?.(phase, a, b);
-    onGenProgress?.(genProgressFormat.formatGenProgress(phase, a, b));
+  return (phase, text) => {
+    onProgressWire?.(phase, text);
+    onGenProgress?.(text);
   };
 }
 
@@ -80,7 +79,7 @@ export async function generateWithModal(game, modal, options = {}) {
   const wire = genWireFromEngine(game, options);
   const rowSink =
     typeof modal?.renderProgressRows === "function" ? genProgressRows.createGenProgressModalSink(modal) : null;
-  const onProgressWire = rowSink ? (phase, a, b) => rowSink.push(phase, a, b) : undefined;
+  const onProgressWire = rowSink ? (phase, text) => rowSink.push(phase, text) : undefined;
   const gen = { difficulty: wire.difficulty, logLevel: wire.logLevel, onGenProgress, onProgressWire };
   if (genWorker && genClient.canUseGenWorker()) {
     const workerResult = await generateWithWorker(game, modal, { ...gen, genWorker });

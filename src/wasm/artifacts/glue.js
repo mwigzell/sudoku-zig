@@ -40,15 +40,17 @@ function randomSeed32() {
 }
 
 export async function loadArtifact(wasmBytes) {
+  /** @type {WebAssembly.Exports} */
+  let exports;
   const imports = {
     env: {
-      sudoku_gen_progress(phase, a, b) {
-        genProgressListener?.(phase, a, b);
+      sudoku_gen_progress(phase, textPtr, textLen) {
+        genProgressListener?.(phase, new TextDecoder().decode(new Uint8Array(exports.memory.buffer, textPtr, textLen)));
       },
     },
   };
   const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
-  const { exports } = instance;
+  exports = instance.exports;
   const memory = exports.memory;
 
   // Most wasm exports return an out-pointer to a JSON string response.
@@ -137,6 +139,11 @@ export async function loadArtifact(wasmBytes) {
 
     getAbout() {
       return readJson(exports.getAbout());
+    },
+
+    /** @returns {import("../types").GenText} */
+    getGenText() {
+      return readJson(exports.getGenText());
     },
 
     getConfig() {

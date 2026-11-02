@@ -2,12 +2,9 @@
 
 import assert from "node:assert/strict";
 import * as boardMod from "./board.js";
-import * as genProgressFormat from "./gen/gen_progress_format.js";
 import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame } from "./test_support.mjs";
 
 
-assert.equal(genProgressFormat.formatGenProgress(4, 71, 36), "Generating: 71 givens → ≤36");
-assert.equal(genProgressFormat.formatGenProgress(0, 0, 0), "Generating: new attempt…");
 
 assert.equal(boardMod.cellIndex(2, 4), 22);
 assert.equal(boardMod.cellIndex(0, 0), 0);

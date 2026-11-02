@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import * as generate from "./generate.js";
-import { flushDialogPaint, generatingModalStub } from "../test_support.mjs";
+import { flushDialogPaint, generatingModalStub, genText } from "../test_support.mjs";
 
 function makeWorkerGenMock({ line, cooperativeCancel = true }) {
   const instances = [];
@@ -143,8 +143,8 @@ function makeProgressRowsEl() {
     },
     requestGenAbort() {},
     generatePuzzle() {
-      progressCb?.(0, 0, 0);
-      progressCb?.(2, 7, 256);
+      progressCb?.(0, "progress line 1");
+      progressCb?.(2, "progress line 2");
       return { ok: true, line };
     },
     getConfig() {
@@ -155,12 +155,12 @@ function makeProgressRowsEl() {
   const modal = generatingModalStub({ progressRowsEl });
   const running = generate.generateWithModal(game, modal, { difficulty: 2 });
   await flushDialogPaint();
-  assert.equal(progressRowsEl._children[0].textContent, "Generating: new attempt…");
+  assert.equal(progressRowsEl._children[0].textContent, "progress line 1");
   assert.equal(progressRowsEl._children[0].hidden, false);
   const hint = progressRowsEl._children.find((c) => c.classList?._set?.has("gen-progress-attempt-hint"));
-  assert.equal(hint?.textContent, "Fast strip");
+  assert.equal(hint?.textContent, genText.fast_strip);
   const rowII = progressRowsEl._children.filter((c) => c.classList?._set?.has("gen-progress-row"))[1];
-  assert.equal(rowII.textContent, "Generating: try 7/256");
+  assert.equal(rowII.textContent, "progress line 2");
   assert.equal(rowII.hidden, false);
   modal.continueBtn.click();
   const out = await running;

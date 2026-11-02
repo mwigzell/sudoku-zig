@@ -47,6 +47,7 @@ export async function bootSudokuWebApp(root = document) {
 
     // Boot phase 3: wire generation modal and optional worker generation context.
     const generatingModal = generating.wireGeneratingModal({
+      genText: game.getGenText(),
       el: root.getElementById("generating-modal"),
       continueBtn: root.getElementById("generating-modal-continue"),
       cancelBtn: root.getElementById("generating-modal-cancel"),

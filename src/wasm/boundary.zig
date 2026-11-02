@@ -436,6 +436,29 @@ pub fn writeAboutJson(out: OutBuffer, debug_build: bool) !void {
     try std.Io.Writer.flush(&jw.writer);
 }
 
+/// Generating dialog text from core, keyed for the web dialog.
+pub fn writeGenTextJson(out: OutBuffer) !void {
+    var mutable = out;
+    mutable.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    const fields = [_]struct { key: []const u8, text: []const u8 }{
+        .{ .key = "busy", .text = puzzle_gen.GENERATING_MSG },
+        .{ .key = "done", .text = puzzle_gen.GENERATING_DONE_MSG },
+        .{ .key = "cancelling", .text = puzzle_gen.GENERATING_CANCELLING_MSG },
+        .{ .key = "fast_strip", .text = puzzle_gen.FAST_STRIP_MSG },
+        .{ .key = "dig_hole", .text = puzzle_gen.DIG_HOLE_MSG },
+    };
+    for (fields, 0..) |f, i| {
+        try std.Io.Writer.writeAll(&jw.writer, if (i == 0) "{" else ",");
+        try writeJsonString(&jw.writer, f.key);
+        try std.Io.Writer.writeAll(&jw.writer, ":");
+        try writeJsonString(&jw.writer, f.text);
+    }
+    try std.Io.Writer.writeAll(&jw.writer, "}");
+    try std.Io.Writer.flush(&jw.writer);
+}
+
 pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
     var mutable = out;
     out.reset();

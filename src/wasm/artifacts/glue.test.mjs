@@ -70,9 +70,15 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(boot.ok, true, `bootstrapHostConfig failed: ${JSON.stringify(boot)}`);
   const empty = handoff.getState().cells.every((c) => c.value === 0);
   assert.equal(empty, true, "host bootstrap starts from an empty grid");
+  const progress = [];
+  handoff.setGenProgressListener((phase, text) => progress.push([phase, text]));
   const gen = handoff.generatePuzzle({ difficulty: 2, logLevel: 1 });
+  handoff.setGenProgressListener(null);
   assert.equal(gen.ok, true, `generatePuzzle failed: ${JSON.stringify(gen)}`);
   assert.equal(gen.line.length, 81);
+  // Progress text comes from core; the phase only places it in the dialog.
+  assert.equal(progress[0][0], 0, "generation opens with a new attempt");
+  assert.ok(progress.every(([, text]) => /^[A-Z].*\.$/.test(text)), "every progress line is a sentence from core");
   startNewGame(handoff, gen.line, "medium");
   assert.equal(handoff.getConfig().difficulty, 2, "New takes the chosen difficulty");
 }

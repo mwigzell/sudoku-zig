@@ -170,9 +170,11 @@ Front-end layers are adapters. They do I/O, lifecycle, and presentation; shared 
 | Startup behavior | `src/core/startup/policy.zig` + `src/core/flow/startup.zig` (`StartupFlow`) | read the current file, draw, ask, generate, forget the file when told | per-platform startup decision trees |
 | Configuration meaning and persistence schema | `src/core/config.zig` + `src/core/settings_store.zig` + host persistence seam | edit/view settings through exposed interfaces | parallel config schemas or defaults that override host contract |
 | Cross-platform command availability semantics | engine/legend + shared contracts | wire controls to existing contracts | feature-specific rule variants per platform |
+| Text the user sees (dialogs, status line, generation progress) | whoever implements the behaviour: core for engine, flows and generation (`src/core/`), the platform only for what it alone does | show core's text as-is; report a failure with a reason for the log | wording, fallback messages or raw error text for behaviour core owns; copies of core's formatters |
 
 Rule: every supported front-end entry must remain transport-thin and behavior-consistent by consuming shared contracts, not redefining them.
 Policy centralization is mandatory: in this shared-core multi-front-end architecture, front ends transport/render only; they do not fork rule decisions (persistence/autosave semantics, startup policy, or log filtering policy).
+Text ownership follows the behaviour: if core implements it, core writes the words and adapters pass their technical reason to core for the log. A platform writes its own text only for something core does not handle (e.g. the web boot dialog when wasm fails to load). Either way, dialog and status text is full sentences. Generation is core behaviour on every platform: progress lines are core's `formatProgressEvent` text, native and web alike, and the web generating dialog's messages and method label come from core through `getGenText`.
 
 ### Policy authority map (core vs platform call sites)
 
@@ -190,7 +192,7 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 | Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/entry_wasm.zig`) | Native: `src/native/shell/storage.zig` (`Storage.write` for Save and autosave, `pickOpen` for Open) via `FileTransport`. Web/Android: wasm `serialize` out; picked bytes in through `flowPicked`. |
 | Log-level filtering policy | `src/core/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
 
-Startup outcomes, the same on every platform: a failed restore shows the idle board, asks "Delete {file}?" (Delete / Keep) and always forgets the current file; a restored solved game asks "Puzzle solved" (New game / Keep), and New game generates at the saved difficulty; a failed generation shows the idle board then the error; a cancelled one goes straight to idle.
+Startup outcomes, the same on every platform: a failed restore shows the idle board, asks "The file {file} could not be restored. Do you want to delete it?" (Delete / Keep) and always forgets the current file; a restored solved game asks "Puzzle solved" (New game / Keep), and New game generates at the saved difficulty; a failed generation shows the idle board then the error; a cancelled one goes straight to idle.
 
 **Desktop web entry** (`native/desktop_web.zig`):
 Wires **`web_host.runWithHostConfig`**, fatal bind errors, and **`whenHostReady`** → **`open_browser`**. Called from `main` when `-r web`.

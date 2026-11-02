@@ -591,10 +591,12 @@ test "reportGenProgress: writes formatted line to session writer" {
     var s = styler.PlainStyler{};
     var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
 
-    try renderer.reportGenProgress(.{ .attempt = .{ .n = 2, .max = 256 } });
+    const event: puzzle_gen.GenProgressEvent = .{ .attempt = .{ .n = 2, .max = 256 } };
+    try renderer.reportGenProgress(event);
 
-    const contents = aw.writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, contents, "Generating: try 2/256") != null);
+    var want_buf: [96]u8 = undefined;
+    const want = puzzle_gen.formatProgressEvent(event, &want_buf).?;
+    try std.testing.expectEqualStrings(want, std.mem.trimEnd(u8, aw.writer.buffered(), "\n"));
 }
 
 test "render: renders empty board end-to-end" {

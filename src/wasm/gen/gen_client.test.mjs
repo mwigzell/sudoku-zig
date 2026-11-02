@@ -45,7 +45,7 @@ function makeMockWorker() {
   const worker = MockWorker.instances[0];
   assert.equal(worker.lastPost.type, "run");
   assert.equal(worker.lastPost.difficulty, 2);
-  worker.emit({ type: "progress", phase: 1, a: 0, b: 0 });
+  worker.emit({ type: "progress", phase: 1, text: "progress line 1" });
   worker.emit({ type: "done", line: "0".repeat(81) });
   const out = await promise;
   assert.equal(out.ok, true);

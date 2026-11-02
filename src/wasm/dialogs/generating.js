@@ -2,10 +2,6 @@
 
 import * as genProgressRows from "../gen/gen_progress_rows.js";
 
-export const GENERATING_MSG_BUSY = "Generating…";
-export const GENERATING_MSG_DONE = "Generating… Done";
-export const GENERATING_MSG_CANCELLING = "Cancelling…";
-
 /** Let the browser paint modal open/close before sync wasm work blocks the main thread. */
 function waitForDialogPaint() {
   if (typeof requestAnimationFrame !== "function") return Promise.resolve();
@@ -14,8 +10,12 @@ function waitForDialogPaint() {
   });
 }
 
-/** Wire Continue dismiss; disabled until `setReady(true)`. */
+/**
+ * Wire Continue dismiss; disabled until `setReady(true)`.
+ * `genText` is core's dialog text (`game.getGenText()`).
+ */
 export function wireGeneratingModal({
+  genText,
   el,
   continueBtn,
   cancelBtn,
@@ -67,10 +67,10 @@ export function wireGeneratingModal({
       if (cancelBtn) cancelBtn.disabled = false;
       continueBtn.disabled = true;
       showSpinner(true);
-      setMessage(GENERATING_MSG_BUSY);
+      setMessage(genText.busy);
       if (progressRowsEl && mkEl) {
         progressRowState = genProgressRows.createGenProgressRowState();
-        genProgressRows.renderGenProgressRows(progressRowsEl, progressRowState, mkEl);
+        genProgressRows.renderGenProgressRows(progressRowsEl, progressRowState, mkEl, genText);
         genProgressRows.setProgressRowsVisible(progressRowsEl, true);
       }
     },
@@ -79,11 +79,11 @@ export function wireGeneratingModal({
       cancelHandler = null;
       setButtonsDisabled(true);
       showSpinner(false);
-      setMessage(GENERATING_MSG_BUSY);
+      setMessage(genText.busy);
       if (progressRowsEl && mkEl) {
         genProgressRows.setProgressRowsVisible(progressRowsEl, false);
         progressRowState = genProgressRows.createGenProgressRowState();
-        genProgressRows.renderGenProgressRows(progressRowsEl, progressRowState, mkEl);
+        genProgressRows.renderGenProgressRows(progressRowsEl, progressRowState, mkEl, genText);
       }
     },
     setReady(ready) {
@@ -91,19 +91,19 @@ export function wireGeneratingModal({
       if (cancelBtn) cancelBtn.disabled = true;
       if (ready) {
         showSpinner(false);
-        setMessage(GENERATING_MSG_DONE);
+        setMessage(genText.done);
       }
     },
     setCancelling() {
       setButtonsDisabled(true);
       showSpinner(false);
-      setMessage(GENERATING_MSG_CANCELLING);
+      setMessage(genText.cancelling);
       if (progressRowsEl) genProgressRows.setProgressRowsVisible(progressRowsEl, false);
     },
     renderProgressRows(state) {
       if (!progressRowsEl || !mkEl) return;
       progressRowState = state;
-      genProgressRows.renderGenProgressRows(progressRowsEl, progressRowState, mkEl);
+      genProgressRows.renderGenProgressRows(progressRowsEl, progressRowState, mkEl, genText);
     },
     setCancelHandler(fn) {
       cancelHandler = fn ?? null;
