@@ -10,5 +10,14 @@
     "build",
     "debug-test",
     "-Dtest-filter=${filter}"
+  ],
+  "java.project.sourcePaths": [
+    "src/android/bootstrap",
+    "src/android/test"
+  ],
+  "java.project.referencedLibraries": [
+    "${env:ANDROID_HOME}/platforms/android-37.2/android.jar",
+    "third_party/androidx-test/*.jar",
+    "zig-out/android-test/jars/*/classes.jar"
   ]
 }
