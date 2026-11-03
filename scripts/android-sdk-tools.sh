@@ -131,3 +131,23 @@ sign_debug_apk() {
     --out "$2" \
     "$1"
 }
+
+# Usage: resolve_bundletool <repo_root>; sets BUNDLETOOL_JAR. bundletool is not in the SDK: the pinned jar is fetched
+# once into third_party/bundletool/ and its hash is checked on every run.
+resolve_bundletool() {
+  local version="1.18.3"
+  local sha256="a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29"
+  BUNDLETOOL_JAR="$1/third_party/bundletool/bundletool-all-$version.jar"
+  if [[ ! -f "$BUNDLETOOL_JAR" ]]; then
+    echo "fetching bundletool $version"
+    mkdir -p "$(dirname "$BUNDLETOOL_JAR")"
+    curl -fsSL -o "$BUNDLETOOL_JAR.part" "https://github.com/google/bundletool/releases/download/$version/bundletool-all-$version.jar"
+    mv "$BUNDLETOOL_JAR.part" "$BUNDLETOOL_JAR"
+  fi
+  local actual
+  actual="$(shasum -a 256 "$BUNDLETOOL_JAR" | awk '{print $1}')"
+  if [[ "$actual" != "$sha256" ]]; then
+    echo "error: $BUNDLETOOL_JAR sha256 is $actual, expected $sha256" >&2
+    exit 1
+  fi
+}

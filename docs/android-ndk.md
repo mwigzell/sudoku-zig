@@ -62,16 +62,12 @@ Signing comes from the environment; the step fails with a clear error when a var
 | `ANDROID_RELEASE_KEY_ALIAS` | Key alias inside the keystore |
 | `ANDROID_RELEASE_KEY_PASS` | Key password (defaults to the keystore password) |
 
-**bundletool** is not part of the SDK. `scripts/android-bundle.sh` pins its version and SHA-256, downloads the jar from GitHub into `third_party/bundletool/` (git-ignored) on first use, and fails on a hash mismatch.
+**bundletool** is not part of the SDK. `scripts/android-sdk-tools.sh` pins its version and SHA-256, downloads the jar from GitHub into `third_party/bundletool/` (git-ignored) on first use, and fails on a hash mismatch.
 
-**Installing from the bundle.** `adb install` cannot install an `.aab`. Build device APKs from it and install those (a phone or emulator that has the debug build needs `adb uninstall com.wigzell.sudoku_zig` first, because the signatures differ):
+**Installing from the bundle.** `adb install` cannot install an `.aab`. `scripts/android-run-bundle.sh [aab]` unpacks the bundle into one universal `zig-out/android-bundle/apk/sudoku.apk` with `bundletool`, installs it on the one connected device or emulator and launches it. That APK is signed with the debug keystore, the same key as `zig build android`, so it installs over the debug build and keeps the app data; no signing variables are needed.
 
 ```bash
-BT="java -jar third_party/bundletool/bundletool-all-1.18.3.jar"
-$BT build-apks --bundle=zig-out/android-bundle/sudoku.aab --output=/tmp/sudoku.apks --connected-device --overwrite \
-  --ks="$ANDROID_RELEASE_KEYSTORE" --ks-pass=pass:"$ANDROID_RELEASE_STORE_PASS" \
-  --ks-key-alias="$ANDROID_RELEASE_KEY_ALIAS" --key-pass=pass:"${ANDROID_RELEASE_KEY_PASS:-$ANDROID_RELEASE_STORE_PASS}"
-$BT install-apks --apks=/tmp/sudoku.apks
+scripts/android-run-bundle.sh
 ```
 
 ## Runtime wiring (Step 5)

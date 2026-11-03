@@ -22,27 +22,10 @@ AAB_NAME="$9"
 VERSION_CODE="${10}"
 VERSION_NAME="${11}"
 
-# bundletool is not in the SDK; the pinned jar is fetched once and checked on every run.
-BUNDLETOOL_VERSION="1.18.3"
-BUNDLETOOL_JAR="$ROOT/third_party/bundletool/bundletool-all-$BUNDLETOOL_VERSION.jar"
-BUNDLETOOL_URL="https://github.com/google/bundletool/releases/download/$BUNDLETOOL_VERSION/bundletool-all-$BUNDLETOOL_VERSION.jar"
-BUNDLETOOL_SHA256="a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29"
-
 source "$ROOT/scripts/android-sdk-tools.sh"
 resolve_android_tools "$SDK_ROOT" "$MIN_API"
 require_release_signing
-
-if [[ ! -f "$BUNDLETOOL_JAR" ]]; then
-  echo "fetching bundletool $BUNDLETOOL_VERSION"
-  mkdir -p "$(dirname "$BUNDLETOOL_JAR")"
-  curl -fsSL -o "$BUNDLETOOL_JAR.part" "$BUNDLETOOL_URL"
-  mv "$BUNDLETOOL_JAR.part" "$BUNDLETOOL_JAR"
-fi
-actual="$(shasum -a 256 "$BUNDLETOOL_JAR" | awk '{print $1}')"
-if [[ "$actual" != "$BUNDLETOOL_SHA256" ]]; then
-  echo "error: $BUNDLETOOL_JAR sha256 is $actual, expected $BUNDLETOOL_SHA256" >&2
-  exit 1
-fi
+resolve_bundletool "$ROOT"
 
 OUT="$ROOT/$OUT_REL"
 CLASSES="$OUT/classes"
