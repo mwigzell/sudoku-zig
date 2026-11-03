@@ -76,8 +76,8 @@ export type FlowStart =
   | { flow: "autosave_flush" }
   | { flow: "startup"; path?: string; name?: string };
 
-/** Generating dialog text from core (`getGenText`): overall state and the carving method's label. */
-export type GenText = { busy: string; done: string; cancelling: string; fast_strip: string; dig_hole: string };
+/** Generating dialog text from core (`getGenText`): title, overall state and the carving method's label. */
+export type GenText = { title: string; busy: string; done: string; cancelling: string; fast_strip: string; dig_hole: string };
 
 /** Board snapshot as wasm `getState` and `show_game` report it. */
 export type GameState = { cells: Array<{ value: number; given: boolean; conflict: boolean }> };

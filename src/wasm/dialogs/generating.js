@@ -17,6 +17,7 @@ function waitForDialogPaint() {
 export function wireGeneratingModal({
   genText,
   el,
+  titleEl,
   continueBtn,
   cancelBtn,
   spinnerEl,
@@ -38,6 +39,8 @@ export function wireGeneratingModal({
   const setMessage = (text) => {
     if (msgEl) msgEl.textContent = text;
   };
+
+  if (titleEl) titleEl.textContent = genText.title;
 
   const setButtonsDisabled = (disabled) => {
     continueBtn.disabled = disabled;

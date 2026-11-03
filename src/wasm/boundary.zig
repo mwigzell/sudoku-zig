@@ -462,6 +462,7 @@ fn writeTextTableJson(out: OutBuffer, entries: []const TextEntry) !void {
 /// Generating dialog text from core, keyed for the web dialog.
 pub fn writeGenTextJson(out: OutBuffer) !void {
     try writeTextTableJson(out, &.{
+        .{ .key = "title", .text = puzzle_gen.GENERATING_TITLE },
         .{ .key = "busy", .text = puzzle_gen.GENERATING_MSG },
         .{ .key = "done", .text = puzzle_gen.GENERATING_DONE_MSG },
         .{ .key = "cancelling", .text = puzzle_gen.GENERATING_CANCELLING_MSG },

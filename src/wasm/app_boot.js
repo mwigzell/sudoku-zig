@@ -55,6 +55,7 @@ export async function bootSudokuWebApp(root = document) {
     const generatingModal = generating.wireGeneratingModal({
       genText: game.getGenText(),
       el: root.getElementById("generating-modal"),
+      titleEl: root.getElementById("generating-modal-title"),
       continueBtn: root.getElementById("generating-modal-continue"),
       cancelBtn: root.getElementById("generating-modal-cancel"),
       spinnerEl: root.getElementById("generating-spinner"),

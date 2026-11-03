@@ -32,8 +32,10 @@ function makeContinueBtn() {
   const el = { hidden: true };
   const spinnerEl = { hidden: true };
   const msgEl = { textContent: "" };
+  const titleEl = { textContent: "" };
   const continueBtn = makeContinueBtn();
-  const modal = generating.wireGeneratingModal({ genText, el, continueBtn, spinnerEl, msgEl });
+  const modal = generating.wireGeneratingModal({ genText, el, titleEl, continueBtn, spinnerEl, msgEl });
+  assert.equal(titleEl.textContent, genText.title, "core titles the dialog");
 
   modal.open();
   assert.equal(el.hidden, false);

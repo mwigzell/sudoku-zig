@@ -301,7 +301,8 @@ pub fn encodeProgressWire(event: GenProgressEvent) struct { phase: u32, a: u32, 
 }
 
 /// Human-readable progress text for native renderer and diagnostics.
-/// Generating dialog text around the progress lines: overall state, then which carving method is running.
+/// Generating dialog text around the progress lines: title, overall state, then which carving method is running.
+pub const GENERATING_TITLE = "Generating game";
 pub const GENERATING_MSG = "A new puzzle is being generated.";
 pub const GENERATING_DONE_MSG = "The new puzzle is ready.";
 pub const GENERATING_CANCELLING_MSG = "The new puzzle is being cancelled.";
