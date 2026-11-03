@@ -46,7 +46,7 @@ pub const OnReadyFn = *const fn (io: std.Io, url: []const u8) void;
 const Session = struct {
     host_config: config.Config,
     data_dir: []const u8,
-    /// User-visible folder for the default autosave file when there is no working file.
+    /// User-visible folder for the default autosave file when there is no current file.
     visible_save_dir: []const u8,
     /// Host-computed startup metadata: web restore depends on capability+path.
     has_current_file: bool,
@@ -211,7 +211,7 @@ const CurrentFileTarget = struct {
     restore_copy: bool,
 };
 
-/// No working file: the default visible file. Working file with the same (or no) name: that file
+/// No current file: the default visible file. Current file with the same (or no) name: that file
 /// in place. A restore copy, or a different name, goes to the hidden data dir.
 fn currentFileTarget(io: std.Io, session: *const Session, save_name: ?[]const u8, restore_copy: bool) !CurrentFileTarget {
     const gpa = std.heap.page_allocator;
@@ -998,7 +998,7 @@ test "current-file DELETE without the delete flag forgets the pointer and keeps 
     try forgetScenario(false);
 }
 
-test "current-file POST with no working file writes the visible save folder and makes it the working file" {
+test "current-file POST with no current file writes the visible save folder and makes it the current file" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1027,7 +1027,7 @@ test "current-file POST with no working file writes the visible save folder and 
     try std.testing.expectEqualSlices(u8, "SUD0 first autosave", bytes);
 }
 
-test "current-file POST keeps writing a visible working file in place" {
+test "current-file POST keeps writing a visible current file in place" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1222,7 +1222,7 @@ test "current-file exists never reports the hidden restore copy" {
     try std.testing.expect(!try currentFileTargetExists(io, &session, "picked.sud"));
 }
 
-test "restore-copy POST writes the hidden data dir and leaves the visible working file alone" {
+test "restore-copy POST writes the hidden data dir and leaves the visible current file alone" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

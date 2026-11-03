@@ -108,7 +108,7 @@ function wireLoad(button, wiring, legendKey, command) {
   });
 }
 
-/** Save writes the working file; Save As chooses a fresh target. */
+/** Save writes the current file; Save As chooses a fresh target. */
 /** @param {FileMenuWiring} wiring */
 function wireSave(button, wiring, legendKey, command) {
   button?.addEventListener("click", async () => {

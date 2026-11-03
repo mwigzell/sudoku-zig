@@ -8,7 +8,6 @@ const flow_mod = @import("../../core/flow/mod.zig");
 const file_transport = @import("file_transport.zig");
 const path_mod = @import("path.zig");
 const save_defaults = @import("../../core/save_defaults.zig");
-const export_command = @import("export.zig");
 
 const OPEN_NO_FILE_MSG: []const u8 = "open: no file specified";
 const IMPORT_NO_FILE_MSG: []const u8 = "import: no file specified";
@@ -20,7 +19,7 @@ const READ_STAGE: []const u8 = "readAll";
 pub const SettingsPersist = struct {
     io: std.Io,
     data_dir: []const u8,
-    /// User-visible folder for the default autosave file when there is no working file.
+    /// User-visible folder for the default autosave file when there is no current file.
     visible_save_dir: []const u8,
 };
 
@@ -64,8 +63,8 @@ pub const Storage = struct {
 
     /// Carry out a `resolve_default_target` step: `<visible_save_dir>/sudoku.sud`, or the bare
     /// default name without settings persistence. Only the default folder is created on demand;
-    /// a missing working-file folder must still fail the write.
-    pub fn defaultTarget(self: *const @This(), scratch: []u8) []const u8 {
+    /// a missing current-file folder must still fail the write.
+    pub fn resolveDefaultTarget(self: *const @This(), scratch: []u8) []const u8 {
         const sp = self.settings_persist orelse return copyInto(scratch, save_defaults.DEFAULT_SAVE_FILE);
         std.Io.Dir.cwd().createDirPath(sp.io, sp.visible_save_dir) catch {};
         const path = path_mod.resolveSavePath(std.heap.page_allocator, sp.visible_save_dir, save_defaults.DEFAULT_SAVE_FILE) catch
@@ -94,7 +93,7 @@ pub const Storage = struct {
 
     /// Carry out an `export_puzzle` step; the current file is unchanged.
     pub fn exportPuzzle(self: *const @This(), engine: *game_engine.GameEngine, name: []const u8, scratch: []u8) flow_mod.Wrote {
-        const line = export_command.currentPuzzleLine(engine);
+        const line = engine.toPuzzle();
         return self.writeNamed(name, &line, scratch);
     }
 
@@ -236,21 +235,21 @@ test "exists: a written file is there and a missing one is not" {
     try std.testing.expect(!store.exists(missing));
 }
 
-test "defaultTarget: the default file in the visible folder, creating the folder; the bare name without settings" {
+test "resolveDefaultTarget: the default file in the visible folder, creating the folder; the bare name without settings" {
     var root = try TestRoot.init();
     defer root.deinit();
     const visible = try root.path("Documents/Sudoku");
     defer std.testing.allocator.free(visible);
     var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
 
-    const target = root.storage(visible).defaultTarget(&scratch);
+    const target = root.storage(visible).resolveDefaultTarget(&scratch);
     const expected = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ visible, save_defaults.DEFAULT_SAVE_FILE });
     defer std.testing.allocator.free(expected);
     try std.testing.expectEqualStrings(expected, target);
     _ = try std.Io.Dir.cwd().statFile(std.testing.io, visible, .{});
 
     const bare: Storage = .{ .transport = file_transport.NativeTransport.make(std.testing.io) };
-    try std.testing.expectEqualStrings(save_defaults.DEFAULT_SAVE_FILE, bare.defaultTarget(&scratch));
+    try std.testing.expectEqualStrings(save_defaults.DEFAULT_SAVE_FILE, bare.resolveDefaultTarget(&scratch));
 }
 
 test "saveGame makes the target the current file; exportPuzzle leaves it alone" {
@@ -271,8 +270,8 @@ test "saveGame makes the target the current file; exportPuzzle leaves it alone" 
     defer store.transport.free(store.transport.context, saved);
     var reloaded = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer reloaded.deinit();
-    try reloaded.loadSaveFormat(saved);
-    try std.testing.expectEqualSlices(u8, &export_command.currentPuzzleLine(&engine), &export_command.currentPuzzleLine(&reloaded));
+    try reloaded.fromSaveFormat(saved);
+    try std.testing.expectEqualSlices(u8, &engine.toPuzzle(), &reloaded.toPuzzle());
     try std.testing.expectEqualDeep(engine.state.status.optional(), reloaded.state.status.optional());
 
     const line = try root.path("puzzle.txt");
@@ -281,7 +280,7 @@ test "saveGame makes the target the current file; exportPuzzle leaves it alone" 
     try std.testing.expectEqualStrings(line, store.exportPuzzle(&engine, line, &scratch).ok);
     const bytes = try store.transport.readAll(store.transport.context, line);
     defer store.transport.free(store.transport.context, bytes);
-    try std.testing.expectEqualSlices(u8, &export_command.currentPuzzleLine(&engine), bytes);
+    try std.testing.expectEqualSlices(u8, &engine.toPuzzle(), bytes);
     const after = (try root.currentFile()) orelse return error.TestFailed;
     defer std.testing.allocator.free(after);
     try std.testing.expectEqualStrings(game, after);

@@ -79,7 +79,7 @@ test "EventMsg optional is null when empty" {
 }
 
 test "Event.ok is_quit defaults false" {
-    var board_inst = try board.fromOneLineString(puzzle_gen.PuzzleGen.default());
+    var board_inst = try board.fromPuzzle(puzzle_gen.PuzzleGen.default());
     const view = board_inst.asView();
 
     const e: Event = .{ .ok = .{
@@ -94,7 +94,7 @@ test "Event.ok is_quit defaults false" {
 }
 
 test "Event.ok cell defaults null and can carry last mutated cell" {
-    var board_inst = try board.fromOneLineString(puzzle_gen.PuzzleGen.default());
+    var board_inst = try board.fromPuzzle(puzzle_gen.PuzzleGen.default());
     const view = board_inst.asView();
 
     const bare: Event = .{ .ok = .{
@@ -123,7 +123,7 @@ test "Event.ok cell defaults null and can carry last mutated cell" {
 }
 
 test "Event.ok is_quit can be set true" {
-    var board_inst = try board.fromOneLineString(puzzle_gen.PuzzleGen.default());
+    var board_inst = try board.fromPuzzle(puzzle_gen.PuzzleGen.default());
     const view = board_inst.asView();
 
     const e: Event = .{ .ok = .{

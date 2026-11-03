@@ -23,7 +23,7 @@ function makePageHideWin() {
 {
   const win = makePageHideWin();
   const host = hostFetch();
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([5, 6, 7]) }) }, { autoSave: true, opened: "autosave.sud" });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([5, 6, 7]) }) }, { autoSave: true, opened: "autosave.sud" });
   const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
   autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, session, { fetchFn: host.fetchFn }), { win });
   win.listeners.get("pagehide")?.();
@@ -38,7 +38,7 @@ function makePageHideWin() {
 {
   const win = makePageHideWin();
   const host = hostFetch();
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true, newGame: true });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true, newGame: true });
   autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, { config: { auto_save: true } }, { fetchFn: host.fetchFn }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
@@ -50,7 +50,7 @@ function makePageHideWin() {
   const win = makePageHideWin();
   let called = false;
   const game = await withCoreFlow({
-    serialize() {
+    toSaveFormat() {
       called = true;
       return { ok: true, bytes: new Uint8Array([1]) };
     },
@@ -64,7 +64,7 @@ function makePageHideWin() {
 
 {
   // First autosave with nothing on disk writes the host default file and binds its name.
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1, 2, 3]) }) }, { autoSave: true });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([1, 2, 3]) }) }, { autoSave: true });
   const session = { config: { auto_save: true }, default_save_filename: "sudoku.sud", boundFilename: null };
   const host = hostFetch({ exists: false });
   const outcome = await moveWithAutosave(game, session, { fetchFn: host.fetchFn });
@@ -75,7 +75,7 @@ function makePageHideWin() {
 
 {
   // Commands outside the core trigger list write nothing.
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true });
   const host = hostFetch();
   const session = { default_save_filename: "sudoku.sud" };
   const outcome = await stepRunner.runCommand(game, { action: "toggle_region" }, {
@@ -89,7 +89,7 @@ function makePageHideWin() {
 
 /** Session continuing `bound.sud` through a file handle that records into `writes`; `failure` makes the write throw. */
 async function boundAutosaveSetup(writes, failure = null) {
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true, opened: "bound.sud" });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true, opened: "bound.sud" });
   const fileHandle = {
     name: "bound.sud",
     async createWritable() {
@@ -152,7 +152,7 @@ async function boundAutosaveSetup(writes, failure = null) {
 
 {
   // An opened game continues its file: the first autosave writes without a replace question.
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([9]) }) }, { autoSave: true, opened: "autosave.sud" });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([9]) }) }, { autoSave: true, opened: "autosave.sud" });
   const host = hostFetch({ exists: true });
   const prevChoose = globalThis.__sudokuChoose;
   globalThis.__sudokuChoose = async () => assert.fail("continued file must not ask");
@@ -166,7 +166,7 @@ async function boundAutosaveSetup(writes, failure = null) {
   const writes = [];
   let firstWriteResolve = null;
   let currentSnapshot = new Uint8Array([1]);
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: currentSnapshot }) }, { autoSave: true, opened: "autosave.sud" });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: currentSnapshot }) }, { autoSave: true, opened: "autosave.sud" });
   const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
   const fetchFn = async (url, init) => {
     if (url === "./current-file-exists") return { ok: true, json: async () => ({ exists: true }) };

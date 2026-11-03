@@ -20,7 +20,7 @@ pub const Step = union(enum) {
     /// Report the platform's default save target name.
     resolve_default_target,
     ask: Ask,
-    /// Write the saved game to the working file (or a picker when none is bound), keep the restore copy, bind it; answered with `wrote`.
+    /// Write the saved game to the current file (or a picker when none is bound), keep the restore copy, bind it; answered with `wrote`.
     save: GameWrite,
     /// Write the saved game to a file the player picks, suggesting this name (native: the typed path); answered with `wrote`.
     save_as: GameWrite,
@@ -28,7 +28,7 @@ pub const Step = union(enum) {
     autosave: GameWrite,
     /// The app is closing: write the saved game to the restore copy only; answered with `wrote`.
     flush: []const u8,
-    /// Write the puzzle to this file; the working file is unchanged; answered with `wrote`.
+    /// Write the puzzle to this file; the current file is unchanged; answered with `wrote`.
     export_puzzle: []const u8,
     /// Let the player pick the file an earlier install wrote, so this install may write it again, and write the saved game there; answered with `wrote`.
     reclaim_file,
@@ -73,7 +73,7 @@ pub fn isTerminal(s: Step) bool {
 /// Everything the adapter draws for `show_game`, so it needs nothing else from the engine.
 pub const ShowGame = struct {
     status: ?[]const u8,
-    /// The working file to label the game with; null for an unsaved game.
+    /// The current file to label the game with; null for an unsaved game.
     file: ?[]const u8,
     board: board.Board.BoardView,
     legend: legend_mod.Legend,

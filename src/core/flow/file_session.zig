@@ -1,34 +1,34 @@
-// FileSession: the one owner of write context and the working file name.
+// FileSession: the one owner of write context and the current file name.
 // Flows read it to decide overwrite questions and update it after writes.
 const std = @import("std");
 const file_policy = @import("../file_policy.zig");
 
-/// Longest working file name or path the session keeps.
+/// Longest current file name or path the session keeps.
 pub const MAX_NAME_LEN = 4096;
 
 pub const FileSession = struct {
     write_context: file_policy.WriteContext = .detached,
-    working_buf: [MAX_NAME_LEN]u8 = undefined,
-    working_len: ?usize = null,
+    current_buf: [MAX_NAME_LEN]u8 = undefined,
+    current_len: ?usize = null,
 
     /// The file autosave follows; null until something is opened, restored or written.
-    pub fn workingFile(self: *const FileSession) ?[]const u8 {
-        const len = self.working_len orelse return null;
-        return self.working_buf[0..len];
+    pub fn currentFile(self: *const FileSession) ?[]const u8 {
+        const len = self.current_len orelse return null;
+        return self.current_buf[0..len];
     }
 
-    /// Replace the working file; a name too long to keep clears it.
-    pub fn setWorkingFile(self: *FileSession, name: ?[]const u8) void {
+    /// Replace the current file; a name too long to keep clears it.
+    pub fn setCurrentFile(self: *FileSession, name: ?[]const u8) void {
         const value = name orelse {
-            self.working_len = null;
+            self.current_len = null;
             return;
         };
-        if (value.len == 0 or value.len > self.working_buf.len) {
-            self.working_len = null;
+        if (value.len == 0 or value.len > self.current_buf.len) {
+            self.current_len = null;
             return;
         }
-        std.mem.copyForwards(u8, self.working_buf[0..value.len], value);
-        self.working_len = value.len;
+        std.mem.copyForwards(u8, self.current_buf[0..value.len], value);
+        self.current_len = value.len;
     }
 
     /// Apply a lifecycle event to the write context.
@@ -36,13 +36,13 @@ pub const FileSession = struct {
         self.write_context = file_policy.nextWriteContext(self.write_context, event);
     }
 
-    /// Record a load that replaced the game: an opened file becomes the working file and later
+    /// Record a load that replaced the game: an opened file becomes the current file and later
     /// writes continue it; anything else detaches, so the next write onto an existing file asks first.
     pub fn noteLoad(self: *FileSession, load: Load) void {
         switch (load) {
             .new_game => self.apply(.new_game_success),
             .open => |name| {
-                if (name) |n| self.setWorkingFile(n);
+                if (name) |n| self.setCurrentFile(n);
                 self.apply(.open_success);
             },
             .import => self.apply(.import_success),
@@ -59,41 +59,41 @@ pub const Load = union(enum) {
     paste,
 };
 
-test "file session starts detached with no working file" {
+test "file session starts detached with no current file" {
     const session = FileSession{};
     try std.testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
-    try std.testing.expect(session.workingFile() == null);
+    try std.testing.expect(session.currentFile() == null);
 }
 
-test "file session keeps and clears the working file" {
+test "file session keeps and clears the current file" {
     var session = FileSession{};
-    session.setWorkingFile("game.sud");
-    try std.testing.expectEqualStrings("game.sud", session.workingFile().?);
-    session.setWorkingFile(null);
-    try std.testing.expect(session.workingFile() == null);
+    session.setCurrentFile("game.sud");
+    try std.testing.expectEqualStrings("game.sud", session.currentFile().?);
+    session.setCurrentFile(null);
+    try std.testing.expect(session.currentFile() == null);
 }
 
-test "opening a file makes it the working file and continues it" {
+test "opening a file makes it the current file and continues it" {
     var session = FileSession{};
     session.noteLoad(.{ .open = "game.sud" });
-    try std.testing.expectEqualStrings("game.sud", session.workingFile().?);
+    try std.testing.expectEqualStrings("game.sud", session.currentFile().?);
     try std.testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
 
-test "an unnamed open keeps the working file and still continues it" {
+test "an unnamed open keeps the current file and still continues it" {
     var session = FileSession{};
-    session.setWorkingFile("old.sud");
+    session.setCurrentFile("old.sud");
     session.noteLoad(.{ .open = null });
-    try std.testing.expectEqualStrings("old.sud", session.workingFile().?);
+    try std.testing.expectEqualStrings("old.sud", session.currentFile().?);
     try std.testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
 
-test "new, import and paste keep the working file but detach from it" {
+test "new, import and paste keep the current file but detach from it" {
     for ([_]Load{ .new_game, .import, .paste }) |load| {
         var session = FileSession{};
         session.noteLoad(.{ .open = "game.sud" });
         session.noteLoad(load);
-        try std.testing.expectEqualStrings("game.sud", session.workingFile().?);
+        try std.testing.expectEqualStrings("game.sud", session.currentFile().?);
         try std.testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
     }
 }

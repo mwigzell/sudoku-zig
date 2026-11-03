@@ -272,7 +272,7 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
 
 assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
 
-// ── Copy sends exportPuzzle bytes as clipboard text ──
+// ── Copy sends toPuzzle bytes as clipboard text ──
 {
   const line = "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
   let written = null;
@@ -281,7 +281,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
     state: { cells: [{ value: 3, given: false, conflict: false }] },
   };
   const game = await withCoreFlow({
-    exportPuzzle() {
+    toPuzzle() {
       return { ok: true, bytes: new TextEncoder().encode(line) };
     },
   });
@@ -294,7 +294,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   });
   const result = await menu.handleCopyPuzzle(game, session, steps);
   assert.equal(result.ok, true);
-  assert.equal(written, line, "clipboard gets exportPuzzle one-line string");
+  assert.equal(written, line, "clipboard gets toPuzzle one-line string");
   assert.equal(status.textContent, coreText.COPIED_MSG, "core owns the copy status");
   assert.equal(errorModal.el.hidden, true);
 }
@@ -308,7 +308,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   const before = JSON.stringify(session.state);
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const game = await withCoreFlow({
-    exportPuzzle() {
+    toPuzzle() {
       return { ok: true, bytes: new TextEncoder().encode("2".repeat(81)) };
     },
   });
@@ -345,7 +345,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
 {
   let called = false;
   const session = { legend: {}, state: { cells: [] } };
-  const game = { exportPuzzle() { called = true; return { ok: true, bytes: new Uint8Array(81) }; } };
+  const game = { toPuzzle() { called = true; return { ok: true, bytes: new Uint8Array(81) }; } };
   const result = await menu.handleCopyPuzzle(game, session, webSteps.webSteps(game, session, { clipboard: { writeText: async () => {} } }));
   assert.equal(result.handled, false);
   assert.equal(called, false);
@@ -358,7 +358,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   let written = null;
   const lineBytes = new TextEncoder().encode("1".repeat(81));
   const game = await withCoreFlow({
-    exportPuzzle() {
+    toPuzzle() {
       return { ok: true, bytes: lineBytes };
     },
   });

@@ -71,7 +71,7 @@ Player action vocabulary (`fill`, `clear`, `undo`, `redo`, `quit`, plus session 
 _Avoid_: Input action (framework term)
 
 **GameEngine**:
-Portable orchestrator. Gameplay `exec` (fill, clear, undo, redo, quit) mutates `State`, runs validation, and returns `Event`. Owns the SUD0 codec (`toSaveFormat` / `loadSaveFormat` on bytes). **No** `FileTransport`, paths, or `std.Io`. Session persistence is **not** in `exec`. Single cross-cutting native test seam: Command → GameEngine → Event.
+Portable orchestrator. Gameplay `exec` (fill, clear, undo, redo, quit) mutates `State`, runs validation, and returns `Event`. Owns the SUD0 codec (`toSaveFormat` / `fromSaveFormat` on bytes). **No** `FileTransport`, paths, or `std.Io`. Session persistence is **not** in `exec`. Single cross-cutting native test seam: Command → GameEngine → Event.
 _Avoid_: Engine alone (ambiguous — Solver Service also contains "engine" semantics), Controller (MVC framework term)
 
 **Legend**:
@@ -89,7 +89,7 @@ Play path: **live generation** for `easy` / `medium` / `hard` via `generateForPl
 _Avoid_: stdout, threadlocal `Io`, or platform-specific generator policy inside `puzzle_gen`; treating canned lines as the play path outside tests
 
 **Puzzle Repository** (domain slot):
-Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — live gen for play, fixtures for deterministic tests; no `PuzzleSource` trait yet. The wasm boundary passes difficulty via **`WireConfig`** at `init`; generated grids load as engine state (not a separate puzzle export on New). One-line strings cross to JS only as opaque text — picked or pasted puzzles go in through the core command flow (`flowRead`), `exportPuzzle` brings them out — never by reimplementing the codec in JS.
+Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — live gen for play, fixtures for deterministic tests; no `PuzzleSource` trait yet. The wasm boundary passes difficulty via **`WireConfig`** at `init`; generated grids load as engine state (not a separate puzzle export on New). One-line strings cross to JS only as opaque text — picked or pasted puzzles go in through the core command flow (`flowRead`), `toPuzzle` brings them out — never by reimplementing the codec in JS.
 _Avoid_: Puzzle store, PuzzleSource (name reserved for a future interface)
 
 **Solver Service**:
@@ -121,18 +121,18 @@ One piece of core behaviour run to its end: a command (Save, Save As, Export, Op
 _Avoid_: naming a flow after one platform's handler
 
 **Step**:
-One operation a flow asks the platform to do, such as "ask this question" or "write the saved game to the working file". Named for what it achieves, not for the platform call that carries it out; a command's own step takes the command's name, and steps about the puzzle say `_puzzle` (ADR-0016). Each platform has one handler per step, used by every flow.
+One operation a flow asks the platform to do, such as "ask this question" or "write the saved game to the current file". Named for what it achieves, not for the platform call that carries it out; a command's own step takes the command's name, and steps about the puzzle say `_puzzle` (ADR-0016). Each platform has one handler per step, used by every flow.
 _Avoid_: generic steps told apart by a flag; a handler set per flow
 
 | Step | The platform… |
 |---|---|
 | `resolve_default_target` | names the default file |
 | `ask` | shows a two-button question |
-| `save` | writes the saved game to the working file (web/Android: the bound file, else a picker), keeps the restore copy |
+| `save` | writes the saved game to the current file (web/Android: the bound file, else a picker), keeps the restore copy |
 | `save_as` | writes the saved game to a file the player picks, suggesting the given name (native: the typed path) |
 | `autosave` | writes the saved game to the bound or default file, never through a picker |
 | `flush` | app closing: writes the saved game to the restore copy only |
-| `export_puzzle` | writes the puzzle to a file; the working file is unchanged |
+| `export_puzzle` | writes the puzzle to a file; the current file is unchanged |
 | `reclaim_file` | Android: lets the player pick the file an earlier install wrote, and writes the saved game there |
 | `copy_puzzle` | copies the puzzle to the clipboard (native: prints it) |
 | `paste_puzzle` | reads the puzzle from the clipboard |
@@ -157,22 +157,22 @@ The platform code that carries out steps: native `Storage` and renderer; on web 
 
 **Saved game**:
 The full game (board, givens, history, status) in the SUD0 format, written by Save, Save As and autosave.
-_Avoid_: platform function names (`toSaveFormat`, `serialize`) when describing behaviour
+_Avoid_: platform function names (`toSaveFormat`, `fromSaveFormat`) when describing behaviour
 
 **Puzzle**:
 The board's cell values as exactly 81 characters of text, one per cell, row by row; any other length is rejected. Export and Copy write it with `0` for an empty cell; Import and Paste also accept `.` as empty.
-_Avoid_: "line" or "puzzle line"; platform function names (`currentPuzzleLine`, `exportPuzzle`)
+_Avoid_: "line" or "puzzle line"; platform function names (`toPuzzle`, `fromPuzzle`)
 
 ### Files
 
-**Working file**:
+**Current file**:
 The file the current game belongs to (`FileSession`), set by Open, Save and Save As, and written by autosave.
 
 **Bound file**:
-On web and Android, the player's real file that the working file is tied to: a browser file handle or an Android document.
+On web and Android, the player's real file that the current file is tied to: a browser file handle or an Android document.
 
 **Default file / default folder**:
-`sudoku.sud` in the default folder (`Documents/Sudoku` on desktop, `Download/Sudoku` on Android). Autosave writes it when there is no working file. Core owns the file name and the **default folder name** `Sudoku` (`save_defaults.zig`); each platform chooses only the parent folder (Android reads the name through `JniHost.defaultFolderName`).
+`sudoku.sud` in the default folder (`Documents/Sudoku` on desktop, `Download/Sudoku` on Android). Autosave writes it when there is no current file. Core owns the file name and the **default folder name** `Sudoku` (`save_defaults.zig`); each platform chooses only the parent folder (Android reads the name through `JniHost.defaultFolderName`).
 
 **Restore copy**:
 The host's private copy of the game in its hidden data dir, read by Auto Restore at startup when the player's file is elsewhere.
@@ -181,7 +181,7 @@ The host's private copy of the game in its hidden data dir, read by Auto Restore
 The platform's own file chooser (browser or Android). It asks its own replace question. On Android every picker starts in the bound file's folder, else in the default folder; the player can still browse away.
 
 **Lane**:
-Whether the next write continues the working file (continuation: no question) or starts fresh (detached: "Replace file?" when the file exists). Save As always starts a new lane.
+Whether the next write continues the current file (continuation: no question) or starts fresh (detached: "Replace file?" when the file exists). Save As always starts a new lane.
 
 ### App Shell & Deployments
 
@@ -255,10 +255,10 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 | Startup choreography (restore / new / idle, restore failure, solved restore, generation failure) | `src/core/startup/policy.zig` (`evaluate`), `src/core/flow/startup.zig` (`StartupFlow`) | Native: `src/native/shell/shell.zig` (`runStartupFlow` → `runFlow`). Web/Android: `src/wasm/flows/startup.js` (`runStartupFlow`) with the platform's step handlers after `app_boot.js` wires the idle session. Host JSON carries config and `startup_save_path` only; `DELETE /current-file` forgets (optionally deletes) the host's current file. |
 | Autosave trigger set (which commands autosave) | `src/core/file_policy.zig` (`commandTriggersAutoSave`), applied by `src/core/flow/autosave.zig` | Play, edit, settings and load commands: the core command flow (`src/core/flow/command.zig`) runs autosave after the command; native `runCommandFlow`, web `runBoardCommand` / `runSessionCommand` → wasm `commandStart`. |
 | Overwrite/replace lane policy (`detached` vs `continuation`) | `src/core/file_policy.zig`; state in `src/core/flow/file_session.zig` (`FileSession`) | Core records each load inside the command (`FileSession.noteLoad` for New/Open/Import/Paste). Native and web/Android run New/Open/Import/Paste through the core command flow (`open`, `import_puzzle`, `paste_puzzle`, `generate_game` steps); no adapter or host-side context. |
-| Save / Save As / autosave choreography (name the target: typed path, else working file, else the platform default → write without `replace` → on `exists` reissue or ask → status; Save refused while Auto Save is on; Android "earlier install" ask → `reclaim_file` / `save_as`) | `src/core/flow/{step,save,autosave}.zig` (`Step` / `Input`); Save / Save As run inside `CommandFlow` | Native: `src/native/shell/shell.zig` (`runCommandFlow` → `runFlow`), file steps in `src/native/shell/storage.zig` (`Storage`). Web/Android: `src/wasm/flows/step_runner.js` (`runCommand`) with the handlers in `web_steps.js` / `android_steps.js`. Fixed-file writes answer `exists`; pickers own their own overwrite question. |
+| Save / Save As / autosave choreography (name the target: typed path, else current file, else the platform default → write without `replace` → on `exists` reissue or ask → status; Save refused while Auto Save is on; Android "earlier install" ask → `reclaim_file` / `save_as`) | `src/core/flow/{step,save,autosave}.zig` (`Step` / `Input`); Save / Save As run inside `CommandFlow` | Native: `src/native/shell/shell.zig` (`runCommandFlow` → `runFlow`), file steps in `src/native/shell/storage.zig` (`Storage`). Web/Android: `src/wasm/flows/step_runner.js` (`runCommand`) with the handlers in `web_steps.js` / `android_steps.js`. Fixed-file writes answer `exists`; pickers own their own overwrite question. |
 | Export / Copy (puzzle to a file or clipboard, default export name, status text) | `src/core/flow/export.zig` (`ExportFlow` → `export_puzzle` / `copy_puzzle`), run inside `CommandFlow` | Native: `src/native/shell/shell.zig` (`runCommandFlow`; Copy prints the puzzle). Web/Android: `file_menu.js` Export and `menu.js` `handleCopyPuzzle` via `runCommand`. |
 | Settings schema + persistence semantics (which commands persist, the `settings.json` body) | `src/core/config.zig`, `src/core/settings_store.zig`, `src/core/flow/settings.zig` (`SettingsFlow` → `persist_settings`, run as a phase of `src/core/flow/command.zig` `CommandFlow`) | Native: `src/native/shell/shell.zig` (`runCommandFlow` → `runFlow`) → `src/native/shell/storage.zig` (`Storage.persistSettings` → `settings_store.save`). Web/Android: the shared `persistSettings` handler (`src/wasm/flows/steps.js`) posts core's body as-is through `host_api.js`; `src/web_host/mod.zig` merges/saves via `settings_store`. |
-| Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/entry_wasm.zig`) | Native: `src/native/shell/storage.zig` (`Storage.saveGame` for Save, Save As and autosave, `open` for Open) via `FileTransport`. Web/Android: wasm `serialize` out; picked bytes in through `flowRead`. |
+| Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/entry_wasm.zig`) | Native: `src/native/shell/storage.zig` (`Storage.saveGame` for Save, Save As and autosave, `open` for Open) via `FileTransport`. Web/Android: wasm `toSaveFormat` out; picked bytes in through `flowRead`. |
 | Log-level filtering policy | `src/core/logger.zig` (`min_level`) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: host startup config + `/client-log` bridge in `src/web_host/mod.zig`. |
 
 Startup outcomes, the same on every platform: a failed restore shows the idle board, asks "The file {file} could not be restored. Do you want to delete it?" (Delete / Keep) and always forgets the current file; a restored solved game asks "Puzzle solved" (New game / Keep), and New game generates at the saved difficulty; a failed generation shows the idle board then the error; a cancelled one goes straight to idle.
@@ -276,7 +276,7 @@ Minimal Java/DEX + JNI (`jni_host.zig`) — package **`com.wigzell.sudoku_zig`**
 _Avoid_: `android/shell` JS, Gradle app layer (default path), EGL UI in the same entry
 
 **FileTransport** (`native/shell/file_transport.zig`, native arm):
-Fn-pointer vtable for file read/write/resolve. **Owned by native `Storage`** (held by `Sudoku`) — not by `GameEngine`. The wasm path passes opaque bytes instead (`serialize` out, `flowRead` in); no wasm transport arm.
+Fn-pointer vtable for file read/write/resolve. **Owned by native `Storage`** (held by `Sudoku`) — not by `GameEngine`. The wasm path passes opaque bytes instead (`toSaveFormat` out, `flowRead` in); no wasm transport arm.
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
 **Config** (`config.zig`):
@@ -298,7 +298,7 @@ JSON-serializable display twin of `BoardView` — per-cell `value`, `given`, `co
 _Avoid_: duplicating SaveFormat fields in JS
 
 **entry_wasm**:
-Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `serialize`, and the core flow (`commandStart` / `flowNext` / `flowRead`, and `flowFail` when the web side cannot carry a flow on). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
+Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `toSaveFormat`, `toPuzzle`, and the core flow (`commandStart` / `flowNext` / `flowRead`, and `flowFail` when the web side cannot carry a flow on). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
 _Avoid_: `step(line)`, `page_bytes_out`, or other REPL imports (removed — see ADR-0010)
 
 **glue.js**:

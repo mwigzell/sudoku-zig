@@ -17,7 +17,7 @@ const std = @import("std");
 
 test "State codec: toSaveFormat/fromSaveFormat round-trip without std.Io" {
     const gpa = std.testing.allocator;
-    const brd = try board_mod.fromOneLineString(puzzle_gen.PuzzleGen.default());
+    const brd = try board_mod.fromPuzzle(puzzle_gen.PuzzleGen.default());
     var state = State{ .board = brd, .history = mutation_history.MutationHistory.init(gpa) };
     defer state.history.deinit();
 

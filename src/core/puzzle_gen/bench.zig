@@ -26,7 +26,7 @@ test "bench: one dig-hole easy generation" {
     var prng = std.Random.DefaultPrng.init(0xDEAD_BEEF);
     var line: [81]u8 = undefined;
     try puzzle_gen.PuzzleGen.generateIntoDigHole(.easy, prng.random(), &line, benchProgress, null);
-    const b = try board.fromOneLineString(&line);
+    const b = try board.fromPuzzle(&line);
     try std.testing.expectEqual(@as(usize, 1), try solver.countSolutions(b, 2));
     const g = puzzle_gen.countGivens(&line);
     try std.testing.expect(g >= 36 and g <= 45);
@@ -39,7 +39,7 @@ test "bench: first successful dig-hole easy and attempt count" {
         std.debug.print("[gen] trying seed {d}\n", .{seed});
         var prng = std.Random.DefaultPrng.init(seed);
         puzzle_gen.PuzzleGen.generateIntoDigHole(.easy, prng.random(), &line, benchProgress, null) catch continue;
-        const b = board.fromOneLineString(&line) catch continue;
+        const b = board.fromPuzzle(&line) catch continue;
         if ((try solver.countSolutions(b, 2)) != 1) continue;
         const g = puzzle_gen.countGivens(&line);
         if (g < 36 or g > 45) continue;
@@ -60,7 +60,7 @@ test "bench: dig-hole success rate over seeds" {
         var prng = std.Random.DefaultPrng.init(seed);
         var line: [81]u8 = undefined;
         puzzle_gen.PuzzleGen.generateIntoDigHole(.easy, prng.random(), &line, benchProgress, null) catch continue;
-        const b = board.fromOneLineString(&line) catch continue;
+        const b = board.fromPuzzle(&line) catch continue;
         const n = solver.countSolutions(b, 2) catch continue;
         if (n != 1) continue;
         const g = puzzle_gen.countGivens(&line);
@@ -75,6 +75,6 @@ test "bench: one fast generateInto easy with progress" {
     var prng = std.Random.DefaultPrng.init(0xBEEF);
     var line: [81]u8 = undefined;
     try puzzle_gen.PuzzleGen.generateInto(.easy, prng.random(), &line, benchProgress, null);
-    const b = try board.fromOneLineString(&line);
+    const b = try board.fromPuzzle(&line);
     try std.testing.expectEqual(@as(usize, 1), try solver.countSolutions(b, 2));
 }

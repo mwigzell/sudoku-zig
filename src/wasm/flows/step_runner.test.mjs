@@ -46,7 +46,7 @@ const saveHandlers = (options = {}) => recordingHandlers({ defaultName: "game.su
 const NOT_SAVED = coreText.WRITE_CANCELLED_MSG;
 const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.REPLACE_CONFIRM_FMT, "game.sud"), coreText.REPLACE_CONFIRM_OK_LABEL, coreText.REPLACE_CONFIRM_CANCEL_LABEL];
 
-// Save with no working file names the default target, writes and reports the core status text.
+// Save with no current file names the default target, writes and reports the core status text.
 {
   const core = await loadCoreFlow();
   const handlers = saveHandlers({ exists: false });
@@ -89,7 +89,7 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.deepEqual(detached.log, [["save_as", "game.sud", false], REPLACE_ASK, ["status", NOT_SAVED]]);
 }
 
-// The name the platform actually wrote becomes the status and the working file.
+// The name the platform actually wrote becomes the status and the current file.
 {
   const core = await loadCoreFlow({ autoSave: true });
   const handlers = saveHandlers({ write: () => ({ ok: true, name: "picked.sud" }) });
@@ -153,7 +153,7 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.ok(logged.some((line) => String(line).includes("disk full")), "the thrown message is logged as an error");
 }
 
-// A move's first autosave with no working file resolves the default target, then asks when that file is there.
+// A move's first autosave with no current file resolves the default target, then asks when that file is there.
 {
   const core = await loadCoreFlow({ autoSave: true });
   const handlers = recordingHandlers({ exists: true, yes: false });
@@ -233,7 +233,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const source = await loadGame();
   startNewGame(source);
   const game = await loadGame({ auto_restore: true });
-  const handlers = startupRecorder({ read: { ok: true, bytes: source.serialize().bytes } });
+  const handlers = startupRecorder({ read: { ok: true, bytes: source.toSaveFormat().bytes } });
   const outcome = await stepRunner.runFlow(game, { flow: stepRunner.FLOW_STARTUP, path: "/current-file", name: "game.sud" }, handlers);
   assert.equal(outcome.kind, "done");
   assert.deepEqual(handlers.log[0], ["read", "/current-file"]);
@@ -323,7 +323,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
 {
   const source = await loadGame();
   startNewGame(source);
-  const bytes = source.serialize().bytes;
+  const bytes = source.toSaveFormat().bytes;
   const game = await loadGame();
   const shown = [];
   const picks = [];

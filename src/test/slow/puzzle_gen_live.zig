@@ -8,7 +8,7 @@ test "puzzle_gen live: generateInto yields unique solvable puzzle in givens rang
     var prng = std.Random.DefaultPrng.init(0x1234_5678);
     var line: [81]u8 = undefined;
     try puzzle_gen.PuzzleGen.generateInto(.easy, prng.random(), &line, null, null);
-    const b = try board.fromOneLineString(&line);
+    const b = try board.fromPuzzle(&line);
     try std.testing.expectEqual(@as(usize, 1), try solver.countSolutions(b, 2));
     const givens = puzzle_gen.countGivens(&line);
     try std.testing.expect(givens >= 36 and givens <= 45);
@@ -24,7 +24,7 @@ test "puzzle_gen live: play retry policy always yields a puzzle" {
         } else |_| {
             try puzzle_gen.PuzzleGen.generateIntoDigHole(.medium, prng.random(), &line, null, null);
         }
-        const b = try board.fromOneLineString(&line);
+        const b = try board.fromPuzzle(&line);
         try std.testing.expectEqual(@as(usize, 1), try solver.countSolutions(b, 2));
     }
 }

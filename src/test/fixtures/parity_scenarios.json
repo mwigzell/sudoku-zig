@@ -41,7 +41,7 @@
     },
     {
       "name": "auto_save_toggle_then_autosave",
-      "summary": "Turning Auto Save on persists the setting; the next move writes the default file without asking and makes it the working file.",
+      "summary": "Turning Auto Save on persists the setting; the next move writes the default file without asking and makes it the current file.",
       "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],

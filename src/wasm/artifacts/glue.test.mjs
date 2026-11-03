@@ -241,19 +241,19 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(config.show_region, true);
 }
 
-// ── serialize errors ──
+// ── toSaveFormat errors ──
 {
   const fresh = await glue.loadArtifact(wasmBytes);
-  const res = fresh.serialize();
+  const res = fresh.toSaveFormat();
   assert.equal(res.ok, false, `expected error before init: ${JSON.stringify(res)}`);
   assert.ok(res.error);
 }
 
-// ── serialize round-trip ──
+// ── toSaveFormat round-trip ──
 {
   const before = game.getState();
-  const saved = game.serialize();
-  assert.equal(saved.ok, true, `serialize failed: ${JSON.stringify(saved)}`);
+  const saved = game.toSaveFormat();
+  assert.equal(saved.ok, true, `toSaveFormat failed: ${JSON.stringify(saved)}`);
   assert.ok(saved.bytes.length > 16, "SUD0 blob too small");
 
   const fresh = await glue.loadArtifact(wasmBytes);
@@ -274,7 +274,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(bad.ok, true);
   assert.match(bad.msg ?? "", /no solution/i);
   assert.doesNotMatch(bad.msg ?? "", / should be /);
-  const saved = dead.serialize();
+  const saved = dead.toSaveFormat();
   assert.equal(saved.ok, true);
 
   const fresh = await glue.loadArtifact(wasmBytes);
@@ -319,7 +319,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const before = game.getState();
   const configBefore = game.getConfig();
-  const saved = game.serialize();
+  const saved = game.toSaveFormat();
   assert.equal(saved.ok, true);
   assert.ok(saved.bytes.length > 16);
 
@@ -344,20 +344,20 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(res.is_quit, true);
 }
 
-// ── exportPuzzle ──
+// ── toPuzzle ──
 {
   const fresh = await glue.loadArtifact(wasmBytes);
-  const res = fresh.exportPuzzle();
+  const res = fresh.toPuzzle();
   assert.equal(res.ok, false, "export before init should fail");
   assert.ok(res.error);
 
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
-  let exported = fresh.exportPuzzle();
-  assert.equal(exported.ok, true, `exportPuzzle failed: ${JSON.stringify(exported)}`);
+  let exported = fresh.toPuzzle();
+  assert.equal(exported.ok, true, `toPuzzle failed: ${JSON.stringify(exported)}`);
   assert.equal(exported.bytes.length, 81);
 
   assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
-  exported = fresh.exportPuzzle();
+  exported = fresh.toPuzzle();
   assert.equal(new TextDecoder().decode(exported.bytes), EASY_FIXTURE);
 
   const idx = fresh.getState().cells.findIndex((c) => c.value === 0 && !c.given);
@@ -365,7 +365,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const row = Math.floor(idx / 9);
   const col = idx % 9;
   assert.equal(fresh.exec({ action: "fill", row, col, digit: 4 }).ok, true);
-  const afterFill = fresh.exportPuzzle();
+  const afterFill = fresh.toPuzzle();
   assert.equal(afterFill.ok, true);
   const line = new TextDecoder().decode(afterFill.bytes);
   assert.notEqual(line, EASY_FIXTURE);

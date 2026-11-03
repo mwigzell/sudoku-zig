@@ -98,8 +98,8 @@ export function openBytes(game, bytes, name = null) {
 
 /** Open the game's own bytes under `name` on a real wasm game, as File -> Open does. */
 export function openAs(game, name) {
-  const saved = game.serialize();
-  if (!saved.ok) throw new Error(`serialize failed: ${saved.error}`);
+  const saved = game.toSaveFormat();
+  if (!saved.ok) throw new Error(`toSaveFormat failed: ${saved.error}`);
   return openBytes(game, saved.bytes, name);
 }
 

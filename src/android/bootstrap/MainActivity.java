@@ -616,7 +616,7 @@ public final class MainActivity extends Activity {
     }
 
     /**
-     * Writes the default autosave file in shared Downloads/Sudoku (no picker) and makes it the working file.
+     * Writes the default autosave file in shared Downloads/Sudoku (no picker) and makes it the current file.
      * A same-named file this install does not own (left by an earlier install) is never shadowed by a renamed copy;
      * the result reports it so core can ask the user to pick it or choose a new name.
      */
@@ -641,7 +641,7 @@ public final class MainActivity extends Activity {
         try {
             getContentResolver().delete(uri, null, null);
         } catch (RuntimeException ignored) {
-            // Leaves an empty renamed entry; the user's pick or new name still decides the working file.
+            // Leaves an empty renamed entry; the user's pick or new name still decides the current file.
         }
         return jsonDefaultTaken(name);
     }

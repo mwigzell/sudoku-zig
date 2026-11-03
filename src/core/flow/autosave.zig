@@ -1,4 +1,4 @@
-// AutosaveFlow: after a state-changing command, write the game to the working
+// AutosaveFlow: after a state-changing command, write the game to the current
 // file (or the platform default) through the same steps as Save.
 const std = @import("std");
 const file_policy = @import("../file_policy.zig");
@@ -27,7 +27,7 @@ pub const AutosaveFlow = struct {
         return .{ .session = session, .auto_save = auto_save, .kind = .{ .after_command = tag } };
     }
 
-    /// Final write when the app is closing: only continues an existing working file, since nobody can be asked.
+    /// Final write when the app is closing: only continues an existing current file, since nobody can be asked.
     pub fn flush(session: *FileSession, auto_save: bool) AutosaveFlow {
         return .{ .session = session, .auto_save = auto_save, .kind = .flush };
     }
@@ -60,15 +60,15 @@ pub const AutosaveFlow = struct {
 
     fn startAfterCommand(self: *AutosaveFlow, tag: command.CommandTag) Step {
         if (!file_policy.commandTriggersAutoSave(tag)) return self.finish(.done);
-        if (self.session.workingFile()) |working| return self.saveTo(working);
+        if (self.session.currentFile()) |current| return self.saveTo(current);
         self.phase = .resolving;
         return .resolve_default_target;
     }
 
     fn startFlush(self: *AutosaveFlow) Step {
         if (self.session.write_context != .continuation) return self.finish(.done);
-        const working = self.session.workingFile() orelse return self.finish(.done);
-        self.save = SaveFlow.flush(self.session, working);
+        const current = self.session.currentFile() orelse return self.finish(.done);
+        self.save = SaveFlow.flush(self.session, current);
         self.phase = .saving;
         return self.next(.start);
     }
@@ -99,19 +99,19 @@ test "commands that do not change the game do not autosave" {
     try testing.expect(flow.next(.start) == .done);
 }
 
-test "with no working file autosave asks the platform for its default target" {
+test "with no current file autosave asks the platform for its default target" {
     var session = FileSession{};
     var flow = AutosaveFlow.afterCommand(&session, true, .fill);
     try testing.expect(flow.next(.start) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).autosave.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
-    try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
+    try testing.expectEqualStrings("sudoku.sud", session.currentFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
 
-test "autosave follows the working file" {
+test "autosave follows the current file" {
     var session = FileSession{ .write_context = .continuation };
-    session.setWorkingFile("/docs/game.sud");
+    session.setCurrentFile("/docs/game.sud");
     var flow = AutosaveFlow.afterCommand(&session, true, .undo);
     try testing.expectEqualStrings("/docs/game.sud", flow.next(.start).autosave.name);
     const write = flow.next(.{ .wrote = .exists }).autosave;
@@ -122,7 +122,7 @@ test "autosave follows the working file" {
 
 test "autosave onto an existing file after New asks first and keeps it when declined" {
     var session = FileSession{};
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     session.apply(.new_game_success);
     var flow = AutosaveFlow.afterCommand(&session, true, .paste);
     _ = flow.next(.start);
@@ -133,15 +133,15 @@ test "autosave onto an existing file after New asks first and keeps it when decl
 
 test "autosave write failure is shown" {
     var session = FileSession{};
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     var flow = AutosaveFlow.afterCommand(&session, true, .fill);
     _ = flow.next(.start);
     try testing.expectEqualStrings(save_mod.SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
 }
 
-test "flush writes the working file's restore copy" {
+test "flush writes the current file's restore copy" {
     var session = FileSession{ .write_context = .continuation };
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     var flow = AutosaveFlow.flush(&session, true);
     try testing.expectEqualStrings("game.sud", flow.next(.start).flush);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "game.sud" } }) == .done);
@@ -149,14 +149,14 @@ test "flush writes the working file's restore copy" {
 
 test "flush never writes a detached game, since nobody can be asked" {
     var session = FileSession{};
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     var flow = AutosaveFlow.flush(&session, true);
     try testing.expect(flow.next(.start) == .done);
 }
 
 test "flush with autosave off does nothing" {
     var session = FileSession{ .write_context = .continuation };
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     var flow = AutosaveFlow.flush(&session, false);
     try testing.expect(flow.next(.start) == .done);
 }

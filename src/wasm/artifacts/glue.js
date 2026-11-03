@@ -160,16 +160,16 @@ export async function loadArtifact(wasmBytes) {
     },
 
     // SUD0 snapshot path: either JSON error (pointer unchanged) or raw bytes.
-    serialize() {
-      const ret = exports.serialize();
+    toSaveFormat() {
+      const ret = exports.toSaveFormat();
       const base = exports.outPtr();
       if (ret === base) return readJson(base);
       return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };
     },
 
     // One-line export path used by copy/export UI actions.
-    exportPuzzle() {
-      const ret = exports.exportPuzzle();
+    toPuzzle() {
+      const ret = exports.toPuzzle();
       const base = exports.outPtr();
       if (ret === base) return readJson(base);
       return { ok: true, bytes: new Uint8Array(memory.buffer, base, ret).slice() };

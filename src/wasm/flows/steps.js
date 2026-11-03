@@ -62,7 +62,7 @@ export function keepaliveFetch(fetchFn) {
  * @returns {Promise<WriteResult>}
  */
 export async function writeGame(ctx, writeUserFile, name, { restoreCopy, fetchFn = ctx.fetchFn }) {
-  const serialized = ctx.game.serialize();
+  const serialized = ctx.game.toSaveFormat();
   if (!serialized.ok) return serialized;
   let written = name;
   if (writeUserFile) {
@@ -88,7 +88,7 @@ export function sharedSteps(ctx) {
     resolveDefaultTarget: () => session.default_save_filename,
     ask: (step) => stepRunner.askWithDialog(step, win),
     exportPuzzle: async (name) => {
-      const exported = game.exportPuzzle();
+      const exported = game.toPuzzle();
       if (!exported.ok) return exported;
       const saved = await exportText(exported.bytes, session, name, { win, download });
       return saved.ok ? { ok: true, name: saved.filename } : saved;
@@ -98,7 +98,7 @@ export function sharedSteps(ctx) {
       const read = await clipboardMod.readClipboardText({ clipboard });
       return read.ok ? { ok: true, bytes: new TextEncoder().encode(read.text) } : read;
     },
-    restore: (path) => hostApi.fetchStartupSaveBytes(path, fetchFn),
+    restore: (path) => hostApi.restore(path, fetchFn),
     showGame: (step) => {
       session.boundFilename = step.file ?? null;
       sessionMod.applySessionOutcomeStatus(session, statusEl, {
@@ -109,8 +109,8 @@ export function sharedSteps(ctx) {
       });
     },
     generateGame: (difficulty) => generate.generateWithModal(game, generatingModal, { difficulty, genWorker }),
-    forgetCurrentFile: (forget) => hostApi.forgetHostCurrentFile(forget.delete, fetchFn),
-    persistSettings: (settings) => hostApi.postHostSettings(settings, fetchFn),
+    forgetCurrentFile: (forget) => hostApi.forgetCurrentFile(forget.delete, fetchFn),
+    persistSettings: (settings) => hostApi.persistSettings(settings, fetchFn),
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);
       if (statusEl) statusBar.showStatusText(statusEl, text);

@@ -122,7 +122,7 @@ const HOST_CURRENT_FILE = "/current-file";
 async function savedGameBytes(line) {
   const source = await loadGame();
   startNewGame(source, line);
-  return source.serialize().bytes;
+  return source.toSaveFormat().bytes;
 }
 
 /**
@@ -484,7 +484,7 @@ async function savedGame(file) {
   for (const m of file.moves ?? []) {
     assert.equal(game.exec({ action: "fill", row: m.row, col: m.col, digit: m.digit }).ok, true);
   }
-  const saved = game.serialize();
+  const saved = game.toSaveFormat();
   assert.equal(saved.ok, true);
   return saved.bytes;
 }

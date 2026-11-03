@@ -22,7 +22,7 @@ Native and web front ends call core differently, but must produce the same **sem
 
 Steps are player actions: `fill`, `clear`, `fill_first_empty`, `undo`, `redo`, `hint`, `solve` (Edit menu items), `paste` (clipboard text), `open` (a saved game picked by name), `import` (a picked puzzle file's text), `save`, `copy` (File and Edit menu items), `toggle_auto_save`, `toggle_region` (View menu items), `set_theme` (View theme item).
 
-Write context (core's `continuation` / `detached`) is checked by what follows it: under `continuation` the next autosave writes the working file without asking; under `detached` it asks before overwriting an existing file.
+Write context (core's `continuation` / `detached`) is checked by what follows it: under `continuation` the next autosave writes the current file without asking; under `detached` it asks before overwriting an existing file.
 
 ## Scenarios
 
@@ -30,7 +30,7 @@ Write context (core's `continuation` / `detached`) is checked by what follows it
 |---|---|---|---|
 | `restore_solved_keep` | 1 question; solved after startup; next autosave writes `startup.sud` without asking (`continuation`); cleared cell empty, not given | `parity scenarios: native shell meets every shared scenario expectation` | parity block in `startup.test.mjs` |
 | `restore_solved_new_game` | 2 questions (restore choice, then replace); unsolved after startup; nothing written after declining replace (`detached`) | same | same |
-| `auto_save_toggle_then_autosave` | `auto_save: true` persisted; next move writes `sudoku.sud` without asking and makes it the working file; filled cell not given | same | same |
+| `auto_save_toggle_then_autosave` | `auto_save: true` persisted; next move writes `sudoku.sud` without asking and makes it the current file; filled cell not given | same | same |
 | `restore_unsolved_moves` | No question; moves restored as non-givens, givens intact; Undo offered | same | same |
 | `autosave_then_relaunch_restores_moves` | Three moves and an Undo autosave `sudoku.sud`; the next launch restores the moves as non-givens, givens intact, the undone move still undone; Undo and Redo offered | relaunch: new `Sudoku` on the same transport, startup on the last written path | relaunch: new game and session, startup on the host's last written file |
 | `history_branch_discards_redo` | A move after Undo discards the undone move; Redo not offered | same | same |

@@ -51,7 +51,7 @@ async function writeClipboardText(text, { clipboard = globalThis.navigator?.clip
 /** One-line puzzle string from wasm, or an error result. */
 /** @param {GameApi} game */
 function puzzleLineForCopy(game) {
-  const exported = game.exportPuzzle();
+  const exported = game.toPuzzle();
   if (!exported.ok) return exported;
   return { ok: true, text: new TextDecoder().decode(exported.bytes) };
 }

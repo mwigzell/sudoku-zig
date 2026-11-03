@@ -32,14 +32,14 @@ export async function fetchHostBuildInfo(fetchFn = globalThis.fetch) {
 }
 
 /** Read the host's current file for a startup `restore` step. */
-export async function fetchStartupSaveBytes(path, fetchFn = globalThis.fetch) {
+export async function restore(path, fetchFn = globalThis.fetch) {
   const res = await fetchFn(path);
   if (!res.ok) return { ok: false, error: `fetch failed: ${res.status}` };
   return { ok: true, bytes: new Uint8Array(await res.arrayBuffer()) };
 }
 
 /** Stop the host restoring its current file at startup; `deleteFile` removes the file too. */
-export async function forgetHostCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
+export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
   const headers = {};
   if (deleteFile === true) headers[DELETE_FILE_HEADER] = "true";
   const res = await fetchFn(CURRENT_FILE_PATH, { method: "DELETE", headers });
@@ -51,7 +51,7 @@ export async function forgetHostCurrentFile(deleteFile, fetchFn = globalThis.fet
  * @param {PlayerSettings} settings
  * @returns {Promise<PersistResult>}
  */
-export async function postHostSettings(settings, fetchFn) {
+export async function persistSettings(settings, fetchFn) {
   const res = await fetchFn(HOST_SETTINGS_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

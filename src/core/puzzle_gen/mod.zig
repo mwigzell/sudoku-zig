@@ -195,7 +195,7 @@ pub const PuzzleGen = struct {
             try reportProgress(progress, progress_ctx, .{ .strip = .{ .givens = givens, .target = target } });
             try reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens } });
             if (try solver.countSolutions(puzzle, 2) != 1) continue;
-            const line = serial.toOneLineString(puzzle);
+            const line = serial.toPuzzle(puzzle);
             @memcpy(out, &line);
             return;
         }
@@ -254,7 +254,7 @@ pub const PuzzleGen = struct {
             if (givens < range.min or givens > range.max) continue;
             try reportProgress(progress, progress_ctx, .{ .uniqueness_check = .{ .givens = givens } });
             if (try solver.countSolutions(puzzle, 2) != 1) continue;
-            const line = serial.toOneLineString(puzzle);
+            const line = serial.toPuzzle(puzzle);
             @memcpy(out, &line);
             return;
         }
@@ -391,10 +391,10 @@ test "puzzle_gen: fixture strings are exactly 81 chars" {
 }
 
 test "puzzle_gen: fixture puzzles load into Board" {
-    _ = try board.fromOneLineString(PuzzleGen.default());
-    _ = try board.fromOneLineString(PuzzleGen.easy());
-    _ = try board.fromOneLineString(PuzzleGen.medium());
-    _ = try board.fromOneLineString(PuzzleGen.hard());
+    _ = try board.fromPuzzle(PuzzleGen.default());
+    _ = try board.fromPuzzle(PuzzleGen.easy());
+    _ = try board.fromPuzzle(PuzzleGen.medium());
+    _ = try board.fromPuzzle(PuzzleGen.hard());
 }
 
 test "puzzle_gen: default generate stays on legacy fixture" {

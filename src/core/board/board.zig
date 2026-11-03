@@ -260,8 +260,8 @@ const serial = @import("serial.zig");
 // Flat-grid codec lives in serial.zig; re-exported here for @import("board/board.zig") callers.
 pub const FlatOpts = serial.FlatOpts;
 pub const fromFlat = serial.fromFlat;
-pub const fromOneLineString = serial.fromOneLineString;
-pub const toOneLineString = serial.toOneLineString;
+pub const fromPuzzle = serial.fromPuzzle;
+pub const toPuzzle = serial.toPuzzle;
 pub const toFlat = serial.toFlat;
 pub const equal = serial.equal;
 
@@ -289,21 +289,21 @@ test "Board: isSolved is false with one empty cell on an otherwise complete grid
     var line: [81]u8 = undefined;
     @memcpy(&line, full);
     line[40] = '0';
-    var b = try fromOneLineString(&line);
+    var b = try fromPuzzle(&line);
     b.validate();
     try std.testing.expect(!b.isSolved());
 }
 
 test "Board: isSolved is true when all cells are filled and conflict-free" {
     const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
-    var b = try fromOneLineString(full);
+    var b = try fromPuzzle(full);
     b.validate();
     try std.testing.expect(b.isSolved());
 }
 
 test "Board: isSolved is false when every cell is filled but a conflict exists" {
     const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
-    var b = try fromOneLineString(full);
+    var b = try fromPuzzle(full);
     b.cells[0].value = .one;
     b.cells[1].value = .one;
     b.validate();

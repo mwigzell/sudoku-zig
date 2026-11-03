@@ -8,7 +8,7 @@ const cell = @import("../board/cell.zig");
 const _puzzle_gen = @import("../puzzle_gen/mod.zig");
 
 test "fromSaveFormat uses mutation_history not game_engine" {
-    var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.default());
+    var board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
     try board_state.setCell(0, 2, .seven);
@@ -25,7 +25,7 @@ test "fromSaveFormat uses mutation_history not game_engine" {
 }
 
 test "save codec round-trip preserves durable status text" {
-    const board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.default());
+    const board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
 
@@ -406,7 +406,7 @@ test "SaveFileTrailer: round-trip write/read" {
 // toSaveFormat / fromSaveFormat (in-memory blob serialization)
 
 test "toSaveFormat empty history produces buffer of correct size" {
-    const board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.easy());
+    const board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.easy());
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
 
@@ -419,7 +419,7 @@ test "toSaveFormat empty history produces buffer of correct size" {
 }
 
 test "toSaveFormat header has correct magic and version" {
-    const board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.easy());
+    const board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.easy());
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
 
@@ -437,7 +437,7 @@ test "toSaveFormat header has correct magic and version" {
 }
 
 test "toSaveFormat includes history entries and correct trailer" {
-    var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.default());
+    var board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
 
@@ -483,7 +483,7 @@ test "toSaveFormat includes history entries and correct trailer" {
 }
 
 test "fromSaveFormat round-trip: board state given_bits history" {
-    var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.default());
+    var board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
 
@@ -524,7 +524,7 @@ test "fromSaveFormat round-trip: board state given_bits history" {
 }
 
 test "save v2 round-trips a cell entry and one solve snapshot" {
-    var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.easy());
+    var board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.easy());
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
 
@@ -564,7 +564,7 @@ test "save v2 round-trips a cell entry and one solve snapshot" {
 }
 
 test "save v1 fixture still loads as a cell entry" {
-    var board_state = try board.fromOneLineString(_puzzle_gen.PuzzleGen.easy());
+    var board_state = try board.fromPuzzle(_puzzle_gen.PuzzleGen.easy());
     try board_state.setCell(0, 0, .four);
 
     var buf = try std.testing.allocator.alloc(u8, SAVE_HEADER_SIZE + @sizeOf(SaveEntry) + SAVE_TRAILER_SIZE);

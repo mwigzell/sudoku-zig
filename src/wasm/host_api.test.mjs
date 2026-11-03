@@ -7,12 +7,12 @@ import { hostFetch } from "./test_support.mjs";
 {
   const calls = [];
   const game = {
-    serialize() {
+    toSaveFormat() {
       return { ok: true, bytes: new Uint8Array([1, 2]) };
     },
   };
   const out = await hostApi.persistCurrentFileBytes(
-    game.serialize().bytes,
+    game.toSaveFormat().bytes,
     async (url, init) => {
       calls.push({ url, init });
       return { ok: true, status: 204 };

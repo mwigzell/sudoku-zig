@@ -132,7 +132,7 @@ const easy = "003020600900305001001806400008102900700000008006708200002609500800
 const solution = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
 
 test "solve fills a known partial to the hardcoded solution" {
-    const b = try board.fromOneLineString(easy);
+    const b = try board.fromPuzzle(easy);
     const result = try solve(b);
     switch (result) {
         .none => return error.TestFailed,
@@ -148,7 +148,7 @@ test "solve returns none when a conflict-free partial has no completion" {
     var line: [81]u8 = @splat('0');
     for (0..8) |c| line[c] = '1' + @as(u8, @intCast(c));
     line[1 * 9 + 8] = '9';
-    const b = try board.fromOneLineString(&line);
+    const b = try board.fromPuzzle(&line);
     const before = board.toFlat(b);
     const result = try solve(b);
     try std.testing.expect(result == .none);
@@ -159,7 +159,7 @@ test "solve errors when the board already has a conflict" {
     var line: [81]u8 = @splat('0');
     line[0] = '5';
     line[1] = '5';
-    const b = try board.fromOneLineString(&line);
+    const b = try board.fromPuzzle(&line);
     const before = board.toFlat(b);
     const result = solve(b) catch |err| {
         try std.testing.expectEqual(error.Conflict, err);
@@ -171,14 +171,14 @@ test "solve errors when the board already has a conflict" {
 }
 
 test "countSolutions reports one completion for a well-posed puzzle" {
-    const b = try board.fromOneLineString(easy);
+    const b = try board.fromPuzzle(easy);
     try std.testing.expectEqual(@as(usize, 1), try countSolutions(b, 2));
 }
 
 test "countSolutions stops at limit for ambiguous partials" {
     var line: [81]u8 = @splat('0');
     line[0] = '1';
-    const b = try board.fromOneLineString(&line);
+    const b = try board.fromPuzzle(&line);
     const n = try countSolutions(b, 2);
     try std.testing.expect(n >= 2);
 }
@@ -188,7 +188,7 @@ test "solve completes the single empty cell of a known grid" {
     var line: [81]u8 = undefined;
     @memcpy(&line, full);
     line[40] = '0';
-    const b = try board.fromOneLineString(&line);
+    const b = try board.fromPuzzle(&line);
     const result = try solve(b);
     switch (result) {
         .none => return error.TestFailed,

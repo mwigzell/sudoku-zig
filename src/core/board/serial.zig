@@ -50,7 +50,7 @@ pub fn fromFlat(flat: [81]u8, opts: FlatOpts) Error!board.Board {
 }
 
 /// Construct a Board from a one-line Sudoku string like "53..7........6.....98..".
-pub fn fromOneLineString(oneLine: []const u8) Error!board.Board {
+pub fn fromPuzzle(oneLine: []const u8) Error!board.Board {
     if (oneLine.len != 81) return Error.WrongLength;
 
     var flat: [81]u8 = undefined;
@@ -66,8 +66,8 @@ pub fn fromOneLineString(oneLine: []const u8) Error!board.Board {
 }
 
 /// Serialize a board's cell values to the one-line 81-char string — inverse
-/// of fromOneLineString: row-major A1->I9, empty cell -> '0'. No allocation.
-pub fn toOneLineString(b: board.Board) [board.CELL_COUNT]u8 {
+/// of fromPuzzle: row-major A1->I9, empty cell -> '0'. No allocation.
+pub fn toPuzzle(b: board.Board) [board.CELL_COUNT]u8 {
     var line: [board.CELL_COUNT]u8 = undefined;
     for (b.cells, 0..) |c, i| {
         const d = @as(u8, @backingInt(c.value));
@@ -153,10 +153,10 @@ test "Board: constructs from flat puzzle array with correct values" {
     }
 }
 
-test "Board: fromOneLineString parses digits and dots correctly" {
+test "Board: fromPuzzle parses digits and dots correctly" {
     const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const fixture = puzzle_gen.PuzzleGen.default();
-    const b = try fromOneLineString(fixture);
+    const b = try fromPuzzle(fixture);
 
     // Sample given positions (taken from fixture)
     const given_specs: []const struct { row: u4, col: u4, expected: cell.CellValue } = &.{
@@ -194,21 +194,21 @@ test "Board: fromFlat rejects out-of-range cell values" {
     try std.testing.expectError(Error.BadCellValue, fromFlat(bad, .{}));
 }
 
-test "Board: fromOneLineString rejects wrong length" {
+test "Board: fromPuzzle rejects wrong length" {
     const tooShort: []const u8 = "67..4";
-    try std.testing.expectError(Error.WrongLength, fromOneLineString(tooShort));
+    try std.testing.expectError(Error.WrongLength, fromPuzzle(tooShort));
 
     var tooLong: [82]u8 = undefined;
     @memset(&tooLong, '.');
-    try std.testing.expectError(Error.WrongLength, fromOneLineString(tooLong[0..]));
+    try std.testing.expectError(Error.WrongLength, fromPuzzle(tooLong[0..]));
 }
 
-test "Board: fromOneLineString rejects invalid characters" {
+test "Board: fromPuzzle rejects invalid characters" {
     var bad: [81]u8 = undefined;
     @memset(&bad, '.');
     bad[10] = 'X'; // letter in puzzle string
 
-    try std.testing.expectError(Error.InvalidCharacter, fromOneLineString(bad[0..]));
+    try std.testing.expectError(Error.InvalidCharacter, fromPuzzle(bad[0..]));
 }
 
 test "Board: toFlat produces [81]u8 matching current cell values" {
@@ -310,7 +310,7 @@ test "Board: equal returns false when given_bits differ" {
     try std.testing.expect(!equal(b1, b2));
 }
 
-test "Board: toOneLineString emits digits and zeros for empty cells" {
+test "Board: toPuzzle emits digits and zeros for empty cells" {
     var flat: [board.CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
     flat[0] = 5;
@@ -319,7 +319,7 @@ test "Board: toOneLineString emits digits and zeros for empty cells" {
     flat[9] = 6;
 
     const b = try fromFlat(flat, .{});
-    const out = toOneLineString(b);
+    const out = toPuzzle(b);
     try std.testing.expectEqual(@as(u8, '5'), out[0]);
     try std.testing.expectEqual(@as(u8, '3'), out[1]);
     try std.testing.expectEqual(@as(u8, '0'), out[2]);
@@ -329,14 +329,14 @@ test "Board: toOneLineString emits digits and zeros for empty cells" {
     try std.testing.expectEqual(@as(u8, '0'), out[80]);
 }
 
-test "Board: toOneLineString -> fromOneLineString round-trips" {
+test "Board: toPuzzle -> fromPuzzle round-trips" {
     var flat: [board.CELL_COUNT]u8 = undefined;
     @memset(&flat, 0);
     var i: usize = 0;
     while (i < 81) : (i += 3) flat[i] = @as(u8, @intCast(i % 9 + 1));
 
     const b1 = try fromFlat(flat, .{});
-    const line = toOneLineString(b1);
-    const b2 = try fromOneLineString(&line);
+    const line = toPuzzle(b1);
+    const b2 = try fromPuzzle(&line);
     try std.testing.expect(equal(b1, b2));
 }

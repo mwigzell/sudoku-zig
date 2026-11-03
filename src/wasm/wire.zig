@@ -221,7 +221,7 @@ test "WireConfig round-trips config fields including view prefs" {
 }
 
 test "GameSnapshot captures value given conflict from BoardView" {
-    var b = try board.fromOneLineString(puzzle_gen.PuzzleGen.default());
+    var b = try board.fromPuzzle(puzzle_gen.PuzzleGen.default());
     try b.setCell(0, 2, .seven);
     b.refreshConflictsForCell(0, 2);
     try b.setCell(0, 3, .seven);
@@ -240,7 +240,7 @@ test "GameSnapshot captures value given conflict from BoardView" {
 }
 
 test "GameSnapshot JSON round-trip preserves all cells" {
-    var b = try board.fromOneLineString(puzzle_gen.PuzzleGen.medium());
+    var b = try board.fromPuzzle(puzzle_gen.PuzzleGen.medium());
     try b.setCell(1, 2, .five);
     b.refreshConflictsForCell(1, 2);
 

@@ -125,7 +125,7 @@ pub const CommandFlow = struct {
         const ev = switch (loaded) {
             .new_game => self.engine.newFromOneLinePuzzle(data),
             .open => |name| self.engine.openFromSave(data, name),
-            .import => self.engine.importFromLine(data),
+            .import => self.engine.fromPuzzle(data),
             .paste => self.engine.pasteFromLine(data),
         };
         if (ev == .ok) {
@@ -144,7 +144,7 @@ pub const CommandFlow = struct {
             .error_msg => |msg| return self.finish(.{ .show_error = msg }),
             .ok => |ok| {
                 self.phase = .showing;
-                var shown = step_mod.showGame(self.engine, ok.msg, self.session.workingFile());
+                var shown = step_mod.showGame(self.engine, ok.msg, self.session.currentFile());
                 shown.show_game.cell = ok.cell;
                 return shown;
             },
@@ -249,7 +249,7 @@ test "a failed settings write ends the command with the error" {
     try testing.expectEqualStrings(settings_mod.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).show_error);
 }
 
-test "open asks for a game file, loads the pick and makes it the working file" {
+test "open asks for a game file, loads the pick and makes it the current file" {
     var engine = try testEngine(config.Config.default());
     defer engine.deinit();
     var session = FileSession{};
@@ -263,7 +263,7 @@ test "open asks for a game file, loads the pick and makes it the working file" {
     try testing.expect(shown.loaded);
     try testing.expectEqualStrings("game.sud", shown.file.?);
     try testing.expect(!shown.legend.undo);
-    try testing.expectEqualStrings("game.sud", session.workingFile().?);
+    try testing.expectEqualStrings("game.sud", session.currentFile().?);
     try testing.expect(flow.next(.ack) == .done);
 }
 
@@ -311,7 +311,7 @@ test "new generates at the chosen difficulty, which the game then keeps" {
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     session.apply(.open_success);
 
     var flow = CommandFlow.init(&engine, &session, .{ .new = .{ .difficulty = .easy } });
@@ -322,7 +322,7 @@ test "new generates at the chosen difficulty, which the game then keeps" {
     try testing.expectEqual(@import("../file_policy.zig").WriteContext.detached, session.write_context);
 }
 
-test "save with no working file asks for the default target, writes it and reports where" {
+test "save with no current file asks for the default target, writes it and reports where" {
     var engine = try testEngine(config.Config.default());
     defer engine.deinit();
     var session = FileSession{};
@@ -331,14 +331,14 @@ test "save with no working file asks for the default target, writes it and repor
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).save.name);
     try testing.expectEqualStrings(std.fmt.comptimePrint(@import("../file_policy.zig").SAVED_TO_FMT, .{"sudoku.sud"}), flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }).show_status);
     try testing.expect(flow.next(.ack) == .done);
-    try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
+    try testing.expectEqualStrings("sudoku.sud", session.currentFile().?);
 }
 
-test "save as suggests the working file; export and copy hand over the puzzle" {
+test "save as suggests the current file; export and copy hand over the puzzle" {
     var engine = try testEngine(config.Config.default());
     defer engine.deinit();
     var session = FileSession{};
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     var save_as = CommandFlow.init(&engine, &session, .{ .save_as = .{ .path = null } });
     try testing.expectEqualStrings("game.sud", save_as.next(.start).save_as.name);
 
@@ -349,7 +349,7 @@ test "save as suggests the working file; export and copy hand over the puzzle" {
     var copied = CommandFlow.init(&engine, &session, .{ .copy = {} });
     try testing.expect(copied.next(.start) == .copy_puzzle);
     try testing.expectEqualStrings(export_mod.COPIED_MSG, copied.next(.{ .copied = .ok }).show_status);
-    try testing.expectEqualStrings("game.sud", session.workingFile().?);
+    try testing.expectEqualStrings("game.sud", session.currentFile().?);
 }
 
 test "stopping generation ends New quietly; a wrong answer is an error" {

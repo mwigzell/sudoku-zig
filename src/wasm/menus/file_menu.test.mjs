@@ -89,7 +89,7 @@ function easyDialog() {
   globalThis.fetch = host.fetchFn;
   await controls.save.click();
   globalThis.fetch = prevFetch;
-  assert.deepEqual([...downloaded.bytes], [...game.serialize().bytes]);
+  assert.deepEqual([...downloaded.bytes], [...game.toSaveFormat().bytes]);
   assert.equal(downloaded.name, "host-default.sud");
   assert.equal(session.boundFilename, "host-default.sud");
   assert.equal(statusEl.textContent, fillText(coreText.SAVED_TO_FMT, "host-default.sud"), "core composes the save status");
@@ -119,7 +119,7 @@ function easyDialog() {
 }
 
 {
-  // Save As with no working file suggests the host default; the host copy is filed under it.
+  // Save As with no current file suggests the host default; the host copy is filed under it.
   const game = await loadGame();
   const session = { legend: { save_as: true }, state: { cells: [] }, default_save_filename: "host-default.sud" };
   const controls = { saveAs: makeBtn() };
@@ -300,7 +300,7 @@ function easyDialog() {
   const session = { legend: { open: true }, state: { cells: [] } };
   const openBtn = makeBtn();
   wireFile({ open: openBtn }, game, session, {
-    pick: async () => ({ ok: true, name: "picked.sud", handle, bytes: source.serialize().bytes }),
+    pick: async () => ({ ok: true, name: "picked.sud", handle, bytes: source.toSaveFormat().bytes }),
   });
   await openBtn.click();
   assert.equal(session.state.cells[0].value, 5);
@@ -324,7 +324,7 @@ function easyDialog() {
 }
 
 
-// Export writes bytes from exportPuzzle via the text save path; save target stays bound
+// Export writes bytes from toPuzzle via the text save path; save target stays bound
 {
   const lineBytes = new TextEncoder().encode("003020600900305001001806400008102900700000008006708200002609500800203009005010300");
   const session = {
@@ -335,7 +335,7 @@ function easyDialog() {
   };
   let saved = null;
   const game = {
-    exportPuzzle() {
+    toPuzzle() {
       return { ok: true, bytes: lineBytes };
     },
   };
@@ -352,7 +352,7 @@ function easyDialog() {
     },
   });
   await exportBtn.click();
-  assert.deepEqual([...saved], [...lineBytes], "save receives exportPuzzle bytes");
+  assert.deepEqual([...saved], [...lineBytes], "save receives toPuzzle bytes");
   assert.equal(statusEl.textContent, fillText(coreText.EXPORTED_TO_FMT, "puzzle.txt"), "core owns the export status");
   assert.equal(session.fileHandle.name, "game.sud", "export must not bind SUD0 file handle");
   assert.equal(session.boundFilename, "game.sud");
@@ -367,7 +367,7 @@ function easyDialog() {
     boundFilename: "game.sud",
   };
   const game = {
-    exportPuzzle() {
+    toPuzzle() {
       return { ok: true, bytes: new TextEncoder().encode("x".repeat(81)) };
     },
   };
@@ -390,7 +390,7 @@ function easyDialog() {
 {
   let called = false;
   const exportBtn = makeBtn();
-  wireFile({ export: exportBtn }, { exportPuzzle() { called = true; return { ok: true }; } }, { legend: {}, state: { cells: [] } }, {
+  wireFile({ export: exportBtn }, { toPuzzle() { called = true; return { ok: true }; } }, { legend: {}, state: { cells: [] } }, {
     exportText: async () => { throw new Error("must not run"); },
   });
   await exportBtn.click();
@@ -408,7 +408,7 @@ function easyDialog() {
     config: { auto_save: true },
     default_save_filename: "sudoku.sud",
   };
-  const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
+  const game = { toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
   await withCoreFlow(game, { autoSave: true });
   const host = hostFetch();
   const fetchFn = async (url, init) => {
@@ -456,7 +456,7 @@ function easyDialog() {
   });
   await controls.save.click();
   globalThis.__sudokuChoose = prevChoose;
-  assert.deepEqual(written, [[...game.serialize().bytes]]);
+  assert.deepEqual(written, [[...game.toSaveFormat().bytes]]);
   assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Restore-Copy"], "true");
   assert.equal(statusEl.textContent, fillText(coreText.SAVED_TO_FMT, "bound.sud"));
 }

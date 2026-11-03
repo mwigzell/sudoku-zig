@@ -48,12 +48,12 @@ pub const SaveFlow = struct {
         return flow;
     }
 
-    /// The Save or Save As the player asked for, to `path`, else the working file, else the
+    /// The Save or Save As the player asked for, to `path`, else the current file, else the
     /// platform's default target. A manual Save while autosave is on is refused, since every
     /// change is already written.
     pub fn forCommand(session: *FileSession, intent: file_policy.WriteIntent, path: ?[]const u8, auto_save: bool) SaveFlow {
         var flow = SaveFlow{ .session = session, .intent = intent, .write_step = writeStepFor(intent), .refused = intent == .save and auto_save };
-        if (path orelse session.workingFile()) |name| {
+        if (path orelse session.currentFile()) |name| {
             flow.setName(name);
         } else {
             flow.phase = .naming;
@@ -215,7 +215,7 @@ pub const SaveFlow = struct {
     }
 
     fn succeeded(self: *SaveFlow, written: []const u8) Step {
-        self.session.setWorkingFile(written);
+        self.session.setCurrentFile(written);
         self.session.apply(switch (self.intent) {
             .save => .save_success,
             .save_as => .save_as_success,
@@ -256,7 +256,7 @@ test "save to a new file writes without replacing and reports where it saved" {
     try testing.expect(!write.replace);
     const end = flow.next(.{ .wrote = .{ .ok = "/docs/game.sud" } });
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"/docs/game.sud"}), end.show_status);
-    try testing.expectEqualStrings("/docs/game.sud", session.workingFile().?);
+    try testing.expectEqualStrings("/docs/game.sud", session.currentFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
 
@@ -275,7 +275,7 @@ test "a manual save while autosave is on writes nothing and says why" {
     var session = FileSession{};
     var flow = SaveFlow.forCommand(&session, .save, "game.sud", true);
     try testing.expectEqualStrings(file_policy.SAVE_WHILE_AUTO_SAVE_MSG, flow.next(.start).show_status);
-    try testing.expect(session.workingFile() == null);
+    try testing.expect(session.currentFile() == null);
 }
 
 test "save as while autosave is on still writes" {
@@ -284,13 +284,13 @@ test "save as while autosave is on still writes" {
     try testing.expectEqualStrings("game.sud", flow.next(.start).save_as.name);
 }
 
-test "a save with no path writes the working file, else asks for the default target" {
+test "a save with no path writes the current file, else asks for the default target" {
     var session = FileSession{};
     var fresh = SaveFlow.forCommand(&session, .save, null, false);
     try testing.expect(fresh.next(.start) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", fresh.next(.{ .default_target = "sudoku.sud" }).save.name);
 
-    session.setWorkingFile("game.sud");
+    session.setCurrentFile("game.sud");
     var continued = SaveFlow.forCommand(&session, .save_as, null, false);
     try testing.expectEqualStrings("game.sud", continued.next(.start).save_as.name);
 }
@@ -318,11 +318,11 @@ test "a file taken by an earlier install asks, and Pick it reclaims the file" {
     try takenAsk(&flow);
     try testing.expect(flow.next(.{ .answered = true }) == .reclaim_file);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
-    try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
+    try testing.expectEqualStrings("sudoku.sud", session.currentFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
 
-test "New name saves as the taken file's name, and the new file becomes the working file" {
+test "New name saves as the taken file's name, and the new file becomes the current file" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
     try takenAsk(&flow);
@@ -330,7 +330,7 @@ test "New name saves as the taken file's name, and the new file becomes the work
     try testing.expectEqualStrings("sudoku.sud", save_as.name);
     try testing.expect(!save_as.replace);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "mine.sud" } }) == .done);
-    try testing.expectEqualStrings("mine.sud", session.workingFile().?);
+    try testing.expectEqualStrings("mine.sud", session.currentFile().?);
 }
 
 test "closing the picker asks again, since there is nowhere else to autosave" {
@@ -341,7 +341,7 @@ test "closing the picker asks again, since there is nowhere else to autosave" {
     try testing.expectEqualStrings(taken_ask_text, flow.next(.{ .wrote = .cancelled }).ask.text);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).save_as.name);
     try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
-    try testing.expect(session.workingFile() == null);
+    try testing.expect(session.currentFile() == null);
 }
 
 test "save onto an existing file while detached asks, then replaces it" {
@@ -364,7 +364,7 @@ test "declining the replace question cancels the save without writing" {
     _ = flow.next(.start);
     _ = flow.next(.{ .wrote = .exists });
     try testing.expectEqualStrings(file_policy.WRITE_CANCELLED_MSG, flow.next(.{ .answered = false }).show_status);
-    try testing.expect(session.workingFile() == null);
+    try testing.expect(session.currentFile() == null);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }
 
@@ -382,7 +382,7 @@ test "write failure shows the error and leaves the session alone" {
     var flow = SaveFlow.init(&session, .save, "game.sud");
     _ = flow.next(.start);
     try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
-    try testing.expect(session.workingFile() == null);
+    try testing.expect(session.currentFile() == null);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }
 
@@ -393,12 +393,12 @@ test "a cancelled platform picker ends the save silently" {
     try testing.expect(flow.next(.{ .wrote = .cancelled }) == .done);
 }
 
-test "the platform's written name becomes the working file" {
+test "the platform's written name becomes the current file" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save_as, "game.sud");
     _ = flow.next(.start);
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"game (1).sud"}), flow.next(.{ .wrote = .{ .ok = "game (1).sud" } }).show_status);
-    try testing.expectEqualStrings("game (1).sud", session.workingFile().?);
+    try testing.expectEqualStrings("game (1).sud", session.currentFile().?);
 }
 
 test "save and save as record their own success events" {
@@ -413,7 +413,7 @@ test "save and save as record their own success events" {
     _ = save_as.next(.start);
     _ = save_as.next(.{ .wrote = .{ .ok = "b.sud" } });
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
-    try testing.expectEqualStrings("b.sud", session.workingFile().?);
+    try testing.expectEqualStrings("b.sud", session.currentFile().?);
 }
 
 test "an unexpected input ends the flow with an error" {

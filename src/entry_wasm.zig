@@ -21,7 +21,7 @@ var have_engine: bool = false;
 var host_debug_build: bool = false;
 var gen_abort_requested: bool = false;
 
-/// Web write context and working file; resets on page reload.
+/// Web write context and current file; resets on page reload.
 var file_session: flow.FileSession = .{};
 /// The one flow in progress; the JS step runner never overlaps flows.
 var active_flow: flow.Flow = undefined;
@@ -258,17 +258,17 @@ export fn getState() callconv(.c) u32 {
 
 /// Serialize full game state to SUD0 bytes in the shared out buffer.
 /// Success: byte length. Failure: JSON status ptr (same convention as other exports).
-export fn serialize() callconv(.c) u32 {
+export fn toSaveFormat() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
 
     const bytes = eng.toSaveFormat(std.heap.page_allocator) catch {
-        return exportError(out, "serialize failed");
+        return exportError(out, "toSaveFormat failed");
     };
     defer std.heap.page_allocator.free(bytes);
 
     if (bytes.len > out.buf.len) {
-        return exportError(out, "serialize buffer overflow");
+        return exportError(out, "toSaveFormat buffer overflow");
     }
     out.reset();
     @memcpy(out.buf[0..bytes.len], bytes);
@@ -277,11 +277,11 @@ export fn serialize() callconv(.c) u32 {
 }
 
 /// Export the current board as an 81-byte one-line puzzle string (same codec as native export).
-/// Success: byte length at outPtr. Failure: JSON error (same convention as serialize).
-export fn exportPuzzle() callconv(.c) u32 {
+/// Success: byte length at outPtr. Failure: JSON error (same convention as toSaveFormat).
+export fn toPuzzle() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
-    const line = board.toOneLineString(eng.state.board);
+    const line = eng.toPuzzle();
     if (line.len > out.buf.len) return exportError(out, "export buffer overflow");
     out.reset();
     @memcpy(out.buf[0..line.len], &line);
@@ -309,7 +309,7 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
             .auto_restore = eng.cfg.auto_restore,
             .auto_new = eng.cfg.auto_new,
             .difficulty = eng.cfg.difficulty,
-        }, if (file) |f| .{ .path = f.path, .name = f.name, .working = f.name } else null) },
+        }, if (file) |f| .{ .path = f.path, .name = f.name, .current = f.name } else null) },
     };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
@@ -352,7 +352,7 @@ export fn flowRead(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) callc
     return returnStep(out, active_flow.next(.{ .read = .{ .file = .{ .bytes = bytes, .name = name } } }));
 }
 
-/// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from serialize).
+/// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from toSaveFormat).
 export fn outPtr() callconv(.c) u32 {
     return @intFromPtr(&out_buf);
 }

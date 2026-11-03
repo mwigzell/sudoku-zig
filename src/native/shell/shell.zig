@@ -17,7 +17,6 @@ const disambiguate = @import("../ascii/disambiguate.zig");
 const legend = @import("../../core/renderer/legend.zig");
 
 const host_mod = @import("../host.zig");
-const export_command = @import("export.zig");
 const gen_progress = @import("gen_progress.zig");
 const storage_mod = @import("storage.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
@@ -61,7 +60,7 @@ pub const Sudoku = struct {
         };
         const current = sudoku.storage.loadCurrentFile(std.heap.page_allocator);
         defer if (current) |p| std.heap.page_allocator.free(p);
-        sudoku.file_session.setWorkingFile(current);
+        sudoku.file_session.setCurrentFile(current);
         return sudoku;
     }
 
@@ -79,7 +78,7 @@ pub const Sudoku = struct {
                 transport.free(transport.context, o.bytes);
             };
             const input: flow_mod.Input = switch (step) {
-                .resolve_default_target => .{ .default_target = self.storage.defaultTarget(&scratch) },
+                .resolve_default_target => .{ .default_target = self.storage.resolveDefaultTarget(&scratch) },
                 .ask => |question| .{ .answered = try self.renderer.ask(question) },
                 .save, .save_as, .autosave => |target| .{ .wrote = self.storage.saveGame(&self.engine, target, &scratch) },
                 .export_puzzle => |name| .{ .wrote = self.storage.exportPuzzle(&self.engine, name, &scratch) },
@@ -125,7 +124,7 @@ pub const Sudoku = struct {
 
     /// Carry out a `copy_puzzle` step: the terminal has no clipboard, so print the puzzle for the player to copy.
     fn printPuzzle(self: *@This()) flow_mod.step.Outcome {
-        const line = export_command.currentPuzzleLine(&self.engine);
+        const line = self.engine.toPuzzle();
         self.out.writeAll(&line) catch return .{ .failed = COPY_WRITE_FAILED_MSG };
         self.out.writeAll("\n") catch return .{ .failed = COPY_WRITE_FAILED_MSG };
         return .ok;
@@ -230,7 +229,7 @@ pub const Sudoku = struct {
     /// Run the shared startup flow: restore `current_file`, start a new game, or show the idle board.
     pub fn runStartupFlow(self: *@This(), current_file: ?[]const u8) Error!void {
         const current: ?flow_mod.startup.CurrentFile = if (current_file) |path|
-            .{ .path = path, .name = std.fs.path.basename(path), .working = path }
+            .{ .path = path, .name = std.fs.path.basename(path), .current = path }
         else
             null;
         self.flow = .{ .startup = flow_mod.StartupFlow.init(&self.engine, &self.file_session, .{
@@ -522,7 +521,7 @@ test "deterministic major path: explicit new puzzle replaces board and clears hi
     try app.showGame();
     while (true) if (try app.turn()) break;
 
-    const expected = try board.fromOneLineString(puzzle_gen.PuzzleGen.medium());
+    const expected = try board.fromPuzzle(puzzle_gen.PuzzleGen.medium());
     try std.testing.expect(board.equal(app.engine.state.board, expected));
     try std.testing.expectEqual(@as(usize, 0), app.engine.state.history.entries.items.len);
 }
@@ -827,7 +826,7 @@ test "integrated e2e - run: import via menu loads puzzle and clears history" {
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
 
-    const expected = board_mod.fromOneLineString(puzzle_line) catch unreachable;
+    const expected = board_mod.fromPuzzle(puzzle_line) catch unreachable;
     try std.testing.expect(board_mod.equal(sudoku_instance.engine.state.board, expected));
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
 }
@@ -874,7 +873,6 @@ test "integrated e2e - run: export via menu writes one-line file" {
         .log_level = .info,
     };
 
-    const board_mod = @import("../../core/board/board.zig");
     const io = std.testing.io;
     const tmp_path = "/tmp/sudoku_e2e_export_ok_test.txt";
     defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
@@ -896,7 +894,7 @@ test "integrated e2e - run: export via menu writes one-line file" {
     defer sudoku_instance.deinit();
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
-    const expected = board_mod.toOneLineString(sudoku_instance.engine.state.board);
+    const expected = sudoku_instance.engine.toPuzzle();
     const bytes = transport.readAll(transport.context, tmp_path) catch return error.TestFailed;
     defer transport.free(transport.context, bytes);
     try std.testing.expectEqual(@as(usize, 81), bytes.len);
@@ -928,7 +926,7 @@ test "integrated e2e - run: copy via menu prints one-line puzzle; history untouc
     try sudoku_instance.showGame();
     while (true) if (try sudoku_instance.turn()) break;
 
-    const expected = export_command.currentPuzzleLine(&sudoku_instance.engine);
+    const expected = sudoku_instance.engine.toPuzzle();
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, &expected) != null);
     try std.testing.expectEqual(@as(usize, 1), sudoku_instance.engine.state.history.entries.items.len);
@@ -1305,9 +1303,9 @@ test "startup policy: auto_restore false and auto_new false keeps manual startup
 
     var expected_idle: [81]u8 = undefined;
     @memset(&expected_idle, '0');
-    const before = export_command.currentPuzzleLine(&app.engine);
+    const before = app.engine.toPuzzle();
     try app.runStartupFlow(null);
-    const after = export_command.currentPuzzleLine(&app.engine);
+    const after = app.engine.toPuzzle();
 
     try std.testing.expectEqualSlices(u8, &expected_idle, &before);
     try std.testing.expectEqualSlices(u8, &before, &after);
@@ -1383,7 +1381,7 @@ test "win state stays manual: no automatic transition after You win" {
     try std.testing.expect(std.mem.indexOf(u8, output, "You win!") != null);
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "You win!"));
 
-    const solved = export_command.currentPuzzleLine(&app.engine);
+    const solved = app.engine.toPuzzle();
     const expected =
         "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
     try std.testing.expectEqualSlices(u8, expected, &solved);
@@ -1418,15 +1416,15 @@ fn restoreFailureScenario(delete: bool) !void {
     defer out.deinit();
     var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport, &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
     defer app.deinit();
-    const before = export_command.currentPuzzleLine(&app.engine);
+    const before = app.engine.toPuzzle();
 
     try app.runStartupFlow(broken_path);
 
-    const after = export_command.currentPuzzleLine(&app.engine);
+    const after = app.engine.toPuzzle();
     try std.testing.expectEqualSlices(u8, &before, &after);
     try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, facade_impl.last_render_msg.?);
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
-    try std.testing.expect(app.file_session.workingFile() == null);
+    try std.testing.expect(app.file_session.currentFile() == null);
     const pointer = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (pointer) |p| std.testing.allocator.free(p);
     try std.testing.expect(pointer == null);
@@ -1442,7 +1440,7 @@ test "startup: restore failure keeps the file on Keep but still forgets it" {
     try restoreFailureScenario(false);
 }
 
-test "autosave: first autosave with no working file writes the visible save folder and makes it the working file" {
+test "autosave: first autosave with no current file writes the visible save folder and makes it the current file" {
     const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});

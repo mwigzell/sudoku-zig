@@ -84,7 +84,7 @@ pub const GameEngine = struct {
 
     /// Build an engine from a one-line puzzle string and nominal config.
     pub fn init(puzzle_str: []const u8, cfg: config.Config) Error!@This() {
-        const brd = board.fromOneLineString(puzzle_str) catch return Error.System;
+        const brd = board.fromPuzzle(puzzle_str) catch return Error.System;
         var self = @This(){
             .state = .{
                 .board = brd,
@@ -154,7 +154,7 @@ pub const GameEngine = struct {
     }
 
     /// Replace board and history from a SUD0 blob produced by `toSaveFormat`.
-    pub fn loadSaveFormat(self: *@This(), buf: []const u8) !void {
+    pub fn fromSaveFormat(self: *@This(), buf: []const u8) !void {
         const gpa = std.heap.page_allocator;
         const loaded = try save_format.fromSaveFormat(gpa, buf);
         self.state.history.deinit();
@@ -173,7 +173,7 @@ pub const GameEngine = struct {
 
     /// Open from SUD0 bytes — the core open command calls this on every platform.
     pub fn openFromSave(self: *@This(), buf: []const u8, opened_label: ?[]const u8) Event {
-        self.loadSaveFormat(buf) catch |err| {
+        self.fromSaveFormat(buf) catch |err| {
             log.err("open: not a saved game ({s})", .{@errorName(err)});
             return self.errorEvent(NOT_A_SAVED_GAME_MSG);
         };
@@ -182,7 +182,7 @@ pub const GameEngine = struct {
 
     /// Startup restore path: rehydrate state and surface only persisted status.
     pub fn restoreFromSave(self: *@This(), buf: []const u8) Event {
-        self.loadSaveFormat(buf) catch |err| {
+        self.fromSaveFormat(buf) catch |err| {
             log.err("restore: not a saved game ({s})", .{@errorName(err)});
             return self.errorEvent(NOT_A_SAVED_GAME_MSG);
         };
@@ -194,14 +194,19 @@ pub const GameEngine = struct {
     pub fn applyOneLinePuzzle(self: *@This(), line: []const u8) board.Error!void {
         const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
         if (trimmed.len != 81) return board.Error.WrongLength;
-        const imported = try board.fromOneLineString(trimmed);
+        const imported = try board.fromPuzzle(trimmed);
         self.state.history.deinit();
         self.state.history = MutationHistory.init(std.heap.page_allocator);
         self.state.board = imported;
     }
 
+    /// The game as a puzzle: the board's cell values as 81 characters, `0` for an empty cell.
+    pub fn toPuzzle(self: *const @This()) [board.CELL_COUNT]u8 {
+        return board.toPuzzle(self.state.board);
+    }
+
     /// Import a one-line puzzle (81 digits/blanks) from a file.
-    pub fn importFromLine(self: *@This(), line: []const u8) Event {
+    pub fn fromPuzzle(self: *@This(), line: []const u8) Event {
         return self.loadOneLine(line, IMPORTED_MSG);
     }
 
@@ -603,7 +608,7 @@ test "openFromSave joins competing status sentences with a space" {
     try std.testing.expectEqualStrings(std.fmt.comptimePrint(OPENED_FMT, .{"dead.sud"}) ++ " " ++ hint_command.load_no_solution_msg, msg);
 }
 
-test "loadSaveFormat replaces board and history from SUD0 bytes" {
+test "fromSaveFormat replaces board and history from SUD0 bytes" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try engine.state.board.setCell(0, 2, .seven);
@@ -614,12 +619,12 @@ test "loadSaveFormat replaces board and history from SUD0 bytes" {
 
     var fresh = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer fresh.deinit();
-    try fresh.loadSaveFormat(buf);
+    try fresh.fromSaveFormat(buf);
 
     try std.testing.expect(board.equal(engine.state.board, fresh.state.board));
     try std.testing.expectEqual(@as(usize, 1), fresh.state.history.pointer);
 }
-test "importFromLine loads a one-line puzzle and clears history" {
+test "fromPuzzle loads a one-line puzzle and clears history" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
@@ -629,16 +634,16 @@ test "importFromLine loads a one-line puzzle and clears history" {
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
 
     const line = puzzle_gen.PuzzleGen.hard();
-    const ev = engine.importFromLine(line);
+    const ev = engine.fromPuzzle(line);
     try std.testing.expect(ev == .ok);
     try std.testing.expectEqualStrings(IMPORTED_MSG, ev.ok.msg.?);
 
-    const expected = try board.fromOneLineString(line);
+    const expected = try board.fromPuzzle(line);
     try std.testing.expect(board.equal(engine.state.board, expected));
     try std.testing.expectEqual(@as(usize, 0), engine.state.history.pointer);
 }
 
-test "importFromLine rejects a short line and leaves board and history intact" {
+test "fromPuzzle rejects a short line and leaves board and history intact" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
@@ -646,7 +651,7 @@ test "importFromLine rejects a short line and leaves board and history intact" {
     try engine.state.history.push(0, 3, .zero, .seven);
     const before = board.toFlat(engine.state.board);
 
-    const ev = engine.importFromLine("12345");
+    const ev = engine.fromPuzzle("12345");
     try std.testing.expect(ev == .error_msg);
     try std.testing.expectEqualStrings(LINE_LENGTH_MSG, ev.error_msg);
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
@@ -665,14 +670,14 @@ test "applyOneLinePuzzle rejects short line without mutating state" {
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
 }
 
-test "importFromLine rejects invalid characters without touching state" {
+test "fromPuzzle rejects invalid characters without touching state" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     const before = board.toFlat(engine.state.board);
 
     var bad: [81]u8 = undefined;
     for (&bad) |*c| c.* = 'z';
-    const ev = engine.importFromLine(bad[0..]);
+    const ev = engine.fromPuzzle(bad[0..]);
     try std.testing.expect(ev == .error_msg);
     try std.testing.expectEqualStrings(LINE_CHARACTER_MSG, ev.error_msg);
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
@@ -713,7 +718,7 @@ test "toSaveFormat serializes state without engine file methods" {
 
     var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer loaded.deinit();
-    try loaded.loadSaveFormat(buf);
+    try loaded.fromSaveFormat(buf);
     try std.testing.expectEqual(cell.CellValue.seven, loaded.state.board.getCellValue(0, 2));
 }
 
@@ -741,7 +746,7 @@ test "GameEngine init builds board from puzzle string" {
     try std.testing.expectEqual(cell.CellValue.zero, view.get(0, 2));
 }
 
-test "codec round-trip via loadSaveFormat and toSaveFormat — no engine file methods" {
+test "codec round-trip via fromSaveFormat and toSaveFormat — no engine file methods" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
@@ -754,7 +759,7 @@ test "codec round-trip via loadSaveFormat and toSaveFormat — no engine file me
 
     var loaded = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer loaded.deinit();
-    try loaded.loadSaveFormat(buf);
+    try loaded.fromSaveFormat(buf);
 
     try std.testing.expect(board.equal(engine.state.board, loaded.state.board));
     try std.testing.expectEqual(engine.state.history.count(), loaded.state.history.count());
@@ -981,7 +986,7 @@ test "init calls validate so initial conflicts are detected" {
 
 test "Event.ok carries board_view and optional msg" {
     const puzzle_str: []const u8 = puzzle_gen.PuzzleGen.default();
-    var board_inst = try board.fromOneLineString(puzzle_str);
+    var board_inst = try board.fromPuzzle(puzzle_str);
     const view = board_inst.asView();
 
     _ = Event{
@@ -995,7 +1000,7 @@ test "Event.ok carries board_view and optional msg" {
 
 test "Event.ok can carry a message" {
     const puzzle_str: []const u8 = puzzle_gen.PuzzleGen.default();
-    var board_inst = try board.fromOneLineString(puzzle_str);
+    var board_inst = try board.fromPuzzle(puzzle_str);
     const view = board_inst.asView();
 
     _ = Event{
@@ -1568,7 +1573,7 @@ test "exec startup auto toggles flip config" {
     try std.testing.expect(cfg.auto_save);
 }
 
-test "loadSaveFormat preserves view config" {
+test "fromSaveFormat preserves view config" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     engine.cfg.theme = .light;
@@ -1577,7 +1582,7 @@ test "loadSaveFormat preserves view config" {
     const buf = try engine.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    try engine.loadSaveFormat(buf);
+    try engine.fromSaveFormat(buf);
     const cfg = engine.getConfig();
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
     try std.testing.expect(cfg.show_region);

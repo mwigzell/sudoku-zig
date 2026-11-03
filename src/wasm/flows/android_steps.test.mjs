@@ -9,7 +9,7 @@ const okFetch = async () => ({ ok: true, status: 204 });
 
 /** Autosave session with nothing written yet, over a fake game whose saved bytes are [4, 2]. */
 async function autosaveGame() {
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true });
   const session = { legend: {}, state: { cells: [] }, config: { auto_save: true }, default_save_filename: "sudoku.sud" };
   return { game, session };
 }
@@ -116,7 +116,7 @@ async function autosaveGame() {
 
 {
   // Save writes the bound file through the bridge; Save As always asks the bridge for a new file.
-  const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { opened: "bound.sud" });
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { opened: "bound.sud" });
   const session = { legend: { save: true, save_as: true }, state: { cells: [] }, default_save_filename: "sudoku.sud" };
   const saves = [];
   const bridge = {

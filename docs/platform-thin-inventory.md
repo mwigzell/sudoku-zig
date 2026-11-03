@@ -10,9 +10,9 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 | Command | Core owns | Adapter does | Tag |
 |---|---|---|---|
 | New | Generation, board swap, status text, `FileSession.noteLoad(.new_game)`, then the autosave flow | Difficulty dialog, generating modal / worker, render | `CORE` |
-| Open | Decode, board swap, status text, `noteLoad(.open)` (working file), then the autosave flow | File picker or Android open bridge; binding the picked handle so later writes reach it | `CORE` |
-| Import / Paste | `importFromLine` / `pasteFromLine` codec and status text, `noteLoad(.import / .paste)`, then the autosave flow | Text file picker; clipboard read (or native `paste` line input) | `CORE` |
-| Save / Save As | `SaveFlow`: target choice, overwrite question, refusing Save while Auto Save is on, status text, working file | Picker, bound handle, Android bridge or download; host restore copy | `CORE` |
+| Open | Decode, board swap, status text, `noteLoad(.open)` (current file), then the autosave flow | File picker or Android open bridge; binding the picked handle so later writes reach it | `CORE` |
+| Import / Paste | `fromPuzzle` / `pasteFromLine` codec and status text, `noteLoad(.import / .paste)`, then the autosave flow | Text file picker; clipboard read (or native `paste` line input) | `CORE` |
+| Save / Save As | `SaveFlow`: target choice, overwrite question, refusing Save while Auto Save is on, status text, current file | Picker, bound handle, Android bridge or download; host restore copy | `CORE` |
 | Autosave | `AutosaveFlow` after every command; Android "earlier install" question and retry (`Wrote.taken` → `reclaim_file` / `save_as`) | Writing the bound file; the two Android pickers | `CORE` |
 | Export | `ExportFlow` (`write` step, "exported to:" status, errors) | Text picker or download; native writes through the file transport | `CORE` |
 | Copy | `ExportFlow.toClipboard` (`copy_puzzle` step, status, errors) | Clipboard write (web) or printing the line (native: no clipboard) | `CORE` |

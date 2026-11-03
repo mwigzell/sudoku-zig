@@ -29,7 +29,7 @@ const RESTORE_CANCELLED_REASON = "the restore read was cancelled";
 pub const CurrentFile = struct {
     path: []const u8,
     name: []const u8,
-    working: []const u8,
+    current: []const u8,
 };
 
 /// Player settings that shape startup.
@@ -62,7 +62,7 @@ pub const StartupFlow = struct {
     has_current: bool = false,
     path: Text = .{},
     name: Text = .{},
-    working: Text = .{},
+    current: Text = .{},
     /// Status of the game just shown, or the question / error text still to come.
     text: Text = .{},
     restored: bool = false,
@@ -90,7 +90,7 @@ pub const StartupFlow = struct {
             flow.has_current = true;
             flow.path.set(file.path);
             flow.name.set(file.name);
-            flow.working.set(file.working);
+            flow.current.set(file.current);
         }
         return flow;
     }
@@ -128,7 +128,7 @@ pub const StartupFlow = struct {
                     .error_msg => |msg| self.restoreFailed(msg),
                     .ok => |ok| blk: {
                         self.restored = true;
-                        self.session.setWorkingFile(self.working.get());
+                        self.session.setCurrentFile(self.current.get());
                         self.session.apply(.startup_restore);
                         break :blk self.showGame(.showing_restored, ok.msg);
                     },
@@ -220,7 +220,7 @@ pub const StartupFlow = struct {
 
     /// Idle board with the welcome line; `phase` says what follows once it is drawn.
     fn showIdle(self: *StartupFlow, phase: Phase) Step {
-        self.session.setWorkingFile(null);
+        self.session.setCurrentFile(null);
         self.session.apply(.startup_idle);
         self.phase = phase;
         return step_mod.showGame(self.engine, startup_policy.IDLE_STARTUP_STATUS, null);
@@ -279,7 +279,7 @@ const Harness = struct {
 };
 
 const restore_opts = Options{ .auto_restore = true, .auto_new = false, .difficulty = .easy };
-const test_file = CurrentFile{ .path = "/data/game.sud", .name = "game.sud", .working = "/data/game.sud" };
+const test_file = CurrentFile{ .path = "/data/game.sud", .name = "game.sud", .current = "/data/game.sud" };
 
 test "startup with nothing to restore and no auto new shows the idle board" {
     var h = try Harness.init();
@@ -301,7 +301,7 @@ test "startup restore reads the file, shows the game and continues it" {
     const shown = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } });
     try std.testing.expectEqualStrings("game.sud", shown.show_game.file.?);
     try std.testing.expectEqual(Step.done, f.next(.ack));
-    try std.testing.expectEqualStrings("/data/game.sud", h.session.workingFile().?);
+    try std.testing.expectEqualStrings("/data/game.sud", h.session.currentFile().?);
     try std.testing.expectEqual(@import("../file_policy.zig").WriteContext.continuation, h.session.write_context);
 }
 
@@ -350,7 +350,7 @@ test "startup restore failure shows idle, asks to delete, then forgets the file"
         try std.testing.expectEqualStrings("/data/game.sud", forget.forget_current_file.path);
         try std.testing.expectEqual(delete, forget.forget_current_file.delete);
         try std.testing.expectEqual(Step.done, f.next(.ack));
-        try std.testing.expect(h.session.workingFile() == null);
+        try std.testing.expect(h.session.currentFile() == null);
     }
 }
 
