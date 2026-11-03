@@ -10,7 +10,7 @@ pub const ParseError = error{
 
 const log = logger.Logger(.cli);
 
-/// Help text; printed to stdout for -h/--version and embedded in fatal error messages.
+/// Help text; printed to stdout for -h/--version and appended to flag errors.
 const usage_fmt =
     \\Usage: sudoku [OPTIONS]
     \\
@@ -35,27 +35,27 @@ pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Confi
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-r") or std.mem.eql(u8, arg, "--renderer")) {
             const kind = iterator.next() orelse {
-                log.fatal("--renderer requires a value.\n\n{s}", .{usage_fmt});
+                failFlag("--renderer requires a value.", .{});
             };
             cfg.preferred_renderer = parseRenderer(kind) orelse {
-                log.fatal("invalid renderer kind '{s}'.\n\n{s}", .{ kind, usage_fmt });
+                failFlag("invalid renderer kind '{s}'.", .{kind});
             };
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--difficulty")) {
             const diff = iterator.next() orelse {
-                log.fatal("--difficulty requires a value.\n\n{s}", .{usage_fmt});
+                failFlag("--difficulty requires a value.", .{});
             };
             cfg.difficulty = parseDifficulty(diff) orelse {
-                log.fatal("invalid difficulty '{s}'.\n\n{s}", .{ diff, usage_fmt });
+                failFlag("invalid difficulty '{s}'.", .{diff});
             };
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--log-level")) {
             const lvl = iterator.next() orelse {
-                log.fatal("--log-level requires a value.\n\n{s}", .{usage_fmt});
+                failFlag("--log-level requires a value.", .{});
             };
             cfg.log_level = parseLogLevel(lvl) orelse {
-                log.fatal("invalid log level '{s}'.\n\n{s}", .{ lvl, usage_fmt });
+                failFlag("invalid log level '{s}'.", .{lvl});
             };
         } else if (std.mem.startsWith(u8, arg, "-")) {
-            log.fatal("Unknown flag: '{s}'.\n\n{s}", .{ arg, usage_fmt });
+            failFlag("Unknown flag: '{s}'.", .{arg});
         }
     }
 
@@ -65,6 +65,15 @@ pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Confi
 /// Iterate argv and return a Config with code defaults overridden by flags.
 pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
     return parseCLIWithBase(iterator, config.Config.default());
+}
+
+/// Exit status for a bad command-line flag.
+const FLAG_ERROR_EXIT = 2;
+
+/// A bad flag is the user's typo, not a crash: log it with the usage text and exit, no stack trace.
+fn failFlag(comptime fmt: []const u8, args: anytype) noreturn {
+    log.err(fmt ++ "\n\n{s}", args ++ .{usage_fmt});
+    std.process.exit(FLAG_ERROR_EXIT);
 }
 
 fn parseRenderer(kind: []const u8) ?config.RendererKind {
