@@ -6,13 +6,14 @@
 /// — caller is responsible for freeing via `gpa.free()`.
 const std = @import("std");
 const builtin = @import("builtin");
+const save_defaults = @import("../../core/save_defaults.zig");
 const data_dir_suffix = switch (builtin.os.tag) {
     .linux => "/.local/share/sudoku",
     .macos => "/Library/Application Support/sudoku",
     else => @compileError("computeDataDir: unsupported OS — add platform convention"),
 };
 
-const visible_save_dir_suffix = "/Documents/Sudoku";
+const visible_save_dir_suffix = "/Documents/" ++ save_defaults.DEFAULT_FOLDER_NAME;
 
 // POSIX: walks the C environ array to find $HOME.
 fn getHomeDir(gpa: std.mem.Allocator) ![]u8 {

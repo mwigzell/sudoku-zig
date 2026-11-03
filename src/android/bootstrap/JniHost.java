@@ -49,6 +49,13 @@ public final class JniHost {
 
     private static native String logIdentityNative();
 
+    private static native String defaultFolderNameNative();
+
+    /** Core's default folder name; the caller chooses the parent folder. */
+    public static String defaultFolderName() {
+        return defaultFolderNameNative();
+    }
+
     public static String logIdentity() {
         final String value = logIdentityNative();
         if (value == null || value.isEmpty()) return "sudoku-zig";

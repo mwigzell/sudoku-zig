@@ -30,3 +30,10 @@ export fn Java_com_wigzell_sudoku_1zig_JniHost_logIdentityNative(
 ) callconv(.c) ?*anyopaque {
     return jni_host.logIdentity(env);
 }
+
+export fn Java_com_wigzell_sudoku_1zig_JniHost_defaultFolderNameNative(
+    env: *anyopaque,
+    _: *anyopaque,
+) callconv(.c) ?*anyopaque {
+    return jni_host.defaultFolderName(env);
+}

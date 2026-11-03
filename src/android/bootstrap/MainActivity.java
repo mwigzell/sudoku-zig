@@ -67,7 +67,7 @@ public final class MainActivity extends Activity {
         MIME_TEXT_PLAIN,
     };
     private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
-    private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/Sudoku";
+    private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/" + JniHost.defaultFolderName();
     private static final String REASON_DEFAULT_TAKEN = "default_taken";
     /** Bridge result keys, read by `file_menu.js`. */
     private static final String KEY_OK = "ok";

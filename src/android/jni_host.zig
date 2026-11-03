@@ -5,6 +5,7 @@ const web_host = @import("../web_host/mod.zig");
 const config = @import("../core/config.zig");
 const settings_store = @import("../core/settings_store.zig");
 const startup_config = @import("../core/startup/config.zig");
+const save_defaults = @import("../core/save_defaults.zig");
 const logcat = @import("logcat.zig");
 extern fn sudoku_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque) ?[*:0]const u8;
 extern fn sudoku_release_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque, chars: ?[*:0]const u8) void;
@@ -108,6 +109,12 @@ pub fn stopHost() void {
 pub fn logIdentity(env: ?*anyopaque) ?*anyopaque {
     const env_raw = env orelse return null;
     return sudoku_new_jstring_utf(env_raw, logcat.logIdentity());
+}
+
+/// JNI surface: core's default folder name, which Java places under Downloads.
+pub fn defaultFolderName(env: ?*anyopaque) ?*anyopaque {
+    const env_raw = env orelse return null;
+    return sudoku_new_jstring_utf(env_raw, save_defaults.DEFAULT_FOLDER_NAME);
 }
 
 test {

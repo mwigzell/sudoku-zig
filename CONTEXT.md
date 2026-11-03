@@ -172,7 +172,7 @@ The file the current game belongs to (`FileSession`), set by Open, Save and Save
 On web and Android, the player's real file that the working file is tied to: a browser file handle or an Android document.
 
 **Default file / default folder**:
-`sudoku.sud` in the default folder (`Documents/Sudoku` on desktop, `Download/Sudoku` on Android). Autosave writes it when there is no working file.
+`sudoku.sud` in the default folder (`Documents/Sudoku` on desktop, `Download/Sudoku` on Android). Autosave writes it when there is no working file. Core owns the file name and the **default folder name** `Sudoku` (`save_defaults.zig`); each platform chooses only the parent folder (Android reads the name through `JniHost.defaultFolderName`).
 
 **Restore copy**:
 The host's private copy of the game in its hidden data dir, read by Auto Restore at startup when the player's file is elsewhere.
