@@ -16,7 +16,7 @@ export const sudFilePickerTypes = [
 
 export const puzzleTextPickerTypes = [
   {
-    description: "One-line puzzle",
+    description: "Puzzle (Simple Line Format)",
     accept: { "text/plain": [".txt"] },
   },
 ];

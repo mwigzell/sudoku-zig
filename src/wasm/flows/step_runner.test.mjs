@@ -361,4 +361,29 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.deepEqual(game.getState(), before);
 }
 
+// Paste and Import hand core the text untrimmed: every blank marker reads, surrounding whitespace is a wrong length.
+{
+  const game = await loadGame();
+  const markers = "0.X*_ ";
+  const blanks = Array.from({ length: 81 }, (_, i) => markers[i % markers.length]);
+  blanks[0] = " ";
+  blanks[80] = " ";
+  blanks[7] = "5";
+  const bytes = new TextEncoder().encode(blanks.join(""));
+  const shown = [];
+  for (const action of ["paste", "import"]) {
+    const outcome = await stepRunner.runCommand(game, { action }, {
+      pastePuzzle: () => ({ ok: true, bytes }),
+      importPuzzle: () => ({ ok: true, bytes }),
+      showGame: (step) => shown.push(step),
+    });
+    assert.deepEqual(outcome, { kind: "done" }, `${action} accepts every blank marker`);
+  }
+  assert.equal(game.getState().cells[7].value, 5);
+
+  const padded = new TextEncoder().encode(`${PUZZLE_LINE}\n`);
+  const rejected = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: true, bytes: padded }), showError() {} });
+  assert.deepEqual(rejected, { kind: "show_error", text: coreText.PUZZLE_LENGTH_MSG });
+}
+
 console.log("step_runner.test.mjs OK");

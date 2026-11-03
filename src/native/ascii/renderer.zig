@@ -50,6 +50,8 @@ pub fn bottomBorder() []const u8 {
 /// lines and the legend can push it wider — never narrower than this.
 const box_min_width: usize = 80;
 const SAVE_AS_PROMPT = "Save as (Enter keeps the current file): ";
+/// Prompt for Edit → Paste; the answer is read exactly as typed.
+const PASTE_PROMPT = "Paste puzzle: ";
 
 fn menuPickIsQuit(pick: []const u8) bool {
     return std.mem.eql(u8, pick, "10") or
@@ -175,14 +177,18 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.can_solve = commands.solve;
         }
 
-        /// Read one line from the injected input source.
+        /// Read one line from the injected input source, trimmed (commands, answers, paths).
         /// Caller owns returned string and must free it.
         pub fn readLine(self: *@This()) facade.Error![]u8 {
-            const raw = self.inputSource.readline() catch return facade.Error.System;
-            // Caller needs an owned copy of the trimmed line
-            const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
+            const raw = try self.readRawLine();
             defer self.allocator.free(raw);
+            const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
             return self.allocator.dupe(u8, trimmed) catch return facade.Error.System;
+        }
+
+        /// Read one line exactly as typed; a pasted puzzle keeps its edge space blanks.
+        fn readRawLine(self: *@This()) facade.Error![]u8 {
+            return self.inputSource.readline() catch return facade.Error.System;
         }
 
         /// Implement Facade showError_fn. Draw the error in the shared box frame, then
@@ -230,11 +236,11 @@ pub fn AsciiRenderer(StylerType: type) type {
             return .{ .FileName = line };
         }
 
-        /// Prompt for a one-line puzzle string; empty input means cancelled.
-        fn puzzleLineDialog(self: *@This()) facade.Error!_command.OpenFileResult {
-            self.writer.writeAll("Paste puzzle line: ") catch return facade.Error.System;
+        /// Prompt for a puzzle, read as typed; empty input means cancelled.
+        fn puzzleDialog(self: *@This()) facade.Error!_command.OpenFileResult {
+            self.writer.writeAll(PASTE_PROMPT) catch return facade.Error.System;
 
-            const line = self.readLine() catch return .Cancelled;
+            const line = self.readRawLine() catch return .Cancelled;
 
             if (line.len == 0) {
                 defer self.allocator.free(line);
@@ -367,8 +373,8 @@ pub fn AsciiRenderer(StylerType: type) type {
             } else {
                 self.writer.writeAll("  11) Solve (unavailable)\n") catch return facade.Error.System;
             }
-            self.writer.writeAll("  12) Copy puzzle line\n") catch return facade.Error.System;
-            self.writer.writeAll("  13) Paste puzzle line\n") catch return facade.Error.System;
+            self.writer.writeAll("  12) Copy puzzle\n") catch return facade.Error.System;
+            self.writer.writeAll("  13) Paste puzzle\n") catch return facade.Error.System;
             self.writer.writeAll("  14) Settings\n") catch return facade.Error.System;
             self.writer.writeAll("> ") catch return facade.Error.System;
 
@@ -450,7 +456,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         ) facade.Error!_command.ParseCommandResult {
             while (true) {
                 self.writer.writeAll("> ") catch return facade.Error.System;
-                const raw = self.inputSource.readline() catch return .{ .valid = _command.Command.quit };
+                const raw = self.readLine() catch return .{ .valid = _command.Command.quit };
                 defer self.allocator.free(raw);
                 if (names.len == 0) return .{ .error_msg = NO_COMMANDS_MSG };
 
@@ -463,7 +469,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
         }
 
-        /// Ask the dialog a command needs (path, puzzle line, difficulty); false when the player cancels.
+        /// Ask the dialog a command needs (path, puzzle, difficulty); false when the player cancels.
         fn completeFromDialog(self: *@This(), rsl: *_command.ParseCommandResult) bool {
             // Intercept save_as: the typed path, or null for core's suggestion.
             if (std.meta.activeTag(rsl.*) == .valid and
@@ -507,7 +513,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             // Intercept paste: prompt for a one-line puzzle; engine owns parse/validate.
             if (std.meta.activeTag(rsl.*) == .valid and std.meta.activeTag(rsl.*.valid) == .paste) {
-                const line_result = self.puzzleLineDialog() catch return false;
+                const line_result = self.puzzleDialog() catch return false;
                 switch (line_result) {
                     .FileName => |line| {
                         if (self.paste_line) |old| self.allocator.free(old);
@@ -1028,12 +1034,25 @@ test "getCommandInput: open carries the typed path" {
     try std.testing.expectEqualStrings("game.sud", result.valid.open.path.?);
 }
 
-test "getCommandInput: paste carries the typed puzzle line" {
+test "getCommandInput: paste carries the typed puzzle" {
     const line = "003020600900305001001806400008102900700000008006708200002609500800203009005010300";
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
     var s = styler.PlainStyler{};
     var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "13\n", line ++ "\n" });
+    defer renderer.deinit();
+    var names: [7][]const u8 = undefined;
+    const count = save_legend.getNames(&names);
+    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    try std.testing.expectEqualStrings(line, result.valid.paste.line.?);
+}
+
+test "getCommandInput: a pasted puzzle keeps its edge space blanks while commands are trimmed" {
+    const line = " " ++ "03020600900305001001806400008102900700000008006708200002609500800203009005010300"[0..79] ++ " ";
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var renderer = scriptedRenderer(&aw, &s, &.{ " m \n", " 13 \n", line ++ "\n" });
     defer renderer.deinit();
     var names: [7][]const u8 = undefined;
     const count = save_legend.getNames(&names);

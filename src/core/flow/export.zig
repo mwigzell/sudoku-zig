@@ -13,7 +13,7 @@ const Input = step_mod.Input;
 /// Status after Export; `{s}` is the written file.
 pub const EXPORTED_TO_FMT = "The puzzle was exported to {s}.";
 /// Status after Copy.
-pub const COPIED_MSG: []const u8 = "The puzzle line was copied.";
+pub const COPIED_MSG: []const u8 = "The puzzle was copied.";
 /// Export target when the player names none.
 pub const DEFAULT_EXPORT_FILE: []const u8 = "puzzle.txt";
 /// Shown when the platform could not write the puzzle file; its reason goes to the log.

@@ -295,7 +295,7 @@
     },
     {
       "name": "copy_reports_and_writes_nothing",
-      "summary": "Copy hands the puzzle line over, reports it, and writes no file even with Auto Save on.",
+      "summary": "Copy hands the puzzle over, reports it, and writes no file even with Auto Save on.",
       "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
@@ -303,7 +303,7 @@
       "expect": {
         "questions": 0,
         "written": [],
-        "status": "The puzzle line was copied.",
+        "status": "The puzzle was copied.",
         "probes": []
       }
     },

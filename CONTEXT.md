@@ -160,8 +160,11 @@ The full game (board, givens, history, status) in the SUD0 format, written by Sa
 _Avoid_: platform function names (`toSaveFormat`, `fromSaveFormat`) when describing behaviour
 
 **Puzzle**:
-The board's cell values as exactly 81 characters of text, one per cell, row by row; any other length is rejected. Export and Copy write it with `0` for an empty cell; Import and Paste also accept `.` as empty.
+The board's cell values as text in **Simple Line Format**. Import and Paste read Simple Line Format; Export and Copy write it with `0` for an empty cell. Nothing is trimmed: any text that is not exactly 81 characters is rejected.
 _Avoid_: "line" or "puzzle line"; platform function names (`toPuzzle`, `fromPuzzle`)
+
+**Simple Line Format**:
+A puzzle as 81 characters, one per cell, row by row: the digits 1 to 9 for filled cells, and `0`, `.`, `X`, `*`, `_` or a space for an empty cell (`0` is the least ambiguous).
 
 ### Files
 

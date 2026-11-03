@@ -49,15 +49,14 @@ pub fn fromFlat(flat: [81]u8, opts: FlatOpts) Error!board.Board {
     return b;
 }
 
-/// Construct a Board from a one-line Sudoku string like "53..7........6.....98..".
+/// Construct a Board from a puzzle in Simple Line Format: 81 characters, digits 1 to 9, blanks 0 . X * _ or space.
 pub fn fromPuzzle(oneLine: []const u8) Error!board.Board {
     if (oneLine.len != 81) return Error.WrongLength;
 
     var flat: [81]u8 = undefined;
     for (oneLine, 0..) |ch, i| {
         flat[i] = switch (ch) {
-            '.' => 0,
-            '0' => 0,
+            '0', '.', 'X', '*', '_', ' ' => 0,
             '1'...'9' => ch - '0',
             else => return Error.InvalidCharacter,
         };
@@ -206,9 +205,22 @@ test "Board: fromPuzzle rejects wrong length" {
 test "Board: fromPuzzle rejects invalid characters" {
     var bad: [81]u8 = undefined;
     @memset(&bad, '.');
-    bad[10] = 'X'; // letter in puzzle string
+    bad[10] = 'x'; // only uppercase X is a blank marker
 
     try std.testing.expectError(Error.InvalidCharacter, fromPuzzle(bad[0..]));
+}
+
+test "Board: fromPuzzle reads 0 . X * _ and space as empty, all in one puzzle" {
+    const markers = "0.X*_ ";
+    var line: [81]u8 = undefined;
+    for (&line, 0..) |*ch, i| ch.* = markers[i % markers.len];
+    line[40] = '5';
+    const b = try fromPuzzle(&line);
+    for (0..board.CELL_COUNT) |i| {
+        const want: u8 = if (i == 40) 5 else 0;
+        try std.testing.expectEqual(want, toFlat(b)[i]);
+    }
+    try std.testing.expectEqual(@as(u8, ' '), line[5]);
 }
 
 test "Board: toFlat produces [81]u8 matching current cell values" {

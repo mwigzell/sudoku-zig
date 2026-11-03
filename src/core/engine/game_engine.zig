@@ -51,8 +51,8 @@ pub const CELL_CHANGE_FAILED_MSG = "The cell could not be changed.";
 pub const MOVE_NOT_RECORDED_MSG = "The move could not be recorded, so it was not made.";
 pub const SOLVE_CONFLICT_MSG = "The board has a conflict, so it can't be solved. Clear the conflicting cells and try again.";
 pub const NOT_A_SAVED_GAME_MSG = "The file is not a saved Sudoku game, or it is damaged.";
-pub const LINE_LENGTH_MSG = "A puzzle line must have exactly 81 characters.";
-pub const LINE_CHARACTER_MSG = "A puzzle line can only contain the digits 1 to 9, with 0 or . for an empty cell.";
+pub const PUZZLE_LENGTH_MSG = "A puzzle in Simple Line Format must have exactly 81 characters.";
+pub const PUZZLE_CHARACTER_MSG = "A puzzle in Simple Line Format can only contain the digits 1 to 9, with 0, ., X, *, _ or a space for an empty cell.";
 pub const NEW_GAME_FAILED_MSG = "A new game could not be started.";
 pub const NOTHING_TO_UNDO_MSG = "There is nothing to undo.";
 pub const NOTHING_TO_REDO_MSG = "There is nothing to redo.";
@@ -189,12 +189,10 @@ pub const GameEngine = struct {
         return self.finishLoadEvent(null, .startup_restore);
     }
 
-    /// Replace board and clear history from a trimmed one-line puzzle string.
+    /// Replace board and clear history from a puzzle in Simple Line Format, untrimmed.
     /// Failure leaves board and history untouched.
     pub fn applyOneLinePuzzle(self: *@This(), line: []const u8) board.Error!void {
-        const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
-        if (trimmed.len != 81) return board.Error.WrongLength;
-        const imported = try board.fromPuzzle(trimmed);
+        const imported = try board.fromPuzzle(line);
         self.state.history.deinit();
         self.state.history = MutationHistory.init(std.heap.page_allocator);
         self.state.board = imported;
@@ -217,8 +215,8 @@ pub const GameEngine = struct {
 
     fn loadOneLine(self: *@This(), line: []const u8, loaded_msg: []const u8) Event {
         self.applyOneLinePuzzle(line) catch |err| switch (err) {
-            board.Error.WrongLength => return self.errorEvent(LINE_LENGTH_MSG),
-            else => return self.errorEvent(LINE_CHARACTER_MSG),
+            board.Error.WrongLength => return self.errorEvent(PUZZLE_LENGTH_MSG),
+            else => return self.errorEvent(PUZZLE_CHARACTER_MSG),
         };
         self.beginEventMsg();
         self.appendEventMsg(loaded_msg);
@@ -653,7 +651,7 @@ test "fromPuzzle rejects a short line and leaves board and history intact" {
 
     const ev = engine.fromPuzzle("12345");
     try std.testing.expect(ev == .error_msg);
-    try std.testing.expectEqualStrings(LINE_LENGTH_MSG, ev.error_msg);
+    try std.testing.expectEqualStrings(PUZZLE_LENGTH_MSG, ev.error_msg);
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
 }
@@ -679,7 +677,36 @@ test "fromPuzzle rejects invalid characters without touching state" {
     for (&bad) |*c| c.* = 'z';
     const ev = engine.fromPuzzle(bad[0..]);
     try std.testing.expect(ev == .error_msg);
-    try std.testing.expectEqualStrings(LINE_CHARACTER_MSG, ev.error_msg);
+    try std.testing.expectEqualStrings(PUZZLE_CHARACTER_MSG, ev.error_msg);
+    try std.testing.expectEqual(before, board.toFlat(engine.state.board));
+}
+
+test "import and paste accept a puzzle that starts and ends with a space blank" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    const markers = "0.X*_ ";
+    var line: [81]u8 = undefined;
+    for (&line, 0..) |*ch, i| ch.* = markers[i % markers.len];
+    line[0] = ' ';
+    line[80] = ' ';
+    line[7] = '5';
+
+    try std.testing.expect(engine.fromPuzzle(&line) == .ok);
+    try std.testing.expectEqual(@as(u8, 5), board.toFlat(engine.state.board)[7]);
+    try std.testing.expect(engine.pasteFromLine(&line) == .ok);
+}
+
+test "a puzzle with surrounding whitespace is not trimmed and is rejected for its length" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    const before = board.toFlat(engine.state.board);
+    const line: [81]u8 = @splat('0');
+
+    for ([_][]const u8{ line ++ "\n", " " ++ line, "\t" ++ line ++ " " }) |padded| {
+        const ev = engine.pasteFromLine(padded);
+        try std.testing.expect(ev == .error_msg);
+        try std.testing.expectEqualStrings(PUZZLE_LENGTH_MSG, ev.error_msg);
+    }
     try std.testing.expectEqual(before, board.toFlat(engine.state.board));
 }
 
@@ -1592,7 +1619,7 @@ test "every engine error message reads as a sentence" {
     const sentence = @import("../../test/sentence.zig");
     inline for (.{
         PUZZLE_CELL_MSG,      CELL_CHANGE_FAILED_MSG, MOVE_NOT_RECORDED_MSG, SOLVE_CONFLICT_MSG,
-        NOT_A_SAVED_GAME_MSG, LINE_LENGTH_MSG,        LINE_CHARACTER_MSG,    NEW_GAME_FAILED_MSG,
+        NOT_A_SAVED_GAME_MSG, PUZZLE_LENGTH_MSG,      PUZZLE_CHARACTER_MSG,  NEW_GAME_FAILED_MSG,
         NOTHING_TO_UNDO_MSG,  NOTHING_TO_REDO_MSG,    UNDO_FAILED_MSG,       REDO_FAILED_MSG,
     }) |msg| try sentence.expectSentence(msg);
 }

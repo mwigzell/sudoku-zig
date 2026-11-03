@@ -495,6 +495,7 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "NEW_GAME_STARTED_MSG", .text = game_engine.NEW_GAME_STARTED_MSG },
         .{ .key = "OPENED_FMT", .text = game_engine.OPENED_FMT },
         .{ .key = "PASTED_MSG", .text = game_engine.PASTED_MSG },
+        .{ .key = "PUZZLE_LENGTH_MSG", .text = game_engine.PUZZLE_LENGTH_MSG },
         .{ .key = "PUZZLE_CELL_MSG", .text = game_engine.PUZZLE_CELL_MSG },
     });
 }

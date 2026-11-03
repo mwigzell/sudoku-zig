@@ -15,10 +15,11 @@ pub const StdinSource = struct {
         return .{ .allocator = allocator, .io = io, .file = Io.File.stdin() };
     }
 
+    /// One line as typed, without its newline; callers that read commands trim it themselves.
     pub fn readLine(self: *StdinSource) ![]u8 {
         if (self.reader == null) self.reader = self.file.reader(self.io, &self.buf);
         const line = (self.reader.?.interface.takeDelimiter('\n') catch return error.ReadFailed) orelse return error.ReadEOF;
-        return self.allocator.dupe(u8, std.mem.trim(u8, line, &std.ascii.whitespace)) catch return error.OutOfMemory;
+        return self.allocator.dupe(u8, line) catch return error.OutOfMemory;
     }
 };
 
@@ -42,8 +43,8 @@ pub const MockSource = struct {
             return error.ReadEOF;
         const resp = self.responses[self.idx];
         self.idx += 1;
-        // Return a DUPLICATE — caller owns the returned slice
-        return self.allocator.dupe(u8, resp) catch return error.OutOfMemory;
+        const line = if (std.mem.endsWith(u8, resp, "\n")) resp[0 .. resp.len - 1] else resp;
+        return self.allocator.dupe(u8, line) catch return error.OutOfMemory;
     }
 };
 
@@ -109,7 +110,7 @@ test "StdinSource.initStdin creates instance with allocator" {
     _ = StdinSource.initStdin(alloc, io);
 }
 
-test "StdinSource.readLine returns each line when several arrive in one read" {
+test "StdinSource.readLine returns each line as typed when several arrive in one read" {
     const io = std.testing.io;
     const alloc = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
@@ -125,7 +126,7 @@ test "StdinSource.readLine returns each line when several arrive in one read" {
     try std.testing.expectEqualStrings("m", first);
     const second = try src.readLine();
     defer alloc.free(second);
-    try std.testing.expectEqualStrings("q", second);
+    try std.testing.expectEqualStrings(" q ", second);
     try std.testing.expectError(error.ReadEOF, src.readLine());
 }
 
