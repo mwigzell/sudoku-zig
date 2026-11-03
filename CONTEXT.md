@@ -272,7 +272,7 @@ Wires **`Host`**, renderer facade, and **`Sudoku`** play loop. Called from `main
 _Avoid_: web_host or browser open here
 
 **Android platform entry** (`src/android/`, issue #64):
-Minimal Java/DEX + JNI (`jni_host.zig`) — package **`com.wigzell.sudoku_zig`**, `MainActivity`, WebView, permissions, cleartext localhost. Starts **`web_host`** on a background thread; **`loadUrl`** when the port is bound.
+Minimal Java/DEX + JNI (`jni_host.zig`) — package **`com.wigzell.sudoku_zig`**, `MainActivity`, WebView, permissions, cleartext localhost. Starts **`web_host`** on a background thread; **`loadUrl`** when the port is bound. Launch: a native splash covers the WebView until the page reports boot-ready; the system bars stay dark until the splash is gone, then take the theme (`setSystemBars` calls are held until then).
 _Avoid_: `android/shell` JS, Gradle app layer (default path), EGL UI in the same entry
 
 **FileTransport** (`native/shell/file_transport.zig`, native arm):

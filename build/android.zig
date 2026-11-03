@@ -25,6 +25,8 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     gen_build_info: *std.Build.Step,
     version_name: []const u8,
     version_code: u32,
+    /// Runs only the FileBridgeTest method with this name.
+    test_filter: ?[]const u8,
 }) *std.Build.Step {
     const ndk_opt = b.option([]const u8, "ndk", "Android NDK root (default: $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT)");
     const ndk_root = resolveNdkRoot(b, ndk_opt) orelse {
@@ -181,6 +183,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         TestManifestPath,
         TestJavaSource,
     });
+    if (deps.test_filter) |name| run_tests.addArg(name);
     run_tests.has_side_effects = true;
     run_tests.step.dependOn(&package_apk.step);
     const android_test_step = b.step("android-test", "Run the UiAutomator file bridge tests against a connected emulator");

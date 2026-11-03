@@ -8,6 +8,8 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.app.UiAutomation;
+import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -61,6 +63,14 @@ public final class FileBridgeTest {
     private static final String AUTO_SAVE_SETTINGS_FMT =
         "{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"system\",\"show_region\":false,"
             + "\"warn_solvability\":false,\"auto_restore\":%b,\"auto_new\":false,\"auto_save\":true}";
+    /** Light theme, nothing to restore. */
+    private static final String LIGHT_THEME_SETTINGS =
+        "{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"light\",\"show_region\":false,"
+            + "\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":false}";
+    /** Launch frames are sampled for this long; the splash shows for a minimum time, then fades. */
+    private static final long LAUNCH_WATCH_MS = 6_000;
+    private static final int DARK_RGB_SUM = 120;
+    private static final int LIGHT_RGB_SUM = 600;
     private static final Pattern MEDIA_ROW =
         Pattern.compile("_id=(\\d+), _display_name=(.*), owner_package_name=(.*)$");
     private static final Pattern MEDIA_PATH = Pattern.compile("_data=(.*)$");
@@ -178,6 +188,36 @@ public final class FileBridgeTest {
     @After
     public void removeChosenNameFiles() throws IOException {
         deleteChosenNameFiles();
+    }
+
+    @Test
+    public void systemBarsStayDarkUntilTheSplashIsGoneThenTakeTheTheme() throws IOException {
+        writeSettings(LIGHT_THEME_SETTINGS);
+        sh("am start -n " + APP + "/.MainActivity\n");
+        final UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        final long started = SystemClock.uptimeMillis();
+        final long deadline = started + LAUNCH_WATCH_MS;
+        boolean sawSplash = false;
+        boolean barsLightAtEnd = false;
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (!APP.equals(device.getCurrentPackageName())) continue;
+            final Bitmap frame = automation.takeScreenshot();
+            if (frame == null) continue;
+            final int bar = rgbSum(frame.getPixel(frame.getWidth() / 2, 10));
+            final int middle = rgbSum(frame.getPixel(20, frame.getHeight() / 2));
+            final boolean splash = middle < DARK_RGB_SUM;
+            frame.recycle();
+            if (splash) {
+                sawSplash = true;
+                assertFalse(
+                    "the system bars took the light theme while the splash was showing (bar " + bar
+                        + ", middle " + middle + ", " + (SystemClock.uptimeMillis() - started) + " ms after launch)",
+                    bar > LIGHT_RGB_SUM);
+            }
+            barsLightAtEnd = !splash && bar > LIGHT_RGB_SUM;
+        }
+        assertTrue("the splash was never seen", sawSplash);
+        assertTrue("the system bars did not take the light theme after the splash", barsLightAtEnd);
     }
 
     @Test
@@ -365,8 +405,15 @@ public final class FileBridgeTest {
         return earlierHash;
     }
 
+    private static int rgbSum(int color) {
+        return Color.red(color) + Color.green(color) + Color.blue(color);
+    }
+
     private void writeAutoSaveSettings(boolean autoRestore) throws IOException {
-        final String settings = String.format(AUTO_SAVE_SETTINGS_FMT, autoRestore);
+        writeSettings(String.format(AUTO_SAVE_SETTINGS_FMT, autoRestore));
+    }
+
+    private void writeSettings(String settings) throws IOException {
         sh("run-as " + APP + " mkdir -p files\n"
             + "echo '" + settings + "' | run-as " + APP + " sh -c 'cat > files/settings.json'\n");
     }
@@ -455,8 +502,7 @@ public final class FileBridgeTest {
     }
 
     private String awaitFileLabel(String expected) {
-        final UiObject2 label = need(By.res(FILE_LABEL), UI_WAIT_MS);
-        label.wait(Until.textEquals(expected), UI_WAIT_MS);
+        device.wait(Until.hasObject(By.res(FILE_LABEL).text(expected)), UI_WAIT_MS);
         return need(By.res(FILE_LABEL), UI_WAIT_MS).getText();
     }
 

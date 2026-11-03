@@ -717,7 +717,8 @@ public final class MainActivity extends Activity {
         public void setSystemBars(String themeName) {
             final String resolved = THEME_LIGHT.equals(themeName) ? THEME_LIGHT : THEME_DARK;
             runOnUiThread(() -> {
-                if (!webBootReady) {
+                // The bars stay dark until the splash is gone; the splash's fade-out applies the held theme.
+                if (!webBootReady || launchSplashView != null) {
                     pendingSystemBarsTheme = resolved;
                     return;
                 }

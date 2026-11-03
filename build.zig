@@ -195,5 +195,6 @@ pub fn build(b: *std.Build) void {
         .gen_build_info = &gen_build_info.step,
         .version_name = version.string,
         .version_code = android_version_code,
+        .test_filter = filter_opt,
     });
 }

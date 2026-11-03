@@ -77,6 +77,7 @@ emulator -list-avds
 emulator -avd <name> &
 adb devices            # exactly one device, state "device"
 zig build android-test
+zig build android-test -Dtest-filter=<method>   # one FileBridgeTest method
 ```
 
 The step builds the app APK and a separate, self-instrumenting test APK (`com.wigzell.sudoku_zig.test`, `src/android/test/`), installs both, runs `am instrument` with `AndroidJUnitRunner`, and fails on any failed test, printing the full instrumentation output. Each test's result is printed as it finishes; a run still going after 10 minutes is stopped and fails (a frozen emulator never fails a UiAutomator wait — cold boot it from Device Manager). A failed test leaves a screenshot and window hierarchy in `zig-out/android-test/failure/`. The earlier-install scenarios uninstall and reinstall the app during the run (from a copy pushed to `/data/local/tmp`); a full run takes about two minutes.

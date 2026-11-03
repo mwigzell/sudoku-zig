@@ -5,8 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ "$#" -ne 6 ]]; then
-  echo "usage: $0 <sdk_root> <min_api> <app_apk> <out_dir> <test_manifest> <test_java>" >&2
+if [[ "$#" -ne 6 && "$#" -ne 7 ]]; then
+  echo "usage: $0 <sdk_root> <min_api> <app_apk> <out_dir> <test_manifest> <test_java> [test_method]" >&2
   exit 1
 fi
 
@@ -16,6 +16,7 @@ APP_APK="$ROOT/$3"
 OUT="$ROOT/$4"
 TEST_MANIFEST="$5"
 TEST_JAVA="$6"
+TEST_METHOD="${7:-}"
 
 APP_PACKAGE="com.wigzell.sudoku_zig"
 TEST_PACKAGE="com.wigzell.sudoku_zig.test"
@@ -167,11 +168,15 @@ trap restore_device EXIT
 (
   sleep "$RUN_LIMIT_SECONDS"
   touch "$OUT/timed-out"
-  pkill -f "am instrument -w -r $TEST_PACKAGE/$RUNNER"
+  pkill -f "am instrument -w -r .*$TEST_PACKAGE/$RUNNER"
 ) </dev/null >/dev/null 2>&1 &
 WATCHDOG=$!
+INSTRUMENT_ARGS=()
+if [[ -n "$TEST_METHOD" ]]; then
+  INSTRUMENT_ARGS=(-e class "$TEST_PACKAGE.FileBridgeTest#$TEST_METHOD")
+fi
 echo "running tests on $DEVICES (limit ${RUN_LIMIT_SECONDS}s)"
-"$ADB" shell am instrument -w -r "$TEST_PACKAGE/$RUNNER" | tr -d '\r' | tee "$OUT/instrument.txt" | awk '
+"$ADB" shell am instrument -w -r ${INSTRUMENT_ARGS[@]+"${INSTRUMENT_ARGS[@]}"} "$TEST_PACKAGE/$RUNNER" | tr -d '\r' | tee "$OUT/instrument.txt" | awk '
   /^INSTRUMENTATION_STATUS: test=/ { test = substr($0, index($0, "=") + 1) }
   /^INSTRUMENTATION_STATUS_CODE: / {
     code = $2
