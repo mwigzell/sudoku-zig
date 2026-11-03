@@ -11,6 +11,7 @@ import android.content.res.Configuration;
 import android.database.Cursor;
 import android.provider.DocumentsContract;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
@@ -26,6 +27,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.widget.Toast;
 import android.widget.FrameLayout;
@@ -105,6 +107,7 @@ public final class MainActivity extends Activity {
         "<body style=\"margin:0;padding:16px;font-family:sans-serif;background:#16181d;color:#e6e6e6;\">" +
         "<p>" + BOOT_FAILED_MSG + "</p></body></html>";
 
+    private FrameLayout root;
     private WebView webView;
     private View launchSplashView;
     private long launchSplashShownAtMs;
@@ -182,7 +185,8 @@ public final class MainActivity extends Activity {
 
         launchSplashShownAtMs = SystemClock.elapsedRealtime();
         launchSplashView = makeLaunchSplashView();
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
+        padClearOfSystemBars(root);
         root.addView(
             webView,
             new FrameLayout.LayoutParams(
@@ -303,11 +307,22 @@ public final class MainActivity extends Activity {
         ));
     }
 
+    /** From API 35 the window draws under the system bars: keep the game clear of them; the bars show the root's colour. */
+    private static void padClearOfSystemBars(View view) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return;
+        view.setOnApplyWindowInsetsListener((v, insets) -> {
+            final Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return WindowInsets.CONSUMED;
+        });
+    }
+
     private void applySystemBarsTheme(String themeName) {
         final boolean lightTheme = THEME_LIGHT.equals(themeName);
         final Window window = getWindow();
         if (window == null) return;
         final int chromeColor = lightTheme ? CHROME_LIGHT : CHROME_DARK;
+        root.setBackgroundColor(chromeColor);
         window.setStatusBarColor(chromeColor);
         window.setNavigationBarColor(chromeColor);
         final View decor = window.getDecorView();

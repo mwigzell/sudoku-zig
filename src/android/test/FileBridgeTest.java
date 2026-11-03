@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.app.UiAutomation;
+import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
@@ -88,6 +89,7 @@ public final class FileBridgeTest {
     private static final String ASK_OK = "replace-confirm-ok";
     private static final String ASK_CANCEL = "replace-confirm-cancel";
     private static final String FILE_LABEL = "current-file-desktop";
+    private static final String WEB_VIEW = "android.webkit.WebView";
     // DocumentsUI views: a listed file's name, the create picker's name field, and its Save button.
     private static final String PICKER_ITEM_NAME = "android:id/title";
     private static final String PICKER_NAME_FIELD = "android:id/title";
@@ -96,6 +98,7 @@ public final class FileBridgeTest {
     private static final long UI_WAIT_MS = 20_000;
     private static final long GENERATE_WAIT_MS = 180_000;
     private static final long POLL_MS = 250;
+    private static final long NODE_CACHE_WAIT_MS = 2_000;
 
     private UiDevice device;
     /** Cells this test filled; a clashing digit is not reported in the accessibility text, so track them here. */
@@ -223,6 +226,24 @@ public final class FileBridgeTest {
         }
         assertTrue("the splash was never seen", sawSplash);
         assertTrue("the system bars did not take the light theme after the splash", barsLightAtEnd);
+    }
+
+    @Test
+    public void theGameSitsBetweenTheSystemBars() throws IOException {
+        launchApp();
+        final Rect page = need(By.clazz(WEB_VIEW), UI_WAIT_MS).getVisibleBounds();
+        final int statusBar = systemDimension("status_bar_height");
+        assertTrue("the page starts under the status bar: top " + page.top + ", bar " + statusBar, page.top >= statusBar);
+        // Gesture navigation's bar is shorter than `navigation_bar_height`; the page must stop short of the screen's bottom.
+        assertTrue("the page runs under the navigation bar: bottom " + page.bottom + ", screen " + device.getDisplayHeight(),
+            page.bottom < device.getDisplayHeight());
+    }
+
+    @Test
+    public void backLeavesTheApp() throws IOException {
+        launchApp();
+        device.pressBack();
+        assertTrue("Back left the app", device.wait(Until.gone(By.pkg(APP)), UI_WAIT_MS));
     }
 
     @Test
@@ -448,6 +469,12 @@ public final class FileBridgeTest {
         return earlierHash;
     }
 
+    /** A system dimension in pixels, e.g. a system bar's height. */
+    private static int systemDimension(String name) {
+        final Resources system = Resources.getSystem();
+        return system.getDimensionPixelSize(system.getIdentifier(name, "dimen", "android"));
+    }
+
     private static int rgbSum(int color) {
         return Color.red(color) + Color.green(color) + Color.blue(color);
     }
@@ -538,8 +565,15 @@ public final class FileBridgeTest {
         return false;
     }
 
+    /** UiAutomator's node cache can keep a stale copy of the page; it is cleared between short waits. */
     private UiObject2 need(BySelector selector, long timeoutMs) {
-        final UiObject2 found = device.wait(Until.findObject(selector), timeoutMs);
+        final UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        final long deadline = SystemClock.uptimeMillis() + timeoutMs;
+        UiObject2 found;
+        while ((found = device.wait(Until.findObject(selector), NODE_CACHE_WAIT_MS)) == null
+            && SystemClock.uptimeMillis() < deadline) {
+            automation.clearCache();
+        }
         assertNotNull("not shown within " + timeoutMs + " ms: " + selector, found);
         return found;
     }
