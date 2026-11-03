@@ -13,7 +13,7 @@ import * as sessionMod from "./session.js";
   const session = sessionMod.createWebSessionFromStartup(ready);
   assert.equal(session.default_save_filename, "sudoku.sud");
   assert.equal(session.boundFilename, null);
-  assert.equal(session.boundTargetExists, null);
+  assert.equal(session.fileHandle, null);
 }
 
 {

@@ -1,5 +1,6 @@
-// SaveFlow: one write to a named target — check it, ask before replacing,
-// write, then update the FileSession. Save, Save As and autosave all use it.
+// SaveFlow: one write of the saved game to a named target — write it, and when the
+// platform reports the file is already there, replace it or ask first; then update the
+// FileSession. Save, Save As and autosave all use it.
 const std = @import("std");
 const file_policy = @import("../file_policy.zig");
 const step_mod = @import("step.zig");
@@ -21,6 +22,8 @@ pub const SAVE_FAILED_MSG = "The game could not be saved.";
 pub const SaveFlow = struct {
     session: *FileSession,
     intent: file_policy.WriteIntent,
+    /// The write step this flow issues; after a `taken` answer, New name switches it to `save_as`.
+    write_step: WriteStep,
     name_buf: [MAX_NAME_LEN]u8 = undefined,
     name_len: usize = 0,
     text_buf: [MAX_NAME_LEN + 128]u8 = undefined,
@@ -28,11 +31,19 @@ pub const SaveFlow = struct {
     refused: bool = false,
     taken_text_len: usize = 0,
 
-    const Phase = enum { start, naming, checking, asking, writing, asking_taken, picking, finished };
+    const Phase = enum { start, naming, writing, asking, asking_taken, picking, finished };
+    const WriteStep = enum { save, save_as, autosave, flush };
 
-    /// A flow writing `name`; the first `next(.start)` checks the target.
+    /// A flow writing `name`; the first `next(.start)` writes without replacing.
     pub fn init(session: *FileSession, intent: file_policy.WriteIntent, name: []const u8) SaveFlow {
-        var flow = SaveFlow{ .session = session, .intent = intent };
+        var flow = SaveFlow{ .session = session, .intent = intent, .write_step = writeStepFor(intent) };
+        flow.setName(name);
+        return flow;
+    }
+
+    /// The final write when the app is closing: the restore copy of `name` only, never asked about.
+    pub fn flush(session: *FileSession, name: []const u8) SaveFlow {
+        var flow = SaveFlow{ .session = session, .intent = .auto_save, .write_step = .flush };
         flow.setName(name);
         return flow;
     }
@@ -41,13 +52,21 @@ pub const SaveFlow = struct {
     /// platform's default target. A manual Save while autosave is on is refused, since every
     /// change is already written.
     pub fn forCommand(session: *FileSession, intent: file_policy.WriteIntent, path: ?[]const u8, auto_save: bool) SaveFlow {
-        var flow = SaveFlow{ .session = session, .intent = intent, .refused = intent == .save and auto_save };
+        var flow = SaveFlow{ .session = session, .intent = intent, .write_step = writeStepFor(intent), .refused = intent == .save and auto_save };
         if (path orelse session.workingFile()) |name| {
             flow.setName(name);
         } else {
             flow.phase = .naming;
         }
         return flow;
+    }
+
+    fn writeStepFor(intent: file_policy.WriteIntent) WriteStep {
+        return switch (intent) {
+            .save => .save,
+            .save_as => .save_as,
+            .auto_save => .autosave,
+        };
     }
 
     fn setName(self: *SaveFlow, name: []const u8) void {
@@ -60,28 +79,13 @@ pub const SaveFlow = struct {
         return self.name_buf[0..self.name_len];
     }
 
-    fn target(self: *const SaveFlow) step_mod.Target {
-        const kind: step_mod.WriteKind = switch (self.intent) {
-            .save => .save,
-            .save_as => .save_as,
-            .auto_save => .auto_save,
-        };
-        return .{ .name = self.targetName(), .kind = kind };
-    }
-
-    /// Skip the check and write now; only valid when the policy cannot ask.
-    pub fn beginWrite(self: *SaveFlow) Step {
-        self.phase = .writing;
-        return .{ .write = self.target() };
-    }
-
     /// Answer the last step; returns the next step (`.start` first).
     pub fn next(self: *SaveFlow, input: Input) Step {
         switch (self.phase) {
             .start => {
                 if (input != .start) return self.fail(step_mod.UNEXPECTED_INPUT_MSG);
                 if (self.refused) return self.finish(.{ .show_status = file_policy.SAVE_WHILE_AUTO_SAVE_MSG });
-                return self.check();
+                return self.write(false);
             },
             .naming => {
                 if (input == .start) {
@@ -93,30 +97,7 @@ pub const SaveFlow = struct {
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                 };
                 self.setName(name);
-                return self.check();
-            },
-            .checking => {
-                const exists = switch (input) {
-                    .target_checked => |e| e,
-                    else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
-                };
-                const decision = file_policy.evaluateOverwritePolicy(.{
-                    .intent = self.intent,
-                    .target_exists = exists,
-                    .write_context = self.session.write_context,
-                });
-                return switch (decision) {
-                    .write => self.beginWrite(),
-                    .require_replace_confirm => self.askReplace(),
-                };
-            },
-            .asking => {
-                const yes = switch (input) {
-                    .answered => |a| a,
-                    else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
-                };
-                if (yes) return self.beginWrite();
-                return self.finish(self.declinedStep());
+                return self.write(false);
             },
             .writing => {
                 const wrote = switch (input) {
@@ -125,19 +106,29 @@ pub const SaveFlow = struct {
                 };
                 return switch (wrote) {
                     .ok => |written| self.succeeded(written),
+                    .exists => self.replaceOrAsk(),
                     .cancelled => self.finish(.done),
                     .taken => |taken| self.askTaken(taken),
                     .failed => |reason| self.writeFailed(reason),
                 };
             },
+            .asking => {
+                const yes = switch (input) {
+                    .answered => |a| a,
+                    else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
+                };
+                if (yes) return self.write(true);
+                return self.finish(self.declinedStep());
+            },
             .asking_taken => {
-                const pick_existing = switch (input) {
+                const reclaim = switch (input) {
                     .answered => |a| a,
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                 };
                 self.phase = .picking;
-                if (pick_existing) return .pick_existing;
-                return .{ .pick_new = self.targetName() };
+                if (reclaim) return .reclaim_file;
+                self.write_step = .save_as;
+                return .{ .save_as = .{ .name = self.targetName(), .replace = false } };
             },
             .picking => {
                 const wrote = switch (input) {
@@ -146,6 +137,7 @@ pub const SaveFlow = struct {
                 };
                 return switch (wrote) {
                     .ok => |written| self.succeeded(written),
+                    .exists => self.replaceOrAsk(),
                     .cancelled, .taken => self.repeatTakenAsk(),
                     .failed => |reason| self.writeFailed(reason),
                 };
@@ -154,10 +146,30 @@ pub const SaveFlow = struct {
         }
     }
 
-    fn check(self: *SaveFlow) Step {
+    /// Issue this flow's write step; `replace` lets it overwrite a file that is already there.
+    fn write(self: *SaveFlow, replace: bool) Step {
         if (self.name_len == 0) return self.fail(NAME_TOO_LONG_MSG);
-        self.phase = .checking;
-        return .{ .check_target = self.target() };
+        self.phase = .writing;
+        const target: step_mod.GameWrite = .{ .name = self.targetName(), .replace = replace };
+        return switch (self.write_step) {
+            .save => .{ .save = target },
+            .save_as => .{ .save_as = target },
+            .autosave => .{ .autosave = target },
+            .flush => .{ .flush = target.name },
+        };
+    }
+
+    /// The file is already there: the replace policy writes over it or asks first.
+    fn replaceOrAsk(self: *SaveFlow) Step {
+        const decision = file_policy.evaluateOverwritePolicy(.{
+            .intent = self.intent,
+            .target_exists = true,
+            .write_context = self.session.write_context,
+        });
+        return switch (decision) {
+            .write => self.write(true),
+            .require_replace_confirm => self.askReplace(),
+        };
     }
 
     /// The platform's file belongs to an earlier install: ask whether to pick it or choose a new name.
@@ -236,21 +248,27 @@ pub const SaveFlow = struct {
 
 const testing = std.testing;
 
-fn expectCheck(step: Step, expected: []const u8) !void {
-    try testing.expectEqualStrings(expected, step.check_target.name);
-}
-
-test "save to a new file writes without asking and reports where it saved" {
+test "save to a new file writes without replacing and reports where it saved" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save, "/docs/game.sud");
-    try expectCheck(flow.next(.start), "/docs/game.sud");
-    const write = flow.next(.{ .target_checked = false }).write;
+    const write = flow.next(.start).save;
     try testing.expectEqualStrings("/docs/game.sud", write.name);
-    try testing.expectEqual(step_mod.WriteKind.save, write.kind);
+    try testing.expect(!write.replace);
     const end = flow.next(.{ .wrote = .{ .ok = "/docs/game.sud" } });
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"/docs/game.sud"}), end.show_status);
     try testing.expectEqualStrings("/docs/game.sud", session.workingFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+}
+
+test "each intent issues its own write step" {
+    var session = FileSession{};
+    var save_as = SaveFlow.init(&session, .save_as, "a.sud");
+    try testing.expectEqualStrings("a.sud", save_as.next(.start).save_as.name);
+    var autosave = SaveFlow.init(&session, .auto_save, "b.sud");
+    try testing.expectEqualStrings("b.sud", autosave.next(.start).autosave.name);
+    var flushed = SaveFlow.flush(&session, "c.sud");
+    try testing.expectEqualStrings("c.sud", flushed.next(.start).flush);
+    try testing.expect(flushed.next(.{ .wrote = .{ .ok = "c.sud" } }) == .done);
 }
 
 test "a manual save while autosave is on writes nothing and says why" {
@@ -263,18 +281,18 @@ test "a manual save while autosave is on writes nothing and says why" {
 test "save as while autosave is on still writes" {
     var session = FileSession{};
     var flow = SaveFlow.forCommand(&session, .save_as, "game.sud", true);
-    try expectCheck(flow.next(.start), "game.sud");
+    try testing.expectEqualStrings("game.sud", flow.next(.start).save_as.name);
 }
 
 test "a save with no path writes the working file, else asks for the default target" {
     var session = FileSession{};
     var fresh = SaveFlow.forCommand(&session, .save, null, false);
     try testing.expect(fresh.next(.start) == .resolve_default_target);
-    try expectCheck(fresh.next(.{ .default_target = "sudoku.sud" }), "sudoku.sud");
+    try testing.expectEqualStrings("sudoku.sud", fresh.next(.{ .default_target = "sudoku.sud" }).save.name);
 
     session.setWorkingFile("game.sud");
     var continued = SaveFlow.forCommand(&session, .save_as, null, false);
-    try expectCheck(continued.next(.start), "game.sud");
+    try testing.expectEqualStrings("game.sud", continued.next(.start).save_as.name);
 }
 
 test "a refused save does not ask for a target" {
@@ -287,7 +305,6 @@ const taken_ask_text = "The file sudoku.sud in Documents was saved by an earlier
 
 fn takenAsk(flow: *SaveFlow) !void {
     _ = flow.next(.start);
-    _ = flow.next(.{ .target_checked = false });
     const ask = flow.next(.{ .wrote = .{ .taken = .{ .name = "sudoku.sud", .dir = "Documents" } } }).ask;
     try testing.expectEqualStrings(file_policy.TAKEN_TITLE, ask.title);
     try testing.expectEqualStrings(taken_ask_text, ask.text);
@@ -295,21 +312,23 @@ fn takenAsk(flow: *SaveFlow) !void {
     try testing.expectEqualStrings(file_policy.TAKEN_NEW_NAME_LABEL, ask.cancel_label);
 }
 
-test "a file taken by an earlier install asks, and Pick it writes the picked file" {
+test "a file taken by an earlier install asks, and Pick it reclaims the file" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
     try takenAsk(&flow);
-    try testing.expect(flow.next(.{ .answered = true }) == .pick_existing);
+    try testing.expect(flow.next(.{ .answered = true }) == .reclaim_file);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 }
 
-test "New name suggests the taken file's name, and the new file becomes the working file" {
+test "New name saves as the taken file's name, and the new file becomes the working file" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
     try takenAsk(&flow);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).pick_new);
+    const save_as = flow.next(.{ .answered = false }).save_as;
+    try testing.expectEqualStrings("sudoku.sud", save_as.name);
+    try testing.expect(!save_as.replace);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "mine.sud" } }) == .done);
     try testing.expectEqualStrings("mine.sud", session.workingFile().?);
 }
@@ -320,45 +339,48 @@ test "closing the picker asks again, since there is nowhere else to autosave" {
     try takenAsk(&flow);
     _ = flow.next(.{ .answered = true });
     try testing.expectEqualStrings(taken_ask_text, flow.next(.{ .wrote = .cancelled }).ask.text);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).pick_new);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).save_as.name);
     try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
     try testing.expect(session.workingFile() == null);
 }
 
-test "save onto an existing file while detached asks before writing" {
+test "save onto an existing file while detached asks, then replaces it" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save, "/docs/game.sud");
     _ = flow.next(.start);
-    const ask = flow.next(.{ .target_checked = true }).ask;
+    const ask = flow.next(.{ .wrote = .exists }).ask;
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_TITLE, ask.title);
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), ask.text);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_OK_LABEL, ask.ok_label);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_CANCEL_LABEL, ask.cancel_label);
-    try testing.expectEqualStrings("/docs/game.sud", flow.next(.{ .answered = true }).write.name);
+    const write = flow.next(.{ .answered = true }).save;
+    try testing.expectEqualStrings("/docs/game.sud", write.name);
+    try testing.expect(write.replace);
 }
 
 test "declining the replace question cancels the save without writing" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save_as, "game.sud");
     _ = flow.next(.start);
-    _ = flow.next(.{ .target_checked = true });
+    _ = flow.next(.{ .wrote = .exists });
     try testing.expectEqualStrings(file_policy.WRITE_CANCELLED_MSG, flow.next(.{ .answered = false }).show_status);
     try testing.expect(session.workingFile() == null);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }
 
-test "save onto an existing file while continuing writes without asking" {
+test "save onto an existing file while continuing replaces it without asking" {
     var session = FileSession{ .write_context = .continuation };
     var flow = SaveFlow.init(&session, .save, "game.sud");
     _ = flow.next(.start);
-    try testing.expectEqualStrings("game.sud", flow.next(.{ .target_checked = true }).write.name);
+    const write = flow.next(.{ .wrote = .exists }).save;
+    try testing.expectEqualStrings("game.sud", write.name);
+    try testing.expect(write.replace);
 }
 
 test "write failure shows the error and leaves the session alone" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save, "game.sud");
     _ = flow.next(.start);
-    _ = flow.next(.{ .target_checked = false });
     try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
     try testing.expect(session.workingFile() == null);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
@@ -368,7 +390,6 @@ test "a cancelled platform picker ends the save silently" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save_as, "game.sud");
     _ = flow.next(.start);
-    _ = flow.next(.{ .target_checked = false });
     try testing.expect(flow.next(.{ .wrote = .cancelled }) == .done);
 }
 
@@ -376,7 +397,6 @@ test "the platform's written name becomes the working file" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save_as, "game.sud");
     _ = flow.next(.start);
-    _ = flow.next(.{ .target_checked = false });
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"game (1).sud"}), flow.next(.{ .wrote = .{ .ok = "game (1).sud" } }).show_status);
     try testing.expectEqualStrings("game (1).sud", session.workingFile().?);
 }
@@ -385,14 +405,12 @@ test "save and save as record their own success events" {
     var session = FileSession{};
     var save = SaveFlow.init(&session, .save, "a.sud");
     _ = save.next(.start);
-    _ = save.next(.{ .target_checked = false });
     _ = save.next(.{ .wrote = .{ .ok = "a.sud" } });
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
 
     session.apply(.new_game_success);
     var save_as = SaveFlow.init(&session, .save_as, "b.sud");
     _ = save_as.next(.start);
-    _ = save_as.next(.{ .target_checked = false });
     _ = save_as.next(.{ .wrote = .{ .ok = "b.sud" } });
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
     try testing.expectEqualStrings("b.sud", session.workingFile().?);

@@ -1,5 +1,5 @@
-// ExportFlow: hand the current puzzle line to the platform, either as a file
-// (Export) or where the user can paste it (Copy), and report the outcome.
+// ExportFlow: hand the puzzle to the platform, either as a file (Export) or on
+// the clipboard (Copy), and report the outcome.
 const std = @import("std");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
@@ -18,7 +18,7 @@ pub const COPIED_MSG: []const u8 = "The puzzle line was copied.";
 pub const DEFAULT_EXPORT_FILE: []const u8 = "puzzle.txt";
 /// Shown when the platform could not write the puzzle file; its reason goes to the log.
 pub const EXPORT_FAILED_MSG = "The puzzle could not be exported.";
-/// Shown when the platform could not copy the puzzle line; its reason goes to the log.
+/// Shown when the platform could not copy the puzzle; its reason goes to the log.
 pub const COPY_FAILED_MSG = "The puzzle could not be copied.";
 
 pub const ExportFlow = struct {
@@ -31,7 +31,7 @@ pub const ExportFlow = struct {
     const Target = enum { file, clipboard };
     const Phase = enum { start, exporting, finished };
 
-    /// Export the puzzle line to `path`, else to the default file.
+    /// Export the puzzle to `path`, else to the default file.
     pub fn toFile(path: ?[]const u8) ExportFlow {
         var flow = ExportFlow{ .target = .file };
         const name = path orelse DEFAULT_EXPORT_FILE;
@@ -41,7 +41,7 @@ pub const ExportFlow = struct {
         return flow;
     }
 
-    /// Copy the puzzle line for pasting.
+    /// Copy the puzzle to the clipboard.
     pub fn toClipboard() ExportFlow {
         return .{ .target = .clipboard };
     }
@@ -53,8 +53,8 @@ pub const ExportFlow = struct {
                 if (input != .start) return self.fail(step_mod.UNEXPECTED_INPUT_MSG);
                 self.phase = .exporting;
                 return switch (self.target) {
-                    .file => .{ .write = .{ .name = self.name_buf[0..self.name_len], .kind = .export_line } },
-                    .clipboard => .copy_line,
+                    .file => .{ .export_puzzle = self.name_buf[0..self.name_len] },
+                    .clipboard => .copy_puzzle,
                 };
             },
             .exporting => switch (self.target) {
@@ -63,7 +63,7 @@ pub const ExportFlow = struct {
                         .ok => |written| self.exported(written),
                         .cancelled => self.finish(.done),
                         .failed => |reason| self.failedWith(EXPORT_FAILED_MSG, reason),
-                        .taken => self.fail(step_mod.UNEXPECTED_INPUT_MSG),
+                        .exists, .taken => self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                     },
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                 },
@@ -103,14 +103,14 @@ const testing = std.testing;
 
 test "export writes the named file and reports where" {
     var flow = ExportFlow.toFile("puzzle.txt");
-    try testing.expectEqualStrings("puzzle.txt", flow.next(.start).write.name);
+    try testing.expectEqualStrings("puzzle.txt", flow.next(.start).export_puzzle);
     try testing.expectEqualStrings(std.fmt.comptimePrint(EXPORTED_TO_FMT, .{"/docs/puzzle.txt"}), flow.next(.{ .wrote = .{ .ok = "/docs/puzzle.txt" } }).show_status);
     try testing.expect(flow.next(.start) == .done);
 }
 
 test "export with no file writes the default file" {
     var flow = ExportFlow.toFile(null);
-    try testing.expectEqualStrings(DEFAULT_EXPORT_FILE, flow.next(.start).write.name);
+    try testing.expectEqualStrings(DEFAULT_EXPORT_FILE, flow.next(.start).export_puzzle);
 }
 
 test "a closed export picker ends quietly; a failed write shows the error" {
@@ -122,9 +122,9 @@ test "a closed export picker ends quietly; a failed write shows the error" {
     try testing.expectEqualStrings(EXPORT_FAILED_MSG, failed.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
 }
 
-test "copy hands over the line and reports it, or shows why it could not" {
+test "copy hands over the puzzle and reports it, or shows why it could not" {
     var flow = ExportFlow.toClipboard();
-    try testing.expect(flow.next(.start) == .copy_line);
+    try testing.expect(flow.next(.start) == .copy_puzzle);
     try testing.expectEqualStrings(COPIED_MSG, flow.next(.{ .copied = .ok }).show_status);
     var denied = ExportFlow.toClipboard();
     _ = denied.next(.start);

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import * as glue from "../artifacts/glue.js";
 import * as menu from "./menu.js";
 import * as boardMod from "../board.js";
+import * as webSteps from "../flows/web_steps.js";
 import { coreText } from "../test_support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -132,10 +133,9 @@ async function runHint(game, board, selection, session, status) {
     game,
     board,
     selection,
-    status,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
     session,
     makeRenderElement(),
+    { steps: webSteps.webSteps(game, session, { statusEl: status }) },
   );
   assert.equal(outcome.handled, true);
   await outcome.done;

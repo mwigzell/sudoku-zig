@@ -22,7 +22,10 @@ pub const RouteResult = enum {
     generate,
     clipboard,
     autosave,
-    command_flow,
+    files,
+    steps,
+    web_steps,
+    android_steps,
     startup,
     board,
     menu,
@@ -81,7 +84,10 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/gen/generate.js")) return .generate;
         if (std.mem.eql(u8, path, "/clipboard.js")) return .clipboard;
         if (std.mem.eql(u8, path, "/flows/autosave.js")) return .autosave;
-        if (std.mem.eql(u8, path, "/flows/command_flow.js")) return .command_flow;
+        if (std.mem.eql(u8, path, "/files.js")) return .files;
+        if (std.mem.eql(u8, path, "/flows/steps.js")) return .steps;
+        if (std.mem.eql(u8, path, "/flows/web_steps.js")) return .web_steps;
+        if (std.mem.eql(u8, path, "/flows/android_steps.js")) return .android_steps;
         if (std.mem.eql(u8, path, "/flows/startup.js")) return .startup;
         if (std.mem.eql(u8, path, "/board.js")) return .board;
         if (std.mem.eql(u8, path, "/menus/menu.js")) return .menu;
@@ -139,7 +145,10 @@ pub const Router = struct {
             .generate => embed.generate_js,
             .clipboard => embed.clipboard_js,
             .autosave => embed.autosave_js,
-            .command_flow => embed.command_flow_js,
+            .files => embed.files_js,
+            .steps => embed.steps_js,
+            .web_steps => embed.web_steps_js,
+            .android_steps => embed.android_steps_js,
             .startup => embed.startup_js,
             .board => embed.board_js,
             .menu => embed.menu_js,
@@ -175,7 +184,7 @@ pub const Router = struct {
             .build_info, .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
-            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .error_modal, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .command_flow, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .region, .help, .settings => "text/javascript",
+            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .error_modal, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .files, .steps, .web_steps, .android_steps, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .region, .help, .settings => "text/javascript",
         };
     }
 };

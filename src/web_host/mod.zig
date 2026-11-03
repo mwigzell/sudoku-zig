@@ -633,7 +633,10 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "gen/generate.js", .body = embed.generate_js },
         .{ .name = "clipboard.js", .body = embed.clipboard_js },
         .{ .name = "flows/autosave.js", .body = embed.autosave_js },
-        .{ .name = "flows/command_flow.js", .body = embed.command_flow_js },
+        .{ .name = "files.js", .body = embed.files_js },
+        .{ .name = "flows/steps.js", .body = embed.steps_js },
+        .{ .name = "flows/web_steps.js", .body = embed.web_steps_js },
+        .{ .name = "flows/android_steps.js", .body = embed.android_steps_js },
         .{ .name = "flows/startup.js", .body = embed.startup_js },
         .{ .name = "board.js", .body = embed.board_js },
         .{ .name = "menus/menu.js", .body = embed.menu_js },
@@ -737,7 +740,10 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/gen/generate.js", .expected = .generate },
         .{ .path = "/clipboard.js", .expected = .clipboard },
         .{ .path = "/flows/autosave.js", .expected = .autosave },
-        .{ .path = "/flows/command_flow.js", .expected = .command_flow },
+        .{ .path = "/files.js", .expected = .files },
+        .{ .path = "/flows/steps.js", .expected = .steps },
+        .{ .path = "/flows/web_steps.js", .expected = .web_steps },
+        .{ .path = "/flows/android_steps.js", .expected = .android_steps },
         .{ .path = "/flows/startup.js", .expected = .startup },
         .{ .path = "/board.js", .expected = .board },
         .{ .path = "/menus/menu.js", .expected = .menu },
@@ -1317,8 +1323,10 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     r.markDelivered(.autosave);
     try std.testing.expect(!r.allDelivered());
 
-    r.markDelivered(.command_flow);
-    try std.testing.expect(!r.allDelivered());
+    for ([_]router_mod.RouteResult{ .files, .steps, .web_steps, .android_steps }) |route| {
+        r.markDelivered(route);
+        try std.testing.expect(!r.allDelivered());
+    }
 
     r.markDelivered(.startup);
     try std.testing.expect(!r.allDelivered());

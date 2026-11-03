@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import * as autosave from "./autosave.js";
 import * as stepRunner from "./step_runner.js";
-import { hostFetch, moveWithAutosave, postedCurrentFile, settleFlow, withCoreFlow, coreText } from "../test_support.mjs";
+import * as webSteps from "./web_steps.js";
+import { errorModalStub, hostFetch, moveWithAutosave, postedCurrentFile, settleFlow, withCoreFlow, coreText } from "../test_support.mjs";
 
 function makePageHideWin() {
   const listeners = new Map();
@@ -24,7 +25,7 @@ function makePageHideWin() {
   const host = hostFetch();
   const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([5, 6, 7]) }) }, { autoSave: true, opened: "autosave.sud" });
   const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
-  autosave.wireFinalSnapshotOnPageHide(game, session, { win, fetchFn: host.fetchFn });
+  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, session, { fetchFn: host.fetchFn }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
   assert.equal(host.calls.length, 1);
@@ -38,7 +39,7 @@ function makePageHideWin() {
   const win = makePageHideWin();
   const host = hostFetch();
   const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true, newGame: true });
-  autosave.wireFinalSnapshotOnPageHide(game, { config: { auto_save: true } }, { win, fetchFn: host.fetchFn });
+  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, { config: { auto_save: true } }, { fetchFn: host.fetchFn }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
   assert.equal(host.calls.length, 0);
@@ -54,10 +55,8 @@ function makePageHideWin() {
       return { ok: true, bytes: new Uint8Array([1]) };
     },
   }, { opened: "autosave.sud" });
-  autosave.wireFinalSnapshotOnPageHide(game, { config: { auto_save: false }, boundFilename: "autosave.sud" }, {
-    win,
-    fetchFn: async () => ({ ok: true, status: 204 }),
-  });
+  const session = { config: { auto_save: false }, boundFilename: "autosave.sud" };
+  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, session, { fetchFn: async () => ({ ok: true, status: 204 }) }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
   assert.equal(called, false);
@@ -80,7 +79,7 @@ function makePageHideWin() {
   const host = hostFetch();
   const session = { default_save_filename: "sudoku.sud" };
   const outcome = await stepRunner.runCommand(game, { action: "toggle_region" }, {
-    ...autosave.autosaveHandlers(game, session, { fetchFn: host.fetchFn }),
+    ...webSteps.webSteps(game, session, { fetchFn: host.fetchFn }),
     showGame() {},
     persistSettings: () => ({ ok: true }),
   });
@@ -88,21 +87,25 @@ function makePageHideWin() {
   assert.equal(host.calls.length, 0);
 }
 
-/** Session continuing `bound.sud` through a bound writer that records into `writes`. */
-async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
+/** Session continuing `bound.sud` through a file handle that records into `writes`; `failure` makes the write throw. */
+async function boundAutosaveSetup(writes, failure = null) {
   const game = await withCoreFlow({ serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) }, { autoSave: true, opened: "bound.sud" });
-  const session = {
-    config: { auto_save: true },
-    boundFilename: "bound.sud",
-    boundTargetExists: () => true,
-    boundSnapshotWriter: async (bytes) => {
-      writes.push({ lane: "bound", bytes: [...bytes] });
-      return boundResult;
+  const fileHandle = {
+    name: "bound.sud",
+    async createWritable() {
+      if (failure) throw failure;
+      return {
+        async write(bytes) {
+          writes.push({ lane: "bound", bytes: [...bytes] });
+        },
+        async close() {},
+      };
     },
   };
+  const session = { config: { auto_save: true }, boundFilename: "bound.sud", fileHandle };
   const fetchFn = async (url, init) => {
     if (url === "./current-file") {
-      writes.push({ lane: "host", bytes: [...new Uint8Array(init.body)], restoreCopy: init.headers["X-Sudoku-Restore-Copy"] });
+      writes.push({ lane: "host", bytes: [...new Uint8Array(init.body)], restoreCopy: init.headers["X-Sudoku-Restore-Copy"], keepalive: init.keepalive === true });
       return { ok: true, status: 204 };
     }
     throw new Error(`unexpected fetch url: ${url}`);
@@ -120,24 +123,31 @@ async function boundAutosaveSetup(writes, boundResult = { ok: true }) {
   globalThis.__sudokuChoose = prevChoose;
   assert.deepEqual(writes, [
     { lane: "bound", bytes: [4, 2] },
-    { lane: "host", bytes: [4, 2], restoreCopy: "true" },
+    { lane: "host", bytes: [4, 2], restoreCopy: "true", keepalive: false },
   ]);
+}
+
+{
+  // The page-hide flush on a bound file writes only the host restore copy, kept alive past the page.
+  const writes = [];
+  const { game, session, fetchFn } = await boundAutosaveSetup(writes);
+  const win = makePageHideWin();
+  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, session, { fetchFn }), { win });
+  win.listeners.get("pagehide")?.();
+  await settleFlow();
+  assert.deepEqual(writes, [{ lane: "host", bytes: [4, 2], restoreCopy: "true", keepalive: true }]);
 }
 
 {
   // A failed bound write skips the host copy and shows core's sentence, not the write's reason.
   const writes = [];
-  const { game, session, fetchFn } = await boundAutosaveSetup(writes, { ok: false, error: "bound write failed" });
-  let surfaced = null;
-  const outcome = await moveWithAutosave(game, session, {
-    fetchFn,
-    onError: (err) => {
-      surfaced = err;
-    },
-  });
+  const { game, session, fetchFn } = await boundAutosaveSetup(writes, new Error("bound write failed"));
+  const errorModal = errorModalStub();
+  const outcome = await moveWithAutosave(game, session, { fetchFn, errorModal });
   assert.equal(outcome.kind, "show_error");
-  assert.deepEqual(writes, [{ lane: "bound", bytes: [4, 2] }], "host copy must not run when bound autosave fails");
-  assert.equal(surfaced?.error, coreText.SAVE_FAILED_MSG);
+  assert.deepEqual(writes, [], "host copy must not run when bound autosave fails");
+  assert.equal(errorModal.msgEl.textContent, coreText.SAVE_FAILED_MSG);
+  assert.equal(session.fileHandle, null, "the failing handle is dropped");
 }
 
 {

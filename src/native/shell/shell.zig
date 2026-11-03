@@ -23,7 +23,9 @@ const storage_mod = @import("storage.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 const COPY_WRITE_FAILED_MSG: []const u8 = "copy: write failed";
-const PASTE_NO_LINE_MSG: []const u8 = "paste: no puzzle line specified";
+const PASTE_NO_PUZZLE_MSG: []const u8 = "paste: no puzzle specified";
+const NO_FLUSH_MSG: []const u8 = "flush: the terminal has no closing write";
+const NO_RECLAIM_MSG: []const u8 = "reclaim_file: the terminal has no earlier-install files";
 
 /// One running game: engine + renderer; each entry shows the game, then turns it.
 pub const Sudoku = struct {
@@ -67,7 +69,7 @@ pub const Sudoku = struct {
     fn runFlow(self: *@This()) Error!flow_mod.Step {
         var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
         var step = self.flow.next(.start);
-        while (!flow_mod.isTerminal(step)) {
+        while (true) {
             var read_bytes: ?[]u8 = null;
             const transport = self.storage.transport;
             defer if (read_bytes) |b| transport.free(transport.context, b);
@@ -78,22 +80,23 @@ pub const Sudoku = struct {
             };
             const input: flow_mod.Input = switch (step) {
                 .resolve_default_target => .{ .default_target = self.storage.defaultTarget(&scratch) },
-                .check_target => |target| .{ .target_checked = self.storage.exists(target.name) },
                 .ask => |question| .{ .answered = try self.renderer.ask(question) },
-                .write => |target| .{ .wrote = self.storage.write(&self.engine, target, &scratch) },
-                .read_file => |path| blk: {
-                    const read = self.storage.readFile(path, &scratch);
-                    if (read == .bytes) read_bytes = @constCast(read.bytes);
-                    break :blk .{ .file_read = read };
+                .save, .save_as, .autosave => |target| .{ .wrote = self.storage.saveGame(&self.engine, target, &scratch) },
+                .export_puzzle => |name| .{ .wrote = self.storage.exportPuzzle(&self.engine, name, &scratch) },
+                .restore => |path| blk: {
+                    const read = self.storage.restore(path, &scratch);
+                    if (read == .file) read_bytes = @constCast(read.file.bytes);
+                    break :blk .{ .read = read };
                 },
-                .pick_open => |pick| .{ .picked = self.storage.pickOpen(pick, &scratch, &opened) },
-                // The terminal has no clipboard; Paste takes its line with the command.
-                .read_clipboard => .{ .file_read = .{ .failed = PASTE_NO_LINE_MSG } },
+                .open => |path| .{ .read = self.storage.open(path, &scratch, &opened) },
+                .import_puzzle => |path| .{ .read = self.storage.importPuzzle(path, &scratch, &opened) },
+                // The terminal has no clipboard; Paste takes its puzzle with the command.
+                .paste_puzzle => .{ .read = .{ .failed = PASTE_NO_PUZZLE_MSG } },
                 .show_game => |game| blk: {
                     try self.showStep(game);
                     break :blk .ack;
                 },
-                .generate => |difficulty| .{ .generated = .{ .line = self.generate(difficulty) } },
+                .generate_game => |difficulty| .{ .generated = .{ .line = self.generate(difficulty) } },
                 .forget_current_file => |forget| blk: {
                     self.storage.forgetCurrentFile(forget);
                     break :blk .ack;
@@ -102,25 +105,26 @@ pub const Sudoku = struct {
                     self.cfg = cfg;
                     break :blk .{ .persisted = self.storage.persistSettings(cfg) };
                 },
-                .copy_line => .{ .copied = self.printPuzzleLine() },
-                // Pickers follow only a `taken` write, which native writes never report.
-                .pick_existing, .pick_new => unreachable,
-                .show_status, .show_error, .done => unreachable,
+                .copy_puzzle => .{ .copied = self.printPuzzle() },
+                // Only the web flushes, when its page closes; a terminal game is written after every command.
+                .flush => .{ .wrote = .{ .failed = NO_FLUSH_MSG } },
+                // Native writes never answer `taken`, so core never asks to reclaim a file here.
+                .reclaim_file => .{ .wrote = .{ .failed = NO_RECLAIM_MSG } },
+                .show_status, .show_error, .done => return step,
             };
             step = self.flow.next(input);
         }
-        return step;
     }
 
-    /// Carry out a `generate` step, reporting progress through the renderer.
+    /// Carry out a `generate_game` step, reporting progress through the renderer.
     fn generate(self: *@This(), difficulty: puzzle_gen.Difficulty) []const u8 {
         puzzle_gen.PuzzleGen.setPlayProgress(gen_progress.playProgressToFacade, @ptrCast(&self.renderer));
         defer puzzle_gen.PuzzleGen.setPlayProgress(null, null);
         return puzzle_gen.PuzzleGen.generate(difficulty);
     }
 
-    /// Carry out a `copy_line` step: the terminal has no clipboard, so print the line for the player to copy.
-    fn printPuzzleLine(self: *@This()) flow_mod.step.Outcome {
+    /// Carry out a `copy_puzzle` step: the terminal has no clipboard, so print the puzzle for the player to copy.
+    fn printPuzzle(self: *@This()) flow_mod.step.Outcome {
         const line = export_command.currentPuzzleLine(&self.engine);
         self.out.writeAll(&line) catch return .{ .failed = COPY_WRITE_FAILED_MSG };
         self.out.writeAll("\n") catch return .{ .failed = COPY_WRITE_FAILED_MSG };

@@ -3,7 +3,6 @@
 import * as glue from "./glue.js";
 import * as autosave from "./flows/autosave.js";
 import * as clientLog from "./client_log.js";
-import * as errorModalMod from "./dialogs/error_modal.js";
 import * as sessionMod from "./flows/session.js";
 import * as startupMod from "./flows/startup.js";
 import * as genClient from "./gen/gen_client.js";
@@ -74,7 +73,6 @@ export async function bootSudokuWebApp(root = document) {
 
     // Boot phase 5: wire the UI around the idle session.
     const session = sessionMod.createWebSessionFromStartup(boot);
-    autosave.wireFinalSnapshotOnPageHide(game, session);
     sessionMod.syncCurrentFileLabels(session, root);
     board.renderBoard(boardEl, session.state);
     const app = appWire.wireSudokuApp({
@@ -85,6 +83,7 @@ export async function bootSudokuWebApp(root = document) {
       errorModal,
       root,
     });
+    autosave.wireFinalSnapshotOnPageHide(game, app.steps);
 
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
@@ -92,16 +91,7 @@ export async function bootSudokuWebApp(root = document) {
     clientLog.clientLog("startup", "info", "ready");
 
     // Boot phase 6: core startup flow decides restore / new / idle; its dialogs need the splash gone.
-    const outcome = await startupMod.runStartupFlow(
-      game,
-      boot,
-      startupMod.startupHandlers(game, session, {
-        generatingModal,
-        genWorker,
-        showGame: app.showGame,
-        showError: (text) => errorModalMod.showErrorModal(errorModal, text),
-      }),
-    );
+    const outcome = await startupMod.runStartupFlow(game, boot, app.steps, app.showGame);
     clientLog.clientLog("startup", "info", "startup_flow_complete", { kind: outcome.kind });
   } catch (err) {
     const errorText = err && err.message ? err.message : String(err);

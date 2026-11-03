@@ -342,21 +342,14 @@ export fn flowFail() callconv(.c) u32 {
     return returnStep(outBuffer(), .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
 }
 
-/// Answer a `read_file` step with the file's bytes; returns the next step JSON.
-export fn flowFileRead(in_ptr: u32, in_len: u32) callconv(.c) u32 {
-    const out = outBuffer();
-    if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
-    const bytes = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    return returnStep(out, active_flow.next(.{ .file_read = .{ .bytes = bytes } }));
-}
-
-/// Answer a `pick_open` step with the chosen file's bytes and name; returns the next step JSON.
-export fn flowPicked(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) callconv(.c) u32 {
+/// Answer a reading step (`open`, `import_puzzle`, `restore`, `paste_puzzle`) with what was
+/// read and, for a chosen file, its name; returns the next step JSON.
+export fn flowRead(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
     const bytes = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     const name: ?[]const u8 = if (name_len > 0) @as([*]const u8, @ptrFromInt(name_ptr))[0..name_len] else null;
-    return returnStep(out, active_flow.next(.{ .picked = .{ .file = .{ .bytes = bytes, .name = name } } }));
+    return returnStep(out, active_flow.next(.{ .read = .{ .file = .{ .bytes = bytes, .name = name } } }));
 }
 
 /// Pointer to the shared out buffer (JSON NUL-terminated or SUD0 bytes from serialize).

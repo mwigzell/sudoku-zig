@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as glue from "./artifacts/glue.js";
-import * as autosave from "./flows/autosave.js";
+import * as webSteps from "./flows/web_steps.js";
 import * as generating from "./dialogs/generating.js";
 import * as stepRunner from "./flows/step_runner.js";
 
@@ -77,8 +77,7 @@ function loadNow(game, action, answer) {
     const input = {
       show_game: { input: "ack" },
       resolve_default_target: { input: "default_target", name: "sudoku.sud" },
-      check_target: { input: "target_checked", exists: false },
-      write: { input: "wrote", ok: true, name: step.name },
+      autosave: { input: "wrote", ok: true, name: step.name },
     }[step.step];
     if (!input) break;
     step = game.flowNext(input);
@@ -94,7 +93,7 @@ export function startNewGame(game, line = PUZZLE_LINE, difficulty = "easy") {
 
 /** Open saved-game `bytes` picked as `name` on a real wasm game; returns the `show_game` step. */
 export function openBytes(game, bytes, name = null) {
-  return loadNow(game, { action: "open" }, () => game.flowPicked(bytes, name));
+  return loadNow(game, { action: "open" }, () => game.flowRead(bytes, name));
 }
 
 /** Open the game's own bytes under `name` on a real wasm game, as File -> Open does. */
@@ -154,9 +153,18 @@ export async function flushDialogPaint() {
 
 export const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
 
-/** One move through the core command flow with the web autosave handlers; core decides what is written. */
-export function moveWithAutosave(game, session, { fetchFn, onError } = {}, move = FILL_MOVE) {
-  return stepRunner.runCommand(game, move, { ...autosave.autosaveHandlers(game, session, { fetchFn, onError }), showGame() {} });
+/** Error dialog stub: `el.hidden` turns false and `msgEl` holds the text once an error shows. */
+export function errorModalStub(text = "") {
+  return { el: { hidden: true }, msgEl: { textContent: text } };
+}
+
+/**
+ * One move through the core command flow with `steps` (the browser's by default); core decides what is written.
+ * @param {import("./types").StepsOptions & { steps?: import("./types").FlowHandlers }} [options]
+ */
+export function moveWithAutosave(game, session, { steps, ...options } = {}, move = FILL_MOVE) {
+  const handlers = steps ?? webSteps.webSteps(game, session, options);
+  return stepRunner.runCommand(game, move, { ...handlers, showGame() {} });
 }
 
 function makeContinueBtn() {

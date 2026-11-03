@@ -13,9 +13,9 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 | Open | Decode, board swap, status text, `noteLoad(.open)` (working file), then the autosave flow | File picker or Android open bridge; binding the picked handle so later writes reach it | `CORE` |
 | Import / Paste | `importFromLine` / `pasteFromLine` codec and status text, `noteLoad(.import / .paste)`, then the autosave flow | Text file picker; clipboard read (or native `paste` line input) | `CORE` |
 | Save / Save As | `SaveFlow`: target choice, overwrite question, refusing Save while Auto Save is on, status text, working file | Picker, bound handle, Android bridge or download; host restore copy | `CORE` |
-| Autosave | `AutosaveFlow` after every command; Android "earlier install" question and retry (`Wrote.taken` → `pick_existing` / `pick_new`) | Writing the bound file; the two Android pickers | `CORE` |
+| Autosave | `AutosaveFlow` after every command; Android "earlier install" question and retry (`Wrote.taken` → `reclaim_file` / `save_as`) | Writing the bound file; the two Android pickers | `CORE` |
 | Export | `ExportFlow` (`write` step, "exported to:" status, errors) | Text picker or download; native writes through the file transport | `CORE` |
-| Copy | `ExportFlow.toClipboard` (`copy_line` step, status, errors) | Clipboard write (web) or printing the line (native: no clipboard) | `CORE` |
+| Copy | `ExportFlow.toClipboard` (`copy_puzzle` step, status, errors) | Clipboard write (web) or printing the line (native: no clipboard) | `CORE` |
 | Undo / Redo / Hint / Solve / fill | Engine command, status text, win detection ("You win!"), then the autosave flow | Key and menu wiring, render | `CORE` |
 | Settings edits | `SettingsFlow` decides whether `settings.json` is written | Settings dialog; host POST or native `settings_store` write | `CORE` |
 | Startup | `StartupFlow`: restore, auto-new, first board | Fetching host config and the current file | `CORE` |
@@ -27,7 +27,7 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 |---|---|---|---|
 | Web status and modals | `src/wasm/status_bar.js` (`applyEventStatus`), `error_modal.js` (`showErrorModal`) | DOM presentation of core text | `KEEP` |
 | Web board and selection | `src/wasm/board.js` | DOM rendering and pointer/key input | `KEEP` |
-| Web step handlers | `src/wasm/flows/step_runner.js`, `autosaveHandlers`, `saveHandlers` | Carry out one step each with browser APIs; no branching on outcomes | `KEEP` |
+| Web step handlers | `src/wasm/flows/step_runner.js`, `web_steps.js`, `android_steps.js` | Carry out one step each with browser APIs; no branching on outcomes | `KEEP` |
 | Web pickers, download, clipboard | `src/wasm/menus/file_menu.js` (`persistBytes`, `pickBytes`, `persistPuzzleText`), `clipboard.js` (`startCopyPuzzleOnClick`, `readClipboardText`) | Browser and Android bridge APIs exist only in the page | `KEEP` |
 | Menubar drag-release | `src/wasm/menus/menu_bar.js` | DOM event mechanics | `KEEP` |
 | Android WebView bootstrap | `MainActivity.java` (`onCreate`, `injectBridgeShim`), `page.html` boot-ready signal | WebView lifecycle | `KEEP` |

@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import * as boardMod from "./board.js";
+import * as webSteps from "./flows/web_steps.js";
 import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, coreText, fillText } from "./test_support.mjs";
 
 
@@ -342,10 +343,9 @@ function makeMockBoard() {
     game,
     board,
     { getSelection: () => ({ row: 0, col: 3 }), select() {} },
-    status,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
     session,
     makeRenderElement(),
+    { steps: webSteps.webSteps(game, session, { statusEl: status }) },
   );
   await outcome.done;
   assert.match(status.textContent, /^C2 /, "hint targets the cell selected on the board");
@@ -438,7 +438,7 @@ function selectedAt(board, row, col) {
   const board = makeMockBoard();
   const status = statusStub();
   const { game, session } = await playGame();
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), status, errorModalStub(), "4", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: status, errorModal: errorModalStub() }) });
   assert.equal(outcome.handled, true);
   await outcome.done;
   assert.equal(session.state.cells[boardMod.cellIndex(0, 2)].value, 4);
@@ -453,7 +453,7 @@ function selectedAt(board, row, col) {
   const errorModal = errorModalStub();
   const { game, session } = await playGame();
   status.textContent = "before";
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 0), status, errorModal, "5", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 0), "5", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: status, errorModal: errorModal }) });
   assert.equal(outcome.handled, true);
   await outcome.done;
   assert.equal(status.textContent, "before");
@@ -467,11 +467,10 @@ function selectedAt(board, row, col) {
     game,
     makeMockBoard(),
     { getSelection: () => null, select() {} },
-    statusStub(),
-    errorModalStub(),
     "5",
-    session,
     makeRenderElement(),
+    "",
+    { steps: webSteps.webSteps(game, session) },
   );
   assert.equal(outcome.handled, false);
 }
@@ -483,7 +482,7 @@ function selectedAt(board, row, col) {
   const host = hostFetch({ exists: false });
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModal }) });
   await outcome.done;
   globalThis.fetch = prevFetch;
   assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST", "first autosave with nothing on disk writes the host file");
@@ -503,7 +502,7 @@ function selectedAt(board, row, col) {
     questions.push({ message, labels });
     return false;
   };
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), statusStub(), errorModal, "4", session, makeRenderElement());
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModal }) });
   await outcome.done;
   globalThis.fetch = prevFetch;
   globalThis.__sudokuChoose = prevChoose;
@@ -532,7 +531,8 @@ function selectedAt(board, row, col) {
     },
   };
   let shownLegend = null;
-  boardMod.wirePlayLoop(board, game, selectedAt(board, 0, 2), statusStub(), errorModalStub(), session, {
+  boardMod.wirePlayLoop(board, game, selectedAt(board, 0, 2), session, {
+    steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModalStub() }),
     playPadEl: pad,
     createElement: makeRenderElement(),
     onLegendChange: (legend) => {

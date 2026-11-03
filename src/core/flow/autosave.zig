@@ -68,9 +68,9 @@ pub const AutosaveFlow = struct {
     fn startFlush(self: *AutosaveFlow) Step {
         if (self.session.write_context != .continuation) return self.finish(.done);
         const working = self.session.workingFile() orelse return self.finish(.done);
-        self.save = SaveFlow.init(self.session, .auto_save, working);
+        self.save = SaveFlow.flush(self.session, working);
         self.phase = .saving;
-        return self.save.beginWrite();
+        return self.next(.start);
     }
 
     fn saveTo(self: *AutosaveFlow, name: []const u8) Step {
@@ -103,8 +103,7 @@ test "with no working file autosave asks the platform for its default target" {
     var session = FileSession{};
     var flow = AutosaveFlow.afterCommand(&session, true, .fill);
     try testing.expect(flow.next(.start) == .resolve_default_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target.name);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write.name);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).autosave.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
@@ -114,10 +113,10 @@ test "autosave follows the working file" {
     var session = FileSession{ .write_context = .continuation };
     session.setWorkingFile("/docs/game.sud");
     var flow = AutosaveFlow.afterCommand(&session, true, .undo);
-    try testing.expectEqualStrings("/docs/game.sud", flow.next(.start).check_target.name);
-    const write = flow.next(.{ .target_checked = true }).write;
+    try testing.expectEqualStrings("/docs/game.sud", flow.next(.start).autosave.name);
+    const write = flow.next(.{ .wrote = .exists }).autosave;
     try testing.expectEqualStrings("/docs/game.sud", write.name);
-    try testing.expectEqual(step_mod.WriteKind.auto_save, write.kind);
+    try testing.expect(write.replace);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "/docs/game.sud" } }) == .done);
 }
 
@@ -127,7 +126,7 @@ test "autosave onto an existing file after New asks first and keeps it when decl
     session.apply(.new_game_success);
     var flow = AutosaveFlow.afterCommand(&session, true, .paste);
     _ = flow.next(.start);
-    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), flow.next(.{ .target_checked = true }).ask.text);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), flow.next(.{ .wrote = .exists }).ask.text);
     try testing.expect(flow.next(.{ .answered = false }) == .done);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }
@@ -137,15 +136,14 @@ test "autosave write failure is shown" {
     session.setWorkingFile("game.sud");
     var flow = AutosaveFlow.afterCommand(&session, true, .fill);
     _ = flow.next(.start);
-    _ = flow.next(.{ .target_checked = false });
     try testing.expectEqualStrings(save_mod.SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
 }
 
-test "flush continues the working file without checking" {
+test "flush writes the working file's restore copy" {
     var session = FileSession{ .write_context = .continuation };
     session.setWorkingFile("game.sud");
     var flow = AutosaveFlow.flush(&session, true);
-    try testing.expectEqualStrings("game.sud", flow.next(.start).write.name);
+    try testing.expectEqualStrings("game.sud", flow.next(.start).flush);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "game.sud" } }) == .done);
 }
 

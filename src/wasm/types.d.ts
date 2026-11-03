@@ -27,21 +27,38 @@ export type BoardSelection = ReturnType<typeof import("./board.js").wireSelectio
 export type FileMenuControls = Partial<
   Pick<MenuBarControls, "new" | "open" | "import" | "export" | "save" | "saveAs" | "autoSave">
 >;
-/** What each File item's wiring needs: the game and session, the views it refreshes, and the file APIs it writes through. */
+/** What each File item's wiring needs: the game and session, the views it refreshes, and the platform's step handlers. */
 export type FileMenuWiring = {
   game: GameApi;
   boardEl: HTMLElement;
   selection: BoardSelection;
   statusEl: HTMLElement;
-  errorModal: ErrorModal;
   session: WebSession;
   menuBar: MenuBar;
-  download: typeof import("./menus/file_menu.js").downloadBytes;
-  pick: (session: WebSession, options?: Parameters<typeof import("./menus/file_menu.js").pickBytes>[2]) => ReturnType<typeof import("./menus/file_menu.js").pickBytes>;
-  exportText: typeof import("./menus/file_menu.js").persistPuzzleText;
   createElement?: (tag: string) => HTMLElement;
   onViewRefresh?: () => void;
-  commandFlow?: FlowHandlers;
+  steps: FlowHandlers;
+};
+/** What a platform's step handlers are built with; unset hooks take the browser's. */
+export type StepsOptions = {
+  win?: Window & typeof globalThis;
+  doc?: Document;
+  fetchFn?: typeof fetch;
+  statusEl?: HTMLElement | null;
+  errorModal?: ErrorModal | null;
+  generatingModal?: GeneratingModal;
+  genWorker?: GenWorker;
+  clipboard?: Pick<Clipboard, "readText" | "writeText">;
+  download?: (bytes: Uint8Array, filename: string) => unknown;
+  pick?: (session: WebSession, options?: Parameters<typeof import("./files.js").pickBytes>[2]) => Promise<PickResult>;
+  exportText?: typeof import("./files.js").persistPuzzleText;
+};
+/** `StepsOptions` with every hook resolved, as the handlers use it. */
+export type StepContext = Required<Omit<StepsOptions, "generatingModal" | "genWorker">> & {
+  game: GameApi;
+  session: WebSession;
+  generatingModal?: GeneratingModal;
+  genWorker?: GenWorker;
 };
 export type GeneratingModal = ReturnType<typeof import("./dialogs/generating.js").wireGeneratingModal>;
 export type ErrorModal = ReturnType<typeof import("./dialogs/error_modal.js").wireErrorModal>;
@@ -82,22 +99,17 @@ export type HostBuildInfo = {
   debug_build: boolean;
 };
 
-/** What a core write is for (`step.zig` `WriteKind`). */
-export type WriteKind = "save" | "save_as" | "auto_save" | "export_line";
-
-/** The file a `check_target` or `write` step names, and the write it is for. */
-export type FlowTarget = { name: string; kind: WriteKind };
+/** A game write step's target: the file, and whether a file already there may be replaced. */
+export type GameWrite = { name: string; replace: boolean };
 
 /** One core step (wasm `flowStart` / `flowNext` result). */
 export type FlowStep =
-  | { step: "resolve_default_target" }
-  | ({ step: "check_target" | "write" } & FlowTarget)
-  | { step: "pick_new"; name: string }
-  | { step: "pick_existing" | "copy_line" }
+  | { step: "resolve_default_target" | "reclaim_file" | "copy_puzzle" | "paste_puzzle" }
+  | ({ step: "save" | "save_as" | "autosave" } & GameWrite)
+  | { step: "flush" | "export_puzzle"; name: string }
   | { step: "ask"; title: string; text: string; ok_label: string; cancel_label: string }
-  | { step: "read_file"; path: string }
-  | { step: "pick_open"; kind: "game" | "puzzle"; path: string | null }
-  | { step: "read_clipboard" }
+  | { step: "restore"; path: string }
+  | { step: "open" | "import_puzzle"; path: string | null }
   | {
       step: "show_game";
       text: string | null;
@@ -108,55 +120,52 @@ export type FlowStep =
       cell?: { row: number; col: number };
       loaded?: true;
     }
-  | { step: "generate"; difficulty: number }
+  | { step: "generate_game"; difficulty: number }
   | { step: "forget_current_file"; path: string; delete: boolean }
   | { step: "persist_settings"; settings: PlayerSettings }
   | { step: "show_status" | "show_error"; text: string }
   | { step: "done" }
   | { ok: false; error: string; step?: undefined };
 
-/** Platform result of a `write` or pick step; `taken` means the file belongs to an earlier install. */
+/** Platform result of a write step; `exists` means a fixed file is there and was left alone,
+ * `taken` that the file belongs to an earlier install. */
 export type WriteResult =
   | { ok: true; name?: string }
-  | { ok: false; cancelled?: boolean; taken?: { name: string; dir: string }; error?: string };
+  | { ok: false; exists?: boolean; cancelled?: boolean; taken?: { name: string; dir: string }; error?: string };
 
-/** Platform result of a `read_file` step. */
-export type ReadResult = { ok: true; bytes: Uint8Array } | { ok: false; error?: string };
-
-/** Platform result of a `pick_open` step; `handle` / `binding` let later saves write the picked file. */
+/** Platform result of a reading step (`restore`, `open`, `import_puzzle`, `paste_puzzle`); a browser
+ * pick also carries the file's handle so a saved game can be bound. */
 export type PickResult =
-  | { ok: true; bytes: Uint8Array; name: string; handle?: unknown; binding?: unknown }
+  | { ok: true; bytes: Uint8Array; name?: string; handle?: FileSystemFileHandle }
   | { ok: false; cancelled?: boolean; error?: string };
 
-/** Platform result of a `read_clipboard` step. */
-export type ClipboardResult = { ok: true; text: string } | { ok: false; error?: string };
-
-/** Platform result of a `persist_settings` or `copy_line` step. */
+/** Platform result of a `persist_settings` or `copy_puzzle` step. */
 export type PersistResult = { ok: true } | { ok: false; error?: string };
 
-/** Platform result of a `generate` step. */
+/** Platform result of a `generate_game` step. */
 export type GenerateResult = { ok: true; line: string } | { ok: false; cancelled?: boolean; error?: string };
 
-/** Platform work for each step kind; handlers report facts and never decide what happens next.
- * A flow only issues the steps its handlers cover (save flows: targets and writes; startup: reads,
- * generation and questions; settings: `persistSettings`). */
+/** The platform's handler for each step, used by every flow; handlers report facts and never decide what happens next. */
 export type FlowHandlers = {
-  resolveDefaultTarget?: () => string | Promise<string>;
-  checkTarget?: (target: FlowTarget) => boolean | Promise<boolean>;
-  ask?: (step: { title: string; text: string; ok_label: string; cancel_label: string }) => boolean | Promise<boolean>;
-  write?: (target: FlowTarget) => WriteResult | Promise<WriteResult>;
-  pickExisting?: () => WriteResult | Promise<WriteResult>;
-  pickNew?: (name: string) => WriteResult | Promise<WriteResult>;
-  copyLine?: () => PersistResult | Promise<PersistResult>;
-  readFile?: (path: string) => ReadResult | Promise<ReadResult>;
-  pickOpen?: (step: { kind: "game" | "puzzle"; path: string | null }) => PickResult | Promise<PickResult>;
-  readClipboard?: () => ClipboardResult | Promise<ClipboardResult>;
-  showGame?: (step: { text: string | null; file: string | null }) => void | Promise<void>;
-  generate?: (difficulty: number) => GenerateResult | Promise<GenerateResult>;
-  forgetCurrentFile?: (forget: { path: string; delete: boolean }) => void | Promise<void>;
-  persistSettings?: (settings: PlayerSettings) => PersistResult | Promise<PersistResult>;
-  showStatus?: (text: string) => void;
-  showError?: (text: string) => void | Promise<void>;
+  resolveDefaultTarget: () => string | Promise<string>;
+  ask: (step: { title: string; text: string; ok_label: string; cancel_label: string }) => boolean | Promise<boolean>;
+  save: (target: GameWrite) => WriteResult | Promise<WriteResult>;
+  saveAs: (target: GameWrite) => WriteResult | Promise<WriteResult>;
+  autosave: (target: GameWrite) => WriteResult | Promise<WriteResult>;
+  flush: (name: string) => WriteResult | Promise<WriteResult>;
+  exportPuzzle: (name: string) => WriteResult | Promise<WriteResult>;
+  reclaimFile: () => WriteResult | Promise<WriteResult>;
+  copyPuzzle: () => PersistResult | Promise<PersistResult>;
+  pastePuzzle: () => PickResult | Promise<PickResult>;
+  restore: (path: string) => PickResult | Promise<PickResult>;
+  open: (path: string | null) => PickResult | Promise<PickResult>;
+  importPuzzle: (path: string | null) => PickResult | Promise<PickResult>;
+  showGame: (step: Extract<FlowStep, { step: "show_game" }>) => void | Promise<void>;
+  generateGame: (difficulty: number) => GenerateResult | Promise<GenerateResult>;
+  forgetCurrentFile: (forget: { path: string; delete: boolean }) => void | Promise<void>;
+  persistSettings: (settings: PlayerSettings) => PersistResult | Promise<PersistResult>;
+  showStatus: (text: string) => void;
+  showError: (text: string) => void | Promise<void>;
 };
 
 /** How a flow ended. */

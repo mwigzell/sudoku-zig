@@ -1,7 +1,8 @@
 // app_wire.js — DOM wiring for the web shell once startup/session are ready.
 
-import * as commandFlowMod from "./flows/command_flow.js";
+import * as androidSteps from "./flows/android_steps.js";
 import * as errorModalMod from "./dialogs/error_modal.js";
+import * as webSteps from "./flows/web_steps.js";
 import * as sessionMod from "./flows/session.js";
 import * as statusBarMod from "./status_bar.js";
 import * as board from "./board.js";
@@ -19,7 +20,21 @@ import * as settings from "./menus/settings.js";
  * @typedef {import("./types").GeneratingModal} GeneratingModal
  * @typedef {import("./types").GenWorker} GenWorker
  * @typedef {import("./types").ErrorModal} ErrorModal
+ * @typedef {import("./types").FlowHandlers} FlowHandlers
+ * @typedef {import("./types").StepsOptions} StepsOptions
  */
+
+/**
+ * The platform's handler for every core step: Android's when the WebView has the file bridge, else the browser's.
+ * @param {GameApi} game
+ * @param {WebSession} session
+ * @param {StepsOptions} options
+ * @returns {FlowHandlers}
+ */
+export function platformSteps(game, session, options) {
+  const bridge = (options.win ?? globalThis).AndroidFileBridge;
+  return bridge ? androidSteps.androidSteps(game, session, bridge, options) : webSteps.webSteps(game, session, options);
+}
 
 function isTouchPlayPadPlatform(win = globalThis) {
   if (!win || !win.navigator) return false;
@@ -93,6 +108,7 @@ function settingsModalFromDom(root = document) {
 /**
  * @typedef {Object} WiredSudokuApp
  * @property {(step: { text: string | null }) => void} showGame Redraw board, menus and status from the session.
+ * @property {FlowHandlers} steps The platform's step handlers every flow runs with.
  */
 
 /**
@@ -139,18 +155,12 @@ export function wireSudokuApp({
   };
   syncPlayPadVisibility(null);
 
-  const commandFlow = commandFlowMod.commandHandlers(game, session, {
-    win,
-    statusEl: statusBar,
-    onError: (failed) => errorModalMod.showErrorModal(errorModal, failed.error),
-    generatingModal,
-    genWorker,
-  });
+  const steps = platformSteps(game, session, { win, statusEl: statusBar, errorModal, generatingModal, genWorker });
 
   const themeMenu = theme.wireThemeMenu(menuControls, game, session, {
     root,
     onChange: () => menuBar.sync(),
-    commandFlow,
+    steps,
   });
 
   let editMenu;
@@ -169,7 +179,7 @@ export function wireSudokuApp({
     session,
     boardEl,
     () => selection.getSelection(),
-    { onChange: () => menuBar.sync(), commandFlow },
+    { onChange: () => menuBar.sync(), steps },
   );
   const difficultyDialog = {
     el: root.getElementById("new-difficulty-modal"),
@@ -181,13 +191,13 @@ export function wireSudokuApp({
     cancelBtn: root.getElementById("new-difficulty-cancel"),
   };
 
-  fileMenu.wireFileMenu(menuControls, game, boardEl, selection, statusBar, errorModal, session, menuBar, {
+  fileMenu.wireFileMenu(menuControls, game, boardEl, selection, statusBar, session, menuBar, {
     difficultyDialog,
     onViewRefresh: () => {
       themeMenu.sync();
       regionMenu.sync();
     },
-    commandFlow,
+    steps,
   });
 
   editMenu = menu.wireEditMenu(
@@ -197,8 +207,6 @@ export function wireSudokuApp({
     game,
     boardEl,
     selection,
-    statusBar,
-    errorModal,
     session,
     undefined,
     root,
@@ -207,19 +215,19 @@ export function wireSudokuApp({
       copyBtn: menuControls.copy,
       pasteBtn: menuControls.paste,
       closeMenus: () => menuBar.closeAll?.(),
-      commandFlow,
+      steps,
     },
   );
 
-  board.wirePlayLoop(boardEl, game, selection, statusBar, errorModal, session, {
+  board.wirePlayLoop(boardEl, game, selection, session, {
     onLegendChange: () => menuBar.sync(),
     playPadEl,
-    commandFlow,
+    steps,
   });
   help.wireHelpAbout(menuControls.about, game, aboutModal);
   settings.wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
     closeMenus: () => menuBar.closeAll?.(),
-    commandFlow,
+    steps,
   });
 
   if (win.matchMedia?.("(pointer: fine)")?.matches === true) {
@@ -227,6 +235,7 @@ export function wireSudokuApp({
   }
 
   return {
+    steps,
     showGame: (step) => {
       board.renderBoard(boardEl, session.state);
       selection.deselect();

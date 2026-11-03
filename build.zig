@@ -29,15 +29,15 @@ pub fn build(b: *std.Build) void {
     // --export forces the step symbol into the wasm export table (wasm-ld);
     // `export fn` alone is a no-op on this toolchain snapshot.
     const wasm_emit = b.addSystemCommand(&.{
-        "zig",                          "build-exe",               "src/entry_wasm.zig",
-        "-target",                      "wasm32-freestanding",     "-femit-bin=" ++ WASM_OUT,
-        "--export=init",                "--export=exec",           "--export=getLegend",
-        "--export=getConfig",           "--export=getState",       "--export=serialize",
-        "--export=flowPicked",          "--export=flowFail",       "--export=exportPuzzle",
-        "--export=bootstrapHostConfig", "--export=generatePuzzle", "--export=requestGenAbort",
-        "--export=getAbout",            "--export=outPtr",         "--export=flowStart",
-        "--export=flowNext",            "--export=flowFileRead",   "--export=setHostBuildInfo",
-        "--export=commandStart",        "--export=getGenText",     "--export=getCoreText",
+        "zig",                          "build-exe",                 "src/entry_wasm.zig",
+        "-target",                      "wasm32-freestanding",       "-femit-bin=" ++ WASM_OUT,
+        "--export=init",                "--export=exec",             "--export=getLegend",
+        "--export=getConfig",           "--export=getState",         "--export=serialize",
+        "--export=flowRead",            "--export=flowFail",         "--export=exportPuzzle",
+        "--export=bootstrapHostConfig", "--export=generatePuzzle",   "--export=requestGenAbort",
+        "--export=getAbout",            "--export=outPtr",           "--export=flowStart",
+        "--export=flowNext",            "--export=setHostBuildInfo", "--export=commandStart",
+        "--export=getGenText",          "--export=getCoreText",
     });
     const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });
     wasm_emit.step.dependOn(&mkdir_artifacts.step);
@@ -61,7 +61,7 @@ pub fn build(b: *std.Build) void {
     web_step.dependOn(&run_web.step);
 
     // JS glue contract test for the served web page (command-in → full-text-out over the wasm import table).
-    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/menus/hint_flow.test.mjs && node src/wasm/flows/step_runner.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menus/menu.test.mjs && node src/wasm/menus/menu_bar.test.mjs && node src/wasm/menus/theme.test.mjs && node src/wasm/gen/gen_client.test.mjs && node src/wasm/status_bar.test.mjs && node src/wasm/dialogs/error_modal.test.mjs && node src/wasm/client_log.test.mjs && node src/wasm/flows/session.test.mjs && node src/wasm/host_api.test.mjs && node src/wasm/gen/generate.test.mjs && node src/wasm/flows/autosave.test.mjs && node src/wasm/flows/startup.test.mjs && node src/wasm/gen/gen_progress_rows.test.mjs && node src/wasm/gen/gen_progress_rows_dom.test.mjs && node src/wasm/dialogs/generating.test.mjs && node src/wasm/menus/file_menu.test.mjs && node src/wasm/menus/region.test.mjs && node src/wasm/menus/help.test.mjs && node src/wasm/menus/settings.test.mjs && node src/wasm/menus/host_settings.test.mjs && node src/wasm/android_bridge.test.mjs" });
+    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/menus/hint_flow.test.mjs && node src/wasm/flows/step_runner.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menus/menu.test.mjs && node src/wasm/menus/menu_bar.test.mjs && node src/wasm/menus/theme.test.mjs && node src/wasm/gen/gen_client.test.mjs && node src/wasm/status_bar.test.mjs && node src/wasm/dialogs/error_modal.test.mjs && node src/wasm/client_log.test.mjs && node src/wasm/flows/session.test.mjs && node src/wasm/host_api.test.mjs && node src/wasm/gen/generate.test.mjs && node src/wasm/flows/autosave.test.mjs && node src/wasm/flows/startup.test.mjs && node src/wasm/gen/gen_progress_rows.test.mjs && node src/wasm/gen/gen_progress_rows_dom.test.mjs && node src/wasm/dialogs/generating.test.mjs && node src/wasm/menus/file_menu.test.mjs && node src/wasm/menus/region.test.mjs && node src/wasm/menus/help.test.mjs && node src/wasm/menus/settings.test.mjs && node src/wasm/menus/host_settings.test.mjs && node src/wasm/android_bridge.test.mjs && node src/wasm/files.test.mjs && node src/wasm/flows/android_steps.test.mjs" });
     const glue_step = b.step("glue", "Run the JS glue contract test (node)");
     glue_step.dependOn(&glue.step);
     glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit

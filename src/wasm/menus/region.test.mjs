@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import * as regionMod from "./region.js";
 import * as boardMod from "../board.js";
-import * as commandFlowMod from "../flows/command_flow.js";
+import * as webSteps from "../flows/web_steps.js";
 import { loadGame, settleFlow } from "../test_support.mjs";
 
 function makeToggleBtn() {
@@ -81,7 +81,7 @@ function makeMockCell(row, col) {
     board,
     () => ({ row: 1, col: 1 }),
     {
-      commandFlow: commandFlowMod.commandHandlers(game, session, {
+      steps: webSteps.webSteps(game, session, {
         fetchFn: async (url, init) => {
           persistCalls.push(JSON.parse(init.body));
           return { ok: true, status: 204 };

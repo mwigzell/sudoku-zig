@@ -302,24 +302,22 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
     return switch (kind) {
         .start => .start,
         .default_target => .{ .default_target = v.name orelse return error.MissingField },
-        .target_checked => .{ .target_checked = v.exists orelse return error.MissingField },
         .answered => .{ .answered = v.yes orelse return error.MissingField },
         .wrote => .{ .wrote = if (v.ok == true)
             .{ .ok = v.name orelse return error.MissingField }
+        else if (v.exists == true)
+            .exists
         else if (v.cancelled == true)
             .cancelled
         else if (v.taken == true)
             .{ .taken = .{ .name = v.name orelse return error.MissingField, .dir = v.dir orelse return error.MissingField } }
         else
             .{ .failed = v.@"error" orelse return error.MissingField } },
-        .file_read => if (v.ok == false)
-            .{ .file_read = .{ .failed = v.@"error" orelse return error.MissingField } }
-        else
-            error.MissingField,
-        .picked => if (v.cancelled == true)
-            .{ .picked = .cancelled }
+        // A successful read carries bytes, so it arrives through `flowRead`, not as JSON.
+        .read => if (v.cancelled == true)
+            .{ .read = .cancelled }
         else if (v.ok == false)
-            .{ .picked = .{ .failed = v.@"error" orelse return error.MissingField } }
+            .{ .read = .{ .failed = v.@"error" orelse return error.MissingField } }
         else
             error.MissingField,
         .generated => .{ .generated = if (v.ok == true)
@@ -349,14 +347,13 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
     try std.Io.Writer.writeAll(w, "{\"step\":");
     try writeJsonString(w, @tagName(step));
     switch (step) {
-        .resolve_default_target, .done, .pick_existing, .copy_line, .read_clipboard => {},
-        .check_target, .write => |target| {
+        .resolve_default_target, .done, .reclaim_file, .copy_puzzle, .paste_puzzle => {},
+        .save, .save_as, .autosave => |target| {
             try std.Io.Writer.writeAll(w, ",\"name\":");
             try writeJsonString(w, target.name);
-            try std.Io.Writer.writeAll(w, ",\"kind\":");
-            try writeJsonString(w, @tagName(target.kind));
+            try std.Io.Writer.print(w, ",\"replace\":{any}", .{target.replace});
         },
-        .pick_new => |name| {
+        .flush, .export_puzzle => |name| {
             try std.Io.Writer.writeAll(w, ",\"name\":");
             try writeJsonString(w, name);
         },
@@ -374,15 +371,13 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"cancel_label\":");
             try writeJsonString(w, q.cancel_label);
         },
-        .read_file => |path| {
+        .restore => |path| {
             try std.Io.Writer.writeAll(w, ",\"path\":");
             try writeJsonString(w, path);
         },
-        .pick_open => |pick| {
-            try std.Io.Writer.writeAll(w, ",\"kind\":");
-            try writeJsonString(w, @tagName(pick.kind));
+        .open, .import_puzzle => |path| {
             try std.Io.Writer.writeAll(w, ",\"path\":");
-            try writeOptionalJsonString(w, pick.path);
+            try writeOptionalJsonString(w, path);
         },
         .show_game => |g| {
             try std.Io.Writer.writeAll(w, ",\"text\":");
@@ -398,7 +393,7 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             if (g.cell) |c| try std.Io.Writer.print(w, ",\"cell\":{{\"row\":{d},\"col\":{d}}}", .{ c.row, c.col });
             if (g.loaded) try std.Io.Writer.writeAll(w, ",\"loaded\":true");
         },
-        .generate => |d| try std.Io.Writer.print(w, ",\"difficulty\":{d}", .{@backingInt(wire.PlayerDifficulty.fromPuzzleDifficulty(d))}),
+        .generate_game => |d| try std.Io.Writer.print(w, ",\"difficulty\":{d}", .{@backingInt(wire.PlayerDifficulty.fromPuzzleDifficulty(d))}),
         .forget_current_file => |f| {
             try std.Io.Writer.writeAll(w, ",\"path\":");
             try writeJsonString(w, f.path);
@@ -917,14 +912,12 @@ test "flow input parses every step result" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"target_checked\",\"exists\":true}")).target_checked);
     try std.testing.expect(!(try parseFlowInput(a, "{\"input\":\"answered\",\"yes\":false}")).answered);
     try std.testing.expectEqualStrings("d.sud", (try parseFlowInput(a, "{\"input\":\"default_target\",\"name\":\"d.sud\"}")).default_target);
     try std.testing.expectEqualStrings("w.sud", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":true,\"name\":\"w.sud\"}")).wrote.ok);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"cancelled\":true}")).wrote == .cancelled);
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"exists\":true}")).wrote == .exists);
     try std.testing.expectEqualStrings("boom", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"error\":\"boom\"}")).wrote.failed);
-    try std.testing.expectEqualStrings("gone", (try parseFlowInput(a, "{\"input\":\"file_read\",\"ok\":false,\"error\":\"gone\"}")).file_read.failed);
-    try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"file_read\",\"ok\":true}"));
     try std.testing.expectEqualStrings("123", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":true,\"line\":\"123\"}")).generated.line);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"cancelled\":true}")).generated == .cancelled);
     try std.testing.expectEqualStrings("x", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"error\":\"x\"}")).generated.failed);
@@ -936,9 +929,9 @@ test "flow input parses every step result" {
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":true}")).copied == .ok);
     try std.testing.expectEqualStrings("denied", (try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":false,\"error\":\"denied\"}")).copied.failed);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"ack\"}")) == .ack);
-    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"picked\",\"ok\":false,\"cancelled\":true}")).picked == .cancelled);
-    try std.testing.expectEqualStrings("no", (try parseFlowInput(a, "{\"input\":\"picked\",\"ok\":false,\"error\":\"no\"}")).picked.failed);
-    try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"picked\",\"ok\":true}"));
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"read\",\"ok\":false,\"cancelled\":true}")).read == .cancelled);
+    try std.testing.expectEqualStrings("no", (try parseFlowInput(a, "{\"input\":\"read\",\"ok\":false,\"error\":\"no\"}")).read.failed);
+    try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"read\",\"ok\":true}"));
 }
 
 test "step JSON carries the tag and its payload" {
@@ -947,18 +940,22 @@ test "step JSON carries the tag and its payload" {
     const out = OutBuffer{ .buf = &buf, .len = &len };
     try writeStepJson(out, .{ .ask = .{ .title = "T", .text = "Q?", .ok_label = "Yes", .cancel_label = "No" } });
     try std.testing.expectEqualStrings("{\"step\":\"ask\",\"title\":\"T\",\"text\":\"Q?\",\"ok_label\":\"Yes\",\"cancel_label\":\"No\"}", out.finishJson());
-    try writeStepJson(out, .{ .write = .{ .name = "a.sud", .kind = .save_as } });
-    try std.testing.expectEqualStrings("{\"step\":\"write\",\"name\":\"a.sud\",\"kind\":\"save_as\"}", out.finishJson());
-    try writeStepJson(out, .{ .pick_new = "sudoku.sud" });
-    try std.testing.expectEqualStrings("{\"step\":\"pick_new\",\"name\":\"sudoku.sud\"}", out.finishJson());
-    try writeStepJson(out, .pick_existing);
-    try std.testing.expectEqualStrings("{\"step\":\"pick_existing\"}", out.finishJson());
-    try writeStepJson(out, .copy_line);
-    try std.testing.expectEqualStrings("{\"step\":\"copy_line\"}", out.finishJson());
+    try writeStepJson(out, .{ .save_as = .{ .name = "a.sud", .replace = false } });
+    try std.testing.expectEqualStrings("{\"step\":\"save_as\",\"name\":\"a.sud\",\"replace\":false}", out.finishJson());
+    try writeStepJson(out, .{ .autosave = .{ .name = "a.sud", .replace = true } });
+    try std.testing.expectEqualStrings("{\"step\":\"autosave\",\"name\":\"a.sud\",\"replace\":true}", out.finishJson());
+    try writeStepJson(out, .{ .flush = "sudoku.sud" });
+    try std.testing.expectEqualStrings("{\"step\":\"flush\",\"name\":\"sudoku.sud\"}", out.finishJson());
+    try writeStepJson(out, .{ .export_puzzle = "p.txt" });
+    try std.testing.expectEqualStrings("{\"step\":\"export_puzzle\",\"name\":\"p.txt\"}", out.finishJson());
+    try writeStepJson(out, .reclaim_file);
+    try std.testing.expectEqualStrings("{\"step\":\"reclaim_file\"}", out.finishJson());
+    try writeStepJson(out, .copy_puzzle);
+    try std.testing.expectEqualStrings("{\"step\":\"copy_puzzle\"}", out.finishJson());
     try writeStepJson(out, .done);
     try std.testing.expectEqualStrings("{\"step\":\"done\"}", out.finishJson());
-    try writeStepJson(out, .{ .read_file = "/current-file" });
-    try std.testing.expectEqualStrings("{\"step\":\"read_file\",\"path\":\"/current-file\"}", out.finishJson());
+    try writeStepJson(out, .{ .restore = "/current-file" });
+    try std.testing.expectEqualStrings("{\"step\":\"restore\",\"path\":\"/current-file\"}", out.finishJson());
     var shown_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer shown_engine.deinit();
     var shown = flow.step.showGame(&shown_engine, null, "g.sud");
@@ -973,12 +970,14 @@ test "step JSON carries the tag and its payload" {
     shown.show_game.loaded = true;
     try writeStepJson(out, shown);
     try std.testing.expect(std.mem.endsWith(u8, out.finishJson(), ",\"loaded\":true}"));
-    try writeStepJson(out, .{ .pick_open = .{ .kind = .puzzle, .path = null } });
-    try std.testing.expectEqualStrings("{\"step\":\"pick_open\",\"kind\":\"puzzle\",\"path\":null}", out.finishJson());
-    try writeStepJson(out, .read_clipboard);
-    try std.testing.expectEqualStrings("{\"step\":\"read_clipboard\"}", out.finishJson());
-    try writeStepJson(out, .{ .generate = .hard });
-    try std.testing.expectEqualStrings("{\"step\":\"generate\",\"difficulty\":3}", out.finishJson());
+    try writeStepJson(out, .{ .import_puzzle = null });
+    try std.testing.expectEqualStrings("{\"step\":\"import_puzzle\",\"path\":null}", out.finishJson());
+    try writeStepJson(out, .{ .open = "g.sud" });
+    try std.testing.expectEqualStrings("{\"step\":\"open\",\"path\":\"g.sud\"}", out.finishJson());
+    try writeStepJson(out, .paste_puzzle);
+    try std.testing.expectEqualStrings("{\"step\":\"paste_puzzle\"}", out.finishJson());
+    try writeStepJson(out, .{ .generate_game = .hard });
+    try std.testing.expectEqualStrings("{\"step\":\"generate_game\",\"difficulty\":3}", out.finishJson());
     try writeStepJson(out, .{ .forget_current_file = .{ .path = "/current-file", .delete = true } });
     try std.testing.expectEqualStrings("{\"step\":\"forget_current_file\",\"path\":\"/current-file\",\"delete\":true}", out.finishJson());
     var cfg = config.Config.default();

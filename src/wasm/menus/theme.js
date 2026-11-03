@@ -1,6 +1,6 @@
 // theme.js — View menu light/dark theme via engine config.
 
-import * as commandFlowMod from "../flows/command_flow.js";
+import * as stepRunner from "../flows/step_runner.js";
 import * as startup from "../flows/startup.js";
 
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
@@ -74,13 +74,13 @@ export function syncThemeMenu(controls, config) {
 }
 
 /**
- * @param {{ root?: Document, onChange?: () => void, commandFlow?: FlowHandlers }} [options]
+ * @param {{ root?: Document, onChange?: () => void, steps: FlowHandlers }} [options]
  */
 export function wireThemeMenu(
   controls,
   game,
   session,
-  { root = document, onChange, commandFlow } = {},
+  { root = document, onChange, steps } = {},
 ) {
   const win = root.defaultView ?? globalThis;
   const mediaQuery = typeof win.matchMedia === "function" ? win.matchMedia(MEDIA_DARK) : null;
@@ -97,7 +97,7 @@ export function wireThemeMenu(
 
   const chooseTheme = async (theme) => {
     if (session.config.theme === theme) return;
-    await commandFlowMod.runSessionCommand(game, { action: SET_THEME, theme }, commandFlow, () => {
+    await stepRunner.runCommand(game, { action: SET_THEME, theme }, steps, () => {
       sync();
       onChange?.();
     });

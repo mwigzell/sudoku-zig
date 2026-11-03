@@ -195,18 +195,12 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.flowFail());
     },
 
-    /** Answer a `read_file` step with the file's bytes; returns the next step. */
-    flowFileRead(bytes) {
-      writeBytes(memory, SCRATCH, bytes);
-      return readJson(exports.flowFileRead(SCRATCH, bytes.length));
-    },
-
-    /** Answer a `pick_open` step with the chosen file's bytes and name; returns the next step. */
-    flowPicked(bytes, name) {
+    /** Answer a reading step with what was read and, for a chosen file, its name; returns the next step. */
+    flowRead(bytes, name) {
       writeBytes(memory, SCRATCH, bytes);
       const nameBytes = new TextEncoder().encode(name ?? "");
       writeBytes(memory, NAME_SCRATCH, nameBytes);
-      return readJson(exports.flowPicked(SCRATCH, bytes.length, NAME_SCRATCH, nameBytes.length));
+      return readJson(exports.flowRead(SCRATCH, bytes.length, NAME_SCRATCH, nameBytes.length));
     },
     get exports() {
       return exports;

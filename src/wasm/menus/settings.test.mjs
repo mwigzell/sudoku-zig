@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import * as settings from "./settings.js";
-import * as commandFlowMod from "../flows/command_flow.js";
+import * as webSteps from "../flows/web_steps.js";
 import { loadGame } from "../test_support.mjs";
 
 {
@@ -36,18 +36,18 @@ import { loadGame } from "../test_support.mjs";
   assert.equal(modal.checkbox.checked, true);
 }
 
-/** Real wasm game, its session, and a command flow that records every settings write. */
+/** Real wasm game, its session, and web step handlers that record every settings write. */
 async function settingsHarness() {
   const game = await loadGame();
   const session = { config: game.getConfig(), legend: game.getLegend(), state: game.getState() };
   const persisted = [];
-  const commandFlow = commandFlowMod.commandHandlers(game, session, {
+  const steps = webSteps.webSteps(game, session, {
     fetchFn: async (url, init) => {
       persisted.push(JSON.parse(init.body));
       return { ok: true, status: 204 };
     },
   });
-  return { game, session, persisted, commandFlow };
+  return { game, session, persisted, steps };
 }
 
 /** A control that records its listener for `type` under `on<type>`. */
@@ -59,10 +59,10 @@ const control = (extra = {}) => ({
 });
 
 {
-  const { game, session, persisted, commandFlow } = await settingsHarness();
+  const { game, session, persisted, steps } = await settingsHarness();
   const modal = { el: { hidden: true }, checkbox: control({ checked: false }), dismissEl: control() };
   const btn = control();
-  settings.wireSettingsMenu(btn, game, session, modal, { commandFlow });
+  settings.wireSettingsMenu(btn, game, session, modal, { steps });
 
   btn.onclick();
   assert.equal(modal.el.hidden, false);
@@ -79,7 +79,7 @@ const control = (extra = {}) => ({
 }
 
 {
-  const { game, session, commandFlow } = await settingsHarness();
+  const { game, session, steps } = await settingsHarness();
   const modal = {
     el: { hidden: true },
     checkbox: control(),
@@ -87,7 +87,7 @@ const control = (extra = {}) => ({
     logLevelSelect: control(),
     dismissEl: control(),
   };
-  settings.wireSettingsMenu(control(), game, session, modal, { commandFlow });
+  settings.wireSettingsMenu(control(), game, session, modal, { steps });
   modal.difficultySelect.value = "hard";
   await modal.difficultySelect.onchange();
   assert.equal(session.config.difficulty, 3);
@@ -95,7 +95,7 @@ const control = (extra = {}) => ({
 }
 
 {
-  const { game, session, persisted, commandFlow } = await settingsHarness();
+  const { game, session, persisted, steps } = await settingsHarness();
   const modal = {
     el: { hidden: true },
     checkbox: control(),
@@ -104,7 +104,7 @@ const control = (extra = {}) => ({
     autoSaveCheckbox: control({ checked: false }),
     dismissEl: control(),
   };
-  settings.wireSettingsMenu(control(), game, session, modal, { commandFlow });
+  settings.wireSettingsMenu(control(), game, session, modal, { steps });
   modal.autoSaveCheckbox.checked = true;
   await modal.autoSaveCheckbox.onchange();
   assert.equal(session.config.auto_save, true);

@@ -1,6 +1,5 @@
 // settings.js — File → Settings: warn, default difficulty, log level.
 
-import * as commandFlowMod from "../flows/command_flow.js";
 import * as stepRunner from "../flows/step_runner.js";
 
 /** @typedef {import("../types").ExecAction} ExecAction */
@@ -41,23 +40,23 @@ export function showSettingsModal(modal, config) {
  * Run one settings command through core; the dialog re-syncs from the config core shows,
  * or from the unchanged session config when core rejects the command.
  * @param {ExecAction} action
- * @param {FlowHandlers} [commandFlow]
+ * @param {FlowHandlers} steps
  */
-async function applySettingChange(game, session, modal, commandFlow, action) {
-  const outcome = await commandFlowMod.runSessionCommand(game, action, commandFlow, (step) => syncSettingsModal(modal, step.config));
+async function applySettingChange(game, session, modal, steps, action) {
+  const outcome = await stepRunner.runCommand(game, action, steps, (step) => syncSettingsModal(modal, step.config));
   if (outcome.kind === stepRunner.STEP_SHOW_ERROR) syncSettingsModal(modal, session.config);
 }
 
 /**
  * File → Settings dialog.
- * @param {{ commandFlow?: FlowHandlers, onDismiss?: () => void, closeMenus?: () => void }} [options]
+ * @param {{ steps: FlowHandlers, onDismiss?: () => void, closeMenus?: () => void }} [options]
  */
 export function wireSettingsMenu(
   settingsBtn,
   game,
   session,
   modal,
-  { commandFlow, onDismiss, closeMenus } = {},
+  { steps, onDismiss, closeMenus } = {},
 ) {
   if (!settingsBtn || !modal?.el) return;
   settingsBtn.addEventListener("click", () => {
@@ -65,7 +64,7 @@ export function wireSettingsMenu(
     showSettingsModal(modal, session.config ?? game.getConfig());
   });
 
-  const change = (action) => applySettingChange(game, session, modal, commandFlow, action);
+  const change = (action) => applySettingChange(game, session, modal, steps, action);
 
   modal.checkbox?.addEventListener("change", async () => {
     await change({ action: "toggle_warn_solvability" });

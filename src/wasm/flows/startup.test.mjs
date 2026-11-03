@@ -4,8 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as sessionMod from "./session.js";
 import * as startupMod from "./startup.js";
-import * as commandFlowMod from "./command_flow.js";
-import * as errorModalMod from "../dialogs/error_modal.js";
+import * as webSteps from "./web_steps.js";
 import * as board from "../board.js";
 import * as fileMenu from "../menus/file_menu.js";
 import * as menu from "../menus/menu.js";
@@ -128,7 +127,7 @@ async function savedGameBytes(line) {
 
 /**
  * Run the startup flow on a real game with recording handlers.
- * `answers` feeds each `ask`; `generated` answers each `generate`.
+ * `answers` feeds each `ask`; `generated` answers each `generate_game`.
  */
 async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [] } = {}) {
   const game = await loadGame(config);
@@ -160,19 +159,15 @@ async function runStartupScenario({ config = {}, currentFile = null, answers = [
       return answers.shift() === true;
     },
   };
-  const handlers = {
-    ...startupMod.startupHandlers(game, session, {
-      fetchFn,
-      win,
-      showGame: (step) => shown.push({ text: step.text, file: step.file }),
-      showError: (text) => errors.push(text),
-    }),
-    generate: async (difficulty) => {
+  const steps = {
+    ...webSteps.webSteps(game, session, { fetchFn, win }),
+    showError: (text) => errors.push(text),
+    generateGame: async (difficulty) => {
       generateCalls.push(difficulty);
       return generated.shift() ?? { ok: false, error: "no generation scripted" };
     },
   };
-  const outcome = await startupMod.runStartupFlow(game, boot, handlers);
+  const outcome = await startupMod.runStartupFlow(game, boot, steps, (step) => shown.push({ text: step.text, file: step.file }));
   return { game, session, outcome, calls, shown, asked, errors, generateCalls, fetchFn };
 }
 
@@ -295,14 +290,14 @@ for (const deleteIt of [true, false]) {
 }
 
 {
-  // The web generate step hands core the line; Continue still closes the modal.
+  // The web generate_game step hands core the line; Continue still closes the modal.
   const game = {
     getConfig: () => ({ difficulty: 1, log_level: 1 }),
     generatePuzzle: ({ difficulty }) => ({ ok: true, line: `${difficulty}`.repeat(81) }),
   };
   const modal = generatingModalStub();
-  const handlers = startupMod.startupHandlers(game, {}, { generatingModal: modal });
-  const running = handlers.generate(2);
+  const steps = webSteps.webSteps(game, {}, { generatingModal: modal });
+  const running = steps.generateGame(2);
   await flushDialogPaint();
   assert.equal(modal.el.hidden, false, "startup generation waits for Continue");
   modal.continueBtn.click();
@@ -530,44 +525,48 @@ async function launchWeb(cfg, host, ui, { generatedLine, expectSolved } = {}) {
     startup_save_path: host.current ? PARITY_CURRENT_FILE : null,
   };
   const session = sessionMod.createWebSessionFromStartup(boot);
-  if (host.current) {
-    const startupErrors = [];
-    await startupMod.runStartupFlow(game, boot, {
-      ...startupMod.startupHandlers(game, session, { fetchFn: host.fetchFn, win: globalThis, showError: (t) => startupErrors.push(t) }),
-      generate: async () => ({ ok: true, line: generatedLine }),
-    });
-    assert.deepEqual(startupErrors, []);
-    if (expectSolved !== undefined) assert.equal(isSolved(game.getState()), expectSolved, "solved after startup");
-  }
-
   const run = {
     game,
     session,
     /** @type {import("../types").PickResult | null} */
     picked: null,
     /** @type {string | null} */
-    newLine: null,
+    newLine: generatedLine ?? null,
+    /** Clipboard text the next Paste reads. */
+    pasted: "",
     controls: { new: makeBtn(), open: makeBtn(), import: makeBtn(), save: makeBtn(), export: makeBtn(), autoSave: makeBtn(), viewRegion: makeMenuItem(), viewLight: makeMenuItem(), viewDark: makeMenuItem(), viewSystem: makeMenuItem() },
     easyButton: { el: makeBtn(), difficulty: "easy" },
-    commandFlow: null,
+    steps: null,
   };
-  run.commandFlow = {
-    ...commandFlowMod.commandHandlers(game, session, { fetchFn: host.fetchFn, statusEl: ui.statusEl, onError: (failed) => errorModalMod.showErrorModal(ui.errorModal, failed.error) }),
-    generate: async () => ({ ok: true, line: run.newLine }),
+  run.steps = {
+    ...webSteps.webSteps(game, session, {
+      fetchFn: host.fetchFn,
+      statusEl: ui.statusEl,
+      errorModal: ui.errorModal,
+      clipboard: { readText: async () => run.pasted, writeText: async () => {} },
+      pick: async () => run.picked,
+      download() {},
+      exportText: async (_bytes, _session, name) => {
+        host.written.push(name);
+        return { ok: true, filename: name };
+      },
+    }),
+    generateGame: async () => ({ ok: true, line: run.newLine }),
   };
-  const { controls, commandFlow } = run;
-  region.wireRegionMenu(controls, game, session, ui.boardEl, () => null, { commandFlow });
-  themeMod.wireThemeMenu(controls, game, session, { root: themeRoot(), commandFlow });
-  fileMenu.wireFileMenu(controls, game, ui.boardEl, { select() {}, deselect() {} }, ui.statusEl, ui.errorModal, session, { sync() {} }, {
+  if (host.current) {
+    const startupErrors = [];
+    await startupMod.runStartupFlow(game, boot, { ...run.steps, showError: (t) => startupErrors.push(t) });
+    assert.deepEqual(startupErrors, []);
+    if (expectSolved !== undefined) assert.equal(isSolved(game.getState()), expectSolved, "solved after startup");
+  }
+
+  const { controls, steps } = run;
+  region.wireRegionMenu(controls, game, session, ui.boardEl, () => null, { steps });
+  themeMod.wireThemeMenu(controls, game, session, { root: themeRoot(), steps });
+  fileMenu.wireFileMenu(controls, game, ui.boardEl, { select() {}, deselect() {} }, ui.statusEl, session, { sync() {} }, {
     createElement,
     difficultyDialog: { el: { hidden: true }, buttons: [run.easyButton] },
-    pick: async () => run.picked,
-    download() {},
-    exportText: async (_bytes, _session, name) => {
-      host.written.push(name);
-      return { ok: true, filename: name };
-    },
-    commandFlow,
+    steps,
   });
   return run;
 }
@@ -604,7 +603,7 @@ async function runParityScenario(scenario) {
     },
     boardEl: makeBoard(),
   };
-  const { statusEl, errorModal, boardEl } = ui;
+  const { statusEl, boardEl } = ui;
   try {
     if (scenario.current_file) {
       host.files.set(scenario.current_file.name, await savedGame(scenario.current_file));
@@ -621,7 +620,7 @@ async function runParityScenario(scenario) {
     }
 
     for (const step of scenario.steps) {
-      const { game, session, controls, commandFlow } = run;
+      const { game, session, controls, steps } = run;
       if (step.relaunch) {
         assert.ok(host.written.length > 0, "relaunch needs a written file");
         host.current = host.written[host.written.length - 1];
@@ -646,12 +645,12 @@ async function runParityScenario(scenario) {
       const edit = step.undo ? "undo" : step.redo ? "redo" : step.hint ? "hint" : step.solve ? "solve" : null;
       if (edit) {
         const selection = { getSelection: () => null, select() {}, deselect() {} };
-        await menu.handleEditAction(edit, game, boardEl, selection, statusEl, errorModal, session, createElement).done;
+        await menu.handleEditAction(edit, game, boardEl, selection, session, createElement, { steps }).done;
         continue;
       }
       if (step.paste !== undefined) {
-        const clipboard = { readText: async () => step.paste };
-        await menu.handlePastePuzzle(game, session, statusEl, errorModal, { clipboard, commandFlow }).done;
+        run.pasted = step.paste;
+        await menu.handlePastePuzzle(game, session, steps).done;
         continue;
       }
       if (step.open) {
@@ -674,8 +673,7 @@ async function runParityScenario(scenario) {
         continue;
       }
       if (step.copy) {
-        const clipboard = { writeText: async () => {} };
-        await menu.handleCopyPuzzle(game, session, statusEl, errorModal, { clipboard });
+        await menu.handleCopyPuzzle(game, session, steps);
         continue;
       }
       if (step.import !== undefined) {
@@ -687,7 +685,7 @@ async function runParityScenario(scenario) {
       if (!move) throw new Error(`unknown scenario step: ${JSON.stringify(step)}`);
       const selection = { getSelection: () => ({ row: move.row, col: move.col }), select() {} };
       const key = step.clear ? "Delete" : String(move.digit);
-      const outcome = board.handlePlayKey(game, boardEl, selection, statusEl, errorModal, key, session, createElement);
+      const outcome = board.handlePlayKey(game, boardEl, selection, key, createElement, "", { steps });
       assert.equal(outcome.handled, true);
       await outcome.done;
     }

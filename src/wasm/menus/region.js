@@ -1,7 +1,7 @@
 // region.js — View menu region highlight via engine config.
 
 import * as board from "../board.js";
-import * as commandFlowMod from "../flows/command_flow.js";
+import * as stepRunner from "../flows/step_runner.js";
 
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
 
@@ -15,7 +15,7 @@ export function syncRegionMenu(controls, config) {
 }
 
 /**
- * @param {{ onChange?: () => void, commandFlow?: FlowHandlers }} [options]
+ * @param {{ onChange?: () => void, steps: FlowHandlers }} [options]
  */
 export function wireRegionMenu(
   controls,
@@ -23,7 +23,7 @@ export function wireRegionMenu(
   session,
   boardEl,
   getSelection,
-  { onChange, commandFlow } = {},
+  { onChange, steps } = {},
 ) {
   const syncBoard = () => {
     syncRegionMenu(controls, session.config);
@@ -36,7 +36,7 @@ export function wireRegionMenu(
   };
 
   controls.viewRegion?.addEventListener("click", () => {
-    void commandFlowMod.runSessionCommand(game, { action: TOGGLE_REGION }, commandFlow, () => {
+    void stepRunner.runCommand(game, { action: TOGGLE_REGION }, steps, () => {
       syncBoard();
       onChange?.();
     });

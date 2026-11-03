@@ -31,7 +31,7 @@ export async function fetchHostBuildInfo(fetchFn = globalThis.fetch) {
   return { debug_build: body.debug_build === true };
 }
 
-/** Read the host's current file for a startup `read_file` step. */
+/** Read the host's current file for a startup `restore` step. */
 export async function fetchStartupSaveBytes(path, fetchFn = globalThis.fetch) {
   const res = await fetchFn(path);
   if (!res.ok) return { ok: false, error: `fetch failed: ${res.status}` };

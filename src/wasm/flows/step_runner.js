@@ -11,43 +11,52 @@ import * as clientLog from "../client_log.js";
 /** @typedef {import("../types").ExecAction} ExecAction */
 
 export const STEP_RESOLVE_DEFAULT_TARGET = "resolve_default_target";
-export const STEP_CHECK_TARGET = "check_target";
 export const STEP_ASK = "ask";
-export const STEP_WRITE = "write";
-export const STEP_READ_FILE = "read_file";
-export const STEP_PICK_OPEN = "pick_open";
-export const STEP_READ_CLIPBOARD = "read_clipboard";
+export const STEP_SAVE = "save";
+export const STEP_SAVE_AS = "save_as";
+export const STEP_AUTOSAVE = "autosave";
+export const STEP_FLUSH = "flush";
+export const STEP_EXPORT_PUZZLE = "export_puzzle";
+export const STEP_RECLAIM_FILE = "reclaim_file";
+export const STEP_COPY_PUZZLE = "copy_puzzle";
+export const STEP_PASTE_PUZZLE = "paste_puzzle";
+export const STEP_RESTORE = "restore";
+export const STEP_OPEN = "open";
+export const STEP_IMPORT_PUZZLE = "import_puzzle";
 export const STEP_SHOW_GAME = "show_game";
-export const STEP_GENERATE = "generate";
+export const STEP_GENERATE_GAME = "generate_game";
 export const STEP_FORGET_CURRENT_FILE = "forget_current_file";
 export const STEP_PERSIST_SETTINGS = "persist_settings";
-export const STEP_PICK_EXISTING = "pick_existing";
-export const STEP_PICK_NEW = "pick_new";
-export const STEP_COPY_LINE = "copy_line";
 export const STEP_SHOW_STATUS = "show_status";
 export const STEP_SHOW_ERROR = "show_error";
 export const STEP_DONE = "done";
-
-/** `write` / `check_target` kinds: what core writes and why. */
-export const WRITE_SAVE = "save";
-export const WRITE_SAVE_AS = "save_as";
-export const WRITE_AUTO_SAVE = "auto_save";
-export const WRITE_EXPORT_LINE = "export_line";
 
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
 export const FLOW_STARTUP = "startup";
 
 /** Input names core's `flowNext` reads (`boundary.zig` `parseFlowInput`). */
 const INPUT_DEFAULT_TARGET = "default_target";
-const INPUT_TARGET_CHECKED = "target_checked";
 const INPUT_ANSWERED = "answered";
 const INPUT_WROTE = "wrote";
+const INPUT_READ = "read";
 const INPUT_GENERATED = "generated";
 const INPUT_PERSISTED = "persisted";
 const INPUT_COPIED = "copied";
-const INPUT_FILE_READ = "file_read";
-const INPUT_PICKED = "picked";
 const INPUT_ACK = "ack";
+
+/** Game write steps and the handler that carries each out. */
+const GAME_WRITE_HANDLERS = {
+  [STEP_SAVE]: "save",
+  [STEP_SAVE_AS]: "saveAs",
+  [STEP_AUTOSAVE]: "autosave",
+};
+/** Reading steps and the handler that carries each out; the path is the one core named, if any. */
+const READ_HANDLERS = {
+  [STEP_RESTORE]: "restore",
+  [STEP_OPEN]: "open",
+  [STEP_IMPORT_PUZZLE]: "importPuzzle",
+  [STEP_PASTE_PUZZLE]: "pastePuzzle",
+};
 
 const FLOW_LANE = Symbol("flowLane");
 const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
@@ -72,6 +81,7 @@ function failedInput(input, result) {
  */
 function wroteInput(result, name) {
   if (result?.ok === true) return { input: INPUT_WROTE, ok: true, name: result.name ?? name };
+  if (result?.exists === true) return { input: INPUT_WROTE, ok: false, exists: true };
   if (result?.cancelled === true) return { input: INPUT_WROTE, ok: false, cancelled: true };
   if (result?.taken) return { input: INPUT_WROTE, ok: false, taken: true, name: result.taken.name, dir: result.taken.dir };
   return failedInput(INPUT_WROTE, result);
@@ -106,12 +116,15 @@ function outcomeInput(input, result) {
 }
 
 /**
- * The file a `check_target` or `write` step names, and the write it is for.
- * @param {{ name: string, kind: import("../types").WriteKind }} step
- * @returns {import("../types").FlowTarget}
+ * Answer a reading step: bytes go to core through `flowRead`.
+ * @param {GameApi} game
+ * @param {import("../types").PickResult} result
+ * @returns {FlowStep}
  */
-function targetOf(step) {
-  return { name: step.name, kind: step.kind };
+function readAnswer(game, result) {
+  if (result?.ok === true) return game.flowRead(result.bytes, result.name ?? null);
+  if (result?.cancelled === true) return game.flowNext({ input: INPUT_READ, ok: false, cancelled: true });
+  return game.flowNext(failedInput(INPUT_READ, result));
 }
 
 /**
@@ -130,13 +143,15 @@ async function settle(fn) {
 
 /**
  * Run one flow to its end. Flows on the same game run one at a time (wasm holds one flow).
+ * `onShown` redraws once the session holds the game core showed.
  * @param {GameApi} game
  * @param {FlowStart} start
  * @param {FlowHandlers} handlers
+ * @param {(step: FlowStep) => void} [onShown]
  * @returns {Promise<FlowOutcome>}
  */
-export function runFlow(game, start, handlers) {
-  return enqueueFlow(game, () => game.flowStart(start), handlers);
+export function runFlow(game, start, handlers, onShown) {
+  return enqueueFlow(game, () => game.flowStart(start), withShown(handlers, onShown));
 }
 
 /**
@@ -144,10 +159,27 @@ export function runFlow(game, start, handlers) {
  * @param {GameApi} game
  * @param {ExecAction} action
  * @param {FlowHandlers} handlers
+ * @param {(step: FlowStep) => void} [onShown]
  * @returns {Promise<FlowOutcome>}
  */
-export function runCommand(game, action, handlers) {
-  return enqueueFlow(game, () => game.commandStart(action), handlers);
+export function runCommand(game, action, handlers, onShown) {
+  return enqueueFlow(game, () => game.commandStart(action), withShown(handlers, onShown));
+}
+
+/**
+ * @param {FlowHandlers} handlers
+ * @param {(step: FlowStep) => void} [onShown]
+ * @returns {FlowHandlers}
+ */
+function withShown(handlers, onShown) {
+  if (!onShown) return handlers;
+  return {
+    ...handlers,
+    showGame: async (step) => {
+      await handlers.showGame?.(step);
+      onShown(step);
+    },
+  };
 }
 
 /**
@@ -200,57 +232,49 @@ async function stepThrough(game, first, handlers) {
       case STEP_RESOLVE_DEFAULT_TARGET:
         step = game.flowNext({ input: INPUT_DEFAULT_TARGET, name: await handlers.resolveDefaultTarget() });
         break;
-      case STEP_CHECK_TARGET:
-        step = game.flowNext({ input: INPUT_TARGET_CHECKED, exists: (await handlers.checkTarget(targetOf(step))) === true });
-        break;
       case STEP_ASK:
         step = game.flowNext({ input: INPUT_ANSWERED, yes: (await handlers.ask(step)) === true });
         break;
-      case STEP_WRITE: {
-        const target = targetOf(step);
-        step = game.flowNext(wroteInput(await settle(() => handlers.write(target)), target.name));
+      case STEP_SAVE:
+      case STEP_SAVE_AS:
+      case STEP_AUTOSAVE: {
+        const target = { name: step.name, replace: step.replace === true };
+        const handler = GAME_WRITE_HANDLERS[step.step];
+        step = game.flowNext(wroteInput(await settle(() => handlers[handler](target)), target.name));
         break;
       }
-      case STEP_PICK_EXISTING:
-        step = game.flowNext(wroteInput(await settle(() => handlers.pickExisting()), null));
-        break;
-      case STEP_PICK_NEW: {
+      case STEP_FLUSH: {
         const name = step.name;
-        step = game.flowNext(wroteInput(await settle(() => handlers.pickNew(name)), name));
+        step = game.flowNext(wroteInput(await settle(() => handlers.flush(name)), name));
         break;
       }
-      case STEP_COPY_LINE:
-        step = game.flowNext(outcomeInput(INPUT_COPIED, await settle(() => handlers.copyLine())));
-        break;
-      case STEP_READ_FILE: {
-        const path = step.path;
-        const read = await settle(() => handlers.readFile(path));
-        step = read?.ok === true
-          ? game.flowFileRead(read.bytes)
-          : game.flowNext(failedInput(INPUT_FILE_READ, read));
+      case STEP_EXPORT_PUZZLE: {
+        const name = step.name;
+        step = game.flowNext(wroteInput(await settle(() => handlers.exportPuzzle(name)), name));
         break;
       }
-      case STEP_PICK_OPEN: {
-        const picked = await settle(() => handlers.pickOpen(step));
-        if (picked?.ok === true) step = game.flowPicked(picked.bytes, picked.name ?? null);
-        else if (picked?.cancelled === true) step = game.flowNext({ input: INPUT_PICKED, ok: false, cancelled: true });
-        else step = game.flowNext(failedInput(INPUT_PICKED, picked));
+      case STEP_RECLAIM_FILE:
+        step = game.flowNext(wroteInput(await settle(() => handlers.reclaimFile()), null));
         break;
-      }
-      case STEP_READ_CLIPBOARD: {
-        const read = await settle(() => handlers.readClipboard());
-        step = read?.ok === true
-          ? game.flowFileRead(new TextEncoder().encode(read.text))
-          : game.flowNext(failedInput(INPUT_FILE_READ, read));
+      case STEP_COPY_PUZZLE:
+        step = game.flowNext(outcomeInput(INPUT_COPIED, await settle(() => handlers.copyPuzzle())));
+        break;
+      case STEP_RESTORE:
+      case STEP_OPEN:
+      case STEP_IMPORT_PUZZLE:
+      case STEP_PASTE_PUZZLE: {
+        const path = step.path ?? null;
+        const handler = READ_HANDLERS[step.step];
+        step = readAnswer(game, await settle(() => handlers[handler](path)));
         break;
       }
       case STEP_SHOW_GAME:
         await handlers.showGame(step);
         step = game.flowNext({ input: INPUT_ACK });
         break;
-      case STEP_GENERATE: {
+      case STEP_GENERATE_GAME: {
         const difficulty = step.difficulty;
-        step = game.flowNext(generatedInput(await settle(() => handlers.generate(difficulty))));
+        step = game.flowNext(generatedInput(await settle(() => handlers.generateGame(difficulty))));
         break;
       }
       case STEP_FORGET_CURRENT_FILE: {

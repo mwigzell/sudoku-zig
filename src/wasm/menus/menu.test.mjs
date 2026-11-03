@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import * as board from "../board.js";
 import * as menu from "./menu.js";
 import * as menuBar from "./menu_bar.js";
+import * as webSteps from "../flows/web_steps.js";
 import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, withCoreFlow, coreText } from "../test_support.mjs";
 
 
@@ -115,7 +116,8 @@ async function editGame(config = {}) {
 }
 
 function runEdit(action, game, session, { selection = { getSelection: () => null, select() {} }, status = statusStub() } = {}) {
-  return menu.handleEditAction(action, game, makeMockBoard(), selection, status, errorModalStub(), session, makeRenderElement());
+  const steps = webSteps.webSteps(game, session, { statusEl: status, errorModal: errorModalStub() });
+  return menu.handleEditAction(action, game, makeMockBoard(), selection, session, makeRenderElement(), { steps });
 }
 
 // ── hint: core picks a cell when deselected, targets the selected cell otherwise ──
@@ -152,12 +154,10 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
     game,
     makeMockBoard(),
     { getSelection: () => ({ row: 2, col: 3 }), select() {} },
-    status,
-    errorModalStub(),
     session,
     makeRenderElement(),
     root,
-    { closeMenus: () => { closedMenus += 1; } },
+    { steps: webSteps.webSteps(game, session, { statusEl: status }), closeMenus: () => { closedMenus += 1; } },
   );
   hintBtn.click();
   await settleFlow();
@@ -215,11 +215,10 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
     game,
     makeMockBoard(),
     selection,
-    statusStub(),
-    errorModalStub(),
     session,
     makeRenderElement(),
     root,
+    { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModalStub() }) },
   );
 
   assert.equal(undoBtn.disabled, false);
@@ -288,9 +287,12 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   });
   const status = { textContent: "", className: "" };
   const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
-  const result = await menu.handleCopyPuzzle(game, session, status, errorModal, {
+  const steps = webSteps.webSteps(game, session, {
+    statusEl: status,
+    errorModal,
     clipboard: { writeText: async (text) => { written = text; } },
   });
+  const result = await menu.handleCopyPuzzle(game, session, steps);
   assert.equal(result.ok, true);
   assert.equal(written, line, "clipboard gets exportPuzzle one-line string");
   assert.equal(status.textContent, coreText.COPIED_MSG, "core owns the copy status");
@@ -310,32 +312,29 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
       return { ok: true, bytes: new TextEncoder().encode("2".repeat(81)) };
     },
   });
-  const result = await menu.handleCopyPuzzle(
-    game,
-    session,
-    { textContent: "", className: "" },
+  const steps = webSteps.webSteps(game, session, {
+    statusEl: { textContent: "", className: "" },
     errorModal,
-    {
-      clipboard: {
-        writeText: async () => {
-          throw new Error("denied");
-        },
-      },
-      doc: {
-        createElement() {
-          return {
-            select() {},
-            style: {},
-            setAttribute() {},
-          };
-        },
-        body: { appendChild() {}, removeChild() {} },
-        execCommand() {
-          return false;
-        },
+    clipboard: {
+      writeText: async () => {
+        throw new Error("denied");
       },
     },
-  );
+    doc: {
+      createElement() {
+        return {
+          select() {},
+          style: {},
+          setAttribute() {},
+        };
+      },
+      body: { appendChild() {}, removeChild() {} },
+      execCommand() {
+        return false;
+      },
+    },
+  });
+  const result = await menu.handleCopyPuzzle(game, session, steps);
   assert.equal(result.ok, false);
   assert.equal(errorModal.el.hidden, false);
   assert.equal(errorModal.msgEl.textContent, coreText.COPY_FAILED_MSG);
@@ -346,13 +345,8 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
 {
   let called = false;
   const session = { legend: {}, state: { cells: [] } };
-  const result = await menu.handleCopyPuzzle(
-    { exportPuzzle() { called = true; return { ok: true, bytes: new Uint8Array(81) }; } },
-    session,
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    { clipboard: { writeText: async () => {} } },
-  );
+  const game = { exportPuzzle() { called = true; return { ok: true, bytes: new Uint8Array(81) }; } };
+  const result = await menu.handleCopyPuzzle(game, session, webSteps.webSteps(game, session, { clipboard: { writeText: async () => {} } }));
   assert.equal(result.handled, false);
   assert.equal(called, false);
 }
@@ -363,25 +357,24 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   const session = { state: emptyState(), legend: { [menuBar.LEGEND_WIRE_COPY]: true } };
   let written = null;
   const lineBytes = new TextEncoder().encode("1".repeat(81));
+  const game = await withCoreFlow({
+    exportPuzzle() {
+      return { ok: true, bytes: lineBytes };
+    },
+  });
   menu.wireEditMenu(
     makeBtn(),
     makeBtn(),
     makeBtn(),
-    await withCoreFlow({
-      exportPuzzle() {
-        return { ok: true, bytes: lineBytes };
-      },
-    }),
+    game,
     makeMockBoard(),
     { getSelection: () => null, deselect() {}, select() {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
     session,
     makeRenderElement(),
     { querySelectorAll: () => [], addEventListener() {} },
     {
       copyBtn,
-      clipboard: { writeText: async (text) => { written = text; } },
+      steps: webSteps.webSteps(game, session, { clipboard: { writeText: async (text) => { written = text; } } }),
     },
   );
   copyBtn.click();
@@ -400,7 +393,7 @@ const clipboardWith = (text) => ({ readText: async () => text });
   const before = JSON.stringify(game.getState());
   const errorModal = errorModalStub();
   const clipboard = { readText: async () => { throw new Error("denied"); } };
-  await menu.handlePastePuzzle(game, session, statusStub(), errorModal, { clipboard }).done;
+  await menu.handlePastePuzzle(game, session, webSteps.webSteps(game, session, { errorModal, clipboard })).done;
   assert.equal(errorModal.el.hidden, false);
   assert.match(errorModal.msgEl.textContent, /clipboard/i);
   assert.equal(JSON.stringify(game.getState()), before);
@@ -410,9 +403,9 @@ const clipboardWith = (text) => ({ readText: async () => text });
 {
   let readCalled = false;
   const { game } = await editGame();
-  const result = menu.handlePastePuzzle(game, { legend: {} }, statusStub(), errorModalStub(), {
-    clipboard: { readText: async () => { readCalled = true; return GOLDEN_PUZZLE_LINE; } },
-  });
+  const session = { legend: {} };
+  const clipboard = { readText: async () => { readCalled = true; return GOLDEN_PUZZLE_LINE; } };
+  const result = menu.handlePastePuzzle(game, session, webSteps.webSteps(game, session, { clipboard }));
   assert.equal(result.handled, false);
   assert.equal(readCalled, false);
 }
@@ -432,12 +425,10 @@ const clipboardWith = (text) => ({ readText: async () => text });
     game,
     boardEl,
     { getSelection: () => null, deselect() {} },
-    statusStub(),
-    errorModalStub(),
     session,
     makeRenderElement(),
     { querySelectorAll: () => [], addEventListener() {} },
-    { pasteBtn, clipboard: clipboardWith(GOLDEN_PUZZLE_LINE) },
+    { pasteBtn, steps: webSteps.webSteps(game, session, { clipboard: clipboardWith(GOLDEN_PUZZLE_LINE) }) },
   );
   pasteBtn.click();
   await settleFlow();

@@ -1,17 +1,14 @@
 // menu.js — Edit menu: undo/redo/solve/deselect (web only; native has no cell selection).
 
-import * as clipboardMod from "../clipboard.js";
-import * as commandFlowMod from "../flows/command_flow.js";
-import * as errorModalMod from "../dialogs/error_modal.js";
-import * as statusBar from "../status_bar.js";
 import * as menuBar from "./menu_bar.js";
 import * as board from "../board.js";
 
 import * as menuBarMod from "./menu_bar.js";
 import * as stepRunner from "../flows/step_runner.js";
-import * as fileMenu from "./file_menu.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
+/** @typedef {import("../types").FlowHandlers} FlowHandlers */
+/** @typedef {import("../types").FlowStep} FlowStep */
 
 const PASTE_COMMAND = "paste";
 const COPY_COMMAND = "copy";
@@ -40,43 +37,26 @@ export function anyMenuOpen(root) {
   return [...root.querySelectorAll("#menu-bar .menu")].some((menu) => menu.dataset.open === "true");
 }
 
-/** Edit → Copy: core has the puzzle line put on the clipboard; denied leaves the board intact. */
-/** @param {GameApi} game */
-export async function handleCopyPuzzle(
-  game,
-  session,
-  statusEl,
-  errorModal,
-  { clipboard, doc } = {},
-) {
+/**
+ * Edit → Copy: core has the puzzle put on the clipboard; denied leaves the board intact.
+ * @param {GameApi} game
+ * @param {FlowHandlers} steps
+ */
+export async function handleCopyPuzzle(game, session, steps) {
   if (!session.legend[menuBar.LEGEND_WIRE_COPY]) return { handled: false };
-  const outcome = await stepRunner.runCommand(game, { action: COPY_COMMAND }, {
-    copyLine: () => clipboardMod.startCopyPuzzleOnClick(game, { clipboard, doc: doc ?? globalThis.document }),
-    showStatus: (text) => statusBar.showStatusText(statusEl, text),
-    showError: (text) => errorModalMod.showErrorModal(errorModal, text),
-  });
+  const outcome = await stepRunner.runCommand(game, { action: COPY_COMMAND }, steps);
   return { handled: true, ok: outcome.kind === stepRunner.STEP_SHOW_STATUS };
 }
 
 /**
- * Edit → Paste: core asks for the clipboard text and loads it; a read or load failure keeps the board.
+ * Edit → Paste: core asks for the clipboard puzzle and loads it; a read or load failure keeps the board.
  * @param {GameApi} game
- * @param {{ clipboard?: Pick<Clipboard, "readText">, commandFlow?: import("../types").FlowHandlers, onShown?: (step: import("../types").FlowStep) => void }} [options]
+ * @param {FlowHandlers} steps
+ * @param {(step: FlowStep) => void} [onShown]
  */
-export function handlePastePuzzle(
-  game,
-  session,
-  statusEl,
-  errorModal,
-  { clipboard, commandFlow = board.boardCommandFlow(game, session, statusEl, errorModal), onShown } = {},
-) {
+export function handlePastePuzzle(game, session, steps, onShown) {
   if (!session.legend[menuBar.LEGEND_WIRE_PASTE]) return { handled: false };
-  const handlers = { ...commandFlow, readClipboard: () => clipboardMod.readClipboardText({ clipboard }) };
-  const shown = (step) => {
-    if (step.loaded) fileMenu.bindLoadedGame(session, null);
-    onShown?.(step);
-  };
-  return { handled: true, done: commandFlowMod.runSessionCommand(game, { action: PASTE_COMMAND }, handlers, shown) };
+  return { handled: true, done: stepRunner.runCommand(game, { action: PASTE_COMMAND }, steps, onShown) };
 }
 
 export function handleDeselect(selection) {
@@ -96,27 +76,28 @@ function execPayloadForEditAction(action, boardEl, selection) {
 /**
  * Edit dispatcher: actions the legend disables are not handled; the rest run through core.
  * @param {GameApi} game
- * @param {{ commandFlow?: import("../types").FlowHandlers, onShown?: (step: import("../types").FlowStep) => void }} [options]
+ * @param {{ steps: FlowHandlers, onShown?: (step: FlowStep) => void }} options
  */
 export function handleEditAction(
   action,
   game,
   boardEl,
   selection,
-  statusEl,
-  errorModal,
   session,
   createElement,
-  { commandFlow = board.boardCommandFlow(game, session, statusEl, errorModal), onShown } = {},
+  { steps, onShown },
 ) {
   if (action in session.legend && !session.legend[action]) return { handled: false };
   const payload = execPayloadForEditAction(action, boardEl, selection);
-  const done = board.runBoardCommand(game, payload, { boardEl, selection, createElement, commandFlow, onShown });
+  const done = board.runBoardCommand(game, payload, { boardEl, selection, createElement, steps, onShown });
   return { handled: true, done };
 }
 
-/** Wires edit controls + keyboard shortcuts onto one shared edit action dispatcher. */
-/** @param {GameApi} game */
+/**
+ * Wires edit controls + keyboard shortcuts onto one shared edit action dispatcher.
+ * @param {GameApi} game
+ * @param {{ steps: FlowHandlers, syncLegend?: () => void, copyBtn?: HTMLElement, pasteBtn?: HTMLElement, closeMenus?: () => void }} options
+ */
 export function wireEditMenu(
   undoBtn,
   redoBtn,
@@ -124,19 +105,10 @@ export function wireEditMenu(
   game,
   boardEl,
   selection,
-  statusEl,
-  errorModal,
   session,
   createElement,
   root = document,
-  {
-    syncLegend,
-    copyBtn,
-    pasteBtn,
-    closeMenus,
-    clipboard = globalThis.navigator?.clipboard,
-    commandFlow,
-  } = {},
+  { steps, syncLegend, copyBtn, pasteBtn, closeMenus },
 ) {
   const controls = {
     undo: undoBtn,
@@ -153,10 +125,7 @@ export function wireEditMenu(
   syncEdit();
 
   const run = (action) =>
-    handleEditAction(action, game, boardEl, selection, statusEl, errorModal, session, createElement, {
-      commandFlow,
-      onShown: syncEdit,
-    });
+    handleEditAction(action, game, boardEl, selection, session, createElement, { steps, onShown: syncEdit });
 
   const runDeselect = () => {
     const outcome = handleDeselect(selection);
@@ -179,22 +148,15 @@ export function wireEditMenu(
   copyBtn?.addEventListener("click", (event) => {
     closeMenus?.();
     event?.stopPropagation?.();
-    void handleCopyPuzzle(game, session, statusEl, errorModal, {
-      clipboard,
-      doc: root.ownerDocument ?? globalThis.document,
-    });
+    void handleCopyPuzzle(game, session, steps);
   });
   pasteBtn?.addEventListener("click", (event) => {
     closeMenus?.();
     event?.stopPropagation?.();
-    handlePastePuzzle(game, session, statusEl, errorModal, {
-      clipboard,
-      commandFlow,
-      onShown: (step) => {
-        board.renderBoard(boardEl, step.state, createElement);
-        selection.deselect();
-        syncEdit();
-      },
+    handlePastePuzzle(game, session, steps, (step) => {
+      board.renderBoard(boardEl, step.state, createElement);
+      selection.deselect();
+      syncEdit();
     });
   });
   if (typeof root.querySelector === "function") {

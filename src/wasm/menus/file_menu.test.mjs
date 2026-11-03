@@ -1,20 +1,10 @@
-// file_menu.test.mjs — File menu session contract.
+// file_menu.test.mjs — File menu session contract on the browser's step handlers.
 
 import assert from "node:assert/strict";
 import * as fileMenu from "./file_menu.js";
-import * as commandFlowMod from "../flows/command_flow.js";
-import * as errorModalMod from "../dialogs/error_modal.js";
-import { PUZZLE_LINE, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow, coreText, fillText } from "../test_support.mjs";
+import * as webSteps from "../flows/web_steps.js";
+import { PUZZLE_LINE, errorModalStub, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow, coreText, fillText } from "../test_support.mjs";
 import * as menuBar from "./menu_bar.js";
-
-async function flushDialogPaint() {
-  if (typeof requestAnimationFrame === "function") {
-    await new Promise((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(resolve));
-    });
-  }
-  await Promise.resolve();
-}
 
 function makeBtn() {
   return {
@@ -39,63 +29,31 @@ function makeRenderElement() {
   return (tag) => ({ tag, classList: { add() {}, remove() {} }, textContent: "", dataset: {}, setAttribute() {} });
 }
 
-{
-  assert.equal(fileMenu.filePickerStartIn({}), "documents");
-  assert.equal(fileMenu.filePickerStartIn({ fileHandle: { name: "game.sud" } }).name, "game.sud");
-}
-
-{
-  const links = [];
-  const urls = [];
-  const doc = {
-    defaultView: {
-      URL: {
-        createObjectURL: () => "blob:mock",
-        revokeObjectURL: (url) => urls.push(url),
-      },
-    },
-    createElement(tag) {
-      return {
-        tag,
-        click() {
-          links.push(this);
-        },
-      };
-    },
-  };
-  const out = fileMenu.downloadBytes(new Uint8Array([1, 2, 3]), "game.sud", doc);
-  assert.equal(out.ok, true);
-  assert.equal(links[0].download, "game.sud");
-}
-
-
-/** Web command handlers on a real game; `generate` answers New from `generated` and records the difficulty. */
-function loadFlow(game, session, { statusEl = null, errorModal = makeErrorModal(), fetchFn = hostFetch().fetchFn, generated = [] } = {}) {
+/**
+ * File menu over `game` with the browser's step handlers; `generated` answers New and records
+ * the difficulty, the rest of `options` reach `webSteps` (pick, download, exportText, ...).
+ */
+function wireFile(controls, game, session, { statusEl = makeStatus(), errorModal = errorModalStub(), difficultyDialog = { el: { hidden: true }, buttons: [] }, generated = [], ...options } = {}) {
   const difficulties = [];
-  const flow = {
-    ...commandFlowMod.commandHandlers(game, session, { fetchFn, statusEl, onError: (failed) => errorModalMod.showErrorModal(errorModal, failed.error) }),
-    generate: async (difficulty) => {
+  const steps = {
+    ...webSteps.webSteps(game, session, {
+      statusEl,
+      errorModal,
+      download() {},
+      pick: async () => ({ ok: false, cancelled: true }),
+      ...options,
+    }),
+    generateGame: async (difficulty) => {
       difficulties.push(difficulty);
       return generated.shift() ?? { ok: true, line: PUZZLE_LINE };
     },
   };
-  return { flow, difficulties };
-}
-
-function makeErrorModal(text = "") {
-  return { el: { hidden: true }, msgEl: { textContent: text } };
-}
-
-/** File menu over a real game; options reach `wireFileMenu`. */
-function wireLoads(controls, game, session, { statusEl = makeStatus(), errorModal = makeErrorModal(), commandFlow, ...options } = {}) {
-  fileMenu.wireFileMenu(controls, game, makeBoard(), { select: () => {}, deselect: () => {} }, statusEl, errorModal, session, { sync() {} }, {
-    difficultyDialog: { el: { hidden: true }, buttons: [] },
-    download() {},
-    pick: async () => ({ ok: false, cancelled: true }),
+  fileMenu.wireFileMenu(controls, game, makeBoard(), { select: () => {}, deselect: () => {} }, statusEl, session, { sync() {} }, {
+    difficultyDialog,
     createElement: makeRenderElement(),
-    commandFlow: commandFlow ?? loadFlow(game, session, { statusEl, errorModal }).flow,
-    ...options,
+    steps,
   });
+  return { difficulties, steps };
 }
 
 function makeStatus() {
@@ -114,7 +72,7 @@ function easyDialog() {
   const statusEl = makeStatus();
   const controls = { new: makeBtn(), save: makeBtn() };
   const difficultyDialog = easyDialog();
-  wireLoads(controls, game, session, {
+  wireFile(controls, game, session, {
     statusEl,
     difficultyDialog,
     download(bytes, name) {
@@ -144,9 +102,9 @@ function easyDialog() {
   const game = await loadGame();
   const session = { legend: { save_as: true }, state: { cells: [] } };
   let downloaded = null;
-  const errorModal = makeErrorModal();
+  const errorModal = errorModalStub();
   const controls = { saveAs: makeBtn() };
-  wireLoads(controls, game, session, {
+  wireFile(controls, game, session, {
     errorModal,
     download(bytes, name) {
       downloaded = { bytes, name };
@@ -171,7 +129,7 @@ function easyDialog() {
     fetchCalls.push({ url, init });
     return { ok: true, status: 204 };
   };
-  wireLoads(controls, game, session);
+  wireFile(controls, game, session);
   await controls.saveAs.click();
   globalThis.fetch = prevFetch;
   const currentFilePost = fetchCalls.find((c) => c.url === "./current-file");
@@ -185,7 +143,7 @@ function easyDialog() {
   const session = { legend: { save: true }, state: { cells: [] }, default_save_filename: "host-default.sud" };
   let downloaded = null;
   const controls = { save: makeBtn() };
-  wireLoads(controls, game, session, {
+  wireFile(controls, game, session, {
     download(bytes, name) {
       downloaded = { bytes, name };
     },
@@ -201,10 +159,9 @@ function easyDialog() {
   // New opens the difficulty dialog; the picked difficulty reaches core's generate step.
   const game = await loadGame();
   const session = { state: { cells: [] }, legend: { new: true } };
-  const { flow, difficulties } = loadFlow(game, session);
   const difficultyDialog = easyDialog();
   const controls = { new: makeBtn() };
-  wireLoads(controls, game, session, { difficultyDialog, commandFlow: flow });
+  const { difficulties } = wireFile(controls, game, session, { difficultyDialog });
   controls.new.click();
   assert.equal(difficultyDialog.el.hidden, false, "New opens the difficulty dialog");
   assert.equal(difficulties.length, 0, "no puzzle generated until a difficulty is picked");
@@ -218,10 +175,9 @@ function easyDialog() {
   // A failed generation surfaces core's error; the board stays.
   const game = await loadGame();
   const session = { state: { cells: [] }, legend: { new: true } };
-  const errorModal = makeErrorModal();
-  const { flow } = loadFlow(game, session, { errorModal, generated: [{ ok: false, error: "gen failed" }] });
+  const errorModal = errorModalStub();
   const difficultyDialog = easyDialog();
-  wireLoads({ new: makeBtn() }, game, session, { difficultyDialog, errorModal, commandFlow: flow });
+  wireFile({ new: makeBtn() }, game, session, { difficultyDialog, errorModal, generated: [{ ok: false, error: "gen failed" }] });
   await difficultyDialog.buttons[0].el.click();
   assert.equal(errorModal.el.hidden, false, "error modal shown");
   assert.equal(errorModal.msgEl.textContent, coreText.GENERATE_FAILED_MSG);
@@ -233,7 +189,7 @@ function easyDialog() {
   const game = await loadGame();
   const session = { state: { cells: [] }, legend: { new: true }, fileHandle: { name: "bound.sud" }, boundFilename: "bound.sud" };
   const difficultyDialog = easyDialog();
-  wireLoads({ new: makeBtn() }, game, session, { difficultyDialog });
+  wireFile({ new: makeBtn() }, game, session, { difficultyDialog });
   await difficultyDialog.buttons[2].el.click();
   assert.equal(session.fileHandle, null, "save target unbound after New");
   assert.equal(session.boundFilename, null, "a new game has no file");
@@ -242,10 +198,9 @@ function easyDialog() {
 {
   const session = { state: { cells: [] }, legend: {} };
   const game = await loadGame();
-  const { flow, difficulties } = loadFlow(game, session);
   const newBtn = makeBtn();
   const difficultyDialog = easyDialog();
-  wireLoads({ new: newBtn }, game, session, { difficultyDialog, commandFlow: flow });
+  const { difficulties } = wireFile({ new: newBtn }, game, session, { difficultyDialog });
   newBtn.click();
   assert.equal(difficultyDialog.el.hidden, true, "legend.new off → dialog stays closed");
   assert.equal(difficulties.length, 0, "legend.new off → no generation");
@@ -286,146 +241,6 @@ function easyDialog() {
   assert.equal(chosen, null);
 }
 
-{
-  let downloaded = null;
-  const session = {};
-  const out = await fileMenu.persistBytes(new Uint8Array([4, 5]), session, "sudoku_save.sud", {
-    download(bytes, name) {
-      downloaded = { bytes, name };
-    },
-  });
-  assert.equal(out.ok, true);
-  assert.deepEqual([...downloaded.bytes], [4, 5]);
-}
-
-{
-  let last = null;
-  const out = await fileMenu.persistBytes(new Uint8Array([9, 8, 7]), {}, "android.sud", {
-    bridge: {
-      async saveSudokuFile(base64, suggestedName, saveAs) {
-        last = { base64, suggestedName, saveAs };
-        return { ok: true, name: "picked.sud" };
-      },
-    },
-    win: {},
-    download() {
-      throw new Error("download fallback must not run");
-    },
-  });
-  assert.equal(out.ok, true);
-  assert.equal(out.filename, "picked.sud");
-  assert.equal(out.binding?.kind, "android_bridge");
-  assert.equal(last.suggestedName, "android.sud");
-  assert.equal(last.saveAs, false);
-}
-
-{
-  const out = await fileMenu.persistBytes(new Uint8Array([1]), {}, "android.sud", {
-    saveAs: true,
-    bridge: {
-      async saveSudokuFile(_base64, _suggestedName, saveAs) {
-        assert.equal(saveAs, true);
-        return { ok: false, cancelled: true };
-      },
-    },
-    win: {},
-  });
-  assert.equal(out.ok, false);
-  assert.equal(out.cancelled, true);
-}
-
-{
-  let written = null;
-  const session = {
-    fileHandle: {
-      name: "opened.sud",
-      async createWritable() {
-        return {
-          async write(data) {
-            written = data;
-          },
-          async close() {},
-        };
-      },
-    },
-  };
-  const bytes = new Uint8Array([7]);
-  const saved = await fileMenu.persistBytes(bytes, session, "sudoku_save.sud", {
-    // Suggested name comes from caller when no host-provided session default is present.
-    saveAs: false,
-    win: { showSaveFilePicker: async () => { throw new Error("no picker"); } },
-    download() { throw new Error("no download"); },
-  });
-  assert.equal(saved.ok, true);
-  assert.equal(saved.binding?.kind, "file_handle");
-  assert.deepEqual([...written], [7]);
-}
-
-{
-  const doc = {
-    defaultView: {
-      showOpenFilePicker: async () => [
-        {
-          async getFile() {
-            return {
-              name: "picked.sud",
-              async arrayBuffer() {
-                return new Uint8Array([8, 8]).buffer;
-              },
-            };
-          },
-        },
-      ],
-    },
-    createElement() {
-      throw new Error("fallback input should not run");
-    },
-  };
-  const picked = await fileMenu.pickBytes(doc, { fileHandle: { name: "prior.sud" } });
-  assert.equal(picked.ok, true);
-  assert.equal(picked.name, "picked.sud");
-  assert.equal(picked.binding?.kind, "file_handle");
-  assert.deepEqual([...picked.bytes], [8, 8]);
-}
-
-{
-  const bytes = new Uint8Array([2, 4, 6, 8]);
-  const base64 = Buffer.from(bytes).toString("base64");
-  const doc = {
-    defaultView: {
-      AndroidFileBridge: {
-        async openSudokuFile() {
-          return { ok: true, name: "bridge.sud", base64 };
-        },
-      },
-    },
-    createElement() {
-      throw new Error("input fallback should not run");
-    },
-  };
-  const picked = await fileMenu.pickBytes(doc, {});
-  assert.equal(picked.ok, true);
-  assert.equal(picked.name, "bridge.sud");
-  assert.equal(picked.binding?.kind, "android_bridge");
-  assert.deepEqual([...picked.bytes], [...bytes]);
-}
-
-{
-  const doc = {
-    defaultView: {
-      AndroidFileBridge: {
-        async openSudokuFile() {
-          return { ok: false, cancelled: true };
-        },
-      },
-    },
-  };
-  const picked = await fileMenu.pickBytes(doc, {});
-  assert.equal(picked.ok, false);
-  assert.equal(picked.cancelled, true);
-}
-
-
 // Import loads a valid one-line puzzle file, resets the board, and unbinds the save target
 {
   const game = await loadGame();
@@ -435,9 +250,9 @@ function easyDialog() {
     fileHandle: { name: "game.sud" },
     boundFilename: "game.sud",
   };
-  const errorModal = makeErrorModal("old");
+  const errorModal = errorModalStub("old");
   const importBtn = makeBtn();
-  wireLoads({ import: importBtn }, game, session, {
+  wireFile({ import: importBtn }, game, session, {
     errorModal,
     pick: async (sessionArg, opts) => {
       assert.equal(opts.accept, ".txt,text/plain", "puzzle picker targets text files");
@@ -461,10 +276,10 @@ function easyDialog() {
     fileHandle: { name: "game.sud" },
     boundFilename: "game.sud",
   };
-  const errorModal = makeErrorModal("old");
+  const errorModal = errorModalStub("old");
   const before = JSON.stringify(session.state);
   const importBtn = makeBtn();
-  wireLoads({ import: importBtn }, game, session, {
+  wireFile({ import: importBtn }, game, session, {
     errorModal,
     pick: async () => ({ ok: true, name: "bad.txt", bytes: new TextEncoder().encode("oops") }),
   });
@@ -484,7 +299,7 @@ function easyDialog() {
   const handle = { name: "picked.sud" };
   const session = { legend: { open: true }, state: { cells: [] } };
   const openBtn = makeBtn();
-  wireLoads({ open: openBtn }, game, session, {
+  wireFile({ open: openBtn }, game, session, {
     pick: async () => ({ ok: true, name: "picked.sud", handle, bytes: source.serialize().bytes }),
   });
   await openBtn.click();
@@ -498,7 +313,7 @@ function easyDialog() {
   let picked = false;
   const session = { legend: {}, state: { cells: [] } };
   const importBtn = makeBtn();
-  wireLoads({ import: importBtn }, await loadGame(), session, {
+  wireFile({ import: importBtn }, await loadGame(), session, {
     pick: async () => {
       picked = true;
       return { ok: true };
@@ -527,28 +342,15 @@ function easyDialog() {
   const exportBtn = makeBtn();
   const statusEl = { textContent: "", className: "" };
   await withCoreFlow(game);
-  fileMenu.wireFileMenu(
-    { export: exportBtn },
-    game,
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
+  wireFile({ export: exportBtn }, game, session, {
     statusEl,
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      exportText: async (bytes, sessionArg, name) => {
-        assert.equal(sessionArg, session);
-        assert.equal(name, "puzzle.txt");
-        saved = bytes;
-        return { ok: true, filename: "puzzle.txt" };
-      },
-      createElement: makeRenderElement(),
+    exportText: async (bytes, sessionArg, name) => {
+      assert.equal(sessionArg, session);
+      assert.equal(name, "puzzle.txt");
+      saved = bytes;
+      return { ok: true, filename: "puzzle.txt" };
     },
-  );
+  });
   await exportBtn.click();
   assert.deepEqual([...saved], [...lineBytes], "save receives exportPuzzle bytes");
   assert.equal(statusEl.textContent, fillText(coreText.EXPORTED_TO_FMT, "puzzle.txt"), "core owns the export status");
@@ -573,23 +375,10 @@ function easyDialog() {
   const before = JSON.stringify(session.state);
   const exportBtn = makeBtn();
   await withCoreFlow(game);
-  fileMenu.wireFileMenu(
-    { export: exportBtn },
-    game,
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
+  wireFile({ export: exportBtn }, game, session, {
     errorModal,
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      exportText: async () => ({ ok: false, error: "export: write failed" }),
-      createElement: makeRenderElement(),
-    },
-  );
+    exportText: async () => ({ ok: false, error: "export: write failed" }),
+  });
   await exportBtn.click();
   assert.equal(errorModal.el.hidden, false);
   assert.equal(errorModal.msgEl.textContent, coreText.EXPORT_FAILED_MSG);
@@ -601,23 +390,9 @@ function easyDialog() {
 {
   let called = false;
   const exportBtn = makeBtn();
-  fileMenu.wireFileMenu(
-    { export: exportBtn },
-    { exportPuzzle() { called = true; return { ok: true }; } },
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    { legend: {}, state: { cells: [] } },
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {},
-      pick: async () => ({ ok: false, cancelled: true }),
-      exportText: async () => { throw new Error("must not run"); },
-      createElement: makeRenderElement(),
-    },
-  );
+  wireFile({ export: exportBtn }, { exportPuzzle() { called = true; return { ok: true }; } }, { legend: {}, state: { cells: [] } }, {
+    exportText: async () => { throw new Error("must not run"); },
+  });
   await exportBtn.click();
   assert.equal(called, false);
 }
@@ -635,222 +410,55 @@ function easyDialog() {
   };
   const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
   await withCoreFlow(game, { autoSave: true });
-  fileMenu.wireFileMenu(
-    {},
-    game,
-    makeBoard(),
-    { select: () => {}, deselect: () => {} },
-    { textContent: "", className: "" },
-    { el: { hidden: true }, msgEl: { textContent: "" } },
-    session,
-    { sync() {} },
-    {
-      difficultyDialog: { el: { hidden: true }, buttons: [] },
-      download() {
-        downloads += 1;
-      },
-      pick: async () => {
-        picks += 1;
-        return { ok: false, cancelled: true };
-      },
-      createElement: makeRenderElement(),
-    },
-  );
   const host = hostFetch();
   const fetchFn = async (url, init) => {
     if (url === "./current-file") hostWrites.push([...new Uint8Array(init.body)]);
     return host.fetchFn(url, init);
   };
-  await moveWithAutosave(game, session, { fetchFn });
+  const { steps } = wireFile({}, game, session, {
+    fetchFn,
+    download() {
+      downloads += 1;
+    },
+    pick: async () => {
+      picks += 1;
+      return { ok: false, cancelled: true };
+    },
+  });
+  await moveWithAutosave(game, session, { steps });
   assert.equal(downloads, 0, "autosave must not download");
   assert.equal(picks, 0, "autosave must not open a picker");
   assert.deepEqual(hostWrites, [[4, 2]]);
 }
 
-// Android with nothing bound: autosave after File → New still hands the bytes to the bridge default file.
+// Save on a bound handle writes it again without a picker or a question; the host keeps the restore copy.
 {
-  const bridgeWrites = [];
-  const prevBridge = globalThis.AndroidFileBridge;
-  const prevFetch = globalThis.fetch;
-  globalThis.AndroidFileBridge = {
-    saveCurrentSudokuFile(base64, suggestedName) {
-      bridgeWrites.push(suggestedName);
-      return { ok: true, name: suggestedName };
+  const game = await loadGame();
+  openAs(game, "bound.sud");
+  const written = [];
+  const fileHandle = {
+    name: "bound.sud",
+    async createWritable() {
+      return { async write(bytes) { written.push([...bytes]); }, async close() {} };
     },
-    currentSudokuFileName: () => "",
   };
-  globalThis.fetch = async () => ({ ok: true, status: 204, json: async () => ({}) });
-  const session = {
-    legend: { new: true },
-    state: { cells: [] },
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
-  const game = await loadGame({ auto_save: true });
-  const difficultyDialog = easyDialog();
-  try {
-    wireLoads({ new: makeBtn() }, game, session, { difficultyDialog });
-    await difficultyDialog.buttons[0].el.click();
-    bridgeWrites.length = 0;
-    await moveWithAutosave(game, session, { fetchFn: globalThis.fetch });
-    assert.deepEqual(bridgeWrites, ["sudoku.sud"]);
-  } finally {
-    globalThis.AndroidFileBridge = prevBridge;
-    globalThis.fetch = prevFetch;
-  }
-}
-
-// Android with a file bound: after File → New the replace-confirmed autosave still writes through the bridge.
-{
-  const bridgeWrites = [];
-  const prevBridge = globalThis.AndroidFileBridge;
-  const prevFetch = globalThis.fetch;
+  const session = { legend: { save: true }, state: { cells: [] }, fileHandle, boundFilename: "bound.sud" };
+  const host = hostFetch();
   const prevChoose = globalThis.__sudokuChoose;
-  globalThis.AndroidFileBridge = {
-    saveCurrentSudokuFile(base64, suggestedName) {
-      bridgeWrites.push(suggestedName);
-      return { ok: true, name: "bound.sud" };
-    },
-    currentSudokuFileName: () => "bound.sud",
-  };
-  globalThis.fetch = async () => ({ ok: true, status: 204, json: async () => ({}) });
-  globalThis.__sudokuChoose = async () => true;
-  const session = {
-    legend: { new: true },
-    state: { cells: [] },
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
-  const game = await loadGame({ auto_save: true });
-  const difficultyDialog = easyDialog();
-  try {
-    wireLoads({ new: makeBtn() }, game, session, { difficultyDialog });
-    await difficultyDialog.buttons[0].el.click();
-    bridgeWrites.length = 0;
-    await moveWithAutosave(game, session, { fetchFn: globalThis.fetch });
-    assert.equal(bridgeWrites.length, 1, "the move after New reaches the bridge");
-  } finally {
-    globalThis.AndroidFileBridge = prevBridge;
-    globalThis.fetch = prevFetch;
-    globalThis.__sudokuChoose = prevChoose;
-  }
-}
-
-// Android autosave adopts the file name the bridge actually wrote (e.g. a new name the user picked).
-{
-  const prevBridge = globalThis.AndroidFileBridge;
-  const hostNames = [];
-  globalThis.AndroidFileBridge = {
-    saveCurrentSudokuFile: () => ({ ok: true, name: "game2.sud" }),
-    currentSudokuFileName: () => "",
-  };
-  const session = {
-    legend: {},
-    state: { cells: [] },
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
-  const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
-  try {
-    await withCoreFlow(game, { autoSave: true });
-    fileMenu.wireFileMenu(
-      {},
-      game,
-      makeBoard(),
-      { select: () => {}, deselect: () => {} },
-      { textContent: "", className: "" },
-      { el: { hidden: true }, msgEl: { textContent: "" } },
-      session,
-      { sync() {} },
-      {
-        difficultyDialog: { el: { hidden: true }, buttons: [] },
-        download() {},
-        pick: async () => ({ ok: false, cancelled: true }),
-        createElement: makeRenderElement(),
-      },
-    );
-    const fetchFn = async (url, init) => {
-      if (url === "./current-file") hostNames.push(init.headers?.["X-Sudoku-Filename"]);
-      return { ok: true, status: 204 };
-    };
-    await moveWithAutosave(game, session, { fetchFn });
-    assert.equal(session.boundFilename, "game2.sud");
-    assert.deepEqual(hostNames, ["game2.sud"]);
-  } finally {
-    globalThis.AndroidFileBridge = prevBridge;
-  }
-}
-
-// Android default file taken by an earlier install: core asks pick-or-rename until a picker writes a file.
-{
-  const prevBridge = globalThis.AndroidFileBridge;
-  const prevChoose = globalThis.__sudokuChoose;
-  const calls = [];
-  const answers = [false, true];
-  globalThis.__sudokuChoose = async (message, labels) => {
-    calls.push(["ask", labels.okLabel, labels.cancelLabel]);
-    assert.equal(labels.title, "Autosave file");
-    assert.match(message, /sudoku\.sud in Download\/Sudoku/);
-    return answers.shift();
-  };
-  globalThis.AndroidFileBridge = {
-    saveCurrentSudokuFile: () => {
-      calls.push(["current"]);
-      return { ok: false, reason: "default_taken", name: "sudoku.sud", dir: "Download/Sudoku" };
-    },
-    saveSudokuFile: (_b64, name, saveAs) => {
-      calls.push(["new_name", name, saveAs]);
-      return { ok: false, cancelled: true };
-    },
-    saveSudokuFileToExisting: () => {
-      calls.push(["pick_existing"]);
-      return { ok: true, name: "sudoku.sud" };
-    },
-    currentSudokuFileName: () => "",
-  };
-  const session = {
-    legend: {},
-    state: { cells: [] },
-    config: { auto_save: true },
-    default_save_filename: "sudoku.sud",
-  };
-  const game = { serialize: () => ({ ok: true, bytes: new Uint8Array([4, 2]) }) };
-  try {
-    await withCoreFlow(game, { autoSave: true });
-    fileMenu.wireFileMenu(
-      {},
-      game,
-      makeBoard(),
-      { select: () => {}, deselect: () => {} },
-      { textContent: "", className: "" },
-      { el: { hidden: true }, msgEl: { textContent: "" } },
-      session,
-      { sync() {} },
-      {
-        difficultyDialog: { el: { hidden: true }, buttons: [] },
-        download() {},
-        pick: async () => ({ ok: false, cancelled: true }),
-        createElement: makeRenderElement(),
-      },
-    );
-    let errors = 0;
-    await moveWithAutosave(game, session, {
-      fetchFn: async () => ({ ok: true, status: 204 }),
-      onError: () => { errors += 1; },
-    });
-    assert.deepEqual(calls, [
-      ["current"],
-      ["ask", "Pick it", "New name"],
-      ["new_name", "sudoku.sud", true],
-      ["ask", "Pick it", "New name"],
-      ["pick_existing"],
-    ]);
-    assert.equal(errors, 0);
-    assert.equal(session.boundFilename, "sudoku.sud");
-  } finally {
-    globalThis.AndroidFileBridge = prevBridge;
-    globalThis.__sudokuChoose = prevChoose;
-  }
+  globalThis.__sudokuChoose = async () => assert.fail("continuing the bound file must not ask");
+  const statusEl = makeStatus();
+  const controls = { save: makeBtn() };
+  wireFile(controls, game, session, {
+    statusEl,
+    fetchFn: host.fetchFn,
+    pick: async () => assert.fail("no picker for a bound file"),
+    download: () => assert.fail("no download for a bound file"),
+  });
+  await controls.save.click();
+  globalThis.__sudokuChoose = prevChoose;
+  assert.deepEqual(written, [[...game.serialize().bytes]]);
+  assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Restore-Copy"], "true");
+  assert.equal(statusEl.textContent, fillText(coreText.SAVED_TO_FMT, "bound.sud"));
 }
 
 console.log("file_menu.test.mjs OK");

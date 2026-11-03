@@ -4,29 +4,29 @@ import assert from "node:assert/strict";
 import * as stepRunner from "./step_runner.js";
 import { loadCoreFlow, loadGame, openAs, PUZZLE_LINE, startNewGame, coreText, fillText } from "../test_support.mjs";
 
-/** Handlers that record every step and answer from `answers`. */
+/** Handlers that record every step and answer from the options; `exists` makes a write without `replace` find its file there. */
 function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }), defaultName = "sudoku.sud" } = {}) {
   const log = [];
-  const kinds = [];
+  const writeStep = (step) => ({ name, replace }) => {
+    log.push([step, name, replace]);
+    if (exists && !replace) return { ok: false, exists: true };
+    return write(name);
+  };
   return {
     log,
-    kinds,
     resolveDefaultTarget: () => {
       log.push(["default"]);
       return defaultName;
-    },
-    checkTarget: ({ name, kind }) => {
-      log.push(["check", name]);
-      kinds.push(["check", kind]);
-      return exists;
     },
     ask: (step) => {
       log.push(["ask", step.title, step.text, step.ok_label, step.cancel_label]);
       return yes;
     },
-    write: ({ name, kind }) => {
-      log.push(["write", name]);
-      kinds.push(["write", kind]);
+    save: writeStep(stepRunner.STEP_SAVE),
+    saveAs: writeStep(stepRunner.STEP_SAVE_AS),
+    autosave: writeStep(stepRunner.STEP_AUTOSAVE),
+    exportPuzzle: (name) => {
+      log.push([stepRunner.STEP_EXPORT_PUZZLE, name]);
       return write(name);
     },
     showGame: () => {},
@@ -51,29 +51,29 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   const core = await loadCoreFlow();
   const handlers = saveHandlers({ exists: false });
   const outcome = await stepRunner.runCommand(core, SAVE, handlers);
-  assert.deepEqual(handlers.log, [DEFAULT, ["check", "game.sud"], ["write", "game.sud"], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
+  assert.deepEqual(handlers.log, [DEFAULT, ["save", "game.sud", false], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
   assert.deepEqual(outcome, { kind: "show_status", text: fillText(coreText.SAVED_TO_FMT, "game.sud") });
 }
 
-// Save after New onto an existing file asks once; declining writes nothing.
+// Save after New onto a file already there asks once; declining writes nothing.
 {
   const core = await loadCoreFlow();
   startNewGame(core);
   const handlers = saveHandlers({ exists: true, yes: false });
   const outcome = await stepRunner.runCommand(core, SAVE, handlers);
-  assert.deepEqual(handlers.log, [DEFAULT, ["check", "game.sud"], REPLACE_ASK, ["status", NOT_SAVED]]);
+  assert.deepEqual(handlers.log, [DEFAULT, ["save", "game.sud", false], REPLACE_ASK, ["status", NOT_SAVED]]);
   assert.equal(outcome.kind, "show_status");
 }
 
-// Accepting the replace question writes; the next Save continues the file without asking.
+// Accepting the replace question writes with replace; the next Save continues the file without asking.
 {
   const core = await loadCoreFlow();
   const accept = saveHandlers({ exists: true, yes: true });
   await stepRunner.runCommand(core, SAVE, accept);
-  assert.deepEqual(accept.log, [DEFAULT, ["check", "game.sud"], REPLACE_ASK, ["write", "game.sud"], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
+  assert.deepEqual(accept.log, [DEFAULT, ["save", "game.sud", false], REPLACE_ASK, ["save", "game.sud", true], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
   const again = saveHandlers({ exists: true });
   await stepRunner.runCommand(core, SAVE, again);
-  assert.deepEqual(again.log, [["check", "game.sud"], ["write", "game.sud"], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
+  assert.deepEqual(again.log, [["save", "game.sud", false], ["save", "game.sud", true], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
 }
 
 // Save As suggests the opened file and asks before replacing it; after New it asks too.
@@ -82,11 +82,11 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   openAs(core, "game.sud");
   const continuing = saveHandlers({ exists: true, yes: true });
   await stepRunner.runCommand(core, SAVE_AS, continuing);
-  assert.deepEqual(continuing.log, [["check", "game.sud"], REPLACE_ASK, ["write", "game.sud"], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
+  assert.deepEqual(continuing.log, [["save_as", "game.sud", false], REPLACE_ASK, ["save_as", "game.sud", true], ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]]);
   startNewGame(core);
   const detached = saveHandlers({ exists: true, yes: false });
   await stepRunner.runCommand(core, SAVE_AS, detached);
-  assert.deepEqual(detached.log, [["check", "game.sud"], REPLACE_ASK, ["status", NOT_SAVED]]);
+  assert.deepEqual(detached.log, [["save_as", "game.sud", false], REPLACE_ASK, ["status", NOT_SAVED]]);
 }
 
 // The name the platform actually wrote becomes the status and the working file.
@@ -97,25 +97,26 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.deepEqual(handlers.log.at(-1), ["status", fillText(coreText.SAVED_TO_FMT, "picked.sud")]);
   const autosave = recordingHandlers({ exists: true });
   await stepRunner.runCommand(core, FILL, autosave);
-  assert.deepEqual(autosave.log, [["check", "picked.sud"], ["write", "picked.sud"]], "autosave continues the saved file");
+  assert.deepEqual(autosave.log, [["autosave", "picked.sud", false], ["autosave", "picked.sud", true]], "autosave continues the saved file");
 }
 
-// Each check and write says what it is for, so the platform needs no knowledge of the command.
+// Each command issues its own step, so the platform needs no knowledge of the command.
 {
+  const writes = (handlers) => handlers.log.filter(([step]) => step !== "default" && step !== "status").map(([step]) => step);
   const core = await loadCoreFlow({ autoSave: true });
   const saveAs = saveHandlers();
   await stepRunner.runCommand(core, SAVE_AS, saveAs);
-  assert.deepEqual(saveAs.kinds, [["check", stepRunner.WRITE_SAVE_AS], ["write", stepRunner.WRITE_SAVE_AS]]);
+  assert.deepEqual(writes(saveAs), [stepRunner.STEP_SAVE_AS]);
   const autosave = recordingHandlers();
   await stepRunner.runCommand(core, FILL, autosave);
-  assert.deepEqual(autosave.kinds, [["check", stepRunner.WRITE_AUTO_SAVE], ["write", stepRunner.WRITE_AUTO_SAVE]]);
+  assert.deepEqual(writes(autosave), [stepRunner.STEP_AUTOSAVE]);
   const exported = recordingHandlers();
   await stepRunner.runCommand(core, { action: "export" }, exported);
-  assert.deepEqual(exported.kinds, [["write", stepRunner.WRITE_EXPORT_LINE]]);
+  assert.deepEqual(writes(exported), [stepRunner.STEP_EXPORT_PUZZLE]);
   const core2 = await loadCoreFlow();
   const save = saveHandlers();
   await stepRunner.runCommand(core2, SAVE, save);
-  assert.deepEqual(save.kinds, [["check", stepRunner.WRITE_SAVE], ["write", stepRunner.WRITE_SAVE]]);
+  assert.deepEqual(writes(save), [stepRunner.STEP_SAVE]);
 }
 
 // A manual Save while Auto Save is on writes nothing and says why; the legend offers no Save.
@@ -152,14 +153,14 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.ok(logged.some((line) => String(line).includes("disk full")), "the thrown message is logged as an error");
 }
 
-// A move's first autosave with no working file resolves the default target, then asks if it exists.
+// A move's first autosave with no working file resolves the default target, then asks when that file is there.
 {
   const core = await loadCoreFlow({ autoSave: true });
   const handlers = recordingHandlers({ exists: true, yes: false });
   const outcome = await stepRunner.runCommand(core, FILL, handlers);
   assert.deepEqual(handlers.log, [
     ["default"],
-    ["check", "sudoku.sud"],
+    ["autosave", "sudoku.sud", false],
     ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.REPLACE_CONFIRM_FMT, "sudoku.sud"), coreText.REPLACE_CONFIRM_OK_LABEL, coreText.REPLACE_CONFIRM_CANCEL_LABEL],
   ]);
   assert.deepEqual(outcome, { kind: "done" }, "declined autosave ends without a status");
@@ -173,11 +174,11 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.deepEqual(handlers.log, []);
 }
 
-// A handler that throws outside write ends the flow with core's sentence, not the thrown message; the next flow still runs.
+// A handler that throws outside a write ends the flow with core's sentence, not the thrown message; the next flow still runs.
 {
   const core = await loadCoreFlow();
   const broken = saveHandlers();
-  broken.checkTarget = () => {
+  broken.resolveDefaultTarget = () => {
     throw new Error("host unreachable");
   };
   assert.deepEqual(await stepRunner.runCommand(core, SAVE, broken), { kind: "show_error", text: coreText.UNEXPECTED_INPUT_MSG });
@@ -206,7 +207,7 @@ function startupRecorder({ read, generated, yes = false } = {}) {
   const log = [];
   return {
     log,
-    readFile: (path) => {
+    restore: (path) => {
       log.push(["read", path]);
       if (read instanceof Error) throw read;
       return read;
@@ -216,7 +217,7 @@ function startupRecorder({ read, generated, yes = false } = {}) {
       log.push(["ask", step.title]);
       return yes;
     },
-    generate: (difficulty) => {
+    generateGame: (difficulty) => {
       log.push(["generate", difficulty]);
       return generated;
     },
@@ -227,7 +228,7 @@ function startupRecorder({ read, generated, yes = false } = {}) {
 
 const WELCOME = coreText.IDLE_STARTUP_STATUS;
 
-// read_file bytes go to core through flowFileRead; the restored game is shown with its file name.
+// restore bytes go to core through flowRead; the restored game is shown with its file name.
 {
   const source = await loadGame();
   startNewGame(source);
@@ -253,7 +254,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   ]);
 }
 
-// generate reports the line, cancellation, or failure to core.
+// generate_game reports the line, cancellation, or failure to core.
 {
   const line = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
   const ok = startupRecorder({ generated: { ok: true, line } });
@@ -318,7 +319,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.equal(shown.length, 0);
 }
 
-// pick_open hands core the picked bytes and name; closing the picker ends quietly; a failed pick is core's error.
+// open hands core the picked bytes and name; closing the picker ends quietly; a failed pick is core's error.
 {
   const source = await loadGame();
   startNewGame(source);
@@ -326,14 +327,14 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const game = await loadGame();
   const shown = [];
   const picks = [];
-  const handlers = (pickOpen) => ({ pickOpen, showGame: (step) => shown.push(step), showError() {} });
+  const handlers = (pick) => ({ open: pick, importPuzzle: pick, showGame: (step) => shown.push(step), showError() {} });
 
-  const opened = await stepRunner.runCommand(game, { action: "open" }, handlers((step) => {
-    picks.push([step.kind, step.path]);
+  const opened = await stepRunner.runCommand(game, { action: "open" }, handlers((path) => {
+    picks.push(path);
     return { ok: true, bytes, name: "game.sud" };
   }));
   assert.deepEqual(opened, { kind: "done" });
-  assert.deepEqual(picks, [["game", null]]);
+  assert.deepEqual(picks, [null]);
   assert.equal(shown[0].loaded, true);
   assert.equal(shown[0].file, "game.sud");
   assert.equal(shown[0].text, fillText(coreText.OPENED_FMT, "game.sud"));
@@ -344,18 +345,18 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.equal(shown.length, 1, "a cancelled or failed pick shows nothing");
 }
 
-// read_clipboard hands core the text; a denied read is core's error and keeps the board.
+// paste_puzzle hands core the clipboard text; a denied read is core's error and keeps the board.
 {
   const game = await loadGame();
   const shown = [];
   const pasted = await stepRunner.runCommand(game, { action: "paste" }, {
-    readClipboard: () => ({ ok: true, text: PUZZLE_LINE }),
+    pastePuzzle: () => ({ ok: true, bytes: new TextEncoder().encode(PUZZLE_LINE) }),
     showGame: (step) => shown.push(step),
   });
   assert.deepEqual(pasted, { kind: "done" });
   assert.equal(shown[0].text, coreText.PASTED_MSG);
   const before = game.getState();
-  const denied = await stepRunner.runCommand(game, { action: "paste" }, { readClipboard: () => ({ ok: false, error: "denied" }), showError() {} });
+  const denied = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: false, error: "denied" }), showError() {} });
   assert.deepEqual(denied, { kind: "show_error", text: coreText.PASTE_FAILED_MSG });
   assert.deepEqual(game.getState(), before);
 }

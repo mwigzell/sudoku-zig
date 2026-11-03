@@ -69,7 +69,7 @@ Concrete repo examples:
 
 ### Amendment — core drives flows, adapters do platform work
 
-Multi-step user flows (Save, Save As, autosave, startup) are choreographed by core as a sequence of steps (`src/core/flow/step.zig`). Core issues a step (`check_target`, `ask`, `write`, `show_status`, …); the adapter performs only the platform mechanics and answers with an input; core decides the next step. Question copy (title, text, button labels) and status text come from core.
+Multi-step user flows (Save, Save As, autosave, startup) are choreographed by core as a sequence of steps (`src/core/flow/step.zig`). Core issues a step (`ask`, `save`, `autosave`, `show_status`, …; one operation per step, ADR-0016); the adapter performs only the platform mechanics and answers with an input; core decides the next step. Question copy (title, text, button labels) and status text come from core.
 
 | Concern | Owning layer | Never in |
 |---|---|---|

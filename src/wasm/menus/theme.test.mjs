@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import * as themeMod from "./theme.js";
-import * as commandFlowMod from "../flows/command_flow.js";
+import * as webSteps from "../flows/web_steps.js";
 import { loadGame, settleFlow } from "../test_support.mjs";
 
 function makeThemeBtn() {
@@ -70,7 +70,7 @@ function makeThemeBtn() {
     viewDark: { ...makeThemeBtn(), addEventListener() {} },
   };
   const persistCalls = [];
-  const commandFlow = commandFlowMod.commandHandlers(game, session, {
+  const steps = webSteps.webSteps(game, session, {
     fetchFn: async (url, init) => {
       persistCalls.push(JSON.parse(init.body));
       return { ok: true, status: 204 };
@@ -81,7 +81,7 @@ function makeThemeBtn() {
       documentElement: html,
       defaultView: { matchMedia: () => ({ matches: false, addEventListener() {} }) },
     },
-    commandFlow,
+    steps,
   });
   assert.equal(themeMod.themeFromConfig(session.config), "dark");
   await controls.viewLight.click();

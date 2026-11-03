@@ -74,10 +74,10 @@ pub const CommandFlow = struct {
             .new => |data| if (data.puzzle) |line|
                 return self.load(.new_game, line)
             else
-                .{ .generate = data.difficulty orelse self.engine.cfg.difficulty },
-            .open => |data| .{ .pick_open = .{ .kind = .game, .path = data.path } },
-            .import => |data| .{ .pick_open = .{ .kind = .puzzle, .path = data.path } },
-            .paste => |data| if (data.line) |line| return self.load(.paste, line) else .read_clipboard,
+                .{ .generate_game = data.difficulty orelse self.engine.cfg.difficulty },
+            .open => |data| .{ .open = data.path },
+            .import => |data| .{ .import_puzzle = data.path },
+            .paste => |data| if (data.line) |line| return self.load(.paste, line) else .paste_puzzle,
             .save => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save, data.path, self.engine.cfg.auto_save) }),
             .save_as => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save_as, data.path, self.engine.cfg.auto_save) }),
             .@"export" => |data| return self.startWrite(.{ .@"export" = ExportFlow.toFile(data.path) }),
@@ -100,22 +100,20 @@ pub const CommandFlow = struct {
                     .failed => |reason| self.failed(step_mod.GENERATE_FAILED_MSG, reason),
                 };
             },
-            .open, .import => {
-                if (input != .picked) return self.finish(unexpected);
-                return switch (input.picked) {
+            .open, .import, .paste => {
+                if (input != .read) return self.finish(unexpected);
+                return switch (input.read) {
                     .file => |file| switch (self.cmd) {
                         .open => self.load(.{ .open = file.name }, file.bytes),
-                        else => self.load(.import, file.bytes),
+                        .import => self.load(.import, file.bytes),
+                        else => self.load(.paste, file.bytes),
                     },
                     .cancelled => self.finish(.done),
-                    .failed => |reason| self.failed(if (self.cmd == .open) OPEN_FAILED_MSG else IMPORT_FAILED_MSG, reason),
-                };
-            },
-            .paste => {
-                if (input != .file_read) return self.finish(unexpected);
-                return switch (input.file_read) {
-                    .bytes => |text| self.load(.paste, text),
-                    .failed => |reason| self.failed(PASTE_FAILED_MSG, reason),
+                    .failed => |reason| self.failed(switch (self.cmd) {
+                        .open => OPEN_FAILED_MSG,
+                        .import => IMPORT_FAILED_MSG,
+                        else => PASTE_FAILED_MSG,
+                    }, reason),
                 };
             },
             else => return self.finish(unexpected),
@@ -228,8 +226,7 @@ test "a move shows the board and the edited cell, then autosaves to the default 
     try testing.expectEqual(@as(u4, 0), shown.cell.?.row);
     try testing.expect(shown.legend.undo);
     try testing.expect(flow.next(.ack) == .resolve_default_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target.name);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write.name);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).autosave.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
 }
 
@@ -261,10 +258,8 @@ test "open asks for a game file, loads the pick and makes it the working file" {
     _ = engine.exec(.{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
 
     var flow = CommandFlow.init(&engine, &session, .{ .open = .{ .path = null } });
-    const pick = flow.next(.start).pick_open;
-    try testing.expectEqual(step_mod.OpenKind.game, pick.kind);
-    try testing.expect(pick.path == null);
-    const shown = flow.next(.{ .picked = .{ .file = .{ .bytes = saved, .name = "game.sud" } } }).show_game;
+    try testing.expect(flow.next(.start).open == null);
+    const shown = flow.next(.{ .read = .{ .file = .{ .bytes = saved, .name = "game.sud" } } }).show_game;
     try testing.expect(shown.loaded);
     try testing.expectEqualStrings("game.sud", shown.file.?);
     try testing.expect(!shown.legend.undo);
@@ -272,16 +267,14 @@ test "open asks for a game file, loads the pick and makes it the working file" {
     try testing.expect(flow.next(.ack) == .done);
 }
 
-test "a typed path rides the pick step; backing out of the picker ends quietly" {
+test "a typed path rides the import step; backing out of the picker ends quietly" {
     var engine = try testEngine(config.Config.default());
     defer engine.deinit();
     var session = FileSession{};
     const before = engine.state.board;
     var flow = CommandFlow.init(&engine, &session, .{ .import = .{ .path = "puzzle.txt" } });
-    const pick = flow.next(.start).pick_open;
-    try testing.expectEqual(step_mod.OpenKind.puzzle, pick.kind);
-    try testing.expectEqualStrings("puzzle.txt", pick.path.?);
-    try testing.expect(flow.next(.{ .picked = .cancelled }) == .done);
+    try testing.expectEqualStrings("puzzle.txt", flow.next(.start).import_puzzle.?);
+    try testing.expect(flow.next(.{ .read = .cancelled }) == .done);
     try testing.expect(@import("../board/board.zig").equal(engine.state.board, before));
 }
 
@@ -292,7 +285,7 @@ test "an import that is not a puzzle shows the error and keeps the board" {
     const before = engine.state.board;
     var flow = CommandFlow.init(&engine, &session, .{ .import = .{ .path = null } });
     _ = flow.next(.start);
-    try testing.expect(flow.next(.{ .picked = .{ .file = .{ .bytes = "123", .name = "bad.txt" } } }) == .show_error);
+    try testing.expect(flow.next(.{ .read = .{ .file = .{ .bytes = "123", .name = "bad.txt" } } }) == .show_error);
     try testing.expect(@import("../board/board.zig").equal(engine.state.board, before));
 }
 
@@ -308,8 +301,8 @@ test "paste with a line skips the clipboard; without one it reads the clipboard"
     try testing.expectEqualStrings(game_engine.PASTED_MSG, shown.status.?);
 
     var clipboard = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = null } });
-    try testing.expect(clipboard.next(.start) == .read_clipboard);
-    try testing.expectEqualStrings(PASTE_FAILED_MSG, clipboard.next(.{ .file_read = .{ .failed = "denied" } }).show_error);
+    try testing.expect(clipboard.next(.start) == .paste_puzzle);
+    try testing.expectEqualStrings(PASTE_FAILED_MSG, clipboard.next(.{ .read = .{ .failed = "denied" } }).show_error);
 }
 
 test "new generates at the chosen difficulty, which the game then keeps" {
@@ -322,7 +315,7 @@ test "new generates at the chosen difficulty, which the game then keeps" {
     session.apply(.open_success);
 
     var flow = CommandFlow.init(&engine, &session, .{ .new = .{ .difficulty = .easy } });
-    try testing.expectEqual(puzzle_gen.Difficulty.easy, flow.next(.start).generate);
+    try testing.expectEqual(puzzle_gen.Difficulty.easy, flow.next(.start).generate_game);
     const shown = flow.next(.{ .generated = .{ .line = puzzle_gen.PuzzleGen.easy() } }).show_game;
     try testing.expect(shown.loaded);
     try testing.expectEqual(puzzle_gen.Difficulty.easy, shown.config.difficulty);
@@ -335,31 +328,26 @@ test "save with no working file asks for the default target, writes it and repor
     var session = FileSession{};
     var flow = CommandFlow.init(&engine, &session, .{ .save = .{ .path = null } });
     try testing.expect(flow.next(.start) == .resolve_default_target);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).check_target.name);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .target_checked = false }).write.name);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).save.name);
     try testing.expectEqualStrings(std.fmt.comptimePrint(@import("../file_policy.zig").SAVED_TO_FMT, .{"sudoku.sud"}), flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }).show_status);
     try testing.expect(flow.next(.ack) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.workingFile().?);
 }
 
-test "save as suggests the working file; export and copy hand over the line" {
+test "save as suggests the working file; export and copy hand over the puzzle" {
     var engine = try testEngine(config.Config.default());
     defer engine.deinit();
     var session = FileSession{};
     session.setWorkingFile("game.sud");
     var save_as = CommandFlow.init(&engine, &session, .{ .save_as = .{ .path = null } });
-    const check = save_as.next(.start).check_target;
-    try testing.expectEqualStrings("game.sud", check.name);
-    try testing.expectEqual(step_mod.WriteKind.save_as, check.kind);
+    try testing.expectEqualStrings("game.sud", save_as.next(.start).save_as.name);
 
     var exported = CommandFlow.init(&engine, &session, .{ .@"export" = .{ .path = null } });
-    const write = exported.next(.start).write;
-    try testing.expectEqualStrings(export_mod.DEFAULT_EXPORT_FILE, write.name);
-    try testing.expectEqual(step_mod.WriteKind.export_line, write.kind);
+    try testing.expectEqualStrings(export_mod.DEFAULT_EXPORT_FILE, exported.next(.start).export_puzzle);
     try testing.expectEqualStrings(std.fmt.comptimePrint(export_mod.EXPORTED_TO_FMT, .{"puzzle.txt"}), exported.next(.{ .wrote = .{ .ok = "puzzle.txt" } }).show_status);
 
     var copied = CommandFlow.init(&engine, &session, .{ .copy = {} });
-    try testing.expect(copied.next(.start) == .copy_line);
+    try testing.expect(copied.next(.start) == .copy_puzzle);
     try testing.expectEqualStrings(export_mod.COPIED_MSG, copied.next(.{ .copied = .ok }).show_status);
     try testing.expectEqualStrings("game.sud", session.workingFile().?);
 }

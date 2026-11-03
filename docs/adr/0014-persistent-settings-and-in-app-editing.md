@@ -81,5 +81,5 @@ Single toggle **`warn_solvability`** (default **off**) drives proactive move/loa
 
 - `src/core/config.zig`, `src/core/settings_store.zig`, `src/core/startup/config.zig`, `src/core/flow/settings.zig`
 - `src/native/shell/shell.zig`, `src/native/desktop_web.zig`, `src/web_host/mod.zig`
-- `src/wasm/flows/startup.js` (`initializeWebSession`), `command_flow.js` (`commandHandlers`, `runSessionCommand`)
+- `src/wasm/flows/startup.js` (`initializeWebSession`), `steps.js` (`persistSettings` step handler)
 - README — Settings section (data-dir paths)

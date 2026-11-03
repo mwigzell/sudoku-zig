@@ -1,7 +1,6 @@
 // board.js — DOM board shell: render GameSnapshot, selection, play loop.
 
-import * as commandFlowMod from "./flows/command_flow.js";
-import * as errorModalMod from "./dialogs/error_modal.js";
+import * as stepRunner from "./flows/step_runner.js";
 
 /** @typedef {import("./types").GameApi} GameApi */
 /** @typedef {import("./types").FlowHandlers} FlowHandlers */
@@ -338,10 +337,10 @@ export function parsePlayKey(key, code = "") {
  * Run a board command through core and redraw from the game core shows; the selection survives.
  * @param {GameApi} game
  * @param {import("./types").ExecAction} action
- * @param {{ boardEl: HTMLElement, selection: import("./types").BoardSelection, createElement?: (tag: string) => HTMLElement, commandFlow: FlowHandlers, onShown?: (step: FlowStep) => void }} options
+ * @param {{ boardEl: HTMLElement, selection: import("./types").BoardSelection, createElement?: (tag: string) => HTMLElement, steps: FlowHandlers, onShown?: (step: FlowStep) => void }} options
  */
-export function runBoardCommand(game, action, { boardEl, selection, createElement, commandFlow, onShown }) {
-  return commandFlowMod.runSessionCommand(game, action, commandFlow, (step) => {
+export function runBoardCommand(game, action, { boardEl, selection, createElement, steps, onShown }) {
+  return stepRunner.runCommand(game, action, steps, (step) => {
     renderBoard(boardEl, step.state, createElement);
     const sel = selection.getSelection();
     if (sel) selection.select(sel.row, sel.col);
@@ -349,27 +348,19 @@ export function runBoardCommand(game, action, { boardEl, selection, createElemen
   });
 }
 
-/** Command flow handlers for a board view: errors go to the error modal, status to the status bar. */
-export function boardCommandFlow(game, session, statusEl, errorModal) {
-  return commandFlowMod.commandHandlers(game, session, { statusEl, onError: (failed) => errorModalMod.showErrorModal(errorModal, failed.error) });
-}
-
 /**
  * Run one play key against the selected cell through core.
  * @param {GameApi} game
- * @param {{ commandFlow?: FlowHandlers, onShown?: (step: FlowStep) => void }} [options]
+ * @param {{ steps: FlowHandlers, onShown?: (step: FlowStep) => void }} options
  */
 export function handlePlayKey(
   game,
   boardEl,
   selection,
-  statusEl,
-  errorModal,
   key,
-  session,
   createElement,
-  code = "",
-  { commandFlow = boardCommandFlow(game, session, statusEl, errorModal), onShown } = {},
+  code,
+  { steps, onShown },
 ) {
   const play = parsePlayKey(key, code);
   if (!play) return { handled: false };
@@ -378,25 +369,26 @@ export function handlePlayKey(
   const { row, col } = sel;
   const action =
     play.type === "fill" ? { action: "fill", row, col, digit: play.digit } : { action: "clear", row, col };
-  const done = runBoardCommand(game, action, { boardEl, selection, createElement, commandFlow, onShown });
+  const done = runBoardCommand(game, action, { boardEl, selection, createElement, steps, onShown });
   return { handled: true, done };
 }
 
-/** Board key + play-pad event loop that feeds `handlePlayKey` and syncs legend hooks. */
-/** @param {GameApi} game */
+/**
+ * Board key + play-pad event loop that feeds `handlePlayKey` and syncs legend hooks.
+ * @param {GameApi} game
+ * @param {{ steps: FlowHandlers, onLegendChange?: (legend: Record<string, boolean>) => void, playPadEl?: HTMLElement | null, createElement?: (tag: string) => HTMLElement }} options
+ */
 export function wirePlayLoop(
   frameEl,
   game,
   selection,
-  statusEl,
-  errorModal,
   session,
-  { onLegendChange, playPadEl = null, createElement, commandFlow } = {},
+  { steps, onLegendChange, playPadEl = null, createElement },
 ) {
   const playEl = resolvePlayGrid(frameEl);
   const runPlayInput = (key, code = "") =>
-    handlePlayKey(game, frameEl, selection, statusEl, errorModal, key, session, createElement, code, {
-      commandFlow,
+    handlePlayKey(game, frameEl, selection, key, createElement, code, {
+      steps,
       onShown: (step) => onLegendChange?.(step.legend),
     });
   playEl.addEventListener("keydown", (event) => {

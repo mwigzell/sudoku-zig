@@ -31,8 +31,14 @@ pub const generate_js: []const u8 = @embedFile("../wasm/gen/generate.js");
 pub const clipboard_js: []const u8 = @embedFile("../wasm/clipboard.js");
 /// Autosave platform work (`/autosave.js`).
 pub const autosave_js: []const u8 = @embedFile("../wasm/flows/autosave.js");
-/// Command flow platform work (`/command_flow.js`).
-pub const command_flow_js: []const u8 = @embedFile("../wasm/flows/command_flow.js");
+/// Browser file pickers, handles and download (`/files.js`).
+pub const files_js: []const u8 = @embedFile("../wasm/files.js");
+/// Step handlers web and Android share (`/flows/steps.js`).
+pub const steps_js: []const u8 = @embedFile("../wasm/flows/steps.js");
+/// The browser's step handlers (`/flows/web_steps.js`).
+pub const web_steps_js: []const u8 = @embedFile("../wasm/flows/web_steps.js");
+/// The Android WebView's step handlers (`/flows/android_steps.js`).
+pub const android_steps_js: []const u8 = @embedFile("../wasm/flows/android_steps.js");
 /// Web startup (`/startup.js`).
 pub const startup_js: []const u8 = @embedFile("../wasm/flows/startup.js");
 /// Board DOM and input (`/board.js`).
@@ -130,8 +136,8 @@ test "embedded autosave.js is non-empty" {
     try std.testing.expect(autosave_js.len > 0);
 }
 
-test "embedded command_flow.js is non-empty" {
-    try std.testing.expect(command_flow_js.len > 0);
+test "embedded step handler modules are non-empty" {
+    for ([_][]const u8{ files_js, steps_js, web_steps_js, android_steps_js }) |js| try std.testing.expect(js.len > 0);
 }
 
 test "embedded startup.js is non-empty" {

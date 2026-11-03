@@ -2,7 +2,8 @@
 // what is persisted and produces the `POST /settings.json` body.
 
 import assert from "node:assert/strict";
-import * as commandFlowMod from "../flows/command_flow.js";
+import * as webSteps from "../flows/web_steps.js";
+import * as stepRunner from "../flows/step_runner.js";
 import * as themeMod from "./theme.js";
 import * as region from "./region.js";
 import * as settings from "./settings.js";
@@ -19,16 +20,16 @@ const DEFAULT_SETTINGS = {
   auto_save: false,
 };
 
-/** Command flow handlers whose host answers `status`, recording posts and shown errors. */
-function recordingCommandFlow(game, session, { status = 204 } = {}) {
+/** Web step handlers whose host answers `status`, recording posts and shown errors. */
+function recordingSteps(game, session, { status = 204 } = {}) {
   const posts = [];
   const errors = [];
   const fetchFn = async (url, init) => {
     posts.push({ url, method: init.method, body: JSON.parse(init.body) });
     return { ok: status < 400, status };
   };
-  const commandFlow = commandFlowMod.commandHandlers(game, session, { fetchFn, onError: (failed) => errors.push(failed.error) });
-  return { posts, errors, commandFlow };
+  const steps = { ...webSteps.webSteps(game, session, { fetchFn }), showError: (text) => errors.push(text) };
+  return { posts, errors, steps };
 }
 
 /** A real wasm game and the web session over it. */
@@ -55,9 +56,9 @@ const themeRoot = {
 // View → Light posts core's settings body once.
 {
   const { game, session } = await gameAndSession();
-  const { posts, errors, commandFlow } = recordingCommandFlow(game, session);
+  const { posts, errors, steps } = recordingSteps(game, session);
   const controls = { viewLight: clickable() };
-  themeMod.wireThemeMenu(controls, game, session, { root: themeRoot, commandFlow });
+  themeMod.wireThemeMenu(controls, game, session, { root: themeRoot, steps });
   controls.viewLight.click();
   await settleFlow();
   assert.deepEqual(posts, [{ url: "./settings.json", method: "POST", body: { ...DEFAULT_SETTINGS, theme: "light" } }]);
@@ -67,9 +68,9 @@ const themeRoot = {
 // View → Region posts show_region.
 {
   const { game, session } = await gameAndSession();
-  const { posts, commandFlow } = recordingCommandFlow(game, session);
+  const { posts, steps } = recordingSteps(game, session);
   const controls = { viewRegion: clickable() };
-  region.wireRegionMenu(controls, game, session, { children: [] }, () => null, { commandFlow });
+  region.wireRegionMenu(controls, game, session, { children: [] }, () => null, { steps });
   controls.viewRegion.click();
   await settleFlow();
   assert.equal(posts.length, 1);
@@ -79,7 +80,7 @@ const themeRoot = {
 // File → Settings: each control posts the full settings with its change.
 {
   const { game, session } = await gameAndSession();
-  const { posts, commandFlow } = recordingCommandFlow(game, session);
+  const { posts, steps } = recordingSteps(game, session);
   const handlers = {};
   const control = (key, extra) => ({
     ...extra,
@@ -94,7 +95,7 @@ const themeRoot = {
     logLevelSelect: control("log", { value: "info" }),
     autoSaveCheckbox: control("autoSave", { checked: false }),
   };
-  settings.wireSettingsMenu({ addEventListener() {} }, game, session, modal, { commandFlow });
+  settings.wireSettingsMenu({ addEventListener() {} }, game, session, modal, { steps });
 
   modal.difficultySelect.value = "hard";
   await handlers.difficulty();
@@ -116,9 +117,9 @@ const themeRoot = {
 // A host failure is shown as core's sentence.
 {
   const { game, session } = await gameAndSession();
-  const { posts, errors, commandFlow } = recordingCommandFlow(game, session, { status: 500 });
+  const { posts, errors, steps } = recordingSteps(game, session, { status: 500 });
   const controls = { viewDark: clickable(), viewLight: clickable() };
-  themeMod.wireThemeMenu(controls, game, session, { root: themeRoot, commandFlow });
+  themeMod.wireThemeMenu(controls, game, session, { root: themeRoot, steps });
   controls.viewLight.click();
   await settleFlow();
   assert.equal(posts.length, 1);
@@ -128,8 +129,8 @@ const themeRoot = {
 // Commands that change no setting post nothing.
 {
   const { game, session } = await gameAndSession();
-  const { posts, commandFlow } = recordingCommandFlow(game, session);
-  const outcome = await commandFlowMod.runSessionCommand(game, { action: "fill", row: 0, col: 0, digit: 4 }, commandFlow);
+  const { posts, steps } = recordingSteps(game, session);
+  const outcome = await stepRunner.runCommand(game, { action: "fill", row: 0, col: 0, digit: 4 }, steps);
   assert.deepEqual(outcome, { kind: "done" });
   assert.equal(posts.length, 0);
   assert.equal(session.state.cells[0].value, 4);

@@ -21,6 +21,8 @@ pub const RESTORE_FAILED_TITLE = "Restore failed";
 pub const RESTORE_FAILED_FMT = "The file {s} could not be restored. Do you want to delete it?";
 pub const RESTORE_FAILED_OK_LABEL = "Delete";
 pub const RESTORE_FAILED_CANCEL_LABEL = "Keep";
+/// Logged when the platform reports the restore read as cancelled; nobody picks the restored file.
+const RESTORE_CANCELLED_REASON = "the restore read was cancelled";
 
 /// The file startup may restore: where to read it, what to call it, and what the
 /// FileSession should follow afterwards (a path natively, a host name on the web).
@@ -106,7 +108,7 @@ pub const StartupFlow = struct {
                 return switch (decision.action) {
                     .restore => blk: {
                         self.phase = .reading;
-                        break :blk .{ .read_file = self.path.get() };
+                        break :blk .{ .restore = self.path.get() };
                     },
                     .new => self.generate(),
                     .idle => self.showIdle(.showing_idle),
@@ -114,11 +116,12 @@ pub const StartupFlow = struct {
             },
             .reading => {
                 const read = switch (input) {
-                    .file_read => |r| r,
+                    .read => |r| r,
                     else => return self.fail(UNEXPECTED_INPUT_MSG),
                 };
                 const bytes = switch (read) {
-                    .bytes => |b| b,
+                    .file => |f| f.bytes,
+                    .cancelled => return self.restoreFailed(RESTORE_CANCELLED_REASON),
                     .failed => |msg| return self.restoreFailed(msg),
                 };
                 return switch (self.engine.restoreFromSave(bytes)) {
@@ -203,7 +206,7 @@ pub const StartupFlow = struct {
 
     fn generate(self: *StartupFlow) Step {
         self.phase = .generating;
-        return .{ .generate = self.options.difficulty };
+        return .{ .generate_game = self.options.difficulty };
     }
 
     fn showGame(self: *StartupFlow, phase: Phase, status: ?[]const u8) Step {
@@ -294,8 +297,8 @@ test "startup restore reads the file, shows the game and continues it" {
     const bytes = try Harness.saveBytes(open_line);
     defer std.testing.allocator.free(bytes);
     var f = h.flow(restore_opts, test_file);
-    try std.testing.expectEqualStrings("/data/game.sud", f.next(.start).read_file);
-    const shown = f.next(.{ .file_read = .{ .bytes = bytes } });
+    try std.testing.expectEqualStrings("/data/game.sud", f.next(.start).restore);
+    const shown = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } });
     try std.testing.expectEqualStrings("game.sud", shown.show_game.file.?);
     try std.testing.expectEqual(Step.done, f.next(.ack));
     try std.testing.expectEqualStrings("/data/game.sud", h.session.workingFile().?);
@@ -309,10 +312,10 @@ test "startup restore of a solved game asks, and New game generates" {
     defer std.testing.allocator.free(bytes);
     var f = h.flow(restore_opts, test_file);
     _ = f.next(.start);
-    _ = f.next(.{ .file_read = .{ .bytes = bytes } });
+    _ = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } });
     const asked = f.next(.ack);
     try std.testing.expectEqualStrings(startup_policy.RESTORE_SOLVED_TITLE, asked.ask.title);
-    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, f.next(.{ .answered = true }).generate);
+    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, f.next(.{ .answered = true }).generate_game);
     const shown = f.next(.{ .generated = .{ .line = open_line } });
     try std.testing.expect(shown.show_game.status != null);
     try std.testing.expectEqual(Step.done, f.next(.ack));
@@ -326,7 +329,7 @@ test "startup restore of a solved game keeps it when the player says Keep" {
     defer std.testing.allocator.free(bytes);
     var f = h.flow(restore_opts, test_file);
     _ = f.next(.start);
-    _ = f.next(.{ .file_read = .{ .bytes = bytes } });
+    _ = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } });
     _ = f.next(.ack);
     try std.testing.expectEqual(Step.done, f.next(.{ .answered = false }));
     try std.testing.expect(h.engine.state.board.isSolved());
@@ -338,7 +341,7 @@ test "startup restore failure shows idle, asks to delete, then forgets the file"
         defer h.deinit();
         var f = h.flow(restore_opts, test_file);
         _ = f.next(.start);
-        const shown = f.next(.{ .file_read = .{ .failed = "readAll: FileNotFound" } });
+        const shown = f.next(.{ .read = .{ .failed = "readAll: FileNotFound" } });
         try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.status.?);
         const asked = f.next(.ack);
         try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, asked.ask.title);
@@ -356,7 +359,7 @@ test "startup restore of unreadable bytes is a restore failure" {
     defer h.deinit();
     var f = h.flow(restore_opts, test_file);
     _ = f.next(.start);
-    _ = f.next(.{ .file_read = .{ .bytes = "not a save" } });
+    _ = f.next(.{ .read = .{ .file = .{ .bytes = "not a save" } } });
     try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, f.next(.ack).ask.title);
 }
 
@@ -364,7 +367,7 @@ test "startup new generates at the saved difficulty and shows the game" {
     var h = try Harness.init();
     defer h.deinit();
     var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .hard }, test_file);
-    try std.testing.expectEqual(puzzle_gen.Difficulty.hard, f.next(.start).generate);
+    try std.testing.expectEqual(puzzle_gen.Difficulty.hard, f.next(.start).generate_game);
     const shown = f.next(.{ .generated = .{ .line = open_line } });
     try std.testing.expect(shown.show_game.file == null);
     try std.testing.expectEqual(Step.done, f.next(.ack));

@@ -1,9 +1,7 @@
 // startup.js — web startup: host config into the engine, then core's startup flow (restore / new / idle).
 
 import * as clientLog from "../client_log.js";
-import * as generate from "../gen/generate.js";
 import * as hostApi from "../host_api.js";
-import * as sessionMod from "./session.js";
 import * as stepRunner from "./step_runner.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
@@ -85,34 +83,14 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
 }
 
 /**
- * Platform work for the core startup flow. `showGame` redraws the view after the session
- * takes the engine's new state; `showError` presents the flow's closing error.
+ * Run the core startup flow on the host's current file (if any); `onShown` redraws the view.
  * @param {GameApi} game
+ * @param {import("../types").FlowHandlers} steps the platform's step handlers
+ * @param {(step: import("../types").FlowStep) => void} [onShown]
  */
-export function startupHandlers(
-  game,
-  session,
-  { fetchFn = globalThis.fetch, win = globalThis, generatingModal, genWorker, showGame, showError } = {},
-) {
-  return {
-    readFile: (path) => hostApi.fetchStartupSaveBytes(path, fetchFn),
-    showGame: (step) => {
-      session.boundFilename = step.file ?? null;
-      sessionMod.applySessionOutcome(session, { state: step.state, legend: step.legend, config: step.config });
-      showGame?.(step);
-    },
-    ask: (step) => stepRunner.askWithDialog(step, win),
-    generate: (difficulty) => generate.generateWithModal(game, generatingModal, { difficulty, genWorker }),
-    forgetCurrentFile: (forget) => hostApi.forgetHostCurrentFile(forget.delete, fetchFn),
-    showError,
-  };
-}
-
-/** Run the core startup flow on the host's current file (if any). */
-/** @param {GameApi} game */
-export function runStartupFlow(game, boot, handlers) {
+export function runStartupFlow(game, boot, steps, onShown) {
   const start = boot.startup_save_path
     ? { flow: stepRunner.FLOW_STARTUP, path: boot.startup_save_path, name: boot.default_save_filename }
     : { flow: stepRunner.FLOW_STARTUP };
-  return stepRunner.runFlow(game, start, handlers);
+  return stepRunner.runFlow(game, start, steps, onShown);
 }
