@@ -29,7 +29,7 @@ zig build android -Dsdk=/path/to/sdk
 
 ## Build artifacts (Step 3 + Step 4)
 
-Default native API: **`aarch64-linux-android`** API **29** (arm64-v8a); APK manifest targets Android API **33**.
+Default native API: **`aarch64-linux-android`** API **29** (arm64-v8a); the manifest targets Android API **37** (minimum 29).
 
 Library-only build (Step 3):
 
@@ -44,6 +44,35 @@ zig-out/android/sudoku.apk
 ```
 
 Use `zig build android-lib` when you only want the `.so`.
+
+## Release bundle for Google Play (`zig build android-bundle`)
+
+Google Play takes an Android App Bundle, not an APK. This step builds the native library with `ReleaseSmall`, links the resources and manifest with `aapt2` in proto format, builds the bundle with `bundletool`, signs it with your upload key (`jarsigner`) and runs `bundletool validate`. Version code and name come from the same build values as the debug APK.
+
+```text
+zig-out/android-bundle/sudoku.aab
+```
+
+Signing comes from the environment; the step fails with a clear error when a variable is missing or the keystore does not open with it. Keep the keystore and its passwords out of the repo.
+
+| Variable | Purpose |
+|----------|---------|
+| `ANDROID_RELEASE_KEYSTORE` | Path to the upload keystore (`.jks`) |
+| `ANDROID_RELEASE_STORE_PASS` | Keystore password |
+| `ANDROID_RELEASE_KEY_ALIAS` | Key alias inside the keystore |
+| `ANDROID_RELEASE_KEY_PASS` | Key password (defaults to the keystore password) |
+
+**bundletool** is not part of the SDK. `scripts/android-bundle.sh` pins its version and SHA-256, downloads the jar from GitHub into `third_party/bundletool/` (git-ignored) on first use, and fails on a hash mismatch.
+
+**Installing from the bundle.** `adb install` cannot install an `.aab`. Build device APKs from it and install those (a phone or emulator that has the debug build needs `adb uninstall com.wigzell.sudoku_zig` first, because the signatures differ):
+
+```bash
+BT="java -jar third_party/bundletool/bundletool-all-1.18.3.jar"
+$BT build-apks --bundle=zig-out/android-bundle/sudoku.aab --output=/tmp/sudoku.apks --connected-device --overwrite \
+  --ks="$ANDROID_RELEASE_KEYSTORE" --ks-pass=pass:"$ANDROID_RELEASE_STORE_PASS" \
+  --ks-key-alias="$ANDROID_RELEASE_KEY_ALIAS" --key-pass=pass:"${ANDROID_RELEASE_KEY_PASS:-$ANDROID_RELEASE_STORE_PASS}"
+$BT install-apks --apks=/tmp/sudoku.apks
+```
 
 ## Runtime wiring (Step 5)
 

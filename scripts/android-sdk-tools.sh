@@ -1,5 +1,6 @@
-# Sourced by the Android scripts: resolve SDK tools and debug-sign an APK (no Gradle).
-# Usage: resolve_android_tools <sdk_root> <min_api>; then ANDROID_JAR, AAPT, D8, ZIPALIGN, APKSIGNER, JAVAC, KEYTOOL are set.
+# Sourced by the Android scripts: resolve SDK and JDK tools, debug-sign an APK, check release signing (no Gradle).
+# Usage: resolve_android_tools <sdk_root> <min_api>; then ANDROID_JAR, AAPT, AAPT2, D8, ZIPALIGN, APKSIGNER, JAVAC, JAVA,
+# JARSIGNER, KEYTOOL are set.
 
 pick_latest_dir() {
   ls -1 "$1" 2>/dev/null | sort -V | awk 'NF {v=$0} END {print v}'
@@ -42,10 +43,11 @@ resolve_android_tools() {
 
   local build_tools="$sdk_root/build-tools/$build_tools_version"
   AAPT="$build_tools/aapt"
+  AAPT2="$build_tools/aapt2"
   D8="$build_tools/d8"
   ZIPALIGN="$build_tools/zipalign"
   APKSIGNER="$build_tools/apksigner"
-  for tool in "$AAPT" "$D8" "$ZIPALIGN" "$APKSIGNER"; do
+  for tool in "$AAPT" "$AAPT2" "$D8" "$ZIPALIGN" "$APKSIGNER"; do
     if [[ ! -x "$tool" ]]; then
       echo "error: missing executable: $tool" >&2
       exit 1
@@ -62,13 +64,45 @@ resolve_android_tools() {
     exit 1
   fi
 
-  if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/keytool" ]]; then
-    KEYTOOL="$JAVA_HOME/bin/keytool"
+  KEYTOOL="$(jdk_tool keytool)"
+  JAVA="$(jdk_tool java)"
+  JARSIGNER="$(jdk_tool jarsigner)"
+}
+
+# Usage: jdk_tool <name>; prints the JDK tool's path, from JAVA_HOME else PATH, or exits.
+jdk_tool() {
+  local tool=""
+  if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/$1" ]]; then
+    tool="$JAVA_HOME/bin/$1"
   else
-    KEYTOOL="$(command -v keytool || true)"
+    tool="$(command -v "$1" || true)"
   fi
-  if [[ -z "${KEYTOOL:-}" || ! -x "$KEYTOOL" ]]; then
-    echo "error: keytool not found. Set JAVA_HOME to a JDK install." >&2
+  if [[ -z "$tool" || ! -x "$tool" ]]; then
+    echo "error: $1 not found. Set JAVA_HOME to a JDK install." >&2
+    exit 1
+  fi
+  echo "$tool"
+}
+
+# Usage: require_release_signing; checks the ANDROID_RELEASE_* variables and that the keystore opens with them.
+# The passwords stay in the environment (jarsigner reads them with :env), never on a command line.
+require_release_signing() {
+  : "${ANDROID_RELEASE_KEY_PASS:=${ANDROID_RELEASE_STORE_PASS:-}}"
+  export ANDROID_RELEASE_KEY_PASS
+  local name
+  for name in ANDROID_RELEASE_KEYSTORE ANDROID_RELEASE_STORE_PASS ANDROID_RELEASE_KEY_ALIAS ANDROID_RELEASE_KEY_PASS; do
+    if [[ -z "${!name:-}" ]]; then
+      echo "error: $name is required for release signing" >&2
+      exit 1
+    fi
+  done
+  if [[ ! -f "$ANDROID_RELEASE_KEYSTORE" ]]; then
+    echo "error: release keystore does not exist: $ANDROID_RELEASE_KEYSTORE" >&2
+    exit 1
+  fi
+  if ! "$KEYTOOL" -list -keystore "$ANDROID_RELEASE_KEYSTORE" -storepass:env ANDROID_RELEASE_STORE_PASS \
+    -alias "$ANDROID_RELEASE_KEY_ALIAS" >/dev/null 2>&1; then
+    echo "error: the release keystore does not open with ANDROID_RELEASE_STORE_PASS, or has no key ANDROID_RELEASE_KEY_ALIAS" >&2
     exit 1
   fi
 }

@@ -1,4 +1,4 @@
-//! Android build entry: cross-compile the JNI `.so` and package a debug-signed APK (no Gradle).
+//! Android build entry: cross-compile the JNI `.so`, package a debug-signed APK and a release-signed App Bundle (no Gradle).
 const std = @import("std");
 
 /// Bionic link stubs for `aarch64-linux-android` (matches common arm64 AVDs on Apple Silicon).
@@ -6,10 +6,16 @@ pub const android_api_level: u32 = 29;
 
 pub const LibName = "sudoku_zig";
 pub const ApkName = "sudoku.apk";
-pub const ReleaseApkName = "sudoku-release.apk";
+pub const BundleName = "sudoku.aab";
 const OutDir = "zig-out/android";
-const SoPathDebug = "zig-out/lib/libsudoku_zig.so";
-const SoPathRelease = "zig-out/lib/libsudoku_zig.so";
+const BundleOutDir = "zig-out/android-bundle";
+const SoSubPathDebug = "libsudoku_zig.so";
+const SoSubPathRelease = "release/libsudoku_zig.so";
+const SoPathDebug = "zig-out/lib/" ++ SoSubPathDebug;
+const SoPathRelease = "zig-out/lib/" ++ SoSubPathRelease;
+const AndroidStepDesc = "Build a debug-signed Android APK (arm64-v8a, no Gradle)";
+const AndroidTestStepDesc = "Run the UiAutomator file bridge tests against a connected emulator";
+const AndroidBundleStepDesc = "Build a release-signed Android App Bundle for Google Play (arm64-v8a, no Gradle)";
 const BootstrapRoot = "src/android/bootstrap";
 const ManifestPath = BootstrapRoot ++ "/AndroidManifest.xml";
 const ResourcePath = BootstrapRoot ++ "/res";
@@ -37,10 +43,12 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         });
         const android_lib_fail = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
         android_lib_fail.dependOn(&fail.step);
-        const android_fail = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
+        const android_fail = b.step("android", AndroidStepDesc);
         android_fail.dependOn(&fail.step);
-        const android_test_fail = b.step("android-test", "Run the UiAutomator file bridge tests against a connected emulator");
+        const android_test_fail = b.step("android-test", AndroidTestStepDesc);
         android_test_fail.dependOn(&fail.step);
+        const android_bundle_fail = b.step("android-bundle", AndroidBundleStepDesc);
+        android_bundle_fail.dependOn(&fail.step);
         return android_fail;
     };
 
@@ -52,7 +60,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     });
     // Keep debug APK debug-friendly by default; callers can still override with -Doptimize.
     const optimize_debug = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
-    // Release APK native library is always built with release optimization.
+    // The bundle's native library is always built with release optimization.
     const optimize_release: std.builtin.OptimizeMode = .ReleaseSmall;
 
     const host_prebuilt = resolveHostPrebuiltTag(b, ndk_root);
@@ -97,7 +105,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     shared_debug.step.dependOn(deps.gen_build_info);
 
     const install_debug = b.addInstallArtifact(shared_debug, .{
-        .dest_sub_path = "libsudoku_zig.so",
+        .dest_sub_path = SoSubPathDebug,
     });
     const android_lib_step = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
     android_lib_step.dependOn(&install_debug.step);
@@ -134,7 +142,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     shared_release.step.dependOn(deps.gen_build_info);
 
     const install_release = b.addInstallArtifact(shared_release, .{
-        .dest_sub_path = "libsudoku_zig.so",
+        .dest_sub_path = SoSubPathRelease,
     });
 
     const sdk_opt = b.option([]const u8, "sdk", "Android SDK root (default: $ANDROID_HOME or $ANDROID_SDK_ROOT)");
@@ -145,10 +153,12 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
             "echo 'error: Android SDK not found. Set ANDROID_HOME or ANDROID_SDK_ROOT.' >&2; exit 1",
         });
         fail.step.dependOn(&install_debug.step);
-        const step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
+        const step = b.step("android", AndroidStepDesc);
         step.dependOn(&fail.step);
-        const test_step = b.step("android-test", "Run the UiAutomator file bridge tests against a connected emulator");
+        const test_step = b.step("android-test", AndroidTestStepDesc);
         test_step.dependOn(&fail.step);
+        const bundle_step = b.step("android-bundle", AndroidBundleStepDesc);
+        bundle_step.dependOn(&fail.step);
         return step;
     };
 
@@ -166,11 +176,10 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         ApkName,
         b.fmt("{d}", .{deps.version_code}),
         deps.version_name,
-        "debug",
     });
     package_apk.step.dependOn(&install_debug.step);
 
-    const android_step = b.step("android", "Build a debug-signed Android APK (arm64-v8a, no Gradle)");
+    const android_step = b.step("android", AndroidStepDesc);
     android_step.dependOn(&package_apk.step);
 
     const run_tests = b.addSystemCommand(&.{
@@ -186,29 +195,28 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     if (deps.test_filter) |name| run_tests.addArg(name);
     run_tests.has_side_effects = true;
     run_tests.step.dependOn(&package_apk.step);
-    const android_test_step = b.step("android-test", "Run the UiAutomator file bridge tests against a connected emulator");
+    const android_test_step = b.step("android-test", AndroidTestStepDesc);
     android_test_step.dependOn(&run_tests.step);
 
-    const package_release_apk = b.addSystemCommand(&.{
+    const package_bundle = b.addSystemCommand(&.{
         "bash",
-        "scripts/android-package.sh",
+        "scripts/android-bundle.sh",
         sdk_root,
         b.fmt("{d}", .{android_api_level}),
-        OutDir,
+        BundleOutDir,
         JavaSourceMain,
         JavaSourceJni,
         ManifestPath,
         ResourcePath,
         SoPathRelease,
-        ReleaseApkName,
+        BundleName,
         b.fmt("{d}", .{deps.version_code}),
         deps.version_name,
-        "release",
     });
-    package_release_apk.step.dependOn(&install_release.step);
-
-    const android_release_step = b.step("android-release", "Build a release-signed Android APK (arm64-v8a, no Gradle)");
-    android_release_step.dependOn(&package_release_apk.step);
+    package_bundle.has_side_effects = true;
+    package_bundle.step.dependOn(&install_release.step);
+    const android_bundle_step = b.step("android-bundle", AndroidBundleStepDesc);
+    android_bundle_step.dependOn(&package_bundle.step);
     return android_step;
 }
 

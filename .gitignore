@@ -3,4 +3,5 @@ zig-out/
 src/build_info.zig
 build.log
 kcov-out/
+third_party/bundletool/
 src/wasm/artifacts/artifact.wasm
