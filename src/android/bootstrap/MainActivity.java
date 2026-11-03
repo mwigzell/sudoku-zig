@@ -49,6 +49,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -517,11 +518,34 @@ public final class MainActivity extends Activity {
         return fallback;
     }
 
+    /** Every picker starts in the bound file's folder, else in the default folder; the player can still browse away. */
+    private void startInGameFolder(Intent picker) {
+        final Uri bound = currentUri();
+        final Uri folder = bound != null ? folderOf(bound) : null;
+        picker.putExtra(DocumentsContract.EXTRA_INITIAL_URI, folder != null ? folder : DocumentsContract.buildDocumentUri(
+            EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY, PRIMARY_VOLUME_DOC_PREFIX + DEFAULT_VISIBLE_SAVE_DIR));
+    }
+
+    /** The document folder holding `file`, or null when its provider cannot say (e.g. a MediaStore entry). */
+    private Uri folderOf(Uri file) {
+        if (!DocumentsContract.isDocumentUri(this, file)) return null;
+        try {
+            final DocumentsContract.Path path = DocumentsContract.findDocumentPath(getContentResolver(), file);
+            if (path == null) return null;
+            final List<String> ids = path.getPath();
+            if (ids == null || ids.size() < 2) return null;
+            return DocumentsContract.buildDocumentUri(file.getAuthority(), ids.get(ids.size() - 2));
+        } catch (IOException | RuntimeException err) {
+            return null;
+        }
+    }
+
     private String openViaPicker() {
         final Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
         pick.setType(MIME_OCTET_STREAM);
         pick.putExtra(Intent.EXTRA_MIME_TYPES, OPEN_MIME_TYPES);
+        startInGameFolder(pick);
         pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -564,11 +588,12 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private static Intent createDocumentIntent(String suggestedName) {
+    private Intent createDocumentIntent(String suggestedName) {
         final Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         create.addCategory(Intent.CATEGORY_OPENABLE);
         create.setType(MIME_OCTET_STREAM);
         create.putExtra(Intent.EXTRA_TITLE, suggestedName);
+        startInGameFolder(create);
         create.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         create.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         create.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -651,13 +676,12 @@ public final class MainActivity extends Activity {
     }
 
     /** Lets the user grant this install write access to an existing file in the default folder. */
-    private static Intent pickExistingIntent() {
+    private Intent pickExistingIntent() {
         final Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
         pick.setType(MIME_OCTET_STREAM);
         pick.putExtra(Intent.EXTRA_MIME_TYPES, OPEN_MIME_TYPES);
-        pick.putExtra(DocumentsContract.EXTRA_INITIAL_URI, DocumentsContract.buildDocumentUri(
-            EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY, PRIMARY_VOLUME_DOC_PREFIX + DEFAULT_VISIBLE_SAVE_DIR));
+        startInGameFolder(pick);
         pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);

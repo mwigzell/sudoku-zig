@@ -51,7 +51,10 @@ public final class FileBridgeTest {
     private static final String APP_APK_ON_DEVICE = "/data/local/tmp/sudoku-app.apk";
     /** Screenshots and window hierarchies of failed tests; the host script pulls them. */
     private static final String FAILURE_DIR = "/data/local/tmp/sudoku-test-failure";
-    private static final String SAVE_DIR = "/sdcard/Download/Sudoku";
+    private static final String OTHER_FOLDER = "/storage/emulated/0/Download";
+    private static final String SAVE_FOLDER_NAME = "Sudoku";
+    private static final String SAVE_DIR = "/sdcard/Download/" + SAVE_FOLDER_NAME;
+    private static final String BINDING_PREFS = "shared_prefs/sudoku_file_binding.xml";
     private static final String SAVE_RELATIVE_PATH = "Download/Sudoku/";
     private static final String DEFAULT_NAME = "sudoku.sud";
     private static final String DEFAULT_PATH = SAVE_DIR + "/" + DEFAULT_NAME;
@@ -366,6 +369,31 @@ public final class FileBridgeTest {
         assertEquals("no default file after the restart: " + defaultOrRenamedEntries(), 0, defaultOrRenamedEntries().size());
     }
 
+    @Test
+    public void withNoBoundFileSaveAsStartsInTheDefaultFolderNotWhereThePickerWasLast() throws IOException {
+        sh("mkdir -p " + SAVE_DIR + " && echo earlier > " + DEFAULT_PATH + "\n");
+        launchApp();
+        startEasyGame();
+        need(By.text("File"), UI_WAIT_MS).click();
+        need(By.res("file-save-as"), UI_WAIT_MS).click();
+        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        device.pressBack();
+        need(By.res(PICKER_ITEM_NAME).text(SAVE_FOLDER_NAME), UI_WAIT_MS);
+        saveInCreatePicker(CHOSEN_NAME);
+        final String chosenPath = awaitChosenNamePath();
+        assertEquals("saved in the folder above the default folder", OTHER_FOLDER + "/" + CHOSEN_NAME, chosenPath);
+
+        sh("am force-stop " + APP + "\n" + "run-as " + APP + " rm -f " + BINDING_PREFS + "\n");
+        launchApp();
+        startEasyGame();
+        need(By.text("File"), UI_WAIT_MS).click();
+        need(By.res("file-save-as"), UI_WAIT_MS).click();
+        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        assertFalse("the picker is in the default folder, not the folder above it",
+            device.hasObject(By.res(PICKER_ITEM_NAME).text(SAVE_FOLDER_NAME)));
+        backOutOfPicker();
+    }
+
     /** A new game's first autosave over an existing file asks first; answer Replace. */
     private void replaceWhenAsked(String name) {
         final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
@@ -564,7 +592,7 @@ public final class FileBridgeTest {
     }
 
     private String boundNameNow() throws IOException {
-        final Matcher m = BOUND_NAME.matcher(sh("run-as " + APP + " cat shared_prefs/sudoku_file_binding.xml 2>/dev/null\n"));
+        final Matcher m = BOUND_NAME.matcher(sh("run-as " + APP + " cat " + BINDING_PREFS + " 2>/dev/null\n"));
         return m.find() ? m.group(1) : "";
     }
 

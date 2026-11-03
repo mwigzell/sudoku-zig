@@ -178,7 +178,7 @@ On web and Android, the player's real file that the working file is tied to: a b
 The host's private copy of the game in its hidden data dir, read by Auto Restore at startup when the player's file is elsewhere.
 
 **Picker**:
-The platform's own file chooser (browser or Android). It asks its own replace question.
+The platform's own file chooser (browser or Android). It asks its own replace question. On Android every picker starts in the bound file's folder, else in the default folder; the player can still browse away.
 
 **Lane**:
 Whether the next write continues the working file (continuation: no question) or starts fresh (detached: "Replace file?" when the file exists). Save As always starts a new lane.
