@@ -8,13 +8,14 @@
 
   /** @type {import("./types").AndroidFileBridge} */
   win.AndroidFileBridge = {
-    saveSudokuFile: (base64, suggestedName, saveAs) =>
-      JSON.parse(native.saveSudokuFile(text(base64), text(suggestedName), !!saveAs)),
-    saveSudokuFileToExisting: (base64) => JSON.parse(native.saveSudokuFileToExisting(text(base64))),
-    saveCurrentSudokuFile: (base64, suggestedName) =>
-      JSON.parse(native.saveCurrentSudokuFile(text(base64), text(suggestedName))),
+    save: (base64, suggestedName) => JSON.parse(native.save(text(base64), text(suggestedName))),
+    saveAs: (base64, suggestedName) => JSON.parse(native.saveAs(text(base64), text(suggestedName))),
+    autosave: (base64, suggestedName) => JSON.parse(native.autosave(text(base64), text(suggestedName))),
+    reclaimFile: (base64) => JSON.parse(native.reclaimFile(text(base64))),
+    open: () => JSON.parse(native.open()),
+    importPuzzle: () => JSON.parse(native.importPuzzle()),
+    exportPuzzle: (base64, suggestedName) => JSON.parse(native.exportPuzzle(text(base64), text(suggestedName))),
     currentSudokuFileName: () => text(native.currentSudokuFileName()),
-    openSudokuFile: () => JSON.parse(native.openSudokuFile()),
     setSystemBars: (themeName) => native.setSystemBars(String(themeName || "dark")),
     notifyWebBootReady: () => native.notifyWebBootReady(),
   };

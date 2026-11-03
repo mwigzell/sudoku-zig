@@ -30,7 +30,7 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 | Web step handlers | `src/wasm/flows/step_runner.js`, `web_steps.js`, `android_steps.js` | Carry out one step each with browser APIs; no branching on outcomes | `KEEP` |
 | Web pickers, download, clipboard | `src/wasm/menus/file_menu.js` (`persistBytes`, `pickBytes`, `persistPuzzleText`), `clipboard.js` (`startCopyPuzzleOnClick`, `readClipboardText`) | Browser and Android bridge APIs exist only in the page | `KEEP` |
 | Menubar drag-release | `src/wasm/menus/menu_bar.js` | DOM event mechanics | `KEEP` |
-| Android WebView bootstrap | `MainActivity.java` (`onCreate`, `injectBridgeShim`), `page.html` boot-ready signal | WebView lifecycle | `KEEP` |
-| Android URI bridge | `MainActivity.java` (`saveCurrentSudokuFile`, `saveSudokuFileToExisting`, `openSudokuFile`) | Storage Access Framework and MediaStore; reports `default_taken` as a fact for core | `KEEP` |
+| Android WebView bootstrap | `MainActivity.java` (`onCreate`, `onStop` flush on close), `android_bridge.js` head script, `page.html` boot-ready signal | WebView lifecycle | `KEEP` |
+| Android URI bridge | `MainActivity.java` `AndroidFileBridge`: one method per file step (`save`, `saveAs`, `autosave`, `reclaimFile`, `open`, `importPuzzle`, `exportPuzzle`) | Storage Access Framework and MediaStore; reports `default_taken` as a fact for core | `KEEP` |
 | Android host lifecycle | `src/android/jni_host.zig` | Loopback host thread start/stop | `KEEP` |
 | Native renderer and loop | `src/native/host.zig`, `src/native/shell/shell.zig` (`turn`, `runFlow` step execution) | Terminal substrate and step execution against the file transport | `KEEP` |

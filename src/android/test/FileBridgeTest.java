@@ -78,6 +78,8 @@ public final class FileBridgeTest {
         Pattern.compile("_id=(\\d+), _display_name=(.*), owner_package_name=(.*)$");
     private static final Pattern MEDIA_PATH = Pattern.compile("_data=(.*)$");
     private static final Pattern BOUND_NAME = Pattern.compile("name=\"current_name\">([^<]*)<");
+    /** The host's log line for a write of the hidden restore copy. */
+    private static final Pattern RESTORE_COPY_WRITE = Pattern.compile("current-file write: .*restore_copy=true");
     private static final Pattern BOUNDS = Pattern.compile("\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]");
     private static final String COLUMN_LABELS = "ABCDEFGHI";
     private static final String FILL_DIGIT = "5";
@@ -394,6 +396,19 @@ public final class FileBridgeTest {
         backOutOfPicker();
     }
 
+    @Test
+    public void closingTheAppFlushesTheRestoreCopy() throws IOException {
+        launchApp();
+        startEasyGame();
+        sh("logcat -c\n");
+        fillAnEmptyCell();
+        awaitLog(RESTORE_COPY_WRITE);
+
+        sh("logcat -c\n");
+        device.pressHome();
+        awaitLog(RESTORE_COPY_WRITE);
+    }
+
     /** A new game's first autosave over an existing file asks first; answer Replace. */
     private void replaceWhenAsked(String name) {
         final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
@@ -602,6 +617,15 @@ public final class FileBridgeTest {
             final String name = boundNameNow();
             if (!name.isEmpty()) return name;
             if (SystemClock.uptimeMillis() > deadline) fail("the app bound no file");
+            SystemClock.sleep(POLL_MS);
+        }
+    }
+
+    /** Wait until the device log has a line matching `line`. */
+    private void awaitLog(Pattern line) throws IOException {
+        final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
+        while (!line.matcher(sh("logcat -d\n")).find()) {
+            if (SystemClock.uptimeMillis() > deadline) fail("no log line like " + line.pattern());
             SystemClock.sleep(POLL_MS);
         }
     }

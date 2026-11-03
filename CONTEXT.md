@@ -131,7 +131,7 @@ _Avoid_: generic steps told apart by a flag; a handler set per flow
 | `save` | writes the saved game to the current file (web/Android: the bound file, else a picker), keeps the restore copy |
 | `save_as` | writes the saved game to a file the player picks, suggesting the given name (native: the typed path) |
 | `autosave` | writes the saved game to the bound or default file, never through a picker |
-| `flush` | app closing: writes the saved game to the restore copy only |
+| `flush` | app closing (web: page hide; Android: the activity stops): writes the saved game to the restore copy only |
 | `export_puzzle` | writes the puzzle to a file; the current file is unchanged |
 | `reclaim_file` | Android: lets the player pick the file an earlier install wrote, and writes the saved game there |
 | `copy_puzzle` | copies the puzzle to the clipboard (native: prints it) |

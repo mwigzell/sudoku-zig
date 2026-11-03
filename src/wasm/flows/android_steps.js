@@ -1,5 +1,5 @@
-// android_steps.js — the Android WebView's handler for every core step: saved games go through
-// the Java file bridge, which holds the bound file; the host keeps the restore copy.
+// android_steps.js — the Android WebView's handler for every core step: saved games and puzzle files
+// go through the Java file bridge, which holds the bound file; the host keeps the restore copy.
 
 import * as steps from "./steps.js";
 
@@ -18,7 +18,7 @@ const BRIDGE_CANCELLED = "cancelled";
 const BRIDGE_DEFAULT_TAKEN = "default_taken";
 const INVALID_PAYLOAD_REASON = "invalid Android file payload";
 
-/** SUD0 bytes as the bridge's base64 text. */
+/** File bytes as the bridge's base64 text. */
 function bytesToBase64(bytes) {
   const chars = [];
   for (const b of bytes) chars.push(String.fromCharCode(b));
@@ -67,9 +67,13 @@ export function androidSteps(game, session, bridge, options = {}) {
    */
   const writeThroughBridge = (call, name) =>
     steps.writeGame(ctx, async (bytes) => bridgeWrote(await call(bytesToBase64(bytes)), name), name, { restoreCopy: true });
-  /** @returns {Promise<PickResult>} */
-  const openThroughBridge = async () => {
-    const out = await bridge.openSudokuFile();
+  /**
+   * Read the file the bridge's picker returns.
+   * @param {() => AndroidBridgeResult | Promise<AndroidBridgeResult>} pick
+   * @returns {Promise<PickResult>}
+   */
+  const readThroughBridge = async (pick) => {
+    const out = await pick();
     if (out?.ok !== true) {
       if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
       return { ok: false, error: out?.error };
@@ -83,19 +87,25 @@ export function androidSteps(game, session, bridge, options = {}) {
     /** @param {GameWrite} target */
     save: (target) => {
       if (!target.replace && bound()) return steps.EXISTS;
-      return writeThroughBridge((b64) => bridge.saveSudokuFile(b64, target.name, false), target.name);
+      return writeThroughBridge((b64) => bridge.save(b64, target.name), target.name);
     },
     /** @param {GameWrite} target */
-    saveAs: (target) => writeThroughBridge((b64) => bridge.saveSudokuFile(b64, target.name, true), target.name),
+    saveAs: (target) => writeThroughBridge((b64) => bridge.saveAs(b64, target.name), target.name),
     /** The bound file, else the default visible file, which may belong to an earlier install (`taken`). */
     autosave: (target) => {
       if (!target.replace && bound()) return steps.EXISTS;
-      return writeThroughBridge((b64) => bridge.saveCurrentSudokuFile(b64, target.name), target.name);
+      return writeThroughBridge((b64) => bridge.autosave(b64, target.name), target.name);
     },
     /** The host copy only: a closing app cannot wait for the bridge. */
     flush: (name) => steps.writeGame(ctx, null, name, { restoreCopy: true, fetchFn: steps.keepaliveFetch(ctx.fetchFn) }),
-    reclaimFile: () => writeThroughBridge((b64) => bridge.saveSudokuFileToExisting(b64), session.default_save_filename),
-    open: openThroughBridge,
-    importPuzzle: openThroughBridge,
+    reclaimFile: () => writeThroughBridge((b64) => bridge.reclaimFile(b64), session.default_save_filename),
+    /** @param {string} name */
+    exportPuzzle: async (name) => {
+      const exported = game.toPuzzle();
+      if (!exported.ok) return exported;
+      return bridgeWrote(await bridge.exportPuzzle(bytesToBase64(exported.bytes), name), name);
+    },
+    open: () => readThroughBridge(() => bridge.open()),
+    importPuzzle: () => readThroughBridge(() => bridge.importPuzzle()),
   };
 }

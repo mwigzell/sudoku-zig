@@ -22,40 +22,49 @@ function runInWindow(win) {
 // ── Java bridge present: AndroidFileBridge exists at once and parses the Java strings ──
 {
   const calls = [];
+  const wrote = (step) => (base64, name) => {
+    calls.push([step, base64, name]);
+    return JSON.stringify({ ok: true, name });
+  };
   const native = {
-    saveCurrentSudokuFile: (base64, name) => {
-      calls.push(["current", base64, name]);
+    save: wrote("save"),
+    saveAs: wrote("saveAs"),
+    autosave: (base64, name) => {
+      calls.push(["autosave", base64, name]);
       return JSON.stringify({ ok: false, reason: "default_taken", name, dir: "Download/Sudoku" });
     },
-    saveSudokuFile: (base64, name, saveAs) => {
-      calls.push(["save", base64, name, saveAs]);
-      return JSON.stringify({ ok: true, name });
-    },
-    saveSudokuFileToExisting: (base64) => {
-      calls.push(["existing", base64]);
+    reclaimFile: (base64) => {
+      calls.push(["reclaimFile", base64]);
       return JSON.stringify({ ok: true, name: "sudoku.sud" });
     },
+    open: () => JSON.stringify({ ok: false, cancelled: true }),
+    importPuzzle: () => JSON.stringify({ ok: true, name: "p.txt", base64: "QQ==" }),
+    exportPuzzle: wrote("exportPuzzle"),
     currentSudokuFileName: () => null,
-    openSudokuFile: () => JSON.stringify({ ok: false, cancelled: true }),
     notifyWebBootReady: () => calls.push(["ready"]),
   };
   const win = runInWindow({ __SudokuAndroidBridge: native });
   const bridge = win.AndroidFileBridge;
-  assert.deepEqual(bridge.saveCurrentSudokuFile("QQ==", "sudoku.sud"), {
+  assert.deepEqual(bridge.save("QQ==", "a.sud"), { ok: true, name: "a.sud" });
+  assert.deepEqual(bridge.saveAs("QQ==", "b.sud"), { ok: true, name: "b.sud" });
+  assert.deepEqual(bridge.autosave("QQ==", "sudoku.sud"), {
     ok: false,
     reason: "default_taken",
     name: "sudoku.sud",
     dir: "Download/Sudoku",
   });
-  assert.deepEqual(bridge.saveSudokuFile("QQ==", "a.sud", 1), { ok: true, name: "a.sud" });
-  assert.deepEqual(bridge.saveSudokuFileToExisting(undefined), { ok: true, name: "sudoku.sud" });
+  assert.deepEqual(bridge.reclaimFile(undefined), { ok: true, name: "sudoku.sud" });
+  assert.deepEqual(bridge.open(), { ok: false, cancelled: true });
+  assert.deepEqual(bridge.importPuzzle(), { ok: true, name: "p.txt", base64: "QQ==" });
+  assert.deepEqual(bridge.exportPuzzle("QQ==", "sudoku.txt"), { ok: true, name: "sudoku.txt" });
   assert.equal(bridge.currentSudokuFileName(), "");
-  assert.deepEqual(bridge.openSudokuFile(), { ok: false, cancelled: true });
   bridge.notifyWebBootReady();
   assert.deepEqual(calls, [
-    ["current", "QQ==", "sudoku.sud"],
-    ["save", "QQ==", "a.sud", true],
-    ["existing", ""],
+    ["save", "QQ==", "a.sud"],
+    ["saveAs", "QQ==", "b.sud"],
+    ["autosave", "QQ==", "sudoku.sud"],
+    ["reclaimFile", ""],
+    ["exportPuzzle", "QQ==", "sudoku.txt"],
     ["ready"],
   ]);
 }

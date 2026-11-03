@@ -83,7 +83,7 @@ export async function bootSudokuWebApp(root = document) {
       errorModal,
       root,
     });
-    autosave.wireFinalSnapshotOnPageHide(game, app.steps);
+    autosave.wireFlushOnClose(game, app.steps);
 
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();

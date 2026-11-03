@@ -25,7 +25,7 @@ function makePageHideWin() {
   const host = hostFetch();
   const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([5, 6, 7]) }) }, { autoSave: true, opened: "autosave.sud" });
   const session = { config: { auto_save: true }, boundFilename: "autosave.sud" };
-  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, session, { fetchFn: host.fetchFn }), { win });
+  autosave.wireFlushOnClose(game, webSteps.webSteps(game, session, { fetchFn: host.fetchFn }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
   assert.equal(host.calls.length, 1);
@@ -39,7 +39,7 @@ function makePageHideWin() {
   const win = makePageHideWin();
   const host = hostFetch();
   const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true, newGame: true });
-  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, { config: { auto_save: true } }, { fetchFn: host.fetchFn }), { win });
+  autosave.wireFlushOnClose(game, webSteps.webSteps(game, { config: { auto_save: true } }, { fetchFn: host.fetchFn }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
   assert.equal(host.calls.length, 0);
@@ -56,7 +56,7 @@ function makePageHideWin() {
     },
   }, { opened: "autosave.sud" });
   const session = { config: { auto_save: false }, boundFilename: "autosave.sud" };
-  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, session, { fetchFn: async () => ({ ok: true, status: 204 }) }), { win });
+  autosave.wireFlushOnClose(game, webSteps.webSteps(game, session, { fetchFn: async () => ({ ok: true, status: 204 }) }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
   assert.equal(called, false);
@@ -132,7 +132,7 @@ async function boundAutosaveSetup(writes, failure = null) {
   const writes = [];
   const { game, session, fetchFn } = await boundAutosaveSetup(writes);
   const win = makePageHideWin();
-  autosave.wireFinalSnapshotOnPageHide(game, webSteps.webSteps(game, session, { fetchFn }), { win });
+  autosave.wireFlushOnClose(game, webSteps.webSteps(game, session, { fetchFn }), { win });
   win.listeners.get("pagehide")?.();
   await settleFlow();
   assert.deepEqual(writes, [{ lane: "host", bytes: [4, 2], restoreCopy: "true", keepalive: true }]);

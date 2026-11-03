@@ -178,15 +178,22 @@ export type AndroidBridgeResult =
 
 /** Android WebView file bridge (`android_bridge.js` over the Java `__SudokuAndroidBridge`); absent elsewhere. */
 export type AndroidFileBridge = {
-  /** Save via the create-document picker when `saveAs`, else to the bound file. */
-  saveSudokuFile: (base64: string, suggestedName: string, saveAs: boolean) => AndroidBridgeResult;
-  /** Pick an existing file and write to it. */
-  saveSudokuFileToExisting: (base64: string) => AndroidBridgeResult;
+  /** Write the bound file, else a new file the player names. */
+  save: (base64: string, suggestedName: string) => AndroidBridgeResult;
+  /** Write a new file the player names. */
+  saveAs: (base64: string, suggestedName: string) => AndroidBridgeResult;
   /** Write the bound file, or the default visible file when none is bound. */
-  saveCurrentSudokuFile: (base64: string, suggestedName: string) => AndroidBridgeResult;
+  autosave: (base64: string, suggestedName: string) => AndroidBridgeResult;
+  /** Pick an existing file and write to it. */
+  reclaimFile: (base64: string) => AndroidBridgeResult;
+  /** Pick a saved game and read it; the picked file becomes the bound file. */
+  open: () => AndroidBridgeResult;
+  /** Pick a puzzle text file and read it; the bound file is unchanged. */
+  importPuzzle: () => AndroidBridgeResult;
+  /** Write the puzzle to a new text file the player names; the bound file is unchanged. */
+  exportPuzzle: (base64: string, suggestedName: string) => AndroidBridgeResult;
   /** Bound file name, or "" when none. */
   currentSudokuFileName: () => string;
-  openSudokuFile: () => AndroidBridgeResult;
   setSystemBars: (themeName: string) => void;
   notifyWebBootReady: () => void;
 };

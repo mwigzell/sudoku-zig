@@ -67,10 +67,14 @@ public final class MainActivity extends Activity {
         MIME_OCTET_STREAM,
         MIME_TEXT_PLAIN,
     };
+    private static final String[] PUZZLE_MIME_TYPES = new String[] { MIME_TEXT_PLAIN };
     private static final String DEFAULT_SAVE_FILENAME = "sudoku.sud";
+    private static final String OPENED_FALLBACK_NAME = "opened.sud";
+    /** The page's flush hook (`flows/autosave.js`); the WebView fires no page hide when the app closes. */
+    private static final String FLUSH_ON_CLOSE_JS = "window.__sudokuFlushOnClose && window.__sudokuFlushOnClose();";
     private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/" + JniHost.defaultFolderName();
     private static final String REASON_DEFAULT_TAKEN = "default_taken";
-    /** Bridge result keys, read by `file_menu.js`. */
+    /** Bridge result keys, read by `flows/android_steps.js`. */
     private static final String KEY_OK = "ok";
     private static final String KEY_CANCELLED = "cancelled";
     private static final String KEY_ERROR = "error";
@@ -259,6 +263,12 @@ public final class MainActivity extends Activity {
             null
         );
         dismissLaunchSplash();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        webView.evaluateJavascript(FLUSH_ON_CLOSE_JS, null);
     }
 
     @Override
@@ -540,15 +550,18 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private String openViaPicker() {
+    /** Let the player pick a file of `mimeTypes` and read it; a saved game becomes the current file, a puzzle does not. */
+    private String readViaPicker(String[] mimeTypes, boolean bindsFile, String fallbackName) {
         final Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
-        pick.setType(MIME_OCTET_STREAM);
-        pick.putExtra(Intent.EXTRA_MIME_TYPES, OPEN_MIME_TYPES);
+        pick.setType(mimeTypes[0]);
+        pick.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
         startInGameFolder(pick);
         pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        if (bindsFile) {
+            pick.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            pick.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        }
 
         final Intent result;
         try {
@@ -558,9 +571,9 @@ public final class MainActivity extends Activity {
             return jsonFailed(FAILED_INTERRUPTED, err);
         }
         if (result == null || result.getData() == null) return jsonCancelled();
-        rememberPersistedPermission(result);
+        if (bindsFile) rememberPersistedPermission(result);
         final Uri uri = result.getData();
-        final String name = displayNameOf(uri, "opened.sud");
+        final String name = displayNameOf(uri, fallbackName);
 
         try (InputStream in = getContentResolver().openInputStream(uri)) {
             if (in == null) return jsonFailed(FAILED_OPEN);
@@ -568,7 +581,7 @@ public final class MainActivity extends Activity {
             final byte[] buf = new byte[8192];
             int read;
             while ((read = in.read(buf)) != -1) out.write(buf, 0, read);
-            rememberCurrentFile(uri, name);
+            if (bindsFile) rememberCurrentFile(uri, name);
             final String base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
             return jsonOpenOk(name, base64);
         } catch (IOException err) {
@@ -576,22 +589,29 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private String saveBytesTo(Uri uri, byte[] bytes, String fallbackName) {
+    /** Write `bytes` to `uri`; null when written, else the failure result. */
+    private String writeBytes(Uri uri, byte[] bytes) {
         try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
             if (out == null) return jsonFailed(FAILED_SAVE);
             out.write(bytes);
             out.flush();
-            rememberCurrentFile(uri, fallbackName);
-            return jsonSaveOk(currentNameOr(fallbackName));
+            return null;
         } catch (IOException err) {
             return jsonFailed(FAILED_SAVE, err);
         }
     }
 
-    private Intent createDocumentIntent(String suggestedName) {
+    private String saveBytesTo(Uri uri, byte[] bytes, String fallbackName) {
+        final String failed = writeBytes(uri, bytes);
+        if (failed != null) return failed;
+        rememberCurrentFile(uri, fallbackName);
+        return jsonSaveOk(currentNameOr(fallbackName));
+    }
+
+    private Intent createDocumentIntent(String suggestedName, String mimeType) {
         final Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         create.addCategory(Intent.CATEGORY_OPENABLE);
-        create.setType(MIME_OCTET_STREAM);
+        create.setType(mimeType);
         create.putExtra(Intent.EXTRA_TITLE, suggestedName);
         startInGameFolder(create);
         create.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -600,18 +620,23 @@ public final class MainActivity extends Activity {
         return create;
     }
 
-    private String saveViaCreateDocument(byte[] bytes, String suggestedName) {
+    /** Let the player name a new file of `mimeType` and write `bytes` there; a saved game becomes the current file, a puzzle does not. */
+    private String writeViaCreatePicker(byte[] bytes, String suggestedName, String mimeType, boolean bindsFile) {
         final Intent result;
         try {
-            result = awaitResultIntent(REQUEST_CREATE_DOCUMENT, createDocumentIntent(suggestedName));
+            result = awaitResultIntent(REQUEST_CREATE_DOCUMENT, createDocumentIntent(suggestedName, mimeType));
         } catch (InterruptedException err) {
             Thread.currentThread().interrupt();
             return jsonFailed(FAILED_INTERRUPTED, err);
         }
         if (result == null || result.getData() == null) return jsonCancelled();
-        rememberPersistedPermission(result);
         final Uri uri = result.getData();
         final String name = displayNameOf(uri, suggestedName);
+        if (!bindsFile) {
+            final String failed = writeBytes(uri, bytes);
+            return failed != null ? failed : jsonSaveOk(name);
+        }
+        rememberPersistedPermission(result);
         return saveBytesTo(uri, bytes, name);
     }
 
@@ -688,33 +713,51 @@ public final class MainActivity extends Activity {
         return pick;
     }
 
+    /** One method per file step (`flows/android_steps.js`), plus the page's boot, theme and error signals. */
     private final class AndroidFileBridge {
+        /** The bound file, else a new file the player names. */
         @JavascriptInterface
-        public String saveSudokuFile(String base64, String suggestedName, boolean saveAs) {
+        public String save(String base64, String suggestedName) {
             return withPayload(base64, bytes -> {
-                final Uri uri = saveAs ? null : currentUri();
+                final Uri uri = currentUri();
                 if (uri != null) return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
-                return saveViaCreateDocument(bytes, suggestedName);
+                return writeViaCreatePicker(bytes, suggestedName, MIME_OCTET_STREAM, true);
             });
         }
 
         @JavascriptInterface
-        public String openSudokuFile() {
-            return openViaPicker();
+        public String saveAs(String base64, String suggestedName) {
+            return withPayload(base64, bytes -> writeViaCreatePicker(bytes, suggestedName, MIME_OCTET_STREAM, true));
         }
 
+        /** The bound file, else the default visible file. */
         @JavascriptInterface
-        public String saveSudokuFileToExisting(String base64) {
-            return withPayload(base64, bytes -> saveViaPickExisting(bytes));
-        }
-
-        @JavascriptInterface
-        public String saveCurrentSudokuFile(String base64, String suggestedName) {
+        public String autosave(String base64, String suggestedName) {
             return withPayload(base64, bytes -> {
                 final Uri uri = currentUri();
                 if (uri == null) return saveToDefaultVisible(bytes, suggestedName);
                 return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
             });
+        }
+
+        @JavascriptInterface
+        public String reclaimFile(String base64) {
+            return withPayload(base64, bytes -> saveViaPickExisting(bytes));
+        }
+
+        @JavascriptInterface
+        public String open() {
+            return readViaPicker(OPEN_MIME_TYPES, true, OPENED_FALLBACK_NAME);
+        }
+
+        @JavascriptInterface
+        public String importPuzzle() {
+            return readViaPicker(PUZZLE_MIME_TYPES, false, "");
+        }
+
+        @JavascriptInterface
+        public String exportPuzzle(String base64, String suggestedName) {
+            return withPayload(base64, bytes -> writeViaCreatePicker(bytes, suggestedName, MIME_TEXT_PLAIN, false));
         }
 
         @JavascriptInterface

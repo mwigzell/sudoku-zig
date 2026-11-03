@@ -2,8 +2,9 @@
 
 import assert from "node:assert/strict";
 import * as androidSteps from "./android_steps.js";
+import * as autosave from "./autosave.js";
 import * as stepRunner from "./step_runner.js";
-import { errorModalStub, moveWithAutosave, withCoreFlow } from "../test_support.mjs";
+import { errorModalStub, moveWithAutosave, settleFlow, withCoreFlow } from "../test_support.mjs";
 
 const okFetch = async () => ({ ok: true, status: 204 });
 
@@ -20,7 +21,7 @@ async function autosaveGame() {
   const bridgeWrites = [];
   const hostNames = [];
   const bridge = {
-    saveCurrentSudokuFile(base64, suggestedName) {
+    autosave(base64, suggestedName) {
       bridgeWrites.push([base64, suggestedName]);
       return { ok: true, name: suggestedName };
     },
@@ -42,7 +43,7 @@ async function autosaveGame() {
   const prevChoose = globalThis.__sudokuChoose;
   globalThis.__sudokuChoose = async () => true;
   const bridge = {
-    saveCurrentSudokuFile(_b64, suggestedName) {
+    autosave(_b64, suggestedName) {
       bridgeWrites.push(suggestedName);
       return { ok: true, name: "bound.sud" };
     },
@@ -60,7 +61,7 @@ async function autosaveGame() {
   // Autosave adopts the file name the bridge actually wrote.
   const { game, session } = await autosaveGame();
   const hostNames = [];
-  const bridge = { saveCurrentSudokuFile: () => ({ ok: true, name: "game2.sud" }), currentSudokuFileName: () => "" };
+  const bridge = { autosave: () => ({ ok: true, name: "game2.sud" }), currentSudokuFileName: () => "" };
   const fetchFn = async (url, init) => {
     if (url === "./current-file") hostNames.push(init.headers["X-Sudoku-Filename"]);
     return { ok: true, status: 204 };
@@ -83,15 +84,15 @@ async function autosaveGame() {
     return answers.shift();
   };
   const bridge = {
-    saveCurrentSudokuFile: () => {
+    autosave: () => {
       calls.push(["autosave"]);
       return { ok: false, reason: "default_taken", name: "sudoku.sud", dir: "Download/Sudoku" };
     },
-    saveSudokuFile: (_b64, name, saveAs) => {
-      calls.push(["save_as", name, saveAs]);
+    saveAs: (_b64, name) => {
+      calls.push(["save_as", name]);
       return { ok: false, cancelled: true };
     },
-    saveSudokuFileToExisting: () => {
+    reclaimFile: () => {
       calls.push(["reclaim_file"]);
       return { ok: true, name: "sudoku.sud" };
     },
@@ -106,7 +107,7 @@ async function autosaveGame() {
   assert.deepEqual(calls, [
     ["autosave"],
     ["ask", "Pick it", "New name"],
-    ["save_as", "sudoku.sud", true],
+    ["save_as", "sudoku.sud"],
     ["ask", "Pick it", "New name"],
     ["reclaim_file"],
   ]);
@@ -120,29 +121,75 @@ async function autosaveGame() {
   const session = { legend: { save: true, save_as: true }, state: { cells: [] }, default_save_filename: "sudoku.sud" };
   const saves = [];
   const bridge = {
-    saveSudokuFile: (_b64, name, saveAs) => {
-      saves.push([name, saveAs]);
-      return saveAs ? { ok: false, cancelled: true } : { ok: true, name };
+    save: (_b64, name) => {
+      saves.push(["save", name]);
+      return { ok: true, name };
+    },
+    saveAs: (_b64, name) => {
+      saves.push(["save_as", name]);
+      return { ok: false, cancelled: true };
     },
     currentSudokuFileName: () => "bound.sud",
   };
   const steps = androidSteps.androidSteps(game, session, bridge, { fetchFn: okFetch });
   assert.equal((await stepRunner.runCommand(game, { action: "save" }, steps)).kind, "show_status");
   assert.deepEqual(await stepRunner.runCommand(game, { action: "save_as" }, steps), { kind: "done" }, "a closed picker ends quietly");
-  assert.deepEqual(saves, [["bound.sud", false], ["bound.sud", true]]);
+  assert.deepEqual(saves, [["save", "bound.sud"], ["save_as", "bound.sud"]]);
 }
 
 {
-  // Open and Import read through the bridge's picker; closing it is a cancel.
+  // Open reads through the bridge's saved-game picker; closing it is a cancel.
   const bytes = new Uint8Array([2, 4, 6, 8]);
   const answers = [{ ok: true, name: "bridge.sud", base64: Buffer.from(bytes).toString("base64") }, { ok: false, cancelled: true }];
-  const bridge = { openSudokuFile: async () => answers.shift() };
+  const bridge = { open: async () => answers.shift() };
   const steps = androidSteps.androidSteps({}, {}, bridge);
   const picked = await steps.open(null);
   assert.equal(picked.ok, true);
   assert.equal(picked.name, "bridge.sud");
   assert.deepEqual([...picked.bytes], [...bytes]);
-  assert.deepEqual(await steps.importPuzzle(null), { ok: false, cancelled: true });
+  assert.deepEqual(await steps.open(null), { ok: false, cancelled: true });
+}
+
+{
+  // Import reads through the bridge's puzzle picker; Export hands the puzzle to the bridge under core's name.
+  const puzzle = "puzzle line 1";
+  const exported = [];
+  const bridge = {
+    importPuzzle: () => ({ ok: true, name: "picked.txt", base64: Buffer.from(puzzle).toString("base64") }),
+    exportPuzzle: (b64, name) => {
+      exported.push([Buffer.from(b64, "base64").toString(), name]);
+      return { ok: true, name: "written.txt" };
+    },
+    open: () => assert.fail("Import must not use the saved-game picker"),
+  };
+  const game = { toPuzzle: () => ({ ok: true, bytes: new TextEncoder().encode(puzzle) }) };
+  const steps = androidSteps.androidSteps(game, {}, bridge, { exportText: () => assert.fail("Export must not use the browser picker") });
+  const picked = await steps.importPuzzle(null);
+  assert.equal(new TextDecoder().decode(picked.bytes), puzzle);
+  assert.equal(picked.name, "picked.txt");
+  assert.deepEqual(await steps.exportPuzzle("sudoku.txt"), { ok: true, name: "written.txt" });
+  assert.deepEqual(exported, [[puzzle, "sudoku.txt"]]);
+}
+
+{
+  // Each app close the Android entry reports flushes the host restore copy only, kept alive past the page.
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([3]) }) }, { autoSave: true, opened: "bound.sud" });
+  const session = { config: { auto_save: true }, boundFilename: "bound.sud", default_save_filename: "sudoku.sud" };
+  const flushes = [];
+  const fetchFn = async (url, init) => {
+    if (url === "./current-file") flushes.push([init.headers["X-Sudoku-Filename"], init.headers["X-Sudoku-Restore-Copy"], init.keepalive]);
+    return { ok: true, status: 204 };
+  };
+  const win = { addEventListener() {} };
+  autosave.wireFlushOnClose(game, androidSteps.androidSteps(game, session, {}, { fetchFn }), { win });
+  win[autosave.FLUSH_ON_CLOSE_HOOK]();
+  await settleFlow();
+  win[autosave.FLUSH_ON_CLOSE_HOOK]();
+  await settleFlow();
+  assert.deepEqual(flushes, [
+    ["bound.sud", "true", true],
+    ["bound.sud", "true", true],
+  ]);
 }
 
 console.log("android_steps.test.mjs OK");
