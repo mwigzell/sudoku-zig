@@ -1,18 +1,32 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const android_logcat = @import("../android/logcat.zig");
+const wasm_console = @import("../wasm/console_log.zig");
 
 /// Severity ranks for runtime filtering; enum order IS the rank, so with the
 /// .info default, debug is suppressed and info..fatal are emitted.
 pub const Severity = enum { debug, info, warn, err, fatal };
 pub const build_allows_debug_logs = builtin.mode == .debug;
+const is_wasm = builtin.os.tag == .freestanding;
 
 /// Minimum severity emitted at runtime; set from parsed CLI flags before the game starts.
 pub var min_level: Severity = .info;
 
+/// Wasm is always built as Debug and ships in every host, so there the host's build mode decides
+/// whether debug lines run; the wasm entry sets it from the host's build info.
+pub var host_allows_debug_logs: bool = false;
+
+fn debugAllowed() bool {
+    if (comptime is_wasm) return host_allows_debug_logs;
+    return build_allows_debug_logs;
+}
+
+/// Test builds write emitted lines here when set, so a test can check what the sink receives.
+pub var test_sink: if (builtin.is_test) ?*std.Io.Writer else void = if (builtin.is_test) null else {};
+
 /// .fatal always emits; everything else is gated against min_level.
 pub fn shouldEmit(sev: Severity) bool {
-    if (sev == .debug and !build_allows_debug_logs) return false;
+    if (sev == .debug and !debugAllowed()) return false;
     if (sev == .fatal) return true;
     return @backingInt(sev) >= @backingInt(min_level);
 }
@@ -58,7 +72,7 @@ pub fn Logger(comptime scope: @EnumLiteral()) type {
     };
 }
 
-const android_line_cap = 1024;
+const line_cap = 1024;
 
 fn androidPriority(sev: Severity) c_int {
     return switch (sev) {
@@ -74,7 +88,7 @@ fn formatAndroidLine(
     comptime scope_name: []const u8,
     comptime fmt: []const u8,
     args: anytype,
-    buf: *[android_line_cap]u8,
+    buf: *[line_cap]u8,
 ) ?[:0]const u8 {
     const max = buf.len - 1;
     var idx: usize = 0;
@@ -93,17 +107,27 @@ fn emit(
     comptime fmt: []const u8,
     args: anytype,
 ) void {
-    // wasm has no stderr; on the web the JS shell logs its own failures.
-    if (comptime builtin.os.tag == .freestanding) return;
+    // wasm has no stderr: the JS shell writes the line to the console and the host log.
+    if (comptime is_wasm) {
+        var text_buf: [line_cap]u8 = undefined;
+        var w: std.Io.Writer = .fixed(&text_buf);
+        w.print(fmt, args) catch {};
+        wasm_console.write(@backingInt(sev), scope_name, w.buffered());
+        return;
+    }
     if (comptime builtin.abi == .android) {
-        var line_buf: [android_line_cap]u8 = undefined;
+        var line_buf: [line_cap]u8 = undefined;
         const line = formatAndroidLine(scope_name, fmt, args, &line_buf) orelse return;
         android_logcat.write(androidPriority(sev), line);
         return;
     }
 
-    // The test runner fails any test that logs at warn or error, and tests drive those paths on purpose.
     if (comptime builtin.is_test) {
+        if (test_sink) |sink| {
+            sink.print("{s} [{s}] " ++ fmt ++ "\n", .{ @tagName(sev), scope_name } ++ args) catch {};
+            return;
+        }
+        // The test runner fails any test that logs at warn or error, and tests drive those paths on purpose.
         if (sev == .warn or sev == .err) return log.info(fmt, args);
     }
     switch (sev) {
@@ -146,6 +170,21 @@ test "shouldEmit suppresses severities below min_level" {
     min_level = .info;
 }
 
+test "a core line reaches the sink, and lines below min_level do not" {
+    var buf: [512]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&buf);
+    test_sink = &sink;
+    defer test_sink = null;
+    min_level = .warn;
+    defer min_level = .info;
+    const log = Logger(.flow);
+    log.debug("parity {s}", .{"debug"});
+    log.info("parity {s}", .{"info"});
+    log.warn("parity {s}", .{"warn"});
+    log.err("parity {s}", .{"err"});
+    try std.testing.expectEqualStrings("warn [flow] parity warn\nerr [flow] parity err\n", sink.buffered());
+}
+
 test "shouldEmit always allows fatal" {
     min_level = .err;
     try std.testing.expect(shouldEmit(.fatal));
@@ -161,7 +200,7 @@ test "androidPriority maps severities to logcat priorities" {
 }
 
 test "formatAndroidLine includes scope prefix and payload" {
-    var buf: [android_line_cap]u8 = undefined;
+    var buf: [line_cap]u8 = undefined;
     const line = formatAndroidLine("web_host", "current-file write success: bytes={d}", .{117}, &buf) orelse
         return error.TestFailed;
     try std.testing.expectEqualStrings("[web_host] current-file write success: bytes=117", line);

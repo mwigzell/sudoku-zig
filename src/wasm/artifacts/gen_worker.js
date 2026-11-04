@@ -13,7 +13,10 @@ self.onmessage = async (event) => {
   if (msg?.type !== "run") return;
 
   try {
-    if (!game) game = await glue.loadArtifact(msg.wasmBytes);
+    if (!game) {
+      game = await glue.loadArtifact(msg.wasmBytes);
+      game.setLogListener((level, scope, text) => self.postMessage({ type: "log", level, scope, text }));
+    }
     game.setGenProgressListener((phase, text) => {
       self.postMessage({ type: "progress", phase, text });
     });

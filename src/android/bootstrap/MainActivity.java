@@ -76,6 +76,7 @@ public final class MainActivity extends Activity {
     private static final String FLUSH_ON_CLOSE_JS = "window.__sudokuFlushOnClose && window.__sudokuFlushOnClose();";
     private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/" + JniHost.defaultFolderName();
     /** Bridge reason: this install may not write the file (an earlier install created it, or its permission is gone). */
+    private static final String CLIENT_LOG_SCRIPT = "/client_log.js";
     private static final String REASON_TAKEN = "taken";
     /** Bridge result keys, read by `flows/android_steps.js`. */
     private static final String KEY_OK = "ok";
@@ -163,6 +164,8 @@ public final class MainActivity extends Activity {
             @Override
             public boolean onConsoleMessage(ConsoleMessage message) {
                 if (message == null) return true;
+                // The client log posts its lines to the host, which writes them to logcat already.
+                if (message.sourceId() != null && message.sourceId().endsWith(CLIENT_LOG_SCRIPT)) return true;
                 final String rendered =
                     "JS console: " + message.message() + " @ " + message.sourceId() + ":" + message.lineNumber();
                 switch (message.messageLevel()) {

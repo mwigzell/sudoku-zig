@@ -64,14 +64,12 @@ const UNKNOWN_STEP_PREFIX = "unknown flow step: ";
 const NO_REASON = "no reason given";
 
 /**
- * A failed `input` for core; the reason is logged here because core cannot log on wasm.
+ * A failed `input` for core; core logs the reason.
  * @param {string} input
  * @param {{ error?: string }} [result]
  */
 function failedInput(input, result) {
-  const error = result?.error ?? NO_REASON;
-  clientLog.clientLog("flow", "err", "step_failed", { input, error });
-  return { input, ok: false, error };
+  return { input, ok: false, error: result?.error ?? NO_REASON };
 }
 
 /**

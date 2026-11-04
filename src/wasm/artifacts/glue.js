@@ -23,6 +23,10 @@ const writeBytes = (memory, ptr, bytes) => {
 
 let genProgressListener = null;
 
+// Core's `logger.Severity` names, in rank order.
+/** @type {import("../types").LogLevel[]} */
+export const LOG_LEVELS = ["debug", "info", "warn", "err", "fatal"];
+
 function randomSeed32() {
   try {
     const c = globalThis.crypto;
@@ -42,10 +46,16 @@ function randomSeed32() {
 export async function loadArtifact(wasmBytes) {
   /** @type {WebAssembly.Exports} */
   let exports;
+  /** @type {((level: import("../types").LogLevel, scope: string, text: string) => void) | null} */
+  let logListener = null;
+  const decodeText = (ptr, len) => new TextDecoder().decode(new Uint8Array(exports.memory.buffer, ptr, len));
   const imports = {
     env: {
       sudoku_gen_progress(phase, textPtr, textLen) {
-        genProgressListener?.(phase, new TextDecoder().decode(new Uint8Array(exports.memory.buffer, textPtr, textLen)));
+        genProgressListener?.(phase, decodeText(textPtr, textLen));
+      },
+      sudoku_log(level, scopePtr, scopeLen, textPtr, textLen) {
+        logListener?.(LOG_LEVELS[level] ?? LOG_LEVELS[LOG_LEVELS.length - 1], decodeText(scopePtr, scopeLen), decodeText(textPtr, textLen));
       },
     },
   };
@@ -66,6 +76,23 @@ export async function loadArtifact(wasmBytes) {
     // Worker and main-thread generators share one progress callback contract.
     setGenProgressListener(fn) {
       genProgressListener = fn ?? null;
+    },
+
+    /**
+     * Where core's log lines go; core has already filtered them.
+     * @param {((level: import("../types").LogLevel, scope: string, text: string) => void) | null} fn
+     */
+    setLogListener(fn) {
+      logListener = fn ?? null;
+    },
+
+    /**
+     * Whether core emits a line at `level` (its log level and the host's build mode decide).
+     * @param {import("../types").LogLevel} level
+     */
+    logEnabled(level) {
+      const rank = LOG_LEVELS.indexOf(level);
+      return rank >= 0 && exports.logEnabled(rank) !== 0;
     },
 
     // Engine startup entry (same semantics as native new-game init).

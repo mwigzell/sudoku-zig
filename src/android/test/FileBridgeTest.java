@@ -83,6 +83,9 @@ public final class FileBridgeTest {
     private static final Pattern BOUND_NAME = Pattern.compile("name=\"current_name\">([^<]*)<");
     /** The host's log line for a write of the hidden restore copy. */
     private static final Pattern RESTORE_COPY_WRITE = Pattern.compile("current-file write: .*restore_copy=true");
+    private static final Pattern CORE_FLOW_LOG = Pattern.compile("client-log \\[flow\\] write of \\S+: this install may not write it");
+    private static final Pattern JS_READY_LOG = Pattern.compile("client-log \\[startup\\] ready");
+    private static final Pattern CONSOLE_COPY_LOG = Pattern.compile("JS console: .*client_log\\.js");
     private static final Pattern BOUNDS = Pattern.compile("\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]");
     private static final String COLUMN_LABELS = "ABCDEFGHI";
     private static final String FILL_DIGIT = "5";
@@ -449,6 +452,15 @@ public final class FileBridgeTest {
         assertFalse("the picker is in the default folder, not the folder above it",
             device.hasObject(By.res(PICKER_ITEM_NAME).text(SAVE_FOLDER_NAME)));
         backOutOfPicker();
+    }
+
+    @Test
+    public void coreAndJsLogLinesReachLogcat() throws IOException {
+        sh("logcat -c\n");
+        reachTakenAskAfterReinstall();
+        awaitLog(CORE_FLOW_LOG);
+        awaitLog(JS_READY_LOG);
+        assertFalse("the WebView does not copy the client log's lines too", CONSOLE_COPY_LOG.matcher(sh("logcat -d\n")).find());
     }
 
     @Test

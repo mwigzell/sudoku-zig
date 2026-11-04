@@ -36,6 +36,7 @@ For this repo's shared-core architecture, **policy centralization is mandatory**
 
 - Front ends (native shell, web JS, Android host/WebView) are adapters: input/output, lifecycle, presentation.
 - Shared seams (engine/startup/host contracts) own policy: rule semantics, save/restore/autosave semantics, startup decisions, and log filtering policy.
+- **One log line per event.** Do not log the same event twice (e.g. an adapter logging a failure reason core already logs, or two sinks writing one line to the same host log).
 - Do **not** duplicate or fork policy in a front end "for convenience". If a front end appears to need custom behavior, extract or extend a shared seam instead.
 - **Text ownership follows the behaviour.** Whoever implements a behaviour writes the words the user sees for it. For engine, flow and generation behaviour that is core: adapters show core's text and pass their technical reason (`err.message`, Zig error names) to core for the log, never into a dialog. A platform writes text only for what it alone implements (e.g. web boot failure before wasm loads). Dialog and status text is always full sentences.
 

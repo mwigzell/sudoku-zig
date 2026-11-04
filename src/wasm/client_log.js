@@ -1,29 +1,23 @@
-// client_log.js — client diagnostics: console output and `/client-log` posts, filtered by the host's log level.
+// client_log.js — one output path for core and JS log lines: the console and `/client-log` (the host log).
+// Core decides which lines run; JS lines wait for core while the wasm loads.
 
 const CLIENT_LOG_PATH = "./client-log";
 const DEFAULT_CLIENT_LOG_LEVEL = "info";
-const CLIENT_LOG_LEVEL_STATE = "__SUDOKU_CLIENT_LOG_LEVEL";
 const LOG_LEVEL_DEBUG = "debug";
 const LOG_LEVEL_INFO = "info";
 const LOG_LEVEL_WARN = "warn";
 const LOG_LEVEL_ERR = "err";
 const LOG_LEVEL_FATAL = "fatal";
+const PENDING_LINES_CAP = 64;
 
-const LOG_LEVEL_RANK = {
-  [LOG_LEVEL_DEBUG]: 0,
-  [LOG_LEVEL_INFO]: 1,
-  [LOG_LEVEL_WARN]: 2,
-  [LOG_LEVEL_ERR]: 3,
-  [LOG_LEVEL_FATAL]: 4,
-};
+/** @typedef {import("./types").LogLevel} LogLevel */
+/** @typedef {{ logEnabled(level: LogLevel): boolean }} LogFilter */
+/** @typedef {{ scope: string, level: LogLevel, event: string, details: Record<string, unknown> }} LogLine */
 
-function clientLogConsoleEnabled() {
-  return globalThis.__SUDOKU_LOG === true;
-}
-
-function clientLogPostEnabled() {
-  return globalThis.__SUDOKU_LOG_POST === true;
-}
+/** @type {LogFilter | null} */
+let filter = null;
+/** @type {LogLine[]} */
+let pending = [];
 
 function consoleWriterForLevel(level) {
   if (level === LOG_LEVEL_WARN) return console.warn;
@@ -32,6 +26,7 @@ function consoleWriterForLevel(level) {
   return console.info;
 }
 
+/** @returns {LogLevel} */
 function normalizedClientLogLevel(level) {
   if (
     level === LOG_LEVEL_DEBUG ||
@@ -55,75 +50,63 @@ function formatClientLogLine(scopeName, eventName, details) {
   return `[${scopeName}] ${eventName} ${detailsText}`;
 }
 
-function normalizedClientLogLevelFromWire(level) {
-  if (typeof level === "number" && Number.isFinite(level)) {
-    const names = [LOG_LEVEL_DEBUG, LOG_LEVEL_INFO, LOG_LEVEL_WARN, LOG_LEVEL_ERR, LOG_LEVEL_FATAL];
-    return names[level] ?? DEFAULT_CLIENT_LOG_LEVEL;
-  }
-  return normalizedClientLogLevel(level);
-}
-
-function effectiveClientLogLevel() {
-  return normalizedClientLogLevelFromWire(globalThis[CLIENT_LOG_LEVEL_STATE]);
-}
-
-function shouldEmitClientLog(level) {
-  const resolvedLevel = normalizedClientLogLevel(level);
-  return LOG_LEVEL_RANK[resolvedLevel] >= LOG_LEVEL_RANK[effectiveClientLogLevel()];
-}
-
-/**
- * A debug host build sends client diagnostics to the console and the host log (terminal, logcat);
- * a release build leaves both switches as they are (off unless set).
- * @param {boolean} debugBuild the host's build mode, from `/build-info.json`
- */
-export function enableTransportsForDebugBuild(debugBuild) {
-  if (debugBuild !== true) return;
-  globalThis.__SUDOKU_LOG = true;
-  globalThis.__SUDOKU_LOG_POST = true;
-}
-
-/** Set threshold used by JS console/client-log transport. */
-export function setClientLogLevel(level) {
-  globalThis[CLIENT_LOG_LEVEL_STATE] = normalizedClientLogLevelFromWire(level);
-}
-
-/**
- * Structured client-side diagnostics transport.
- * Console output and host posting are independently toggled via globals:
- * - __SUDOKU_LOG (console)
- * - __SUDOKU_LOG_POST (/client-log)
- * @param {string} scope
- * @param {"debug"|"info"|"warn"|"err"|string} level
- * @param {string} event
- * @param {Record<string, unknown>} [details]
- * @returns {void}
- */
-export function clientLog(scope, level, event, details = {}) {
-  const scopeName = typeof scope === "string" && scope.length > 0 ? scope : "client";
-  const eventName = typeof event === "string" && event.length > 0 ? event : "event";
-  const resolvedLevel = normalizedClientLogLevel(level);
-  if (!shouldEmitClientLog(resolvedLevel)) return;
-  if (clientLogConsoleEnabled()) {
-    const writer = consoleWriterForLevel(resolvedLevel);
-    writer(formatClientLogLine(scopeName, eventName, details));
-  }
-  if (!clientLogPostEnabled()) return;
+/** @param {LogLine} line */
+function writeLine({ scope, level, event, details }) {
+  consoleWriterForLevel(level)(formatClientLogLine(scope, event, details));
   const fetchFn = globalThis.fetch;
   if (typeof fetchFn !== "function") return;
   // Keep lane/stage aliases for compatibility with historical diagnostics.
-  const payload = {
-    level: resolvedLevel,
-    scope: scopeName,
-    event: eventName,
-    lane: scopeName,
-    stage: eventName,
-    details,
-  };
+  const payload = { level, scope, event, lane: scope, stage: event, details };
   void fetchFn(CLIENT_LOG_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     keepalive: true,
   }).catch(() => {});
+}
+
+/**
+ * Core filters JS lines from now on; lines logged while the wasm loaded are written if core lets them run.
+ * @param {LogFilter} core the loaded game (`glue.loadArtifact`)
+ */
+export function useCore(core) {
+  filter = core;
+  const waiting = pending;
+  pending = [];
+  for (const line of waiting) {
+    if (core.logEnabled(line.level)) writeLine(line);
+  }
+}
+
+/**
+ * A line core already filtered (`glue.js` `setLogListener`): write it, never filter again.
+ * @param {LogLevel} level
+ * @param {string} scope
+ * @param {string} text
+ */
+export function coreLine(level, scope, text) {
+  writeLine({ scope, level: normalizedClientLogLevel(level), event: text, details: {} });
+}
+
+/**
+ * Structured client-side diagnostics; core decides whether the level runs.
+ * @param {string} scope
+ * @param {LogLevel | string} level
+ * @param {string} event
+ * @param {Record<string, unknown>} [details]
+ * @returns {void}
+ */
+export function clientLog(scope, level, event, details = {}) {
+  /** @type {LogLine} */
+  const line = {
+    scope: typeof scope === "string" && scope.length > 0 ? scope : "client",
+    level: normalizedClientLogLevel(level),
+    event: typeof event === "string" && event.length > 0 ? event : "event",
+    details,
+  };
+  if (filter === null) {
+    if (pending.length < PENDING_LINES_CAP) pending.push(line);
+    return;
+  }
+  if (filter.logEnabled(line.level)) writeLine(line);
 }

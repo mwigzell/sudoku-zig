@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import * as stepRunner from "./step_runner.js";
+import * as clientLog from "../client_log.js";
 import { loadCoreFlow, loadGame, openAs, PUZZLE_LINE, startNewGame, coreText, fillText } from "../test_support.mjs";
 
 /** Handlers that record every step and answer from the options; `exists` makes a write without `replace` find its file there. */
@@ -142,11 +143,12 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   const logged = [];
   const originalError = console.error;
   console.error = (line) => logged.push(line);
-  globalThis.__SUDOKU_LOG = true;
+  clientLog.useCore(core);
+  core.setLogListener(clientLog.coreLine);
   try {
     await stepRunner.runCommand(core, SAVE, failed);
   } finally {
-    delete globalThis.__SUDOKU_LOG;
+    core.setLogListener(null);
     console.error = originalError;
   }
   assert.deepEqual(failed.log.at(-1), ["error", coreText.SAVE_FAILED_MSG]);

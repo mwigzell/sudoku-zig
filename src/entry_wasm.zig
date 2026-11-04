@@ -205,9 +205,16 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
 }
 
 /// Serving host's build facts: one wasm ships in every host, so its own build mode says nothing.
-/// debug_build: 1 when the host is a Debug build (shown in About).
+/// debug_build: 1 when the host is a Debug build (shown in About; lets debug log lines run).
 export fn setHostBuildInfo(debug_build: u32) callconv(.c) void {
     host_debug_build = debug_build != 0;
+    logger.host_allows_debug_logs = host_debug_build;
+}
+
+/// Whether core emits a log line at `level` (`logger.Severity` rank); the JS shell asks before logging its own lines.
+export fn logEnabled(level: u32) callconv(.c) u32 {
+    const sev = std.enums.fromInt(logger.Severity, level) orelse return 0;
+    return @intFromBool(logger.shouldEmit(sev));
 }
 
 /// Product metadata for Help/About as JSON.

@@ -1,5 +1,7 @@
 // gen_client.js — start puzzle gen in a worker; testable via injected Worker mock.
 
+import * as clientLog from "../client_log.js";
+
 /** Module workers need a secure context (https or localhost). */
 export function canUseGenWorker() {
   return typeof Worker !== "undefined" && globalThis.isSecureContext === true;
@@ -86,6 +88,10 @@ export function startGenInWorker({
 
       worker.onmessage = (event) => {
         const msg = event.data;
+        if (msg?.type === "log") {
+          clientLog.coreLine(msg.level, msg.scope, msg.text);
+          return;
+        }
         if (msg?.type === "progress") {
           if (cancelling) return;
           onProgress?.(msg.phase, msg.text);

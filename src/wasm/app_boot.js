@@ -28,12 +28,10 @@ function logUncaughtErrors(win) {
  * @returns {Promise<void>}
  */
 export async function bootSudokuWebApp(root = document) {
-  // Leave client diagnostics opt-in; release paths should not force debug telemetry.
-  if (globalThis.__SUDOKU_LOG !== true) globalThis.__SUDOKU_LOG = false;
-  if (globalThis.__SUDOKU_LOG_POST !== true) globalThis.__SUDOKU_LOG_POST = false;
-
   const boardEl = root.getElementById("board");
   const errorModal = appWire.createErrorModal(root);
+  /** @type {import("./types").GameApi | null} */
+  let game = null;
 
   try {
     clientLog.clientLog("startup", "debug", "module_start");
@@ -48,7 +46,8 @@ export async function bootSudokuWebApp(root = document) {
     const bytes = new Uint8Array(await res.arrayBuffer());
     clientLog.clientLog("startup", "debug", "artifact_bytes", { bytes: bytes.length });
 
-    const game = await glue.loadArtifact(bytes);
+    game = await glue.loadArtifact(bytes);
+    game.setLogListener(clientLog.coreLine);
     clientLog.clientLog("startup", "debug", "wasm_loaded");
 
     // Boot phase 3: wire generation modal and optional worker generation context.
@@ -97,6 +96,7 @@ export async function bootSudokuWebApp(root = document) {
   } catch (err) {
     const errorText = err && err.message ? err.message : String(err);
     clientLog.clientLog("startup", "err", "boot_failed", { error: errorText });
+    if (game) clientLog.useCore(game);
     globalThis.__sudokuSignalAndroidBootReady?.();
     globalThis.__sudokuShowBootFailure?.();
   }

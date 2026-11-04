@@ -53,6 +53,33 @@ function makeMockWorker() {
   assert.equal(worker.terminated, true);
 }
 
+// A core line from the worker's wasm goes to the page's log output as it came.
+{
+  const MockWorker = makeMockWorker();
+  const { promise } = genClient.startGenInWorker({
+    workerUrl: "/gen_worker.js",
+    wasmBytes: new Uint8Array([0]),
+    difficulty: 1,
+    logLevel: 1,
+    WorkerCtor: MockWorker,
+  });
+  const worker = MockWorker.instances[0];
+  const originalWarn = console.warn;
+  const originalFetch = globalThis.fetch;
+  const warned = [];
+  console.warn = (line) => warned.push(line);
+  globalThis.fetch = undefined;
+  try {
+    worker.emit({ type: "log", level: "warn", scope: "gen", text: "log line 1" });
+  } finally {
+    console.warn = originalWarn;
+    globalThis.fetch = originalFetch;
+  }
+  assert.deepEqual(warned, ["[gen] log line 1 {}"]);
+  worker.emit({ type: "done", line: "0".repeat(81) });
+  assert.equal((await promise).ok, true);
+}
+
 {
   const MockWorker = makeMockWorker();
   const { promise, cancel } = genClient.startGenInWorker({
