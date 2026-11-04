@@ -172,13 +172,13 @@ pub const SaveFlow = struct {
         };
     }
 
-    /// The platform's file belongs to an earlier install: ask whether to pick it or choose a new name.
+    /// This install may not write the platform's file: ask whether to choose it again or save under a new name.
     fn askTaken(self: *SaveFlow, taken: step_mod.Taken) Step {
         if (taken.name.len > 0 and taken.name.len <= self.name_buf.len) {
             std.mem.copyForwards(u8, self.name_buf[0..taken.name.len], taken.name);
             self.name_len = taken.name.len;
         }
-        const text = std.fmt.bufPrint(&self.text_buf, file_policy.TAKEN_FMT, .{ self.targetName(), taken.dir }) catch
+        const text = std.fmt.bufPrint(&self.text_buf, file_policy.TAKEN_FMT, .{self.targetName()}) catch
             return self.fail(NAME_TOO_LONG_MSG);
         self.taken_text_len = text.len;
         return self.repeatTakenAsk();
@@ -301,18 +301,18 @@ test "a refused save does not ask for a target" {
     try testing.expectEqualStrings(file_policy.SAVE_WHILE_AUTO_SAVE_MSG, flow.next(.start).show_status);
 }
 
-const taken_ask_text = "The file sudoku.sud in Documents was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
+const taken_ask_text = "Can't save: Sudoku no longer has permission to save to sudoku.sud. Choose the file again to keep saving there, or save it under a new name.";
 
 fn takenAsk(flow: *SaveFlow) !void {
     _ = flow.next(.start);
-    const ask = flow.next(.{ .wrote = .{ .taken = .{ .name = "sudoku.sud", .dir = "Documents" } } }).ask;
+    const ask = flow.next(.{ .wrote = .{ .taken = .{ .name = "sudoku.sud" } } }).ask;
     try testing.expectEqualStrings(file_policy.TAKEN_TITLE, ask.title);
     try testing.expectEqualStrings(taken_ask_text, ask.text);
     try testing.expectEqualStrings(file_policy.TAKEN_PICK_LABEL, ask.ok_label);
     try testing.expectEqualStrings(file_policy.TAKEN_NEW_NAME_LABEL, ask.cancel_label);
 }
 
-test "a file taken by an earlier install asks, and Pick it reclaims the file" {
+test "a file this install may not write asks, and Choose file reclaims the file" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
     try takenAsk(&flow);
@@ -320,6 +320,17 @@ test "a file taken by an earlier install asks, and Pick it reclaims the file" {
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.currentFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+}
+
+test "a Save to a file this install may not write asks the same, and Choose file saves there" {
+    var session = FileSession{ .write_context = .continuation };
+    session.setCurrentFile("sudoku.sud");
+    var flow = SaveFlow.forCommand(&session, .save, null, false);
+    try takenAsk(&flow);
+    try testing.expect(flow.next(.{ .answered = true }) == .reclaim_file);
+    const end = flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } });
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"sudoku.sud"}), end.show_status);
+    try testing.expectEqualStrings("sudoku.sud", session.currentFile().?);
 }
 
 test "New name saves as the taken file's name, and the new file becomes the current file" {

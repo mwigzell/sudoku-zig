@@ -290,7 +290,6 @@ const JsonFlowInput = struct {
     ok: ?bool = null,
     cancelled: ?bool = null,
     taken: ?bool = null,
-    dir: ?[]const u8 = null,
     line: ?[]const u8 = null,
     @"error": ?[]const u8 = null,
 };
@@ -310,7 +309,7 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
         else if (v.cancelled == true)
             .cancelled
         else if (v.taken == true)
-            .{ .taken = .{ .name = v.name orelse return error.MissingField, .dir = v.dir orelse return error.MissingField } }
+            .{ .taken = .{ .name = v.name orelse return error.MissingField } }
         else
             .{ .failed = v.@"error" orelse return error.MissingField } },
         // A successful read carries bytes, so it arrives through `flowRead`, not as JSON.
@@ -480,6 +479,10 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "REPLACE_CONFIRM_FMT", .text = file_policy.REPLACE_CONFIRM_FMT },
         .{ .key = "REPLACE_CONFIRM_OK_LABEL", .text = file_policy.REPLACE_CONFIRM_OK_LABEL },
         .{ .key = "REPLACE_CONFIRM_CANCEL_LABEL", .text = file_policy.REPLACE_CONFIRM_CANCEL_LABEL },
+        .{ .key = "TAKEN_TITLE", .text = file_policy.TAKEN_TITLE },
+        .{ .key = "TAKEN_FMT", .text = file_policy.TAKEN_FMT },
+        .{ .key = "TAKEN_PICK_LABEL", .text = file_policy.TAKEN_PICK_LABEL },
+        .{ .key = "TAKEN_NEW_NAME_LABEL", .text = file_policy.TAKEN_NEW_NAME_LABEL },
         .{ .key = "SAVE_WHILE_AUTO_SAVE_MSG", .text = file_policy.SAVE_WHILE_AUTO_SAVE_MSG },
         .{ .key = "SAVE_FAILED_MSG", .text = flow.save.SAVE_FAILED_MSG },
         .{ .key = "RESTORE_FAILED_FMT", .text = flow.startup.RESTORE_FAILED_FMT },
@@ -925,9 +928,8 @@ test "flow input parses every step result" {
     try std.testing.expectEqualStrings("x", (try parseFlowInput(a, "{\"input\":\"generated\",\"ok\":false,\"error\":\"x\"}")).generated.failed);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"persisted\",\"ok\":true}")).persisted == .ok);
     try std.testing.expectEqualStrings("503", (try parseFlowInput(a, "{\"input\":\"persisted\",\"ok\":false,\"error\":\"503\"}")).persisted.failed);
-    const taken = (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"taken\":true,\"name\":\"sudoku.sud\",\"dir\":\"Documents\"}")).wrote.taken;
+    const taken = (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"taken\":true,\"name\":\"sudoku.sud\"}")).wrote.taken;
     try std.testing.expectEqualStrings("sudoku.sud", taken.name);
-    try std.testing.expectEqualStrings("Documents", taken.dir);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":true}")).copied == .ok);
     try std.testing.expectEqualStrings("denied", (try parseFlowInput(a, "{\"input\":\"copied\",\"ok\":false,\"error\":\"denied\"}")).copied.failed);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"ack\"}")) == .ack);

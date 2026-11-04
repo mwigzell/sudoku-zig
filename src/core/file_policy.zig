@@ -46,10 +46,10 @@ pub const REPLACE_CONFIRM_CANCEL_LABEL: []const u8 = "Cancel";
 pub const WRITE_CANCELLED_MSG: []const u8 = "The game was not saved.";
 /// Status after a successful Save / Save As; `{s}` is the written target.
 pub const SAVED_TO_FMT = "The game was saved to {s}.";
-/// Question when the platform's autosave file was created by an earlier install; `{s}` are the file and its folder.
-pub const TAKEN_TITLE: []const u8 = "Autosave file";
-pub const TAKEN_FMT = "The file {s} in {s} was saved by an earlier install. Pick it to keep autosaving there, or choose a new name.";
-pub const TAKEN_PICK_LABEL: []const u8 = "Pick it";
+/// Question when this install may not write the target (an earlier install created it, or its permission is gone); `{s}` is the file.
+pub const TAKEN_TITLE: []const u8 = "Can't save";
+pub const TAKEN_FMT = "Can't save: Sudoku no longer has permission to save to {s}. Choose the file again to keep saving there, or save it under a new name.";
+pub const TAKEN_PICK_LABEL: []const u8 = "Choose file";
 pub const TAKEN_NEW_NAME_LABEL: []const u8 = "New name";
 
 /// Status when the player asks to Save while autosave is on.
@@ -173,6 +173,6 @@ test "file prompts read as sentences that start with words, not the file name" {
     const sentence = @import("../test/sentence.zig");
     var buf: [256]u8 = undefined;
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, REPLACE_CONFIRM_FMT, .{"game.sud"}));
-    try sentence.expectSentence(try std.fmt.bufPrint(&buf, TAKEN_FMT, .{ "sudoku.sud", "Documents" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, TAKEN_FMT, .{"sudoku.sud"}));
     try sentence.expectSentence(SAVE_WHILE_AUTO_SAVE_MSG);
 }

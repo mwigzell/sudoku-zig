@@ -31,7 +31,7 @@ function runInWindow(win) {
     saveAs: wrote("saveAs"),
     autosave: (base64, name) => {
       calls.push(["autosave", base64, name]);
-      return JSON.stringify({ ok: false, reason: "default_taken", name, dir: "Download/Sudoku" });
+      return JSON.stringify({ ok: false, reason: "taken", name });
     },
     reclaimFile: (base64) => {
       calls.push(["reclaimFile", base64]);
@@ -49,9 +49,8 @@ function runInWindow(win) {
   assert.deepEqual(bridge.saveAs("QQ==", "b.sud"), { ok: true, name: "b.sud" });
   assert.deepEqual(bridge.autosave("QQ==", "sudoku.sud"), {
     ok: false,
-    reason: "default_taken",
+    reason: "taken",
     name: "sudoku.sud",
-    dir: "Download/Sudoku",
   });
   assert.deepEqual(bridge.reclaimFile(undefined), { ok: true, name: "sudoku.sud" });
   assert.deepEqual(bridge.open(), { ok: false, cancelled: true });

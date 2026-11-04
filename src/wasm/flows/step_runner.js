@@ -83,7 +83,7 @@ function wroteInput(result, name) {
   if (result?.ok === true) return { input: INPUT_WROTE, ok: true, name: result.name ?? name };
   if (result?.exists === true) return { input: INPUT_WROTE, ok: false, exists: true };
   if (result?.cancelled === true) return { input: INPUT_WROTE, ok: false, cancelled: true };
-  if (result?.taken) return { input: INPUT_WROTE, ok: false, taken: true, name: result.taken.name, dir: result.taken.dir };
+  if (result?.taken) return { input: INPUT_WROTE, ok: false, taken: true, name: result.taken.name };
   return failedInput(INPUT_WROTE, result);
 }
 

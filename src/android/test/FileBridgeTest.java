@@ -50,6 +50,8 @@ public final class FileBridgeTest {
     private static final String APP = "com.wigzell.sudoku_zig";
     /** Pushed by the host script so a test can reinstall the app. */
     private static final String APP_APK_ON_DEVICE = "/data/local/tmp/sudoku-app.apk";
+    /** The app's private files and preferences, kept across a reinstall. */
+    private static final String APP_DATA_ON_DEVICE = "/data/local/tmp/sudoku-app-data.tar";
     /** Screenshots and window hierarchies of failed tests; the host script pulls them. */
     private static final String FAILURE_DIR = "/data/local/tmp/sudoku-test-failure";
     private static final String OTHER_FOLDER = "/storage/emulated/0/Download";
@@ -88,6 +90,7 @@ public final class FileBridgeTest {
     private static final String ASK_TEXT = "replace-confirm-msg";
     private static final String ASK_OK = "replace-confirm-ok";
     private static final String ASK_CANCEL = "replace-confirm-cancel";
+    private static final String ERROR_TEXT = "error-modal-msg";
     private static final String FILE_LABEL = "current-file-desktop";
     private static final String WEB_VIEW = "android.webkit.WebView";
     // DocumentsUI views: a listed file's name, the create picker's name field, and its Save button.
@@ -393,6 +396,37 @@ public final class FileBridgeTest {
     }
 
     @Test
+    public void aRestoredBindingWithoutPermissionAsksToChooseTheFileAgainAndKeepsSavingThere() throws IOException {
+        writeAutoSaveSettings(true);
+        launchApp();
+        startEasyGame();
+        need(By.text("File"), UI_WAIT_MS).click();
+        need(By.res("file-save-as"), UI_WAIT_MS).click();
+        saveInCreatePicker(CHOSEN_NAME);
+        final String chosenPath = awaitChosenNamePath();
+        final String chosenName = chosenPath.substring(chosenPath.lastIndexOf('/') + 1);
+        assertEquals(chosenName, awaitBoundName());
+        final String savedHash = fileHash(chosenPath);
+
+        reinstallKeepingAppData();
+        launchApp();
+        tappedCells.clear();
+        fillAnEmptyCell();
+        final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
+        assertTrue("the question names the file: " + question, question.contains(chosenName));
+        assertFalse("no error is shown", device.hasObject(By.res(ERROR_TEXT)));
+
+        need(By.res(ASK_OK), UI_WAIT_MS).click();
+        need(By.res(PICKER_ITEM_NAME).text(chosenName), UI_WAIT_MS).click();
+        final String pickedHash = awaitFileHashOtherThan(chosenPath, savedHash);
+        assertEquals("the binding stays", chosenName, awaitBoundName());
+
+        fillAnEmptyCell();
+        awaitFileHashOtherThan(chosenPath, pickedHash);
+        assertFalse("later autosaves write without asking", device.hasObject(By.res(ASK_TEXT)));
+    }
+
+    @Test
     public void withNoBoundFileSaveAsStartsInTheDefaultFolderNotWhereThePickerWasLast() throws IOException {
         sh("mkdir -p " + SAVE_DIR + " && echo earlier > " + DEFAULT_PATH + "\n");
         launchApp();
@@ -457,8 +491,7 @@ public final class FileBridgeTest {
         awaitDefaultEntry();
         final String earlierHash = fileHash(DEFAULT_PATH);
 
-        final String reinstalled = sh("pm uninstall " + APP + "\n" + "pm install -t " + APP_APK_ON_DEVICE + "\n");
-        assertTrue("reinstall: " + reinstalled, reinstalled.trim().endsWith("Success"));
+        reinstallApp();
         writeAutoSaveSettings(false);
         tappedCells.clear();
 
@@ -467,6 +500,19 @@ public final class FileBridgeTest {
         fillAnEmptyCell();
         need(By.res(ASK_OK), UI_WAIT_MS);
         return earlierHash;
+    }
+
+    /** Uninstall and install the app; its files stay, owned by no install. */
+    private void reinstallApp() throws IOException {
+        final String reinstalled = sh("pm uninstall " + APP + "\n" + "pm install -t " + APP_APK_ON_DEVICE + "\n");
+        assertTrue("reinstall: " + reinstalled, reinstalled.trim().endsWith("Success"));
+    }
+
+    /** Reinstall, then put the app's private data back as Auto Backup does: the binding returns, its permission does not. */
+    private void reinstallKeepingAppData() throws IOException {
+        sh("am force-stop " + APP + "\n" + "run-as " + APP + " tar cf - files shared_prefs > " + APP_DATA_ON_DEVICE + "\n");
+        reinstallApp();
+        sh("run-as " + APP + " tar xf - < " + APP_DATA_ON_DEVICE + "\n" + "rm -f " + APP_DATA_ON_DEVICE + "\n");
     }
 
     /** A system dimension in pixels, e.g. a system bar's height. */

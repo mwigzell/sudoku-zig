@@ -75,14 +75,14 @@ public final class MainActivity extends Activity {
     /** The page's flush hook (`flows/autosave.js`); the WebView fires no page hide when the app closes. */
     private static final String FLUSH_ON_CLOSE_JS = "window.__sudokuFlushOnClose && window.__sudokuFlushOnClose();";
     private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/" + JniHost.defaultFolderName();
-    private static final String REASON_DEFAULT_TAKEN = "default_taken";
+    /** Bridge reason: this install may not write the file (an earlier install created it, or its permission is gone). */
+    private static final String REASON_TAKEN = "taken";
     /** Bridge result keys, read by `flows/android_steps.js`. */
     private static final String KEY_OK = "ok";
     private static final String KEY_CANCELLED = "cancelled";
     private static final String KEY_ERROR = "error";
     private static final String KEY_REASON = "reason";
     private static final String KEY_NAME = "name";
-    private static final String KEY_DIR = "dir";
     private static final String KEY_BASE64 = "base64";
     private static final String JSON_FAILED_FALLBACK = "{\"" + KEY_OK + "\":false}";
     /** Failure kinds the bridge reports to JS; core words what the user sees, the kind and detail are logged. */
@@ -410,8 +410,8 @@ public final class MainActivity extends Activity {
         return jsonFailed(kind + ": " + cause);
     }
 
-    private static String jsonDefaultTaken(String name) {
-        return jsonResult(KEY_OK, false, KEY_REASON, REASON_DEFAULT_TAKEN, KEY_NAME, name, KEY_DIR, DEFAULT_VISIBLE_SAVE_DIR);
+    private static String jsonTaken(String name) {
+        return jsonResult(KEY_OK, false, KEY_REASON, REASON_TAKEN, KEY_NAME, name);
     }
 
     private static String jsonSaveOk(String name) {
@@ -616,8 +616,15 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /** Write the saved game to `uri` and bind it; a file this install has no permission for is reported as taken. */
     private String saveBytesTo(Uri uri, byte[] bytes, String fallbackName) {
-        final String failed = writeBytes(uri, bytes);
+        final String failed;
+        try {
+            failed = writeBytes(uri, bytes);
+        } catch (SecurityException err) {
+            Log.w(LOG_IDENTITY, "no permission to write " + uri + ": " + err);
+            return jsonTaken(fallbackName);
+        }
         if (failed != null) return failed;
         rememberCurrentFile(uri, fallbackName);
         return jsonSaveOk(currentNameOr(fallbackName));
@@ -683,7 +690,7 @@ public final class MainActivity extends Activity {
         } catch (RuntimeException ignored) {
             // Leaves an empty renamed entry; the user's pick or new name still decides the current file.
         }
-        return jsonDefaultTaken(name);
+        return jsonTaken(name);
     }
 
     private String saveViaPickExisting(byte[] bytes) {

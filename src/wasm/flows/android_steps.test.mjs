@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as androidSteps from "./android_steps.js";
 import * as autosave from "./autosave.js";
 import * as stepRunner from "./step_runner.js";
-import { errorModalStub, moveWithAutosave, settleFlow, withCoreFlow } from "../test_support.mjs";
+import { coreText, errorModalStub, fillText, moveWithAutosave, settleFlow, withCoreFlow } from "../test_support.mjs";
 
 const okFetch = async () => ({ ok: true, status: 204 });
 
@@ -71,22 +71,22 @@ async function autosaveGame() {
   assert.deepEqual(hostNames, ["game2.sud"]);
 }
 
-{
-  // Default file taken by an earlier install: core asks pick-or-rename; New name is save_as, Pick it is reclaim_file.
+for (const bound of ["", "sudoku.sud"]) {
+  // A file this install may not write, whether the default file or the bound one: core asks choose-or-rename;
+  // New name is save_as, Choose file is reclaim_file.
   const { game, session } = await autosaveGame();
   const prevChoose = globalThis.__sudokuChoose;
   const calls = [];
   const answers = [false, true];
   globalThis.__sudokuChoose = async (message, labels) => {
-    calls.push(["ask", labels.okLabel, labels.cancelLabel]);
-    assert.equal(labels.title, "Autosave file");
-    assert.match(message, /sudoku\.sud in Download\/Sudoku/);
+    if (labels.title === coreText.REPLACE_CONFIRM_TITLE) return true;
+    calls.push(["ask", labels.title, message, labels.okLabel, labels.cancelLabel]);
     return answers.shift();
   };
   const bridge = {
     autosave: () => {
       calls.push(["autosave"]);
-      return { ok: false, reason: "default_taken", name: "sudoku.sud", dir: "Download/Sudoku" };
+      return { ok: false, reason: "taken", name: "sudoku.sud" };
     },
     saveAs: (_b64, name) => {
       calls.push(["save_as", name]);
@@ -96,7 +96,7 @@ async function autosaveGame() {
       calls.push(["reclaim_file"]);
       return { ok: true, name: "sudoku.sud" };
     },
-    currentSudokuFileName: () => "",
+    currentSudokuFileName: () => bound,
   };
   const errorModal = errorModalStub();
   try {
@@ -104,13 +104,8 @@ async function autosaveGame() {
   } finally {
     globalThis.__sudokuChoose = prevChoose;
   }
-  assert.deepEqual(calls, [
-    ["autosave"],
-    ["ask", "Pick it", "New name"],
-    ["save_as", "sudoku.sud"],
-    ["ask", "Pick it", "New name"],
-    ["reclaim_file"],
-  ]);
+  const ask = ["ask", coreText.TAKEN_TITLE, fillText(coreText.TAKEN_FMT, "sudoku.sud"), coreText.TAKEN_PICK_LABEL, coreText.TAKEN_NEW_NAME_LABEL];
+  assert.deepEqual(calls, [["autosave"], ask, ["save_as", "sudoku.sud"], ask, ["reclaim_file"]], `bound: "${bound}"`);
   assert.equal(errorModal.el.hidden, true);
   assert.equal(session.boundFilename, "sudoku.sud");
 }

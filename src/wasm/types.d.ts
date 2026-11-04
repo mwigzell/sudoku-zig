@@ -128,10 +128,10 @@ export type FlowStep =
   | { ok: false; error: string; step?: undefined };
 
 /** Platform result of a write step; `exists` means a fixed file is there and was left alone,
- * `taken` that the file belongs to an earlier install. */
+ * `taken` that this install may not write the file. */
 export type WriteResult =
   | { ok: true; name?: string }
-  | { ok: false; exists?: boolean; cancelled?: boolean; taken?: { name: string; dir: string }; error?: string };
+  | { ok: false; exists?: boolean; cancelled?: boolean; taken?: { name: string }; error?: string };
 
 /** Platform result of a reading step (`restore`, `open`, `import_puzzle`, `paste_puzzle`); a browser
  * pick also carries the file's handle so a saved game can be bound. */
@@ -171,10 +171,11 @@ export type FlowHandlers = {
 /** How a flow ended. */
 export type FlowOutcome = { kind: "show_status" | "show_error"; text: string } | { kind: "done" };
 
-/** What an Android bridge save or open reports; `default_taken` means the default file belongs to an earlier install. */
+/** What an Android bridge save or open reports; `taken` means this install may not write the file (an earlier
+ * install created it, or its permission is gone). */
 export type AndroidBridgeResult =
   | { ok: true; name?: string; base64?: string }
-  | { ok: false; cancelled?: boolean; reason?: "cancelled" | "default_taken"; name?: string; dir?: string; error?: string };
+  | { ok: false; cancelled?: boolean; reason?: "cancelled" | "taken"; name?: string; error?: string };
 
 /** Android WebView file bridge (`android_bridge.js` over the Java `__SudokuAndroidBridge`); absent elsewhere. */
 export type AndroidFileBridge = {

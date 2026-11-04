@@ -30,7 +30,7 @@ pub const Step = union(enum) {
     flush: []const u8,
     /// Write the puzzle to this file; the current file is unchanged; answered with `wrote`.
     export_puzzle: []const u8,
-    /// Let the player pick the file an earlier install wrote, so this install may write it again, and write the saved game there; answered with `wrote`.
+    /// Let the player pick the file this install may not write, so it may write it again, and write the saved game there; answered with `wrote`.
     reclaim_file,
     /// Copy the puzzle to the clipboard (native: print it); answered with `copied`.
     copy_puzzle,
@@ -137,15 +137,14 @@ pub const Wrote = union(enum) {
     exists,
     /// The user backed out of a platform picker.
     cancelled,
-    /// The target exists but this install may not write it (an earlier install created it).
+    /// The target exists but this install may not write it (an earlier install created it, or its permission is gone).
     taken: Taken,
     failed: []const u8,
 };
 
-/// The file a write could not use, and the folder it is in.
+/// The file a write could not use.
 pub const Taken = struct {
     name: []const u8,
-    dir: []const u8,
 };
 
 /// Adapter report for the step it just carried out.

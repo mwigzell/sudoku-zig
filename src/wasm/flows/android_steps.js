@@ -14,8 +14,8 @@ import * as steps from "./steps.js";
 /** @typedef {import("../types").AndroidBridgeResult} AndroidBridgeResult */
 
 const BRIDGE_CANCELLED = "cancelled";
-/** Bridge reason: the default visible file belongs to an earlier install. */
-const BRIDGE_DEFAULT_TAKEN = "default_taken";
+/** Bridge reason: this install may not write the file. */
+const BRIDGE_TAKEN = "taken";
 const INVALID_PAYLOAD_REASON = "invalid Android file payload";
 
 /** File bytes as the bridge's base64 text. */
@@ -41,7 +41,7 @@ function base64ToBytes(base64) {
  */
 function bridgeWrote(out, name) {
   if (out?.ok === true) return typeof out.name === "string" && out.name.length > 0 ? { ok: true, name: out.name } : { ok: true };
-  if (out?.reason === BRIDGE_DEFAULT_TAKEN) return { ok: false, taken: { name: out.name ?? name, dir: out.dir } };
+  if (out?.reason === BRIDGE_TAKEN) return { ok: false, taken: { name: out.name ?? name } };
   if (out?.cancelled === true || out?.reason === BRIDGE_CANCELLED) return { ok: false, cancelled: true };
   return { ok: false, error: out?.error };
 }
@@ -91,7 +91,7 @@ export function androidSteps(game, session, bridge, options = {}) {
     },
     /** @param {GameWrite} target */
     saveAs: (target) => writeThroughBridge((b64) => bridge.saveAs(b64, target.name), target.name),
-    /** The bound file, else the default visible file, which may belong to an earlier install (`taken`). */
+    /** The bound file, else the default visible file; either may be one this install may not write (`taken`). */
     autosave: (target) => {
       if (!target.replace && bound()) return steps.EXISTS;
       return writeThroughBridge((b64) => bridge.autosave(b64, target.name), target.name);

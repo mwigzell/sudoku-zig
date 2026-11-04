@@ -13,7 +13,7 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 | Open | Decode, board swap, status text, `noteLoad(.open)` (current file), then the autosave flow | File picker or Android open bridge; binding the picked handle so later writes reach it | `CORE` |
 | Import / Paste | `fromPuzzle` / `pasteFromLine` codec and status text, `noteLoad(.import / .paste)`, then the autosave flow | Text file picker; clipboard read (or native `paste` line input) | `CORE` |
 | Save / Save As | `SaveFlow`: target choice, overwrite question, refusing Save while Auto Save is on, status text, current file | Picker, bound handle, Android bridge or download; host restore copy | `CORE` |
-| Autosave | `AutosaveFlow` after every command; Android "earlier install" question and retry (`Wrote.taken` → `reclaim_file` / `save_as`) | Writing the bound file; the two Android pickers | `CORE` |
+| Autosave | `AutosaveFlow` after every command; Android "Can't save" question (`taken`) and retry (`Wrote.taken` → `reclaim_file` / `save_as`) | Writing the bound file; the two Android pickers | `CORE` |
 | Export | `ExportFlow` (`write` step, "exported to:" status, errors) | Text picker or download; native writes through the file transport | `CORE` |
 | Copy | `ExportFlow.toClipboard` (`copy_puzzle` step, status, errors) | Clipboard write (web) or printing the line (native: no clipboard) | `CORE` |
 | Undo / Redo / Hint / Solve / fill | Engine command, status text, win detection ("You win!"), then the autosave flow | Key and menu wiring, render | `CORE` |
@@ -31,6 +31,6 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 | Web pickers, download, clipboard | `src/wasm/menus/file_menu.js` (`persistBytes`, `pickBytes`, `persistPuzzleText`), `clipboard.js` (`startCopyPuzzleOnClick`, `readClipboardText`) | Browser and Android bridge APIs exist only in the page | `KEEP` |
 | Menubar drag-release | `src/wasm/menus/menu_bar.js` | DOM event mechanics | `KEEP` |
 | Android WebView bootstrap | `MainActivity.java` (`onCreate`, `onStop` flush on close), `android_bridge.js` head script, `page.html` boot-ready signal | WebView lifecycle | `KEEP` |
-| Android URI bridge | `MainActivity.java` `AndroidFileBridge`: one method per file step (`save`, `saveAs`, `autosave`, `reclaimFile`, `open`, `importPuzzle`, `exportPuzzle`) | Storage Access Framework and MediaStore; reports `default_taken` as a fact for core | `KEEP` |
+| Android URI bridge | `MainActivity.java` `AndroidFileBridge`: one method per file step (`save`, `saveAs`, `autosave`, `reclaimFile`, `open`, `importPuzzle`, `exportPuzzle`) | Storage Access Framework and MediaStore; reports `taken` (earlier-install file, or no permission) as a fact for core | `KEEP` |
 | Android host lifecycle | `src/android/jni_host.zig` | Loopback host thread start/stop | `KEEP` |
 | Native renderer and loop | `src/native/host.zig`, `src/native/shell/shell.zig` (`turn`, `runFlow` step execution) | Terminal substrate and step execution against the file transport | `KEEP` |
