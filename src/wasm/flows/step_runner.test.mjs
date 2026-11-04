@@ -5,6 +5,19 @@ import * as stepRunner from "./step_runner.js";
 import * as clientLog from "../client_log.js";
 import { loadCoreFlow, loadGame, openAs, PUZZLE_LINE, startNewGame, coreText, fillText } from "../test_support.mjs";
 
+/**
+ * Record a prompt the way these tests read it: a one-button message as its type and text, a question as
+ * `ask` with its title, text and buttons, answered with its default when `yes`, else by dismissing it.
+ */
+function recordPrompt(log, step, yes) {
+  if (step.buttons.length === 1) {
+    log.push([step.type, step.text]);
+    return step.default;
+  }
+  log.push(["ask", step.title, step.text, step.buttons]);
+  return yes ? step.default : step.dismiss;
+}
+
 /** Handlers that record every step and answer from the options; `exists` makes a write without `replace` find its file there. */
 function recordingHandlers({ exists = false, yes = false, write = (name) => ({ ok: true, name }), defaultName = "sudoku.sud" } = {}) {
   const log = [];
@@ -19,10 +32,7 @@ function recordingHandlers({ exists = false, yes = false, write = (name) => ({ o
       log.push(["default"]);
       return defaultName;
     },
-    ask: (step) => {
-      log.push(["ask", step.title, step.text, step.ok_label, step.cancel_label]);
-      return yes;
-    },
+    promptMessage: (step) => recordPrompt(log, step, yes),
     save: writeStep(stepRunner.STEP_SAVE),
     saveAs: writeStep(stepRunner.STEP_SAVE_AS),
     autosave: writeStep(stepRunner.STEP_AUTOSAVE),
@@ -32,7 +42,6 @@ function recordingHandlers({ exists = false, yes = false, write = (name) => ({ o
     },
     showGame: () => {},
     showStatus: (text) => log.push(["status", text]),
-    showError: (text) => log.push(["error", text]),
   };
 }
 
@@ -45,7 +54,8 @@ const DEFAULT = ["default"];
 const saveHandlers = (options = {}) => recordingHandlers({ defaultName: "game.sud", ...options });
 
 const NOT_SAVED = coreText.WRITE_CANCELLED_MSG;
-const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.REPLACE_CONFIRM_FMT, "game.sud"), coreText.REPLACE_CONFIRM_OK_LABEL, coreText.REPLACE_CONFIRM_CANCEL_LABEL];
+const REPLACE_BUTTONS = [coreText.REPLACE_CONFIRM_CANCEL_LABEL, coreText.REPLACE_CONFIRM_OK_LABEL];
+const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.REPLACE_CONFIRM_FMT, "game.sud"), REPLACE_BUTTONS];
 
 // Save with no current file names the default target, writes and reports the core status text.
 {
@@ -163,7 +173,7 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.deepEqual(handlers.log, [
     ["default"],
     ["autosave", "sudoku.sud", false],
-    ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.REPLACE_CONFIRM_FMT, "sudoku.sud"), coreText.REPLACE_CONFIRM_OK_LABEL, coreText.REPLACE_CONFIRM_CANCEL_LABEL],
+    ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.REPLACE_CONFIRM_FMT, "sudoku.sud"), REPLACE_BUTTONS],
   ]);
   assert.deepEqual(outcome, { kind: "done" }, "declined autosave ends without a status");
 }
@@ -183,25 +193,23 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   broken.resolveDefaultTarget = () => {
     throw new Error("host unreachable");
   };
-  assert.deepEqual(await stepRunner.runCommand(core, SAVE, broken), { kind: "show_error", text: coreText.UNEXPECTED_INPUT_MSG });
+  assert.deepEqual(await stepRunner.runCommand(core, SAVE, broken), { kind: "done" });
+  assert.deepEqual(broken.log.at(-1), ["error", coreText.UNEXPECTED_INPUT_MSG]);
   const next = saveHandlers();
   await stepRunner.runCommand(core, SAVE, next);
   assert.deepEqual(next.log.at(-1), ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]);
 }
 
-// The web dialog gets the core title, text and button labels.
-{
-  const seen = [];
-  const win = {
-    __sudokuChoose: async (text, labels) => {
-      seen.push({ text, labels });
-      return true;
+/** Handlers that answer every prompt with its default and keep its text in `texts`. */
+function promptTexts() {
+  const texts = [];
+  return {
+    texts,
+    promptMessage: (step) => {
+      texts.push(step.text);
+      return step.default;
     },
   };
-  const yes = await stepRunner.askWithDialog({ step: "ask", title: "T", text: "Q?", ok_label: "Yes", cancel_label: "No" }, win);
-  assert.equal(yes, true);
-  assert.deepEqual(seen, [{ text: "Q?", labels: { title: "T", okLabel: "Yes", cancelLabel: "No" } }]);
-  assert.equal(await stepRunner.askWithDialog({ step: "ask", text: "Q?" }, {}), false, "no dialog means no");
 }
 
 /** Startup handlers that record each step; `read` and `generated` script the platform results. */
@@ -215,16 +223,12 @@ function startupRecorder({ read, generated, yes = false } = {}) {
       return read;
     },
     showGame: (step) => log.push(["show", step.text, step.file]),
-    ask: (step) => {
-      log.push(["ask", step.title]);
-      return yes;
-    },
+    promptMessage: (step) => recordPrompt(log, step, yes),
     generateGame: (difficulty) => {
       log.push(["generate", difficulty]);
       return generated;
     },
     forgetCurrentFile: (forget) => log.push(["forget", forget.path, forget.delete]),
-    showError: (text) => log.push(["error", text]),
   };
 }
 
@@ -248,12 +252,14 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const game = await loadGame({ auto_restore: true });
   const handlers = startupRecorder({ read: new Error("network down") });
   await stepRunner.runFlow(game, { flow: stepRunner.FLOW_STARTUP, path: "/current-file", name: "game.sud" }, handlers);
-  assert.deepEqual(handlers.log, [
+  assert.deepEqual(handlers.log.map((entry) => entry.slice(0, 2)), [
     ["read", "/current-file"],
-    ["show", WELCOME, null],
+    ["show", WELCOME],
     ["ask", "Restore failed"],
-    ["forget", "/current-file", false],
+    ["forget", "/current-file"],
   ]);
+  assert.equal(handlers.log[1][2], null);
+  assert.equal(handlers.log[3][2], false);
 }
 
 // generate_game reports the line, cancellation, or failure to core.
@@ -270,7 +276,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
 
   const failed = startupRecorder({ generated: { ok: false } });
   const outcome = await stepRunner.runFlow(await loadGame({ auto_new: true }), { flow: stepRunner.FLOW_STARTUP }, failed);
-  assert.equal(outcome.kind, "show_error");
+  assert.equal(outcome.kind, "done");
   assert.deepEqual(failed.log.at(-1), ["error", coreText.GENERATE_FAILED_MSG]);
 }
 
@@ -287,7 +293,10 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
       persisted.push(settings.theme);
       return { ok: true };
     },
-    showError: (text) => errors.push(text),
+    promptMessage: (step) => {
+      errors.push(step.text);
+      return step.default;
+    },
   };
   assert.deepEqual(await stepRunner.runCommand(game, { action: "set_theme", theme: "light" }, handlers), { kind: "done" });
   assert.equal(shown[0].config.theme, "light");
@@ -299,7 +308,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
     ...handlers,
     persistSettings: () => ({ ok: false }),
   });
-  assert.deepEqual(failed, { kind: "show_error", text: coreText.PERSIST_FAILED_MSG });
+  assert.deepEqual(failed, { kind: "done" });
 
   const thrown = await stepRunner.runCommand(game, { action: "toggle_region" }, {
     ...handlers,
@@ -307,8 +316,8 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
       throw new Error("offline");
     },
   });
-  assert.equal(thrown.text, coreText.PERSIST_FAILED_MSG);
-  assert.equal(errors.length, 2);
+  assert.deepEqual(thrown, { kind: "done" });
+  assert.deepEqual(errors, [coreText.PERSIST_FAILED_MSG, coreText.PERSIST_FAILED_MSG]);
   assert.equal(game.getConfig().show_region, false, "two toggles leave the setting where it started");
 }
 
@@ -316,8 +325,10 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
 {
   const game = await loadGame();
   const shown = [];
-  const outcome = await stepRunner.runCommand(game, { action: "undo" }, { showGame: (step) => shown.push(step), showError() {} });
-  assert.equal(outcome.kind, "show_error");
+  const prompts = promptTexts();
+  const outcome = await stepRunner.runCommand(game, { action: "undo" }, { showGame: (step) => shown.push(step), ...prompts });
+  assert.equal(outcome.kind, "done");
+  assert.equal(prompts.texts.length, 1);
   assert.equal(shown.length, 0);
 }
 
@@ -329,7 +340,8 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const game = await loadGame();
   const shown = [];
   const picks = [];
-  const handlers = (pick) => ({ open: pick, importPuzzle: pick, showGame: (step) => shown.push(step), showError() {} });
+  const prompts = promptTexts();
+  const handlers = (pick) => ({ open: pick, importPuzzle: pick, showGame: (step) => shown.push(step), ...prompts });
 
   const opened = await stepRunner.runCommand(game, { action: "open" }, handlers((path) => {
     picks.push(path);
@@ -343,7 +355,8 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
 
   assert.deepEqual(await stepRunner.runCommand(game, { action: "import" }, handlers(() => ({ ok: false, cancelled: true }))), { kind: "done" });
   const failed = await stepRunner.runCommand(game, { action: "import" }, handlers(() => ({ ok: false, error: "unreadable" })));
-  assert.deepEqual(failed, { kind: "show_error", text: coreText.IMPORT_FAILED_MSG });
+  assert.deepEqual(failed, { kind: "done" });
+  assert.deepEqual(prompts.texts, [coreText.IMPORT_FAILED_MSG]);
   assert.equal(shown.length, 1, "a cancelled or failed pick shows nothing");
 }
 
@@ -358,8 +371,10 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.deepEqual(pasted, { kind: "done" });
   assert.equal(shown[0].text, coreText.PASTED_MSG);
   const before = game.getState();
-  const denied = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: false, error: "denied" }), showError() {} });
-  assert.deepEqual(denied, { kind: "show_error", text: coreText.PASTE_FAILED_MSG });
+  const prompts = promptTexts();
+  const denied = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: false, error: "denied" }), ...prompts });
+  assert.deepEqual(denied, { kind: "done" });
+  assert.deepEqual(prompts.texts, [coreText.PASTE_FAILED_MSG]);
   assert.deepEqual(game.getState(), before);
 }
 
@@ -384,8 +399,10 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.equal(game.getState().cells[7].value, 5);
 
   const padded = new TextEncoder().encode(`${PUZZLE_LINE}\n`);
-  const rejected = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: true, bytes: padded }), showError() {} });
-  assert.deepEqual(rejected, { kind: "show_error", text: coreText.PUZZLE_LENGTH_MSG });
+  const prompts = promptTexts();
+  const rejected = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: true, bytes: padded }), ...prompts });
+  assert.deepEqual(rejected, { kind: "done" });
+  assert.deepEqual(prompts.texts, [coreText.PUZZLE_LENGTH_MSG]);
 }
 
 console.log("step_runner.test.mjs OK");

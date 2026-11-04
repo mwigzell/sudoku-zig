@@ -48,7 +48,7 @@ export type StepsOptions = {
   doc?: Document;
   fetchFn?: typeof fetch;
   statusEl?: HTMLElement | null;
-  errorModal?: ErrorModal | null;
+  promptDialog?: PromptDialog | null;
   generatingModal?: GeneratingModal;
   genWorker?: GenWorker;
   clipboard?: Pick<Clipboard, "readText" | "writeText">;
@@ -64,7 +64,30 @@ export type StepContext = Required<Omit<StepsOptions, "generatingModal" | "genWo
   genWorker?: GenWorker;
 };
 export type GeneratingModal = ReturnType<typeof import("./dialogs/generating.js").wireGeneratingModal>;
-export type ErrorModal = ReturnType<typeof import("./dialogs/error_modal.js").wireErrorModal>;
+/** Core's `prompt_message` step: `default` is the rightmost button; `dismiss` is what dismissing answers, or null when it does nothing. */
+export type PromptStep = {
+  step: "prompt_message";
+  type: "information" | "warning" | "error";
+  title: string;
+  text: string;
+  buttons: string[];
+  default: number;
+  dismiss: number | null;
+};
+/** The shared prompt dialog; `show` resolves with the index of the button pressed. */
+export type PromptDialog = {
+  show: (step: PromptStep) => Promise<number>;
+  dismiss: () => void;
+};
+export type PromptDialogElements = {
+  el: HTMLElement;
+  iconEl: HTMLElement;
+  titleEl: HTMLElement;
+  textEl: HTMLElement;
+  buttonsEl: HTMLElement;
+  doc: Document;
+  onOpenChange?: (open: boolean) => void;
+};
 export type GenWorker =
   | {
       workerUrl: string;
@@ -110,7 +133,7 @@ export type FlowStep =
   | { step: "resolve_default_target" | "reclaim_file" | "copy_puzzle" | "paste_puzzle" }
   | ({ step: "save" | "save_as" | "autosave" } & GameWrite)
   | { step: "flush" | "export_puzzle"; name: string }
-  | { step: "ask"; title: string; text: string; ok_label: string; cancel_label: string }
+  | PromptStep
   | { step: "restore"; path: string }
   | { step: "open" | "import_puzzle"; path: string | null }
   | {
@@ -126,7 +149,7 @@ export type FlowStep =
   | { step: "generate_game"; difficulty: number }
   | { step: "forget_current_file"; path: string; delete: boolean }
   | { step: "persist_settings"; settings: PlayerSettings }
-  | { step: "show_status" | "show_error"; text: string }
+  | { step: "show_status"; text: string }
   | { step: "done" }
   | { ok: false; error: string; step?: undefined };
 
@@ -151,7 +174,7 @@ export type GenerateResult = { ok: true; line: string } | { ok: false; cancelled
 /** The platform's handler for each step, used by every flow; handlers report facts and never decide what happens next. */
 export type FlowHandlers = {
   resolveDefaultTarget: () => string | Promise<string>;
-  ask: (step: { title: string; text: string; ok_label: string; cancel_label: string }) => boolean | Promise<boolean>;
+  promptMessage: (step: PromptStep) => number | Promise<number>;
   save: (target: GameWrite) => WriteResult | Promise<WriteResult>;
   saveAs: (target: GameWrite) => WriteResult | Promise<WriteResult>;
   autosave: (target: GameWrite) => WriteResult | Promise<WriteResult>;
@@ -168,11 +191,10 @@ export type FlowHandlers = {
   forgetCurrentFile: (forget: { path: string; delete: boolean }) => void | Promise<void>;
   persistSettings: (settings: PlayerSettings) => PersistResult | Promise<PersistResult>;
   showStatus: (text: string) => void;
-  showError: (text: string) => void | Promise<void>;
 };
 
 /** How a flow ended. */
-export type FlowOutcome = { kind: "show_status" | "show_error"; text: string } | { kind: "done" };
+export type FlowOutcome = { kind: "show_status"; text: string } | { kind: "done" };
 
 /** What an Android bridge save or open reports; `taken` means this install may not write the file (an earlier
  * install created it, or its permission is gone). */

@@ -90,11 +90,11 @@ public final class FileBridgeTest {
     private static final Pattern BOUNDS = Pattern.compile("\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]");
     private static final String COLUMN_LABELS = "ABCDEFGHI";
     private static final String FILL_DIGIT = "5";
-    // Page ids: the ask dialog (core's question with its two answers) and the file label in the menu bar.
-    private static final String ASK_TEXT = "replace-confirm-msg";
-    private static final String ASK_OK = "replace-confirm-ok";
-    private static final String ASK_CANCEL = "replace-confirm-cancel";
-    private static final String ERROR_TEXT = "error-modal-msg";
+    // Page ids: the prompt dialog (core's question, its cancel button on the left, its answer on the right)
+    // and the file label in the menu bar.
+    private static final String ASK_TEXT = "prompt-dialog-text";
+    private static final String ASK_OK = "prompt-dialog-button-1";
+    private static final String ASK_CANCEL = "prompt-dialog-button-0";
     private static final String FILE_LABEL = "current-file-desktop";
     private static final String WEB_VIEW = "android.webkit.WebView";
     // DocumentsUI views: a listed file's name, the create picker's name field, and its Save button.
@@ -254,6 +254,27 @@ public final class FileBridgeTest {
         launchApp();
         device.pressBack();
         assertTrue("Back left the app", device.wait(Until.gone(By.pkg(APP)), UI_WAIT_MS));
+    }
+
+    @Test
+    public void backAnswersAnOpenPromptWithItsCancelButtonAndStaysInTheApp() throws IOException {
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+        awaitDefaultEntry();
+        awaitBoundName();
+        final String firstGameHash = fileHash(DEFAULT_PATH);
+
+        startEasyGame();
+        fillAnEmptyCell();
+        need(By.res(ASK_TEXT), UI_WAIT_MS);
+        device.pressBack();
+        assertTrue("Back closed the prompt", device.wait(Until.gone(By.res(ASK_TEXT)), UI_WAIT_MS));
+        assertEquals("Back stayed in the app", APP, device.getCurrentPackageName());
+        assertEquals("cancelling the replace leaves the file", firstGameHash, fileHash(DEFAULT_PATH));
+
+        device.pressBack();
+        assertTrue("with no prompt open Back leaves the app", device.wait(Until.gone(By.pkg(APP)), UI_WAIT_MS));
     }
 
     @Test
@@ -421,7 +442,7 @@ public final class FileBridgeTest {
         fillAnEmptyCell();
         final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
         assertTrue("the question names the file: " + question, question.contains(chosenName));
-        assertFalse("no error is shown", device.hasObject(By.res(ERROR_TEXT)));
+        assertTrue("the prompt is the question, not an error", device.hasObject(By.res(ASK_OK)));
 
         need(By.res(ASK_OK), UI_WAIT_MS).click();
         need(By.res(PICKER_ITEM_NAME).text(chosenName), UI_WAIT_MS).click();

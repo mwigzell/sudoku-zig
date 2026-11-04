@@ -134,6 +134,8 @@ pub const NativeTransport = struct {
         if (ctx.data_dir) |dir| return dir;
         if (builtin.is_test) {
             const dir = gpa.dupe(u8, TEST_DATA_DIR) catch return TransportError.OutOfMemory;
+            // Each test session starts empty: files an earlier run left would change what core asks.
+            std.Io.Dir.cwd().deleteTree(ctx.io, dir) catch {};
             std.Io.Dir.cwd().createDirPath(ctx.io, dir) catch return TransportError.System;
             ctx.data_dir = dir;
             return dir;

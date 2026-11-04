@@ -138,16 +138,17 @@ pub const StartupFlow = struct {
                 if (input != .ack) return self.fail(UNEXPECTED_INPUT_MSG);
                 if (!self.engine.state.board.isSolved()) return self.finish(.done);
                 self.phase = .asking_solved;
-                return .{ .ask = .{
-                    .title = startup_policy.RESTORE_SOLVED_TITLE,
-                    .text = startup_policy.RESTORE_SOLVED_PROMPT,
-                    .ok_label = startup_policy.RESTORE_SOLVED_OK_LABEL,
-                    .cancel_label = startup_policy.RESTORE_SOLVED_CANCEL_LABEL,
-                } };
+                return step_mod.makeQuestion(
+                    .information,
+                    startup_policy.RESTORE_SOLVED_TITLE,
+                    startup_policy.RESTORE_SOLVED_PROMPT,
+                    startup_policy.RESTORE_SOLVED_OK_LABEL,
+                    startup_policy.RESTORE_SOLVED_CANCEL_LABEL,
+                );
             },
             .asking_solved => {
                 const yes = switch (input) {
-                    .answered => |a| a,
+                    .pressed => |i| i == step_mod.QUESTION_OK,
                     else => return self.fail(UNEXPECTED_INPUT_MSG),
                 };
                 return if (yes) self.generate() else self.finish(.done);
@@ -177,16 +178,11 @@ pub const StartupFlow = struct {
             .showing_idle_then_ask_delete => {
                 if (input != .ack) return self.fail(UNEXPECTED_INPUT_MSG);
                 self.phase = .asking_delete;
-                return .{ .ask = .{
-                    .title = RESTORE_FAILED_TITLE,
-                    .text = self.text.get(),
-                    .ok_label = RESTORE_FAILED_OK_LABEL,
-                    .cancel_label = RESTORE_FAILED_CANCEL_LABEL,
-                } };
+                return step_mod.makeQuestion(.@"error", RESTORE_FAILED_TITLE, self.text.get(), RESTORE_FAILED_OK_LABEL, RESTORE_FAILED_CANCEL_LABEL);
             },
             .asking_delete => {
                 const yes = switch (input) {
-                    .answered => |a| a,
+                    .pressed => |i| i == step_mod.QUESTION_OK,
                     else => return self.fail(UNEXPECTED_INPUT_MSG),
                 };
                 self.phase = .forgetting;
@@ -198,9 +194,9 @@ pub const StartupFlow = struct {
             },
             .showing_idle_then_error => {
                 if (input != .ack) return self.fail(UNEXPECTED_INPUT_MSG);
-                return self.finish(.{ .show_error = self.text.get() });
+                return self.finish(step_mod.promptError(self.text.get()));
             },
-            .finished => return self.fail(UNEXPECTED_INPUT_MSG),
+            .finished => return .done,
         }
     }
 
@@ -235,13 +231,13 @@ pub const StartupFlow = struct {
 
     fn generateFailed(self: *StartupFlow, reason: []const u8) Step {
         log.err("generate failed: {s}", .{reason});
-        if (self.restored) return self.finish(.{ .show_error = step_mod.GENERATE_FAILED_MSG });
+        if (self.restored) return self.finish(step_mod.promptError(step_mod.GENERATE_FAILED_MSG));
         self.text.set(step_mod.GENERATE_FAILED_MSG);
         return self.showIdle(.showing_idle_then_error);
     }
 
     fn fail(self: *StartupFlow, msg: []const u8) Step {
-        return self.finish(.{ .show_error = msg });
+        return self.finish(step_mod.promptError(msg));
     }
 
     fn finish(self: *StartupFlow, terminal: Step) Step {
@@ -314,8 +310,8 @@ test "startup restore of a solved game asks, and New game generates" {
     _ = f.next(.start);
     _ = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } });
     const asked = f.next(.ack);
-    try std.testing.expectEqualStrings(startup_policy.RESTORE_SOLVED_TITLE, asked.ask.title);
-    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, f.next(.{ .answered = true }).generate_game);
+    try std.testing.expectEqualStrings(startup_policy.RESTORE_SOLVED_TITLE, asked.prompt_message.title);
+    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, f.next(.{ .pressed = step_mod.QUESTION_OK }).generate_game);
     const shown = f.next(.{ .generated = .{ .line = open_line } });
     try std.testing.expect(shown.show_game.status != null);
     try std.testing.expectEqual(Step.done, f.next(.ack));
@@ -331,7 +327,7 @@ test "startup restore of a solved game keeps it when the player says Keep" {
     _ = f.next(.start);
     _ = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } });
     _ = f.next(.ack);
-    try std.testing.expectEqual(Step.done, f.next(.{ .answered = false }));
+    try std.testing.expectEqual(Step.done, f.next(.{ .pressed = step_mod.QUESTION_CANCEL }));
     try std.testing.expect(h.engine.state.board.isSolved());
 }
 
@@ -344,9 +340,9 @@ test "startup restore failure shows idle, asks to delete, then forgets the file"
         const shown = f.next(.{ .read = .{ .failed = "readAll: FileNotFound" } });
         try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.status.?);
         const asked = f.next(.ack);
-        try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, asked.ask.title);
-        try std.testing.expectEqualStrings(std.fmt.comptimePrint(RESTORE_FAILED_FMT, .{"game.sud"}), asked.ask.text);
-        const forget = f.next(.{ .answered = delete });
+        try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, asked.prompt_message.title);
+        try std.testing.expectEqualStrings(std.fmt.comptimePrint(RESTORE_FAILED_FMT, .{"game.sud"}), asked.prompt_message.text);
+        const forget = f.next(.{ .pressed = if (delete) step_mod.QUESTION_OK else step_mod.QUESTION_CANCEL });
         try std.testing.expectEqualStrings("/data/game.sud", forget.forget_current_file.path);
         try std.testing.expectEqual(delete, forget.forget_current_file.delete);
         try std.testing.expectEqual(Step.done, f.next(.ack));
@@ -360,7 +356,7 @@ test "startup restore of unreadable bytes is a restore failure" {
     var f = h.flow(restore_opts, test_file);
     _ = f.next(.start);
     _ = f.next(.{ .read = .{ .file = .{ .bytes = "not a save" } } });
-    try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, f.next(.ack).ask.title);
+    try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, f.next(.ack).prompt_message.title);
 }
 
 test "startup new generates at the saved difficulty and shows the game" {
@@ -389,7 +385,7 @@ test "startup new failure shows the idle board, then the error" {
     var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .easy }, null);
     _ = f.next(.start);
     _ = f.next(.{ .generated = .{ .failed = "worker crashed" } });
-    try std.testing.expectEqualStrings(step_mod.GENERATE_FAILED_MSG, f.next(.ack).show_error);
+    try std.testing.expectEqualStrings(step_mod.GENERATE_FAILED_MSG, f.next(.ack).prompt_message.text);
 }
 
 test "startup new with an invalid generated line is a generation failure" {
@@ -398,7 +394,7 @@ test "startup new with an invalid generated line is a generation failure" {
     var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .easy }, null);
     _ = f.next(.start);
     _ = f.next(.{ .generated = .{ .line = "123" } });
-    try std.testing.expect(f.next(.ack) == .show_error);
+    try std.testing.expect(f.next(.ack) == .prompt_message);
 }
 
 test "startup ends with an error on an unexpected answer" {
@@ -406,7 +402,7 @@ test "startup ends with an error on an unexpected answer" {
     defer h.deinit();
     var f = h.flow(restore_opts, test_file);
     _ = f.next(.start);
-    try std.testing.expectEqualStrings(UNEXPECTED_INPUT_MSG, f.next(.ack).show_error);
+    try std.testing.expectEqualStrings(UNEXPECTED_INPUT_MSG, f.next(.ack).prompt_message.text);
 }
 
 test "startup prompts read as sentences that start with words, not the file name" {

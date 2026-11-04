@@ -22,9 +22,8 @@ const ProgressRecorder = struct {
 
     fn render(_: *anyopaque, _: board.Board.BoardView, _: ?[]const u8, _: ?event_mod.CellCoord) facade_mod.Error!void {}
     fn showLegend(_: *anyopaque, _: legend_mod.Legend) facade_mod.Error!void {}
-    fn showError(_: *anyopaque, _: []const u8) facade_mod.Error!void {}
-    fn ask(_: *anyopaque, _: flow_step.Ask) facade_mod.Error!bool {
-        return true;
+    fn promptMessage(_: *anyopaque, prompt: flow_step.PromptMessage) facade_mod.Error!usize {
+        return prompt.defaultAnswer();
     }
     fn getCommandInput(
         _: *anyopaque,
@@ -54,8 +53,7 @@ fn makeFacade(rec: *ProgressRecorder) facade_mod.Facade {
         .context = @ptrCast(@alignCast(rec)),
         .render_fn = ProgressRecorder.render,
         .showLegend_fn = ProgressRecorder.showLegend,
-        .showError_fn = ProgressRecorder.showError,
-        .ask_fn = ProgressRecorder.ask,
+        .promptMessage_fn = ProgressRecorder.promptMessage,
         .getCommandInput_fn = ProgressRecorder.getCommandInput,
         .report_gen_progress_fn = ProgressRecorder.reportGenProgress,
         .deinit_fn = ProgressRecorder.deinit,

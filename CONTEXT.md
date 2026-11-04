@@ -127,7 +127,7 @@ _Avoid_: generic steps told apart by a flag; a handler set per flow
 | Step | The platform… |
 |---|---|
 | `resolve_default_target` | names the default file |
-| `ask` | shows a two-button question |
+| `prompt_message` | shows a typed message (information, warning, error) with its title, text and buttons; answers the index of the button pressed (ADR-0017) |
 | `save` | writes the saved game to the current file (web/Android: the bound file, else a picker), keeps the restore copy |
 | `save_as` | writes the saved game to a file the player picks, suggesting the given name (native: the typed path) |
 | `autosave` | writes the saved game to the bound or default file, never through a picker |
@@ -143,12 +143,12 @@ _Avoid_: generic steps told apart by a flag; a handler set per flow
 | `generate_game` | generates a puzzle at the given difficulty |
 | `forget_current_file` | stops restoring the file at startup, deleting it when told |
 | `persist_settings` | stores the settings |
-| `show_status`, `show_error`, `done` | ends the flow |
+| `show_status`, `done` | ends the flow |
 
 `save`, `save_as` and `autosave` carry `replace`: a handler writing a fixed file (native path, host default file, bound file) answers `exists` without writing when the file is there and `replace` is false; core then reissues with `replace` or asks "Replace file?" first, per the **Lane**. A picker never answers `exists`. A step a platform never receives (e.g. `reclaim_file` on native and web) answers failed with a reason for the log.
 
 **Answer**:
-What the platform reports back after a step (`Input`): the result, or a failure with a reason for the log. Writes answer `wrote` (`ok`, `exists`, `cancelled`, `taken`, `failed`); `restore`, `open`, `import_puzzle` and `paste_puzzle` share one `read` answer (bytes and an optional name, `cancelled`, or `failed`).
+What the platform reports back after a step (`Input`): the result, or a failure with a reason for the log. Writes answer `wrote` (`ok`, `exists`, `cancelled`, `taken`, `failed`); `restore`, `open`, `import_puzzle` and `paste_puzzle` share one `read` answer (bytes and an optional name, `cancelled`, or `failed`). `prompt_message` answers `pressed`, the index of the button.
 
 **Adapter**:
 The platform code that carries out steps: native `Storage` and renderer; on web `flows/web_steps.js`, on Android `flows/android_steps.js` over the Java file bridge, both built on `flows/steps.js` and run by `step_runner.js`. It does mechanics only and decides nothing.
@@ -208,7 +208,7 @@ There is **no** separate Android app shell beside native and wasm. Informal “A
 | Android host | `src/android/` → `web_host` + WebView (ADR-0013) |
 
 **Sudoku** (`native/shell/shell.zig`, native app shell):
-Owns the command loop and the renderer facade. Each command runs through the core command flow (`runCommandFlow` → `runFlow`); `runFlow` hands each step to the renderer (ask, show, generate progress, copy output) or to **Storage**. This is the native integrated e2e seam.
+Owns the command loop and the renderer facade. Each command runs through the core command flow (`runCommandFlow` → `runFlow`); `runFlow` hands each step to the renderer (prompt, show, generate progress, copy output) or to **Storage**. This is the native integrated e2e seam.
 _Avoid_: folding session I/O into GameEngine
 
 **Storage** (`native/shell/storage.zig`, native app shell):

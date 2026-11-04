@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as autosave from "./autosave.js";
 import * as stepRunner from "./step_runner.js";
 import * as webSteps from "./web_steps.js";
-import { errorModalStub, hostFetch, moveWithAutosave, postedCurrentFile, settleFlow, withCoreFlow, coreText } from "../test_support.mjs";
+import { noPromptDialog, promptDialogStub, hostFetch, moveWithAutosave, postedCurrentFile, settleFlow, withCoreFlow, coreText } from "../test_support.mjs";
 
 function makePageHideWin() {
   const listeners = new Map();
@@ -117,10 +117,7 @@ async function boundAutosaveSetup(writes, failure = null) {
   // Continuing a bound file: write it first, then the host restore copy; nobody is asked.
   const writes = [];
   const { game, session, fetchFn } = await boundAutosaveSetup(writes);
-  const prevChoose = globalThis.__sudokuChoose;
-  globalThis.__sudokuChoose = async () => assert.fail("continuation must not ask");
-  await moveWithAutosave(game, session, { fetchFn });
-  globalThis.__sudokuChoose = prevChoose;
+  await moveWithAutosave(game, session, { fetchFn, promptDialog: noPromptDialog("continuation must not ask") });
   assert.deepEqual(writes, [
     { lane: "bound", bytes: [4, 2] },
     { lane: "host", bytes: [4, 2], restoreCopy: "true", keepalive: false },
@@ -142,11 +139,11 @@ async function boundAutosaveSetup(writes, failure = null) {
   // A failed bound write skips the host copy and shows core's sentence, not the write's reason.
   const writes = [];
   const { game, session, fetchFn } = await boundAutosaveSetup(writes, new Error("bound write failed"));
-  const errorModal = errorModalStub();
-  const outcome = await moveWithAutosave(game, session, { fetchFn, errorModal });
-  assert.equal(outcome.kind, "show_error");
+  const prompts = promptDialogStub();
+  const outcome = await moveWithAutosave(game, session, { fetchFn, promptDialog: prompts });
+  assert.equal(outcome.kind, "done");
   assert.deepEqual(writes, [], "host copy must not run when bound autosave fails");
-  assert.equal(errorModal.msgEl.textContent, coreText.SAVE_FAILED_MSG);
+  assert.equal(prompts.lastText, coreText.SAVE_FAILED_MSG);
   assert.equal(session.fileHandle, null, "the failing handle is dropped");
 }
 
@@ -154,10 +151,7 @@ async function boundAutosaveSetup(writes, failure = null) {
   // An opened game continues its file: the first autosave writes without a replace question.
   const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([9]) }) }, { autoSave: true, opened: "autosave.sud" });
   const host = hostFetch({ exists: true });
-  const prevChoose = globalThis.__sudokuChoose;
-  globalThis.__sudokuChoose = async () => assert.fail("continued file must not ask");
-  await moveWithAutosave(game, { config: { auto_save: true }, boundFilename: "autosave.sud" }, { fetchFn: host.fetchFn });
-  globalThis.__sudokuChoose = prevChoose;
+  await moveWithAutosave(game, { config: { auto_save: true }, boundFilename: "autosave.sud" }, { fetchFn: host.fetchFn, promptDialog: noPromptDialog("continued file must not ask") });
   assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Filename"], "autosave.sud");
 }
 

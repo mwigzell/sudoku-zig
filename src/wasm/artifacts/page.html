@@ -273,8 +273,7 @@
       }
     }
 
-    #error-modal,
-    #replace-confirm-modal {
+    #prompt-dialog {
       position: fixed;
       inset: 0;
       display: flex;
@@ -312,8 +311,7 @@
       object-fit: contain;
     }
 
-    #error-modal[hidden],
-    #replace-confirm-modal[hidden],
+    #prompt-dialog[hidden],
     #about-modal[hidden],
     #settings-modal[hidden],
     #new-difficulty-modal[hidden],
@@ -441,7 +439,7 @@
       cursor: pointer;
     }
 
-    .error-dialog,
+    .prompt-dialog,
     .about-dialog {
       width: min(100%, 24rem);
       padding: 1rem 1.25rem;
@@ -473,16 +471,31 @@
       font-size: 1.25rem;
       text-align: center;
     }
-    #error-modal-msg {
-      margin: 0 0 1rem;
-      line-height: 1.45;
-    }
-    #replace-confirm-msg {
-      margin: 0 0 1rem;
-      line-height: 1.45;
-    }
-    #replace-confirm-actions {
+    #prompt-dialog-header {
       display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin: 0 0 0.75rem;
+    }
+    #prompt-dialog-icon {
+      font-size: 1.6rem;
+      line-height: 1;
+    }
+    #prompt-dialog-header h2 {
+      margin: 0;
+      text-align: left;
+    }
+    #prompt-dialog-buttons .prompt-default {
+      font-weight: 600;
+      border-color: var(--status-fg);
+    }
+    #prompt-dialog-text {
+      margin: 0 0 1rem;
+      line-height: 1.45;
+    }
+    #prompt-dialog-buttons {
+      display: flex;
+      flex-wrap: wrap;
       justify-content: flex-end;
       align-items: stretch;
       gap: 0.5rem;
@@ -543,9 +556,7 @@
 
     #settings-modal-dismiss,
     #about-modal-dismiss,
-    #error-modal-dismiss,
-    #replace-confirm-cancel,
-    #replace-confirm-ok,
+    #prompt-dialog-buttons button,
     #new-difficulty-cancel,
     #generating-modal-cancel,
     #generating-modal-continue {
@@ -560,7 +571,6 @@
 
     #settings-modal-dismiss,
     #about-modal-dismiss,
-    #error-modal-dismiss,
     #new-difficulty-cancel {
       display: block;
       margin: 0.5rem 0 0 auto;
@@ -799,21 +809,14 @@
     </div>
   </main>
 
-  <div id="error-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="error-modal-title" aria-describedby="error-modal-msg">
-    <div class="error-dialog">
-      <h2 id="error-modal-title">Error</h2>
-      <p id="error-modal-msg"></p>
-      <button type="button" id="error-modal-dismiss">OK</button>
-    </div>
-  </div>
-  <div id="replace-confirm-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="replace-confirm-title" aria-describedby="replace-confirm-msg">
-    <div class="error-dialog">
-      <h2 id="replace-confirm-title"></h2>
-      <p id="replace-confirm-msg"></p>
-      <div id="replace-confirm-actions">
-        <button type="button" id="replace-confirm-cancel">Cancel</button>
-        <button type="button" id="replace-confirm-ok">Replace</button>
+  <div id="prompt-dialog" hidden role="alertdialog" aria-modal="true" aria-labelledby="prompt-dialog-title" aria-describedby="prompt-dialog-text">
+    <div class="prompt-dialog">
+      <div id="prompt-dialog-header">
+        <span id="prompt-dialog-icon" aria-hidden="true"></span>
+        <h2 id="prompt-dialog-title"></h2>
       </div>
+      <p id="prompt-dialog-text"></p>
+      <div id="prompt-dialog-buttons"></div>
     </div>
   </div>
 
@@ -895,8 +898,7 @@
   <script>
     (function () {
       const statusBar = document.getElementById("status-bar");
-      const errorModal = document.getElementById("error-modal");
-      const errorMsg = document.getElementById("error-modal-msg");
+      const promptDialog = document.getElementById("prompt-dialog");
       const bootSplash = document.getElementById("boot-splash");
       const isAndroidWebView =
         typeof window !== "undefined" &&
@@ -911,12 +913,11 @@
       const WEB_BOOT_TIMEOUT_MS = 12000;
       /** Shown for any boot failure; the reason goes to the console or the client log. */
       const BOOT_FAILED_MSG = "The game could not start. Reload the page to try again.";
+      const BOOT_FAILED_TITLE = "Error";
+      const BOOT_FAILED_ICON = "✖";
+      const OK_LABEL = "OK";
       let bootSplashHidePromise = null;
       let bootFailureShown = false;
-      const dismiss = document.getElementById("error-modal-dismiss");
-      dismiss?.addEventListener("click", () => {
-        if (errorModal) errorModal.hidden = true;
-      });
       async function hideBootSplash() {
         if (bootSplashHidePromise) return bootSplashHidePromise;
         bootSplashHidePromise = (async () => {
@@ -942,9 +943,20 @@
           statusBar.textContent = BOOT_FAILED_MSG;
           statusBar.className = "error";
         }
-        if (errorModal && errorMsg) {
-          errorMsg.textContent = BOOT_FAILED_MSG;
-          errorModal.hidden = false;
+        if (promptDialog) {
+          document.getElementById("prompt-dialog-icon").textContent = BOOT_FAILED_ICON;
+          document.getElementById("prompt-dialog-title").textContent = BOOT_FAILED_TITLE;
+          document.getElementById("prompt-dialog-text").textContent = BOOT_FAILED_MSG;
+          const ok = document.createElement("button");
+          ok.type = "button";
+          ok.textContent = OK_LABEL;
+          ok.className = "prompt-default";
+          ok.addEventListener("click", () => {
+            promptDialog.hidden = true;
+          });
+          document.getElementById("prompt-dialog-buttons").replaceChildren(ok);
+          promptDialog.hidden = false;
+          ok.focus();
         }
       }
       // Before boot completes an uncaught error means the game did not start; after it, app_boot logs them.

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import * as fileMenu from "./file_menu.js";
 import * as webSteps from "../flows/web_steps.js";
-import { PUZZLE_LINE, errorModalStub, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow, coreText, fillText } from "../test_support.mjs";
+import { PUZZLE_LINE, noPromptDialog, promptDialogStub, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow, coreText, fillText } from "../test_support.mjs";
 import * as menuBar from "./menu_bar.js";
 
 function makeBtn() {
@@ -33,12 +33,11 @@ function makeRenderElement() {
  * File menu over `game` with the browser's step handlers; `generated` answers New and records
  * the difficulty, the rest of `options` reach `webSteps` (pick, download, exportText, ...).
  */
-function wireFile(controls, game, session, { statusEl = makeStatus(), errorModal = errorModalStub(), difficultyDialog = { el: { hidden: true }, buttons: [] }, generated = [], ...options } = {}) {
+function wireFile(controls, game, session, { statusEl = makeStatus(), difficultyDialog = { el: { hidden: true }, buttons: [] }, generated = [], ...options } = {}) {
   const difficulties = [];
   const steps = {
     ...webSteps.webSteps(game, session, {
       statusEl,
-      errorModal,
       download() {},
       pick: async () => ({ ok: false, cancelled: true }),
       ...options,
@@ -102,10 +101,10 @@ function easyDialog() {
   const game = await loadGame();
   const session = { legend: { save_as: true }, state: { cells: [] } };
   let downloaded = null;
-  const errorModal = errorModalStub();
+  const prompts = promptDialogStub();
   const controls = { saveAs: makeBtn() };
   wireFile(controls, game, session, {
-    errorModal,
+    promptDialog: prompts,
     download(bytes, name) {
       downloaded = { bytes, name };
     },
@@ -115,7 +114,7 @@ function easyDialog() {
   await controls.saveAs.click();
   globalThis.fetch = prevFetch;
   assert.equal(downloaded, null, "save-as requires host-provided default filename");
-  assert.equal(errorModal.el.hidden, false);
+  assert.equal(prompts.shown.length, 1);
 }
 
 {
@@ -175,12 +174,12 @@ function easyDialog() {
   // A failed generation surfaces core's error; the board stays.
   const game = await loadGame();
   const session = { state: { cells: [] }, legend: { new: true } };
-  const errorModal = errorModalStub();
+  const prompts = promptDialogStub();
   const difficultyDialog = easyDialog();
-  wireFile({ new: makeBtn() }, game, session, { difficultyDialog, errorModal, generated: [{ ok: false, error: "gen failed" }] });
+  wireFile({ new: makeBtn() }, game, session, { difficultyDialog, promptDialog: prompts, generated: [{ ok: false, error: "gen failed" }] });
   await difficultyDialog.buttons[0].el.click();
-  assert.equal(errorModal.el.hidden, false, "error modal shown");
-  assert.equal(errorModal.msgEl.textContent, coreText.GENERATE_FAILED_MSG);
+  assert.equal(prompts.shown.length, 1, "error modal shown");
+  assert.equal(prompts.lastText, coreText.GENERATE_FAILED_MSG);
   assert.deepEqual(session.state.cells, []);
 }
 
@@ -250,10 +249,10 @@ function easyDialog() {
     fileHandle: { name: "game.sud" },
     boundFilename: "game.sud",
   };
-  const errorModal = errorModalStub("old");
+  const prompts = promptDialogStub();
   const importBtn = makeBtn();
   wireFile({ import: importBtn }, game, session, {
-    errorModal,
+    promptDialog: prompts,
     pick: async (sessionArg, opts) => {
       assert.equal(opts.accept, ".txt,text/plain", "puzzle picker targets text files");
       assert.equal(sessionArg, session);
@@ -264,7 +263,7 @@ function easyDialog() {
   assert.equal(session.state.cells[0].value, 5, "board resets from the imported puzzle");
   assert.equal(session.fileHandle, null, "save target unbound after import");
   assert.equal(session.boundFilename, null, "bound filename cleared after import");
-  assert.equal(errorModal.el.hidden, true, "no error modal on success");
+  assert.equal(prompts.shown.length, 0, "no error modal on success");
 }
 
 // Import with an invalid file surfaces core's error; board and save target stay intact
@@ -276,16 +275,16 @@ function easyDialog() {
     fileHandle: { name: "game.sud" },
     boundFilename: "game.sud",
   };
-  const errorModal = errorModalStub("old");
+  const prompts = promptDialogStub();
   const before = JSON.stringify(session.state);
   const importBtn = makeBtn();
   wireFile({ import: importBtn }, game, session, {
-    errorModal,
+    promptDialog: prompts,
     pick: async () => ({ ok: true, name: "bad.txt", bytes: new TextEncoder().encode("oops") }),
   });
   await importBtn.click();
-  assert.equal(errorModal.el.hidden, false, "error modal opens on invalid import");
-  assert.match(errorModal.msgEl.textContent, /81/);
+  assert.equal(prompts.shown.length, 1, "error modal opens on invalid import");
+  assert.match(prompts.lastText, /81/);
   assert.equal(JSON.stringify(session.state), before, "board untouched after failed import");
   assert.equal(session.fileHandle.name, "game.sud", "save target kept after failed import");
   assert.equal(session.boundFilename, "game.sud", "bound filename kept after failed import");
@@ -371,17 +370,17 @@ function easyDialog() {
       return { ok: true, bytes: new TextEncoder().encode("x".repeat(81)) };
     },
   };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "old" } };
+  const prompts = promptDialogStub();
   const before = JSON.stringify(session.state);
   const exportBtn = makeBtn();
   await withCoreFlow(game);
   wireFile({ export: exportBtn }, game, session, {
-    errorModal,
+    promptDialog: prompts,
     exportText: async () => ({ ok: false, error: "export: write failed" }),
   });
   await exportBtn.click();
-  assert.equal(errorModal.el.hidden, false);
-  assert.equal(errorModal.msgEl.textContent, coreText.EXPORT_FAILED_MSG);
+  assert.equal(prompts.shown.length, 1);
+  assert.equal(prompts.lastText, coreText.EXPORT_FAILED_MSG);
   assert.equal(JSON.stringify(session.state), before);
   assert.equal(session.fileHandle.name, "game.sud");
 }
@@ -444,18 +443,16 @@ function easyDialog() {
   };
   const session = { legend: { save: true }, state: { cells: [] }, fileHandle, boundFilename: "bound.sud" };
   const host = hostFetch();
-  const prevChoose = globalThis.__sudokuChoose;
-  globalThis.__sudokuChoose = async () => assert.fail("continuing the bound file must not ask");
   const statusEl = makeStatus();
   const controls = { save: makeBtn() };
   wireFile(controls, game, session, {
     statusEl,
     fetchFn: host.fetchFn,
+    promptDialog: noPromptDialog("continuing the bound file must not ask"),
     pick: async () => assert.fail("no picker for a bound file"),
     download: () => assert.fail("no download for a bound file"),
   });
   await controls.save.click();
-  globalThis.__sudokuChoose = prevChoose;
   assert.deepEqual(written, [[...game.toSaveFormat().bytes]]);
   assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Restore-Copy"], "true");
   assert.equal(statusEl.textContent, fillText(coreText.SAVED_TO_FMT, "bound.sud"));

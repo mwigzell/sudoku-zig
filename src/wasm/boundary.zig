@@ -286,7 +286,7 @@ const JsonFlowInput = struct {
     input: []const u8,
     name: ?[]const u8 = null,
     exists: ?bool = null,
-    yes: ?bool = null,
+    index: ?usize = null,
     ok: ?bool = null,
     cancelled: ?bool = null,
     taken: ?bool = null,
@@ -301,7 +301,7 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
     return switch (kind) {
         .start => .start,
         .default_target => .{ .default_target = v.name orelse return error.MissingField },
-        .answered => .{ .answered = v.yes orelse return error.MissingField },
+        .pressed => .{ .pressed = v.index orelse return error.MissingField },
         .wrote => .{ .wrote = if (v.ok == true)
             .{ .ok = v.name orelse return error.MissingField }
         else if (v.exists == true)
@@ -356,19 +356,25 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"name\":");
             try writeJsonString(w, name);
         },
-        .show_status, .show_error => |text| {
+        .show_status => |text| {
             try std.Io.Writer.writeAll(w, ",\"text\":");
             try writeJsonString(w, text);
         },
-        .ask => |q| {
+        // `default` and `dismiss` are core's rules for which button Enter and dismissing answer.
+        .prompt_message => |p| {
+            try std.Io.Writer.writeAll(w, ",\"type\":");
+            try writeJsonString(w, @tagName(p.type));
             try std.Io.Writer.writeAll(w, ",\"title\":");
-            try writeJsonString(w, q.title);
+            try writeJsonString(w, p.title);
             try std.Io.Writer.writeAll(w, ",\"text\":");
-            try writeJsonString(w, q.text);
-            try std.Io.Writer.writeAll(w, ",\"ok_label\":");
-            try writeJsonString(w, q.ok_label);
-            try std.Io.Writer.writeAll(w, ",\"cancel_label\":");
-            try writeJsonString(w, q.cancel_label);
+            try writeJsonString(w, p.text);
+            try std.Io.Writer.writeAll(w, ",\"buttons\":[");
+            for (p.buttons, 0..) |label, i| {
+                if (i > 0) try std.Io.Writer.writeAll(w, ",");
+                try writeJsonString(w, label);
+            }
+            try std.Io.Writer.print(w, "],\"default\":{d},\"dismiss\":", .{p.defaultAnswer()});
+            if (p.dismissAnswer()) |d| try std.Io.Writer.print(w, "{d}", .{d}) else try std.Io.Writer.writeAll(w, "null");
         },
         .restore => |path| {
             try std.Io.Writer.writeAll(w, ",\"path\":");
@@ -473,6 +479,8 @@ pub fn writeGenTextJson(out: OutBuffer) !void {
 /// Core's dialog and status text keyed by constant name, so JS tests compare against core rather than copies.
 pub fn writeCoreTextJson(out: OutBuffer) !void {
     try writeTextTableJson(out, &.{
+        .{ .key = "ERROR_TITLE", .text = flow.step.ERROR_TITLE },
+        .{ .key = "OK_LABEL", .text = flow.step.OK_LABEL },
         .{ .key = "SAVED_TO_FMT", .text = file_policy.SAVED_TO_FMT },
         .{ .key = "WRITE_CANCELLED_MSG", .text = file_policy.WRITE_CANCELLED_MSG },
         .{ .key = "REPLACE_CONFIRM_TITLE", .text = file_policy.REPLACE_CONFIRM_TITLE },
@@ -917,7 +925,7 @@ test "flow input parses every step result" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    try std.testing.expect(!(try parseFlowInput(a, "{\"input\":\"answered\",\"yes\":false}")).answered);
+    try std.testing.expectEqual(@as(usize, 2), (try parseFlowInput(a, "{\"input\":\"pressed\",\"index\":2}")).pressed);
     try std.testing.expectEqualStrings("d.sud", (try parseFlowInput(a, "{\"input\":\"default_target\",\"name\":\"d.sud\"}")).default_target);
     try std.testing.expectEqualStrings("w.sud", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":true,\"name\":\"w.sud\"}")).wrote.ok);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"cancelled\":true}")).wrote == .cancelled);
@@ -942,8 +950,10 @@ test "step JSON carries the tag and its payload" {
     var buf: [8192]u8 = undefined;
     var len: u32 = 0;
     const out = OutBuffer{ .buf = &buf, .len = &len };
-    try writeStepJson(out, .{ .ask = .{ .title = "T", .text = "Q?", .ok_label = "Yes", .cancel_label = "No" } });
-    try std.testing.expectEqualStrings("{\"step\":\"ask\",\"title\":\"T\",\"text\":\"Q?\",\"ok_label\":\"Yes\",\"cancel_label\":\"No\"}", out.finishJson());
+    try writeStepJson(out, .{ .prompt_message = .{ .type = .warning, .title = "T", .text = "Q?", .buttons = &.{ "A", "B", "C" }, .cancel = 0 } });
+    try std.testing.expectEqualStrings("{\"step\":\"prompt_message\",\"type\":\"warning\",\"title\":\"T\",\"text\":\"Q?\",\"buttons\":[\"A\",\"B\",\"C\"],\"default\":2,\"dismiss\":0}", out.finishJson());
+    try writeStepJson(out, .{ .prompt_message = .{ .type = .information, .title = "T", .text = "Q?", .buttons = &.{ "A", "B" } } });
+    try std.testing.expectEqualStrings("{\"step\":\"prompt_message\",\"type\":\"information\",\"title\":\"T\",\"text\":\"Q?\",\"buttons\":[\"A\",\"B\"],\"default\":1,\"dismiss\":null}", out.finishJson());
     try writeStepJson(out, .{ .save_as = .{ .name = "a.sud", .replace = false } });
     try std.testing.expectEqualStrings("{\"step\":\"save_as\",\"name\":\"a.sud\",\"replace\":false}", out.finishJson());
     try writeStepJson(out, .{ .autosave = .{ .name = "a.sud", .replace = true } });

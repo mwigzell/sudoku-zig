@@ -90,7 +90,7 @@ pub const ExportFlow = struct {
     }
 
     fn fail(self: *ExportFlow, msg: []const u8) Step {
-        return self.finish(.{ .show_error = msg });
+        return self.finish(step_mod.promptError(msg));
     }
 
     fn finish(self: *ExportFlow, terminal: Step) Step {
@@ -119,7 +119,7 @@ test "a closed export picker ends quietly; a failed write shows the error" {
     try testing.expect(cancelled.next(.{ .wrote = .cancelled }) == .done);
     var failed = ExportFlow.toFile("puzzle.txt");
     _ = failed.next(.start);
-    try testing.expectEqualStrings(EXPORT_FAILED_MSG, failed.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
+    try testing.expectEqualStrings(EXPORT_FAILED_MSG, failed.next(.{ .wrote = .{ .failed = "AccessDenied" } }).prompt_message.text);
 }
 
 test "copy hands over the puzzle and reports it, or shows why it could not" {
@@ -128,11 +128,11 @@ test "copy hands over the puzzle and reports it, or shows why it could not" {
     try testing.expectEqualStrings(COPIED_MSG, flow.next(.{ .copied = .ok }).show_status);
     var denied = ExportFlow.toClipboard();
     _ = denied.next(.start);
-    try testing.expectEqualStrings(COPY_FAILED_MSG, denied.next(.{ .copied = .{ .failed = "copy: clipboard write denied" } }).show_error);
+    try testing.expectEqualStrings(COPY_FAILED_MSG, denied.next(.{ .copied = .{ .failed = "copy: clipboard write denied" } }).prompt_message.text);
 }
 
 test "a wrong answer ends the export with an error" {
     var flow = ExportFlow.toClipboard();
     _ = flow.next(.start);
-    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).show_error);
+    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).prompt_message.text);
 }

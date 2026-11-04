@@ -1,5 +1,6 @@
 // Flow protocol: core issues steps, adapters carry each one out on their
 // platform and report the result back as the next input.
+const std = @import("std");
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const config = @import("../config.zig");
 const board = @import("../board/board.zig");
@@ -7,19 +8,72 @@ const legend_mod = @import("../renderer/legend.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const event = @import("../event.zig");
 
-/// A two-button question; `yes` in the answer means the user picked `ok_label`.
-pub const Ask = struct {
+/// What a prompt is about; front ends mark it with its icon.
+pub const MessageType = enum { information, warning, @"error" };
+
+/// A message the player must acknowledge or answer; answered with `pressed`, the index of the button.
+pub const PromptMessage = struct {
+    type: MessageType,
     title: []const u8,
     text: []const u8,
-    ok_label: []const u8,
-    cancel_label: []const u8,
+    /// Left to right; the rightmost is the default.
+    buttons: []const []const u8,
+    /// The button that dismissing the prompt (Escape, Back, a tap outside) answers; null when only a button press answers.
+    cancel: ?usize = null,
+
+    /// The button dismissing answers: the named cancel button, or the only button; null when dismissing does nothing.
+    pub fn dismissAnswer(self: PromptMessage) ?usize {
+        if (self.cancel) |c| return c;
+        if (self.buttons.len == 1) return 0;
+        return null;
+    }
+
+    /// The rightmost button: focused, and chosen by Enter.
+    pub fn defaultAnswer(self: PromptMessage) usize {
+        return self.buttons.len - 1;
+    }
 };
 
-/// One thing for the adapter to do, named for the operation. `show_status`, `show_error` and `done` end the flow.
+pub const ERROR_TITLE: []const u8 = "Error";
+pub const OK_LABEL: []const u8 = "OK";
+
+/// The prompt for an error core reports: its title, the text, one OK button.
+pub fn makeErrorPrompt(text: []const u8) PromptMessage {
+    return .{ .type = .@"error", .title = ERROR_TITLE, .text = text, .buttons = &.{OK_LABEL} };
+}
+
+/// The step that shows an error; the flow ends once the player acknowledges it.
+pub fn promptError(text: []const u8) Step {
+    return .{ .prompt_message = makeErrorPrompt(text) };
+}
+
+/// Button indices of a `makeQuestion` prompt.
+pub const QUESTION_CANCEL: usize = 0;
+pub const QUESTION_OK: usize = 1;
+
+/// A two-button question: `cancel_label` on the left (also what dismissing answers), `ok_label` on the right.
+pub fn makeQuestion(
+    message_type: MessageType,
+    title: []const u8,
+    text: []const u8,
+    comptime ok_label: []const u8,
+    comptime cancel_label: []const u8,
+) Step {
+    return .{ .prompt_message = .{
+        .type = message_type,
+        .title = title,
+        .text = text,
+        .buttons = &.{ cancel_label, ok_label },
+        .cancel = QUESTION_CANCEL,
+    } };
+}
+
+/// One thing for the adapter to do, named for the operation. `show_status` and `done` end the flow.
 pub const Step = union(enum) {
     /// Report the platform's default save target name.
     resolve_default_target,
-    ask: Ask,
+    /// Show this message and report the button the player pressed; answered with `pressed`.
+    prompt_message: PromptMessage,
     /// Write the saved game to the current file (or a picker when none is bound), keep the restore copy, bind it; answered with `wrote`.
     save: GameWrite,
     /// Write the saved game to a file the player picks, suggesting this name (native: the typed path); answered with `wrote`.
@@ -51,7 +105,6 @@ pub const Step = union(enum) {
     /// Store these player settings in `settings.json`.
     persist_settings: config.Config,
     show_status: []const u8,
-    show_error: []const u8,
     done,
 };
 
@@ -65,7 +118,7 @@ pub const GameWrite = struct {
 /// True once the flow has nothing more for the adapter to do.
 pub fn isTerminal(s: Step) bool {
     return switch (s) {
-        .show_status, .show_error, .done => true,
+        .show_status, .done => true,
         else => false,
     };
 }
@@ -151,7 +204,8 @@ pub const Taken = struct {
 pub const Input = union(enum) {
     start,
     default_target: []const u8,
-    answered: bool,
+    /// Index of the button the player pressed on a `prompt_message`.
+    pressed: usize,
     wrote: Wrote,
     read: Read,
     generated: Generated,
@@ -165,3 +219,13 @@ pub const Input = union(enum) {
 pub const UNEXPECTED_INPUT_MSG = "The command could not finish because the app sent an unexpected answer.";
 /// Shown when the platform could not generate a puzzle; its reason goes to the log.
 pub const GENERATE_FAILED_MSG = "A new game could not be generated.";
+
+test "a prompt's default is the rightmost button, and dismissing answers its cancel button or its only button" {
+    const three: PromptMessage = .{ .type = .warning, .title = "T", .text = "Q?", .buttons = &.{ "A", "B", "C" } };
+    try std.testing.expectEqual(@as(usize, 2), three.defaultAnswer());
+    try std.testing.expectEqual(@as(?usize, null), three.dismissAnswer());
+    var named = three;
+    named.cancel = 0;
+    try std.testing.expectEqual(@as(?usize, 0), named.dismissAnswer());
+    try std.testing.expectEqual(@as(?usize, 0), makeErrorPrompt("x").dismissAnswer());
+}

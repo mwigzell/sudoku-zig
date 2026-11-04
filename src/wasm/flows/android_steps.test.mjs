@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as androidSteps from "./android_steps.js";
 import * as autosave from "./autosave.js";
 import * as stepRunner from "./step_runner.js";
-import { coreText, errorModalStub, fillText, moveWithAutosave, settleFlow, withCoreFlow } from "../test_support.mjs";
+import { coreText, promptDialogStub, fillText, moveWithAutosave, settleFlow, withCoreFlow } from "../test_support.mjs";
 
 const okFetch = async () => ({ ok: true, status: 204 });
 
@@ -40,8 +40,6 @@ async function autosaveGame() {
   // A bound file is there: core's replace policy decides, and the replace write still goes through the bridge.
   const { game, session } = await autosaveGame();
   const bridgeWrites = [];
-  const prevChoose = globalThis.__sudokuChoose;
-  globalThis.__sudokuChoose = async () => true;
   const bridge = {
     autosave(_b64, suggestedName) {
       bridgeWrites.push(suggestedName);
@@ -49,11 +47,8 @@ async function autosaveGame() {
     },
     currentSudokuFileName: () => "bound.sud",
   };
-  try {
-    await moveWithAutosave(game, session, { steps: androidSteps.androidSteps(game, session, bridge, { fetchFn: okFetch }) });
-  } finally {
-    globalThis.__sudokuChoose = prevChoose;
-  }
+  const replace = promptDialogStub((step) => step.default);
+  await moveWithAutosave(game, session, { steps: androidSteps.androidSteps(game, session, bridge, { fetchFn: okFetch, promptDialog: replace }) });
   assert.equal(bridgeWrites.length, 1, "one bridge write, after core allows replacing");
 }
 
@@ -75,14 +70,13 @@ for (const bound of ["", "sudoku.sud"]) {
   // A file this install may not write, whether the default file or the bound one: core asks choose-or-rename;
   // New name is save_as, Choose file is reclaim_file.
   const { game, session } = await autosaveGame();
-  const prevChoose = globalThis.__sudokuChoose;
   const calls = [];
   const answers = [false, true];
-  globalThis.__sudokuChoose = async (message, labels) => {
-    if (labels.title === coreText.REPLACE_CONFIRM_TITLE) return true;
-    calls.push(["ask", labels.title, message, labels.okLabel, labels.cancelLabel]);
-    return answers.shift();
-  };
+  const prompts = promptDialogStub((step) => {
+    if (step.title === coreText.REPLACE_CONFIRM_TITLE) return step.default;
+    calls.push(["ask", step.type, step.title, step.text, step.buttons]);
+    return answers.shift() ? step.default : step.dismiss;
+  });
   const bridge = {
     autosave: () => {
       calls.push(["autosave"]);
@@ -98,15 +92,10 @@ for (const bound of ["", "sudoku.sud"]) {
     },
     currentSudokuFileName: () => bound,
   };
-  const errorModal = errorModalStub();
-  try {
-    await moveWithAutosave(game, session, { steps: androidSteps.androidSteps(game, session, bridge, { fetchFn: okFetch, errorModal }) });
-  } finally {
-    globalThis.__sudokuChoose = prevChoose;
-  }
-  const ask = ["ask", coreText.TAKEN_TITLE, fillText(coreText.TAKEN_FMT, "sudoku.sud"), coreText.TAKEN_PICK_LABEL, coreText.TAKEN_NEW_NAME_LABEL];
+  await moveWithAutosave(game, session, { steps: androidSteps.androidSteps(game, session, bridge, { fetchFn: okFetch, promptDialog: prompts }) });
+  const ask = ["ask", "error", coreText.TAKEN_TITLE, fillText(coreText.TAKEN_FMT, "sudoku.sud"), [coreText.TAKEN_NEW_NAME_LABEL, coreText.TAKEN_PICK_LABEL]];
   assert.deepEqual(calls, [["autosave"], ask, ["save_as", "sudoku.sud"], ask, ["reclaim_file"]], `bound: "${bound}"`);
-  assert.equal(errorModal.el.hidden, true);
+  assert.ok(prompts.shown.every((step) => step.buttons.length > 1), "no error shown");
   assert.equal(session.boundFilename, "sudoku.sud");
 }
 

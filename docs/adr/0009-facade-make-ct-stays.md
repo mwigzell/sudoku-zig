@@ -27,3 +27,4 @@ The bar for retroactive readability improvements on working comptime code is hig
 - If WASM renderer integration reveals a genuine flaw in how function pointers are bound, that earns its own ADR with evidence
 - The current pattern constrains future changes implicitly: any new facade method must be added to both the struct field and every concrete renderer's function table — that coupling is intentional and worth keeping visible
 - More native menu/settings prefs extend **`getCommandInput` scalar parameters** from `Sudoku` (engine config snapshot per turn), not new facade types or pref-sync methods — see AGENTS.md “Native renderer facade seam”
+- Messages the player must answer go through one method, `promptMessage` — see [ADR-0017](0017-prompt-message-step.md)

@@ -1,13 +1,11 @@
 // steps.js — the step handlers web and Android share, and the helpers their own sets build on.
 
 import * as clipboardMod from "../clipboard.js";
-import * as errorModalMod from "../dialogs/error_modal.js";
 import * as files from "../files.js";
 import * as generate from "../gen/generate.js";
 import * as hostApi from "../host_api.js";
 import * as sessionMod from "./session.js";
 import * as statusBar from "../status_bar.js";
-import * as stepRunner from "./step_runner.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").WebSession} WebSession */
@@ -36,7 +34,7 @@ export function stepContext(game, session, options = {}) {
     doc,
     fetchFn: options.fetchFn ?? ((url, init) => globalThis.fetch(url, init)),
     statusEl: options.statusEl ?? null,
-    errorModal: options.errorModal ?? null,
+    promptDialog: options.promptDialog ?? null,
     generatingModal: options.generatingModal,
     genWorker: options.genWorker,
     clipboard: options.clipboard ?? win.navigator?.clipboard,
@@ -83,10 +81,10 @@ export async function writeGame(ctx, writeUserFile, name, { restoreCopy, fetchFn
  * @returns {FlowHandlers}
  */
 export function sharedSteps(ctx) {
-  const { game, session, win, doc, fetchFn, statusEl, errorModal, generatingModal, genWorker, clipboard, download, exportText } = ctx;
+  const { game, session, win, doc, fetchFn, statusEl, promptDialog, generatingModal, genWorker, clipboard, download, exportText } = ctx;
   return {
     resolveDefaultTarget: () => session.default_save_filename,
-    ask: (step) => stepRunner.askWithDialog(step, win),
+    promptMessage: (step) => (promptDialog ? promptDialog.show(step) : step.dismiss ?? step.default),
     exportPuzzle: async (name) => {
       const exported = game.toPuzzle();
       if (!exported.ok) return exported;
@@ -114,9 +112,6 @@ export function sharedSteps(ctx) {
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);
       if (statusEl) statusBar.showStatusText(statusEl, text);
-    },
-    showError: (text) => {
-      if (errorModal) errorModalMod.showErrorModal(errorModal, text);
     },
   };
 }

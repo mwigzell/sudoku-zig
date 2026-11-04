@@ -1,5 +1,6 @@
 // test_support.mjs — node test helpers: real wasm games, the core flow for fake games, and stubs shared by test files.
 
+import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,7 +73,7 @@ export const PUZZLE_LINE = "5300700006001950000980000608000600034008030017000200
 function loadNow(game, action, answer) {
   let step = answer(game.commandStart(action));
   let shown = null;
-  while (step.step !== "done" && step.step !== "show_status" && step.step !== "show_error") {
+  while (step.step !== "done" && step.step !== "show_status" && step.step !== "prompt_message") {
     if (step.step === "show_game") shown = step;
     const input = {
       show_game: { input: "ack" },
@@ -153,9 +154,29 @@ export async function flushDialogPaint() {
 
 export const FILL_MOVE = { action: "fill", row: 0, col: 2, digit: 4 };
 
-/** Error dialog stub: `el.hidden` turns false and `msgEl` holds the text once an error shows. */
-export function errorModalStub(text = "") {
-  return { el: { hidden: true }, msgEl: { textContent: text } };
+/**
+ * Prompt dialog stub: records each prompt core shows and answers with `answer` (dismiss, else the default).
+ * @param {(step: import("./types").PromptStep) => number} [answer]
+ */
+export function promptDialogStub(answer = (step) => step.dismiss ?? step.default) {
+  /** @type {import("./types").PromptStep[]} */
+  const shown = [];
+  return {
+    shown,
+    show: async (step) => {
+      shown.push(step);
+      return answer(step);
+    },
+    dismiss() {},
+    get lastText() {
+      return shown.at(-1)?.text ?? null;
+    },
+  };
+}
+
+/** A prompt dialog that fails the test if core asks anything. */
+export function noPromptDialog(why) {
+  return promptDialogStub(() => assert.fail(why));
 }
 
 /**

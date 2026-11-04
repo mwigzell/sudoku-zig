@@ -40,7 +40,7 @@ pub const SettingsFlow = struct {
     pub fn next(self: *SettingsFlow, input: Input) Step {
         switch (self.phase) {
             .start => {
-                if (input != .start) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
+                if (input != .start) return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG));
                 if (!commandPersistsSettings(self.command)) return self.finish(.done);
                 self.phase = .persisting;
                 return .{ .persist_settings = self.cfg };
@@ -50,10 +50,10 @@ pub const SettingsFlow = struct {
                     .ok => return self.finish(.done),
                     .failed => |reason| {
                         log.err("settings save failed: {s}", .{reason});
-                        return self.finish(.{ .show_error = PERSIST_FAILED_MSG });
+                        return self.finish(step_mod.promptError(PERSIST_FAILED_MSG));
                     },
                 },
-                else => return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG }),
+                else => return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG)),
             },
             .finished => return .done,
         }
@@ -92,17 +92,17 @@ test "a persist failure shows core's sentence, not the platform's reason" {
     _ = flow.next(.start);
     try testing.expectEqualStrings(
         PERSIST_FAILED_MSG,
-        flow.next(.{ .persisted = .{ .failed = "AccessDenied" } }).show_error,
+        flow.next(.{ .persisted = .{ .failed = "AccessDenied" } }).prompt_message.text,
     );
 }
 
 test "a wrong answer to persist_settings ends the flow with an error" {
     var flow = SettingsFlow.afterCommand(config.Config.default(), .toggle_region);
     _ = flow.next(.start);
-    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).show_error);
+    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).prompt_message.text);
 }
 
 test "the flow must be started with start" {
     var flow = SettingsFlow.afterCommand(config.Config.default(), .toggle_region);
-    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).show_error);
+    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).prompt_message.text);
 }

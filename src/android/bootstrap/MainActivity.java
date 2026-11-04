@@ -42,6 +42,8 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -72,6 +74,7 @@ public final class MainActivity extends Activity {
     private static final String OPENED_FALLBACK_NAME = "opened.sud";
     /** The page's flush hook (`flows/autosave.js`); the WebView fires no page hide when the app closes. */
     private static final String FLUSH_ON_CLOSE_JS = "window.__sudokuFlushOnClose && window.__sudokuFlushOnClose();";
+    private static final String DISMISS_PROMPT_JS = "window.__sudokuDismissPrompt && window.__sudokuDismissPrompt();";
     private static final String DEFAULT_VISIBLE_SAVE_DIR = Environment.DIRECTORY_DOWNLOADS + "/" + JniHost.defaultFolderName();
     /** Bridge reason: this install may not write the file (an earlier install created it, or its permission is gone). */
     private static final String CLIENT_LOG_SCRIPT = "/client_log.js";
@@ -119,6 +122,9 @@ public final class MainActivity extends Activity {
     private String currentFileName;
     private String pendingSystemBarsTheme;
     private boolean webBootReady;
+    /** While a prompt is open Back dismisses it instead of leaving the app. */
+    private boolean promptOpen;
+    private OnBackInvokedCallback promptBackCallback;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -274,6 +280,34 @@ public final class MainActivity extends Activity {
     protected void onStop() {
         super.onStop();
         webView.evaluateJavascript(FLUSH_ON_CLOSE_JS, null);
+    }
+
+    /** Route Back to the open prompt, or give it back to the system when none is open. */
+    private void setPromptOpen(boolean open) {
+        promptOpen = open;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (open && promptBackCallback == null) {
+            promptBackCallback = this::dismissPrompt;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, promptBackCallback);
+        } else if (!open && promptBackCallback != null) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(promptBackCallback);
+            promptBackCallback = null;
+        }
+    }
+
+    private void dismissPrompt() {
+        webView.evaluateJavascript(DISMISS_PROMPT_JS, null);
+    }
+
+    /** Back before Android 13; later versions use the callback `setPromptOpen` registers. */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        if (promptOpen) {
+            dismissPrompt();
+            return;
+        }
+        super.onBackPressed();
     }
 
     @Override
@@ -763,7 +797,7 @@ public final class MainActivity extends Activity {
         return pick;
     }
 
-    /** One method per file step (`flows/android_steps.js`), plus the page's boot, theme and error signals. */
+    /** One method per file step (`flows/android_steps.js`), plus the page's boot, theme, prompt and error signals. */
     private final class AndroidFileBridge {
         /** The bound file, else a new file the player names. */
         @JavascriptInterface
@@ -819,6 +853,11 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void logJsError(String message, String source, int line, int column) {
             Log.e(LOG_IDENTITY, "JS error: " + message + " @ " + source + ":" + line + ":" + column);
+        }
+
+        @JavascriptInterface
+        public void setPromptOpen(boolean open) {
+            runOnUiThread(() -> MainActivity.this.setPromptOpen(open));
         }
 
         @JavascriptInterface

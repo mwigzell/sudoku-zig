@@ -10,7 +10,7 @@ import * as fileMenu from "../menus/file_menu.js";
 import * as menu from "../menus/menu.js";
 import * as region from "../menus/region.js";
 import * as themeMod from "../menus/theme.js";
-import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAutosave, postedCurrentFile, settleFlow, startNewGame, coreText, fillText } from "../test_support.mjs";
+import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAutosave, noPromptDialog, postedCurrentFile, settleFlow, startNewGame, coreText, fillText } from "../test_support.mjs";
 
 // ── initializeWebSession: host config boot + host startup policy payload ──
 {
@@ -155,15 +155,19 @@ async function runStartupScenario({ config = {}, currentFile = null, answers = [
     startup_save_path: currentFile ? HOST_CURRENT_FILE : null,
   };
   const session = sessionMod.createWebSessionFromStartup(boot);
-  const win = {
-    __sudokuChoose: async (text, opts) => {
-      asked.push({ text, ...opts });
-      return answers.shift() === true;
+  const promptDialog = {
+    show: async (step) => {
+      if (step.buttons.length === 1) {
+        errors.push(step.text);
+        return step.default;
+      }
+      asked.push(step);
+      return answers.shift() === true ? step.default : step.dismiss;
     },
+    dismiss() {},
   };
   const steps = {
-    ...webSteps.webSteps(game, session, { fetchFn, win }),
-    showError: (text) => errors.push(text),
+    ...webSteps.webSteps(game, session, { fetchFn, promptDialog }),
     generateGame: async (difficulty) => {
       generateCalls.push(difficulty);
       return generated.shift() ?? { ok: false, error: "no generation scripted" };
@@ -198,10 +202,7 @@ async function runStartupScenario({ config = {}, currentFile = null, answers = [
   assert.equal(run.generateCalls.length, 0);
 
   const host = hostFetch({ exists: true });
-  const prevChoose = globalThis.__sudokuChoose;
-  globalThis.__sudokuChoose = async () => assert.fail("a restored game continues its file");
-  await moveWithAutosave(run.game, run.session, { fetchFn: host.fetchFn });
-  globalThis.__sudokuChoose = prevChoose;
+  await moveWithAutosave(run.game, run.session, { fetchFn: host.fetchFn, promptDialog: noPromptDialog("a restored game continues its file") });
   assert.equal(postedCurrentFile(host.calls)?.init?.headers?.["X-Sudoku-Filename"], "game.sud");
 }
 
@@ -217,8 +218,8 @@ for (const deleteIt of [true, false]) {
   assert.equal(run.asked.length, 1);
   assert.equal(run.asked[0].title, "Restore failed");
   assert.equal(run.asked[0].text, fillText(coreText.RESTORE_FAILED_FMT, "game.sud"));
-  assert.equal(run.asked[0].okLabel, "Delete");
-  assert.equal(run.asked[0].cancelLabel, "Keep");
+  assert.equal(run.asked[0].type, "error");
+  assert.deepEqual(run.asked[0].buttons, ["Keep", "Delete"]);
   const forget = run.calls.find((c) => c.init.method === "DELETE");
   assert.ok(forget, "the host must forget the current file");
   assert.equal(forget.init.headers["X-Sudoku-Delete-File"], deleteIt ? "true" : undefined);
@@ -246,7 +247,8 @@ for (const deleteIt of [true, false]) {
   });
   assert.equal(run.outcome.kind, "done");
   assert.equal(run.asked[0].title, "Puzzle solved");
-  assert.equal(run.asked[0].okLabel, "New game");
+  assert.equal(run.asked[0].type, "information");
+  assert.equal(run.asked[0].buttons[run.asked[0].default], "New game");
   assert.deepEqual(run.generateCalls, [3]);
   assert.equal(run.shown.length, 2);
   assert.equal(run.session.state.cells[0].value, 5);
@@ -286,7 +288,7 @@ for (const deleteIt of [true, false]) {
 {
   // Auto new failed: the idle board, then the error; boot itself does not fail.
   const run = await runStartupScenario({ config: { auto_new: true }, generated: [{ ok: false, error: "worker crashed" }] });
-  assert.equal(run.outcome.kind, "show_error");
+  assert.equal(run.outcome.kind, "done");
   assert.deepEqual(run.shown, [{ text: WELCOME_STATUS, file: null }]);
   assert.deepEqual(run.errors, [coreText.GENERATE_FAILED_MSG]);
 }
@@ -544,7 +546,7 @@ async function launchWeb(cfg, host, ui, { generatedLine, expectSolved } = {}) {
     ...webSteps.webSteps(game, session, {
       fetchFn: host.fetchFn,
       statusEl: ui.statusEl,
-      errorModal: ui.errorModal,
+      promptDialog: ui.promptDialog,
       clipboard: { readText: async () => run.pasted, writeText: async () => {} },
       pick: async () => run.picked,
       download() {},
@@ -557,7 +559,12 @@ async function launchWeb(cfg, host, ui, { generatedLine, expectSolved } = {}) {
   };
   if (host.current) {
     const startupErrors = [];
-    await startupMod.runStartupFlow(game, boot, { ...run.steps, showError: (t) => startupErrors.push(t) });
+    const recordStartupError = (step) => {
+      startupErrors.push(step.text);
+      return step.default;
+    };
+    const promptMessage = (step) => (step.buttons.length === 1 ? recordStartupError(step) : run.steps.promptMessage(step));
+    await startupMod.runStartupFlow(game, boot, { ...run.steps, promptMessage });
     assert.deepEqual(startupErrors, []);
     if (expectSolved !== undefined) assert.equal(isSolved(game.getState()), expectSolved, "solved after startup");
   }
@@ -580,28 +587,23 @@ async function runParityScenario(scenario) {
   const host = parityHost();
   const answers = [...scenario.answers];
   let questions = 0;
-  const prevChoose = globalThis.__sudokuChoose;
   const prevFetch = globalThis.fetch;
-  globalThis.__sudokuChoose = async () => {
-    questions += 1;
-    return answers.shift() ?? true;
-  };
   globalThis.fetch = host.fetchFn;
   let errors = 0;
   let lastError = "";
   const ui = {
     statusEl: { textContent: "", className: "" },
-    errorModal: {
-      el: { hidden: true },
-      msgEl: {
-        get textContent() {
-          return lastError;
-        },
-        set textContent(text) {
+    promptDialog: {
+      show: async (step) => {
+        if (step.buttons.length === 1) {
           errors += 1;
-          lastError = text;
-        },
+          lastError = step.text;
+          return step.default;
+        }
+        questions += 1;
+        return (answers.shift() ?? true) ? step.default : step.dismiss;
       },
+      dismiss() {},
     },
     boardEl: makeBoard(),
   };
@@ -710,7 +712,6 @@ async function runParityScenario(scenario) {
       assert.equal(c.given, p.given, `probe ${p.row},${p.col} given`);
     }
   } finally {
-    globalThis.__sudokuChoose = prevChoose;
     globalThis.fetch = prevFetch;
   }
 }

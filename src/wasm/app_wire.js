@@ -1,7 +1,7 @@
 // app_wire.js — DOM wiring for the web shell once startup/session are ready.
 
 import * as androidSteps from "./flows/android_steps.js";
-import * as errorModalMod from "./dialogs/error_modal.js";
+import * as promptDialogMod from "./dialogs/prompt_dialog.js";
 import * as webSteps from "./flows/web_steps.js";
 import * as sessionMod from "./flows/session.js";
 import * as statusBarMod from "./status_bar.js";
@@ -19,7 +19,7 @@ import * as settings from "./menus/settings.js";
  * @typedef {import("./types").WebSession} WebSession
  * @typedef {import("./types").GeneratingModal} GeneratingModal
  * @typedef {import("./types").GenWorker} GenWorker
- * @typedef {import("./types").ErrorModal} ErrorModal
+ * @typedef {import("./types").PromptDialog} PromptDialog
  * @typedef {import("./types").FlowHandlers} FlowHandlers
  * @typedef {import("./types").StepsOptions} StepsOptions
  */
@@ -46,41 +46,6 @@ function isTouchPlayPadPlatform(win = globalThis) {
   );
 }
 
-/** One two-button web dialog for every yes/no question, so all prompts share one look. */
-function installReplaceConfirm(root = document, win = globalThis) {
-  const replaceConfirmModal = {
-    el: root.getElementById("replace-confirm-modal"),
-    titleEl: root.getElementById("replace-confirm-title"),
-    msgEl: root.getElementById("replace-confirm-msg"),
-    cancelBtn: root.getElementById("replace-confirm-cancel"),
-    okBtn: root.getElementById("replace-confirm-ok"),
-  };
-  win.__sudokuChoose = (message, { title, okLabel, cancelLabel }) =>
-    new Promise((resolve) => {
-      replaceConfirmModal.titleEl.textContent = title;
-      replaceConfirmModal.msgEl.textContent = message;
-      replaceConfirmModal.okBtn.textContent = okLabel;
-      replaceConfirmModal.cancelBtn.textContent = cancelLabel;
-      replaceConfirmModal.el.hidden = false;
-      const cleanup = () => {
-        replaceConfirmModal.okBtn.removeEventListener("click", onOk);
-        replaceConfirmModal.cancelBtn.removeEventListener("click", onCancel);
-      };
-      const onOk = () => {
-        cleanup();
-        replaceConfirmModal.el.hidden = true;
-        resolve(true);
-      };
-      const onCancel = () => {
-        cleanup();
-        replaceConfirmModal.el.hidden = true;
-        resolve(false);
-      };
-      replaceConfirmModal.okBtn.addEventListener("click", onOk);
-      replaceConfirmModal.cancelBtn.addEventListener("click", onCancel);
-    });
-}
-
 function settingsModalFromDom(root = document) {
   return {
     el: root.getElementById("settings-modal"),
@@ -100,7 +65,6 @@ function settingsModalFromDom(root = document) {
  * @property {WebSession} session
  * @property {GeneratingModal} generatingModal
  * @property {GenWorker} genWorker
- * @property {ErrorModal} errorModal
  * @property {Document} [root]
  * @property {Window & typeof globalThis} [win]
  */
@@ -121,7 +85,6 @@ export function wireSudokuApp({
   session,
   generatingModal,
   genWorker,
-  errorModal,
   root = document,
   win = globalThis,
 }) {
@@ -131,7 +94,7 @@ export function wireSudokuApp({
   const useTouchPlayPad = isTouchPlayPadPlatform(win);
   const menuControls = menuBarMod.collectMenuBarControls(root);
 
-  installReplaceConfirm(root, win);
+  const promptDialog = createPromptDialog(root, win);
 
   const aboutModal = {
     el: root.getElementById("about-modal"),
@@ -155,7 +118,7 @@ export function wireSudokuApp({
   };
   syncPlayPadVisibility(null);
 
-  const steps = platformSteps(game, session, { win, statusEl: statusBar, errorModal, generatingModal, genWorker });
+  const steps = platformSteps(game, session, { win, statusEl: statusBar, promptDialog, generatingModal, genWorker });
 
   const themeMenu = theme.wireThemeMenu(menuControls, game, session, {
     root,
@@ -250,14 +213,23 @@ export function wireSudokuApp({
 }
 
 /**
- * Resolve and wire the shared blocking error modal controls from DOM.
+ * Wire the shared prompt dialog. On Android, Back dismisses an open prompt: the page tells the
+ * bridge when one opens or closes, and the activity calls `__sudokuDismissPrompt` on Back.
  * @param {Document} root
- * @returns {ErrorModal}
+ * @param {Window & typeof globalThis} win
+ * @returns {PromptDialog}
  */
-export function createErrorModal(root = document) {
-  return errorModalMod.wireErrorModal(
-    root.getElementById("error-modal"),
-    root.getElementById("error-modal-msg"),
-    root.getElementById("error-modal-dismiss"),
-  );
+function createPromptDialog(root, win) {
+  const bridge = win.__SudokuAndroidBridge;
+  const dialog = promptDialogMod.wirePromptDialog({
+    el: root.getElementById("prompt-dialog"),
+    iconEl: root.getElementById("prompt-dialog-icon"),
+    titleEl: root.getElementById("prompt-dialog-title"),
+    textEl: root.getElementById("prompt-dialog-text"),
+    buttonsEl: root.getElementById("prompt-dialog-buttons"),
+    doc: root,
+    onOpenChange: bridge ? (open) => bridge.setPromptOpen(open) : undefined,
+  });
+  win.__sudokuDismissPrompt = dialog.dismiss;
+  return dialog;
 }

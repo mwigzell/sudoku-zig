@@ -11,7 +11,7 @@ import * as clientLog from "../client_log.js";
 /** @typedef {import("../types").ExecAction} ExecAction */
 
 export const STEP_RESOLVE_DEFAULT_TARGET = "resolve_default_target";
-export const STEP_ASK = "ask";
+export const STEP_PROMPT_MESSAGE = "prompt_message";
 export const STEP_SAVE = "save";
 export const STEP_SAVE_AS = "save_as";
 export const STEP_AUTOSAVE = "autosave";
@@ -28,7 +28,6 @@ export const STEP_GENERATE_GAME = "generate_game";
 export const STEP_FORGET_CURRENT_FILE = "forget_current_file";
 export const STEP_PERSIST_SETTINGS = "persist_settings";
 export const STEP_SHOW_STATUS = "show_status";
-export const STEP_SHOW_ERROR = "show_error";
 export const STEP_DONE = "done";
 
 export const FLOW_AUTOSAVE_FLUSH = "autosave_flush";
@@ -36,7 +35,7 @@ export const FLOW_STARTUP = "startup";
 
 /** Input names core's `flowNext` reads (`boundary.zig` `parseFlowInput`). */
 const INPUT_DEFAULT_TARGET = "default_target";
-const INPUT_ANSWERED = "answered";
+const INPUT_PRESSED = "pressed";
 const INPUT_WROTE = "wrote";
 const INPUT_READ = "read";
 const INPUT_GENERATED = "generated";
@@ -230,8 +229,8 @@ async function stepThrough(game, first, handlers) {
       case STEP_RESOLVE_DEFAULT_TARGET:
         step = game.flowNext({ input: INPUT_DEFAULT_TARGET, name: await handlers.resolveDefaultTarget() });
         break;
-      case STEP_ASK:
-        step = game.flowNext({ input: INPUT_ANSWERED, yes: (await handlers.ask(step)) === true });
+      case STEP_PROMPT_MESSAGE:
+        step = game.flowNext({ input: INPUT_PRESSED, index: await handlers.promptMessage(step) });
         break;
       case STEP_SAVE:
       case STEP_SAVE_AS:
@@ -289,25 +288,10 @@ async function stepThrough(game, first, handlers) {
       case STEP_SHOW_STATUS:
         handlers.showStatus?.(step.text);
         return { kind: STEP_SHOW_STATUS, text: step.text };
-      case STEP_SHOW_ERROR:
-        handlers.showError?.(step.text);
-        return { kind: STEP_SHOW_ERROR, text: step.text };
       case STEP_DONE:
         return { kind: STEP_DONE };
       default:
         return failFlow(game, handlers, `${UNKNOWN_STEP_PREFIX}${step.step}`);
     }
   }
-}
-
-/**
- * Web two-button dialog for a core `ask` step.
- * @param {FlowStep} step
- * @param {Window & typeof globalThis} [win]
- * @returns {Promise<boolean>}
- */
-export function askWithDialog(step, win = globalThis) {
-  const choose = win?.__sudokuChoose;
-  if (typeof choose !== "function") return Promise.resolve(false);
-  return choose(step.text, { title: step.title, okLabel: step.ok_label, cancelLabel: step.cancel_label });
 }

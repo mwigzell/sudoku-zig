@@ -92,13 +92,9 @@ fn ctx(S: type) type {
             self.renderer.showLegend(commands) catch return facade.Error.System;
         }
 
-        pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-            return self.renderer.showError(msg);
-        }
-
-        /// Forward two-button questions from the facade to the concrete renderer.
-        pub fn ask(self: *@This(), question: flow_step.Ask) facade.Error!bool {
-            return self.renderer.ask(question);
+        /// Forward prompts from the facade to the concrete renderer.
+        pub fn promptMessage(self: *@This(), prompt: flow_step.PromptMessage) facade.Error!usize {
+            return self.renderer.promptMessage(prompt);
         }
 
         pub fn getCommandInput(
@@ -240,7 +236,7 @@ test "integrated e2e - prodBranch showLegend writes into session writer buffer" 
 
     // Non-mock reader routes to prodBranch; showLegend is the one prod
     // method with no input side, so the .mock writer tag makes its output
-    // observable without touching real stdout. (showError/getCommandInput
+    // observable without touching real stdout. (promptMessage/getCommandInput
     // read via StdinSource — untestable on the prod context by design.)
     var session = io_session.IoSession{
         .reader = .{ .stdin = input_source.StdinSource.initStdin(alloc, io) },

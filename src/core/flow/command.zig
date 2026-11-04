@@ -51,13 +51,13 @@ pub const CommandFlow = struct {
     pub fn next(self: *CommandFlow, input: Input) Step {
         switch (self.phase) {
             .start => {
-                if (input != .start) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
+                if (input != .start) return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG));
                 return self.gather();
             },
             .gathering => return self.gathered(input),
             .writing => return self.continueWrite(input),
             .showing => {
-                if (input != .ack) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
+                if (input != .ack) return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG));
                 self.settings = SettingsFlow.afterCommand(self.engine.getConfig(), self.cmd);
                 self.phase = .persisting;
                 return self.continueSettings(.start);
@@ -90,7 +90,7 @@ pub const CommandFlow = struct {
 
     /// Load what the platform gathered; backing out ends the command quietly.
     fn gathered(self: *CommandFlow, input: Input) Step {
-        const unexpected: Step = .{ .show_error = step_mod.UNEXPECTED_INPUT_MSG };
+        const unexpected: Step = step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG);
         switch (self.cmd) {
             .new => {
                 if (input != .generated) return self.finish(unexpected);
@@ -141,7 +141,7 @@ pub const CommandFlow = struct {
 
     fn show(self: *CommandFlow, ev: game_engine.Event) Step {
         switch (ev) {
-            .error_msg => |msg| return self.finish(.{ .show_error = msg }),
+            .error_msg => |msg| return self.finish(step_mod.promptError(msg)),
             .ok => |ok| {
                 self.phase = .showing;
                 var shown = step_mod.showGame(self.engine, ok.msg, self.session.currentFile());
@@ -169,7 +169,7 @@ pub const CommandFlow = struct {
         const step = self.settings.next(input);
         switch (step) {
             .done => {},
-            .show_status, .show_error => return self.finish(step),
+            .show_status, .prompt_message => return self.finish(step),
             else => return step,
         }
         self.autosave = AutosaveFlow.afterCommand(self.session, self.engine.cfg.auto_save, self.cmd);
@@ -184,7 +184,7 @@ pub const CommandFlow = struct {
 
     fn failed(self: *CommandFlow, msg: []const u8, reason: []const u8) Step {
         log.err("{s} failed: {s}", .{ @tagName(self.cmd), reason });
-        return self.finish(.{ .show_error = msg });
+        return self.finish(step_mod.promptError(msg));
     }
 
     fn finish(self: *CommandFlow, terminal: Step) Step {
@@ -235,7 +235,7 @@ test "a rejected command shows the engine's error and nothing else" {
     defer engine.deinit();
     var session = FileSession{};
     var flow = CommandFlow.init(&engine, &session, .{ .fill = .{ .row = 0, .col = 2, .digit = .four } });
-    try testing.expect(flow.next(.start) == .show_error);
+    try testing.expect(flow.next(.start) == .prompt_message);
     try testing.expect(flow.next(.ack) == .done);
 }
 
@@ -246,7 +246,7 @@ test "a failed settings write ends the command with the error" {
     var flow = CommandFlow.init(&engine, &session, .{ .set_theme = .light });
     _ = flow.next(.start);
     _ = flow.next(.ack);
-    try testing.expectEqualStrings(settings_mod.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).show_error);
+    try testing.expectEqualStrings(settings_mod.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).prompt_message.text);
 }
 
 test "open asks for a game file, loads the pick and makes it the current file" {
@@ -285,7 +285,7 @@ test "an import that is not a puzzle shows the error and keeps the board" {
     const before = engine.state.board;
     var flow = CommandFlow.init(&engine, &session, .{ .import = .{ .path = null } });
     _ = flow.next(.start);
-    try testing.expect(flow.next(.{ .read = .{ .file = .{ .bytes = "123", .name = "bad.txt" } } }) == .show_error);
+    try testing.expect(flow.next(.{ .read = .{ .file = .{ .bytes = "123", .name = "bad.txt" } } }) == .prompt_message);
     try testing.expect(@import("../board/board.zig").equal(engine.state.board, before));
 }
 
@@ -302,7 +302,7 @@ test "paste with a line skips the clipboard; without one it reads the clipboard"
 
     var clipboard = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = null } });
     try testing.expect(clipboard.next(.start) == .paste_puzzle);
-    try testing.expectEqualStrings(PASTE_FAILED_MSG, clipboard.next(.{ .read = .{ .failed = "denied" } }).show_error);
+    try testing.expectEqualStrings(PASTE_FAILED_MSG, clipboard.next(.{ .read = .{ .failed = "denied" } }).prompt_message.text);
 }
 
 test "new generates at the chosen difficulty, which the game then keeps" {
@@ -362,7 +362,7 @@ test "stopping generation ends New quietly; a wrong answer is an error" {
 
     var wrong = CommandFlow.init(&engine, &session, .{ .new = .{} });
     _ = wrong.next(.start);
-    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, wrong.next(.ack).show_error);
+    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, wrong.next(.ack).prompt_message.text);
 }
 
 test "every message a command can show in a dialog reads as a sentence" {

@@ -36,7 +36,7 @@ pub const AutosaveFlow = struct {
     pub fn next(self: *AutosaveFlow, input: Input) Step {
         switch (self.phase) {
             .start => {
-                if (input != .start) return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG });
+                if (input != .start) return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG));
                 if (!self.auto_save) return self.finish(.done);
                 return switch (self.kind) {
                     .after_command => |tag| self.startAfterCommand(tag),
@@ -46,7 +46,7 @@ pub const AutosaveFlow = struct {
             .resolving => {
                 const name = switch (input) {
                     .default_target => |n| n,
-                    else => return self.finish(.{ .show_error = step_mod.UNEXPECTED_INPUT_MSG }),
+                    else => return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG)),
                 };
                 return self.saveTo(name);
             },
@@ -126,8 +126,8 @@ test "autosave onto an existing file after New asks first and keeps it when decl
     session.apply(.new_game_success);
     var flow = AutosaveFlow.afterCommand(&session, true, .paste);
     _ = flow.next(.start);
-    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), flow.next(.{ .wrote = .exists }).ask.text);
-    try testing.expect(flow.next(.{ .answered = false }) == .done);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), flow.next(.{ .wrote = .exists }).prompt_message.text);
+    try testing.expect(flow.next(.{ .pressed = step_mod.QUESTION_CANCEL }) == .done);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }
 
@@ -136,7 +136,7 @@ test "autosave write failure is shown" {
     session.setCurrentFile("game.sud");
     var flow = AutosaveFlow.afterCommand(&session, true, .fill);
     _ = flow.next(.start);
-    try testing.expectEqualStrings(save_mod.SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).show_error);
+    try testing.expectEqualStrings(save_mod.SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).prompt_message.text);
 }
 
 test "flush writes the current file's restore copy" {

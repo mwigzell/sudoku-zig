@@ -29,7 +29,6 @@ function logUncaughtErrors(win) {
  */
 export async function bootSudokuWebApp(root = document) {
   const boardEl = root.getElementById("board");
-  const errorModal = appWire.createErrorModal(root);
   /** @type {import("./types").GameApi | null} */
   let game = null;
 
@@ -80,7 +79,6 @@ export async function bootSudokuWebApp(root = document) {
       session,
       generatingModal,
       genWorker,
-      errorModal,
       root,
     });
     autosave.wireFlushOnClose(game, app.steps);

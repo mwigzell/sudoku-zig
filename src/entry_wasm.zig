@@ -302,6 +302,12 @@ fn returnStep(out: boundary.OutBuffer, step: flow.Step) u32 {
     return returnJson(out);
 }
 
+/// End the running flow (if any) with core's error prompt; the press that acknowledges it ends with `done`.
+fn returnUnexpected(out: boundary.OutBuffer) u32 {
+    have_flow = false;
+    return returnStep(out, flow.step.promptError(flow.step.UNEXPECTED_INPUT_MSG));
+}
+
 /// Start the startup or final-snapshot flow from `{flow, name?, path?}`; returns the first step JSON.
 export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
@@ -336,24 +342,24 @@ export fn commandStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
 /// Feed one step result `{input, ...}` to the running flow; returns the next step JSON.
 export fn flowNext(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
-    if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const input = boundary.parseFlowInput(arena.allocator(), json) catch return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+    const input = boundary.parseFlowInput(arena.allocator(), json) catch return returnUnexpected(out);
+    if (!have_flow) return if (input == .pressed) returnStep(out, .done) else returnUnexpected(out);
     return returnStep(out, active_flow.next(input));
 }
 
 /// The adapter could not carry the running flow on; ends it with core's error step.
 export fn flowFail() callconv(.c) u32 {
-    return returnStep(outBuffer(), .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+    return returnUnexpected(outBuffer());
 }
 
 /// Answer a reading step (`open`, `import_puzzle`, `restore`, `paste_puzzle`) with what was
 /// read and, for a chosen file, its name; returns the next step JSON.
 export fn flowRead(in_ptr: u32, in_len: u32, name_ptr: u32, name_len: u32) callconv(.c) u32 {
     const out = outBuffer();
-    if (!have_flow) return returnStep(out, .{ .show_error = flow.step.UNEXPECTED_INPUT_MSG });
+    if (!have_flow) return returnUnexpected(out);
     const bytes = if (in_len == 0) "" else @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     const name: ?[]const u8 = if (name_len > 0) @as([*]const u8, @ptrFromInt(name_ptr))[0..name_len] else null;
     return returnStep(out, active_flow.next(.{ .read = .{ .file = .{ .bytes = bytes, .name = name } } }));

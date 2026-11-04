@@ -5,7 +5,7 @@ import * as board from "../board.js";
 import * as menu from "./menu.js";
 import * as menuBar from "./menu_bar.js";
 import * as webSteps from "../flows/web_steps.js";
-import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, withCoreFlow, coreText } from "../test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, promptDialogStub, settleFlow, startNewGame, withCoreFlow, coreText } from "../test_support.mjs";
 
 
 function makeBtn() {
@@ -99,7 +99,6 @@ assert.equal(menu.parseEditShortcut({ ctrlKey: true, altKey: false, key: "z", sh
 assert.equal(menu.parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), null);
 
 const statusStub = (text = "") => ({ textContent: text, className: "" });
-const errorModalStub = () => ({ el: { hidden: true }, msgEl: { textContent: "" } });
 
 async function editGame(config = {}) {
   const game = await loadGame(config);
@@ -116,7 +115,7 @@ async function editGame(config = {}) {
 }
 
 function runEdit(action, game, session, { selection = { getSelection: () => null, select() {} }, status = statusStub() } = {}) {
-  const steps = webSteps.webSteps(game, session, { statusEl: status, errorModal: errorModalStub() });
+  const steps = webSteps.webSteps(game, session, { statusEl: status, promptDialog: promptDialogStub() });
   return menu.handleEditAction(action, game, makeMockBoard(), selection, session, makeRenderElement(), { steps });
 }
 
@@ -218,7 +217,7 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
     session,
     makeRenderElement(),
     root,
-    { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModalStub() }) },
+    { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), promptDialog: promptDialogStub() }) },
   );
 
   assert.equal(undoBtn.disabled, false);
@@ -286,17 +285,17 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
     },
   });
   const status = { textContent: "", className: "" };
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const prompts = promptDialogStub();
   const steps = webSteps.webSteps(game, session, {
     statusEl: status,
-    errorModal,
+    promptDialog: prompts,
     clipboard: { writeText: async (text) => { written = text; } },
   });
   const result = await menu.handleCopyPuzzle(game, session, steps);
   assert.equal(result.ok, true);
   assert.equal(written, line, "clipboard gets toPuzzle one-line string");
   assert.equal(status.textContent, coreText.COPIED_MSG, "core owns the copy status");
-  assert.equal(errorModal.el.hidden, true);
+  assert.equal(prompts.shown.length, 0);
 }
 
 // ── Copy clipboard denied → error modal; board unchanged ──
@@ -306,7 +305,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
     state: { cells: [{ value: 2, given: true, conflict: false }] },
   };
   const before = JSON.stringify(session.state);
-  const errorModal = { el: { hidden: true }, msgEl: { textContent: "" } };
+  const prompts = promptDialogStub();
   const game = await withCoreFlow({
     toPuzzle() {
       return { ok: true, bytes: new TextEncoder().encode("2".repeat(81)) };
@@ -314,7 +313,7 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   });
   const steps = webSteps.webSteps(game, session, {
     statusEl: { textContent: "", className: "" },
-    errorModal,
+    promptDialog: prompts,
     clipboard: {
       writeText: async () => {
         throw new Error("denied");
@@ -336,8 +335,8 @@ assert.equal(menu.anyMenuOpen({ querySelectorAll: () => [] }), false);
   });
   const result = await menu.handleCopyPuzzle(game, session, steps);
   assert.equal(result.ok, false);
-  assert.equal(errorModal.el.hidden, false);
-  assert.equal(errorModal.msgEl.textContent, coreText.COPY_FAILED_MSG);
+  assert.equal(prompts.shown.length, 1);
+  assert.equal(prompts.lastText, coreText.COPY_FAILED_MSG);
   assert.equal(JSON.stringify(session.state), before);
 }
 
@@ -391,11 +390,11 @@ const clipboardWith = (text) => ({ readText: async () => text });
 {
   const { game, session } = await editGame();
   const before = JSON.stringify(game.getState());
-  const errorModal = errorModalStub();
+  const prompts = promptDialogStub();
   const clipboard = { readText: async () => { throw new Error("denied"); } };
-  await menu.handlePastePuzzle(game, session, webSteps.webSteps(game, session, { errorModal, clipboard })).done;
-  assert.equal(errorModal.el.hidden, false);
-  assert.match(errorModal.msgEl.textContent, /clipboard/i);
+  await menu.handlePastePuzzle(game, session, webSteps.webSteps(game, session, { promptDialog: prompts, clipboard })).done;
+  assert.equal(prompts.shown.length, 1);
+  assert.match(prompts.lastText, /clipboard/i);
   assert.equal(JSON.stringify(game.getState()), before);
 }
 

@@ -50,6 +50,18 @@ pub fn bottomBorder() []const u8 {
 /// lines and the legend can push it wider — never narrower than this.
 const box_min_width: usize = 80;
 const SAVE_AS_PROMPT = "Save as (Enter keeps the current file): ";
+const PRESS_ENTER_PROMPT = "Press Enter to continue... ";
+/// Asks for a button by number; `{d}`s are the button count and the default's number.
+const CHOOSE_BUTTON_FMT = "Choose 1-{d} (Enter: {d}): ";
+
+/// The mark for a prompt's type, as the web dialog shows it.
+fn typeSymbol(message_type: flow_step.MessageType) []const u8 {
+    return switch (message_type) {
+        .information => "ℹ",
+        .warning => "⚠",
+        .@"error" => "✖",
+    };
+}
 /// Prompt for Edit → Paste; the answer is read exactly as typed.
 const PASTE_PROMPT = "Paste puzzle: ";
 
@@ -191,24 +203,42 @@ pub fn AsciiRenderer(StylerType: type) type {
             return self.inputSource.readline() catch return facade.Error.System;
         }
 
-        /// Implement Facade showError_fn. Draw the error in the shared box frame, then
-        /// "Press Enter to continue..." and wait on stdin (via injected input source).
-        pub fn showError(self: *@This(), msg: []const u8) facade.Error!void {
-            const owned = self.allocator.dupe(u8, msg) catch return facade.Error.System;
-            defer self.allocator.free(owned);
-            self.drawBox(owned) catch return facade.Error.System;
-            self.writer.print("Press Enter to continue... ", .{}) catch return facade.Error.System;
-
+        /// Draw this renderer's own message (an invalid pick, About) in the shared box frame and wait for Enter.
+        fn acknowledge(self: *@This(), msg: []const u8) facade.Error!void {
+            try self.drawOwnedBox(msg);
+            self.writer.writeAll(PRESS_ENTER_PROMPT) catch return facade.Error.System;
             const line = try self.readLine();
             defer self.allocator.free(line);
         }
 
-        /// Two-button question: title line, then text with both labels; true only when the player types `ok_label`.
-        pub fn ask(self: *@This(), question: flow_step.Ask) facade.Error!bool {
-            self.writer.print("{s}\n{s} [{s}/{s}]: ", .{ question.title, question.text, question.ok_label, question.cancel_label }) catch return facade.Error.System;
-            const line = self.readLine() catch return false;
-            defer self.allocator.free(line);
-            return std.ascii.eqlIgnoreCase(line, question.ok_label);
+        /// Draw `msg` in the box frame from a copy, so the frame never reads a buffer the caller reuses.
+        fn drawOwnedBox(self: *@This(), msg: []const u8) facade.Error!void {
+            const owned = self.allocator.dupe(u8, msg) catch return facade.Error.System;
+            defer self.allocator.free(owned);
+            self.drawBox(owned) catch return facade.Error.System;
+        }
+
+        /// Implement Facade promptMessage_fn: the type's symbol and the title, the text in the box frame,
+        /// then the buttons numbered left to right. A number picks that button, a bare Enter the rightmost;
+        /// anything else asks again. There is no dismiss.
+        pub fn promptMessage(self: *@This(), prompt: flow_step.PromptMessage) facade.Error!usize {
+            self.writer.print("{s} {s}\n", .{ typeSymbol(prompt.type), prompt.title }) catch return facade.Error.System;
+            try self.drawOwnedBox(prompt.text);
+            if (prompt.buttons.len > 1) {
+                for (prompt.buttons, 1..) |label, n| self.writer.print("  {d}) {s}\n", .{ n, label }) catch return facade.Error.System;
+            }
+            while (true) {
+                if (prompt.buttons.len > 1) {
+                    self.writer.print(CHOOSE_BUTTON_FMT, .{ prompt.buttons.len, prompt.defaultAnswer() + 1 }) catch return facade.Error.System;
+                } else {
+                    self.writer.writeAll(PRESS_ENTER_PROMPT) catch return facade.Error.System;
+                }
+                const line = try self.readLine();
+                defer self.allocator.free(line);
+                if (line.len == 0 or prompt.buttons.len == 1) return prompt.defaultAnswer();
+                const n = std.fmt.parseInt(usize, line, 10) catch 0;
+                if (n >= 1 and n <= prompt.buttons.len) return n - 1;
+            }
         }
 
         /// Internal — prompt for filename with default, return owned string.
@@ -256,7 +286,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "1")) return .easy;
             if (std.mem.eql(u8, pick, "2")) return .medium;
             if (std.mem.eql(u8, pick, "3")) return .hard;
-            try self.showError("invalid choice — enter 1, 2, or 3");
+            try self.acknowledge("invalid choice — enter 1, 2, or 3");
             return try self.pickDifficulty();
         }
 
@@ -269,7 +299,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "3")) return .warn;
             if (std.mem.eql(u8, pick, "4")) return .err;
             if (std.mem.eql(u8, pick, "5")) return .fatal;
-            try self.showError("invalid choice — enter 1–5");
+            try self.acknowledge("invalid choice — enter 1–5");
             return try self.pickLogLevel();
         }
 
@@ -279,7 +309,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             defer self.allocator.free(pick);
             if (std.mem.eql(u8, pick, "1")) return .dark;
             if (std.mem.eql(u8, pick, "2")) return .light;
-            try self.showError("invalid choice — enter 1 or 2");
+            try self.acknowledge("invalid choice — enter 1 or 2");
             return try self.pickTheme();
         }
 
@@ -334,7 +364,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "8")) {
                 return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
             }
-            try self.showError("invalid settings choice");
+            try self.acknowledge("invalid settings choice");
             return try self.showSettingsMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
         }
 
@@ -405,7 +435,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "14")) {
                 return try self.showSettingsMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
             }
-            try self.showError("invalid menu choice");
+            try self.acknowledge("invalid menu choice");
             return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
         }
 
@@ -413,7 +443,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         pub fn showAbout(self: *@This()) facade.Error!void {
             const text = about_format.formatNativeText(self.allocator) catch return facade.Error.System;
             defer self.allocator.free(text);
-            try self.showError(text);
+            try self.acknowledge(text);
         }
 
         /// Live puzzle-gen feedback on the session writer (Facade vtable pass-through).
@@ -667,28 +697,37 @@ test "render: renders with digits placed" {
     try std.testing.expect(std.mem.indexOf(u8, contents, "9") != null);
 }
 
-test "showError: reads from MockSource and does not panic" {
+test "promptMessage: an error shows its mark, title and text, and Enter acknowledges it" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();
-
     var s = styler.PlainStyler{};
-    // MockSource provides a canned "Enter" press so showError doesn't hang.
-    const responses = [_][]const u8{"\n"};
-    const source: input_source.ReaderSource = .{
-        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
-    };
-    var renderer = AsciiRenderer(styler.PlainStyler).init(
-        std.testing.allocator,
-        &aw.writer,
-        &s,
-        source,
-    );
+    var renderer = scriptedRenderer(&aw, &s, &.{"\n"});
 
-    try renderer.showError("something went wrong");
+    try std.testing.expectEqual(@as(usize, 0), try renderer.promptMessage(flow_step.makeErrorPrompt("message text 1")));
 
     const contents = aw.writer.buffered();
-    try std.testing.expect(std.mem.indexOf(u8, contents, "something went wrong") != null);
-    try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "✖ " ++ flow_step.ERROR_TITLE) != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, "message text 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, contents, PRESS_ENTER_PROMPT) != null);
+}
+
+test "promptMessage: three buttons are numbered in order, a number picks that button and bare Enter the rightmost" {
+    const prompt: flow_step.PromptMessage = .{ .type = .warning, .title = "title 1", .text = "text 1", .buttons = &.{ "button A", "button B", "button C" }, .cancel = 0 };
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var renderer = scriptedRenderer(&aw, &s, &.{ "2\n", "\n", "7\n", "x\n", "1\n" });
+
+    try std.testing.expectEqual(@as(usize, 1), try renderer.promptMessage(prompt));
+    try std.testing.expectEqual(@as(usize, 2), try renderer.promptMessage(prompt));
+    try std.testing.expectEqual(@as(usize, 0), try renderer.promptMessage(prompt));
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, contents, "⚠ title 1") != null);
+    const a = std.mem.indexOf(u8, contents, "1) button A").?;
+    const b = std.mem.indexOf(u8, contents, "2) button B").?;
+    const c = std.mem.indexOf(u8, contents, "3) button C").?;
+    try std.testing.expect(a < b and b < c);
 }
 
 /// Renderer over scripted input lines, writing into `aw`.

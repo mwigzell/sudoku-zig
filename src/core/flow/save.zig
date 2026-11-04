@@ -114,7 +114,7 @@ pub const SaveFlow = struct {
             },
             .asking => {
                 const yes = switch (input) {
-                    .answered => |a| a,
+                    .pressed => |i| i == step_mod.QUESTION_OK,
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                 };
                 if (yes) return self.write(true);
@@ -122,7 +122,7 @@ pub const SaveFlow = struct {
             },
             .asking_taken => {
                 const reclaim = switch (input) {
-                    .answered => |a| a,
+                    .pressed => |i| i == step_mod.QUESTION_OK,
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                 };
                 self.phase = .picking;
@@ -188,24 +188,14 @@ pub const SaveFlow = struct {
     /// Until a picker writes a file there is nowhere to autosave, so a closed picker asks again.
     fn repeatTakenAsk(self: *SaveFlow) Step {
         self.phase = .asking_taken;
-        return .{ .ask = .{
-            .title = file_policy.TAKEN_TITLE,
-            .text = self.text_buf[0..self.taken_text_len],
-            .ok_label = file_policy.TAKEN_PICK_LABEL,
-            .cancel_label = file_policy.TAKEN_NEW_NAME_LABEL,
-        } };
+        return step_mod.makeQuestion(.@"error", file_policy.TAKEN_TITLE, self.text_buf[0..self.taken_text_len], file_policy.TAKEN_PICK_LABEL, file_policy.TAKEN_NEW_NAME_LABEL);
     }
 
     fn askReplace(self: *SaveFlow) Step {
         self.phase = .asking;
         const text = std.fmt.bufPrint(&self.text_buf, file_policy.REPLACE_CONFIRM_FMT, .{std.fs.path.basename(self.targetName())}) catch
             return self.fail(NAME_TOO_LONG_MSG);
-        return .{ .ask = .{
-            .title = file_policy.REPLACE_CONFIRM_TITLE,
-            .text = text,
-            .ok_label = file_policy.REPLACE_CONFIRM_OK_LABEL,
-            .cancel_label = file_policy.REPLACE_CONFIRM_CANCEL_LABEL,
-        } };
+        return step_mod.makeQuestion(.warning, file_policy.REPLACE_CONFIRM_TITLE, text, file_policy.REPLACE_CONFIRM_OK_LABEL, file_policy.REPLACE_CONFIRM_CANCEL_LABEL);
     }
 
     fn declinedStep(self: *const SaveFlow) Step {
@@ -238,7 +228,7 @@ pub const SaveFlow = struct {
     }
 
     fn fail(self: *SaveFlow, msg: []const u8) Step {
-        return self.finish(.{ .show_error = msg });
+        return self.finish(step_mod.promptError(msg));
     }
 
     fn finish(self: *SaveFlow, terminal: Step) Step {
@@ -306,18 +296,19 @@ const taken_ask_text = "Can't save: Sudoku no longer has permission to save to s
 
 fn takenAsk(flow: *SaveFlow) !void {
     _ = flow.next(.start);
-    const ask = flow.next(.{ .wrote = .{ .taken = .{ .name = "sudoku.sud" } } }).ask;
+    const ask = flow.next(.{ .wrote = .{ .taken = .{ .name = "sudoku.sud" } } }).prompt_message;
+    try testing.expectEqual(step_mod.MessageType.@"error", ask.type);
     try testing.expectEqualStrings(file_policy.TAKEN_TITLE, ask.title);
     try testing.expectEqualStrings(taken_ask_text, ask.text);
-    try testing.expectEqualStrings(file_policy.TAKEN_PICK_LABEL, ask.ok_label);
-    try testing.expectEqualStrings(file_policy.TAKEN_NEW_NAME_LABEL, ask.cancel_label);
+    try testing.expectEqualStrings(file_policy.TAKEN_PICK_LABEL, ask.buttons[step_mod.QUESTION_OK]);
+    try testing.expectEqualStrings(file_policy.TAKEN_NEW_NAME_LABEL, ask.buttons[step_mod.QUESTION_CANCEL]);
 }
 
 test "a file this install may not write asks, and Choose file reclaims the file" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
     try takenAsk(&flow);
-    try testing.expect(flow.next(.{ .answered = true }) == .reclaim_file);
+    try testing.expect(flow.next(.{ .pressed = step_mod.QUESTION_OK }) == .reclaim_file);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
     try testing.expectEqualStrings("sudoku.sud", session.currentFile().?);
     try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
@@ -328,7 +319,7 @@ test "a Save to a file this install may not write asks the same, and Choose file
     session.setCurrentFile("sudoku.sud");
     var flow = SaveFlow.forCommand(&session, .save, null, false);
     try takenAsk(&flow);
-    try testing.expect(flow.next(.{ .answered = true }) == .reclaim_file);
+    try testing.expect(flow.next(.{ .pressed = step_mod.QUESTION_OK }) == .reclaim_file);
     const end = flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } });
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"sudoku.sud"}), end.show_status);
     try testing.expectEqualStrings("sudoku.sud", session.currentFile().?);
@@ -338,7 +329,7 @@ test "New name saves as the taken file's name, and the new file becomes the curr
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
     try takenAsk(&flow);
-    const save_as = flow.next(.{ .answered = false }).save_as;
+    const save_as = flow.next(.{ .pressed = step_mod.QUESTION_CANCEL }).save_as;
     try testing.expectEqualStrings("sudoku.sud", save_as.name);
     try testing.expect(!save_as.replace);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "mine.sud" } }) == .done);
@@ -349,10 +340,10 @@ test "closing the picker asks again, since there is nowhere else to autosave" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .auto_save, "sudoku.sud");
     try takenAsk(&flow);
-    _ = flow.next(.{ .answered = true });
-    try testing.expectEqualStrings(taken_ask_text, flow.next(.{ .wrote = .cancelled }).ask.text);
-    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .answered = false }).save_as.name);
-    try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
+    _ = flow.next(.{ .pressed = step_mod.QUESTION_OK });
+    try testing.expectEqualStrings(taken_ask_text, flow.next(.{ .wrote = .cancelled }).prompt_message.text);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .pressed = step_mod.QUESTION_CANCEL }).save_as.name);
+    try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).prompt_message.text);
     try testing.expect(session.currentFile() == null);
 }
 
@@ -360,12 +351,13 @@ test "save onto an existing file while detached asks, then replaces it" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save, "/docs/game.sud");
     _ = flow.next(.start);
-    const ask = flow.next(.{ .wrote = .exists }).ask;
+    const ask = flow.next(.{ .wrote = .exists }).prompt_message;
+    try testing.expectEqual(step_mod.MessageType.warning, ask.type);
     try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_TITLE, ask.title);
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), ask.text);
-    try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_OK_LABEL, ask.ok_label);
-    try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_CANCEL_LABEL, ask.cancel_label);
-    const write = flow.next(.{ .answered = true }).save;
+    try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_OK_LABEL, ask.buttons[step_mod.QUESTION_OK]);
+    try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_CANCEL_LABEL, ask.buttons[step_mod.QUESTION_CANCEL]);
+    const write = flow.next(.{ .pressed = step_mod.QUESTION_OK }).save;
     try testing.expectEqualStrings("/docs/game.sud", write.name);
     try testing.expect(write.replace);
 }
@@ -375,7 +367,7 @@ test "declining the replace question cancels the save without writing" {
     var flow = SaveFlow.init(&session, .save_as, "game.sud");
     _ = flow.next(.start);
     _ = flow.next(.{ .wrote = .exists });
-    try testing.expectEqualStrings(file_policy.WRITE_CANCELLED_MSG, flow.next(.{ .answered = false }).show_status);
+    try testing.expectEqualStrings(file_policy.WRITE_CANCELLED_MSG, flow.next(.{ .pressed = step_mod.QUESTION_CANCEL }).show_status);
     try testing.expect(session.currentFile() == null);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }
@@ -393,7 +385,7 @@ test "write failure shows the error and leaves the session alone" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save, "game.sud");
     _ = flow.next(.start);
-    try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).show_error);
+    try testing.expectEqualStrings(SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "disk full" } }).prompt_message.text);
     try testing.expect(session.currentFile() == null);
     try testing.expectEqual(file_policy.WriteContext.detached, session.write_context);
 }
@@ -432,6 +424,6 @@ test "an unexpected input ends the flow with an error" {
     var session = FileSession{};
     var flow = SaveFlow.init(&session, .save, "game.sud");
     _ = flow.next(.start);
-    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.{ .answered = true }).show_error);
+    try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.{ .pressed = step_mod.QUESTION_OK }).prompt_message.text);
     try testing.expect(flow.next(.start) == .done);
 }

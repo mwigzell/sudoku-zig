@@ -626,7 +626,7 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "app_boot.js", .body = embed.app_boot_js },
         .{ .name = "app_wire.js", .body = embed.app_wire_js },
         .{ .name = "status_bar.js", .body = embed.status_bar_js },
-        .{ .name = "dialogs/error_modal.js", .body = embed.error_modal_js },
+        .{ .name = "dialogs/prompt_dialog.js", .body = embed.prompt_dialog_js },
         .{ .name = "client_log.js", .body = embed.client_log_js },
         .{ .name = "flows/session.js", .body = embed.session_js },
         .{ .name = "host_api.js", .body = embed.host_api_js },
@@ -721,7 +721,7 @@ test "web_host: every dialog is titled by an h2 heading" {
         }
         dialogs += 1;
     }
-    try std.testing.expect(dialogs >= 6);
+    try std.testing.expect(dialogs >= 5);
 }
 
 test "web_host: route map resolves every served path" {
@@ -733,7 +733,7 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/app_boot.js", .expected = .app_boot },
         .{ .path = "/app_wire.js", .expected = .app_wire },
         .{ .path = "/status_bar.js", .expected = .status_bar },
-        .{ .path = "/dialogs/error_modal.js", .expected = .error_modal },
+        .{ .path = "/dialogs/prompt_dialog.js", .expected = .prompt_dialog },
         .{ .path = "/client_log.js", .expected = .client_log },
         .{ .path = "/flows/session.js", .expected = .session },
         .{ .path = "/host_api.js", .expected = .host_api },
@@ -1302,7 +1302,7 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     r.markDelivered(.status_bar);
     try std.testing.expect(!r.allDelivered());
 
-    r.markDelivered(.error_modal);
+    r.markDelivered(.prompt_dialog);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.client_log);

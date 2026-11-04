@@ -17,8 +17,8 @@ pub const app_boot_js: []const u8 = @embedFile("../wasm/app_boot.js");
 pub const app_wire_js: []const u8 = @embedFile("../wasm/app_wire.js");
 /// Status bar text (`/status_bar.js`).
 pub const status_bar_js: []const u8 = @embedFile("../wasm/status_bar.js");
-/// Error dialog (`/error_modal.js`).
-pub const error_modal_js: []const u8 = @embedFile("../wasm/dialogs/error_modal.js");
+/// Prompt dialog (`/dialogs/prompt_dialog.js`).
+pub const prompt_dialog_js: []const u8 = @embedFile("../wasm/dialogs/prompt_dialog.js");
 /// Client diagnostics log (`/client_log.js`).
 pub const client_log_js: []const u8 = @embedFile("../wasm/client_log.js");
 /// Web session and current-file label (`/session.js`).
@@ -108,8 +108,8 @@ test "embedded status_bar.js is non-empty" {
     try std.testing.expect(status_bar_js.len > 0);
 }
 
-test "embedded error_modal.js is non-empty" {
-    try std.testing.expect(error_modal_js.len > 0);
+test "embedded prompt_dialog.js is non-empty" {
+    try std.testing.expect(prompt_dialog_js.len > 0);
 }
 
 test "embedded client_log.js is non-empty" {

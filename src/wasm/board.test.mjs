@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import * as boardMod from "./board.js";
 import * as webSteps from "./flows/web_steps.js";
-import { hostFetch, loadGame, postedCurrentFile, settleFlow, startNewGame, coreText, fillText } from "./test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, promptDialogStub, settleFlow, startNewGame, coreText, fillText } from "./test_support.mjs";
 
 
 
@@ -413,7 +413,6 @@ assert.deepEqual(boardMod.parsePlayKey("", "Space"), { type: "clear" });
 assert.deepEqual(boardMod.parsePlayKey("", "Backspace"), { type: "clear" });
 assert.deepEqual(boardMod.parsePlayKey("", "Delete"), { type: "clear" });
 
-const errorModalStub = () => ({ el: { hidden: true }, msgEl: { textContent: "" } });
 const statusStub = () => ({ textContent: "", className: "" });
 
 async function playGame(config = {}) {
@@ -438,7 +437,7 @@ function selectedAt(board, row, col) {
   const board = makeMockBoard();
   const status = statusStub();
   const { game, session } = await playGame();
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: status, errorModal: errorModalStub() }) });
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: status, promptDialog: promptDialogStub() }) });
   assert.equal(outcome.handled, true);
   await outcome.done;
   assert.equal(session.state.cells[boardMod.cellIndex(0, 2)].value, 4);
@@ -450,15 +449,15 @@ function selectedAt(board, row, col) {
 {
   const board = makeMockBoard();
   const status = statusStub();
-  const errorModal = errorModalStub();
+  const prompts = promptDialogStub();
   const { game, session } = await playGame();
   status.textContent = "before";
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 0), "5", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: status, errorModal: errorModal }) });
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 0), "5", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: status, promptDialog: prompts }) });
   assert.equal(outcome.handled, true);
   await outcome.done;
   assert.equal(status.textContent, "before");
-  assert.match(errorModal.msgEl.textContent, /puzzle/i);
-  assert.equal(errorModal.el.hidden, false);
+  assert.match(prompts.lastText, /puzzle/i);
+  assert.equal(prompts.shown.length, 1);
 }
 
 {
@@ -477,40 +476,35 @@ function selectedAt(board, row, col) {
 
 {
   const board = makeMockBoard();
-  const errorModal = errorModalStub();
+  const prompts = promptDialogStub();
   const { game, session } = await playGame({ auto_save: true });
   const host = hostFetch({ exists: false });
   const prevFetch = globalThis.fetch;
   globalThis.fetch = host.fetchFn;
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModal }) });
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), promptDialog: prompts }) });
   await outcome.done;
   globalThis.fetch = prevFetch;
   assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST", "first autosave with nothing on disk writes the host file");
-  assert.equal(errorModal.el.hidden, true);
+  assert.equal(prompts.shown.length, 0);
 }
 
 {
   const board = makeMockBoard();
-  const errorModal = errorModalStub();
+  const prompts = promptDialogStub();
   const { game, session } = await playGame({ auto_save: true });
   const host = hostFetch({ exists: true });
-  const questions = [];
   const prevFetch = globalThis.fetch;
-  const prevChoose = globalThis.__sudokuChoose;
   globalThis.fetch = host.fetchFn;
-  globalThis.__sudokuChoose = async (message, labels) => {
-    questions.push({ message, labels });
-    return false;
-  };
-  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModal }) });
+  const outcome = boardMod.handlePlayKey(game, board, selectedAt(board, 0, 2), "4", makeRenderElement(), "", { steps: webSteps.webSteps(game, session, { statusEl: statusStub(), promptDialog: prompts }) });
   await outcome.done;
   globalThis.fetch = prevFetch;
-  globalThis.__sudokuChoose = prevChoose;
-  assert.equal(questions.length, 1, "detached autosave onto an existing file asks once");
-  assert.equal(questions[0].message, fillText(coreText.REPLACE_CONFIRM_FMT, "sudoku.sud"));
-  assert.deepEqual(questions[0].labels, { title: coreText.REPLACE_CONFIRM_TITLE, okLabel: coreText.REPLACE_CONFIRM_OK_LABEL, cancelLabel: coreText.REPLACE_CONFIRM_CANCEL_LABEL });
+  assert.equal(prompts.shown.length, 1, "detached autosave onto an existing file asks once, and declining is not an error");
+  const [question] = prompts.shown;
+  assert.equal(question.type, "warning");
+  assert.equal(question.title, coreText.REPLACE_CONFIRM_TITLE);
+  assert.equal(question.text, fillText(coreText.REPLACE_CONFIRM_FMT, "sudoku.sud"));
+  assert.deepEqual(question.buttons, [coreText.REPLACE_CONFIRM_CANCEL_LABEL, coreText.REPLACE_CONFIRM_OK_LABEL]);
   assert.equal(postedCurrentFile(host.calls), undefined, "declined question writes nothing");
-  assert.equal(errorModal.el.hidden, true, "declining is not an error");
 }
 
 {
@@ -532,7 +526,7 @@ function selectedAt(board, row, col) {
   };
   let shownLegend = null;
   boardMod.wirePlayLoop(board, game, selectedAt(board, 0, 2), session, {
-    steps: webSteps.webSteps(game, session, { statusEl: statusStub(), errorModal: errorModalStub() }),
+    steps: webSteps.webSteps(game, session, { statusEl: statusStub(), promptDialog: promptDialogStub() }),
     playPadEl: pad,
     createElement: makeRenderElement(),
     onLegendChange: (legend) => {

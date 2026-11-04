@@ -38,13 +38,13 @@ export function showSettingsModal(modal, config) {
 
 /**
  * Run one settings command through core; the dialog re-syncs from the config core shows,
- * or from the unchanged session config when core rejects the command.
+ * then from the session's config, which a rejected command leaves unchanged.
  * @param {ExecAction} action
  * @param {FlowHandlers} steps
  */
 async function applySettingChange(game, session, modal, steps, action) {
-  const outcome = await stepRunner.runCommand(game, action, steps, (step) => syncSettingsModal(modal, step.config));
-  if (outcome.kind === stepRunner.STEP_SHOW_ERROR) syncSettingsModal(modal, session.config);
+  await stepRunner.runCommand(game, action, steps, (step) => syncSettingsModal(modal, step.config));
+  syncSettingsModal(modal, session.config);
 }
 
 /**

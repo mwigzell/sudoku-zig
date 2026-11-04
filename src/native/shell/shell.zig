@@ -79,7 +79,7 @@ pub const Sudoku = struct {
             };
             const input: flow_mod.Input = switch (step) {
                 .resolve_default_target => .{ .default_target = self.storage.resolveDefaultTarget(&scratch) },
-                .ask => |question| .{ .answered = try self.renderer.ask(question) },
+                .prompt_message => |prompt| .{ .pressed = try self.renderer.promptMessage(prompt) },
                 .save, .save_as, .autosave => |target| .{ .wrote = self.storage.saveGame(&self.engine, target, &scratch) },
                 .export_puzzle => |name| .{ .wrote = self.storage.exportPuzzle(&self.engine, name, &scratch) },
                 .restore => |path| blk: {
@@ -109,7 +109,7 @@ pub const Sudoku = struct {
                 .flush => .{ .wrote = .{ .failed = NO_FLUSH_MSG } },
                 // Native writes never answer `taken`, so core never asks to reclaim a file here.
                 .reclaim_file => .{ .wrote = .{ .failed = NO_RECLAIM_MSG } },
-                .show_status, .show_error, .done => return step,
+                .show_status, .done => return step,
             };
             step = self.flow.next(input);
         }
@@ -135,7 +135,6 @@ pub const Sudoku = struct {
         self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, cmd) };
         switch (try self.runFlow()) {
             .show_status => |text| try self.showGameWithStatus(text),
-            .show_error => |msg| try self.renderer.showError(msg),
             else => {},
         }
     }
@@ -160,7 +159,7 @@ pub const Sudoku = struct {
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
-    /// `.ok.msg` rides the status slot (null shows none); `.error_msg` rides `showError`.
+    /// `.ok.msg` rides the status slot (null shows none); `.error_msg` is core's error prompt.
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {
@@ -171,7 +170,7 @@ pub const Sudoku = struct {
                 return false;
             },
             .error_msg => |msg| {
-                try self.renderer.showError(msg);
+                _ = try self.renderer.promptMessage(flow_mod.step.makeErrorPrompt(msg));
                 return false;
             },
         }
@@ -237,10 +236,7 @@ pub const Sudoku = struct {
             .auto_new = self.engine.cfg.auto_new,
             .difficulty = self.engine.cfg.difficulty,
         }, current) };
-        switch (try self.runFlow()) {
-            .show_error => |msg| try self.renderer.showError(msg),
-            else => {},
-        }
+        _ = try self.runFlow();
     }
 
     /// Release the engine and native transport session state.
@@ -287,18 +283,20 @@ const DeterministicFacade = struct {
         self.legend_calls += 1;
     }
 
-    /// Records error-message display calls from Sudoku.handleEvent.
-    pub fn showError(self: *@This(), _: []const u8) !void {
-        self.error_calls += 1;
-    }
-
-    /// Records questions and returns scripted yes/no answers.
-    pub fn ask(self: *@This(), _: flow_mod.Ask) !bool {
+    /// Records prompts: a one-button prompt is an acknowledged error, more buttons a question
+    /// answered from the scripted yes/no answers (yes when they run out).
+    pub fn promptMessage(self: *@This(), prompt: flow_mod.PromptMessage) !usize {
+        if (prompt.buttons.len == 1) {
+            self.error_calls += 1;
+            return 0;
+        }
         self.replace_prompts += 1;
-        if (self.replace_idx >= self.replace_answers.len) return true;
-        const answer = self.replace_answers[self.replace_idx];
-        self.replace_idx += 1;
-        return answer;
+        var yes = true;
+        if (self.replace_idx < self.replace_answers.len) {
+            yes = self.replace_answers[self.replace_idx];
+            self.replace_idx += 1;
+        }
+        return if (yes) flow_mod.step.QUESTION_OK else flow_mod.step.QUESTION_CANCEL;
     }
 
     /// Feeds pre-scripted command results into Sudoku.turn for deterministic flow tests.
@@ -1126,7 +1124,7 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
     }
     try std.testing.expect(terminated);
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
-    // routed through showError: the error text is in the output
+    // routed through promptMessage: the error text is in the output
     try std.testing.expect(std.mem.indexOf(u8, contents, parser.FILL_USAGE_MSG) != null);
     // interactive ack prompt present
     try std.testing.expect(std.mem.indexOf(u8, contents, "Press Enter to continue...") != null);

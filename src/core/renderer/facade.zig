@@ -23,7 +23,7 @@ pub const Error = error{System};
 ///
 /// Contract:
 ///   * A turn = getCommandInput → dispatch → render + showLegend after a
-///     board change, or showError when a message is produced. The renderer
+///     board change, or promptMessage when a message is produced. The renderer
 ///     itself completes each interactive call (see the method docs).
 ///   * Borrowed arguments (view, commands, msg, names) are caller-owned;
 ///     a renderer must not retain them past the call.
@@ -38,8 +38,7 @@ pub const Facade = struct {
 
     showLegend_fn: *const fn (*anyopaque, Legend) Error!void,
 
-    showError_fn: *const fn (*anyopaque, []const u8) Error!void,
-    ask_fn: *const fn (*anyopaque, flow_step.Ask) Error!bool,
+    promptMessage_fn: *const fn (*anyopaque, flow_step.PromptMessage) Error!usize,
 
     getCommandInput_fn: *const fn (
         *anyopaque,
@@ -71,16 +70,10 @@ pub const Facade = struct {
         return self.showLegend_fn(self.context, commands);
     }
 
-    /// Display an `.error_msg` and get user acknowledgement (interactive).
-    /// `.ok.msg` status must not ride this channel — it goes through render's
-    /// status_msg slot.
-    pub fn showError(self: *const Facade, msg: []const u8) Error!void {
-        return self.showError_fn(self.context, msg);
-    }
-
-    /// Ask a two-button question (title, text, button labels); true only when the user picks `ok_label`.
-    pub fn ask(self: *const Facade, question: flow_step.Ask) Error!bool {
-        return self.ask_fn(self.context, question);
+    /// Show a message the player must acknowledge or answer (an error, a question) and return
+    /// the index of the button they pressed (interactive). Status lines ride render's status_msg slot.
+    pub fn promptMessage(self: *const Facade, prompt: flow_step.PromptMessage) Error!usize {
+        return self.promptMessage_fn(self.context, prompt);
     }
 
     /// Show a prompt and get user command input, parsed against the offered
@@ -126,16 +119,10 @@ pub fn Make(comptime CT: type) type {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
             self.showLegend(commands) catch return error.System;
         }
-        /// Forward `showError` through erased context to the concrete renderer.
-        pub fn showError_wrapper(ctx: *anyopaque, msg: []const u8) Error!void {
+        /// Forward `promptMessage` through erased context to the concrete renderer.
+        pub fn promptMessage_wrapper(ctx: *anyopaque, prompt: flow_step.PromptMessage) Error!usize {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            self.showError(msg) catch return error.System;
-        }
-
-        /// Forward `ask` through erased context to the concrete renderer.
-        pub fn ask_wrapper(ctx: *anyopaque, question: flow_step.Ask) Error!bool {
-            const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.ask(question) catch return error.System;
+            return self.promptMessage(prompt) catch return error.System;
         }
 
         /// Forward `getCommandInput` through erased context with live prefs args.
@@ -174,8 +161,7 @@ pub fn Make(comptime CT: type) type {
                 .context = @ptrCast(@alignCast(instance)),
                 .render_fn = render_wrapper,
                 .showLegend_fn = showLegend_wrapper,
-                .showError_fn = showError_wrapper,
-                .ask_fn = ask_wrapper,
+                .promptMessage_fn = promptMessage_wrapper,
                 .getCommandInput_fn = getCommandInput_wrapper,
                 .report_gen_progress_fn = reportGenProgress_wrapper,
                 .deinit_fn = deinit_wrapper,

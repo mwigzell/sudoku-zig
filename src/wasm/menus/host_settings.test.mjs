@@ -28,7 +28,14 @@ function recordingSteps(game, session, { status = 204 } = {}) {
     posts.push({ url, method: init.method, body: JSON.parse(init.body) });
     return { ok: status < 400, status };
   };
-  const steps = { ...webSteps.webSteps(game, session, { fetchFn }), showError: (text) => errors.push(text) };
+  const promptDialog = {
+    show: async (step) => {
+      errors.push(step.text);
+      return step.default;
+    },
+    dismiss() {},
+  };
+  const steps = webSteps.webSteps(game, session, { fetchFn, promptDialog });
   return { posts, errors, steps };
 }
 
