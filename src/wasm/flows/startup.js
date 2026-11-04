@@ -68,7 +68,9 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
   // Phase 2: bootstrap engine config from host contract (difficulty/theme/flags).
   const boot = bootstrapEngineFromHostConfig(game, hostCfg);
   if (!boot.ok) return boot;
-  game.setHostBuildInfo(await hostApi.fetchHostBuildInfo(fetchFn));
+  const buildInfo = await hostApi.fetchHostBuildInfo(fetchFn);
+  game.setHostBuildInfo(buildInfo);
+  clientLog.enableTransportsForDebugBuild(buildInfo.debug_build);
 
   // Phase 3: return canonical boot/session shape for page entry wiring.
   return {

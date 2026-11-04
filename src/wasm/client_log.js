@@ -72,6 +72,17 @@ function shouldEmitClientLog(level) {
   return LOG_LEVEL_RANK[resolvedLevel] >= LOG_LEVEL_RANK[effectiveClientLogLevel()];
 }
 
+/**
+ * A debug host build sends client diagnostics to the console and the host log (terminal, logcat);
+ * a release build leaves both switches as they are (off unless set).
+ * @param {boolean} debugBuild the host's build mode, from `/build-info.json`
+ */
+export function enableTransportsForDebugBuild(debugBuild) {
+  if (debugBuild !== true) return;
+  globalThis.__SUDOKU_LOG = true;
+  globalThis.__SUDOKU_LOG_POST = true;
+}
+
 /** Set threshold used by JS console/client-log transport. */
 export function setClientLogLevel(level) {
   globalThis[CLIENT_LOG_LEVEL_STATE] = normalizedClientLogLevelFromWire(level);

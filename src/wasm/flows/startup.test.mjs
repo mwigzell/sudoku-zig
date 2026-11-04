@@ -64,6 +64,8 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
       };
     },
   };
+  globalThis.__SUDOKU_LOG = false;
+  globalThis.__SUDOKU_LOG_POST = false;
   const out = await startupMod.initializeWebSession(game, {
     fetchFn: async (url) => ({
       ok: true,
@@ -72,6 +74,10 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
   });
   assert.equal(out.ok, true);
   assert.deepEqual(buildInfoCalls, [{ debug_build: true }], "host build facts reach wasm apart from config");
+  assert.equal(globalThis.__SUDOKU_LOG, true, "a debug host build logs to the console");
+  assert.equal(globalThis.__SUDOKU_LOG_POST, true, "a debug host build posts client logs to the host log");
+  delete globalThis.__SUDOKU_LOG;
+  delete globalThis.__SUDOKU_LOG_POST;
   assert.equal(out.config.difficulty, 2);
   assert.equal(out.startup_save_path, "/current-file");
   assert.equal(out.default_save_filename, "sudoku_save.sud");
@@ -105,11 +111,16 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
       return hostCfg;
     },
   };
+  globalThis.__SUDOKU_LOG = false;
+  globalThis.__SUDOKU_LOG_POST = false;
   const out = await startupMod.initializeWebSession(game, {
     fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
   });
   assert.equal(out.ok, true);
   assert.equal(out.startup_save_path, null);
+  assert.equal(globalThis.__SUDOKU_LOG_POST, false, "a release host build leaves client log posting off");
+  delete globalThis.__SUDOKU_LOG;
+  delete globalThis.__SUDOKU_LOG_POST;
 }
 
 // ── startup flow: core decides restore / new / idle; the web only fetches, draws and asks ──
