@@ -471,10 +471,12 @@
       font-size: 1.25rem;
       text-align: center;
     }
+    /* The empty third column mirrors the icon's, so the title centres on the dialog. */
     #prompt-dialog-header {
-      display: flex;
+      display: grid;
+      grid-template-columns: 2rem 1fr 2rem;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.5rem;
       margin: 0 0 0.75rem;
     }
     #prompt-dialog-icon {
@@ -483,7 +485,7 @@
     }
     #prompt-dialog-header h2 {
       margin: 0;
-      text-align: left;
+      text-align: center;
     }
     #prompt-dialog-buttons .prompt-default {
       font-weight: 600;
