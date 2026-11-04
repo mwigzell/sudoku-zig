@@ -67,7 +67,7 @@ for entry in "${PINNED_LIBS[@]}"; do
     curl -fsSL -o "$LIBS/$file.part" "$url"
     mv "$LIBS/$file.part" "$LIBS/$file"
   fi
-  actual="$(shasum -a 256 "$LIBS/$file" | awk '{print $1}')"
+  actual="$(sha256_of "$LIBS/$file")"
   if [[ "$actual" != "$sha" ]]; then
     echo "error: $file sha256 is $actual, expected $sha" >&2
     exit 1

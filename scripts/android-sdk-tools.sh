@@ -132,6 +132,18 @@ sign_debug_apk() {
     "$1"
 }
 
+# Usage: sha256_of <file>; prints its SHA-256 (sha256sum on Linux, shasum on macOS).
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    echo "error: neither sha256sum nor shasum found" >&2
+    exit 1
+  fi
+}
+
 # Usage: resolve_bundletool <repo_root>; sets BUNDLETOOL_JAR. bundletool is not in the SDK: the pinned jar is fetched
 # once into third_party/bundletool/ and its hash is checked on every run.
 resolve_bundletool() {
@@ -145,7 +157,7 @@ resolve_bundletool() {
     mv "$BUNDLETOOL_JAR.part" "$BUNDLETOOL_JAR"
   fi
   local actual
-  actual="$(shasum -a 256 "$BUNDLETOOL_JAR" | awk '{print $1}')"
+  actual="$(sha256_of "$BUNDLETOOL_JAR")"
   if [[ "$actual" != "$sha256" ]]; then
     echo "error: $BUNDLETOOL_JAR sha256 is $actual, expected $sha256" >&2
     exit 1
