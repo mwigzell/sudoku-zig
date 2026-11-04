@@ -114,18 +114,15 @@ fn emit(
     }
 }
 
-// Temporarily commented out — the log.warn() call prints to stderr and
-// interferes with Zig server-mode IPC test runner on cold builds.
-//
-// test "severity methods accept args tuples" {
-//     const log = Logger(.logger);
-//     log.info("value is {}", .{42});
-//     log.warn("range {d}..{d}", .{ 1, 9 });
-//     // Prove .err() compiles — call via a dedicated scope to avoid
-//     // polluting the shared test runner stderr (Zig treats err-level as failure).
-//     const errLog = Logger(.quiet);
-//     _ = errLog;
-// }
+test "severity methods accept args tuples" {
+    const log = Logger(.logger);
+    log.info("value is {}", .{42});
+    log.warn("range {d}..{d}", .{ 1, 9 });
+    // Prove .err() compiles — call via a dedicated scope to avoid
+    // polluting the shared test runner stderr (Zig treats err-level as failure).
+    const errLog = Logger(.quiet);
+    _ = errLog;
+}
 
 test "Logger provides all five severity methods" {
     const log = Logger(.logger);
