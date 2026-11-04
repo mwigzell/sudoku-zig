@@ -3,6 +3,7 @@ package com.wigzell.sudoku_zig.test;
 // File bridge scenarios on a real device: drive the installed app's UI and the system pickers, check MediaStore and the app's files.
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -102,6 +103,9 @@ public final class FileBridgeTest {
     private static final String PICKER_SAVE = "android:id/button1";
     private static final int PICKER_BACK_LIMIT = 5;
     private static final long UI_WAIT_MS = 20_000;
+    /** Longer than a minute in a picker. */
+    private static final long LONG_PICK_MS = 65_000;
+    private static final String EMPTY_FILE_HASH = "d41d8cd98f00b204e9800998ecf8427e";
     private static final long GENERATE_WAIT_MS = 180_000;
     private static final long POLL_MS = 250;
     private static final long NODE_CACHE_WAIT_MS = 2_000;
@@ -455,6 +459,53 @@ public final class FileBridgeTest {
     }
 
     @Test
+    public void picksThatTakeOverAMinuteSaveAndOpenThePickedFile() throws IOException {
+        launchApp();
+        startEasyGame();
+        need(By.text("File"), UI_WAIT_MS).click();
+        need(By.res("file-save-as"), UI_WAIT_MS).click();
+        need(By.res(PICKER_SAVE), UI_WAIT_MS);
+        SystemClock.sleep(LONG_PICK_MS);
+        saveInCreatePicker(CHOSEN_NAME);
+        final String chosenPath = awaitChosenNamePath();
+        final String chosenName = chosenPath.substring(chosenPath.lastIndexOf('/') + 1);
+        assertEquals("a slow Save As binds the file", chosenName, awaitBoundName());
+        assertNotEquals("a slow Save As writes the game", EMPTY_FILE_HASH, fileHash(chosenPath));
+
+        sh("cp '" + chosenPath + "' " + DEFAULT_PATH + "\n");
+        need(By.text("File"), UI_WAIT_MS).click();
+        need(By.res("file-open"), UI_WAIT_MS).click();
+        final UiObject2 listed = need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        SystemClock.sleep(LONG_PICK_MS);
+        listed.click();
+        assertEquals("a slow Open loads the picked file", DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
+    }
+
+    @Test
+    public void aPickerResultForADestroyedPageLeavesNoEmptyFileAndTheAppKeepsWorking() throws IOException {
+        try {
+            launchApp();
+            startEasyGame();
+            need(By.text("File"), UI_WAIT_MS).click();
+            need(By.res("file-save-as"), UI_WAIT_MS).click();
+            need(By.res(PICKER_SAVE), UI_WAIT_MS);
+            // A dark mode change is not in the manifest's configChanges: the page is destroyed and created again.
+            sh("cmd uimode night yes\n");
+            saveInCreatePicker(CHOSEN_NAME);
+            need(By.res("board"), UI_WAIT_MS);
+            need(By.text("File"), UI_WAIT_MS);
+            awaitNoChosenNameFile();
+
+            need(By.text("File"), UI_WAIT_MS).click();
+            need(By.res("file-save-as"), UI_WAIT_MS).click();
+            need(By.res(PICKER_SAVE), UI_WAIT_MS);
+        } finally {
+            sh("cmd uimode night no\n");
+        }
+        backOutOfPicker();
+    }
+
+    @Test
     public void coreAndJsLogLinesReachLogcat() throws IOException {
         sh("logcat -c\n");
         reachTakenAskAfterReinstall();
@@ -688,6 +739,15 @@ public final class FileBridgeTest {
         }
         assertEquals("one file under the chosen name: " + paths, 1, paths.size());
         return paths.get(0);
+    }
+
+    private void awaitNoChosenNameFile() throws IOException {
+        final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
+        List<String> paths;
+        while (!(paths = chosenNamePaths()).isEmpty()) {
+            if (SystemClock.uptimeMillis() > deadline) fail("a file is left under the chosen name: " + paths);
+            SystemClock.sleep(POLL_MS);
+        }
     }
 
     private void deleteChosenNameFiles() throws IOException {

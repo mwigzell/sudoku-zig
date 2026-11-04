@@ -53,14 +53,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 public final class MainActivity extends Activity {
     private static final String LOG_IDENTITY = JniHost.logIdentity();
     private static final int REQUEST_OPEN_DOCUMENT = 2001;
     private static final int REQUEST_CREATE_DOCUMENT = 2002;
-    private static final int PICKER_TIMEOUT_SECONDS = 60;
     private static final long MIN_LAUNCH_SPLASH_MS = 2000L;
     private static final long SPLASH_BOOT_TIMEOUT_MS = 12000L;
     private static final String MIME_OCTET_STREAM = "application/octet-stream";
@@ -280,6 +278,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        cancelPendingPicks();
         if (!isChangingConfigurations()) {
             JniHost.stopHost();
         }
@@ -298,7 +297,33 @@ public final class MainActivity extends Activity {
             if (requestCode == REQUEST_CREATE_DOCUMENT && saveWaiter != null) {
                 saveWaiter.complete(resultCode, data);
                 saveWaiter = null;
+                return;
             }
+        }
+        if (requestCode == REQUEST_CREATE_DOCUMENT && resultCode == RESULT_OK && data != null) {
+            deleteIfEmpty(data.getData());
+        }
+    }
+
+    /** A destroyed activity gets no picker result: end its waiting bridge calls as cancelled. */
+    private void cancelPendingPicks() {
+        synchronized (pickerLock) {
+            if (openWaiter != null) openWaiter.complete(RESULT_CANCELED, null);
+            if (saveWaiter != null) saveWaiter.complete(RESULT_CANCELED, null);
+            openWaiter = null;
+            saveWaiter = null;
+        }
+    }
+
+    /** The picker creates the document before the app writes it; a create nobody waits for leaves it empty. */
+    private void deleteIfEmpty(Uri uri) {
+        if (uri == null) return;
+        try (Cursor cursor = getContentResolver().query(uri, new String[]{OpenableColumns.SIZE}, null, null, null)) {
+            if (cursor == null || !cursor.moveToFirst() || cursor.getLong(0) != 0) return;
+            DocumentsContract.deleteDocument(getContentResolver(), uri);
+            Log.i(LOG_IDENTITY, "deleted empty document from a pick no call was waiting for: " + uri);
+        } catch (RuntimeException | IOException err) {
+            Log.w(LOG_IDENTITY, "could not delete empty document " + uri + ": " + err);
         }
     }
 
@@ -498,8 +523,8 @@ public final class MainActivity extends Activity {
     private Intent awaitResultIntent(int requestCode, Intent intent) throws InterruptedException {
         final ActivityResultWaiter waiter = beginWaiterFor(requestCode);
         runOnUiThread(() -> startActivityForResult(intent, requestCode));
-        final boolean finished = waiter.await(PICKER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!finished || waiter.resultCode != RESULT_OK || waiter.data == null) return null;
+        waiter.await();
+        if (waiter.resultCode != RESULT_OK || waiter.data == null) return null;
         return waiter.data;
     }
 
@@ -830,8 +855,9 @@ public final class MainActivity extends Activity {
             this.done.countDown();
         }
 
-        boolean await(long timeout, TimeUnit unit) throws InterruptedException {
-            return done.await(timeout, unit);
+        /** No time bound: the player may take as long as they like in a picker; `onDestroy` ends a wait that can't finish. */
+        void await() throws InterruptedException {
+            done.await();
         }
     }
 }
