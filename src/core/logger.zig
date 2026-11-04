@@ -102,9 +102,9 @@ fn emit(
         return;
     }
 
-    // The test runner fails any test that logs at error, and tests drive failure paths on purpose.
+    // The test runner fails any test that logs at warn or error, and tests drive those paths on purpose.
     if (comptime builtin.is_test) {
-        if (sev == .err) return log.info(fmt, args);
+        if (sev == .warn or sev == .err) return log.info(fmt, args);
     }
     switch (sev) {
         .debug => log.debug(fmt, args),

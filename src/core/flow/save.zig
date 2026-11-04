@@ -178,6 +178,7 @@ pub const SaveFlow = struct {
             std.mem.copyForwards(u8, self.name_buf[0..taken.name.len], taken.name);
             self.name_len = taken.name.len;
         }
+        log.warn("write of {s}: this install may not write it; asking the player to choose it again", .{self.targetName()});
         const text = std.fmt.bufPrint(&self.text_buf, file_policy.TAKEN_FMT, .{self.targetName()}) catch
             return self.fail(NAME_TOO_LONG_MSG);
         self.taken_text_len = text.len;
