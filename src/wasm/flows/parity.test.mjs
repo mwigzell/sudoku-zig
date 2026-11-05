@@ -206,8 +206,9 @@ async function makeWorld(scenario) {
     settings: null,
     /** The host's current file, restored at startup. */
     current: null,
-    /** What the next picker returns: a name, `CANCEL`, or null for the name it suggests. */
+    /** What the next picker returns: a name, `CANCEL`, or null for the scenario's pick, else the name it suggests. */
     nextPick: null,
+    pick: w.pick ?? null,
     clipboardText: "",
     pasteFails: false,
     copyFails: false,
@@ -223,7 +224,7 @@ async function makeWorld(scenario) {
     world.current = scenario.current_file.name;
   }
   world.takePick = (suggested) => {
-    const pick = world.nextPick ?? suggested;
+    const pick = world.nextPick ?? world.pick ?? suggested;
     world.nextPick = null;
     return pick;
   };
@@ -321,6 +322,7 @@ function browserWindow(world) {
 function androidBridge(world) {
   const base64 = (b64) => Uint8Array.from(Buffer.from(b64, "base64"));
   const write = (name, b64, { bind }) => {
+    if (world.taken.has(name)) return { ok: false, reason: "taken", name };
     const out = world.writeFile(name, base64(b64));
     if (out.ok && bind) world.bound = name;
     return out;
@@ -694,15 +696,16 @@ async function runScenario(scenario, platform) {
 
 const runsOn = (scenario, entry) => !scenario.not_on?.[entry] && scenario.skip?.entry !== entry;
 
-const kindsSeen = new Set();
+/** Step kinds each front end received, and the prompt types any of them showed. */
+const kindsSeen = { [NATIVE_ENTRY]: new Set(), [WEB]: new Set(), [ANDROID]: new Set() };
 const promptTypesSeen = new Set();
-const noteKinds = (transcript) => {
+const noteKinds = (entry, transcript) => {
   for (const e of transcript.events) {
-    kindsSeen.add(e.step);
+    kindsSeen[entry].add(e.step);
     if (e.type) promptTypesSeen.add(e.type);
   }
 };
-NATIVE.scenarios.forEach(noteKinds);
+NATIVE.scenarios.forEach((t) => noteKinds(NATIVE_ENTRY, t));
 
 /** Where a transcript first departs from the reference: an event index, else the end state. */
 function firstDifference(got, reference) {
@@ -740,7 +743,7 @@ for (const scenario of SCENARIOS.scenarios) {
     if (!runsOn(scenario, platform)) continue;
     try {
       ran[platform] = await runScenario(scenario, platform);
-      noteKinds(ran[platform]);
+      noteKinds(platform, ran[platform]);
     } catch (err) {
       failures.push(`${scenario.name} on ${platform}: ${err.message}`);
     }
@@ -756,5 +759,15 @@ for (const scenario of SCENARIOS.scenarios) {
 }
 assert.deepEqual(failures, [], `parity: ${failures.length} front-end differences:\n${failures.join("\n")}`);
 
-for (const kind of NATIVE.step_kinds) assert.ok(kindsSeen.has(kind), `parity: no scenario issues the ${kind} step on any front end`);
+for (const entry of [NATIVE_ENTRY, ...PLATFORMS]) {
+  const notReceived = SCENARIOS.steps_not_received?.[entry] ?? {};
+  for (const kind of NATIVE.step_kinds) {
+    const reason = notReceived[kind];
+    if (reason === undefined) assert.ok(kindsSeen[entry].has(kind), `parity: no scenario issues the ${kind} step on ${entry}`);
+    else {
+      assert.ok(typeof reason === "string" && reason.length > 0, `parity: steps_not_received ${entry}.${kind} gives no reason`);
+      assert.ok(!kindsSeen[entry].has(kind), `parity: ${entry} receives ${kind}, which steps_not_received says it never does`);
+    }
+  }
+}
 for (const type of PROMPT_TYPES) assert.ok(promptTypesSeen.has(type), `parity: no scenario shows a ${type} prompt`);

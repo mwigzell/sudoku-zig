@@ -4,6 +4,16 @@
     "settings": "The terminal renderer opens its Settings screen itself; the command never reaches core.",
     "quit": "Quit ends the terminal loop before any flow runs."
   },
+  "steps_not_received": {
+    "native": {
+      "flush": "The terminal writes the game after every command, so there is no closing write.",
+      "paste_puzzle": "The terminal's Paste carries its line with the command.",
+      "reclaim_file": "Terminal writes never answer taken, so core never asks to reclaim a file."
+    },
+    "web": {
+      "reclaim_file": "Browser writes never answer taken, so core never asks to reclaim a file."
+    }
+  },
   "scenarios": [
     {
       "name": "restore_solved_keep",
@@ -617,6 +627,28 @@
       "expect": {"errors": 1, "written": [], "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]}
     },
     {
+      "name": "save_taken_reclaim",
+      "summary": "Android: the restored game's file belongs to an earlier install; Save asks, and choosing the file lets this install write it again.",
+      "not_on": {"native": "Only Android's file bridge reports a file this install may not write (taken).", "web": "Only Android's file bridge reports a file this install may not write (taken)."},
+      "config": {"auto_restore": true},
+      "current_file": {"name": "game.sud", "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300"},
+      "world": {"taken": ["game.sud"]},
+      "steps": [{"fill": {"row": 0, "col": 0, "digit": 4}}, {"save": true}],
+      "answers": [true],
+      "expect": {"questions": 1, "written": ["game.sud"]}
+    },
+    {
+      "name": "save_taken_save_as",
+      "summary": "Android: the restored game's file belongs to an earlier install; choosing a new name saves the game there.",
+      "not_on": {"native": "Only Android's file bridge reports a file this install may not write (taken).", "web": "Only Android's file bridge reports a file this install may not write (taken)."},
+      "config": {"auto_restore": true},
+      "current_file": {"name": "game.sud", "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300"},
+      "world": {"taken": ["game.sud"], "pick": "new.sud"},
+      "steps": [{"fill": {"row": 0, "col": 0, "digit": 4}}, {"save": true}],
+      "answers": [false],
+      "expect": {"questions": 1, "written": ["new.sud"]}
+    },
+    {
       "name": "autosave_taken_reclaim",
       "summary": "Android: the default file belongs to an earlier install; core asks, and picking it lets this install write it again.",
       "not_on": {
@@ -626,8 +658,8 @@
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "world": {"taken": ["sudoku.sud"]},
       "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
-      "answers": [false],
-      "expect": {"questions": 1}
+      "answers": [true],
+      "expect": {"questions": 1, "written": ["sudoku.sud"]}
     },
     {
       "name": "autosave_taken_save_as",
@@ -637,10 +669,10 @@
         "web": "Only Android's file bridge reports a file this install may not write (taken)."
       },
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
-      "world": {"taken": ["sudoku.sud"]},
+      "world": {"taken": ["sudoku.sud"], "pick": "new.sud"},
       "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
-      "answers": [true],
-      "expect": {"questions": 1}
+      "answers": [false],
+      "expect": {"questions": 1, "written": ["new.sud"]}
     },
     {
       "name": "flush_on_close",

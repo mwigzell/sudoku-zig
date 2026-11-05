@@ -48,6 +48,7 @@ const World = struct {
     // Only web and Android stage these; a scenario using one names native in `not_on`.
     taken: []const []const u8 = &.{},
     generate: ?[]const u8 = null,
+    pick: ?[]const u8 = null,
 };
 
 const Step = struct {
@@ -134,6 +135,8 @@ const Scenario = struct {
 
 const Scenarios = struct {
     flowless_commands: std.json.ArrayHashMap([]const u8),
+    /// Step kinds a front end never receives, with the reason; the JS runner checks them for every front end.
+    steps_not_received: std.json.ArrayHashMap(std.json.ArrayHashMap([]const u8)),
     scenarios: []const Scenario,
 };
 

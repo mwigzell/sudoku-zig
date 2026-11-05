@@ -46,7 +46,7 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 ## Completeness
 
 - Native fails when a `Command` reaches no scenario; `flowless_commands` lists those that never reach core, with the reason.
-- The JS runner fails when a step kind core can issue is issued by no scenario on any front end, or when no scenario shows an information, warning or error prompt.
+- The JS runner fails when a front end receives no scenario's step of some kind core can issue, unless `steps_not_received` lists that kind for that front end with the reason; a listed kind the front end does receive fails as stale. It also fails when no scenario shows an information, warning or error prompt.
 - A front end a scenario cannot reach is named in `not_on` with the reason.
 
 ## Scenarios
@@ -100,6 +100,8 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `autosave_default_exists_asks` | Turning Auto Save on for a new game whose default file is already there: the next move asks before replacing it. | native, web, android | — |
 | `autosave_default_exists_cancel` | Declining to replace the existing default file: the move stays and nothing is written. | native, web, android | — |
 | `autosave_failed` | An autosave whose write fails shows core's error; the move stays. | native, web, android | — |
+| `save_taken_reclaim` | Android: the restored game's file belongs to an earlier install; Save asks, and choosing the file lets this install write it again. | android | native: Only Android's file bridge reports a file this install may not write (taken).; web: Only Android's file bridge reports a file this install may not write (taken). |
+| `save_taken_save_as` | Android: the restored game's file belongs to an earlier install; choosing a new name saves the game there. | android | native: Only Android's file bridge reports a file this install may not write (taken).; web: Only Android's file bridge reports a file this install may not write (taken). |
 | `autosave_taken_reclaim` | Android: the default file belongs to an earlier install; core asks, and picking it lets this install write it again. | android | native: Only Android's file bridge reports a file this install may not write (taken).; web: Only Android's file bridge reports a file this install may not write (taken). |
 | `autosave_taken_save_as` | Android: the default file belongs to an earlier install; choosing a new name saves the game there. | android | native: Only Android's file bridge reports a file this install may not write (taken).; web: Only Android's file bridge reports a file this install may not write (taken). |
 | `flush_on_close` | With Auto Save on, closing the app writes the current file once more. | web, android | native: The terminal writes the game after every command; there is no closing write. |
