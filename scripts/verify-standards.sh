@@ -267,7 +267,8 @@ done
 # Dialog and status text is always full sentences, so a sentence-shaped literal in adapter code is
 # text the adapter wrote. Comments, log calls, tests and Zig `test` blocks are not user text.
 ADAPTER_TEXT_PAT="[\"'\`][A-Z][^\"'\`]* [^\"'\`]*[.!?][\"'\`]"
-ADAPTER_TEXT_SKIP='^[[:space:]]*(//|\*|/\*|#|<!--)|\blog\.(debug|info|warn|err|fatal)\(|Log\.[dewiv]\(|clientLog\(|console\.(log|warn|error)\(|std\.debug\.print\('
+ADAPTER_TEXT_COMMENT='^[0-9]+:[[:space:]]*(//|\*|/\*|#|<!--)'
+ADAPTER_TEXT_LOG='\blog\.(debug|info|warn|err|fatal)\(|Log\.[dewiv]\(|clientLog\(|console\.(log|warn|error)\(|std\.debug\.print\('
 # Platform-only text, for behaviour no core flow implements: "<file>" when the whole file is such
 # text, "<file> <CONSTANT>" for one constant. Documented in docs/agents/verify-standards.md.
 ADAPTER_TEXT_ALLOWED=(
@@ -324,7 +325,7 @@ for f in "${CHANGED[@]}"; do
     check_added_pattern "$f" '\.msg[[:space:]]*=[[:space:]]*["'\'']' \
       "native shell adapter wrote a .msg literal (status text belongs to core)"
   fi
-  hits="$(added_lines_outside_tests "$f" | grep -E "$ADAPTER_TEXT_PAT" | grep -vE "^[0-9]+:(${ADAPTER_TEXT_SKIP})" || true)"
+  hits="$(added_lines_outside_tests "$f" | grep -E "$ADAPTER_TEXT_PAT" | grep -vE "$ADAPTER_TEXT_COMMENT" | grep -vE "$ADAPTER_TEXT_LOG" || true)"
   for c in "${allowed_consts[@]+"${allowed_consts[@]}"}"; do
     hits="$(echo "$hits" | grep -vE "^[0-9]+:.*\b${c}\b[^=]*=" || true)"
   done
