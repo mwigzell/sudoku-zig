@@ -1,4 +1,4 @@
-// prompt_dialog.test.mjs — the shared prompt dialog: type icon, title, text, core's buttons in order;
+// prompt_dialog.test.mjs — the shared prompt dialog: type badge, title, text, core's buttons in order;
 // the rightmost is focused; pressing or dismissing answers the button's index.
 
 import assert from "node:assert/strict";
@@ -36,7 +36,7 @@ function fakeElement(tag = "div") {
 function wire() {
   const els = {
     el: fakeElement(),
-    iconEl: fakeElement(),
+    badgeEl: fakeElement(),
     titleEl: fakeElement(),
     textEl: fakeElement(),
     buttonsEl: fakeElement(),
@@ -58,11 +58,11 @@ function prompt(fields) {
 const THREE = prompt({ type: "information", buttons: ["Left", "Middle", "Right"], default: 2, dismiss: 0 });
 
 {
-  // Three buttons show left to right with the type icon and title; the rightmost is the focused default.
+  // Three buttons show left to right with the type badge and title; the rightmost is the focused default.
   const ui = wire();
   const answer = ui.dialog.show(THREE);
   assert.equal(ui.el.hidden, false);
-  assert.equal(ui.iconEl.textContent, promptDialogMod.TYPE_ICONS.information);
+  assert.equal(ui.badgeEl.textContent, promptDialogMod.TYPE_BADGES.information);
   assert.equal(ui.titleEl.textContent, "Title");
   assert.equal(ui.textEl.textContent, "Text");
   assert.deepEqual(ui.buttonsEl.children.map((b) => b.textContent), ["Left", "Middle", "Right"]);
@@ -102,13 +102,16 @@ const THREE = prompt({ type: "information", buttons: ["Left", "Middle", "Right"]
 }
 
 {
-  // Every type shows its own icon.
+  // Every type renders its own badge: its mark, and the type the page styles the badge by.
+  const marks = new Set();
   for (const type of ["information", "warning", "error"]) {
     const ui = wire();
     void ui.dialog.show(prompt({ type }));
-    assert.equal(ui.iconEl.textContent, promptDialogMod.TYPE_ICONS[type]);
+    assert.equal(ui.badgeEl.textContent, promptDialogMod.TYPE_BADGES[type]);
     assert.equal(ui.el.dataset.type, type);
+    marks.add(ui.badgeEl.textContent);
   }
+  assert.equal(marks.size, 3, "each type has its own mark");
 }
 
 console.log("prompt_dialog.test.mjs OK");

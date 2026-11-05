@@ -81,7 +81,7 @@ export type PromptDialog = {
 };
 export type PromptDialogElements = {
   el: HTMLElement;
-  iconEl: HTMLElement;
+  badgeEl: HTMLElement;
   titleEl: HTMLElement;
   textEl: HTMLElement;
   buttonsEl: HTMLElement;

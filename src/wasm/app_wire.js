@@ -223,7 +223,7 @@ function createPromptDialog(root, win) {
   const bridge = win.__SudokuAndroidBridge;
   const dialog = promptDialogMod.wirePromptDialog({
     el: root.getElementById("prompt-dialog"),
-    iconEl: root.getElementById("prompt-dialog-icon"),
+    badgeEl: root.getElementById("prompt-dialog-badge"),
     titleEl: root.getElementById("prompt-dialog-title"),
     textEl: root.getElementById("prompt-dialog-text"),
     buttonsEl: root.getElementById("prompt-dialog-buttons"),

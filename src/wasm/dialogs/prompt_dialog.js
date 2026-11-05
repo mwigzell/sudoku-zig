@@ -1,12 +1,12 @@
-// prompt_dialog.js — the one dialog for core's `prompt_message` step on web and Android: type icon,
-// title, text and core's buttons; the answer is the index of the button pressed.
+// prompt_dialog.js — the one dialog for core's `prompt_message` step on web and Android: the gator with
+// the type's badge, title, text and core's buttons; the answer is the index of the button pressed.
 
 /** @typedef {import("../types").PromptStep} PromptStep */
 /** @typedef {import("../types").PromptDialog} PromptDialog */
 /** @typedef {import("../types").PromptDialogElements} PromptDialogElements */
 
-/** The icon shown top left for each message type. */
-export const TYPE_ICONS = Object.freeze({ information: "ℹ", warning: "⚠", error: "✖" });
+/** The mark in each type's badge; the page colours and shapes the badge by `data-type`. */
+export const TYPE_BADGES = Object.freeze({ information: "i", warning: "!", error: "✖" });
 /** Id prefix of the n-th button, left to right. */
 export const BUTTON_ID_PREFIX = "prompt-dialog-button-";
 /** Class of the default (rightmost) button. */
@@ -17,7 +17,7 @@ export const DEFAULT_BUTTON_CLASS = "prompt-default";
  * @param {PromptDialogElements} els
  * @returns {PromptDialog}
  */
-export function wirePromptDialog({ el, iconEl, titleEl, textEl, buttonsEl, doc, onOpenChange }) {
+export function wirePromptDialog({ el, badgeEl, titleEl, textEl, buttonsEl, doc, onOpenChange }) {
   /** @type {{ step: PromptStep, resolve: (index: number) => void } | null} */
   let open = null;
 
@@ -50,7 +50,7 @@ export function wirePromptDialog({ el, iconEl, titleEl, textEl, buttonsEl, doc, 
       return new Promise((resolve) => {
         open = { step, resolve };
         el.dataset.type = step.type;
-        iconEl.textContent = TYPE_ICONS[step.type] ?? "";
+        badgeEl.textContent = TYPE_BADGES[step.type] ?? "";
         titleEl.textContent = step.title;
         textEl.textContent = step.text;
         const buttons = step.buttons.map((label, index) => {
