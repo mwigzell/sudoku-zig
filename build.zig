@@ -168,7 +168,7 @@ pub fn build(b: *std.Build) void {
     standards_step.dependOn(&standards_check.step);
 
     const parity_check = b.addSystemCommand(&.{ "bash", "scripts/verify-parity.sh" });
-    const parity_step = b.step("parity", "Cross-entry parity drift check (scenarios on native and web)");
+    const parity_step = b.step("parity", "Parity drift check: fixture, matrix and runners agree (the parity tests run in test and glue)");
     parity_step.dependOn(&parity_check.step);
 
     const verify_run_step = b.step("verify-run", "Internal: exe + test + fmt + standards + parity + glue + coverage");
