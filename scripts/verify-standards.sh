@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Mechanical standards gate for changed source — encodes AGENTS.md, CONTEXT.md,
-# and docs/coding-standards.md rules that grep can enforce (DRY/architecture/SOLID
+# Mechanical standards gate for changed source — encodes AGENTS.md and CONTEXT.md
+# rules that grep can enforce (DRY/architecture/SOLID
 # judgement calls still belong in human or two-axis review).
 set -euo pipefail
 
@@ -222,7 +222,7 @@ for f in "${CHANGED[@]}"; do
   fi
 done
 
-# --- 9. Public Zig API docs are mandatory (docs/coding-standards.md) ---
+# --- 9. Public Zig API docs are mandatory (AGENTS.md "Coding standards") ---
 for f in "${CHANGED[@]}"; do
   [[ "$f" =~ \.zig$ ]] || continue
   while IFS= read -r rec; do
