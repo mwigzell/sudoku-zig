@@ -351,10 +351,32 @@ while IFS= read -r core_asset; do
   note_violation "core placement violation: non-Zig source under src/core (${core_asset})" ""
 done < <(git ls-files 'src/core/**/*.js' 'src/core/**/*.mjs' 'src/core/**/*.html')
 
+# --- 16. Nothing is silent: every caught error in app code is logged with its system message ---
+# A catch that cannot name the error, or that swaps it for a value without a log line, loses it.
+# `catch unreachable` (an assertion) and `catch return Error.X` (propagation) are not flagged.
+SILENT_CATCH_ZIG='catch[[:space:]]*\{[[:space:]]*\}|catch[[:space:]]*\|_\||catch[[:space:]]+(null|false|true|[0-9]+|"[^"]*"|\.\{\}|\.[A-Za-z_]+|continue|break|return([[:space:]]+(null|false|true|\.[A-Za-z_{][^;]*))?)[[:space:]]*[;,)]'
+SILENT_CATCH_JS='catch[[:space:]]*\{|catch[[:space:]]*\([[:space:]]*_[A-Za-z0-9_]*[[:space:]]*\)|\.catch\([[:space:]]*\([[:space:]]*\)[[:space:]]*=>|catch[[:space:]]*\([^)]*\)[[:space:]]*\{[[:space:]]*\}'
+SILENT_CATCH_JAVA='catch[[:space:]]*\([^)]*[[:space:]](ignored|_)\)|catch[[:space:]]*\([^)]*\)[[:space:]]*\{[[:space:]]*\}'
+
+for f in "${CHANGED[@]}"; do
+  [[ "$f" =~ ^src/test/ || "$f" =~ ^src/android/test/ || "$f" =~ \.test\.mjs$ || "$f" == src/wasm/test_support.mjs ]] && continue
+  case "$f" in
+    *.zig) pat="$SILENT_CATCH_ZIG" ;;
+    src/wasm/*.js | src/wasm/*.html) pat="$SILENT_CATCH_JS" ;;
+    src/android/*.java) pat="$SILENT_CATCH_JAVA" ;;
+    *) continue ;;
+  esac
+  hits="$(added_lines_outside_tests "$f" | grep -E "$pat" | grep -vE "$ADAPTER_TEXT_COMMENT" || true)"
+  if [[ -n "$hits" ]]; then
+    note_violation "silent catch in ${f} (log the error with its system message; an expected one at info as \"expected: …\")" \
+      "$(echo "$hits" | head -3 | sed 's/^/+ /')"
+  fi
+done
+
 # --- report ---
 if [[ $FAIL -eq 0 ]]; then
   pass_line "mechanical standards clean (${#CHANGED[@]} file(s))"
-  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY, adapter text ownership, restore lane, core placement\n' "${C_DIM}"
+  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY, adapter text ownership, restore lane, core placement, silent catches\n' "${C_DIM}"
   printf '%b judgement calls (SOLID/spec) still need two-axis review\n' "${C_DIM}"
   exit 0
 fi

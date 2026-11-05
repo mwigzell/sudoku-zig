@@ -2,6 +2,8 @@
 
 import * as clientLog from "../client_log.js";
 
+const WORKER_FAILED_REASON = "worker script fetch failed";
+
 /** Module workers need a secure context (https or localhost). */
 export function canUseGenWorker() {
   return typeof Worker !== "undefined" && globalThis.isSecureContext === true;
@@ -13,11 +15,11 @@ export async function prefetchWorkerScript(workerUrl, { fetchFn } = {}) {
   if (!fetchImpl) return { ok: true };
   try {
     const res = await fetchImpl(workerUrl);
-    if (!res.ok) return { ok: false, error: "worker failed" };
+    if (!res.ok) return { ok: false, error: `${WORKER_FAILED_REASON}: HTTP ${res.status}` };
     await res.arrayBuffer();
     return { ok: true };
-  } catch {
-    return { ok: false, error: "worker failed" };
+  } catch (err) {
+    return { ok: false, error: `${WORKER_FAILED_REASON}: ${err?.message ?? String(err)}` };
   }
 }
 

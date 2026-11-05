@@ -5,6 +5,9 @@ const cell = @import("../board/cell.zig");
 const serial = @import("../board/serial.zig");
 const solver = @import("../solver.zig");
 const std = @import("std");
+const logger = @import("../logger.zig");
+
+const log = logger.Logger(.puzzle_gen);
 
 /// Canonical puzzle difficulty levels. `.default` is the legacy dot-blanked fixture.
 pub const Difficulty = enum { default, easy, medium, hard };
@@ -114,7 +117,7 @@ pub const PuzzleGen = struct {
     pub fn generate(diff: Difficulty) []const u8 {
         if (useGenerateFixtures() and diff != .default) {
             // A test build returns a fixed puzzle, but still reports the attempt play starts with, so New's progress reaches the front end.
-            reportProgress(play_progress_fn, play_progress_ctx, .round) catch {};
+            reportProgress(play_progress_fn, play_progress_ctx, .round) catch |err| noteAborted(err);
             return fixtureLine(diff);
         }
         return switch (diff) {
@@ -131,21 +134,29 @@ pub const PuzzleGen = struct {
         const progress = playProgressCallback();
         while (true) {
             if (checkPlayAbort()) return;
-            reportProgress(progress.callback, progress.ctx, .round) catch return;
+            reportProgress(progress.callback, progress.ctx, .round) catch |err| return noteAborted(err);
             var prng = std.Random.DefaultPrng.init(runtimeSeed());
             generateInto(diff, prng.random(), out, progress.callback, progress.ctx) catch |err| switch (err) {
-                error.GenAborted => return,
+                error.GenAborted => return noteAborted(err),
                 else => {
-                    reportProgress(progress.callback, progress.ctx, .dig_hole) catch return;
+                    log.info("expected: fast strip found no puzzle, trying dig-hole ({s})", .{@errorName(err)});
+                    reportProgress(progress.callback, progress.ctx, .dig_hole) catch |e| return noteAborted(e);
                     generateIntoDigHole(diff, prng.random(), out, progress.callback, progress.ctx) catch |e| switch (e) {
-                        error.GenAborted => return,
-                        else => continue,
+                        error.GenAborted => return noteAborted(e),
+                        else => {
+                            log.info("expected: dig-hole found no puzzle, starting a new attempt ({s})", .{@errorName(e)});
+                            continue;
+                        },
                     };
                     return;
                 },
             };
             return;
         }
+    }
+
+    fn noteAborted(err: anyerror) void {
+        log.info("expected: generation stopped by the player ({s})", .{@errorName(err)});
     }
 
     fn playProgressCallback() struct { callback: ?GenProgressFn, ctx: ?*anyopaque } {
@@ -313,14 +324,19 @@ pub const GENERATING_CANCELLING_MSG = "The new puzzle is being cancelled.";
 pub const FAST_STRIP_MSG = "Using the fast strip method.";
 pub const DIG_HOLE_MSG = "Using the dig-hole fallback method.";
 
+fn progressTextFailed(err: anyerror) ?[]const u8 {
+    log.err("progress text does not fit its buffer: {s}", .{@errorName(err)});
+    return null;
+}
+
 pub fn formatProgressEvent(event: GenProgressEvent, buf: []u8) ?[]const u8 {
     return switch (event) {
-        .round => std.fmt.bufPrint(buf, "Starting a new attempt.", .{}) catch null,
-        .dig_hole => std.fmt.bufPrint(buf, "Carving out clues.", .{}) catch null,
-        .attempt => |x| std.fmt.bufPrint(buf, "Trying puzzle {d} of {d}.", .{ x.n, x.max }) catch null,
-        .strip => |s| std.fmt.bufPrint(buf, "The puzzle has {d} clues; the target is {d} or fewer.", .{ s.givens, s.target }) catch null,
-        .carve => |c| std.fmt.bufPrint(buf, "Removing clues: {d} left, aiming for {d} or fewer.", .{ c.givens, c.target }) catch null,
-        .uniqueness_check => |u| std.fmt.bufPrint(buf, "Checking that the puzzle with {d} clues has only one solution.", .{u.givens}) catch null,
+        .round => std.fmt.bufPrint(buf, "Starting a new attempt.", .{}) catch |err| progressTextFailed(err),
+        .dig_hole => std.fmt.bufPrint(buf, "Carving out clues.", .{}) catch |err| progressTextFailed(err),
+        .attempt => |x| std.fmt.bufPrint(buf, "Trying puzzle {d} of {d}.", .{ x.n, x.max }) catch |err| progressTextFailed(err),
+        .strip => |s| std.fmt.bufPrint(buf, "The puzzle has {d} clues; the target is {d} or fewer.", .{ s.givens, s.target }) catch |err| progressTextFailed(err),
+        .carve => |c| std.fmt.bufPrint(buf, "Removing clues: {d} left, aiming for {d} or fewer.", .{ c.givens, c.target }) catch |err| progressTextFailed(err),
+        .uniqueness_check => |u| std.fmt.bufPrint(buf, "Checking that the puzzle with {d} clues has only one solution.", .{u.givens}) catch |err| progressTextFailed(err),
     };
 }
 

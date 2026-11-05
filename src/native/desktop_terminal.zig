@@ -30,7 +30,10 @@ pub fn run(io: std.Io, gpa: std.mem.Allocator, cfg: config.Config, data_dir: []c
     };
     defer facade_f.deinit();
 
-    const visible_save_dir: ?[]u8 = shell_path.computeVisibleSaveDir(gpa) catch null;
+    const visible_save_dir: ?[]u8 = shell_path.computeVisibleSaveDir(gpa) catch |err| blk: {
+        log.warn("visible save folder unavailable, saving in the data dir: {s}", .{@errorName(err)});
+        break :blk null;
+    };
     defer if (visible_save_dir) |dir| gpa.free(dir);
     const settings_persist: ?storage.SettingsPersist = if (std.mem.eql(u8, data_dir, "."))
         null

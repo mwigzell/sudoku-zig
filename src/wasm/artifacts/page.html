@@ -967,8 +967,11 @@
           : Date.now();
       const BOOT_SPLASH_MIN_MS = 2000;
       const WEB_BOOT_TIMEOUT_MS = 12000;
-      /** Shown for any boot failure; the reason goes to the console or the client log. */
+      /** Shown for any boot failure in a browser; the reason goes to the console or the client log. */
       const BOOT_FAILED_MSG = "The game could not start. Reload the page to try again.";
+      /** The Android app owns its own sentence (MainActivity); a browser shows the page's. */
+      const bootFailedText = () =>
+        window.AndroidFileBridge ? window.AndroidFileBridge.bootFailedText() : BOOT_FAILED_MSG;
       const BOOT_FAILED_TITLE = "Error";
       const BOOT_FAILED_BADGE = "✖";
       const OK_LABEL = "OK";
@@ -996,14 +999,14 @@
         bootFailureShown = true;
         void hideBootSplash();
         if (statusBar) {
-          statusBar.textContent = BOOT_FAILED_MSG;
+          statusBar.textContent = bootFailedText();
           statusBar.className = "error";
         }
         if (promptDialog) {
           promptDialog.dataset.type = "error";
           document.getElementById("prompt-dialog-badge").textContent = BOOT_FAILED_BADGE;
           document.getElementById("prompt-dialog-title").textContent = BOOT_FAILED_TITLE;
-          document.getElementById("prompt-dialog-text").textContent = BOOT_FAILED_MSG;
+          document.getElementById("prompt-dialog-text").textContent = bootFailedText();
           const ok = document.createElement("button");
           ok.type = "button";
           ok.textContent = OK_LABEL;
@@ -1028,7 +1031,9 @@
         window.__sudokuBootReady = true;
         try {
           window.AndroidFileBridge?.notifyWebBootReady();
-        } catch (_) {}
+        } catch (err) {
+          console.error("sudoku boot-ready signal failed:", err);
+        }
       };
       // Android already shows a native launch splash; suppress the HTML splash
       // there to avoid stacked overlays.

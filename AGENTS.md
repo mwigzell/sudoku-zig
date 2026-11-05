@@ -112,7 +112,7 @@ The terminal `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is **set
    - **D**ependency Inversion — depend on abstractions, not implementations. High-level policies (GameEngine) do not import rendering details; low-level renderers are injected at runtime.
 4. **No magic numbers.** Hard-coded values must be pulled out into named constants or configuration structs at the appropriate scope level. Prefer `const GRID_SIZE: u8 = 9` to a random bare literal, with a descriptive name that explains what it represents.
 5. **Constructors are pure.** A constructor (`init`, `fromX`, etc.) only sets fields and returns the object. No rendering, no logging, no mutation of external state, no hidden behaviour. The caller controls when and how side effects happen.
-6. **Don't code empty catch blocks**: always log something if its an error.
+6. **Nothing is silent**: every caught error is logged with its system message (`@errorName(err)`, `err.message`, `e.toString()`), whether or not the user is told. An expected error, part of normal processing, is logged at info as `expected: <why> (<system message>)`; any other at warn or err. A line that cannot reach the host log goes to the console (JS) or stderr (Zig) instead. `scripts/verify-standards.sh` flags new silent catches.
 7. **no God classes**: do not make huge multi-page functions or switch statements. Modularize early so the structure is easy to discern.
 8. **Clean** code style.
 9. **Central plumbing is mandatory (hard rule).**

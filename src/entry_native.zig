@@ -14,7 +14,16 @@ const settings_store = @import("core/settings_store.zig");
 const web_host = @import("web_host/mod.zig");
 const open_browser = @import("native/open_browser.zig");
 const android_jni_host = @import("android/jni_host.zig");
+const about = @import("core/about.zig");
+const build_info = @import("build_info.zig");
 const EntryArm = enum { web, terminal };
+
+fn armLabel(arm: EntryArm) []const u8 {
+    return switch (arm) {
+        .web => "desktop web",
+        .terminal => "desktop terminal",
+    };
+}
 
 fn selectEntryArm(cfg: config.Config) EntryArm {
     if (cfg.preferred_renderer == .web) return .web;
@@ -27,18 +36,23 @@ test {
 
 /// Resolve startup config and dispatch to web or terminal desktop entry.
 pub fn main(init: std.process.Init) shell.Error!void {
+    const log = logger.Logger(.sudoku);
+    log.info("starting desktop: {s}", .{about.summaryLine(build_info.debug_build)});
     var arg_it = std.process.Args.iterate(init.minimal.args);
     const gpa = std.heap.page_allocator;
     const cfg = startup_config.resolveStartupConfig(gpa, init.io, &arg_it) catch unreachable;
     startup_config.applyLoggerFromStartup(cfg);
 
-    const log = logger.Logger(.sudoku);
-    log.debug("Starting sudoku game.", .{});
+    const arm = selectEntryArm(cfg);
+    log.info("entry arm: {s}", .{armLabel(arm)});
 
-    const data_dir = shell_path.computeDataDir(gpa) catch ".";
+    const data_dir = shell_path.computeDataDir(gpa) catch |err| blk: {
+        log.warn("data dir unavailable, using the working directory: {s}", .{@errorName(err)});
+        break :blk ".";
+    };
     defer if (!std.mem.eql(u8, data_dir, ".")) gpa.free(data_dir);
 
-    if (selectEntryArm(cfg) == .web) {
+    if (arm == .web) {
         desktop_web.run(init.io, cfg, data_dir);
         return;
     }

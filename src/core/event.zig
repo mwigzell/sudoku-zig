@@ -1,5 +1,8 @@
 const std = @import("std");
 const board = @import("board/board.zig");
+const logger = @import("logger.zig");
+
+const log = logger.Logger(.event);
 
 /// Scratch buffer for assembling optional `.ok.msg` text during one exec step.
 /// Start empty; append from any number of sources; pass `optional()` into Event.
@@ -31,7 +34,10 @@ pub const EventMsg = struct {
     /// Format and append one message fragment.
     pub fn appendFmt(self: *EventMsg, comptime fmt: []const u8, args: anytype) void {
         var stack: [128]u8 = undefined;
-        const part = std.fmt.bufPrint(&stack, fmt, args) catch return;
+        const part = std.fmt.bufPrint(&stack, fmt, args) catch |err| {
+            log.err("event message fragment does not fit its buffer: {s}", .{@errorName(err)});
+            return;
+        };
         self.append(part);
     }
 

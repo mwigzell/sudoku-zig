@@ -10,10 +10,14 @@ const logger = @import("../../core/logger.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 const flow_step = @import("../../core/flow/step.zig");
 
+const log = logger.Logger(.gen_progress);
+
 /// Forwards generator progress from puzzle-gen to the active native Facade.
 pub fn playProgressToFacade(gen_event: puzzle_gen.GenProgressEvent, ctx: ?*anyopaque) void {
     const facade: *const facade_mod.Facade = @ptrCast(@alignCast(ctx.?));
-    facade.reportGenProgress(gen_event) catch {};
+    facade.reportGenProgress(gen_event) catch |err| {
+        log.warn("generation progress not shown: {s}", .{@errorName(err)});
+    };
 }
 
 const ProgressRecorder = struct {

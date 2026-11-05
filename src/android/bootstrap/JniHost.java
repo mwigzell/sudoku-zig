@@ -28,9 +28,9 @@ public final class JniHost {
                 }
                 try {
                     Thread.sleep(READY_POLL_INTERVAL_MS);
-                } catch (InterruptedException ignored) {
+                } catch (InterruptedException err) {
                     Thread.currentThread().interrupt();
-                    callback.onError("Host startup interrupted");
+                    callback.onError("Host startup interrupted: " + err);
                     return;
                 }
                 elapsedMs += READY_POLL_INTERVAL_MS;

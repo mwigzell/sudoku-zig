@@ -4,6 +4,9 @@
 const std = @import("std");
 const cm = @import("../../core/command.zig");
 const cell_module = @import("../../core/board/cell.zig");
+const logger = @import("../../core/logger.zig");
+
+const log = logger.Logger(.parser);
 
 // Re-export domain types so callers need only this import
 pub const FillData = cm.FillData;
@@ -199,10 +202,19 @@ fn buildAmbiguityMessage(matched: []const []const u8) ParseCommandResult {
     var names_buf: [192]u8 = undefined;
     var w: std.Io.Writer = .fixed(&names_buf);
     for (matched, 0..) |name, i| {
-        if (i > 0) w.writeAll(", ") catch break;
-        w.writeAll(name) catch break;
+        if (i > 0) w.writeAll(", ") catch |err| {
+            log.warn("ambiguous command list cut short: {s}", .{@errorName(err)});
+            break;
+        };
+        w.writeAll(name) catch |err| {
+            log.warn("ambiguous command list cut short: {s}", .{@errorName(err)});
+            break;
+        };
     }
-    const msg = std.fmt.bufPrint(&ambiguity_buf, AMBIGUOUS_FMT, .{w.buffered()}) catch return .{ .error_msg = UNKNOWN_COMMAND_MSG };
+    const msg = std.fmt.bufPrint(&ambiguity_buf, AMBIGUOUS_FMT, .{w.buffered()}) catch |err| {
+        log.err("ambiguity message does not fit its buffer: {s}", .{@errorName(err)});
+        return .{ .error_msg = UNKNOWN_COMMAND_MSG };
+    };
     return .{ .error_msg = msg };
 }
 

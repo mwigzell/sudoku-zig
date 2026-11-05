@@ -9,6 +9,8 @@ const settings_store = @import("../settings_store.zig");
 const path = @import("../../native/shell/path.zig");
 const save_defaults = @import("../save_defaults.zig");
 
+const log = logger.Logger(.startup);
+
 /// View/theme fields the host wire carries alongside difficulty and log level.
 pub fn configFromHostWire(
     difficulty: u8,
@@ -112,7 +114,10 @@ pub fn resolveStartupConfig(
     io: std.Io,
     cli_it: *std.process.Args.Iterator,
 ) settings_store.Error!config.Config {
-    const data_dir = path.computeDataDir(gpa) catch return settings_store.loadOrDefault(gpa, io, ".");
+    const data_dir = path.computeDataDir(gpa) catch |err| {
+        log.warn("data dir unavailable, reading settings from the working directory: {s}", .{@errorName(err)});
+        return settings_store.loadOrDefault(gpa, io, ".");
+    };
     defer gpa.free(data_dir);
     settings_store.ensureSettingsDir(io, data_dir);
 

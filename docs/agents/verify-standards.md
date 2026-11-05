@@ -44,6 +44,7 @@ Rules from `AGENTS.md` and `CONTEXT.md` that grep can check without judgement:
 | Test fixture DRY | No local `WRITE_CONTEXT_EVENTS` map literals in wasm tests; build from shell contract keys |
 | Adapter text ownership | No dialog or status text written as a literal in adapter code (see below) |
 | Restore lane contract | No startup restore routing through named-open copy (`name: restorePath`) in `src/wasm/flows/startup.js` |
+| Silent catches | No caught error in app code goes unlogged (see below) |
 
 ## Adapter text ownership
 
@@ -64,7 +65,17 @@ It skips comment lines, log calls (`log.*`, `Log.*`, `clientLog`, `console.*`, `
 | `src/native/ascii/parser.zig` (whole file) | The terminal's command-line help; typing commands is the terminal's own input |
 | `src/native/ascii/renderer.zig` `NO_COMMANDS_MSG` | The terminal menu when it has nothing to offer |
 
-An entry names a file, or a file and a constant. An entry whose file or constant no longer exists fails the check. Add an entry only for text the platform alone implements; anything a core flow implements goes through core's text.
+An entry names a file, or a file and a constant; the text sits on the constant's own line. An entry whose file or constant no longer exists fails the check. Add an entry only for text the platform alone implements; anything a core flow implements goes through core's text.
+
+## Silent catches
+
+Nothing is silent (`AGENTS.md`, "Coding standards" rule 6). On added lines in app code, outside test files and Zig `test` blocks, the check flags a catch that cannot name its error or that swaps it for a value:
+
+- Zig: `catch {}`, `catch |_|`, and `catch` followed by a fallback (`null`, `false`, `true`, a number, a string, `.{}`, `.tag`, `continue`, `break`, `return`, `return null`/`false`/`true`/`.tag`). Use `catch |err|` and log `@errorName(err)`.
+- Web JS and HTML (`src/wasm/**`): `catch {` with no binding, `catch (_x)`, `.catch(() =>`, and an empty `catch (err) {}`.
+- Android Java (`src/android/**`): `catch (… ignored)`, `catch (… _)`, and an empty `catch (…) {}`.
+
+`catch unreachable` (an assertion) and `catch return Error.X` (propagation) pass. The check is line-based: a catch whose body spans lines but never logs is left to review.
 
 ## Cross-entry parity (`zig build parity`)
 

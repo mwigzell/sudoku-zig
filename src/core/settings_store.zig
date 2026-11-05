@@ -44,6 +44,30 @@ pub const Error = error{
     System,
 };
 
+const SETTINGS_PART = "player settings";
+const CURRENT_FILE_PART = "current file";
+
+/// A settings file that is not there yet is normal; any other read failure is logged as a problem.
+/// `what` names the part being read, so two reads of one file log two distinct lines.
+fn noteReadFailure(what: []const u8, file: []const u8, err: anyerror) void {
+    if (err == error.FileNotFound) {
+        log.info("expected: no settings file at {s} yet, {s} not read ({s})", .{ file, what, @errorName(err) });
+    } else {
+        log.warn("settings file {s} unreadable, {s} not read: {s}", .{ file, what, @errorName(err) });
+    }
+}
+
+/// Settings that do not parse fall back to defaults; the reason is logged.
+fn noteParseFailure(err: anyerror) void {
+    log.warn("settings file does not parse, using defaults: {s}", .{@errorName(err)});
+}
+
+/// Settings write failure: the system reason is logged here, the caller gets `Error.System`.
+fn writeFailed(file: []const u8, err: anyerror) Error {
+    log.err("settings write {s} failed: {s}", .{ file, @errorName(err) });
+    return Error.System;
+}
+
 /// Best-effort `createDirPath` for settings storage; logs and continues on failure.
 pub fn ensureSettingsDir(io: std.Io, dir_path: []const u8) void {
     std.Io.Dir.cwd().createDirPath(io, dir_path) catch |err| {
@@ -123,13 +147,22 @@ pub fn settingsPath(gpa: std.mem.Allocator, data_dir: []const u8) Error![]u8 {
 }
 
 fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
-    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch return config.Config.default();
+    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch |err| {
+        noteParseFailure(err);
+        return config.Config.default();
+    };
     defer parsed.deinit();
-    return configFromJsonFile(parsed.value) catch return config.Config.default();
+    return configFromJsonFile(parsed.value) catch |err| {
+        noteParseFailure(err);
+        return config.Config.default();
+    };
 }
 
 fn loadCurrentFileBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!?[]u8 {
-    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch return null;
+    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch |err| {
+        noteParseFailure(err);
+        return null;
+    };
     defer parsed.deinit();
     const file_path = parsed.value.current_file orelse return null;
     return gpa.dupe(u8, file_path) catch return Error.OutOfMemory;
@@ -137,9 +170,9 @@ fn loadCurrentFileBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!?[]u8 {
 
 /// Read `file_name` from `dir`; missing or invalid file → `Config.default()`.
 pub fn loadOrDefaultInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir) Error!config.Config {
-    const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch |err| switch (err) {
-        error.FileNotFound => return config.Config.default(),
-        else => return config.Config.default(),
+    const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch |err| {
+        noteReadFailure(SETTINGS_PART, file_name, err);
+        return config.Config.default();
     };
     defer gpa.free(bytes);
     return loadBytes(gpa, bytes);
@@ -150,9 +183,9 @@ pub fn loadOrDefault(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) E
     const file_path = try settingsPath(gpa, data_dir);
     defer gpa.free(file_path);
 
-    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch |err| switch (err) {
-        error.FileNotFound => return config.Config.default(),
-        else => return config.Config.default(),
+    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch |err| {
+        noteReadFailure(SETTINGS_PART, file_path, err);
+        return config.Config.default();
     };
     defer gpa.free(bytes);
     return loadBytes(gpa, bytes);
@@ -164,9 +197,9 @@ pub fn loadCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8)
     const file_path = try settingsPath(gpa, data_dir);
     defer gpa.free(file_path);
 
-    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch |err| switch (err) {
-        error.FileNotFound => return null,
-        else => return null,
+    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch |err| {
+        noteReadFailure(CURRENT_FILE_PART, file_path, err);
+        return null;
     };
     defer gpa.free(bytes);
     return loadCurrentFileBytes(gpa, bytes);
@@ -191,19 +224,22 @@ pub fn setCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, 
         .sub_path = file_path,
         .data = text,
         .flags = .{ .truncate = true },
-    }) catch return Error.System;
+    }) catch |err| return writeFailed(file_path, err);
 }
 
 /// Persist player-editable prefs only (no renderer keys). Used by startup, menu, and web POST.
 pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: config.Config) Error!void {
-    const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch null;
+    const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch |err| blk: {
+        noteReadFailure(CURRENT_FILE_PART, file_name, err);
+        break :blk null;
+    };
     defer if (bytes) |b| gpa.free(b);
     const current_file = if (bytes) |b| try loadCurrentFileBytes(gpa, b) else null;
     defer if (current_file) |p| gpa.free(p);
 
     const text = try writePlayerJson(gpa, cfg, current_file);
     defer gpa.free(text);
-    dir.writeFile(io, .{ .sub_path = file_name, .data = text, .flags = .{ .truncate = true } }) catch return Error.System;
+    dir.writeFile(io, .{ .sub_path = file_name, .data = text, .flags = .{ .truncate = true } }) catch |err| return writeFailed(file_name, err);
 }
 
 /// Persist player-editable prefs under `data_dir` (no renderer keys).
@@ -215,7 +251,10 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
     defer gpa.free(parent);
     ensureSettingsDir(io, parent);
 
-    const existing = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch null;
+    const existing = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch |err| blk: {
+        noteReadFailure(CURRENT_FILE_PART, file_path, err);
+        break :blk null;
+    };
     defer if (existing) |b| gpa.free(b);
     const current_file = if (existing) |b| try loadCurrentFileBytes(gpa, b) else null;
     defer if (current_file) |p| gpa.free(p);
@@ -227,7 +266,7 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
         .sub_path = file_path,
         .data = text,
         .flags = .{ .truncate = true },
-    }) catch return Error.System;
+    }) catch |err| return writeFailed(file_path, err);
 }
 
 test "save omits renderer keys; load uses code default for renderer" {

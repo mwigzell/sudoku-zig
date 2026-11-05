@@ -12,6 +12,8 @@ const config = @import("core/config.zig");
 const startup_config = @import("core/startup/config.zig");
 const flow = @import("core/flow/mod.zig");
 
+const log = logger.Logger(.wasm);
+
 const OutCap = 65536;
 var out_buf: [OutCap]u8 = undefined;
 var out_len: u32 = 0;
@@ -36,7 +38,8 @@ fn returnJson(out: boundary.OutBuffer) u32 {
 }
 
 fn writeErrorBestEffort(out: boundary.OutBuffer, msg: []const u8) void {
-    boundary.writeErrorJson(out, msg) catch {
+    boundary.writeErrorJson(out, msg) catch |err| {
+        log.err("error reply did not fit ({s}): {s}", .{ @errorName(err), msg });
         boundary.writeSystemErrorJson(out);
     };
 }
@@ -46,9 +49,14 @@ fn exportError(out: boundary.OutBuffer, msg: []const u8) u32 {
     return returnJson(out);
 }
 
-fn exportWriteFailed(out: boundary.OutBuffer) u32 {
-    writeErrorBestEffort(out, "response write failed");
-    return returnJson(out);
+/// An error reply naming what failed and the Zig error behind it.
+fn exportFailure(out: boundary.OutBuffer, comptime what: []const u8, err: anyerror) u32 {
+    var buf: [128]u8 = undefined;
+    return exportError(out, logger.fitLine(&buf, "{s}: {s}", .{ what, @errorName(err) }));
+}
+
+fn exportWriteFailed(out: boundary.OutBuffer, err: anyerror) u32 {
+    return exportFailure(out, "response write failed", err);
 }
 
 fn engineOrError(out: boundary.OutBuffer) ?*game_engine.GameEngine {
@@ -104,17 +112,17 @@ export fn bootstrapHostConfig(
         auto_restore != 0,
         auto_new != 0,
         auto_save != 0,
-    ) catch return exportError(out, "invalid host startup config");
+    ) catch |err| return exportFailure(out, "invalid host startup config", err);
 
     startup_config.applyLoggerFromStartup(game_cfg);
     deinitEngineIfAny();
 
-    engine = game_engine.GameEngine.init(empty_puzzle_line[0..], game_cfg) catch {
-        return exportError(out, "engine init failed");
+    engine = game_engine.GameEngine.init(empty_puzzle_line[0..], game_cfg) catch |err| {
+        return exportFailure(out, "engine init failed", err);
     };
     have_engine = true;
 
-    boundary.writeOkMsgJson(out, "engine ready") catch return exportWriteFailed(out);
+    boundary.writeOkMsgJson(out, "engine ready") catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -153,7 +161,7 @@ export fn generatePuzzle(difficulty: u32, log_level: u32, entropy: u32) callconv
     if (puzzle_gen.PuzzleGen.takePlayAborted()) {
         return exportError(out, "cancelled");
     }
-    boundary.writeOkLineJson(out, puzzle_str) catch return exportWriteFailed(out);
+    boundary.writeOkLineJson(out, puzzle_str) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -179,13 +187,13 @@ export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
     defer if (builtin.cpu.arch == .wasm32) puzzle_gen.PuzzleGen.setPlayProgress(null, null);
 
     const puzzle_str = puzzle_gen.PuzzleGen.generate(game_cfg.difficulty);
-    engine = game_engine.GameEngine.init(puzzle_str, game_cfg) catch {
-        return exportError(out, "engine init failed");
+    engine = game_engine.GameEngine.init(puzzle_str, game_cfg) catch |err| {
+        return exportFailure(out, "engine init failed", err);
     };
     have_engine = true;
     file_session.noteLoad(.new_game);
 
-    boundary.writeOkMsgJson(out, game_engine.NEW_GAME_STARTED_MSG) catch return exportWriteFailed(out);
+    boundary.writeOkMsgJson(out, game_engine.NEW_GAME_STARTED_MSG) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -195,12 +203,12 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const eng = engineOrError(out) orelse return returnJson(out);
 
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const cmd = boundary.parseAction(json) catch {
-        return exportError(out, "invalid action");
+    const cmd = boundary.parseAction(json) catch |err| {
+        return exportFailure(out, "invalid action", err);
     };
 
     const ev = eng.exec(cmd);
-    boundary.writeEventJson(out, ev) catch return exportWriteFailed(out);
+    boundary.writeEventJson(out, ev) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -220,21 +228,21 @@ export fn logEnabled(level: u32) callconv(.c) u32 {
 /// Product metadata for Help/About as JSON.
 export fn getAbout() callconv(.c) u32 {
     const out = outBuffer();
-    boundary.writeAboutJson(out, host_debug_build) catch return exportWriteFailed(out);
+    boundary.writeAboutJson(out, host_debug_build) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
 /// Generating dialog text from core as JSON.
 export fn getGenText() callconv(.c) u32 {
     const out = outBuffer();
-    boundary.writeGenTextJson(out) catch return exportWriteFailed(out);
+    boundary.writeGenTextJson(out) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
 /// Core's dialog and status text by constant name as JSON.
 export fn getCoreText() callconv(.c) u32 {
     const out = outBuffer();
-    boundary.writeCoreTextJson(out) catch return exportWriteFailed(out);
+    boundary.writeCoreTextJson(out) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -242,7 +250,7 @@ export fn getCoreText() callconv(.c) u32 {
 export fn getLegend() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
-    boundary.writeLegendJson(out, eng.getLegend()) catch return exportWriteFailed(out);
+    boundary.writeLegendJson(out, eng.getLegend()) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -251,7 +259,7 @@ export fn getConfig() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
     const wire_cfg = wire.WireConfig.fromConfig(eng.getConfig());
-    boundary.writeWireConfigJson(out, wire_cfg) catch return exportWriteFailed(out);
+    boundary.writeWireConfigJson(out, wire_cfg) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -259,7 +267,7 @@ export fn getConfig() callconv(.c) u32 {
 export fn getState() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
-    boundary.writeStateJson(out, eng.eventBoard()) catch return exportWriteFailed(out);
+    boundary.writeStateJson(out, eng.eventBoard()) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -269,8 +277,8 @@ export fn toSaveFormat() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
 
-    const bytes = eng.toSaveFormat(std.heap.page_allocator) catch {
-        return exportError(out, "toSaveFormat failed");
+    const bytes = eng.toSaveFormat(std.heap.page_allocator) catch |err| {
+        return exportFailure(out, "toSaveFormat failed", err);
     };
     defer std.heap.page_allocator.free(bytes);
 
@@ -298,7 +306,7 @@ export fn toPuzzle() callconv(.c) u32 {
 
 fn returnStep(out: boundary.OutBuffer, step: flow.Step) u32 {
     if (flow.isTerminal(step)) have_flow = false;
-    boundary.writeStepJson(out, step) catch return exportWriteFailed(out);
+    boundary.writeStepJson(out, step) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -315,7 +323,7 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const start = boundary.parseFlowStart(arena.allocator(), json) catch return exportError(out, "invalid flow start");
+    const start = boundary.parseFlowStart(arena.allocator(), json) catch |err| return exportFailure(out, "invalid flow start", err);
     active_flow = switch (start) {
         .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, eng.cfg.auto_save) },
         .startup => |file| .{ .startup = flow.StartupFlow.init(eng, &file_session, .{
@@ -333,7 +341,7 @@ export fn commandStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const cmd = boundary.parseAction(json) catch return exportError(out, "invalid action");
+    const cmd = boundary.parseAction(json) catch |err| return exportFailure(out, "invalid action", err);
     active_flow = .{ .command = flow.CommandFlow.init(eng, &file_session, cmd) };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
@@ -345,13 +353,18 @@ export fn flowNext(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const input = boundary.parseFlowInput(arena.allocator(), json) catch return returnUnexpected(out);
+    const input = boundary.parseFlowInput(arena.allocator(), json) catch |err| {
+        log.err("unreadable flow input ({s}): {s}", .{ @errorName(err), json });
+        return returnUnexpected(out);
+    };
     if (!have_flow) return if (input == .pressed) returnStep(out, .done) else returnUnexpected(out);
     return returnStep(out, active_flow.next(input));
 }
 
-/// The adapter could not carry the running flow on; ends it with core's error step.
-export fn flowFail() callconv(.c) u32 {
+/// The adapter could not carry the running flow on: logs its reason and ends the flow with core's error step.
+export fn flowFail(reason_ptr: u32, reason_len: u32) callconv(.c) u32 {
+    const reason = if (reason_len == 0) "" else @as([*]const u8, @ptrFromInt(reason_ptr))[0..reason_len];
+    log.err("flow_failed: {s}", .{reason});
     return returnUnexpected(outBuffer());
 }
 

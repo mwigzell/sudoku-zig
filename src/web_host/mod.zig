@@ -127,7 +127,10 @@ fn clientLogSeverity(body: []const u8) ClientLogSeverity {
 fn jsonStringField(body: []const u8, key: []const u8) ?[]const u8 {
     const trimmed = std.mem.trim(u8, body, " \t\r\n");
     var needle_buf: [64]u8 = undefined;
-    const needle = std.fmt.bufPrint(&needle_buf, "\"{s}\":\"", .{key}) catch return null;
+    const needle = std.fmt.bufPrint(&needle_buf, "\"{s}\":\"", .{key}) catch |err| {
+        log.err("client-log key {s} too long to look up: {s}", .{ key, @errorName(err) });
+        return null;
+    };
     const start = std.mem.indexOf(u8, trimmed, needle) orelse return null;
     const value_start = start + needle.len;
     const rest = trimmed[value_start..];
@@ -152,7 +155,10 @@ fn contentLength(request: []const u8) ?usize {
         if (line.len == 0) break;
         if (std.ascii.startsWithIgnoreCase(line, "Content-Length:")) {
             const raw = std.mem.trim(u8, line["Content-Length:".len..], " \t");
-            return std.fmt.parseInt(usize, raw, 10) catch null;
+            return std.fmt.parseInt(usize, raw, 10) catch |err| {
+                log.warn("bad Content-Length '{s}': {s}", .{ raw, @errorName(err) });
+                return null;
+            };
         }
     }
     return null;
@@ -224,7 +230,9 @@ fn currentFileTarget(io: std.Io, session: *const Session, save_name: ?[]const u8
         return .{ .path = try file_path.resolveSavePath(gpa, session.data_dir, name), .restore_copy = true };
     }
     const current = session.current_file orelse {
-        std.Io.Dir.cwd().createDirPath(io, session.visible_save_dir) catch {};
+        std.Io.Dir.cwd().createDirPath(io, session.visible_save_dir) catch |err| {
+            log.warn("could not create save folder {s}: {s}", .{ session.visible_save_dir, @errorName(err) });
+        };
         return .{ .path = try file_path.resolveSavePath(gpa, session.visible_save_dir, requested orelse save_defaults.DEFAULT_SAVE_FILE), .restore_copy = false };
     };
     const in_place: CurrentFileTarget = .{ .path = try gpa.dupe(u8, current), .restore_copy = isRestoreCopyPath(session, current) };
@@ -246,8 +254,14 @@ fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]co
     defer std.heap.page_allocator.free(target.path);
     if (target.restore_copy) return false;
     _ = std.Io.Dir.cwd().statFile(io, target.path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return false,
-        else => return ServeError.System,
+        error.FileNotFound => {
+            log.info("expected: {s} is not there yet ({s})", .{ target.path, @errorName(err) });
+            return false;
+        },
+        else => {
+            log.err("could not check {s}: {s}", .{ target.path, @errorName(err) });
+            return ServeError.System;
+        },
     };
     return true;
 }
@@ -366,8 +380,14 @@ fn bindProbe(io: std.Io, bind: BindFn, gate: *ReadyGate, session: *Session) Serv
     var i: u16 = 0;
     while (i <= FallbackCount and srv == null) : (i += 1) {
         srv = bind(io, Port + i) catch |err| switch (err) {
-            BindError.InUse => continue,
-            else => return ServeError.System,
+            BindError.InUse => {
+                log.info("expected: port {d} in use, trying the next ({s})", .{ Port + i, @errorName(err) });
+                continue;
+            },
+            else => {
+                log.err("could not bind port {d}: {s}", .{ Port + i, @errorName(err) });
+                return ServeError.System;
+            },
         };
         bound_port = Port + i;
     }
@@ -395,7 +415,10 @@ fn bindProbe(io: std.Io, bind: BindFn, gate: *ReadyGate, session: *Session) Serv
 pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, visible_save_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
     shutdown_requested.store(false, .release);
 
-    const current_file = settings_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch null;
+    const current_file = settings_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch |err| blk: {
+        log.warn("current file setting unreadable: {s}", .{@errorName(err)});
+        break :blk null;
+    };
     const startup_name = startupFilename(current_file);
     if (current_file) |path| {
         log.info("startup current file: path={s} name={s}", .{ path, startup_name });

@@ -17,7 +17,10 @@ fn whenHostReady(io: std.Io, url: []const u8) void {
 /// Blocks until the loopback host stops. `data_dir` is caller-owned for settings POST persistence.
 pub fn run(io: std.Io, cfg: config.Config, data_dir: []const u8) void {
     const gpa = std.heap.page_allocator;
-    const visible_save_dir: ?[]u8 = shell_path.computeVisibleSaveDir(gpa) catch null;
+    const visible_save_dir: ?[]u8 = shell_path.computeVisibleSaveDir(gpa) catch |err| blk: {
+        log.warn("visible save folder unavailable, saving in the data dir: {s}", .{@errorName(err)});
+        break :blk null;
+    };
     defer if (visible_save_dir) |dir| gpa.free(dir);
     web_host.runWithHostConfig(io, web_host.bindLoopback, cfg, data_dir, visible_save_dir orelse data_dir, whenHostReady) catch |err| {
         if (err == web_host.ServeError.AddressInUse) {

@@ -160,9 +160,9 @@ function recordSteps(game) {
     answered({ read: "file" });
     return issued(flowRead(bytes, name));
   };
-  game.flowFail = () => {
+  game.flowFail = (reason) => {
     answered({ flow_failed: true });
-    return issued(flowFail());
+    return issued(flowFail(reason));
   };
   return recorder;
 }

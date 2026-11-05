@@ -1,5 +1,7 @@
 // clipboard.js — browser clipboard for Copy and Paste puzzle, with the execCommand fallback.
 
+import * as clientLog from "./client_log.js";
+
 /** @typedef {import("./types").GameApi} GameApi */
 
 const CLIPBOARD_READ_DENIED_MSG = "paste: clipboard read denied";
@@ -28,24 +30,26 @@ export async function readClipboardText({ clipboard = globalThis.navigator?.clip
   try {
     const text = await clipboard.readText();
     return { ok: true, text };
-  } catch {
-    return { ok: false, error: CLIPBOARD_READ_DENIED_MSG };
+  } catch (err) {
+    return { ok: false, error: `${CLIPBOARD_READ_DENIED_MSG}: ${err?.message ?? String(err)}` };
   }
 }
 
 async function writeClipboardText(text, { clipboard = globalThis.navigator?.clipboard, doc } = {}) {
   const document = doc ?? globalThis.document;
   if (!document) return { ok: false, error: CLIPBOARD_WRITE_DENIED_MSG };
+  let writeTextFailure = "no writeText";
   if (clipboard?.writeText) {
     try {
       await clipboard.writeText(text);
       return { ok: true };
-    } catch {
-      // fall through to execCommand
+    } catch (err) {
+      writeTextFailure = err?.message ?? String(err);
+      clientLog.clientLog("clipboard", "info", "expected: writeText refused, trying execCommand", { error: writeTextFailure });
     }
   }
   if (copyTextWithExecCommand(text, document)) return { ok: true };
-  return { ok: false, error: CLIPBOARD_WRITE_DENIED_MSG };
+  return { ok: false, error: `${CLIPBOARD_WRITE_DENIED_MSG}: ${writeTextFailure}; execCommand refused` };
 }
 
 /** One-line puzzle string from wasm, or an error result. */
@@ -66,7 +70,12 @@ export function startCopyPuzzleOnClick(game, { clipboard = globalThis.navigator?
   if (pending) {
     return pending
       .then(() => ({ ok: true }))
-      .catch(() => writeClipboardText(line.text, { clipboard: null, doc: document }));
+      .catch((err) => {
+        clientLog.clientLog("clipboard", "info", "expected: writeText refused, trying execCommand", {
+          error: err?.message ?? String(err),
+        });
+        return writeClipboardText(line.text, { clipboard: null, doc: document });
+      });
   }
   return writeClipboardText(line.text, { clipboard: null, doc: document });
 }

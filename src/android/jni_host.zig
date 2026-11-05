@@ -7,6 +7,9 @@ const settings_store = @import("../core/settings_store.zig");
 const startup_config = @import("../core/startup/config.zig");
 const save_defaults = @import("../core/save_defaults.zig");
 const logcat = @import("logcat.zig");
+const logger = @import("../core/logger.zig");
+
+const log = logger.Logger(.android_host);
 extern fn sudoku_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque) ?[*:0]const u8;
 extern fn sudoku_release_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque, chars: ?[*:0]const u8) void;
 extern fn sudoku_new_jstring_utf(env: ?*anyopaque, chars: ?[*:0]const u8) ?*anyopaque;
@@ -25,7 +28,10 @@ fn extractReadyPort(url: []const u8) ?u16 {
     const start = std.mem.lastIndexOfScalar(u8, url, ':') orelse return null;
     const slash = std.mem.lastIndexOfScalar(u8, url, '/') orelse return null;
     if (slash <= start + 1) return null;
-    return std.fmt.parseInt(u16, url[start + 1 .. slash], 10) catch null;
+    return std.fmt.parseInt(u16, url[start + 1 .. slash], 10) catch |err| {
+        log.err("ready url {s} has no port: {s}", .{ url, @errorName(err) });
+        return null;
+    };
 }
 
 fn recordReady(_: std.Io, url: []const u8) void {
@@ -36,9 +42,14 @@ fn recordReady(_: std.Io, url: []const u8) void {
 fn hostThreadMain(state: *HostState) void {
     const threaded = state.threaded orelse return;
     const io = threaded.io();
-    const cfg = settings_store.loadOrDefault(std.heap.page_allocator, io, state.data_dir) catch config.Config.default();
+    const cfg = settings_store.loadOrDefault(std.heap.page_allocator, io, state.data_dir) catch |err| blk: {
+        log.warn("settings load failed, using defaults: {s}", .{@errorName(err)});
+        break :blk config.Config.default();
+    };
     startup_config.applyLoggerFromStartup(cfg);
-    web_host.runWithHostConfig(io, web_host.bindLoopback, cfg, state.data_dir, state.data_dir, recordReady) catch {};
+    web_host.runWithHostConfig(io, web_host.bindLoopback, cfg, state.data_dir, state.data_dir, recordReady) catch |err| {
+        log.fatal("web server failed to start: {s}", .{@errorName(err)});
+    };
 }
 
 fn setDataDirDefault() void {
@@ -64,14 +75,20 @@ fn copyJStringUtf8(env_ptr: ?*anyopaque, jstring_ptr: ?*anyopaque) ?[]u8 {
     defer sudoku_release_jstring_utf_chars(env_raw, jstr_raw, chars);
 
     const bytes = std.mem.sliceTo(chars, 0);
-    return std.heap.page_allocator.dupe(u8, bytes) catch null;
+    return std.heap.page_allocator.dupe(u8, bytes) catch |err| {
+        log.err("data dir copy failed: {s}", .{@errorName(err)});
+        return null;
+    };
 }
 
 /// Starts the loopback worker using the app files dir passed from Java.
 pub fn startHost(env: ?*anyopaque, data_dir_jstring: ?*anyopaque) void {
     if (host_state.thread != null) return;
 
-    const threaded = std.heap.page_allocator.create(std.Io.Threaded) catch return;
+    const threaded = std.heap.page_allocator.create(std.Io.Threaded) catch |err| {
+        log.fatal("host io setup failed: {s}", .{@errorName(err)});
+        return;
+    };
     threaded.* = std.Io.Threaded.init(std.heap.page_allocator, .{ .environ = std.process.Environ.empty });
     host_state.threaded = threaded;
     if (copyJStringUtf8(env, data_dir_jstring)) |path| {
@@ -80,7 +97,10 @@ pub fn startHost(env: ?*anyopaque, data_dir_jstring: ?*anyopaque) void {
         setDataDirDefault();
     }
     host_state.ready_port.store(0, .release);
-    host_state.thread = std.Thread.spawn(.{}, hostThreadMain, .{&host_state}) catch return;
+    host_state.thread = std.Thread.spawn(.{}, hostThreadMain, .{&host_state}) catch |err| {
+        log.fatal("host thread failed to start: {s}", .{@errorName(err)});
+        return;
+    };
 }
 
 pub fn readyPort() i32 {

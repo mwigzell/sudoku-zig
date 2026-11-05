@@ -19,6 +19,7 @@
     currentSudokuFileName: () => text(native.currentSudokuFileName()),
     setSystemBars: (themeName) => native.setSystemBars(String(themeName || "dark")),
     notifyWebBootReady: () => native.notifyWebBootReady(),
+    bootFailedText: () => text(native.bootFailedText()),
   };
 
   win.addEventListener("error", (e) => {

@@ -8,6 +8,9 @@ const flow_mod = @import("../../core/flow/mod.zig");
 const file_transport = @import("file_transport.zig");
 const path_mod = @import("path.zig");
 const save_defaults = @import("../../core/save_defaults.zig");
+const logger = @import("../../core/logger.zig");
+
+const log = logger.Logger(.storage);
 
 const OPEN_NO_FILE_MSG: []const u8 = "open: no file specified";
 const IMPORT_NO_FILE_MSG: []const u8 = "import: no file specified";
@@ -38,7 +41,10 @@ pub const Storage = struct {
     /// The current-file pointer saved by the last run, owned by `gpa`; null when there is none.
     pub fn loadCurrentFile(self: *const @This(), gpa: std.mem.Allocator) ?[]u8 {
         const sp = self.settings_persist orelse return null;
-        return settings_store.loadCurrentFile(gpa, sp.io, sp.data_dir) catch null;
+        return settings_store.loadCurrentFile(gpa, sp.io, sp.data_dir) catch |err| {
+            log.warn("current file setting unreadable: {s}", .{@errorName(err)});
+            return null;
+        };
     }
 
     /// Carry out the write half of a `persist_settings` step.
@@ -50,12 +56,24 @@ pub const Storage = struct {
 
     /// Whether `path` is there; a file this user may not read still counts as there.
     pub fn exists(self: *const @This(), path: []const u8) bool {
-        const resolved = self.transport.resolve(self.transport.context, path) catch return false;
+        const resolved = self.transport.resolve(self.transport.context, path) catch |err| {
+            log.warn("could not resolve {s}: {s}", .{ path, @errorName(err) });
+            return false;
+        };
         defer self.transport.free(self.transport.context, resolved);
         const bytes = self.transport.readAll(self.transport.context, resolved) catch |err| switch (err) {
-            file_transport.TransportError.FileNotFound => return false,
-            file_transport.TransportError.AccessDenied => return true,
-            else => return false,
+            file_transport.TransportError.FileNotFound => {
+                log.info("expected: {s} is not there yet ({s})", .{ resolved, @errorName(err) });
+                return false;
+            },
+            file_transport.TransportError.AccessDenied => {
+                log.info("expected: {s} is there but not readable by this user ({s})", .{ resolved, @errorName(err) });
+                return true;
+            },
+            else => {
+                log.warn("could not check {s}: {s}", .{ resolved, @errorName(err) });
+                return false;
+            },
         };
         self.transport.free(self.transport.context, bytes);
         return true;
@@ -66,9 +84,13 @@ pub const Storage = struct {
     /// a missing current-file folder must still fail the write.
     pub fn resolveDefaultTarget(self: *const @This(), scratch: []u8) []const u8 {
         const sp = self.settings_persist orelse return copyInto(scratch, save_defaults.DEFAULT_SAVE_FILE);
-        std.Io.Dir.cwd().createDirPath(sp.io, sp.visible_save_dir) catch {};
-        const path = path_mod.resolveSavePath(std.heap.page_allocator, sp.visible_save_dir, save_defaults.DEFAULT_SAVE_FILE) catch
+        std.Io.Dir.cwd().createDirPath(sp.io, sp.visible_save_dir) catch |err| {
+            log.warn("could not create save folder {s}: {s}", .{ sp.visible_save_dir, @errorName(err) });
+        };
+        const path = path_mod.resolveSavePath(std.heap.page_allocator, sp.visible_save_dir, save_defaults.DEFAULT_SAVE_FILE) catch |err| {
+            log.err("default save path failed, using the bare name: {s}", .{@errorName(err)});
             return copyInto(scratch, save_defaults.DEFAULT_SAVE_FILE);
+        };
         defer std.heap.page_allocator.free(path);
         return copyInto(scratch, path);
     }
@@ -76,7 +98,9 @@ pub const Storage = struct {
     /// Remember `path` as the file the next launch restores; null forgets it.
     pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) void {
         const sp = self.settings_persist orelse return;
-        settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch {};
+        settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err| {
+            log.err("could not remember the current file: {s}", .{@errorName(err)});
+        };
     }
 
     /// Carry out a `save`, `save_as` or `autosave` step: the terminal has no picker, so all three
@@ -142,9 +166,14 @@ pub const Storage = struct {
     pub fn forgetCurrentFile(self: *const @This(), forget: flow_mod.step.ForgetCurrentFile) void {
         const sp = self.settings_persist orelse return;
         if (forget.delete) delete: {
-            const resolved = self.transport.resolve(self.transport.context, forget.path) catch break :delete;
+            const resolved = self.transport.resolve(self.transport.context, forget.path) catch |err| {
+                log.warn("could not resolve {s} to delete it: {s}", .{ forget.path, @errorName(err) });
+                break :delete;
+            };
             defer self.transport.free(self.transport.context, resolved);
-            std.Io.Dir.deleteFileAbsolute(sp.io, resolved) catch {};
+            std.Io.Dir.deleteFileAbsolute(sp.io, resolved) catch |err| {
+                log.warn("could not delete {s}: {s}", .{ resolved, @errorName(err) });
+            };
         }
         self.persistCurrentFile(null);
     }

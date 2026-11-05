@@ -1,9 +1,15 @@
 // Monospace terminal column count for UTF-8 text (ascii renderer + native About box).
 const std = @import("std");
+const logger = @import("../../core/logger.zig");
+
+const log = logger.Logger(.renderer);
 
 /// Visible columns in a fixed-width terminal (one column per UTF-8 codepoint here).
 pub fn columns(text: []const u8) usize {
-    return std.unicode.utf8CountCodepoints(text) catch text.len;
+    return std.unicode.utf8CountCodepoints(text) catch |err| {
+        log.warn("text is not valid UTF-8, counting bytes as columns: {s}", .{@errorName(err)});
+        return text.len;
+    };
 }
 
 /// Return a copy of `text` with ASCII spaces appended so `columns(out) == width`.

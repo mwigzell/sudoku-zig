@@ -11,11 +11,15 @@ import * as board from "./board.js";
 import * as theme from "./menus/theme.js";
 import * as appWire from "./app_wire.js";
 
+const UNCAUGHT_LOGGED = Symbol("uncaughtLogged");
+
 /**
  * After boot an uncaught error is a bug, not a failed start: log it, show nothing.
  * @param {Window & typeof globalThis} win
  */
 function logUncaughtErrors(win) {
+  if (win[UNCAUGHT_LOGGED]) return;
+  win[UNCAUGHT_LOGGED] = true;
   const log = (reason) =>
     clientLog.clientLog("page", "err", "uncaught", { error: reason?.message ?? String(reason) });
   win.addEventListener("error", (ev) => log(ev.error ?? ev.message));
@@ -33,7 +37,10 @@ export async function bootSudokuWebApp(root = document) {
   let game = null;
 
   try {
-    clientLog.clientLog("startup", "debug", "module_start");
+    clientLog.startLine("startup", "module_start", {
+      platform: globalThis.AndroidFileBridge ? "android" : "web",
+      user_agent: globalThis.navigator?.userAgent ?? "",
+    });
     // Boot phase 1: ensure first paint/splash is visible before wasm/network work.
     await new Promise((resolve) => requestAnimationFrame(resolve));
     clientLog.clientLog("startup", "debug", "after_first_paint");
@@ -95,7 +102,9 @@ export async function bootSudokuWebApp(root = document) {
     const errorText = err && err.message ? err.message : String(err);
     clientLog.clientLog("startup", "err", "boot_failed", { error: errorText });
     if (game) clientLog.useCore(game);
+    else clientLog.writeWaitingWithoutCore();
     globalThis.__sudokuSignalAndroidBootReady?.();
+    logUncaughtErrors(globalThis);
     globalThis.__sudokuShowBootFailure?.();
   }
 }

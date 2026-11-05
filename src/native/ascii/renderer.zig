@@ -21,6 +21,19 @@ const logger = @import("../../core/logger.zig");
 const Difficulty = @import("../../core/puzzle_gen/mod.zig").Difficulty;
 const flow_step = @import("../../core/flow/step.zig");
 
+const log = logger.Logger(.renderer);
+
+/// Terminal input that ends (EOF) or fails closes the open dialog; that is the player leaving it.
+fn noteInputEnded(what: []const u8, err: anyerror) void {
+    log.info("expected: terminal input ended, {s} ({s})", .{ what, @errorName(err) });
+}
+
+/// A dialog that could not run (its prompt could not be written) leaves the command undone.
+fn noteDialogFailed(what: []const u8, err: anyerror) bool {
+    log.err("{s} dialog failed: {s}", .{ what, @errorName(err) });
+    return false;
+}
+
 /// Terminal renderer for the 9x9 Sudoku board.
 ///
 /// Native terminal Facade implementation (ASCII/ANSI). Web presentation is JS
@@ -236,7 +249,10 @@ pub fn AsciiRenderer(StylerType: type) type {
                 const line = try self.readLine();
                 defer self.allocator.free(line);
                 if (line.len == 0 or prompt.buttons.len == 1) return prompt.defaultAnswer();
-                const n = std.fmt.parseInt(usize, line, 10) catch 0;
+                const n = std.fmt.parseInt(usize, line, 10) catch |err| blk: {
+                    log.info("expected: answer '{s}' is not a button number ({s})", .{ line, @errorName(err) });
+                    break :blk 0;
+                };
                 if (n >= 1 and n <= prompt.buttons.len) return n - 1;
             }
         }
@@ -257,7 +273,10 @@ pub fn AsciiRenderer(StylerType: type) type {
         fn pathDialog(self: *@This(), prompt: []const u8) facade.Error!_command.OpenFileResult {
             self.writer.print("{s}", .{prompt}) catch return facade.Error.System;
 
-            const line = self.readLine() catch return .Cancelled;
+            const line = self.readLine() catch |err| {
+                noteInputEnded("path dialog cancelled", err);
+                return .Cancelled;
+            };
 
             if (line.len == 0) {
                 defer self.allocator.free(line);
@@ -270,7 +289,10 @@ pub fn AsciiRenderer(StylerType: type) type {
         fn puzzleDialog(self: *@This()) facade.Error!_command.OpenFileResult {
             self.writer.writeAll(PASTE_PROMPT) catch return facade.Error.System;
 
-            const line = self.readRawLine() catch return .Cancelled;
+            const line = self.readRawLine() catch |err| {
+                noteInputEnded("paste dialog cancelled", err);
+                return .Cancelled;
+            };
 
             if (line.len == 0) {
                 defer self.allocator.free(line);
@@ -486,7 +508,10 @@ pub fn AsciiRenderer(StylerType: type) type {
         ) facade.Error!_command.ParseCommandResult {
             while (true) {
                 self.writer.writeAll("> ") catch return facade.Error.System;
-                const raw = self.readLine() catch return .{ .valid = _command.Command.quit };
+                const raw = self.readLine() catch |err| {
+                    noteInputEnded("quitting", err);
+                    return .{ .valid = _command.Command.quit };
+                };
                 defer self.allocator.free(raw);
                 if (names.len == 0) return .{ .error_msg = NO_COMMANDS_MSG };
 
@@ -505,7 +530,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl.*) == .valid and
                 std.meta.activeTag(rsl.*.valid) == .save_as)
             {
-                const path = self.saveAsDialog() catch return false;
+                const path = self.saveAsDialog() catch |err| return noteDialogFailed("save as", err);
                 if (self.save_as_path) |old| self.allocator.free(old);
                 self.save_as_path = path;
                 rsl.*.valid.save_as.path = path;
@@ -515,7 +540,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl.*) == .valid and
                 std.meta.activeTag(rsl.*.valid) == .open)
             {
-                const file_result = self.pathDialog("Open file: ") catch return false;
+                const file_result = self.pathDialog("Open file: ") catch |err| return noteDialogFailed("open", err);
                 switch (file_result) {
                     .FileName => |new_path| {
                         if (self.open_path) |old| self.allocator.free(old);
@@ -530,7 +555,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl.*) == .valid and
                 std.meta.activeTag(rsl.*.valid) == .import)
             {
-                const file_result = self.pathDialog("Import file: ") catch return false;
+                const file_result = self.pathDialog("Import file: ") catch |err| return noteDialogFailed("import", err);
                 switch (file_result) {
                     .FileName => |path| {
                         // Renderer owns the import dialog path; ImportData.path borrows it
@@ -543,7 +568,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             // Intercept paste: prompt for a one-line puzzle; engine owns parse/validate.
             if (std.meta.activeTag(rsl.*) == .valid and std.meta.activeTag(rsl.*.valid) == .paste) {
-                const line_result = self.puzzleDialog() catch return false;
+                const line_result = self.puzzleDialog() catch |err| return noteDialogFailed("paste", err);
                 switch (line_result) {
                     .FileName => |line| {
                         if (self.paste_line) |old| self.allocator.free(old);
@@ -557,7 +582,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl.*) == .valid and
                 std.meta.activeTag(rsl.*.valid) == .@"export")
             {
-                const file_result = self.pathDialog("Export file: ") catch return false;
+                const file_result = self.pathDialog("Export file: ") catch |err| return noteDialogFailed("export", err);
                 switch (file_result) {
                     .FileName => |path| {
                         // Renderer owns the export dialog path; ExportData.path borrows it
@@ -572,7 +597,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.meta.activeTag(rsl.*) == .valid and
                 std.meta.activeTag(rsl.*.valid) == .new)
             {
-                const picked = (self.newGameDialog() catch null) orelse return false;
+                const picked = (self.newGameDialog() catch |err| return noteDialogFailed("new game", err)) orelse return false;
                 rsl.*.valid.new.difficulty = picked;
             }
 

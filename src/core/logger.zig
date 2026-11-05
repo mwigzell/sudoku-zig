@@ -84,20 +84,29 @@ fn androidPriority(sev: Severity) c_int {
     };
 }
 
+/// Marks a line cut to fit its buffer, so a long line still reaches the log, shortened.
+const TRUNCATED_MARK = " ...[truncated]";
+
+/// Format into `dest`; a line that does not fit keeps its start and ends with `TRUNCATED_MARK`.
+pub fn fitLine(dest: []u8, comptime fmt: []const u8, args: anytype) []const u8 {
+    var w: std.Io.Writer = .fixed(dest);
+    w.print(fmt, args) catch {
+        const keep = dest.len - TRUNCATED_MARK.len;
+        @memcpy(dest[keep..], TRUNCATED_MARK);
+        return dest;
+    };
+    return w.buffered();
+}
+
 fn formatAndroidLine(
     comptime scope_name: []const u8,
     comptime fmt: []const u8,
     args: anytype,
     buf: *[line_cap]u8,
-) ?[:0]const u8 {
-    const max = buf.len - 1;
-    var idx: usize = 0;
-    const head = std.fmt.bufPrint(buf[idx..max], "[{s}] ", .{scope_name}) catch return null;
-    idx += head.len;
-    const body = std.fmt.bufPrint(buf[idx..max], fmt, args) catch return null;
-    idx += body.len;
-    buf[idx] = 0;
-    return buf[0..idx :0];
+) [:0]const u8 {
+    const line = fitLine(buf[0 .. buf.len - 1], "[{s}] " ++ fmt, .{scope_name} ++ args);
+    buf[line.len] = 0;
+    return buf[0..line.len :0];
 }
 
 fn emit(
@@ -110,14 +119,12 @@ fn emit(
     // wasm has no stderr: the JS shell writes the line to the console and the host log.
     if (comptime is_wasm) {
         var text_buf: [line_cap]u8 = undefined;
-        var w: std.Io.Writer = .fixed(&text_buf);
-        w.print(fmt, args) catch {};
-        wasm_console.write(@backingInt(sev), scope_name, w.buffered());
+        wasm_console.write(@backingInt(sev), scope_name, fitLine(&text_buf, fmt, args));
         return;
     }
     if (comptime builtin.abi == .android) {
         var line_buf: [line_cap]u8 = undefined;
-        const line = formatAndroidLine(scope_name, fmt, args, &line_buf) orelse return;
+        const line = formatAndroidLine(scope_name, fmt, args, &line_buf);
         android_logcat.write(androidPriority(sev), line);
         return;
     }
@@ -201,7 +208,16 @@ test "androidPriority maps severities to logcat priorities" {
 
 test "formatAndroidLine includes scope prefix and payload" {
     var buf: [line_cap]u8 = undefined;
-    const line = formatAndroidLine("web_host", "current-file write success: bytes={d}", .{117}, &buf) orelse
-        return error.TestFailed;
+    const line = formatAndroidLine("web_host", "current-file write success: bytes={d}", .{117}, &buf);
     try std.testing.expectEqualStrings("[web_host] current-file write success: bytes=117", line);
+}
+
+test "a line too long for the buffer is kept, shortened and marked" {
+    var buf: [line_cap]u8 = undefined;
+    var long: [line_cap * 2]u8 = undefined;
+    @memset(&long, 'x');
+    const line = formatAndroidLine("web_host", "{s}", .{&long}, &buf);
+    try std.testing.expectEqual(line_cap - 1, line.len);
+    try std.testing.expect(std.mem.startsWith(u8, line, "[web_host] xxx"));
+    try std.testing.expect(std.mem.endsWith(u8, line, TRUNCATED_MARK));
 }

@@ -21,7 +21,6 @@ const gen_progress = @import("gen_progress.zig");
 const storage_mod = @import("storage.zig");
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
-const COPY_WRITE_FAILED_MSG: []const u8 = "copy: write failed";
 const PASTE_NO_PUZZLE_MSG: []const u8 = "paste: no puzzle specified";
 const NO_FLUSH_MSG: []const u8 = "flush: the terminal has no closing write";
 const NO_RECLAIM_MSG: []const u8 = "reclaim_file: the terminal has no earlier-install files";
@@ -137,8 +136,8 @@ pub const Sudoku = struct {
     /// Carry out a `copy_puzzle` step: the terminal has no clipboard, so print the puzzle for the player to copy.
     fn printPuzzle(self: *@This()) flow_mod.step.Outcome {
         const line = self.engine.toPuzzle();
-        self.out.writeAll(&line) catch return .{ .failed = COPY_WRITE_FAILED_MSG };
-        self.out.writeAll("\n") catch return .{ .failed = COPY_WRITE_FAILED_MSG };
+        self.out.writeAll(&line) catch |err| return .{ .failed = @errorName(err) };
+        self.out.writeAll("\n") catch |err| return .{ .failed = @errorName(err) };
         return .ok;
     }
 

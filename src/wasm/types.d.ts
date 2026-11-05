@@ -224,6 +224,8 @@ export type AndroidFileBridge = {
   currentSudokuFileName: () => string;
   setSystemBars: (themeName: string) => void;
   notifyWebBootReady: () => void;
+  /** The app's boot failure sentence; the page shows it instead of the browser's. */
+  bootFailedText: () => string;
 };
 
 declare global {

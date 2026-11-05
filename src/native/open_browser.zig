@@ -1,6 +1,9 @@
 /// Desktop browser opener for `-r web` — not part of loopback `web_host`.
 const std = @import("std");
 const builtin = @import("builtin");
+const logger = @import("../core/logger.zig");
+
+const log = logger.Logger(.sudoku);
 
 /// No working opener binary was found (`$BROWSER`, `open`, `xdg-open`, etc.).
 pub const OpenError = error{Unavailable};
@@ -34,7 +37,10 @@ pub fn openBrowserWith(io: std.Io, url: []const u8, spawn: SpawnFn) OpenError!vo
 }
 
 fn trySpawn(io: std.Io, argv: []const []const u8) bool {
-    _ = std.process.spawn(io, .{ .argv = argv }) catch return false;
+    _ = std.process.spawn(io, .{ .argv = argv }) catch |err| {
+        log.info("expected: browser opener {s} unavailable, trying the next ({s})", .{ argv[0], @errorName(err) });
+        return false;
+    };
     return true;
 }
 

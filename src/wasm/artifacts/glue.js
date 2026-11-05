@@ -35,8 +35,8 @@ function randomSeed32() {
       c.getRandomValues(a);
       return a[0] >>> 0;
     }
-  } catch {
-    // Fall through to time-based fallback if crypto is unavailable.
+  } catch (err) {
+    console.info(`expected: crypto unavailable, using a time-based seed (${err?.message ?? String(err)})`);
   }
   const t = Date.now() >>> 0;
   const r = Math.floor(Math.random() * 0x100000000) >>> 0;
@@ -217,9 +217,11 @@ export async function loadArtifact(wasmBytes) {
       return callJsonPayload(exports.flowNext, input);
     },
 
-    /** End the running flow because the web side could not carry it on; returns core's error step. */
-    flowFail() {
-      return readJson(exports.flowFail());
+    /** End the running flow because the web side could not carry it on; core logs `reason` and returns its error step. */
+    flowFail(reason) {
+      const bytes = new TextEncoder().encode(reason ?? "");
+      writeBytes(memory, SCRATCH, bytes);
+      return readJson(exports.flowFail(SCRATCH, bytes.length));
     },
 
     /** Answer a reading step with what was read and, for a chosen file, its name; returns the next step. */

@@ -200,6 +200,44 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.deepEqual(next.log.at(-1), ["status", fillText(coreText.SAVED_TO_FMT, "game.sud")]);
 }
 
+// Core logs every failure the platform reports, with the platform's reason, once.
+{
+  /** Core's log lines while `run` drives a flow on a fresh core. */
+  async function coreLines(run, options) {
+    const core = await loadCoreFlow(options);
+    const lines = [];
+    core.setLogListener((level, scope, text) => lines.push({ level, scope, text }));
+    try {
+      await run(core);
+    } finally {
+      core.setLogListener(null);
+    }
+    return lines;
+  }
+  const reason = "platform reason 1";
+  const failing = () => ({ ok: false, error: reason });
+  const throwing = () => {
+    throw new Error(reason);
+  };
+  const cases = {
+    "save write": (core) => stepRunner.runCommand(core, SAVE, saveHandlers({ write: failing })),
+    "save write throws": (core) => stepRunner.runCommand(core, SAVE, saveHandlers({ write: throwing })),
+    "default target throws": (core) => {
+      const handlers = saveHandlers();
+      handlers.resolveDefaultTarget = throwing;
+      return stepRunner.runCommand(core, SAVE, handlers);
+    },
+    "export write": (core) =>
+      stepRunner.runCommand(core, { action: "export" }, saveHandlers({ write: failing })),
+  };
+  for (const [name, run] of Object.entries(cases)) {
+    const lines = await coreLines(run);
+    const hits = lines.filter((l) => l.text.includes(reason));
+    assert.equal(hits.length, 1, `${name}: one core line with the reason, got ${JSON.stringify(lines)}`);
+    assert.ok(["warn", "err"].includes(hits[0].level), `${name}: logged as a failure, got ${hits[0].level}`);
+  }
+}
+
 /** Handlers that answer every prompt with its default and keep its text in `texts`. */
 function promptTexts() {
   const texts = [];

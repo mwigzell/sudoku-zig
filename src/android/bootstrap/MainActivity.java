@@ -103,7 +103,9 @@ public final class MainActivity extends Activity {
     private static final int CHROME_DARK = Color.parseColor("#16181d");
     private static final int ANDROID_UID_PER_USER_RANGE = 100000;
     /** Shown when the page never came up, so the game could not word it; the reason goes to logcat. */
-    private static final String BOOT_FAILED_MSG = "The game could not start. Close the app and open it again.";
+    private static final String BOOT_FAILED_MSG = "The game could not start. If it keeps failing, update Android System WebView from the Play Store.";
+    /** Console prefix for a client-log line the host never got (`client_log.js` `CLIENT_LOG_UNSENT_PREFIX`). */
+    private static final String CLIENT_LOG_UNSENT_PREFIX = "client-log unsent";
     private static final String BOOT_ERROR_HTML =
         "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
         "<body style=\"margin:0;padding:16px;font-family:sans-serif;background:#16181d;color:#e6e6e6;\">" +
@@ -168,8 +170,10 @@ public final class MainActivity extends Activity {
             @Override
             public boolean onConsoleMessage(ConsoleMessage message) {
                 if (message == null) return true;
-                // The client log posts its lines to the host, which writes them to logcat already.
-                if (message.sourceId() != null && message.sourceId().endsWith(CLIENT_LOG_SCRIPT)) return true;
+                // The client log posts its lines to the host, which writes them to logcat already; a line the
+                // host never got comes back on the console with the unsent prefix and is written here instead.
+                if (message.sourceId() != null && message.sourceId().endsWith(CLIENT_LOG_SCRIPT)
+                    && !String.valueOf(message.message()).startsWith(CLIENT_LOG_UNSENT_PREFIX)) return true;
                 final String rendered =
                     "JS console: " + message.message() + " @ " + message.sourceId() + ":" + message.lineNumber();
                 switch (message.messageLevel()) {
@@ -255,7 +259,8 @@ public final class MainActivity extends Activity {
             final PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
             final String name = info.versionName != null && !info.versionName.isEmpty() ? info.versionName : "0";
             return name + "(" + info.getLongVersionCode() + ")";
-        } catch (PackageManager.NameNotFoundException ignored) {
+        } catch (PackageManager.NameNotFoundException err) {
+            Log.w(LOG_IDENTITY, "package info unavailable: " + err);
             return "unknown";
         }
     }
@@ -455,6 +460,7 @@ public final class MainActivity extends Activity {
         try {
             for (int i = 0; i + 1 < keysAndValues.length; i += 2) out.put((String) keysAndValues[i], keysAndValues[i + 1]);
         } catch (JSONException err) {
+            Log.e(LOG_IDENTITY, "bridge result JSON failed: " + err);
             return JSON_FAILED_FALLBACK;
         }
         return out.toString();
@@ -568,8 +574,8 @@ public final class MainActivity extends Activity {
             & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         try {
             getContentResolver().takePersistableUriPermission(data.getData(), grantFlags);
-        } catch (SecurityException ignored) {
-            // Some providers do not offer persistable grants; runtime access can still work.
+        } catch (SecurityException err) {
+            Log.i(LOG_IDENTITY, "expected: provider offers no persistable grant for " + data.getData() + "; runtime access still works (" + err + ")");
         }
     }
 
@@ -585,8 +591,8 @@ public final class MainActivity extends Activity {
                     if (name != null && !name.isEmpty()) return name;
                 }
             }
-        } catch (RuntimeException ignored) {
-            // Provider metadata failed; fallback name still gives usable UX.
+        } catch (RuntimeException err) {
+            Log.w(LOG_IDENTITY, "display name query failed for " + uri + ": " + err);
         } finally {
             if (cursor != null) cursor.close();
         }
@@ -597,8 +603,8 @@ public final class MainActivity extends Activity {
                 final String tail = sep >= 0 ? docId.substring(sep + 1) : docId;
                 if (tail != null && !tail.isEmpty()) return tail;
             }
-        } catch (RuntimeException ignored) {
-            // Non-document URI or provider does not expose a document ID.
+        } catch (RuntimeException err) {
+            Log.i(LOG_IDENTITY, "expected: " + uri + " has no document id; using its path (" + err + ")");
         }
         final String segment = uri.getLastPathSegment();
         if (segment != null && !segment.isEmpty()) return segment;
@@ -623,6 +629,7 @@ public final class MainActivity extends Activity {
             if (ids == null || ids.size() < 2) return null;
             return DocumentsContract.buildDocumentUri(file.getAuthority(), ids.get(ids.size() - 2));
         } catch (IOException | RuntimeException err) {
+            Log.w(LOG_IDENTITY, "folder lookup failed for " + file + ": " + err);
             return null;
         }
     }
@@ -749,8 +756,8 @@ public final class MainActivity extends Activity {
 
         try {
             getContentResolver().delete(uri, null, null);
-        } catch (RuntimeException ignored) {
-            // Leaves an empty renamed entry; the user's pick or new name still decides the current file.
+        } catch (RuntimeException err) {
+            Log.w(LOG_IDENTITY, "could not delete renamed entry " + uri + ": " + err);
         }
         return jsonTaken(name);
     }
@@ -784,6 +791,7 @@ public final class MainActivity extends Activity {
             if (cursor == null || !cursor.moveToFirst()) return null;
             return ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cursor.getLong(0));
         } catch (RuntimeException err) {
+            Log.w(LOG_IDENTITY, "default file lookup failed for " + name + ": " + err);
             return null;
         }
     }
@@ -868,6 +876,12 @@ public final class MainActivity extends Activity {
         @JavascriptInterface
         public void setPromptOpen(boolean open) {
             runOnUiThread(() -> MainActivity.this.setPromptOpen(open));
+        }
+
+        /** The boot failure sentence; the page shows it instead of the browser's. */
+        @JavascriptInterface
+        public String bootFailedText() {
+            return BOOT_FAILED_MSG;
         }
 
         @JavascriptInterface

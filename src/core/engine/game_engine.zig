@@ -261,7 +261,10 @@ pub const GameEngine = struct {
             .load => self.warn_unsolvable_load,
         };
         if (!enabled) return null;
-        return solver.solve(self.state.board) catch null;
+        return solver.solve(self.state.board) catch |err| {
+            log.info("expected: solvability not checked, the board has a conflict ({s})", .{@errorName(err)});
+            return null;
+        };
     }
 
     fn appendUnsolvableLoadWarningIfNeeded(self: *@This()) void {

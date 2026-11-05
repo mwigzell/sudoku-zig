@@ -30,6 +30,94 @@ async function captured(body) {
   return { lines, posts };
 }
 
+/** A client log with no core yet: each call gets its own module instance. */
+let freshCount = 0;
+async function freshClientLog() {
+  freshCount += 1;
+  return import(`./client_log.js?fresh=${freshCount}`);
+}
+
+/** Let the POST promise chains settle. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+// Before core loads, err and fatal lines are written at once and never again; lower levels wait.
+{
+  const log = await freshClientLog();
+  const before = await captured(async () => {
+    log.clientLog("boot", "info", "early_info");
+    log.clientLog("boot", "err", "early_err", { error: "wasm compile failed" });
+    log.clientLog("boot", "fatal", "early_fatal");
+    await settle();
+  });
+  assert.deepEqual(
+    before.posts.map((p) => p.event),
+    ["early_err", "early_fatal"],
+    "err and fatal reach the host log before core loads",
+  );
+  const after = await captured(async () => {
+    log.useCore({ logEnabled: () => true });
+    await settle();
+  });
+  assert.deepEqual(
+    after.posts.map((p) => p.event),
+    ["early_info"],
+    "the waiting info line is written when core loads; err and fatal are not written twice",
+  );
+}
+
+// The page's start line is written at once, before core loads.
+{
+  const log = await freshClientLog();
+  const out = await captured(async () => {
+    log.startLine("startup", "module_start", { platform: "web" });
+    await settle();
+  });
+  assert.deepEqual(out.posts.map((p) => [p.level, p.event]), [["info", "module_start"]]);
+}
+
+// Boot failed before core loaded: the waiting lines are written anyway.
+{
+  const log = await freshClientLog();
+  const out = await captured(async () => {
+    log.clientLog("startup", "debug", "after_first_paint");
+    log.clientLog("startup", "info", "host_config_loaded");
+    log.writeWaitingWithoutCore();
+    await settle();
+  });
+  assert.deepEqual(out.posts.map((p) => p.event), ["after_first_paint", "host_config_loaded"]);
+}
+
+// A line the host log never got is written to the console with the unsent prefix and the reason.
+for (const [fail, reason] of [
+  [() => Promise.reject(new Error("Failed to fetch")), "Failed to fetch"],
+  [() => Promise.resolve({ ok: false, status: 500 }), "HTTP 500"],
+]) {
+  const log = await freshClientLog();
+  const out = await captured(async () => {
+    globalThis.fetch = fail;
+    log.clientLog("startup", "err", "boot_failed", { error: "x" });
+    await settle();
+  });
+  const unsent = out.lines.filter((l) => l.line.startsWith(log.CLIENT_LOG_UNSENT_PREFIX));
+  assert.equal(unsent.length, 1, `one unsent line, got ${JSON.stringify(out.lines)}`);
+  assert.ok(unsent[0].line.includes(`(${reason})`), unsent[0].line);
+  assert.ok(unsent[0].line.includes("[startup] boot_failed"), unsent[0].line);
+}
+
+// Lines past the waiting cap are counted and reported when core loads, not dropped silently.
+{
+  const log = await freshClientLog();
+  const cap = 64;
+  const out = await captured(async () => {
+    for (let i = 0; i < cap + 3; i += 1) log.clientLog("load", "info", `line_${i}`);
+    log.useCore({ logEnabled: () => true });
+    await settle();
+  });
+  const dropped = out.posts.find((p) => p.event === "lines_dropped_while_loading");
+  assert.ok(dropped, "a dropped-lines line is written");
+  assert.equal(dropped.details.dropped, 3);
+}
+
 const game = await loadGame({ logLevel: WARN_RANK });
 
 // Core's filter: with min_level warn, debug and info don't run, warn and err do.

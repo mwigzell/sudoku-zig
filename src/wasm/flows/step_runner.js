@@ -1,7 +1,6 @@
 // step_runner.js — carries out core flow steps on the web: core (wasm) decides
 // what happens next; handlers only do the platform work and report back.
 
-import * as clientLog from "../client_log.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").FlowStart} FlowStart */
@@ -187,7 +186,9 @@ function withShown(handlers, onShown) {
  */
 function enqueueFlow(game, begin, handlers) {
   const previous = game[FLOW_LANE] ?? Promise.resolve();
-  const run = previous.catch(() => {}).then(() => driveFlow(begin, game, handlers));
+  // The previous flow's own caller gets its outcome or error; this flow only waits for it to settle.
+  const start = () => driveFlow(begin, game, handlers);
+  const run = previous.then(start, start);
   game[FLOW_LANE] = run;
   return run;
 }
@@ -207,12 +208,11 @@ async function driveFlow(begin, game, handlers) {
 }
 
 /**
- * The web side could not carry the flow on: log why, and let core end it with its own sentence.
+ * The web side could not carry the flow on: core logs why and ends it with its own sentence.
  * @returns {Promise<FlowOutcome>}
  */
 function failFlow(game, handlers, reason) {
-  clientLog.clientLog("flow", "err", "flow_failed", { error: reason });
-  return stepThrough(game, game.flowFail(), handlers);
+  return stepThrough(game, game.flowFail(reason), handlers);
 }
 
 /**
