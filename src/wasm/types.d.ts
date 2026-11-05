@@ -210,6 +210,8 @@ export type AndroidFileBridge = {
   saveAs: (base64: string, suggestedName: string) => AndroidBridgeResult;
   /** Write the bound file, or the default visible file when none is bound. */
   autosave: (base64: string, suggestedName: string) => AndroidBridgeResult;
+  /** Whether this install's default visible file is there (another install's file answers taken on write instead). */
+  defaultFileExists: (suggestedName: string) => boolean;
   /** Pick an existing file and write to it. */
   reclaimFile: (base64: string) => AndroidBridgeResult;
   /** Pick a saved game and read it; the picked file becomes the bound file. */

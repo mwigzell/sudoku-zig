@@ -17,11 +17,6 @@ export function showStatusText(statusEl, text) {
   applyEventStatus(statusEl, { ok: true, msg: text ?? null });
 }
 
-/** Clear the status bar (same as a successful exec with no message). */
-export function clearEventStatus(statusEl) {
-  showStatusText(statusEl, null);
-}
-
 /** Yield so the status bar can paint before a blocking wasm `init`. */
 export function waitForStatusPaint() {
   if (typeof requestAnimationFrame !== "function") return Promise.resolve();

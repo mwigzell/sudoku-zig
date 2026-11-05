@@ -41,6 +41,7 @@ function runInWindow(win) {
     importPuzzle: () => JSON.stringify({ ok: true, name: "p.txt", base64: "QQ==" }),
     exportPuzzle: wrote("exportPuzzle"),
     currentSudokuFileName: () => null,
+    defaultFileExists: (name) => name === "sudoku.sud",
     notifyWebBootReady: () => calls.push(["ready"]),
   };
   const win = runInWindow({ __SudokuAndroidBridge: native });
@@ -57,6 +58,8 @@ function runInWindow(win) {
   assert.deepEqual(bridge.importPuzzle(), { ok: true, name: "p.txt", base64: "QQ==" });
   assert.deepEqual(bridge.exportPuzzle("QQ==", "sudoku.txt"), { ok: true, name: "sudoku.txt" });
   assert.equal(bridge.currentSudokuFileName(), "");
+  assert.equal(bridge.defaultFileExists("sudoku.sud"), true);
+  assert.equal(bridge.defaultFileExists(undefined), false);
   bridge.notifyWebBootReady();
   assert.deepEqual(calls, [
     ["save", "QQ==", "a.sud"],

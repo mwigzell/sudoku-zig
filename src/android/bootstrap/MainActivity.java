@@ -730,7 +730,7 @@ public final class MainActivity extends Activity {
      * the result reports it so core can ask the user to pick it or choose a new name.
      */
     private String saveToDefaultVisible(byte[] bytes, String suggestedName) {
-        final String name = (suggestedName == null || suggestedName.isEmpty()) ? DEFAULT_SAVE_FILENAME : suggestedName;
+        final String name = defaultVisibleName(suggestedName);
         final Uri owned = findOwnedDefaultVisible(name);
         if (owned != null) return saveBytesTo(owned, bytes, name);
 
@@ -770,6 +770,10 @@ public final class MainActivity extends Activity {
     }
 
     /** MediaStore only lists files this install owns, so a hit is ours to overwrite. */
+    private static String defaultVisibleName(String suggestedName) {
+        return (suggestedName == null || suggestedName.isEmpty()) ? DEFAULT_SAVE_FILENAME : suggestedName;
+    }
+
     private Uri findOwnedDefaultVisible(String name) {
         final String[] projection = new String[] { MediaStore.MediaColumns._ID };
         final String selection =
@@ -822,6 +826,12 @@ public final class MainActivity extends Activity {
                 if (uri == null) return saveToDefaultVisible(bytes, suggestedName);
                 return saveBytesTo(uri, bytes, currentNameOr(suggestedName));
             });
+        }
+
+        /** Whether this install's default visible file is there; another install's file is not seen here and answers taken on write. */
+        @JavascriptInterface
+        public boolean defaultFileExists(String suggestedName) {
+            return findOwnedDefaultVisible(defaultVisibleName(suggestedName)) != null;
         }
 
         @JavascriptInterface

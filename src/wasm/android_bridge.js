@@ -11,6 +11,7 @@
     save: (base64, suggestedName) => JSON.parse(native.save(text(base64), text(suggestedName))),
     saveAs: (base64, suggestedName) => JSON.parse(native.saveAs(text(base64), text(suggestedName))),
     autosave: (base64, suggestedName) => JSON.parse(native.autosave(text(base64), text(suggestedName))),
+    defaultFileExists: (suggestedName) => native.defaultFileExists(text(suggestedName)) === true,
     reclaimFile: (base64) => JSON.parse(native.reclaimFile(text(base64))),
     open: () => JSON.parse(native.open()),
     importPuzzle: () => JSON.parse(native.importPuzzle()),

@@ -93,7 +93,7 @@ export function androidSteps(game, session, bridge, options = {}) {
     saveAs: (target) => writeThroughBridge((b64) => bridge.saveAs(b64, target.name), target.name),
     /** The bound file, else the default visible file; either may be one this install may not write (`taken`). */
     autosave: (target) => {
-      if (!target.replace && bound()) return steps.EXISTS;
+      if (!target.replace && (bound() || bridge.defaultFileExists(target.name))) return steps.EXISTS;
       return writeThroughBridge((b64) => bridge.autosave(b64, target.name), target.name);
     },
     /** The host copy only: a closing app cannot wait for the bridge. */

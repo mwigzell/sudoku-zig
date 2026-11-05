@@ -86,10 +86,11 @@ export function webSteps(game, session, options = {}) {
       return picked;
     },
     importPuzzle: () => ctx.pick(session, { types: files.puzzleTextPickerTypes, accept: files.PUZZLE_TEXT_ACCEPT }),
-    /** A loaded game is bound to the handle `open` picked for it; any other load drops the binding. */
+    /** A loaded game is bound to the handle `open` picked for it, or keeps the handle of the file core still names; otherwise the binding drops. */
     showGame: (step) => {
       if (step.loaded) {
-        session.fileHandle = opened != null && opened.name === step.file ? opened.handle : null;
+        if (opened != null && opened.name === step.file) session.fileHandle = opened.handle;
+        else if (session.fileHandle?.name !== step.file) session.fileHandle = null;
         opened = null;
       }
       return shared.showGame(step);

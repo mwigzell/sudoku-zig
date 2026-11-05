@@ -29,6 +29,8 @@ pub const OPEN_FAILED_MSG = "The game could not be opened.";
 pub const IMPORT_FAILED_MSG = "The puzzle could not be imported.";
 /// Shown when the platform could not read a puzzle from the clipboard; its reason goes to the log.
 pub const PASTE_FAILED_MSG = "There is no puzzle on the clipboard to paste.";
+/// Status a load that shows no game ends with: the last status no longer describes the board.
+pub const LOAD_ENDED_STATUS = "";
 
 pub const CommandFlow = struct {
     engine: *game_engine.GameEngine,
@@ -39,7 +41,7 @@ pub const CommandFlow = struct {
     autosave: AutosaveFlow = undefined,
     write: Write = undefined,
 
-    const Phase = enum { start, gathering, writing, showing, persisting, autosaving, finished };
+    const Phase = enum { start, gathering, writing, showing, persisting, autosaving, clearing, finished };
     const Write = union(enum) { save: SaveFlow, @"export": ExportFlow };
 
     /// Run `cmd` on `engine`; `session` is the file the follow-up autosave writes.
@@ -64,6 +66,7 @@ pub const CommandFlow = struct {
             },
             .persisting => return self.continueSettings(input),
             .autosaving => return self.continueAutosave(input),
+            .clearing => return self.finish(.{ .show_status = LOAD_ENDED_STATUS }),
             .finished => return .done,
         }
     }
@@ -96,7 +99,7 @@ pub const CommandFlow = struct {
                 if (input != .generated) return self.finish(unexpected);
                 return switch (input.generated) {
                     .line => |line| self.load(.new_game, line),
-                    .cancelled => self.finish(.done),
+                    .cancelled => self.finish(.{ .show_status = LOAD_ENDED_STATUS }),
                     .failed => |reason| self.failed(step_mod.GENERATE_FAILED_MSG, reason),
                 };
             },
@@ -108,7 +111,7 @@ pub const CommandFlow = struct {
                         .import => self.load(.import, file.bytes),
                         else => self.load(.paste, file.bytes),
                     },
-                    .cancelled => self.finish(.done),
+                    .cancelled => self.finish(.{ .show_status = LOAD_ENDED_STATUS }),
                     .failed => |reason| self.failed(switch (self.cmd) {
                         .open => OPEN_FAILED_MSG,
                         .import => IMPORT_FAILED_MSG,
@@ -128,6 +131,10 @@ pub const CommandFlow = struct {
             .import => self.engine.fromPuzzle(data),
             .paste => self.engine.pasteFromLine(data),
         };
+        if (ev == .error_msg) {
+            self.phase = .clearing;
+            return step_mod.promptError(ev.error_msg);
+        }
         if (ev == .ok) {
             self.session.noteLoad(loaded);
             if (self.cmd == .new) {
@@ -182,9 +189,11 @@ pub const CommandFlow = struct {
         return if (step_mod.isTerminal(step)) self.finish(step) else step;
     }
 
+    /// A load the platform could not gather: show the error, then clear the status once it is answered.
     fn failed(self: *CommandFlow, msg: []const u8, reason: []const u8) Step {
         log.err("{s} failed: {s}", .{ @tagName(self.cmd), reason });
-        return self.finish(step_mod.promptError(msg));
+        self.phase = .clearing;
+        return step_mod.promptError(msg);
     }
 
     fn finish(self: *CommandFlow, terminal: Step) Step {
@@ -267,14 +276,14 @@ test "open asks for a game file, loads the pick and makes it the current file" {
     try testing.expect(flow.next(.ack) == .done);
 }
 
-test "a typed path rides the import step; backing out of the picker ends quietly" {
+test "a typed path rides the import step; backing out of the picker clears the status" {
     var engine = try testEngine(config.Config.default());
     defer engine.deinit();
     var session = FileSession{};
     const before = engine.state.board;
     var flow = CommandFlow.init(&engine, &session, .{ .import = .{ .path = "puzzle.txt" } });
     try testing.expectEqualStrings("puzzle.txt", flow.next(.start).import_puzzle.?);
-    try testing.expect(flow.next(.{ .read = .cancelled }) == .done);
+    try testing.expectEqualStrings(LOAD_ENDED_STATUS, flow.next(.{ .read = .cancelled }).show_status);
     try testing.expect(@import("../board/board.zig").equal(engine.state.board, before));
 }
 
@@ -286,7 +295,19 @@ test "an import that is not a puzzle shows the error and keeps the board" {
     var flow = CommandFlow.init(&engine, &session, .{ .import = .{ .path = null } });
     _ = flow.next(.start);
     try testing.expect(flow.next(.{ .read = .{ .file = .{ .bytes = "123", .name = "bad.txt" } } }) == .prompt_message);
+    try testing.expectEqualStrings(LOAD_ENDED_STATUS, flow.next(.{ .pressed = 0 }).show_status);
     try testing.expect(@import("../board/board.zig").equal(engine.state.board, before));
+}
+
+test "an open the platform could not read shows the error, then clears the status" {
+    var engine = try testEngine(config.Config.default());
+    defer engine.deinit();
+    var session = FileSession{};
+    var flow = CommandFlow.init(&engine, &session, .{ .open = .{ .path = null } });
+    _ = flow.next(.start);
+    try testing.expectEqualStrings(OPEN_FAILED_MSG, flow.next(.{ .read = .{ .failed = "disk gone" } }).prompt_message.text);
+    try testing.expectEqualStrings(LOAD_ENDED_STATUS, flow.next(.{ .pressed = 0 }).show_status);
+    try testing.expect(flow.next(.ack) == .done);
 }
 
 test "paste with a line skips the clipboard; without one it reads the clipboard" {
@@ -352,13 +373,13 @@ test "save as suggests the current file; export and copy hand over the puzzle" {
     try testing.expectEqualStrings("game.sud", session.currentFile().?);
 }
 
-test "stopping generation ends New quietly; a wrong answer is an error" {
+test "stopping generation ends New by clearing the status; a wrong answer is an error" {
     var engine = try testEngine(config.Config.default());
     defer engine.deinit();
     var session = FileSession{};
     var stopped = CommandFlow.init(&engine, &session, .{ .new = .{} });
     _ = stopped.next(.start);
-    try testing.expect(stopped.next(.{ .generated = .cancelled }) == .done);
+    try testing.expectEqualStrings(LOAD_ENDED_STATUS, stopped.next(.{ .generated = .cancelled }).show_status);
 
     var wrong = CommandFlow.init(&engine, &session, .{ .new = .{} });
     _ = wrong.next(.start);

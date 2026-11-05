@@ -332,7 +332,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.equal(shown.length, 0);
 }
 
-// open hands core the picked bytes and name; closing the picker ends quietly; a failed pick is core's error.
+// open hands core the picked bytes and name; closing the picker clears the status; a failed pick is core's error, then clears it.
 {
   const source = await loadGame();
   startNewGame(source);
@@ -353,9 +353,10 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.equal(shown[0].file, "game.sud");
   assert.equal(shown[0].text, fillText(coreText.OPENED_FMT, "game.sud"));
 
-  assert.deepEqual(await stepRunner.runCommand(game, { action: "import" }, handlers(() => ({ ok: false, cancelled: true }))), { kind: "done" });
+  const loadEnded = { kind: stepRunner.STEP_SHOW_STATUS, text: coreText.LOAD_ENDED_STATUS };
+  assert.deepEqual(await stepRunner.runCommand(game, { action: "import" }, handlers(() => ({ ok: false, cancelled: true }))), loadEnded);
   const failed = await stepRunner.runCommand(game, { action: "import" }, handlers(() => ({ ok: false, error: "unreadable" })));
-  assert.deepEqual(failed, { kind: "done" });
+  assert.deepEqual(failed, loadEnded);
   assert.deepEqual(prompts.texts, [coreText.IMPORT_FAILED_MSG]);
   assert.equal(shown.length, 1, "a cancelled or failed pick shows nothing");
 }
@@ -373,7 +374,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const before = game.getState();
   const prompts = promptTexts();
   const denied = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: false, error: "denied" }), ...prompts });
-  assert.deepEqual(denied, { kind: "done" });
+  assert.deepEqual(denied, { kind: stepRunner.STEP_SHOW_STATUS, text: coreText.LOAD_ENDED_STATUS });
   assert.deepEqual(prompts.texts, [coreText.PASTE_FAILED_MSG]);
   assert.deepEqual(game.getState(), before);
 }
@@ -401,7 +402,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const padded = new TextEncoder().encode(`${PUZZLE_LINE}\n`);
   const prompts = promptTexts();
   const rejected = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: true, bytes: padded }), ...prompts });
-  assert.deepEqual(rejected, { kind: "done" });
+  assert.deepEqual(rejected, { kind: stepRunner.STEP_SHOW_STATUS, text: coreText.LOAD_ENDED_STATUS });
   assert.deepEqual(prompts.texts, [coreText.PUZZLE_LENGTH_MSG]);
 }
 

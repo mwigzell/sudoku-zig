@@ -26,6 +26,7 @@ async function autosaveGame() {
       return { ok: true, name: suggestedName };
     },
     currentSudokuFileName: () => "",
+    defaultFileExists: () => false,
   };
   const fetchFn = async (url, init) => {
     if (url === "./current-file") hostNames.push([init.headers["X-Sudoku-Filename"], init.headers["X-Sudoku-Restore-Copy"]]);
@@ -53,10 +54,28 @@ async function autosaveGame() {
 }
 
 {
+  // An unbound default file this install wrote earlier is there: core asks before the bridge replaces it.
+  const { game, session } = await autosaveGame();
+  const bridgeWrites = [];
+  const bridge = {
+    autosave(_b64, suggestedName) {
+      bridgeWrites.push(suggestedName);
+      return { ok: true, name: suggestedName };
+    },
+    currentSudokuFileName: () => "",
+    defaultFileExists: (name) => name === "sudoku.sud",
+  };
+  const decline = promptDialogStub((step) => step.dismiss);
+  await moveWithAutosave(game, session, { steps: androidSteps.androidSteps(game, session, bridge, { fetchFn: okFetch, promptDialog: decline }) });
+  assert.deepEqual(decline.shown.map((step) => step.title), [coreText.REPLACE_CONFIRM_TITLE]);
+  assert.deepEqual(bridgeWrites, [], "declining leaves the file alone");
+}
+
+{
   // Autosave adopts the file name the bridge actually wrote.
   const { game, session } = await autosaveGame();
   const hostNames = [];
-  const bridge = { autosave: () => ({ ok: true, name: "game2.sud" }), currentSudokuFileName: () => "" };
+  const bridge = { autosave: () => ({ ok: true, name: "game2.sud" }), currentSudokuFileName: () => "", defaultFileExists: () => false };
   const fetchFn = async (url, init) => {
     if (url === "./current-file") hostNames.push(init.headers["X-Sudoku-Filename"]);
     return { ok: true, status: 204 };
@@ -91,6 +110,7 @@ for (const bound of ["", "sudoku.sud"]) {
       return { ok: true, name: "sudoku.sud" };
     },
     currentSudokuFileName: () => bound,
+    defaultFileExists: () => false,
   };
   await moveWithAutosave(game, session, { steps: androidSteps.androidSteps(game, session, bridge, { fetchFn: okFetch, promptDialog: prompts }) });
   const ask = ["ask", "error", coreText.TAKEN_TITLE, fillText(coreText.TAKEN_FMT, "sudoku.sud"), [coreText.TAKEN_NEW_NAME_LABEL, coreText.TAKEN_PICK_LABEL]];

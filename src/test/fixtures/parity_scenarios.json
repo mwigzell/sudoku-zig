@@ -1,71 +1,63 @@
 {
+  "flowless_commands": {
+    "menu": "The terminal renderer opens its menu itself; the command never reaches core.",
+    "settings": "The terminal renderer opens its Settings screen itself; the command never reaches core.",
+    "quit": "Quit ends the terminal loop before any flow runs."
+  },
   "scenarios": [
     {
       "name": "restore_solved_keep",
       "summary": "Restoring a solved game and keeping it continues the file: the next autosave writes it without asking.",
-      "config": { "auto_restore": true, "auto_new": true, "auto_save": true },
+      "config": {"auto_restore": true, "auto_new": true, "auto_save": true},
       "current_file": {
         "name": "startup.sud",
         "puzzle_line": "483921657967345821251876493548132976729504138136798245372689514814253769695417382",
-        "moves": [{ "row": 4, "col": 4, "digit": 6 }]
+        "moves": [{"row": 4, "col": 4, "digit": 6}]
       },
       "answers": [false],
-      "steps": [{ "clear": { "row": 4, "col": 4 } }],
+      "steps": [{"clear": {"row": 4, "col": 4}}],
       "expect": {
         "questions": 1,
         "solved_after_startup": true,
         "written": ["startup.sud"],
-        "status": null,
-        "probes": [{ "row": 4, "col": 4, "value": 0, "given": false }]
+        "probes": [{"row": 4, "col": 4, "value": 0, "given": false}]
       }
     },
     {
       "name": "restore_solved_new_game",
       "summary": "Restoring a solved game and starting a new one detaches the file: the next autosave asks before overwriting it.",
-      "config": { "auto_restore": true, "auto_new": true, "auto_save": true, "difficulty": "easy" },
+      "config": {"auto_restore": true, "auto_new": true, "auto_save": true, "difficulty": "easy"},
       "current_file": {
         "name": "startup.sud",
         "puzzle_line": "483921657967345821251876493548132976729504138136798245372689514814253769695417382",
-        "moves": [{ "row": 4, "col": 4, "digit": 6 }]
+        "moves": [{"row": 4, "col": 4, "digit": 6}]
       },
-      "generated_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [true, false],
-      "steps": [{ "fill_first_empty": true }],
-      "expect": {
-        "questions": 2,
-        "solved_after_startup": false,
-        "written": [],
-        "status": null,
-        "probes": []
-      }
+      "steps": [{"fill_first_empty": true}],
+      "expect": {"questions": 2, "solved_after_startup": false, "written": [], "probes": []}
     },
     {
       "name": "auto_save_toggle_then_autosave",
       "summary": "Turning Auto Save on persists the setting; the next move writes the default file without asking and makes it the current file.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "toggle_auto_save": true }, { "fill": { "row": 0, "col": 0, "digit": 4 } }],
+      "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
       "expect": {
         "questions": 0,
-        "settings": { "auto_save": true },
+        "settings": {"auto_save": true},
         "written": ["sudoku.sud"],
-        "status": null,
-        "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
+        "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]
       }
     },
     {
       "name": "restore_unsolved_moves",
       "summary": "Restoring an unfinished game brings back the player's moves and their undo history without asking.",
-      "config": { "auto_restore": true, "auto_new": false, "auto_save": false },
+      "config": {"auto_restore": true, "auto_new": false, "auto_save": false},
       "current_file": {
         "name": "startup.sud",
         "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
-        "moves": [
-          { "row": 0, "col": 0, "digit": 4 },
-          { "row": 0, "col": 1, "digit": 8 },
-          { "row": 8, "col": 8, "digit": 2 }
-        ]
+        "moves": [{"row": 0, "col": 0, "digit": 4}, {"row": 0, "col": 1, "digit": 8}, {"row": 8, "col": 8, "digit": 2}]
       },
       "answers": [],
       "steps": [],
@@ -73,275 +65,654 @@
         "questions": 0,
         "solved_after_startup": false,
         "written": [],
-        "status": null,
-        "legend": { "undo": true, "redo": false },
+        "legend": {"undo": true, "redo": false},
         "probes": [
-          { "row": 0, "col": 2, "value": 3, "given": true },
-          { "row": 0, "col": 0, "value": 4, "given": false },
-          { "row": 0, "col": 1, "value": 8, "given": false },
-          { "row": 8, "col": 8, "value": 2, "given": false }
+          {"row": 0, "col": 2, "value": 3, "given": true},
+          {"row": 0, "col": 0, "value": 4, "given": false},
+          {"row": 0, "col": 1, "value": 8, "given": false},
+          {"row": 8, "col": 8, "value": 2, "given": false}
         ]
       }
     },
     {
       "name": "autosave_then_relaunch_restores_moves",
       "summary": "Moves autosaved with Auto Save on come back on the next launch: givens stay givens, the player's moves stay moves, an undone move stays undone, and both Undo and Redo are still offered.",
-      "config": { "auto_restore": true, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": true, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
       "steps": [
-        { "fill": { "row": 0, "col": 0, "digit": 4 } },
-        { "fill": { "row": 0, "col": 1, "digit": 8 } },
-        { "fill": { "row": 8, "col": 8, "digit": 2 } },
-        { "undo": true },
-        { "relaunch": true }
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"fill": {"row": 0, "col": 1, "digit": 8}},
+        {"fill": {"row": 8, "col": 8, "digit": 2}},
+        {"undo": true},
+        {"relaunch": true}
       ],
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud"],
-        "status": null,
-        "legend": { "undo": true, "redo": true },
+        "legend": {"undo": true, "redo": true},
         "probes": [
-          { "row": 0, "col": 2, "value": 3, "given": true },
-          { "row": 0, "col": 0, "value": 4, "given": false },
-          { "row": 0, "col": 1, "value": 8, "given": false },
-          { "row": 8, "col": 8, "value": 0, "given": false }
+          {"row": 0, "col": 2, "value": 3, "given": true},
+          {"row": 0, "col": 0, "value": 4, "given": false},
+          {"row": 0, "col": 1, "value": 8, "given": false},
+          {"row": 8, "col": 8, "value": 0, "given": false}
         ]
       }
     },
     {
       "name": "history_branch_discards_redo",
       "summary": "A move after Undo discards the undone branch: Redo is no longer offered and the undone move stays gone.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
       "steps": [
-        { "fill": { "row": 0, "col": 0, "digit": 4 } },
-        { "fill": { "row": 0, "col": 1, "digit": 8 } },
-        { "undo": true },
-        { "fill": { "row": 8, "col": 8, "digit": 2 } }
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"fill": {"row": 0, "col": 1, "digit": 8}},
+        {"undo": true},
+        {"fill": {"row": 8, "col": 8, "digit": 2}}
       ],
       "expect": {
         "questions": 0,
         "written": [],
-        "status": null,
-        "legend": { "undo": true, "redo": false },
+        "legend": {"undo": true, "redo": false},
         "probes": [
-          { "row": 0, "col": 2, "value": 3, "given": true },
-          { "row": 0, "col": 0, "value": 4, "given": false },
-          { "row": 0, "col": 1, "value": 0, "given": false },
-          { "row": 8, "col": 8, "value": 2, "given": false }
+          {"row": 0, "col": 2, "value": 3, "given": true},
+          {"row": 0, "col": 0, "value": 4, "given": false},
+          {"row": 0, "col": 1, "value": 0, "given": false},
+          {"row": 8, "col": 8, "value": 2, "given": false}
         ]
       }
     },
     {
       "name": "paste_valid_resets_history",
       "summary": "Pasting a valid puzzle replaces the board with new givens and clears undo history.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
       "steps": [
-        { "fill": { "row": 0, "col": 0, "digit": 4 } },
-        { "paste": "483921657967345821251876493548132976729564138136798245372689514814253769695417380" }
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"paste": "483921657967345821251876493548132976729564138136798245372689514814253769695417380"}
       ],
       "expect": {
         "questions": 0,
         "written": [],
-        "status": "The puzzle was pasted.",
-        "legend": { "undo": false, "redo": false },
-        "probes": [
-          { "row": 0, "col": 0, "value": 4, "given": true },
-          { "row": 8, "col": 8, "value": 0, "given": false }
-        ]
+        "legend": {"undo": false, "redo": false},
+        "probes": [{"row": 0, "col": 0, "value": 4, "given": true}, {"row": 8, "col": 8, "value": 0, "given": false}]
       }
     },
     {
       "name": "paste_invalid_keeps_board",
       "summary": "Pasting an invalid line shows an error and leaves the board and undo history as they were.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
       "steps": [
-        { "fill": { "row": 8, "col": 8, "digit": 2 } },
-        { "paste": "48392165796734582125187649354813297672956413x136798245372689514814253769695417380" }
+        {"fill": {"row": 8, "col": 8, "digit": 2}},
+        {"paste": "48392165796734582125187649354813297672956413x136798245372689514814253769695417380"}
       ],
       "expect": {
         "questions": 0,
         "written": [],
-        "status": null,
         "errors": 1,
-        "legend": { "undo": true, "redo": false },
-        "probes": [
-          { "row": 0, "col": 0, "value": 0, "given": false },
-          { "row": 8, "col": 8, "value": 2, "given": false }
-        ]
+        "legend": {"undo": true, "redo": false},
+        "probes": [{"row": 0, "col": 0, "value": 0, "given": false}, {"row": 8, "col": 8, "value": 2, "given": false}]
       }
     },
     {
       "name": "settings_change_does_not_autosave",
       "summary": "With Auto Save on, View and Settings changes persist the settings but never write the game file.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "toggle_region": true }, { "set_theme": "light" }],
+      "steps": [{"toggle_region": true}, {"set_theme": "light"}],
       "expect": {
         "questions": 0,
         "written": [],
-        "status": "A new game has started.",
-        "settings": { "auto_save": true, "show_region": true, "theme": "light" },
+        "settings": {"auto_save": true, "show_region": true, "theme": "light"},
         "probes": []
       }
     },
     {
       "name": "hint_reports_and_autosaves",
       "summary": "A hint shows its text in the status line, leaves the hinted cell empty, and autosaves like any other command.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "hint": true }],
+      "steps": [{"hint": true}],
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud"],
-        "status": "F5 takes 4.",
-        "probes": [{ "row": 4, "col": 5, "value": 0, "given": false }]
+        "probes": [{"row": 4, "col": 5, "value": 0, "given": false}]
       }
     },
     {
       "name": "solve_then_rejected_fill",
       "summary": "Solve fills the board, reports the win and autosaves; a move on a given cell is then rejected with an error and changes and writes nothing.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "solve": true }, { "fill": { "row": 0, "col": 2, "digit": 1 } }],
+      "steps": [{"solve": true}, {"fill": {"row": 0, "col": 2, "digit": 1}}],
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud"],
-        "status": "You win!",
         "errors": 1,
-        "probes": [
-          { "row": 0, "col": 0, "value": 4, "given": false },
-          { "row": 0, "col": 2, "value": 3, "given": true }
-        ]
+        "probes": [{"row": 0, "col": 0, "value": 4, "given": false}, {"row": 0, "col": 2, "value": 3, "given": true}]
       }
     },
     {
       "name": "open_then_move_continues_file",
       "summary": "Opening a saved game with Auto Save on continues that file: the load and the next move both write it without asking.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "answers": [],
       "steps": [
-        { "open": { "name": "game.sud", "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079", "moves": [{ "row": 0, "col": 3, "digit": 6 }] } },
-        { "fill": { "row": 0, "col": 2, "digit": 4 } }
+        {
+          "open": {
+            "name": "game.sud",
+            "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079",
+            "moves": [{"row": 0, "col": 3, "digit": 6}]
+          }
+        },
+        {"fill": {"row": 0, "col": 2, "digit": 4}}
       ],
       "expect": {
         "questions": 0,
         "written": ["game.sud", "game.sud"],
-        "status": null,
         "probes": [
-          { "row": 0, "col": 0, "value": 5, "given": true },
-          { "row": 0, "col": 3, "value": 6, "given": false },
-          { "row": 0, "col": 2, "value": 4, "given": false }
+          {"row": 0, "col": 0, "value": 5, "given": true},
+          {"row": 0, "col": 3, "value": 6, "given": false},
+          {"row": 0, "col": 2, "value": 4, "given": false}
         ]
       }
     },
     {
       "name": "import_starts_unsaved_game",
       "summary": "Importing a puzzle file with Auto Save on makes its line the givens and autosaves to the default file.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "answers": [],
-      "steps": [{ "import": "003020600900305001001806400008102900700000008006708200002609500800203009005010300" }],
+      "steps": [{"import": "003020600900305001001806400008102900700000008006708200002609500800203009005010300"}],
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud"],
-        "status": "The puzzle was imported.",
-        "legend": { "undo": false },
-        "probes": [{ "row": 0, "col": 2, "value": 3, "given": true }]
+        "legend": {"undo": false},
+        "probes": [{"row": 0, "col": 2, "value": 3, "given": true}]
       }
     },
     {
       "name": "import_invalid_keeps_board",
       "summary": "Importing a file that is not a puzzle shows one error and leaves the board and its history alone.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "fill": { "row": 0, "col": 0, "digit": 4 } }, { "import": "oops" }],
+      "steps": [{"fill": {"row": 0, "col": 0, "digit": 4}}, {"import": "oops"}],
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud"],
-        "status": null,
         "errors": 1,
-        "legend": { "undo": true },
-        "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
+        "legend": {"undo": true},
+        "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]
       }
     },
     {
       "name": "save_names_default_then_continues",
       "summary": "With Auto Save off, the first Save names the default file and writes it without asking; the next Save continues that file.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": false },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
       "steps": [
-        { "fill": { "row": 0, "col": 0, "digit": 4 } },
-        { "save": true },
-        { "fill": { "row": 0, "col": 1, "digit": 8 } },
-        { "save": true }
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"save": true},
+        {"fill": {"row": 0, "col": 1, "digit": 8}},
+        {"save": true}
       ],
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud", "sudoku.sud"],
-        "status": "The game was saved to sudoku.sud.",
-        "probes": [{ "row": 0, "col": 1, "value": 8, "given": false }]
+        "probes": [{"row": 0, "col": 1, "value": 8, "given": false}]
       }
     },
     {
       "name": "copy_reports_and_writes_nothing",
       "summary": "Copy hands the puzzle over, reports it, and writes no file even with Auto Save on.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "copy": true }],
-      "expect": {
-        "questions": 0,
-        "written": [],
-        "status": "The puzzle was copied.",
-        "probes": []
-      }
+      "steps": [{"copy": true}],
+      "expect": {"questions": 0, "written": [], "probes": []}
     },
     {
       "name": "new_after_open_asks_before_replacing",
       "summary": "New after Open replaces the board and detaches the opened file: the next autosave asks before overwriting it.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "answers": [true],
       "steps": [
-        { "open": { "name": "game.sud", "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079", "moves": [{ "row": 0, "col": 3, "digit": 6 }] } },
-        { "new": "003020600900305001001806400008102900700000008006708200002609500800203009005010300" },
-        { "fill": { "row": 0, "col": 0, "digit": 4 } }
+        {
+          "open": {
+            "name": "game.sud",
+            "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079",
+            "moves": [{"row": 0, "col": 3, "digit": 6}]
+          }
+        },
+        {"new": "easy"},
+        {"fill": {"row": 0, "col": 0, "digit": 4}}
       ],
       "expect": {
         "questions": 1,
         "written": ["game.sud", "game.sud"],
-        "status": null,
-        "legend": { "undo": true },
+        "legend": {"undo": true},
         "probes": [
-          { "row": 0, "col": 2, "value": 3, "given": true },
-          { "row": 0, "col": 3, "value": 0, "given": false },
-          { "row": 0, "col": 0, "value": 4, "given": false }
+          {"row": 0, "col": 2, "value": 3, "given": true},
+          {"row": 0, "col": 3, "value": 0, "given": false},
+          {"row": 0, "col": 0, "value": 4, "given": false}
         ]
       }
     },
     {
       "name": "export_names_default_and_reports",
       "summary": "Export writes the puzzle text to the default export file and reports it; the game file is only written by autosave.",
-      "config": { "auto_restore": false, "auto_new": false, "auto_save": true },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{ "fill": { "row": 0, "col": 0, "digit": 4 } }, { "export": true }],
+      "steps": [{"fill": {"row": 0, "col": 0, "digit": 4}}, {"export": true}],
       "expect": {
         "questions": 0,
         "written": ["sudoku.sud", "puzzle.txt"],
-        "status": "The puzzle was exported to puzzle.txt.",
-        "probes": [{ "row": 0, "col": 0, "value": 4, "given": false }]
+        "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]
       }
+    },
+    {
+      "name": "startup_idle",
+      "summary": "With nothing to restore and Auto New off, startup shows the empty board and its idle status.",
+      "expect": {"questions": 0, "errors": 0, "written": []}
+    },
+    {
+      "name": "startup_new_game",
+      "summary": "With Auto New on and nothing to restore, startup generates a new game at the configured difficulty.",
+      "config": {"auto_new": true, "difficulty": "medium"},
+      "expect": {"questions": 0, "errors": 0, "written": []}
+    },
+    {
+      "name": "startup_generation_failed",
+      "summary": "When startup's generation fails, core shows its error and the empty board.",
+      "not_on": {"native": "Terminal generation always produces a puzzle and has no cancel."},
+      "config": {"auto_new": true},
+      "world": {"generate": "failed"},
+      "expect": {"errors": 1}
+    },
+    {
+      "name": "startup_restore_failed_delete",
+      "summary": "A current file that is no saved game: startup shows the empty board, asks, and deletes it on Delete.",
+      "config": {"auto_restore": true},
+      "current_file": {"name": "startup.sud", "corrupt": true},
+      "answers": [true],
+      "expect": {"questions": 1}
+    },
+    {
+      "name": "startup_restore_failed_keep",
+      "summary": "A current file that is no saved game: startup asks, and Keep forgets it without deleting.",
+      "config": {"auto_restore": true},
+      "current_file": {"name": "startup.sud", "corrupt": true},
+      "answers": [false],
+      "expect": {"questions": 1}
+    },
+    {
+      "name": "startup_restore_missing",
+      "summary": "A current file that is gone: startup reports the failed restore and asks whether to delete it.",
+      "config": {"auto_restore": true},
+      "current_file": {"name": "startup.sud", "missing": true},
+      "answers": [false],
+      "expect": {"questions": 1}
+    },
+    {
+      "name": "new_generated",
+      "summary": "New generates a game at the chosen difficulty and replaces the board.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"fill": {"row": 0, "col": 0, "digit": 4}}, {"new": "medium"}],
+      "expect": {"errors": 0, "legend": {"undo": false}}
+    },
+    {
+      "name": "new_puzzle_line",
+      "summary": "New with a puzzle line typed on the command loads it without generating.",
+      "not_on": {
+        "web": "Web and Android New always generates; only the terminal can type a puzzle line.",
+        "android": "Web and Android New always generates; only the terminal can type a puzzle line."
+      },
+      "steps": [{"new_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"}],
+      "expect": {"errors": 0}
+    },
+    {
+      "name": "new_cancelled",
+      "summary": "Cancelling generation keeps the board as it was.",
+      "not_on": {"native": "Terminal generation always produces a puzzle and has no cancel."},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"generate": "cancelled"},
+      "steps": [{"fill": {"row": 0, "col": 0, "digit": 4}}, {"new": "easy"}],
+      "expect": {"errors": 0, "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]}
+    },
+    {
+      "name": "new_failed",
+      "summary": "A failed generation shows core's error and keeps the board.",
+      "not_on": {"native": "Terminal generation always produces a puzzle and has no cancel."},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"generate": "failed"},
+      "steps": [{"new": "easy"}],
+      "expect": {"errors": 1}
+    },
+    {
+      "name": "open_cancelled",
+      "summary": "Backing out of Open's picker changes nothing.",
+      "not_on": {"native": "The terminal types the file with the command; there is no picker to cancel."},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"open_cancel": true}],
+      "expect": {"errors": 0, "written": []}
+    },
+    {
+      "name": "open_read_failed",
+      "summary": "A saved game that cannot be read shows core's error and keeps the board.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"fail_reads": ["game.sud"]},
+      "steps": [
+        {
+          "open": {
+            "name": "game.sud",
+            "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+          }
+        }
+      ],
+      "expect": {"errors": 1}
+    },
+    {
+      "name": "open_bad_content",
+      "summary": "A file that is no saved game shows core's error and keeps the board.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"open": {"name": "bad.sud", "corrupt": true}}],
+      "expect": {"errors": 1, "probes": [{"row": 0, "col": 2, "value": 3, "given": true}]}
+    },
+    {
+      "name": "import_cancelled",
+      "summary": "Backing out of Import's picker changes nothing.",
+      "not_on": {"native": "The terminal types the file with the command; there is no picker to cancel."},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"import_cancel": true}],
+      "expect": {"errors": 0}
+    },
+    {
+      "name": "import_read_failed",
+      "summary": "A puzzle file that cannot be read shows core's error and keeps the board.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"fail_reads": ["puzzle.txt"]},
+      "steps": [{"import": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"}],
+      "expect": {"errors": 1, "probes": [{"row": 0, "col": 2, "value": 3, "given": true}]}
+    },
+    {
+      "name": "paste_read_failed",
+      "summary": "A clipboard that cannot be read shows core's error and keeps the board.",
+      "not_on": {
+        "native": "The terminal has no clipboard: Paste takes its line with the command and Copy prints the puzzle."
+      },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"paste_fails": true}],
+      "expect": {"errors": 1}
+    },
+    {
+      "name": "save_bound_file_continues",
+      "summary": "Save after Open writes the opened file without asking.",
+      "steps": [
+        {
+          "open": {
+            "name": "game.sud",
+            "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+          }
+        },
+        {"fill": {"row": 0, "col": 2, "digit": 1}},
+        {"save": true}
+      ],
+      "expect": {"questions": 0, "errors": 0, "written": ["game.sud"]}
+    },
+    {
+      "name": "save_after_new_on_opened_file_asks",
+      "summary": "After Open then New, Save names the opened file but asks before replacing it; Cancel writes nothing.",
+      "steps": [
+        {
+          "open": {
+            "name": "game.sud",
+            "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+          }
+        },
+        {"new": "easy"},
+        {"save": true}
+      ],
+      "answers": [false],
+      "expect": {"questions": 1, "written": []}
+    },
+    {
+      "name": "save_default_exists_asks",
+      "summary": "An unbound Save names the default file; when it is already there core asks first, and OK replaces it.",
+      "not_on": {
+        "web": "An unbound Save or a Save As opens a picker, which asks its own replace question; core's question is the terminal's.",
+        "android": "An unbound Save or a Save As opens a picker, which asks its own replace question; core's question is the terminal's."
+      },
+      "files": [
+        {
+          "name": "sudoku.sud",
+          "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+        }
+      ],
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"save": true}],
+      "answers": [true],
+      "expect": {"questions": 1, "written": ["sudoku.sud"]}
+    },
+    {
+      "name": "save_default_exists_cancel",
+      "summary": "An unbound Save onto an existing default file: Cancel writes nothing.",
+      "not_on": {
+        "web": "An unbound Save or a Save As opens a picker, which asks its own replace question; core's question is the terminal's.",
+        "android": "An unbound Save or a Save As opens a picker, which asks its own replace question; core's question is the terminal's."
+      },
+      "files": [
+        {
+          "name": "sudoku.sud",
+          "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+        }
+      ],
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"save": true}],
+      "answers": [false],
+      "expect": {"questions": 1, "written": []}
+    },
+    {
+      "name": "save_refused_while_auto_save",
+      "summary": "With Auto Save on, Save is refused with core's message and writes nothing.",
+      "not_on": {
+        "web": "The File menu greys Save out while Auto Save is on; only the terminal can type it.",
+        "android": "The File menu greys Save out while Auto Save is on; only the terminal can type it."
+      },
+      "config": {"auto_save": true},
+      "steps": [{"save": true}],
+      "expect": {"written": []}
+    },
+    {
+      "name": "save_write_failed",
+      "summary": "A Save whose write fails shows core's error.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"fail_writes": ["sudoku.sud"]},
+      "steps": [{"save": true}],
+      "expect": {"errors": 1, "written": []}
+    },
+    {
+      "name": "save_as_picked",
+      "summary": "Save As writes the file the player names and makes it the current file.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"save_as": "other.sud"}, {"fill": {"row": 0, "col": 0, "digit": 4}}, {"save": true}],
+      "expect": {"questions": 0, "errors": 0, "written": ["other.sud", "other.sud"]}
+    },
+    {
+      "name": "save_as_cancelled",
+      "summary": "Backing out of Save As's picker writes nothing.",
+      "not_on": {"native": "The terminal types the file with the command; there is no picker to cancel."},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"save_as_cancel": true}],
+      "expect": {"errors": 0, "written": []}
+    },
+    {
+      "name": "save_as_exists_asks",
+      "summary": "Save As onto a typed path that is already there: core asks first.",
+      "not_on": {
+        "web": "An unbound Save or a Save As opens a picker, which asks its own replace question; core's question is the terminal's.",
+        "android": "An unbound Save or a Save As opens a picker, which asks its own replace question; core's question is the terminal's."
+      },
+      "files": [
+        {
+          "name": "other.sud",
+          "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+        }
+      ],
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"save_as": "other.sud"}],
+      "answers": [true],
+      "expect": {"questions": 1, "written": ["other.sud"]}
+    },
+    {
+      "name": "save_as_failed",
+      "summary": "A Save As whose write fails shows core's error.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"fail_writes": ["other.sud"]},
+      "steps": [{"save_as": "other.sud"}],
+      "expect": {"errors": 1, "written": []}
+    },
+    {
+      "name": "autosave_default_exists_asks",
+      "summary": "Turning Auto Save on for a new game whose default file is already there: the next move asks before replacing it.",
+      "files": [
+        {
+          "name": "sudoku.sud",
+          "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+        }
+      ],
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
+      "answers": [true],
+      "expect": {"questions": 1, "written": ["sudoku.sud"]}
+    },
+    {
+      "name": "autosave_default_exists_cancel",
+      "summary": "Declining to replace the existing default file: the move stays and nothing is written.",
+      "files": [
+        {
+          "name": "sudoku.sud",
+          "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+        }
+      ],
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
+      "answers": [false],
+      "expect": {"questions": 1, "written": [], "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]}
+    },
+    {
+      "name": "autosave_failed",
+      "summary": "An autosave whose write fails shows core's error; the move stays.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"fail_writes": ["sudoku.sud"]},
+      "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
+      "expect": {"errors": 1, "written": [], "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]}
+    },
+    {
+      "name": "autosave_taken_reclaim",
+      "summary": "Android: the default file belongs to an earlier install; core asks, and picking it lets this install write it again.",
+      "not_on": {
+        "native": "Only Android's file bridge reports a file this install may not write (taken).",
+        "web": "Only Android's file bridge reports a file this install may not write (taken)."
+      },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"taken": ["sudoku.sud"]},
+      "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
+      "answers": [false],
+      "expect": {"questions": 1}
+    },
+    {
+      "name": "autosave_taken_save_as",
+      "summary": "Android: the default file belongs to an earlier install; choosing a new name saves the game there.",
+      "not_on": {
+        "native": "Only Android's file bridge reports a file this install may not write (taken).",
+        "web": "Only Android's file bridge reports a file this install may not write (taken)."
+      },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"taken": ["sudoku.sud"]},
+      "steps": [{"toggle_auto_save": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}],
+      "answers": [true],
+      "expect": {"questions": 1}
+    },
+    {
+      "name": "flush_on_close",
+      "summary": "With Auto Save on, closing the app writes the current file once more.",
+      "config": {"auto_save": true},
+      "not_on": {"native": "The terminal writes the game after every command; there is no closing write."},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"fill": {"row": 0, "col": 0, "digit": 4}}, {"close": true}],
+      "expect": {"errors": 0}
+    },
+    {
+      "name": "export_cancelled",
+      "summary": "Backing out of Export's picker writes nothing.",
+      "not_on": {"native": "The terminal types the file with the command; there is no picker to cancel."},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"export_cancel": true}],
+      "expect": {"errors": 0, "written": []}
+    },
+    {
+      "name": "export_failed",
+      "summary": "An Export whose write fails shows core's error.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"fail_writes": ["puzzle.txt"]},
+      "steps": [{"export": true}],
+      "expect": {"errors": 1, "written": []}
+    },
+    {
+      "name": "copy_failed",
+      "summary": "A clipboard that cannot be written shows core's error.",
+      "not_on": {
+        "native": "The terminal has no clipboard: Paste takes its line with the command and Copy prints the puzzle."
+      },
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [{"copy_fails": true}],
+      "expect": {"errors": 1}
+    },
+    {
+      "name": "undo_redo_and_targeted_hint",
+      "summary": "Undo then Redo brings a move back; a hint on a chosen cell reports that cell.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"undo": true},
+        {"redo": true},
+        {"hint_at": {"row": 0, "col": 1}}
+      ],
+      "expect": {
+        "errors": 0,
+        "legend": {"undo": true, "redo": false},
+        "probes": [{"row": 0, "col": 0, "value": 4, "given": false}]
+      }
+    },
+    {
+      "name": "settings_dialog_changes",
+      "summary": "Each Settings change runs through core and stores the settings.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"toggle_warn_solvability": true},
+        {"set_difficulty": "hard"},
+        {"set_log_level": "debug"},
+        {"toggle_auto_restore": true},
+        {"toggle_auto_new": true}
+      ],
+      "expect": {"errors": 0, "written": []}
+    },
+    {
+      "name": "settings_persist_failed",
+      "summary": "Settings that cannot be stored show core's error.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "world": {"settings_fail": true},
+      "steps": [{"toggle_region": true}],
+      "expect": {"errors": 1}
     }
   ]
 }

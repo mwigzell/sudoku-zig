@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Cross-entry parity drift check: every scenario in the shared file must run on both entries
-# (native shell + web startup), be listed in the parity matrix, and any entry it skips must name
-# the gap and an open issue. Also every core step kind must have a web step-runner case.
+# Cross-entry parity drift check: every scenario in the shared file runs on native, web and Android
+# unless `not_on` gives the reason a front end cannot reach it, is listed in the parity matrix, and any
+# front end it skips names the gap and an open issue. Also every core step kind has a step-runner case.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 SCENARIOS="src/test/fixtures/parity_scenarios.json"
-NATIVE_RUNNER="src/native/shell/shell.zig"
-WEB_RUNNER="src/wasm/flows/startup.test.mjs"
+NATIVE_RUNNER="src/test/parity/native.zig"
+WEB_RUNNER="src/wasm/flows/parity.test.mjs"
 MATRIX="docs/parity-matrix.md"
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -45,7 +45,7 @@ done < <(jq -r '.scenarios[].name' "$SCENARIOS")
 
 while IFS=$'\t' read -r name entry gap issue; do
   [[ -z "$name" ]] && continue
-  [[ "$entry" == "native" || "$entry" == "web" ]] || violation "scenario $name skips unknown entry '$entry'"
+  [[ "$entry" =~ ^(native|web|android)$ ]] || violation "scenario $name skips unknown front end '$entry'"
   [[ -n "$gap" && "$gap" != "null" ]] || violation "scenario $name skips $entry without naming the gap"
   if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
     violation "scenario $name skips $entry without an issue number"
@@ -54,6 +54,12 @@ while IFS=$'\t' read -r name entry gap issue; do
   state="$(gh issue view "$issue" --json state -q .state 2>/dev/null || echo UNKNOWN)"
   [[ "$state" == "OPEN" ]] || violation "scenario $name skips $entry under issue #$issue, which is $state (must be open)"
 done < <(jq -r '.scenarios[] | select(.skip != null) | [.name, .skip.entry, (.skip.gap // ""), (.skip.issue // "" | tostring)] | @tsv' "$SCENARIOS")
+
+while IFS=$'\t' read -r name entry reason; do
+  [[ -z "$name" ]] && continue
+  [[ "$entry" =~ ^(native|web|android)$ ]] || violation "scenario $name is not_on unknown front end '$entry'"
+  [[ -n "$reason" ]] || violation "scenario $name is not_on $entry without a reason"
+done < <(jq -r '.scenarios[] | select(.not_on != null) | .name as $n | .not_on | to_entries[] | [$n, .key, .value] | @tsv' "$SCENARIOS")
 
 STEP_ZIG="src/core/flow/step.zig"
 STEP_RUNNER="src/wasm/flows/step_runner.js"
@@ -73,4 +79,4 @@ if [[ $FAIL -ne 0 ]]; then
   echo "✗ parity drift check failed — see $MATRIX" >&2
   exit 1
 fi
-echo "✓ parity: $(jq '.scenarios | length' "$SCENARIOS") scenario(s) on native and web"
+echo "✓ parity: $(jq '.scenarios | length' "$SCENARIOS") scenario(s) on native, web and Android"

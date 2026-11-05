@@ -498,6 +498,7 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "GENERATE_FAILED_MSG", .text = flow.step.GENERATE_FAILED_MSG },
         .{ .key = "IMPORT_FAILED_MSG", .text = flow_command.IMPORT_FAILED_MSG },
         .{ .key = "PASTE_FAILED_MSG", .text = flow_command.PASTE_FAILED_MSG },
+        .{ .key = "LOAD_ENDED_STATUS", .text = flow_command.LOAD_ENDED_STATUS },
         .{ .key = "PERSIST_FAILED_MSG", .text = flow_settings.PERSIST_FAILED_MSG },
         .{ .key = "EXPORTED_TO_FMT", .text = flow_export.EXPORTED_TO_FMT },
         .{ .key = "EXPORT_FAILED_MSG", .text = flow_export.EXPORT_FAILED_MSG },

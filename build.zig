@@ -65,6 +65,10 @@ pub fn build(b: *std.Build) void {
     const glue_step = b.step("glue", "Run the JS glue contract test (node)");
     glue_step.dependOn(&glue.step);
     glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit
+    // Web and Android parity: compares against the transcripts the native tests write, so it runs after them.
+    const glue_parity = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/flows/parity.test.mjs" });
+    glue_parity.step.dependOn(&wasm_emit.step);
+    glue_step.dependOn(&glue_parity.step);
 
     // --- Tests ---
     // entry_native.zig transitively imports the domain modules; addTest discovers every co-located `test {}`
@@ -95,6 +99,7 @@ pub fn build(b: *std.Build) void {
     // Run the compiled test binary via addRunArtifact (server-mode IPC).
     // Tests needing fake I/O use std.testing.io (in-process fake); server-mode IPC accommodates that.
     const run_tests = b.addRunArtifact(check);
+    glue_parity.step.dependOn(&run_tests.step);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
 
@@ -173,6 +178,7 @@ pub fn build(b: *std.Build) void {
     verify_run_step.dependOn(&standards_check.step);
     verify_run_step.dependOn(&parity_check.step);
     verify_run_step.dependOn(&glue.step);
+    verify_run_step.dependOn(&glue_parity.step);
     verify_run_step.dependOn(&kcov_sum.step);
 
     const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });

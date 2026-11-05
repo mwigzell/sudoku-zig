@@ -86,14 +86,13 @@ function runFileCommand(wiring, action) {
 /** New opens the difficulty chooser; generation starts only after a pick. */
 /** @param {FileMenuWiring} wiring */
 function wireNew(button, wiring, difficultyDialog) {
-  const { session, menuBar, statusEl } = wiring;
+  const { session, menuBar } = wiring;
   const startNewGame = (difficulty) =>
     runFileCommand(wiring, { action: NEW_COMMAND, difficulty: settings.difficultyName({ difficulty }) });
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
   button?.addEventListener("click", () => {
     if (!session.legend.new) return;
     menuBar.closeAll?.();
-    statusBar.clearEventStatus(statusEl);
     newDialog.open();
   });
 }
@@ -103,7 +102,6 @@ function wireNew(button, wiring, difficultyDialog) {
 function wireLoad(button, wiring, legendKey, command) {
   button?.addEventListener("click", async () => {
     if (!wiring.session.legend[legendKey]) return;
-    statusBar.clearEventStatus(wiring.statusEl);
     await runFileCommand(wiring, { action: command });
   });
 }
