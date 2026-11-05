@@ -42,13 +42,33 @@ Rules from `AGENTS.md`, `CONTEXT.md`, and `docs/coding-standards.md` that grep c
 | Wasm ownership | No new write-policy/state-machine literals outside legacy wasm entry points |
 | Policy authority | No duplicated write-context event string literals outside `file_policy` authority |
 | Test fixture DRY | No local `WRITE_CONTEXT_EVENTS` map literals in wasm tests; build from shell contract keys |
-| Status ownership (web) | No adapter-authored `msg: x ?? "literal"` fallback copy in `src/wasm/` JS modules |
-| Status ownership (native) | No `.ok.msg` string literals minted in `src/native/shell/*` adapters (except core-owned engine helpers) |
+| Adapter text ownership | No dialog or status text written as a literal in adapter code (see below) |
 | Restore lane contract | No startup restore routing through named-open copy (`name: restorePath`) in `src/wasm/flows/startup.js` |
+
+## Adapter text ownership
+
+Adapters show the text core supplies (`AGENTS.md`, "Text ownership follows the behaviour"). Adapter code is web JS and HTML (`src/wasm/**`), Android (`src/android/**`, without `src/android/test/`), the native shell and renderers (`src/native/**`), `src/web_host/**`, and the `src/entry_*.zig` entries. On added lines in those files the check flags:
+
+- a sentence-shaped string literal: a quoted string that starts with a capital, holds a space and ends in `.`, `!` or `?` (dialog and status text is always full sentences);
+- a web status fallback, `msg: x ?? "…"`, in `src/wasm/` JS outside `artifacts/`;
+- a `.msg = "…"` literal in `src/native/shell/` outside `shell.zig`.
+
+It skips comment lines, log calls (`log.*`, `Log.*`, `clientLog`, `console.*`, `std.debug.print`), `*.test.mjs` files and Zig `test` blocks. Technical reasons for core's log (`"paste: clipboard read denied"`) start lowercase and pass. Single-word titles and labels are not sentences, so the check does not see them; review catches those.
+
+**Allow-list** (`ADAPTER_TEXT_ALLOWED` in the script). It holds platform-only text, for behaviour no core flow implements:
+
+| Entry | Why the platform owns it |
+|-------|--------------------------|
+| `src/wasm/artifacts/page.html` `BOOT_FAILED_MSG` | Web boot failure, before wasm loads |
+| `src/android/bootstrap/MainActivity.java` `BOOT_FAILED_MSG` | Android boot failure, before wasm loads |
+| `src/native/ascii/parser.zig` (whole file) | The terminal's command-line help; typing commands is the terminal's own input |
+| `src/native/ascii/renderer.zig` `NO_COMMANDS_MSG` | The terminal menu when it has nothing to offer |
+
+An entry names a file, or a file and a constant. An entry whose file or constant no longer exists fails the check. Add an entry only for text the platform alone implements; anything a core flow implements goes through core's text.
 
 ## Cross-entry parity (`zig build parity`)
 
-`scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/fixtures/parity_scenarios.json` is missing from `docs/parity-matrix.md`, when either runner (the `parity scenarios` test in `src/native/shell/shell.zig`, the parity block in `src/wasm/flows/startup.test.mjs`) stops loading the scenarios or drops out of its test list, when a scenario `skip` lacks a gap or an open issue, or when a step kind in `src/core/flow/step.zig` has no `STEP_*` constant and `case` in `src/wasm/flows/step_runner.js` (native gets that check from the Zig compiler). It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
+`scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/fixtures/parity_scenarios.json` is missing from `docs/parity-matrix.md` or its name is duplicated; when either runner (`src/test/parity/native.zig` for native, `src/wasm/flows/parity.test.mjs` for web and Android) stops loading the scenarios or drops out of its test list; when a scenario `skip` lacks a gap or an open issue, or a `not_on` lacks a reason; or when a step kind in `src/core/flow/step.zig` has no `STEP_*` constant and `case` in `src/wasm/flows/step_runner.js` (native gets that check from the Zig compiler). Steps a front end never receives are listed in the fixture's `steps_not_received`. It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
 
 ## What it does not enforce
 

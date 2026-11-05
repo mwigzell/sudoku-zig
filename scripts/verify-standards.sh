@@ -58,7 +58,7 @@ fi
 CHANGED=()
 while IFS= read -r line; do
   CHANGED+=("$line")
-done < <(git diff --name-only --diff-filter=ACMR "$BASE" | grep -E '^src/.*\.(zig|js|mjs|html)$|^build\.zig$' || true)
+done < <(git diff --name-only --diff-filter=ACMR "$BASE" | grep -E '^src/.*\.(zig|js|mjs|html|java)$|^build\.zig$' || true)
 
 banner
 printf '%b base %s — %d changed file(s)\n' "${C_DIM}" "${BASE:0:12}" "${#CHANGED[@]}"
@@ -263,29 +263,85 @@ for f in "${CHANGED[@]}"; do
     "local write-context event map fixture (write-context events are core-owned; take them from core)"
 done
 
-# --- 13. Status authorship: web modules must not invent fallback status copy ---
-for f in "${CHANGED[@]}"; do
-  [[ "$f" =~ ^src/wasm/.*\.js$ && "$f" != src/wasm/artifacts/* ]] || continue
-  check_added_pattern "$f" 'msg[[:space:]]*:[^,]*\?\?[[:space:]]*["'\'']' \
-    "adapter-authored status fallback literal in a web module (status text belongs to core)"
+# --- 13. Text ownership: adapters show core's sentences; they do not write their own ---
+# Dialog and status text is always full sentences, so a sentence-shaped literal in adapter code is
+# text the adapter wrote. Comments, log calls, tests and Zig `test` blocks are not user text.
+ADAPTER_TEXT_PAT="[\"'\`][A-Z][^\"'\`]* [^\"'\`]*[.!?][\"'\`]"
+ADAPTER_TEXT_SKIP='^[[:space:]]*(//|\*|/\*|#|<!--)|\blog\.(debug|info|warn|err|fatal)\(|Log\.[dewiv]\(|clientLog\(|console\.(log|warn|error)\(|std\.debug\.print\('
+# Platform-only text, for behaviour no core flow implements: "<file>" when the whole file is such
+# text, "<file> <CONSTANT>" for one constant. Documented in docs/agents/verify-standards.md.
+ADAPTER_TEXT_ALLOWED=(
+  "src/wasm/artifacts/page.html BOOT_FAILED_MSG"
+  "src/android/bootstrap/MainActivity.java BOOT_FAILED_MSG"
+  "src/native/ascii/parser.zig"
+  "src/native/ascii/renderer.zig NO_COMMANDS_MSG"
+)
+
+is_adapter_file() {
+  [[ "$1" =~ ^src/(wasm|android|native|web_host)/.*\.(js|html|java|zig)$ || "$1" =~ ^src/entry_.*\.zig$ ]] || return 1
+  [[ "$1" =~ ^src/android/test/ ]] && return 1
+  return 0
+}
+
+# Added lines as "<line>:<text>", leaving out lines inside Zig `test` blocks.
+added_lines_outside_tests() {
+  local file=$1 test_lines=""
+  if [[ "$file" =~ \.zig$ && -f "$file" ]]; then
+    test_lines="$(awk '/^test "|^test \{/ { t = 1 } t { print NR } t && /^\}/ { t = 0 }' "$file" | tr '\n' ' ')"
+  fi
+  file_diff "$file" | awk -v skip="$test_lines" '
+    BEGIN { n = split(skip, s, " "); for (i = 1; i <= n; i++) intest[s[i]] = 1 }
+    /^@@/ { if (match($0, /\+[0-9]+/)) line = substr($0, RSTART + 1, RLENGTH - 1) - 1; next }
+    /^\+\+\+/ { next }
+    /^\+/ { line++; if (!(line in intest)) print line ":" substr($0, 2); next }
+    /^-/ { next }
+    { line++ }
+  '
+}
+
+for entry in "${ADAPTER_TEXT_ALLOWED[@]}"; do
+  read -r allowed_file allowed_const <<< "$entry"
+  if [[ ! -f "$allowed_file" ]] || { [[ -n "$allowed_const" ]] && ! grep -qE "\b${allowed_const}\b[^=]*=" "$allowed_file"; }; then
+    note_violation "stale adapter text allow-list entry: ${entry}" ""
+  fi
 done
 
-# --- 14. Status authorship: native shell adapters must not mint .ok.msg literals ---
 for f in "${CHANGED[@]}"; do
-  [[ "$f" =~ ^src/native/shell/.*\.zig$ ]] || continue
-  [[ "$f" == "src/native/shell/shell.zig" ]] && continue
-  check_added_pattern "$f" '\.msg[[:space:]]*=[[:space:]]*["'\'']' \
-    "native shell adapter minted .ok.msg literal (route status authorship through core)"
+  is_adapter_file "$f" || continue
+  allowed_consts=()
+  whole_file=0
+  for entry in "${ADAPTER_TEXT_ALLOWED[@]}"; do
+    read -r allowed_file allowed_const <<< "$entry"
+    [[ "$allowed_file" == "$f" ]] || continue
+    if [[ -z "$allowed_const" ]]; then whole_file=1; else allowed_consts+=("$allowed_const"); fi
+  done
+  [[ $whole_file -eq 1 ]] && continue
+  if [[ "$f" =~ ^src/wasm/.*\.js$ && "$f" != src/wasm/artifacts/* ]]; then
+    check_added_pattern "$f" 'msg[[:space:]]*:[^,]*\?\?[[:space:]]*["'\'']' \
+      "adapter-written status fallback literal in a web module (status text belongs to core)"
+  fi
+  if [[ "$f" =~ ^src/native/shell/.*\.zig$ && "$f" != "src/native/shell/shell.zig" ]]; then
+    check_added_pattern "$f" '\.msg[[:space:]]*=[[:space:]]*["'\'']' \
+      "native shell adapter wrote a .msg literal (status text belongs to core)"
+  fi
+  hits="$(added_lines_outside_tests "$f" | grep -E "$ADAPTER_TEXT_PAT" | grep -vE "^[0-9]+:(${ADAPTER_TEXT_SKIP})" || true)"
+  for c in "${allowed_consts[@]+"${allowed_consts[@]}"}"; do
+    hits="$(echo "$hits" | grep -vE "^[0-9]+:.*\b${c}\b[^=]*=" || true)"
+  done
+  if [[ -n "$hits" ]]; then
+    note_violation "adapter-written dialog or status text in ${f} (show core's text; platform-only text goes on the allow-list)" \
+      "$(echo "$hits" | head -3 | sed 's/^/+ /')"
+  fi
 done
 
-# --- 15. Startup restore policy: do not route restore through named open copy ---
+# --- 14. Startup restore policy: do not route restore through named open copy ---
 for f in "${CHANGED[@]}"; do
   [[ "$f" =~ ^src/wasm/(.*/)?startup\.js$ ]] || continue
   check_added_pattern "$f" 'name:[[:space:]]*restorePath' \
     "startup restore routed via open(name=restorePath) copy (use restore lane for persisted status)"
 done
 
-# --- 16. Core placement invariant: no JS/HTML under src/core ---
+# --- 15. Core placement invariant: no JS/HTML under src/core ---
 # Shared core owns portable policy/domain seams; adapter scripting belongs in
 # frontend/platform layers.
 while IFS= read -r core_asset; do
@@ -297,7 +353,7 @@ done < <(git ls-files 'src/core/**/*.js' 'src/core/**/*.mjs' 'src/core/**/*.html
 # --- report ---
 if [[ $FAIL -eq 0 ]]; then
   pass_line "mechanical standards clean (${#CHANGED[@]} file(s))"
-  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY, status ownership, restore lane, core placement\n' "${C_DIM}"
+  printf '%b checks: issue refs, JSON escape, engine seams, wasm storage, retired symbols, serve/wire DRY, test side effects, public API docs, wasm ownership, policy authority, write-event fixture DRY, adapter text ownership, restore lane, core placement\n' "${C_DIM}"
   printf '%b judgement calls (SOLID/spec) still need two-axis review\n' "${C_DIM}"
   exit 0
 fi
