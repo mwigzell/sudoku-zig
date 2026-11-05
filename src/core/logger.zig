@@ -63,6 +63,11 @@ pub fn Logger(comptime scope: @EnumLiteral()) type {
             emit(.info, scope_name, log, fmt, args);
         }
 
+        /// Emit a runtime's start line at info whatever the log level: it is written before settings are read.
+        pub fn start(comptime fmt: []const u8, args: anytype) void {
+            emit(.info, scope_name, log, fmt, args);
+        }
+
         /// Emit fatal message, then abort the process.
         pub fn fatal(comptime fmt: []const u8, args: anytype) noreturn {
             emit(.fatal, scope_name, log, "FATAL: " ++ fmt, args);
@@ -190,6 +195,17 @@ test "a core line reaches the sink, and lines below min_level do not" {
     log.warn("parity {s}", .{"warn"});
     log.err("parity {s}", .{"err"});
     try std.testing.expectEqualStrings("warn [flow] parity warn\nerr [flow] parity err\n", sink.buffered());
+}
+
+test "a start line is written at info even when the level hides info" {
+    var buf: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&buf);
+    test_sink = &sink;
+    defer test_sink = null;
+    min_level = .err;
+    defer min_level = .info;
+    Logger(.host).start("starting {s}", .{"host"});
+    try std.testing.expectEqualStrings("info [host] starting host\n", sink.buffered());
 }
 
 test "shouldEmit always allows fatal" {

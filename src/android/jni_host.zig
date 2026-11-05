@@ -8,6 +8,8 @@ const startup_config = @import("../core/startup/config.zig");
 const save_defaults = @import("../core/save_defaults.zig");
 const logcat = @import("logcat.zig");
 const logger = @import("../core/logger.zig");
+const about = @import("../core/about.zig");
+const build_info = @import("../build_info.zig");
 
 const log = logger.Logger(.android_host);
 extern fn sudoku_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque) ?[*:0]const u8;
@@ -42,6 +44,7 @@ fn recordReady(_: std.Io, url: []const u8) void {
 fn hostThreadMain(state: *HostState) void {
     const threaded = state.threaded orelse return;
     const io = threaded.io();
+    log.start("starting android host: {s}", .{about.summaryLine(build_info.debug_build)});
     const cfg = settings_store.loadOrDefault(std.heap.page_allocator, io, state.data_dir) catch |err| blk: {
         log.warn("settings load failed, using defaults: {s}", .{@errorName(err)});
         break :blk config.Config.default();

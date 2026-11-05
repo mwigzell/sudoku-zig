@@ -37,7 +37,7 @@ test {
 /// Resolve startup config and dispatch to web or terminal desktop entry.
 pub fn main(init: std.process.Init) shell.Error!void {
     const log = logger.Logger(.sudoku);
-    log.info("starting desktop: {s}", .{about.summaryLine(build_info.debug_build)});
+    log.start("starting desktop: {s}", .{about.summaryLine(build_info.debug_build)});
     var arg_it = std.process.Args.iterate(init.minimal.args);
     const gpa = std.heap.page_allocator;
     const cfg = startup_config.resolveStartupConfig(gpa, init.io, &arg_it) catch unreachable;
