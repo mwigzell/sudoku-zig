@@ -159,3 +159,24 @@ export function clientLog(scope, level, event, details = {}) {
 export function startLine(scope, event, details = {}) {
   writeLine({ scope, level: LOG_LEVEL_INFO, event, details });
 }
+
+const UNCAUGHT_LOGGED = Symbol("uncaughtLogged");
+
+/** Where an uncaught `error` event was thrown, as `file:line:column`; empty for a rejection. */
+function errorSource(ev) {
+  return ev?.filename ? `${ev.filename}:${ev.lineno ?? 0}:${ev.colno ?? 0}` : "";
+}
+
+/**
+ * After boot is ready or has failed an uncaught error is a bug, not a failed start: log it, show nothing.
+ * Before that `page.html` logs it, so each error is logged once whatever the startup state.
+ * @param {Window & typeof globalThis} win
+ */
+export function logUncaughtErrors(win) {
+  if (win[UNCAUGHT_LOGGED]) return;
+  win[UNCAUGHT_LOGGED] = true;
+  const log = (reason, source) =>
+    clientLog("page", "err", "uncaught", { error: reason?.message ?? String(reason), source });
+  win.addEventListener("error", (ev) => log(ev.error ?? ev.message, errorSource(ev)));
+  win.addEventListener("unhandledrejection", (ev) => log(ev.reason, "promise"));
+}

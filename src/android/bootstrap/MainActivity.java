@@ -869,11 +869,6 @@ public final class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void logJsError(String message, String source, int line, int column) {
-            Log.e(LOG_IDENTITY, "JS error: " + message + " @ " + source + ":" + line + ":" + column);
-        }
-
-        @JavascriptInterface
         public void setPromptOpen(boolean open) {
             runOnUiThread(() -> MainActivity.this.setPromptOpen(open));
         }

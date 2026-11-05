@@ -1019,14 +1019,15 @@
           ok.focus();
         }
       }
-      // Before boot completes an uncaught error means the game did not start; after it, app_boot logs them.
-      function failBootWith(reason) {
+      // Before boot is ready an uncaught error means the game did not start; after it, app_boot logs them.
+      function failBootWith(reason, source) {
         if (window.__sudokuBootReady === true) return;
-        console.error("sudoku boot failed:", reason);
+        console.error("sudoku boot failed:", reason, source ?? "");
         showBootFailure();
       }
-      window.addEventListener("error", (ev) => failBootWith(ev.error ?? ev.message));
-      window.addEventListener("unhandledrejection", (ev) => failBootWith(ev.reason));
+      window.addEventListener("error", (ev) =>
+        failBootWith(ev.error ?? ev.message, ev.filename ? `${ev.filename}:${ev.lineno}:${ev.colno}` : ""));
+      window.addEventListener("unhandledrejection", (ev) => failBootWith(ev.reason, "promise"));
       window.__sudokuSignalAndroidBootReady = function () {
         window.__sudokuBootReady = true;
         try {

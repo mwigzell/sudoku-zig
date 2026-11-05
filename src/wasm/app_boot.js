@@ -11,21 +11,6 @@ import * as board from "./board.js";
 import * as theme from "./menus/theme.js";
 import * as appWire from "./app_wire.js";
 
-const UNCAUGHT_LOGGED = Symbol("uncaughtLogged");
-
-/**
- * After boot an uncaught error is a bug, not a failed start: log it, show nothing.
- * @param {Window & typeof globalThis} win
- */
-function logUncaughtErrors(win) {
-  if (win[UNCAUGHT_LOGGED]) return;
-  win[UNCAUGHT_LOGGED] = true;
-  const log = (reason) =>
-    clientLog.clientLog("page", "err", "uncaught", { error: reason?.message ?? String(reason) });
-  win.addEventListener("error", (ev) => log(ev.error ?? ev.message));
-  win.addEventListener("unhandledrejection", (ev) => log(ev.reason));
-}
-
 /**
  * Entry point used by `page.html` module script.
  * @param {Document} root
@@ -92,7 +77,7 @@ export async function bootSudokuWebApp(root = document) {
 
     await globalThis.__hideSudokuBootSplash?.();
     globalThis.__sudokuSignalAndroidBootReady?.();
-    logUncaughtErrors(globalThis);
+    clientLog.logUncaughtErrors(globalThis);
     clientLog.clientLog("startup", "info", "ready");
 
     // Boot phase 6: core startup flow decides restore / new / idle; its dialogs need the splash gone.
@@ -104,7 +89,7 @@ export async function bootSudokuWebApp(root = document) {
     if (game) clientLog.useCore(game);
     else clientLog.writeWaitingWithoutCore();
     globalThis.__sudokuSignalAndroidBootReady?.();
-    logUncaughtErrors(globalThis);
+    clientLog.logUncaughtErrors(globalThis);
     globalThis.__sudokuShowBootFailure?.();
   }
 }

@@ -71,22 +71,4 @@ function runInWindow(win) {
   ]);
 }
 
-// ── Page errors are reported to the Java log ──
-{
-  const listeners = {};
-  const logged = [];
-  runInWindow({
-    __SudokuAndroidBridge: { logJsError: (...args) => logged.push(args) },
-    addEventListener: (type, fn) => {
-      listeners[type] = fn;
-    },
-  });
-  listeners.error({ message: "boom", filename: "app.js", lineno: 3, colno: 7 });
-  listeners.unhandledrejection({ reason: "nope" });
-  assert.deepEqual(logged, [
-    ["boom", "app.js", 3, 7],
-    ["nope", "promise", 0, 0],
-  ]);
-}
-
 console.log("android_bridge.test.mjs OK");

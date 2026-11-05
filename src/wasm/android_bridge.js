@@ -21,11 +21,4 @@
     notifyWebBootReady: () => native.notifyWebBootReady(),
     bootFailedText: () => text(native.bootFailedText()),
   };
-
-  win.addEventListener("error", (e) => {
-    native.logJsError(text(e?.message) || "unknown js error", text(e?.filename), Number(e?.lineno || 0), Number(e?.colno || 0));
-  });
-  win.addEventListener("unhandledrejection", (e) => {
-    native.logJsError(e?.reason != null ? String(e.reason) : "unhandled rejection", "promise", 0, 0);
-  });
 })(globalThis);
