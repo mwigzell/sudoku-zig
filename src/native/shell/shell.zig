@@ -611,6 +611,29 @@ test "integrated e2e - run: new command resets board and history" {
     try std.testing.expectEqual(@as(usize, 0), sudoku_instance.engine.state.history.entries.items.len);
 }
 
+test "new shows core's generation progress through the renderer" {
+    const cfg: config.Config = .{
+        .difficulty = .easy,
+        .preferred_renderer = .ascii,
+        .fallback_renderer = .ascii,
+        .log_level = .info,
+    };
+    const responses = [_][]const u8{ "m", "5", "1", "quit" };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku_instance = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku_instance.deinit();
+    try sudoku_instance.showGame();
+    while (true) if (try sudoku_instance.turn()) break;
+
+    var want_buf: [96]u8 = undefined;
+    const want = puzzle_gen.formatProgressEvent(.round, &want_buf).?;
+    try std.testing.expect(std.mem.indexOf(u8, host.writer().buffered(), want) != null);
+}
+
 test "new command with auto_save enabled does not print saved-to status" {
     var cfg = config.Config.default();
     cfg.auto_save = true;

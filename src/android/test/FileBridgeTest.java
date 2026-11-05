@@ -330,6 +330,31 @@ public final class FileBridgeTest {
     }
 
     @Test
+    public void aLostBindingWithItsOwnDefaultFileLeftAsksBeforeReplacingIt() throws IOException {
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+        awaitDefaultEntry();
+        awaitBoundName();
+        final String earlierHash = fileHash(DEFAULT_PATH);
+
+        // Only the binding is lost: the file is still this install's own, so writing it needs no reclaim.
+        sh("am force-stop " + APP + "\n" + "run-as " + APP + " rm -f " + BINDING_PREFS + "\n");
+        tappedCells.clear();
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+
+        final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
+        assertTrue("the question names the file: " + question, question.contains(DEFAULT_NAME));
+        need(By.res(ASK_CANCEL), UI_WAIT_MS).click();
+        assertTrue("declining closed the question", device.wait(Until.gone(By.res(ASK_TEXT)), UI_WAIT_MS));
+        assertEquals("declining opened no picker", APP, device.getCurrentPackageName());
+        assertEquals("declining leaves the file", earlierHash, fileHash(DEFAULT_PATH));
+        assertEquals("nothing is bound", "", boundNameNow());
+    }
+
+    @Test
     public void pickItWritesTheEarlierFileBindsItAndKeepsAutosavingThere() throws IOException {
         final String earlierHash = reachTakenAskAfterReinstall();
 

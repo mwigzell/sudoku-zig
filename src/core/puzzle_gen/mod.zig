@@ -112,7 +112,11 @@ pub const PuzzleGen = struct {
 
     /// Generate a puzzle line for play (`init`, native New dialog, wasm New).
     pub fn generate(diff: Difficulty) []const u8 {
-        if (useGenerateFixtures() and diff != .default) return fixtureLine(diff);
+        if (useGenerateFixtures() and diff != .default) {
+            // A test build returns a fixed puzzle, but still reports the attempt play starts with, so New's progress reaches the front end.
+            reportProgress(play_progress_fn, play_progress_ctx, .round) catch {};
+            return fixtureLine(diff);
+        }
         return switch (diff) {
             .default => default_str,
             else => blk: {

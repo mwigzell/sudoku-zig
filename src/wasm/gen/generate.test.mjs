@@ -1,8 +1,11 @@
-// generate.test.mjs — generate step: worker line, cancel, main-thread progress rows.
+// generate.test.mjs — generate step: worker line, cancel, main-thread progress rows, and New's progress from core.
 
 import assert from "node:assert/strict";
 import * as generate from "./generate.js";
-import { flushDialogPaint, generatingModalStub, genText } from "../test_support.mjs";
+import * as androidSteps from "../flows/android_steps.js";
+import * as stepRunner from "../flows/step_runner.js";
+import * as webSteps from "../flows/web_steps.js";
+import { flushDialogPaint, generatingModalStub, genText, loadGame } from "../test_support.mjs";
 
 function makeWorkerGenMock({ line, cooperativeCancel = true }) {
   const instances = [];
@@ -165,4 +168,31 @@ function makeProgressRowsEl() {
   modal.continueBtn.click();
   const out = await running;
   assert.deepEqual(out, { ok: true, line });
+}
+
+// New on web and Android: the real wasm generates, and every line the generating dialog shows is the text core reported.
+for (const [platform, makeSteps] of [
+  ["web", (game, session, options) => webSteps.webSteps(game, session, options)],
+  ["android", (game, session, options) => androidSteps.androidSteps(game, session, {}, options)],
+]) {
+  const game = await loadGame();
+  const reported = [];
+  const setGenProgressListener = game.setGenProgressListener.bind(game);
+  game.setGenProgressListener = (cb) =>
+    setGenProgressListener(cb && ((phase, text) => {
+      reported.push(text);
+      cb(phase, text);
+    }));
+  const progressRowsEl = makeProgressRowsEl();
+  const modal = generatingModalStub({ progressRowsEl });
+  let shownRows = [];
+  modal.waitForContinue = async () => {
+    shownRows = progressRowsEl._children.filter((c) => c.classList?._set?.has("gen-progress-row") && !c.hidden).map((c) => c.textContent);
+  };
+  const session = { legend: { new: true }, state: game.getState(), default_save_filename: "sudoku.sud" };
+  const outcome = await stepRunner.runCommand(game, { action: "new", difficulty: "easy" }, makeSteps(game, session, { generatingModal: modal }));
+  assert.equal(outcome.kind, stepRunner.STEP_DONE, `${platform}: New finishes`);
+  assert.ok(reported.length > 0, `${platform}: core reported progress`);
+  assert.ok(shownRows.length > 0, `${platform}: the dialog showed progress`);
+  for (const row of shownRows) assert.ok(reported.includes(row), `${platform}: dialog row "${row}" is text core reported`);
 }
