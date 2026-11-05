@@ -29,7 +29,7 @@ zig build android -Dsdk=/path/to/sdk
 
 ## Build artifacts (Step 3 + Step 4)
 
-Default native API: **`aarch64-linux-android`** API **29** (arm64-v8a); the manifest targets Android API **37** (minimum 29).
+Default native API: **`aarch64-linux-android`** API **30** (arm64-v8a); the manifest targets Android API **37** (minimum 30). Android 10 (API 29) is not supported: its app sandbox kills the process on `statx`, which Zig's file I/O calls.
 
 Library-only build (Step 3):
 

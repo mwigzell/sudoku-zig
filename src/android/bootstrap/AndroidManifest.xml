@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.wigzell.sudoku_zig">
 
-    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="37" />
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="37" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- A bound file may live in another app's provider (Drive); without this the provider is hidden after a restart. -->

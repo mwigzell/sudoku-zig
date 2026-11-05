@@ -13,6 +13,7 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.util.Base64;
@@ -653,8 +654,14 @@ public final class FileBridgeTest {
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-new"), UI_WAIT_MS).click();
         need(By.text("Easy").clickable(true), UI_WAIT_MS).click();
-        need(By.res("generating-modal-continue").enabled(true), GENERATE_WAIT_MS).click();
-        device.wait(Until.gone(By.res("generating-modal-continue")), UI_WAIT_MS);
+        // Before Android 14 the node cache can keep Continue disabled after it is enabled, so tap until the modal closes.
+        final BySelector continueButton = By.res("generating-modal-continue");
+        final UiObject2 cont = need(continueButton, UI_WAIT_MS);
+        final long deadline = SystemClock.uptimeMillis() + GENERATE_WAIT_MS;
+        while (!device.wait(Until.gone(continueButton), NODE_CACHE_WAIT_MS)) {
+            assertTrue("generating modal did not close within " + GENERATE_WAIT_MS + " ms", SystemClock.uptimeMillis() < deadline);
+            cont.click();
+        }
         tappedCells.clear();
     }
 
@@ -727,7 +734,8 @@ public final class FileBridgeTest {
         UiObject2 found;
         while ((found = device.wait(Until.findObject(selector), NODE_CACHE_WAIT_MS)) == null
             && SystemClock.uptimeMillis() < deadline) {
-            automation.clearCache();
+            // Only Android 14+ keeps a node cache that can go stale behind a WebView update.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) automation.clearCache();
         }
         assertNotNull("not shown within " + timeoutMs + " ms: " + selector, found);
         return found;

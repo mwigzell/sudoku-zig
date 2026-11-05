@@ -2,7 +2,7 @@
 const std = @import("std");
 
 /// Bionic link stubs for `aarch64-linux-android` (matches common arm64 AVDs on Apple Silicon).
-pub const android_api_level: u32 = 29;
+pub const android_api_level: u32 = 30;
 
 pub const LibName = "sudoku_zig";
 pub const ApkName = "sudoku.apk";
