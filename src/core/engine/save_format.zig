@@ -283,7 +283,7 @@ fn readEntry(history: *mutation_history.MutationHistory, tag: EntryTag, entry: [
             const row = highNibble(entry[0]);
             const col = lowNibble(entry[0]);
             if (row >= board.DIMENSION_SIZE or col >= board.DIMENSION_SIZE) return error.InvalidSaveFile;
-            try history.push(row, col, try cellValue(highNibble(entry[1])), try cellValue(lowNibble(entry[1])));
+            try history.pushCell(.{ .row = row, .col = col, .old_value = try cellValue(highNibble(entry[1])), .new_value = try cellValue(lowNibble(entry[1])) });
             return true;
         },
         .solve => {
@@ -337,11 +337,11 @@ fn cellValue(raw: u8) Error!cell.CellValue {
 fn sampleState(hist: *mutation_history.MutationHistory) !state_mod.State {
     var b = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
     try b.setCell(0, 2, .seven);
-    try hist.push(0, 2, .zero, .seven);
+    try hist.pushCell(.{ .row = 0, .col = 2, .old_value = .zero, .new_value = .seven });
     try b.setCell(1, 1, .three);
-    try hist.push(1, 1, .zero, .three);
+    try hist.pushCell(.{ .row = 1, .col = 1, .old_value = .zero, .new_value = .three });
     try b.setCell(4, 4, .one);
-    try hist.push(4, 4, .zero, .one);
+    try hist.pushCell(.{ .row = 4, .col = 4, .old_value = .zero, .new_value = .one });
     hist.pointer = 2;
     var st = state_mod.State{ .board = b, .history = hist.* };
     st.status.append("status line 1");
@@ -384,7 +384,7 @@ test "save round-trip keeps a solve entry" {
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
     try b.setCell(0, 0, .four);
-    try hist.push(0, 0, .zero, .four);
+    try hist.pushCell(.{ .row = 0, .col = 0, .old_value = .zero, .new_value = .four });
     try hist.pushSolve(.{ .given_bits = b.given_bits, .flat = board.toFlat(b) });
     const st = state_mod.State{ .board = b, .history = hist };
 

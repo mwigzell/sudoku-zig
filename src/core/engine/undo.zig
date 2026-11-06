@@ -3,6 +3,7 @@ const game_engine = @import("game_engine.zig");
 const cell = @import("../board/cell.zig");
 const board = @import("../board/board.zig");
 const pencil_command = @import("pencil.zig");
+const fill_command = @import("fill.zig");
 
 /// Execute an undo command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
@@ -16,6 +17,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             engine.state.board.setCell(c.row, c.col, c.old_value) catch |err| {
                 return engine.eventFromSetCellError(c.row, c.col, err);
             };
+            fill_command.restoreMarks(&engine.state.board, c);
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },
         .solve_batch => |snap| {

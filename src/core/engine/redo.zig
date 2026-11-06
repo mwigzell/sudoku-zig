@@ -4,6 +4,7 @@ const cell = @import("../board/cell.zig");
 const board = @import("../board/board.zig");
 const solver = @import("../solver.zig");
 const pencil_command = @import("pencil.zig");
+const fill_command = @import("fill.zig");
 
 /// Execute a redo command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
@@ -16,6 +17,8 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             engine.state.board.setCell(c.row, c.col, c.new_value) catch |err| {
                 return engine.eventFromSetCellError(c.row, c.col, err);
             };
+            // Redo replays the edit on the board Undo restored, so it clears the same marks it recorded.
+            _ = fill_command.clearMarks(&engine.state.board, c.row, c.col, c.new_value);
             engine.state.history.pointer += 1;
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },

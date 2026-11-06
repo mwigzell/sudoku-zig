@@ -50,6 +50,29 @@ pub fn markPlane(digit: CellValue) usize {
     return @as(usize, @backingInt(digit)) - 1;
 }
 
+/// The cells that share a row, column or box with (row, col), not counting the cell itself.
+fn peerMask(row: u4, col: u4) CellMask {
+    return PEER_MASKS[@as(usize, row) * DIMENSION_SIZE + @as(usize, col)];
+}
+
+/// `peerMask` for every cell, built at compile time.
+const PEER_MASKS: [CELL_COUNT]CellMask = blk: {
+    @setEvalBranchQuota(@as(u32, CELL_COUNT) * CELL_COUNT * 4);
+    var masks: [CELL_COUNT]CellMask = @splat(0);
+    for (0..DIMENSION_SIZE) |r| {
+        for (0..DIMENSION_SIZE) |c| {
+            for (0..DIMENSION_SIZE) |r2| {
+                for (0..DIMENSION_SIZE) |c2| {
+                    if (r2 == r and c2 == c) continue;
+                    const same_box = r2 / BOX_DIMENSION == r / BOX_DIMENSION and c2 / BOX_DIMENSION == c / BOX_DIMENSION;
+                    if (r2 == r or c2 == c or same_box) masks[r * DIMENSION_SIZE + c] |= cellBit(r2, c2);
+                }
+            }
+        }
+    }
+    break :blk masks;
+};
+
 // Box dimension: a standard Sudoku box is 3x3.
 pub const BOX_DIMENSION: u4 = 3;
 // Cells per box = 9.
@@ -283,6 +306,28 @@ pub const Board = struct {
     /// Turn digit's mark in (row, col) on when it is off, and off when it is on.
     pub fn toggleMark(self: *Board, row: u4, col: u4, digit: CellValue) void {
         self.mark_bits[markPlane(digit)] ^= cellBit(row, col);
+    }
+
+    /// Give (row, col) exactly the marks in `marks`.
+    pub fn setMarks(self: *Board, row: u4, col: u4, marks: MarkSet) void {
+        const bit = cellBit(row, col);
+        for (&self.mark_bits, 0..) |*plane, k| {
+            if (marks & (@as(MarkSet, 1) << @intCast(k)) != 0) plane.* |= bit else plane.* &= ~bit;
+        }
+    }
+
+    /// Remove digit's mark from every cell in the row, column and box of (row, col).
+    /// Returns the cells that lost the mark.
+    pub fn clearPeerMarks(self: *Board, row: u4, col: u4, digit: CellValue) CellMask {
+        const plane = &self.mark_bits[markPlane(digit)];
+        const cleared = plane.* & peerMask(row, col);
+        plane.* &= ~cleared;
+        return cleared;
+    }
+
+    /// Mark digit in every cell of `cells`: the inverse of `clearPeerMarks`.
+    pub fn restoreMarks(self: *Board, digit: CellValue, cells: CellMask) void {
+        self.mark_bits[markPlane(digit)] |= cells;
     }
 
     /// Full-board conflict recompute after broad state changes.
@@ -662,4 +707,33 @@ test "toggleMark sets and removes one digit's mark in one cell" {
 
     b.toggleMark(2, 4, .one);
     try std.testing.expectEqual(@as(MarkSet, 0b1_0000_0000), b.asView().marks(2, 4));
+}
+
+test "peerMask holds the 20 cells sharing a row, column or box" {
+    const peers = peerMask(4, 4);
+    try std.testing.expectEqual(@as(u16, 20), @popCount(peers));
+    try std.testing.expect(peers & cellBit(4, 4) == 0);
+    try std.testing.expect(peers & cellBit(4, 0) != 0);
+    try std.testing.expect(peers & cellBit(0, 4) != 0);
+    try std.testing.expect(peers & cellBit(3, 5) != 0);
+    try std.testing.expect(peers & cellBit(3, 2) == 0);
+}
+
+test "setMarks replaces one cell's marks; clearPeerMarks and restoreMarks undo each other" {
+    var b = Board.init();
+    b.setMarks(0, 0, 0b0_0001_0010);
+    try std.testing.expectEqual(@as(MarkSet, 0b0_0001_0010), b.marksAt(0, 0));
+    b.setMarks(0, 0, 0b0_0000_0100);
+    try std.testing.expectEqual(@as(MarkSet, 0b0_0000_0100), b.marksAt(0, 0));
+
+    b.toggleMark(0, 8, .five);
+    b.toggleMark(8, 0, .five);
+    b.toggleMark(1, 1, .five);
+    b.toggleMark(4, 4, .five);
+    const cleared = b.clearPeerMarks(0, 0, .five);
+    try std.testing.expectEqual(cellBit(0, 8) | cellBit(8, 0) | cellBit(1, 1), cleared);
+    try std.testing.expectEqual(cellBit(4, 4), b.mark_bits[markPlane(.five)]);
+
+    b.restoreMarks(.five, cleared);
+    try std.testing.expectEqual(cellBit(4, 4) | cleared, b.mark_bits[markPlane(.five)]);
 }

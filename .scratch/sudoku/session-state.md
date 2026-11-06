@@ -1,8 +1,8 @@
 # Session state
 
-#107 step 0 done (2d402ba, 5be4487). Step 1 done and committed (pencil marks, Pencil mode, Show Pencil Marks on web).
-- verify + glue green; web demo: pad marks, replace status line, Undo restores digit, Show Pencil Marks hides and persists.
-- Pulled forward from step 4: save codec marks section (tag 5) + mark history entry (tag 3).
-- No wasm `pencil` action: web marks through Pencil mode + digit; `pencil` command is native/terminal.
-- Note: digit keys need board focus (pre-existing), pad works anywhere.
-- Next: step 2 of #107 — wait for user.
+#107 steps 0, 1, 2 done and committed.
+- Step 2: fill replaces cell marks + auto-clears digit's marks in row/col/box (CellMutation.old_marks, cleared_peers);
+  Undo restores, Redo re-clears; Clear removes marks of an empty marked cell; canClear covers marks.
+- Parity: fill_clears_peer_marks, fill_undo_restores_marks, clear_removes_marks.
+- Not yet saved: old_marks/cleared_peers in the cell save entry (step 4). Undo after reload restores values, not marks.
+- Next: step 3 (Solve and Hint) — wait for user.

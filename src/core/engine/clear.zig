@@ -3,9 +3,10 @@ const command = @import("../command.zig");
 const fill_command = @import("fill.zig");
 const board = @import("../board/board.zig");
 
-/// Clear applies only to a player-filled cell: a given is fixed and an empty cell has nothing to clear.
+/// Clear applies to a player-filled cell or an empty cell with marks: a given is fixed
+/// and an empty cell without marks has nothing to clear.
 pub fn canClear(view: board.Board.BoardView, row: u4, col: u4) bool {
-    return !view.isGiven(row, col) and view.get(row, col) != .zero;
+    return !view.isGiven(row, col) and (view.get(row, col) != .zero or view.marks(row, col) != 0);
 }
 
 /// Execute a clear command on the game engine.
@@ -67,4 +68,24 @@ test "command.clear.execute fails on a given cell" {
         .error_msg => {}, // expected
         .ok => return error.TestFailed,
     }
+}
+
+test "Clear on an empty cell with marks removes them all as one Undo step" {
+    const std = @import("std");
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+    _ = engine.exec(.{ .pencil = .{ .row = 0, .col = 2, .digit = .one } });
+    _ = engine.exec(.{ .pencil = .{ .row = 0, .col = 2, .digit = .six } });
+    const marked = engine.state.board.marksAt(0, 2);
+    try std.testing.expect(canClear(engine.eventBoard(), 0, 2));
+
+    const ev = execute(&engine, .{ .row = 0, .col = 2 });
+    try std.testing.expect(ev == .ok);
+    try std.testing.expectEqual(@as(board.MarkSet, 0), ev.ok.board_view.marks(0, 2));
+    try std.testing.expect(!canClear(engine.eventBoard(), 0, 2));
+
+    _ = engine.exec(.{ .undo = {} });
+    try std.testing.expectEqual(marked, engine.state.board.marksAt(0, 2));
 }

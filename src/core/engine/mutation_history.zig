@@ -3,12 +3,14 @@ const std = @import("std");
 const cell = @import("../board/cell.zig");
 const board = @import("../board/board.zig");
 
-/// One player fill or clear.
+/// One player fill or clear, with the marks it removed so Undo can put them back.
 pub const CellMutation = struct {
     row: u4,
     col: u4,
     old_value: cell.CellValue,
     new_value: cell.CellValue,
+    old_marks: board.MarkSet = 0, // the cell's own marks before the edit
+    cleared_peers: board.CellMask = 0, // cells that lost their mark for new_value
 };
 
 /// Board before a solve. Redo re-runs the solver from this snapshot.
@@ -58,13 +60,8 @@ pub const MutationHistory = struct {
     }
 
     /// Append a cell mutation, advancing pointer past it.
-    pub fn push(self: *@This(), row: u4, col: u4, old_value: cell.CellValue, new_value: cell.CellValue) !void {
-        try self.entries.append(self.gpa, .{ .cell = .{
-            .row = row,
-            .col = col,
-            .old_value = old_value,
-            .new_value = new_value,
-        } });
+    pub fn pushCell(self: *@This(), m: CellMutation) !void {
+        try self.entries.append(self.gpa, .{ .cell = m });
         self.pointer = self.entries.items.len;
     }
 
@@ -107,8 +104,8 @@ test "MutationHistory: push and count" {
     var h = MutationHistory.init(std.testing.allocator);
     defer h.deinit();
 
-    _ = h.push(2, 5, .three, .seven) catch unreachable;
-    _ = h.push(4, 1, .zero, .one) catch unreachable;
+    _ = h.pushCell(.{ .row = 2, .col = 5, .old_value = .three, .new_value = .seven }) catch unreachable;
+    _ = h.pushCell(.{ .row = 4, .col = 1, .old_value = .zero, .new_value = .one }) catch unreachable;
 
     try std.testing.expectEqual(@as(usize, 2), h.count());
 }
@@ -117,8 +114,8 @@ test "MutationHistory: peekPast returns last committed" {
     var h = MutationHistory.init(std.testing.allocator);
     defer h.deinit();
 
-    _ = h.push(0, 3, .zero, .eight) catch unreachable;
-    _ = h.push(1, 2, .five, .nine) catch unreachable;
+    _ = h.pushCell(.{ .row = 0, .col = 3, .old_value = .zero, .new_value = .eight }) catch unreachable;
+    _ = h.pushCell(.{ .row = 1, .col = 2, .old_value = .five, .new_value = .nine }) catch unreachable;
 
     const item = h.peekPast() orelse return error.TestFailed;
     const c = item.cell;
@@ -139,7 +136,7 @@ test "MutationHistory: push stores a cell and pushSolve stores one before snapsh
     var h = MutationHistory.init(std.testing.allocator);
     defer h.deinit();
 
-    try h.push(0, 2, .zero, .seven);
+    try h.pushCell(.{ .row = 0, .col = 2, .old_value = .zero, .new_value = .seven });
     var flat: [81]u8 = @splat(0);
     flat[0] = 4;
     try h.pushSolve(.{ .given_bits = 1, .flat = flat });

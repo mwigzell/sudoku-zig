@@ -423,13 +423,22 @@ pub const GameEngine = struct {
     pub fn tryFill(self: *@This(), row: u4, col: u4, digit: cell.CellValue) Event {
         // Snapshot old value before mutation (only recorded on success)
         const old_value = self.state.board.asView().get(row, col);
+        const old_marks = self.state.board.marksAt(row, col);
         self.state.board.setCell(row, col, digit) catch |err| {
             return self.eventFromSetCellError(row, col, err);
         };
+        const cleared_peers = fill_command.clearMarks(&self.state.board, row, col, digit);
         // Persist the successful mutation in history
         // First discard stale future entries from any earlier undo branch
         self.state.history.truncateFuture();
-        self.state.history.push(row, col, old_value, digit) catch |err| {
+        self.state.history.pushCell(.{
+            .row = row,
+            .col = col,
+            .old_value = old_value,
+            .new_value = digit,
+            .old_marks = old_marks,
+            .cleared_peers = cleared_peers,
+        }) catch |err| {
             log.err("history push failed: {s}", .{@errorName(err)});
             return self.errorEvent(MOVE_NOT_RECORDED_MSG);
         };
@@ -624,7 +633,7 @@ test "fromSaveFormat replaces board and history from SUD0 bytes" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try engine.state.board.setCell(0, 2, .seven);
-    try engine.state.history.push(0, 2, .zero, .seven);
+    try engine.state.history.pushCell(.{ .row = 0, .col = 2, .old_value = .zero, .new_value = .seven });
 
     const buf = try save_format.toSaveFormat(&engine.state, std.testing.allocator);
     defer std.testing.allocator.free(buf);
@@ -642,7 +651,7 @@ test "fromPuzzle loads a one-line puzzle and clears history" {
 
     // Seed one mutation so the reset is observable.
     try engine.state.board.setCell(0, 3, .seven);
-    try engine.state.history.push(0, 3, .zero, .seven);
+    try engine.state.history.pushCell(.{ .row = 0, .col = 3, .old_value = .zero, .new_value = .seven });
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
 
     const line = puzzle_gen.PuzzleGen.hard();
@@ -660,7 +669,7 @@ test "fromPuzzle rejects a short line and leaves board and history intact" {
     defer engine.deinit();
 
     try engine.state.board.setCell(0, 3, .seven);
-    try engine.state.history.push(0, 3, .zero, .seven);
+    try engine.state.history.pushCell(.{ .row = 0, .col = 3, .old_value = .zero, .new_value = .seven });
     const before = board.toFlat(engine.state.board);
 
     const ev = engine.fromPuzzle("12345");
@@ -674,7 +683,7 @@ test "applyOneLinePuzzle rejects short line without mutating state" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try engine.state.board.setCell(0, 3, .seven);
-    try engine.state.history.push(0, 3, .zero, .seven);
+    try engine.state.history.pushCell(.{ .row = 0, .col = 3, .old_value = .zero, .new_value = .seven });
     const before = board.toFlat(engine.state.board);
 
     try std.testing.expectError(board.Error.WrongLength, engine.applyOneLinePuzzle("short"));
@@ -752,7 +761,7 @@ test "toSaveFormat serializes state without engine file methods" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try engine.state.board.setCell(0, 2, .seven);
-    try engine.state.history.push(0, 2, .zero, .seven);
+    try engine.state.history.pushCell(.{ .row = 0, .col = 2, .old_value = .zero, .new_value = .seven });
 
     const buf = try engine.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
@@ -1121,8 +1130,8 @@ test "MutationHistory: push and count" {
     var h = MutationHistory.init(std.testing.allocator);
     defer h.deinit();
 
-    _ = h.push(2, 5, .three, .seven) catch unreachable;
-    _ = h.push(4, 1, .zero, .one) catch unreachable;
+    _ = h.pushCell(.{ .row = 2, .col = 5, .old_value = .three, .new_value = .seven }) catch unreachable;
+    _ = h.pushCell(.{ .row = 4, .col = 1, .old_value = .zero, .new_value = .one }) catch unreachable;
 
     try std.testing.expectEqual(@as(usize, 2), h.count());
 }
