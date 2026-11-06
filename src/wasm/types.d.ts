@@ -13,6 +13,7 @@ export type ExecAction =
   | { action: "hint"; row?: number; col?: number }
   | { action: "set_theme"; theme: "light" | "dark" | "system" }
   | { action: "toggle_region" | "toggle_warn_solvability" | "toggle_auto_restore" | "toggle_auto_new" | "toggle_auto_save" }
+  | { action: "toggle_pencil_mode" | "toggle_show_marks" }
   | { action: "set_difficulty"; difficulty: "easy" | "medium" | "hard" }
   | { action: "set_log_level"; log_level: LogLevel }
   | { action: "new"; difficulty?: "easy" | "medium" | "hard" }
@@ -106,7 +107,14 @@ export type FlowStart =
 export type GenText = { title: string; busy: string; done: string; cancelling: string; fast_strip: string; dig_hole: string };
 
 /** Board snapshot as wasm `getState` and `show_game` report it. */
-export type GameState = { cells: Array<{ value: number; given: boolean; conflict: boolean; clearable: boolean; fillable: boolean }> };
+export type GameState = {
+  /** Per cell; `marks` has bit `k` set when digit `k + 1` is pencil-marked. */
+  cells: Array<{ value: number; given: boolean; conflict: boolean; clearable: boolean; fillable: boolean; marks: number }>;
+  /** Digits toggle pencil marks (core's Pencil mode). */
+  pencil_mode: boolean;
+  /** Draw pencil marks: core decides from the setting, Pencil mode and the last command. */
+  marks_visible: boolean;
+};
 
 /** Player settings as core writes them to `settings.json` (no renderer choice, no current file). */
 export type PlayerSettings = {
@@ -118,6 +126,7 @@ export type PlayerSettings = {
   auto_restore: boolean;
   auto_new: boolean;
   auto_save: boolean;
+  show_marks: boolean;
 };
 
 /** The serving host's build facts (`/build-info.json`), separate from player settings. */

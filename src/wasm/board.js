@@ -101,6 +101,34 @@ export function applyRegionHighlight(boardEl, row, col, enabled) {
   }
 }
 
+/** The digits (1..9) marked in a cell's 9-bit `marks`: bit `k` is digit `k + 1`. */
+export function markDigits(marks) {
+  const digits = [];
+  for (let k = 0; k < GRID_SIZE; k += 1) if (marks & (1 << k)) digits.push(k + 1);
+  return digits;
+}
+
+/** Marks to draw in a cell: only when core says marks are visible, and only in an empty cell. */
+function shownMarks(state, cell) {
+  return state.marks_visible === true && cell.value === 0 ? (cell.marks ?? 0) : 0;
+}
+
+/**
+ * A cell's marks as a 3×3 grid of nine slots; a digit always sits in its own slot and an unset one is blank.
+ * @param {number} marks
+ * @param {(tag: string) => HTMLElement} createElement
+ */
+function marksGrid(marks, createElement) {
+  const grid = createElement("div");
+  grid.classList.add("marks");
+  for (let k = 0; k < GRID_SIZE; k += 1) {
+    const slot = createElement("span");
+    if (marks & (1 << k)) slot.textContent = String(k + 1);
+    grid.appendChild(slot);
+  }
+  return grid;
+}
+
 export function formatDigit(cell) {
   return cell.value === 0 ? "" : String(cell.value);
 }
@@ -126,6 +154,7 @@ export function boardCellDescriptors(state) {
       cell,
       classes: cellClasses(row, col, cell),
       text: formatDigit(cell),
+      marks: shownMarks(state, cell),
     };
   });
 }
@@ -135,10 +164,11 @@ export function renderBoard(frameEl, state, createElement = (tag) => document.cr
     typeof frameEl.querySelector === "function"
       ? ensureBoardFrame(frameEl, createElement)
       : resolvePlayGrid(frameEl);
-  const cells = boardCellDescriptors(state).map(({ row, col, classes, text }) => {
+  const cells = boardCellDescriptors(state).map(({ row, col, classes, text, marks }) => {
     const el = createElement("div");
     el.classList.add(...classes);
     el.textContent = text;
+    if (marks) el.appendChild(marksGrid(marks, createElement));
     el.dataset.row = String(row);
     el.dataset.col = String(col);
     el.setAttribute("role", "gridcell");

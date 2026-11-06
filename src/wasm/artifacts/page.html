@@ -749,6 +749,29 @@
       box-shadow: inset 0 0 0 9999px var(--region-tint);
     }
 
+    /* A cell's marks: nine fixed slots, 1 top left to 9 bottom right. cqmin is of the 9×9 grid, so a slot
+       is about 3.7cqmin; 8px is the floor for legibility on a 360dp phone. */
+    .marks {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      width: 100%;
+      height: 100%;
+      font-size: max(8px, 3cqmin);
+      font-weight: 400;
+      line-height: 1;
+      color: var(--player-fg);
+      overflow: hidden;
+    }
+
+    .marks > span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      min-height: 0;
+    }
+
     .cell.selected {
       outline: 2px solid var(--selection-ring);
       outline-offset: -2px;
@@ -861,6 +884,7 @@
           <button type="button" role="menuitemradio" id="view-light" aria-checked="false">Light</button>
           <button type="button" role="menuitemradio" id="view-dark" aria-checked="false">Dark</button>
           <button type="button" role="menuitemcheckbox" id="view-region" aria-checked="false">Show Region</button>
+          <button type="button" role="menuitemcheckbox" id="view-marks" aria-checked="true">Show Pencil Marks</button>
         </div>
       </div>
       <div class="menu" data-menu="help">
@@ -887,6 +911,7 @@
         <button type="button" class="play-pad-btn" data-play-key="0" aria-label="Clear selected cell" disabled>Clear</button>
         <button type="button" class="play-pad-btn" data-pad-command="undo" disabled>Undo</button>
         <button type="button" class="play-pad-btn" data-pad-command="redo" disabled>Redo</button>
+        <button type="button" class="play-pad-btn" data-pad-command="pencil" aria-label="Pencil mode" aria-pressed="false">Pencil</button>
         <button type="button" class="play-pad-btn" data-pad-command="hint" disabled>Hint</button>
         <button type="button" class="play-pad-btn" data-pad-command="region" aria-label="Show Region" aria-pressed="false">Region</button>
       </div>

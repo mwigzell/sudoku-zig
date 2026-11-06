@@ -18,9 +18,9 @@ pub const PERSIST_FAILED_MSG = "Your settings could not be saved.";
 fn commandPersistsSettings(tag: command.CommandTag) bool {
     return switch (tag) {
         .set_theme, .toggle_region, .toggle_warn_solvability, .set_difficulty, .set_log_level => true,
-        .toggle_auto_restore, .toggle_auto_new, .toggle_auto_save => true,
+        .toggle_auto_restore, .toggle_auto_new, .toggle_auto_save, .toggle_show_marks => true,
         .fill, .clear, .quit, .undo, .redo, .menu, .save, .open, .import, .@"export", .copy => false,
-        .paste, .new, .save_as, .solve_for_me, .hint, .settings => false,
+        .paste, .new, .save_as, .solve_for_me, .hint, .settings, .pencil, .toggle_pencil_mode => false,
     };
 }
 

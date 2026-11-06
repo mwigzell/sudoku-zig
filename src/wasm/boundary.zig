@@ -128,6 +128,8 @@ pub fn parseAction(json_text: []const u8) !command.Command {
             .digit = cell.rawToCellValue(d),
         } };
     }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_pencil_mode")) return .{ .toggle_pencil_mode = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_show_marks")) return .{ .toggle_show_marks = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "clear")) {
         const r = row orelse return error.MissingField;
         const c = col orelse return error.MissingField;
@@ -228,7 +230,7 @@ pub fn writeSystemErrorJson(out: OutBuffer) void {
 }
 
 /// Writes Event JSON: `{ok, is_quit, msg, state}` or an error object.
-pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
+pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event, marks_display: wire.MarksDisplay) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
@@ -236,7 +238,7 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event) !void {
     switch (ev) {
         .error_msg => |msg| try writeErrorJsonTo(&jw.writer, msg),
         .ok => |data| {
-            const snap = wire.GameSnapshot.fromView(data.board_view);
+            const snap = wire.GameSnapshot.fromView(data.board_view, marks_display);
             try std.Io.Writer.writeAll(&jw.writer, "{\"ok\":true,\"is_quit\":");
             try std.Io.Writer.print(&jw.writer, "{any},\"msg\":", .{data.is_quit});
             if (data.msg) |m| {
@@ -390,7 +392,7 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"file\":");
             try writeOptionalJsonString(w, g.file);
             try std.Io.Writer.writeAll(w, ",\"state\":");
-            try wire.writeGameSnapshotJson(w, wire.GameSnapshot.fromView(g.board));
+            try wire.writeGameSnapshotJson(w, wire.GameSnapshot.fromView(g.board, .{ .pencil_mode = g.pencil_mode, .marks_visible = g.marks_visible }));
             try std.Io.Writer.writeAll(w, ",\"legend\":");
             try writeLegendTo(w, g.legend);
             try std.Io.Writer.writeAll(w, ",\"config\":");
@@ -563,7 +565,7 @@ fn writeWireConfigTo(w: *std.Io.Writer, wire_cfg: wire.WireConfig) !void {
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"show_marks\":{any}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
@@ -573,16 +575,18 @@ fn writeWireConfigTo(w: *std.Io.Writer, wire_cfg: wire.WireConfig) !void {
             wire_cfg.auto_restore,
             wire_cfg.auto_new,
             wire_cfg.auto_save,
+            wire_cfg.show_marks,
         },
     );
 }
 
-pub fn writeStateJson(out: OutBuffer, view: board.Board.BoardView) !void {
+/// Writes the board snapshot JSON (`getState`), with how pencil marks are drawn.
+pub fn writeStateJson(out: OutBuffer, view: board.Board.BoardView, marks_display: wire.MarksDisplay) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
     JsonWriter.init(&mutable, &jw);
-    try wire.writeGameSnapshotJson(&jw.writer, wire.GameSnapshot.fromView(view));
+    try wire.writeGameSnapshotJson(&jw.writer, wire.GameSnapshot.fromView(view, marks_display));
     try std.Io.Writer.flush(&jw.writer);
 }
 
@@ -647,7 +651,8 @@ test "writeEventJson ok embeds state snapshot" {
     var buf: [8192]u8 = undefined;
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
-    try writeEventJson(out, engine.exec(.{ .undo = {} }));
+    const undone = engine.exec(.{ .undo = {} });
+    try writeEventJson(out, undone, wire.MarksDisplay.of(&engine));
 
     const json = out.finishJson();
     try std.testing.expect(std.mem.indexOf(u8, json, "\"ok\":true") != null);
@@ -672,6 +677,8 @@ test "parseAction set_theme and toggles" {
         .{ .json = "{\"action\":\"toggle_auto_restore\"}", .tag = .toggle_auto_restore },
         .{ .json = "{\"action\":\"toggle_auto_new\"}", .tag = .toggle_auto_new },
         .{ .json = "{\"action\":\"toggle_auto_save\"}", .tag = .toggle_auto_save },
+        .{ .json = "{\"action\":\"toggle_pencil_mode\"}", .tag = .toggle_pencil_mode },
+        .{ .json = "{\"action\":\"toggle_show_marks\"}", .tag = .toggle_show_marks },
     };
     for (toggles) |t| try std.testing.expectEqual(t.tag, std.meta.activeTag(try parseAction(t.json)));
 
@@ -783,7 +790,7 @@ test "writeEventJson error_msg escapes special characters" {
     var buf: [512]u8 = undefined;
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
-    try writeEventJson(out, .{ .error_msg = "bad \"input\"\nretry" });
+    try writeEventJson(out, .{ .error_msg = "bad \"input\"\nretry" }, .{ .pencil_mode = false, .marks_visible = true });
 
     const parsed = try std.json.parseFromSlice(ErrorWire, std.testing.allocator, out.finishJson(), .{});
     defer parsed.deinit();
@@ -803,7 +810,7 @@ test "writeEventJson ok msg escapes special characters" {
         .is_quit = false,
         .msg = "saved \"game\"\nok",
     } };
-    try writeEventJson(out, ev);
+    try writeEventJson(out, ev, wire.MarksDisplay.of(&engine));
 
     const parsed = try std.json.parseFromSlice(OkEventWire, std.testing.allocator, out.finishJson(), .{
         .ignore_unknown_fields = true,

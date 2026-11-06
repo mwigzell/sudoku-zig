@@ -18,6 +18,7 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    show_marks: false,
     default_save_filename: "sudoku_save.sud",
     startup_save_path: "/current-file",
   };
@@ -34,6 +35,7 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
         auto_restore: false,
         auto_new: false,
         auto_save: false,
+        show_marks: false,
       });
       return { ok: true, msg: "engine ready" };
     },
@@ -57,6 +59,7 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
         auto_restore: false,
         auto_new: false,
         auto_save: false,
+        show_marks: false,
       };
     },
   };
@@ -83,6 +86,7 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    show_marks: false,
     default_save_filename: "sudoku_save.sud",
     startup_save_path: null,
   };
@@ -316,6 +320,7 @@ for (const deleteIt of [true, false]) {
       auto_restore: false,
       auto_new: false,
       auto_save: false,
+      show_marks: false,
       default_save_filename: "sudoku_save.sud",
     };
     delete cfg[key];
@@ -333,6 +338,7 @@ for (const deleteIt of [true, false]) {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    show_marks: false,
     default_save_filename: "sudoku_save.sud",
     startup_save_path: null,
   };
@@ -353,6 +359,7 @@ for (const deleteIt of [true, false]) {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    show_marks: false,
     default_save_filename: "sudoku_save.sud",
     startup_save_path: null,
   };

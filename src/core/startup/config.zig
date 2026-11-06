@@ -21,6 +21,7 @@ pub fn configFromHostWire(
     auto_restore: bool,
     auto_new: bool,
     auto_save: bool,
+    show_marks: bool,
 ) error{InvalidHostWire}!config.Config {
     const partial = wire.WireConfig.fromWire(difficulty, log_level) orelse return error.InvalidHostWire;
     var cfg = config.Config.default();
@@ -32,6 +33,7 @@ pub fn configFromHostWire(
     cfg.auto_restore = auto_restore;
     cfg.auto_new = auto_new;
     cfg.auto_save = auto_save;
+    cfg.show_marks = show_marks;
     return cfg;
 }
 
@@ -62,7 +64,7 @@ pub fn writeHostStartupJsonWithCurrentFile(
     };
     try std.Io.Writer.print(
         w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"default_save_filename\":\"{s}\",\"startup_save_path\":{f}}}",
+        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"show_marks\":{any},\"default_save_filename\":\"{s}\",\"startup_save_path\":{f}}}",
         .{
             @backingInt(wire_cfg.difficulty),
             @backingInt(wire_cfg.log_level),
@@ -72,6 +74,7 @@ pub fn writeHostStartupJsonWithCurrentFile(
             startup.auto_restore,
             startup.auto_new,
             startup.auto_save,
+            startup.show_marks,
             default_save_filename,
             std.json.fmt(startup_save_path, .{}),
         },
@@ -180,7 +183,7 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
     var buf: [1024]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
         json,
     );
 }
@@ -201,7 +204,7 @@ test "host startup JSON matches Config wire fields" {
     var buf: [1024]u8 = undefined;
     const json = try formatHostStartupJson(startup, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
+        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"show_marks\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
         json,
     );
 }
@@ -242,7 +245,9 @@ test "host wire startup config matches GameEngine.cfg (web host analogue)" {
         true,
         true,
         true,
+        false,
     );
+    try std.testing.expect(!startup.show_marks);
 
     var engine = try startup_engine.initEngineFromStartup(startup);
     defer engine.deinit();

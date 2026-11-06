@@ -192,6 +192,31 @@ function makeRenderElement() {
   assert.ok(playEl._children[0].classList.contains("cell"));
 }
 
+// ── marks: drawn in nine fixed slots, only in an empty cell and only when core says they are visible ──
+{
+  assert.deepEqual(boardMod.markDigits(0), []);
+  assert.deepEqual(boardMod.markDigits(0b1_0000_0101), [1, 3, 9]);
+
+  const cells = Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false, marks: 0 }));
+  cells[1] = { value: 0, given: false, conflict: false, marks: 0b1_0000_0101 };
+  cells[2] = { value: 6, given: false, conflict: false, marks: 0b10 };
+  const render = (marksVisible) => {
+    const frameEl = makeFrameElement();
+    boardMod.renderBoard(frameEl, { cells, marks_visible: marksVisible }, makeRenderElement());
+    return boardMod.getPlayGrid(frameEl)._children;
+  };
+
+  const shown = render(true);
+  const grid = shown[1]._children[0];
+  assert.ok(grid.classList.contains("marks"));
+  assert.deepEqual(grid._children.map((slot) => slot.textContent), ["1", "", "3", "", "", "", "", "", "9"]);
+  assert.equal(shown[0]._children.length, 0, "a cell with no marks is blank");
+  assert.equal(shown[2]._children.length, 0, "a filled cell shows only its digit");
+  assert.equal(shown[2].textContent, "6");
+
+  assert.equal(render(false)[1]._children.length, 0, "hidden marks are not drawn");
+}
+
 {
   const el = { textContent: "", className: "", classList: { add() {}, remove() {} } };
   boardMod.setStatus(el, "Ready");

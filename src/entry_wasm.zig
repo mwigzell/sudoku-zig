@@ -73,9 +73,9 @@ const empty_puzzle_line: [81]u8 = blk: {
     break :blk line;
 };
 
-fn preservedViewPrefs() struct { theme: config.ViewTheme, show_region: bool } {
-    if (!have_engine) return .{ .theme = .system, .show_region = false };
-    return .{ .theme = engine.cfg.theme, .show_region = engine.cfg.show_region };
+fn preservedViewPrefs() struct { theme: config.ViewTheme, show_region: bool, show_marks: bool } {
+    if (!have_engine) return .{ .theme = .system, .show_region = false, .show_marks = config.Config.default().show_marks };
+    return .{ .theme = engine.cfg.theme, .show_region = engine.cfg.show_region, .show_marks = engine.cfg.show_marks };
 }
 
 fn deinitEngineIfAny() void {
@@ -86,7 +86,7 @@ fn deinitEngineIfAny() void {
 }
 
 /// Empty-grid engine from host-resolved startup config (disk + CLI via serve — same contract as native).
-/// theme: 0 = dark, 1 = light, 2 = system; show_region: 0 = false, 1 = true.
+/// theme: 0 = dark, 1 = light, 2 = system; the flags are 0 = false, 1 = true.
 export fn bootstrapHostConfig(
     difficulty: u32,
     log_level: u32,
@@ -96,6 +96,7 @@ export fn bootstrapHostConfig(
     auto_restore: u32,
     auto_new: u32,
     auto_save: u32,
+    show_marks: u32,
 ) callconv(.c) u32 {
     const out = outBuffer();
     const theme_enum: config.ViewTheme = switch (theme) {
@@ -112,6 +113,7 @@ export fn bootstrapHostConfig(
         auto_restore != 0,
         auto_new != 0,
         auto_save != 0,
+        show_marks != 0,
     ) catch |err| return exportFailure(out, "invalid host startup config", err);
 
     startup_config.applyLoggerFromStartup(game_cfg);
@@ -180,6 +182,7 @@ export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
     var game_cfg = wire_cfg.toConfig();
     game_cfg.theme = prefs.theme;
     game_cfg.show_region = prefs.show_region;
+    game_cfg.show_marks = prefs.show_marks;
 
     if (builtin.cpu.arch == .wasm32) {
         puzzle_gen.PuzzleGen.setPlayProgress(wasmGenProgress, null);
@@ -208,7 +211,7 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     };
 
     const ev = eng.exec(cmd);
-    boundary.writeEventJson(out, ev) catch |err| return exportWriteFailed(out, err);
+    boundary.writeEventJson(out, ev, wire.MarksDisplay.of(eng)) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -267,7 +270,7 @@ export fn getConfig() callconv(.c) u32 {
 export fn getState() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
-    boundary.writeStateJson(out, eng.eventBoard()) catch |err| return exportWriteFailed(out, err);
+    boundary.writeStateJson(out, eng.eventBoard(), wire.MarksDisplay.of(eng)) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 

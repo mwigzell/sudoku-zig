@@ -40,6 +40,16 @@ pub fn indexBit(idx: usize) CellMask {
 pub fn cellBit(row: u4, col: u4) CellMask {
     return indexBit(@as(usize, row) * DIMENSION_SIZE + @as(usize, col));
 }
+/// One cell's pencil marks: bit `k` is set when digit `k + 1` is marked.
+pub const MarkSet = u9;
+
+/// The mark plane for a digit 1..9: its index in `Board.mark_bits`, which is also
+/// the mark's spot in the cell's 3×3 grid (0 top left through 8 bottom right).
+pub fn markPlane(digit: CellValue) usize {
+    std.debug.assert(digit != .zero);
+    return @as(usize, @backingInt(digit)) - 1;
+}
+
 // Box dimension: a standard Sudoku box is 3x3.
 pub const BOX_DIMENSION: u4 = 3;
 // Cells per box = 9.
@@ -58,6 +68,7 @@ pub const Board = struct {
     given_bits: CellMask, // the puzzle's clues, which never change
     conflict_bits: CellMask, // cells that repeat a digit in their row, column or box
     digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
+    mark_bits: [DIMENSION_SIZE]CellMask, // plane markPlane(d): the cells marked with digit d
 
     /// Read-only borrowed lens over Board flat storage.
     pub const BoardView = struct {
@@ -77,6 +88,11 @@ pub const Board = struct {
         pub fn isConflictingRowCol(self: BoardView, row: u4, col: u4) bool {
             const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
             return self._board.isConflicting(idx);
+        }
+
+        /// The pencil marks in (row, col).
+        pub fn marks(self: BoardView, row: u4, col: u4) MarkSet {
+            return self._board.marksAt(row, col);
         }
 
         /// Bulk resolve against flat storage by index list.
@@ -129,6 +145,7 @@ pub const Board = struct {
         b.given_bits = 0;
         b.conflict_bits = 0;
         @memset(&b.digit_bits, 0);
+        @memset(&b.mark_bits, 0);
         return b;
     }
 
@@ -251,6 +268,21 @@ pub const Board = struct {
         self.cells[idx].value = .zero;
         self.given_bits &= ~cellBit(row, col);
         self.updateDigitBits(row, col, old_val, .zero);
+    }
+
+    /// The pencil marks in (row, col), one bit per digit.
+    pub fn marksAt(self: Board, row: u4, col: u4) MarkSet {
+        const bit = cellBit(row, col);
+        var set: MarkSet = 0;
+        for (self.mark_bits, 0..) |plane, k| {
+            if (plane & bit != 0) set |= @as(MarkSet, 1) << @intCast(k);
+        }
+        return set;
+    }
+
+    /// Turn digit's mark in (row, col) on when it is off, and off when it is on.
+    pub fn toggleMark(self: *Board, row: u4, col: u4, digit: CellValue) void {
+        self.mark_bits[markPlane(digit)] ^= cellBit(row, col);
     }
 
     /// Full-board conflict recompute after broad state changes.
@@ -618,4 +650,16 @@ test "cellBit is the bit of the cell's flat index, row by row" {
     try std.testing.expectEqual(indexBit(DIMENSION_SIZE), cellBit(1, 0));
     try std.testing.expectEqual(indexBit(CELL_COUNT - 1), cellBit(8, 8));
     try std.testing.expectEqual(ALL_CELLS, (indexBit(CELL_COUNT - 1) << 1) -% 1);
+}
+
+test "toggleMark sets and removes one digit's mark in one cell" {
+    var b = Board.init();
+    b.toggleMark(2, 4, .one);
+    b.toggleMark(2, 4, .nine);
+    try std.testing.expectEqual(@as(MarkSet, 0b1_0000_0001), b.marksAt(2, 4));
+    try std.testing.expectEqual(@as(MarkSet, 0), b.marksAt(2, 5));
+    try std.testing.expectEqual(cellBit(2, 4), b.mark_bits[markPlane(.nine)]);
+
+    b.toggleMark(2, 4, .one);
+    try std.testing.expectEqual(@as(MarkSet, 0b1_0000_0000), b.asView().marks(2, 4));
 }

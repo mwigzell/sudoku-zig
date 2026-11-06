@@ -19,6 +19,7 @@ const JsonSettingsFile = struct {
     auto_restore: ?bool = null,
     auto_new: ?bool = null,
     auto_save: ?bool = null,
+    show_marks: ?bool = null,
     current_file: ?[]const u8 = null,
 };
 
@@ -32,6 +33,7 @@ const JsonPlayerSettings = struct {
     auto_restore: bool,
     auto_new: bool,
     auto_save: bool,
+    show_marks: bool,
     current_file: ?[]const u8 = null,
 };
 
@@ -109,6 +111,7 @@ fn configFromJsonFile(parsed: JsonSettingsFile) Error!config.Config {
     if (parsed.auto_restore) |on| cfg.auto_restore = on;
     if (parsed.auto_new) |on| cfg.auto_new = on;
     if (parsed.auto_save) |on| cfg.auto_save = on;
+    if (parsed.show_marks) |on| cfg.show_marks = on;
     return cfg;
 }
 
@@ -122,6 +125,7 @@ fn jsonPlayerFromConfig(cfg: config.Config) JsonPlayerSettings {
         .auto_restore = cfg.auto_restore,
         .auto_new = cfg.auto_new,
         .auto_save = cfg.auto_save,
+        .show_marks = cfg.show_marks,
     };
 }
 
@@ -356,7 +360,7 @@ test "player settings JSON carries every player field and no current_file" {
     var w = std.Io.Writer.fixed(&buf);
     try writePlayerSettingsJson(&w, cfg);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"theme\":\"light\",\"show_region\":false,\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":true}",
+        "{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"theme\":\"light\",\"show_region\":false,\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":true,\"show_marks\":true}",
         w.buffered(),
     );
 }
@@ -392,12 +396,14 @@ test "loadOrDefaultInDir reads view prefs from settings.json on disk" {
     on_disk.theme = .light;
     on_disk.show_region = true;
     on_disk.warn_solvability = true;
+    on_disk.show_marks = false;
     try saveInDir(std.testing.allocator, io, tmp.dir, on_disk);
 
     const loaded = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
     try std.testing.expectEqual(config.ViewTheme.light, loaded.theme);
     try std.testing.expect(loaded.show_region);
     try std.testing.expect(loaded.warn_solvability);
+    try std.testing.expect(!loaded.show_marks);
 
     const bytes = tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited) catch unreachable;
     defer std.testing.allocator.free(bytes);

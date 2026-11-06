@@ -3,6 +3,7 @@ const game_engine = @import("game_engine.zig");
 const cell = @import("../board/cell.zig");
 const board = @import("../board/board.zig");
 const solver = @import("../solver.zig");
+const pencil_command = @import("pencil.zig");
 
 /// Execute a redo command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
@@ -19,9 +20,12 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },
         .solve_batch => |snap| {
+            const marks = engine.state.board.mark_bits;
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
                 return engine.errorEvent(game_engine.REDO_FAILED_MSG);
             };
+            // Solve leaves marks alone, so redoing it does too.
+            engine.state.board.mark_bits = marks;
             const solved = solver.solve(engine.state.board) catch {
                 return engine.errorEvent(game_engine.REDO_FAILED_MSG);
             };
@@ -43,6 +47,10 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             engine.beginEventMsg();
             engine.appendEventMsg(game_engine.WIN_STATUS_MSG);
             return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+        },
+        .mark => |m| {
+            engine.state.history.pointer += 1;
+            return pencil_command.applyForward(engine, m);
         },
     }
 }

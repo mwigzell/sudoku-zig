@@ -2,6 +2,7 @@ const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const cell = @import("../board/cell.zig");
 const board = @import("../board/board.zig");
+const pencil_command = @import("pencil.zig");
 
 /// Execute an undo command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
@@ -18,13 +19,17 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },
         .solve_batch => |snap| {
+            const marks = engine.state.board.mark_bits;
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
                 return engine.errorEvent(game_engine.UNDO_FAILED_MSG);
             };
+            // Solve leaves marks alone, so undoing it does too.
+            engine.state.board.mark_bits = marks;
             engine.state.board.validate();
             engine.beginEventMsg();
             return engine.finishOkEvent(engine.state.board.asView(), false, null, true);
         },
+        .mark => |m| return pencil_command.applyBackward(engine, m),
     }
 }
 

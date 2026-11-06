@@ -6,6 +6,7 @@ const logger = @import("../core/logger.zig");
 const config = @import("../core/config.zig");
 const clear_command = @import("../core/engine/clear.zig");
 const fill_command = @import("../core/engine/fill.zig");
+const game_engine = @import("../core/engine/game_engine.zig");
 
 /// Player-facing difficulty on the wasm boundary — explicit u8 wire values, no `.default`.
 pub const PlayerDifficulty = enum(u8) {
@@ -50,6 +51,7 @@ pub const WireConfig = struct {
     auto_restore: bool = false,
     auto_new: bool = false,
     auto_save: bool = false,
+    show_marks: bool = true,
 
     pub fn fromWire(difficulty: u8, log_level: u8) ?WireConfig {
         const pd = PlayerDifficulty.fromWire(difficulty) orelse return null;
@@ -74,6 +76,7 @@ pub const WireConfig = struct {
         cfg.auto_restore = self.auto_restore;
         cfg.auto_new = self.auto_new;
         cfg.auto_save = self.auto_save;
+        cfg.show_marks = self.show_marks;
         return cfg;
     }
 
@@ -87,6 +90,7 @@ pub const WireConfig = struct {
             .auto_restore = cfg.auto_restore,
             .auto_new = cfg.auto_new,
             .auto_save = cfg.auto_save,
+            .show_marks = cfg.show_marks,
         };
     }
 };
@@ -100,14 +104,31 @@ pub const CellSnapshot = struct {
     clearable: bool,
     /// Core's fill rule for this cell (`fill.canFill`), so front ends enable the digits without deciding it.
     fillable: bool,
+    /// Pencil marks: bit `k` set when digit `k + 1` is marked.
+    marks: board.MarkSet,
 };
 
-/// Serializable display twin of `BoardView` — value, given, conflict, clearable and fillable per cell.
+/// How the game draws pencil marks; the engine decides both.
+pub const MarksDisplay = struct {
+    pencil_mode: bool,
+    marks_visible: bool,
+
+    /// The engine's current Pencil mode and mark visibility.
+    pub fn of(engine: *const game_engine.GameEngine) MarksDisplay {
+        return .{ .pencil_mode = engine.pencil_mode, .marks_visible = engine.marksVisible() };
+    }
+};
+
+/// Serializable display twin of `BoardView` (value, given, conflict, clearable, fillable and marks
+/// per cell) plus how marks are drawn.
 pub const GameSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
+    marks_display: MarksDisplay,
 
-    pub fn fromView(view: board.Board.BoardView) GameSnapshot {
+    /// Snapshot every cell of `view`, with the engine's mark display.
+    pub fn fromView(view: board.Board.BoardView, marks_display: MarksDisplay) GameSnapshot {
         var snap: GameSnapshot = undefined;
+        snap.marks_display = marks_display;
         for (0..board.DIMENSION_SIZE) |r_u| {
             const row: u4 = @intCast(r_u);
             for (0..board.DIMENSION_SIZE) |c_u| {
@@ -119,6 +140,7 @@ pub const GameSnapshot = struct {
                     .conflict = view.isConflictingRowCol(row, col),
                     .clearable = clear_command.canClear(view, row, col),
                     .fillable = fill_command.canFill(view, row, col),
+                    .marks = view.marks(row, col),
                 };
             }
         }
@@ -126,19 +148,21 @@ pub const GameSnapshot = struct {
     }
 
     pub fn eql(self: GameSnapshot, other: GameSnapshot) bool {
-        return std.mem.eql(u8, std.mem.asBytes(&self.cells), std.mem.asBytes(&other.cells));
+        return std.meta.eql(self, other);
     }
 };
 
 const JsonSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
+    pencil_mode: bool,
+    marks_visible: bool,
 };
 
 pub fn writeCellJson(w: *std.Io.Writer, cell: CellSnapshot) !void {
     try std.Io.Writer.print(
         w,
-        "{{\"value\":{d},\"given\":{any},\"conflict\":{any},\"clearable\":{any},\"fillable\":{any}}}",
-        .{ cell.value, cell.given, cell.conflict, cell.clearable, cell.fillable },
+        "{{\"value\":{d},\"given\":{any},\"conflict\":{any},\"clearable\":{any},\"fillable\":{any},\"marks\":{d}}}",
+        .{ cell.value, cell.given, cell.conflict, cell.clearable, cell.fillable, cell.marks },
     );
 }
 
@@ -148,7 +172,10 @@ pub fn writeGameSnapshotJson(w: *std.Io.Writer, snap: GameSnapshot) !void {
         if (i > 0) try std.Io.Writer.writeAll(w, ",");
         try writeCellJson(w, cell);
     }
-    try std.Io.Writer.writeAll(w, "]}");
+    try std.Io.Writer.print(w, "],\"pencil_mode\":{any},\"marks_visible\":{any}}}", .{
+        snap.marks_display.pencil_mode,
+        snap.marks_display.marks_visible,
+    });
 }
 
 /// Serialize a snapshot to a heap-owned JSON string.
@@ -165,6 +192,7 @@ pub fn deserializeSnapshot(allocator: std.mem.Allocator, json_text: []const u8) 
     const parsed = try std.json.parseFromSlice(JsonSnapshot, allocator, json_text, .{});
     defer parsed.deinit();
     var snap: GameSnapshot = undefined;
+    snap.marks_display = .{ .pencil_mode = parsed.value.pencil_mode, .marks_visible = parsed.value.marks_visible };
     for (parsed.value.cells, 0..) |cell, i| {
         snap.cells[i] = .{
             .value = cell.value,
@@ -172,6 +200,7 @@ pub fn deserializeSnapshot(allocator: std.mem.Allocator, json_text: []const u8) 
             .conflict = cell.conflict,
             .clearable = cell.clearable,
             .fillable = cell.fillable,
+            .marks = cell.marks,
         };
     }
     return snap;
@@ -210,6 +239,7 @@ test "WireConfig round-trips config fields including view prefs" {
     domain.auto_restore = true;
     domain.auto_new = true;
     domain.auto_save = true;
+    domain.show_marks = false;
 
     const wire_cfg = WireConfig.fromConfig(domain);
     try std.testing.expectEqual(PlayerDifficulty.hard, wire_cfg.difficulty);
@@ -228,6 +258,7 @@ test "WireConfig round-trips config fields including view prefs" {
     try std.testing.expectEqual(domain.auto_restore, restored.auto_restore);
     try std.testing.expectEqual(domain.auto_new, restored.auto_new);
     try std.testing.expectEqual(domain.auto_save, restored.auto_save);
+    try std.testing.expectEqual(domain.show_marks, restored.show_marks);
 }
 
 test "GameSnapshot captures value given conflict clearable fillable from BoardView" {
@@ -237,7 +268,7 @@ test "GameSnapshot captures value given conflict clearable fillable from BoardVi
     try b.setCell(0, 3, .seven);
     b.refreshConflictsForCell(0, 3);
 
-    const snap = GameSnapshot.fromView(b.asView());
+    const snap = GameSnapshot.fromView(b.asView(), .{ .pencil_mode = true, .marks_visible = false });
     const idx = @as(usize, 0) * board.DIMENSION_SIZE + @as(usize, 2);
     try std.testing.expectEqual(@as(u8, 7), snap.cells[idx].value);
     try std.testing.expect(!snap.cells[idx].given);
@@ -263,7 +294,7 @@ test "GameSnapshot JSON round-trip preserves all cells" {
     try b.setCell(1, 2, .five);
     b.refreshConflictsForCell(1, 2);
 
-    const original = GameSnapshot.fromView(b.asView());
+    const original = GameSnapshot.fromView(b.asView(), .{ .pencil_mode = true, .marks_visible = false });
     const json = try serializeSnapshot(std.testing.allocator, original);
     defer std.testing.allocator.free(json);
 

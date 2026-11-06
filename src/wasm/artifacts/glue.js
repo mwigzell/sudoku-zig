@@ -110,6 +110,7 @@ export async function loadArtifact(wasmBytes) {
       auto_restore,
       auto_new,
       auto_save,
+      show_marks,
     }) {
       const themeWire = theme === "light" ? 1 : (theme === "system" ? 2 : 0);
       const regionWire = show_region ? 1 : 0;
@@ -117,6 +118,7 @@ export async function loadArtifact(wasmBytes) {
       const autoRestoreWire = auto_restore ? 1 : 0;
       const autoNewWire = auto_new ? 1 : 0;
       const autoSaveWire = auto_save ? 1 : 0;
+      const showMarksWire = show_marks ? 1 : 0;
       return readJson(
         exports.bootstrapHostConfig(
           difficulty,
@@ -127,6 +129,7 @@ export async function loadArtifact(wasmBytes) {
           autoRestoreWire,
           autoNewWire,
           autoSaveWire,
+          showMarksWire,
         ),
       );
     },

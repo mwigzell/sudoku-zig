@@ -16,6 +16,7 @@ export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
   "auto_restore",
   "auto_new",
   "auto_save",
+  "show_marks",
 ];
 
 /** Throw unless `config` carries every key in `REQUIRED_WEB_BOOT_CONFIG_KEYS`. */
@@ -53,6 +54,7 @@ function bootstrapEngineFromHostConfig(game, hostCfg) {
     auto_restore: hostCfg.auto_restore === true,
     auto_new: hostCfg.auto_new === true,
     auto_save: hostCfg.auto_save === true,
+    show_marks: hostCfg.show_marks === true,
   });
 }
 

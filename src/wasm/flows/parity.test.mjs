@@ -13,6 +13,7 @@ import * as stepRunner from "./step_runner.js";
 import * as webSteps from "./web_steps.js";
 import * as board from "../board.js";
 import * as fileMenu from "../menus/file_menu.js";
+import * as marksMod from "../menus/marks.js";
 import * as menu from "../menus/menu.js";
 import * as region from "../menus/region.js";
 import * as settingsMenu from "../menus/settings.js";
@@ -395,6 +396,7 @@ const createElement = (tag) => ({
   textContent: "",
   dataset: {},
   setAttribute() {},
+  appendChild() {},
   select() {},
 });
 
@@ -480,12 +482,14 @@ async function launch(platform, cfg, world, ui) {
     export: makeBtn(),
     autoSave: makeBtn(),
     viewRegion: makeMenuItem(),
+    viewMarks: makeMenuItem(),
     viewLight: makeMenuItem(),
     viewDark: makeMenuItem(),
     viewSystem: makeMenuItem(),
   };
   const difficultyButtons = Object.keys(DIFFICULTY_WIRE).map((difficulty) => ({ el: makeBtn(), difficulty }));
   region.wireRegionMenu(controls, game, session, ui.boardEl, () => null, { steps });
+  const marks = marksMod.wireMarks(controls, game, session, ui.boardEl, { getSelection: () => null, select() {} }, { createElement, steps });
   themeMod.wireThemeMenu(controls, game, session, { root: themeRoot(), steps });
   fileMenu.wireFileMenu(controls, game, ui.boardEl, { select() {}, deselect() {} }, ui.statusEl, session, { sync() {} }, {
     createElement,
@@ -505,7 +509,7 @@ async function launch(platform, cfg, world, ui) {
   const settingsBtn = makeBtn();
   settingsMenu.wireSettingsMenu(settingsBtn, game, session, modal, { steps });
   autosave.wireFlushOnClose(game, steps, { win });
-  return { platform, game, session, steps, controls, difficultyButtons, modal, settingsBtn, win, recorder };
+  return { platform, game, session, steps, controls, difficultyButtons, modal, settingsBtn, win, recorder, marks };
 }
 
 /** Carry out one scenario step through the shell's own entry points. */
@@ -572,6 +576,12 @@ async function runStep(run, world, ui, step) {
     controls.viewRegion.click();
     return settleFlow();
   }
+  if (step.toggle_show_marks) {
+    controls.viewMarks.click();
+    return settleFlow();
+  }
+  // The pad's Pencil button runs `togglePencilMode`.
+  if (step.toggle_pencil_mode) return run.marks.togglePencilMode();
   if (step.set_theme) {
     ({ light: controls.viewLight, dark: controls.viewDark, system: controls.viewSystem })[step.set_theme].click();
     return settleFlow();
@@ -588,9 +598,13 @@ async function runStep(run, world, ui, step) {
   }
   const move = step.fill ?? step.clear ?? (step.fill_first_empty ? firstEmptyLegalFill(game.getState()) : null);
   if (!move) throw new Error(`step not carried out on ${run.platform}: ${JSON.stringify(step)}`);
-  const selection = { getSelection: () => ({ row: move.row, col: move.col }), select() {} };
-  const key = step.clear ? "Delete" : String(move.digit);
-  const outcome = board.handlePlayKey(game, ui.boardEl, selection, key, createElement, "", { steps });
+  return playKey(run, ui, move, step.clear ? "Delete" : String(move.digit));
+}
+
+/** Press a play key on the cell at `at`, as the board's keydown and the pad's digits do. */
+function playKey(run, ui, at, key) {
+  const selection = { getSelection: () => ({ row: at.row, col: at.col }), select() {} };
+  const outcome = board.handlePlayKey(run.game, ui.boardEl, selection, key, createElement, "", { steps: run.steps });
   assert.equal(outcome.handled, true);
   return outcome.done;
 }
@@ -637,6 +651,7 @@ function checkExpect(expect, events, world, run) {
     const c = cells[p.row * 9 + p.col];
     assert.equal(c.value, p.value, `probe ${p.row},${p.col} value`);
     assert.equal(c.given, p.given, `probe ${p.row},${p.col} given`);
+    if (p.marks !== undefined) assert.equal(c.marks, p.marks, `probe ${p.row},${p.col} marks`);
   }
 }
 

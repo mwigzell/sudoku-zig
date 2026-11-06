@@ -36,6 +36,7 @@ export async function loadGame(config = {}) {
     auto_restore: false,
     auto_new: false,
     auto_save: false,
+    show_marks: true,
     ...config,
   });
   if (!boot.ok) throw new Error(`game bootstrap failed: ${boot.error}`);

@@ -32,6 +32,7 @@ pub const SectionTag = enum(u8) {
     givens = 2,
     history = 3,
     status = 4,
+    marks = 5,
     _,
 };
 
@@ -39,6 +40,7 @@ pub const SectionTag = enum(u8) {
 pub const EntryTag = enum(u8) {
     cell = 1,
     solve = 2,
+    mark = 3,
     _,
 };
 
@@ -51,10 +53,14 @@ const POINTER_SIZE: usize = @sizeOf(u16);
 /// Cell entry: row<<4|col, old<<4|new.
 const CELL_ENTRY_SIZE: usize = 2;
 const SOLVE_ENTRY_SIZE: usize = GIVENS_SIZE + BOARD_SIZE;
+/// Mark entry: row<<4|col, digit<<4|old value.
+const MARK_ENTRY_SIZE: usize = 2;
+/// Marks section: one cell mask per digit, each stored like the givens mask.
+const MARKS_SIZE: usize = board.DIMENSION_SIZE * GIVENS_SIZE;
 const NIBBLE_BITS: u3 = 4;
 const NIBBLE_MASK: u8 = 0x0F;
 const MAX_CELL_VALUE: u8 = 9;
-const SECTION_COUNT: u16 = 4;
+const SECTION_COUNT: u16 = 5;
 
 // ---------------------------------------------------------------------------
 // Byte cursors
@@ -115,7 +121,8 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
         SECTION_PREFIX_SIZE + BOARD_SIZE +
         SECTION_PREFIX_SIZE + GIVENS_SIZE +
         SECTION_PREFIX_SIZE + history_len +
-        SECTION_PREFIX_SIZE + status.len;
+        SECTION_PREFIX_SIZE + status.len +
+        SECTION_PREFIX_SIZE + MARKS_SIZE;
     const buf = try gpa.alloc(u8, total);
     var w = ByteWriter{ .buf = buf };
 
@@ -136,6 +143,9 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
     w.sectionPrefix(.status, status.len);
     w.bytes(status);
 
+    w.sectionPrefix(.marks, MARKS_SIZE);
+    for (self.board.mark_bits) |plane| w.int(u128, plane);
+
     std.debug.assert(w.pos == total);
     return buf;
 }
@@ -149,6 +159,7 @@ fn entryPayloadSize(entry: mutation_history.MutationEntry) usize {
     return switch (entry) {
         .cell => CELL_ENTRY_SIZE,
         .solve_batch => SOLVE_ENTRY_SIZE,
+        .mark => MARK_ENTRY_SIZE,
     };
 }
 
@@ -172,6 +183,12 @@ fn writeEntry(w: *ByteWriter, entry: mutation_history.MutationEntry) void {
             w.int(u128, snap.given_bits);
             w.bytes(&snap.flat);
         },
+        .mark => |m| {
+            w.int(u8, @backingInt(EntryTag.mark));
+            w.int(u8, MARK_ENTRY_SIZE);
+            w.int(u8, packNibbles(m.row, m.col));
+            w.int(u8, packNibbles(@backingInt(m.digit), @backingInt(m.old_value)));
+        },
     }
 }
 
@@ -189,6 +206,7 @@ const ReadSections = struct {
     given_bits: ?board.CellMask = null,
     history: ?[]const u8 = null,
     status: []const u8 = &.{},
+    marks: [board.DIMENSION_SIZE]board.CellMask = @splat(0),
 };
 
 /// Deserialize a SUD0 buffer into a fresh State; the caller owns its history.
@@ -208,6 +226,7 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) Error!state_mod.S
         .board = board.fromFlat(flat, .{ .given_bits = given_bits }) catch return error.InvalidSaveFile,
         .history = mutation_history.MutationHistory.init(gpa),
     };
+    state.board.mark_bits = found.marks;
     errdefer state.history.deinit();
     if (found.history) |payload| try readHistory(&state.history, payload);
     state.status.reset();
@@ -226,10 +245,14 @@ fn readSection(r: *ByteReader, found: *ReadSections) Error!void {
         },
         .givens => {
             if (payload.len != GIVENS_SIZE) return error.InvalidSaveFile;
-            found.given_bits = try readGivens(payload[0..GIVENS_SIZE]);
+            found.given_bits = try readMask(payload[0..GIVENS_SIZE]);
         },
         .history => found.history = payload,
         .status => found.status = payload,
+        .marks => {
+            if (payload.len != MARKS_SIZE) return error.InvalidSaveFile;
+            for (&found.marks, 0..) |*plane, k| plane.* = try readMask(payload[k * GIVENS_SIZE ..][0..GIVENS_SIZE]);
+        },
         // Written by a newer app: skip it so the rest of the game still opens.
         _ => {},
     }
@@ -269,17 +292,27 @@ fn readEntry(history: *mutation_history.MutationHistory, tag: EntryTag, entry: [
             @memcpy(&flat, entry[GIVENS_SIZE..][0..BOARD_SIZE]);
             for (flat) |v| _ = try cellValue(v);
             try history.pushSolve(.{
-                .given_bits = try readGivens(entry[0..GIVENS_SIZE]),
+                .given_bits = try readMask(entry[0..GIVENS_SIZE]),
                 .flat = flat,
             });
+            return true;
+        },
+        .mark => {
+            if (entry.len != MARK_ENTRY_SIZE) return error.InvalidSaveFile;
+            const row = highNibble(entry[0]);
+            const col = lowNibble(entry[0]);
+            if (row >= board.DIMENSION_SIZE or col >= board.DIMENSION_SIZE) return error.InvalidSaveFile;
+            const digit = try cellValue(highNibble(entry[1]));
+            if (digit == .zero) return error.InvalidSaveFile;
+            try history.pushMark(.{ .row = row, .col = col, .digit = digit, .old_value = try cellValue(lowNibble(entry[1])) });
             return true;
         },
         _ => return false,
     }
 }
 
-/// A givens mask, refused when a bit beyond the last cell is set.
-fn readGivens(bytes: *const [GIVENS_SIZE]u8) Error!board.CellMask {
+/// A stored cell mask (givens or a mark plane), refused when a bit beyond the last cell is set.
+fn readMask(bytes: *const [GIVENS_SIZE]u8) Error!board.CellMask {
     return std.math.cast(board.CellMask, std.mem.readInt(u128, bytes, .little)) orelse error.InvalidSaveFile;
 }
 
@@ -487,4 +520,38 @@ test "a givens mask with a bit beyond the last cell is refused" {
     try appendSection(&file, @backingInt(SectionTag.givens), &givens);
 
     try std.testing.expectError(error.InvalidSaveFile, fromSaveFormat(std.testing.allocator, file.items));
+}
+
+test "save round-trip keeps pencil marks and a mark toggle" {
+    var hist = mutation_history.MutationHistory.init(std.testing.allocator);
+    defer hist.deinit();
+    var state = try sampleState(&hist);
+    state.board.toggleMark(0, 3, .two);
+    state.board.toggleMark(8, 8, .nine);
+    try state.history.pushMark(.{ .row = 0, .col = 3, .digit = .two, .old_value = .zero });
+    try state.history.pushMark(.{ .row = 4, .col = 4, .digit = .nine, .old_value = .one });
+
+    const buf = try toSaveFormat(&state, std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+    var loaded = try fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.history.deinit();
+
+    try std.testing.expectEqual(state.board.mark_bits, loaded.board.mark_bits);
+    try expectSameHistory(state.history, loaded.history);
+}
+
+test "a save without a marks section opens with no marks" {
+    const b = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
+    var file: std.ArrayList(u8) = .empty;
+    defer file.deinit(std.testing.allocator);
+    try file.appendSlice(std.testing.allocator, &SaveFileMagic);
+    try file.appendSlice(std.testing.allocator, &.{ 1, 0, 2, 0 });
+    try appendSection(&file, @backingInt(SectionTag.board), &board.toFlat(b));
+    var givens: [GIVENS_SIZE]u8 = undefined;
+    std.mem.writeInt(u128, &givens, b.given_bits, .little);
+    try appendSection(&file, @backingInt(SectionTag.givens), &givens);
+
+    var loaded = try fromSaveFormat(std.testing.allocator, file.items);
+    defer loaded.history.deinit();
+    for (loaded.board.mark_bits) |plane| try std.testing.expectEqual(@as(board.CellMask, 0), plane);
 }

@@ -6,6 +6,7 @@ import * as board from "./board.js";
 import * as menu from "./menus/menu.js";
 import * as menuBar from "./menus/menu_bar.js";
 import * as region from "./menus/region.js";
+import * as marks from "./menus/marks.js";
 import * as webSteps from "./flows/web_steps.js";
 import { FILL_MOVE, loadGame, promptDialogStub, settleFlow, startNewGame } from "./test_support.mjs";
 
@@ -33,6 +34,7 @@ function makePadControls() {
     clear: makeBtn(),
     undo: makeBtn(),
     redo: makeBtn(),
+    pencil: makeBtn(),
     hint: makeBtn(),
     region: makeBtn(),
   };
@@ -62,6 +64,10 @@ function makePadControls() {
   assert.equal(pad.redo.disabled, false);
   assert.equal(pad.hint.disabled, true);
   assert.equal(pad.region.attrs["aria-pressed"], "false");
+  assert.equal(pad.pencil.attrs["aria-pressed"], "false");
+
+  playPad.syncPlayPad(pad, {}, {}, null, true);
+  assert.equal(pad.pencil.attrs["aria-pressed"], "true", "Pencil shows core's Pencil mode");
 }
 
 // ── wired to a real game: pad and menus run the same commands and always show the same state ──
@@ -72,15 +78,15 @@ function makePadControls() {
   const status = { textContent: "", className: "" };
   const steps = webSteps.webSteps(game, session, { statusEl: status, promptDialog: promptDialogStub() });
   const boardEl = { children: [], replaceChildren() {} };
-  const createElement = () => ({ dataset: {}, setAttribute() {}, classList: { add() {}, remove() {}, contains: () => false } });
+  const createElement = () => ({ dataset: {}, setAttribute() {}, appendChild() {}, classList: { add() {}, remove() {}, contains: () => false } });
   const selection = { getSelection: () => null, select() {}, deselect() {} };
-  const menuControls = { undo: makeBtn(), redo: makeBtn(), hint: makeBtn(), viewRegion: makeBtn() };
+  const menuControls = { undo: makeBtn(), redo: makeBtn(), hint: makeBtn(), viewRegion: makeBtn(), viewMarks: makeBtn() };
   const pad = makePadControls();
   const cellAt = ({ row, col }) => session.state.cells[board.cellIndex(row, col)];
   const syncControls = () => {
     const sel = selection.getSelection();
     menuBar.syncMenuBar(session.legend, menuControls, session.config);
-    playPad.syncPlayPad(pad, session.legend, session.config, sel ? cellAt(sel) : null);
+    playPad.syncPlayPad(pad, session.legend, session.config, sel ? cellAt(sel) : null, session.state.pencil_mode);
   };
   const selectAndSync = (cell) => {
     selection.getSelection = () => cell;
@@ -100,7 +106,8 @@ function makePadControls() {
     syncLegend: syncControls,
   });
   const regionMenu = region.wireRegionMenu(menuControls, game, session, boardEl, () => null, { onChange: syncControls, steps });
-  playPad.wirePlayPad(pad, { runEdit: editMenu.run, toggleRegion: regionMenu.toggle });
+  const marksMenu = marks.wireMarks(menuControls, game, session, boardEl, selection, { onChange: syncControls, steps, createElement });
+  playPad.wirePlayPad(pad, { runEdit: editMenu.run, toggleRegion: regionMenu.toggle, togglePencilMode: marksMenu.togglePencilMode });
 
   await board.runBoardCommand(game, FILL_MOVE, { boardEl, selection, createElement, steps, onShown: syncControls });
   assert.equal(pad.undo.disabled, false, "a move enables Undo on the pad");
@@ -137,6 +144,35 @@ function makePadControls() {
   await settleFlow();
   assert.equal(pad.region.attrs["aria-pressed"], "false", "the pad shows the state the View menu set");
   assert.equal(menuControls.viewRegion.attrs["aria-checked"], "false");
+
+  // Pencil: the pad turns core's Pencil mode on; a digit then toggles a mark instead of filling.
+  const markCell = { row: FILL_MOVE.row, col: FILL_MOVE.col + 1 };
+  assert.equal(cellAt(markCell).value, 0, "the mark cell starts empty");
+  pad.pencil.click();
+  await settleFlow();
+  assert.equal(session.state.pencil_mode, true);
+  assert.equal(pad.pencil.attrs["aria-pressed"], "true");
+  const marked = board.handlePlayKey(game, boardEl, { getSelection: () => markCell, select() {} }, "3", createElement, "", { steps });
+  await marked.done;
+  assert.equal(cellAt(markCell).value, 0, "a digit in Pencil mode does not fill");
+  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3]);
+
+  // Show Pencil Marks off: marks stay visible while Pencil mode is on, and hide once it is off.
+  menuControls.viewMarks.click();
+  await settleFlow();
+  assert.equal(session.config.show_marks, false);
+  assert.equal(menuControls.viewMarks.attrs["aria-checked"], "false");
+  assert.equal(session.state.marks_visible, true, "Pencil mode keeps marks visible");
+  pad.pencil.click();
+  await settleFlow();
+  assert.equal(session.state.pencil_mode, false);
+  assert.equal(session.state.marks_visible, false, "with the setting off and Pencil mode off, marks are hidden");
+  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3], "hiding marks keeps them");
+
+  pad.undo.click();
+  await settleFlow();
+  assert.equal(cellAt(markCell).marks, 0, "Undo takes the mark back");
+  assert.equal(session.state.marks_visible, true, "Undo of a mark shows the marks");
 }
 
 console.log("play_pad.test.mjs OK");

@@ -174,12 +174,65 @@
       "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
       "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
       "answers": [],
-      "steps": [{"toggle_region": true}, {"set_theme": "light"}],
+      "steps": [{"toggle_region": true}, {"set_theme": "light"}, {"toggle_show_marks": true}],
       "expect": {
         "questions": 0,
         "written": [],
-        "settings": {"auto_save": true, "show_region": true, "theme": "light"},
+        "settings": {"auto_save": true, "show_region": true, "theme": "light", "show_marks": false},
         "probes": []
+      }
+    },
+    {
+      "name": "pencil_mark_replaces_digit_undo_restores",
+      "summary": "In Pencil mode a digit on the player's digit replaces it with that mark and autosaves; Undo puts the digit back without the mark.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 0, "col": 0, "digit": 5}},
+        {"toggle_pencil_mode": true},
+        {"undo": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "probes": [{"row": 0, "col": 0, "value": 4, "given": false, "marks": 0}]
+      }
+    },
+    {
+      "name": "pencil_command_toggles_mark",
+      "summary": "The pencil command toggles one mark on and off in an empty cell; each toggle autosaves.",
+      "not_on": {
+        "web": "The page marks a cell through Pencil mode and a digit; it sends no pencil command.",
+        "android": "The page marks a cell through Pencil mode and a digit; it sends no pencil command."
+      },
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"pencil": {"row": 0, "col": 0, "digit": 2}},
+        {"pencil": {"row": 0, "col": 0, "digit": 9}},
+        {"pencil": {"row": 0, "col": 0, "digit": 2}}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "probes": [{"row": 0, "col": 0, "value": 0, "given": false, "marks": 256}]
+      }
+    },
+    {
+      "name": "pencil_mode_digit_marks_cell",
+      "summary": "In Pencil mode a digit toggles that mark instead of filling the cell; each mark autosaves, the mode toggle does not.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{"toggle_pencil_mode": true}, {"fill": {"row": 0, "col": 0, "digit": 4}}, {"fill": {"row": 0, "col": 0, "digit": 7}}],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud"],
+        "probes": [{"row": 0, "col": 0, "value": 0, "given": false, "marks": 72}]
       }
     },
     {

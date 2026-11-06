@@ -12,6 +12,7 @@ import * as menuBarMod from "./menus/menu_bar.js";
 import * as theme from "./menus/theme.js";
 import * as fileMenu from "./menus/file_menu.js";
 import * as region from "./menus/region.js";
+import * as marks from "./menus/marks.js";
 import * as help from "./menus/help.js";
 import * as settings from "./menus/settings.js";
 
@@ -104,7 +105,7 @@ export function wireSudokuApp({
   const syncPad = () => {
     const sel = selection?.getSelection();
     const cell = sel ? session.state?.cells?.[board.cellIndex(sel.row, sel.col)] ?? null : null;
-    playPad.syncPlayPad(padControls, session.legend, session.config, cell);
+    playPad.syncPlayPad(padControls, session.legend, session.config, cell, session.state?.pencil_mode === true);
   };
   /** Menu bar and pad show the same legend and config, so they always redraw together. */
   const syncControls = () => {
@@ -139,6 +140,7 @@ export function wireSudokuApp({
     () => selection.getSelection(),
     { onChange: syncControls, steps },
   );
+  const marksMenu = marks.wireMarks(menuControls, game, session, boardEl, selection, { onChange: syncControls, steps });
   const difficultyDialog = {
     el: root.getElementById("new-difficulty-modal"),
     buttons: [...root.querySelectorAll(".new-difficulty-btn")].map((btn) => ({
@@ -154,6 +156,7 @@ export function wireSudokuApp({
     onViewRefresh: () => {
       themeMenu.sync();
       regionMenu.sync();
+      marksMenu.sync();
       syncPad();
     },
     steps,
@@ -177,7 +180,11 @@ export function wireSudokuApp({
       steps,
     },
   );
-  playPad.wirePlayPad(padControls, { runEdit: editMenu.run, toggleRegion: regionMenu.toggle });
+  playPad.wirePlayPad(padControls, {
+    runEdit: editMenu.run,
+    toggleRegion: regionMenu.toggle,
+    togglePencilMode: marksMenu.togglePencilMode,
+  });
 
   board.wirePlayLoop(boardEl, game, selection, session, {
     onLegendChange: syncControls,
@@ -203,6 +210,7 @@ export function wireSudokuApp({
       editMenu.sync();
       themeMenu.sync();
       regionMenu.sync();
+      marksMenu.sync();
       statusBarMod.showStatusText(statusBar, step.text);
       sessionMod.syncCurrentFileLabels(session, root);
     },

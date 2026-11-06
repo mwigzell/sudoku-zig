@@ -31,6 +31,8 @@ pub const Config = struct {
     auto_new: bool = false,
     /// Save policy: write successful state-changing commands automatically.
     auto_save: bool = false,
+    /// Draw pencil marks. Hiding them never removes them.
+    show_marks: bool = true,
 
     /// Hard-coded defaults — entry_native.zig supplies this to the Sudoku layer at init time.
     pub fn default() Config {
@@ -54,4 +56,5 @@ test "config.default produces valid config" {
     if (cfg.auto_restore) return error.TestFailed;
     if (cfg.auto_new) return error.TestFailed;
     if (cfg.auto_save) return error.TestFailed;
+    if (!cfg.show_marks) return error.TestFailed;
 }

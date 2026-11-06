@@ -78,6 +78,7 @@ const SettingsPostBody = struct {
     auto_restore: ?bool = null,
     auto_new: ?bool = null,
     auto_save: ?bool = null,
+    show_marks: ?bool = null,
 };
 
 fn mergeDifficultyPatch(cfg: *config.Config, name: []const u8) void {
@@ -102,6 +103,7 @@ pub fn mergeSettingsPostPatch(cfg: *config.Config, patch: SettingsPostBody) void
     if (patch.auto_restore) |enabled| cfg.auto_restore = enabled;
     if (patch.auto_new) |enabled| cfg.auto_new = enabled;
     if (patch.auto_save) |enabled| cfg.auto_save = enabled;
+    if (patch.show_marks) |enabled| cfg.show_marks = enabled;
 }
 
 fn requestBody(request: []const u8) ?[]const u8 {
@@ -673,6 +675,7 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "menus/menu_bar.js", .body = embed.menu_bar_js },
         .{ .name = "menus/theme.js", .body = embed.theme_js },
         .{ .name = "menus/region.js", .body = embed.region_js },
+        .{ .name = "menus/marks.js", .body = embed.marks_js },
         .{ .name = "menus/help.js", .body = embed.help_js },
         .{ .name = "menus/settings.js", .body = embed.settings_js },
         .{ .name = "android_bridge.js", .body = embed.android_bridge_js },
@@ -780,6 +783,7 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/dialogs/generating.js", .expected = .generating },
         .{ .path = "/gen/gen_progress_rows.js", .expected = .gen_progress_rows },
         .{ .path = "/menus/region.js", .expected = .region },
+        .{ .path = "/menus/marks.js", .expected = .marks },
         .{ .path = "/menus/help.js", .expected = .help },
         .{ .path = "/menus/settings.js", .expected = .settings },
         .{ .path = "/site.webmanifest", .expected = .site_webmanifest },
@@ -1391,6 +1395,9 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.region);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.marks);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.help);

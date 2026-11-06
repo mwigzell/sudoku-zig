@@ -86,10 +86,10 @@ pub fn nextWriteContext(current: WriteContext, event: WriteContextEvent) WriteCo
 /// True when the command changes the game, so autosave writes it afterwards.
 pub fn commandTriggersAutoSave(tag: command.CommandTag) bool {
     return switch (tag) {
-        .fill, .clear, .undo, .redo, .hint, .solve_for_me, .open, .import, .paste => true,
+        .fill, .clear, .undo, .redo, .hint, .solve_for_me, .open, .import, .paste, .pencil => true,
         .quit, .menu, .save, .@"export", .copy, .new, .save_as, .set_theme, .toggle_region => false,
         .toggle_warn_solvability, .set_difficulty, .set_log_level, .toggle_auto_restore, .toggle_auto_new => false,
-        .toggle_auto_save, .settings => false,
+        .toggle_auto_save, .settings, .toggle_pencil_mode, .toggle_show_marks => false,
     };
 }
 

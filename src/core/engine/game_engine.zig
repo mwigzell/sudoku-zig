@@ -27,6 +27,7 @@ const undo_command = @import("undo.zig");
 const redo_command = @import("redo.zig");
 const quit_command = @import("quit.zig");
 const hint_command = @import("hint.zig");
+const pencil_command = @import("pencil.zig");
 const solver = @import("../solver.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
@@ -69,6 +70,10 @@ pub const GameEngine = struct {
     warn_dead_moves: bool = false,
     /// On open/load, probe solvability and warn when the puzzle has no completion.
     warn_unsolvable_load: bool = false,
+    /// Digits toggle pencil marks instead of filling. Session state: starts off, never saved.
+    pencil_mode: bool = false,
+    /// The last command set or removed a mark (a mark, or its Undo or Redo).
+    marks_changed: bool = false,
 
     fn applySolvabilityWarningsFromConfig(self: *@This()) void {
         self.warn_dead_moves = self.cfg.warn_solvability;
@@ -129,6 +134,12 @@ pub const GameEngine = struct {
             if (c.value == .zero) return true;
         }
         return false;
+    }
+
+    /// Whether front ends draw pencil marks: the setting is on, Pencil mode is on,
+    /// or the last command changed a mark, so a player always sees the mark they made.
+    pub fn marksVisible(self: *const @This()) bool {
+        return self.cfg.show_marks or self.pencil_mode or self.marks_changed;
     }
 
     /// Current nominal configuration (theme, region highlight, difficulty, log level).
@@ -332,9 +343,23 @@ pub const GameEngine = struct {
     /// Session commands (save/open/new/save_as) are handled in native/shell/shell.zig.
     pub fn exec(self: *@This(), cmd: command.Command) Event {
         self.beginEventMsg();
+        self.marks_changed = false;
         switch (cmd) {
             .fill => |f| {
+                if (self.pencil_mode and f.digit != .zero) {
+                    return pencil_command.execute(self, .{ .row = f.row, .col = f.col, .digit = f.digit });
+                }
                 return fill_command.execute(self, f);
+            },
+            .pencil => |p| {
+                return pencil_command.execute(self, p);
+            },
+            .toggle_pencil_mode => {
+                return pencil_command.toggleMode(self);
+            },
+            .toggle_show_marks => {
+                self.cfg.show_marks = !self.cfg.show_marks;
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .clear => |c| {
                 return clear_command.execute(self, c);
@@ -493,7 +518,7 @@ test "exec solve_for_me fills a known partial as one solve batch" {
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.count());
     switch (engine.state.history.peekPast().?) {
         .solve_batch => {},
-        .cell => return error.TestFailed,
+        .cell, .mark => return error.TestFailed,
     }
     try std.testing.expect(ev.ok.msg != null);
     try std.testing.expect(std.mem.indexOf(u8, ev.ok.msg.?, "You win!") != null);

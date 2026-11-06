@@ -63,6 +63,8 @@ pub const generating_js: []const u8 = @embedFile("../wasm/dialogs/generating.js"
 pub const gen_progress_rows_js: []const u8 = @embedFile("../wasm/gen/gen_progress_rows.js");
 /// Region overlay toggle (`/region.js`).
 pub const region_js: []const u8 = @embedFile("../wasm/menus/region.js");
+/// Show Pencil Marks and Pencil mode toggles (`/menus/marks.js`).
+pub const marks_js: []const u8 = @embedFile("../wasm/menus/marks.js");
 /// Help copy (`/help.js`).
 pub const help_js: []const u8 = @embedFile("../wasm/menus/help.js");
 /// Settings panel (`/settings.js`).
@@ -186,6 +188,10 @@ test "embedded gen_progress_rows.js is non-empty" {
 
 test "embedded region.js is non-empty" {
     try std.testing.expect(region_js.len > 0);
+}
+
+test "embedded marks.js is non-empty" {
+    try std.testing.expect(marks_js.len > 0);
 }
 
 test "embedded help.js is non-empty" {

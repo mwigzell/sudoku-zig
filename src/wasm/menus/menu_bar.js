@@ -43,6 +43,7 @@ export const MENU_BAR_MENUS = [
         { id: "viewLight", label: "Light" },
         { id: "viewDark", label: "Dark" },
         { id: "viewRegion", label: "Show Region" },
+        { id: "viewMarks", label: "Show Pencil Marks" },
       ],
     },
   {
@@ -64,6 +65,7 @@ export function syncMenuBar(legend, controls, config = {}) {
   if (controls.viewLight) controls.viewLight.disabled = false;
   if (controls.viewDark) controls.viewDark.disabled = false;
   if (controls.viewRegion) controls.viewRegion.disabled = false;
+  if (controls.viewMarks) controls.viewMarks.disabled = false;
   if (controls.about) controls.about.disabled = false;
   if (controls.settings) controls.settings.disabled = false;
   const autoSaveOn = config.auto_save === true;
@@ -96,6 +98,7 @@ export function collectMenuBarControls(root) {
     viewLight: root.querySelector("#view-light"),
     viewDark: root.querySelector("#view-dark"),
     viewRegion: root.querySelector("#view-region"),
+    viewMarks: root.querySelector("#view-marks"),
     about: root.querySelector("#help-about"),
   };
 }

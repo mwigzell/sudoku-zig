@@ -6,6 +6,7 @@ import * as webSteps from "../flows/web_steps.js";
 import * as stepRunner from "../flows/step_runner.js";
 import * as themeMod from "./theme.js";
 import * as region from "./region.js";
+import * as marks from "./marks.js";
 import * as settings from "./settings.js";
 import { loadGame, settleFlow, coreText } from "../test_support.mjs";
 
@@ -18,6 +19,7 @@ const DEFAULT_SETTINGS = {
   auto_restore: false,
   auto_new: false,
   auto_save: false,
+  show_marks: true,
 };
 
 /** Web step handlers whose host answers `status`, recording posts and shown errors. */
@@ -82,6 +84,20 @@ const themeRoot = {
   await settleFlow();
   assert.equal(posts.length, 1);
   assert.deepEqual(posts[0].body, { ...DEFAULT_SETTINGS, show_region: true });
+}
+
+// View → Show Pencil Marks posts show_marks.
+{
+  const { game, session } = await gameAndSession();
+  const { posts, steps } = recordingSteps(game, session);
+  const controls = { viewMarks: clickable() };
+  const fakeEl = () => ({ classList: { add() {} }, dataset: {}, setAttribute() {}, appendChild() {} });
+  const boardEl = { classList: { contains: () => true }, children: [], replaceChildren() {} };
+  marks.wireMarks(controls, game, session, boardEl, { getSelection: () => null, select() {} }, { steps, createElement: fakeEl });
+  controls.viewMarks.click();
+  await settleFlow();
+  assert.equal(posts.length, 1);
+  assert.deepEqual(posts[0].body, { ...DEFAULT_SETTINGS, show_marks: false });
 }
 
 // File → Settings: each control posts the full settings with its change.

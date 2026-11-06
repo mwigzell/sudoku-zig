@@ -17,10 +17,19 @@ pub const BoardSnapshot = struct {
     flat: [81]u8,
 };
 
-/// A history step is either one cell edit or one solve.
+/// One pencil-mark toggle. `old_value` is the player digit the mark replaced, or zero.
+pub const MarkToggle = struct {
+    row: u4,
+    col: u4,
+    digit: cell.CellValue,
+    old_value: cell.CellValue,
+};
+
+/// A history step: one cell edit, one solve, or one mark toggle.
 pub const MutationEntry = union(enum) {
     cell: CellMutation,
     solve_batch: BoardSnapshot,
+    mark: MarkToggle,
 };
 
 /// Mutable list of mutation entries with a forward pointer for undo/redo.
@@ -62,6 +71,12 @@ pub const MutationHistory = struct {
     /// Append one solve step. Only the before-snapshot is stored.
     pub fn pushSolve(self: *@This(), before: BoardSnapshot) !void {
         try self.entries.append(self.gpa, .{ .solve_batch = before });
+        self.pointer = self.entries.items.len;
+    }
+
+    /// Append one mark toggle, advancing pointer past it.
+    pub fn pushMark(self: *@This(), m: MarkToggle) !void {
+        try self.entries.append(self.gpa, .{ .mark = m });
         self.pointer = self.entries.items.len;
     }
 
@@ -136,14 +151,14 @@ test "MutationHistory: push stores a cell and pushSolve stores one before snapsh
             try std.testing.expectEqual(cell.CellValue.zero, c.old_value);
             try std.testing.expectEqual(cell.CellValue.seven, c.new_value);
         },
-        .solve_batch => return error.TestFailed,
+        .solve_batch, .mark => return error.TestFailed,
     }
     switch (h.entries.items[1]) {
         .solve_batch => |snap| {
             try std.testing.expectEqual(@as(board.CellMask, 1), snap.given_bits);
             try std.testing.expectEqual(@as(u8, 4), snap.flat[0]);
         },
-        .cell => return error.TestFailed,
+        .cell, .mark => return error.TestFailed,
     }
     try std.testing.expectEqual(@as(usize, 2), h.count());
 }

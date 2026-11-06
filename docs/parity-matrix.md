@@ -3,7 +3,7 @@
 Native, web and Android drive core's flows through different adapters, but must issue and answer the same steps and end in the same state. Every scenario in `src/test/fixtures/parity_scenarios.json` runs through each front end's real entry points:
 
 - **Native:** `src/test/parity/native.zig` drives `Sudoku` (`runStartupFlow`, then `turn()` per step) with a scripted renderer and `MemoryTransport`. The shell's `step_observer` records every step core issues and the answer it gets, and the run writes them as transcripts to `.zig-cache/parity/native.json`.
-- **Web and Android:** `src/wasm/flows/parity.test.mjs` drives the real wasm through `startup.js`, `board.js`, `menu.js`, `file_menu.js`, `region.js`, `theme.js`, `settings.js` and `autosave.js`, with the browser's step handlers (`web_steps.js`) over fake pickers and host, and Android's (`android_steps.js`) over a fake Java file bridge. It records the same transcript and compares it with native's, field for field. A scenario that native does not run is compared between web and Android.
+- **Web and Android:** `src/wasm/flows/parity.test.mjs` drives the real wasm through `startup.js`, `board.js`, `menu.js`, `file_menu.js`, `region.js`, `marks.js`, `theme.js`, `settings.js` and `autosave.js`, with the browser's step handlers (`web_steps.js`) over fake pickers and host, and Android's (`android_steps.js`) over a fake Java file bridge. It records the same transcript and compares it with native's, field for field. A scenario that native does not run is compared between web and Android.
 
 Core's sentences are never copied into the fixture: the transcripts compare the text core issued on each front end.
 
@@ -62,6 +62,9 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `paste_valid_resets_history` | Pasting a valid puzzle replaces the board with new givens and clears undo history. | native, web, android | — |
 | `paste_invalid_keeps_board` | Pasting an invalid line shows an error and leaves the board and undo history as they were. | native, web, android | — |
 | `settings_change_does_not_autosave` | With Auto Save on, View and Settings changes persist the settings but never write the game file. | native, web, android | — |
+| `pencil_mark_replaces_digit_undo_restores` | In Pencil mode a digit on the player's digit replaces it with that mark and autosaves; Undo puts the digit back without the mark. | native, web, android | — |
+| `pencil_command_toggles_mark` | The pencil command toggles one mark on and off in an empty cell; each toggle autosaves. | native | web: The page marks a cell through Pencil mode and a digit; it sends no pencil command.; android: The page marks a cell through Pencil mode and a digit; it sends no pencil command. |
+| `pencil_mode_digit_marks_cell` | In Pencil mode a digit toggles that mark instead of filling the cell; each mark autosaves, the mode toggle does not. | native, web, android | — |
 | `hint_reports_and_autosaves` | A hint shows its text in the status line, leaves the hinted cell empty, and autosaves like any other command. | native, web, android | — |
 | `solve_then_rejected_fill` | Solve fills the board, reports the win and autosaves; a move on a given cell is then rejected with an error and changes and writes nothing. | native, web, android | — |
 | `open_then_move_continues_file` | Opening a saved game with Auto Save on continues that file: the load and the next move both write it without asking. | native, web, android | — |

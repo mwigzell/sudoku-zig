@@ -131,6 +131,10 @@ pub const ShowGame = struct {
     board: board.Board.BoardView,
     legend: legend_mod.Legend,
     config: config.Config,
+    /// Digits toggle pencil marks (core's Pencil mode).
+    pencil_mode: bool,
+    /// Draw pencil marks (`GameEngine.marksVisible`).
+    marks_visible: bool,
     /// The cell the command edited, if any.
     cell: ?event.CellCoord = null,
     /// The game was replaced (new, open, import, paste): drop the selection and rebind to `file`.
@@ -145,6 +149,8 @@ pub fn showGame(engine: *game_engine.GameEngine, status: ?[]const u8, file: ?[]c
         .board = engine.eventBoard(),
         .legend = engine.getLegend(),
         .config = engine.getConfig(),
+        .pencil_mode = engine.pencil_mode,
+        .marks_visible = engine.marksVisible(),
     } };
 }
 

@@ -30,7 +30,8 @@ const IMPORT_NAME = "puzzle.txt";
 
 const Move = struct { row: u8, col: u8, digit: u8 };
 const CellAt = struct { row: u8, col: u8 };
-const Probe = struct { row: u8, col: u8, value: u8, given: bool };
+/// One cell's expected value; `marks` (bit `k` = digit `k + 1`) is checked when given.
+const Probe = struct { row: u8, col: u8, value: u8, given: bool, marks: ?u16 = null };
 
 /// A saved game: `puzzle_line` with the player's `moves` on top. `corrupt` stores bytes that are no saved game.
 const SavedFile = struct {
@@ -77,6 +78,9 @@ const Step = struct {
     set_log_level: ?[]const u8 = null,
     toggle_auto_restore: ?bool = null,
     toggle_auto_new: ?bool = null,
+    pencil: ?Move = null,
+    toggle_pencil_mode: ?bool = null,
+    toggle_show_marks: ?bool = null,
     relaunch: ?bool = null,
     // Steps only web and Android carry out; a scenario using one names native in `not_on`.
     open_cancel: ?bool = null,
@@ -95,7 +99,7 @@ const ScenarioConfig = struct {
     difficulty: ?[]const u8 = null,
 };
 
-const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null };
+const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null, show_marks: ?bool = null };
 const Legend = struct { undo: ?bool = null, redo: ?bool = null };
 
 /// Outcomes every front end that runs the scenario must meet, on top of matching each other.
@@ -393,6 +397,9 @@ fn stepCommand(step: Step, view: ?board.Board.BoardView) !command.Command {
     if (step.@"export" != null) return .{ .@"export" = .{ .path = null } };
     if (step.toggle_auto_save != null) return .{ .toggle_auto_save = {} };
     if (step.toggle_region != null) return .{ .toggle_region = {} };
+    if (step.pencil) |m| return .{ .pencil = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
+    if (step.toggle_pencil_mode != null) return .{ .toggle_pencil_mode = {} };
+    if (step.toggle_show_marks != null) return .{ .toggle_show_marks = {} };
     if (step.set_theme) |name| return .{ .set_theme = std.meta.stringToEnum(config.ViewTheme, name) orelse return error.UnknownTheme };
     if (step.toggle_warn_solvability != null) return .{ .toggle_warn_solvability = {} };
     if (step.set_difficulty) |name| return .{ .set_difficulty = std.meta.stringToEnum(config.Difficulty, name) orelse return error.UnknownDifficulty };
@@ -535,6 +542,7 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         if (want.auto_save) |on| try std.testing.expectEqual(on, saved.auto_save);
         if (want.show_region) |on| try std.testing.expectEqual(on, saved.show_region);
         if (want.theme) |name| try std.testing.expectEqualStrings(name, @tagName(saved.theme));
+        if (want.show_marks) |on| try std.testing.expectEqual(on, saved.show_marks);
     }
     if (expect.legend) |want| {
         const got = app.engine.getLegend();
@@ -547,6 +555,7 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         const col: u4 = @intCast(p.col);
         try std.testing.expectEqual(cell.rawToCellValue(p.value), view.get(row, col));
         try std.testing.expectEqual(p.given, view.isGiven(row, col));
+        if (p.marks) |want| try std.testing.expectEqual(want, view.marks(row, col));
     }
 }
 
