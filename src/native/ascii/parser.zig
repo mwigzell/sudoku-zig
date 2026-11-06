@@ -32,6 +32,7 @@ pub const getName = cm.getName;
 pub const EMPTY_INPUT_MSG = "Type a command, then press Enter.";
 pub const UNKNOWN_COMMAND_MSG = "That command is not available right now.";
 pub const FILL_USAGE_MSG = "Fill needs a cell and a digit, for example: fill A1 5.";
+pub const PENCIL_USAGE_MSG = "Pencil needs a cell and a digit, for example: pencil A1 5.";
 pub const CLEAR_USAGE_MSG = "Clear needs a cell, for example: clear A1.";
 pub const HINT_USAGE_MSG = "Hint takes at most one cell, for example: hint A1.";
 pub const CELL_FORMAT_MSG = "A cell is a letter from A to I followed by a number from 1 to 9, for example A1.";
@@ -71,6 +72,11 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
         const coord_str = it.next() orelse return .{ .error_msg = FILL_USAGE_MSG };
         const digit_s = it.next() orelse return .{ .error_msg = FILL_USAGE_MSG };
         return parseFill(coord_str, digit_s);
+    }
+    if (std.ascii.eqlIgnoreCase(cmd_name, "pencil")) {
+        const coord_str = it.next() orelse return .{ .error_msg = PENCIL_USAGE_MSG };
+        const digit_s = it.next() orelse return .{ .error_msg = PENCIL_USAGE_MSG };
+        return parsePencil(coord_str, digit_s);
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "clear")) {
         const coord_s = it.next() orelse return .{ .error_msg = CLEAR_USAGE_MSG };
@@ -168,6 +174,15 @@ fn parseFill(coord_str: []const u8, digit_s: []const u8) ParseCommandResult {
             .digit = cell_module.rawToCellValue(dch - '0'),
         },
     } };
+}
+
+/// Pencil takes the same cell and digit as Fill; it toggles that mark instead.
+fn parsePencil(coord_str: []const u8, digit_s: []const u8) ParseCommandResult {
+    const fill = switch (parseFill(coord_str, digit_s)) {
+        .valid => |c| c.fill,
+        .error_msg => |msg| return .{ .error_msg = msg },
+    };
+    return .{ .valid = Command{ .pencil = .{ .row = fill.row, .col = fill.col, .digit = fill.digit } } };
 }
 
 /// Hint with optional coordinate — omit args for engine-pick.
@@ -446,7 +461,7 @@ test "parseWithCommands: hint targeted coordinate" {
 // comptime registration table tests (moved alongside parser)
 test "comptime invariant: CommandTag covers terminal commands plus view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 12);
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 11);
 }
 
 test "Commands table: tag-name mapping" {
@@ -465,6 +480,15 @@ test "Commands table: tag-name mapping" {
     try std.testing.expect(entries[5].tag == .redo);
     try std.testing.expectEqualStrings("Menu", entries[6].name);
     try std.testing.expect(entries[6].tag == .menu);
+    try std.testing.expectEqualStrings("Pencil", entries[7].name);
+    try std.testing.expect(entries[7].tag == .pencil);
+}
+
+test "pencil: p A1 5 toggles mark 5 in A1; a missing digit asks for one" {
+    const res = parse("p A1 5");
+    try std.testing.expectEqual(Command{ .pencil = .{ .row = 0, .col = 0, .digit = .five } }, res.valid);
+    try std.testing.expectEqualStrings(PENCIL_USAGE_MSG, parse("pencil A1").error_msg);
+    try std.testing.expectEqualStrings(DIGIT_FORMAT_MSG, parse("pencil A1 0").error_msg);
 }
 
 test "getName returns correct display name for each tag" {

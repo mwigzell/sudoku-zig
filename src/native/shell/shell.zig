@@ -159,7 +159,7 @@ pub const Sudoku = struct {
         }
         if (game.cell) |c| self.last_cell = c;
         const region: ?facade_mod.Selection = if (game.config.show_region) self.last_cell else null;
-        try self.renderer.render(game.board, game.status, region);
+        try self.renderer.render(game.board, game.status, region, game.marks_visible);
         try self.renderer.showLegend(game.legend);
     }
 
@@ -176,7 +176,7 @@ pub const Sudoku = struct {
             .ok => |ev| {
                 if (ev.cell) |c| self.last_cell = c;
                 if (ev.is_quit) return true;
-                try self.renderer.render(ev.board_view, ev.msg, self.regionSelection());
+                try self.renderer.render(ev.board_view, ev.msg, self.regionSelection(), self.engine.marksVisible());
                 try self.renderer.showLegend(self.engine.getLegend());
                 return false;
             },
@@ -208,11 +208,12 @@ pub const Sudoku = struct {
     /// folded to error.System one level down) or dispatch/render failed.
     pub fn turn(self: *@This()) Error!bool {
         const avail = self.engine.getLegend();
-        var names: [7][]const u8 = undefined;
+        var names: [command.Commands.len][]const u8 = undefined;
         const count = avail.getNames(&names);
         const result = self.renderer.getCommandInput(
             names[0..count],
             self.engine.cfg.show_region,
+            self.engine.cfg.show_marks,
             self.engine.cfg.warn_solvability,
             self.engine.cfg.difficulty,
             self.engine.cfg.log_level,
@@ -232,7 +233,7 @@ pub const Sudoku = struct {
 
     /// First-screen render variant that allows a startup status line.
     pub fn showGameWithStatus(self: *@This(), status_msg: ?[]const u8) Error!void {
-        try self.renderer.render(self.engine.eventBoard(), status_msg, self.regionSelection());
+        try self.renderer.render(self.engine.eventBoard(), status_msg, self.regionSelection(), self.engine.marksVisible());
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
@@ -275,6 +276,7 @@ const DeterministicFacade = struct {
     error_calls: usize = 0,
     replace_prompts: usize = 0,
     last_render_msg: ?[]const u8 = null,
+    last_marks_visible: bool = false,
     replace_answers: []const bool = &[_]bool{},
     replace_idx: usize = 0,
 
@@ -284,8 +286,9 @@ const DeterministicFacade = struct {
     }
 
     /// Records render calls from Sudoku.handleEvent for deterministic branch tests.
-    pub fn render(self: *@This(), _: board.Board.BoardView, msg: ?[]const u8, _: ?facade_mod.Selection) !void {
+    pub fn render(self: *@This(), _: board.Board.BoardView, msg: ?[]const u8, _: ?facade_mod.Selection, marks_visible: bool) !void {
         self.render_calls += 1;
+        self.last_marks_visible = marks_visible;
         self.last_render_msg = msg;
     }
 
@@ -314,6 +317,7 @@ const DeterministicFacade = struct {
     pub fn getCommandInput(
         self: *@This(),
         _: []const []const u8,
+        _: bool,
         _: bool,
         _: bool,
         _: config.Difficulty,
@@ -398,6 +402,28 @@ test "deterministic major path: save_as then open restores saved snapshot" {
 
     try std.testing.expectEqual(cell.CellValue.seven, app.engine.state.board.getCellValue(2, 0));
     try std.testing.expectEqual(@as(usize, 0), facade_impl.error_calls);
+}
+
+test "with Show Pencil Marks off, a pencil command draws the board with marks and the next other command without" {
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .pencil = .{ .row = 2, .col = 0, .digit = .five } } },
+        .{ .valid = .{ .fill = .{ .row = 2, .col = 0, .digit = .seven } } },
+    };
+    var facade_impl = DeterministicFacade{ .steps = &steps };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+
+    var cfg = config.Config.default();
+    cfg.show_marks = false;
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+
+    _ = try app.turn();
+    try std.testing.expect(facade_impl.last_marks_visible);
+    _ = try app.turn();
+    try std.testing.expect(!facade_impl.last_marks_visible);
 }
 
 test "deterministic major path: import then export round-trips through command loop" {
@@ -947,7 +973,7 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     const transport = file_transport.NativeTransport.make(std.testing.io);
     var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
     defer sudoku.deinit();
-    try sudoku.renderer.render(sudoku.engine.state.board.asView(), null, null);
+    try sudoku.renderer.render(sudoku.engine.state.board.asView(), null, null, false);
 
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);
@@ -1094,6 +1120,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
         .preferred_renderer = .ansi,
         .fallback_renderer = .ansi,
         .log_level = .info,
+        .show_marks = false, // the small board's bottom border marks where each board ends
     };
     const gpa = std.heap.page_allocator;
     var probe = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.hard(), cfg);

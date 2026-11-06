@@ -34,7 +34,7 @@ pub const Error = error{System};
 pub const Facade = struct {
     context: *anyopaque,
 
-    render_fn: *const fn (*anyopaque, board.Board.BoardView, ?[]const u8, ?Selection) Error!void,
+    render_fn: *const fn (*anyopaque, board.Board.BoardView, ?[]const u8, ?Selection, bool) Error!void,
 
     showLegend_fn: *const fn (*anyopaque, Legend) Error!void,
 
@@ -44,6 +44,7 @@ pub const Facade = struct {
         *anyopaque,
         []const []const u8,
         show_region: bool,
+        show_marks: bool,
         warn_solvability: bool,
         difficulty: config.Difficulty,
         log_level: logger.Severity,
@@ -60,9 +61,9 @@ pub const Facade = struct {
 
     /// Draw the current board in full. When status_msg is non-null, renderers
     /// with a status surface draw it non-blocking (no input read); null ⇒ plain
-    /// board.
-    pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection) Error!void {
-        return self.render_fn(self.context, view, status_msg, selection);
+    /// board. marks_visible is core's choice of the board with pencil marks.
+    pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection, marks_visible: bool) Error!void {
+        return self.render_fn(self.context, view, status_msg, selection, marks_visible);
     }
 
     /// Draw the command legend for the caller-supplied available commands.
@@ -82,6 +83,7 @@ pub const Facade = struct {
         self: *const Facade,
         names: []const []const u8,
         show_region: bool,
+        show_marks: bool,
         warn_solvability: bool,
         difficulty: config.Difficulty,
         log_level: logger.Severity,
@@ -91,7 +93,7 @@ pub const Facade = struct {
         auto_save: bool,
         hint_target: ?Selection,
     ) Error!command.ParseCommandResult {
-        return self.getCommandInput_fn(self.context, names, show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+        return self.getCommandInput_fn(self.context, names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
     }
 
     /// Live puzzle generation feedback (native terminal); not gameplay `Event` status.
@@ -110,9 +112,9 @@ pub const Facade = struct {
 pub fn Make(comptime CT: type) type {
     return struct {
         /// Forward `render` through erased context to the concrete renderer.
-        pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection) Error!void {
+        pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection, marks_visible: bool) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            self.render(view, status_msg, selection) catch return error.System;
+            self.render(view, status_msg, selection, marks_visible) catch return error.System;
         }
         /// Forward `showLegend` through erased context to the concrete renderer.
         pub fn showLegend_wrapper(ctx: *anyopaque, commands: Legend) Error!void {
@@ -130,6 +132,7 @@ pub fn Make(comptime CT: type) type {
             ctx: *anyopaque,
             names: []const []const u8,
             show_region: bool,
+            show_marks: bool,
             warn_solvability: bool,
             difficulty: config.Difficulty,
             log_level: logger.Severity,
@@ -140,7 +143,7 @@ pub fn Make(comptime CT: type) type {
             hint_target: ?Selection,
         ) Error!command.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(names, show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target) catch error.System;
+            return self.getCommandInput(names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target) catch error.System;
         }
 
         /// Forward generator progress events through the facade seam.

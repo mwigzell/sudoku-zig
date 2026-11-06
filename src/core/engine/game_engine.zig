@@ -109,6 +109,7 @@ pub const GameEngine = struct {
     pub fn getLegend(self: *const @This()) Legend {
         return Legend{
             .fill = true,
+            .pencil = true,
             .clear = true,
             .hint = true,
             .quit = true,

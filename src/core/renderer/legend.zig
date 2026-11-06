@@ -34,12 +34,18 @@ pub const Legend = struct {
     paste: bool = false,
     /// Menu Solve. Off when the board is full or has any conflict.
     solve: bool = false,
+    /// Terminal line: toggle a pencil mark (web and Android toggle marks with Pencil mode).
+    pencil: bool = false,
 
     /// Fill `names` with main-line terminal commands (play loop + menu entry).
-    pub fn getNames(self: Legend, names: *[7][]const u8) usize {
+    pub fn getNames(self: Legend, names: *[command.Commands.len][]const u8) usize {
         var count: usize = 0;
         if (self.fill) {
             names[count] = command.getName(.fill);
+            count += 1;
+        }
+        if (self.pencil) {
+            names[count] = command.getName(.pencil);
             count += 1;
         }
         if (self.clear) {
@@ -107,9 +113,10 @@ pub fn formatLegend(allocator: mem.Allocator, entries: []const disambiguate.Disa
 // ---------------------------------------------------------------------------
 
 test "getNames: main line offers menu not session commands" {
-    var names: [7][]const u8 = undefined;
+    var names: [command.Commands.len][]const u8 = undefined;
     const count = (Legend{
         .fill = true,
+        .pencil = true,
         .clear = true,
         .hint = true,
         .quit = true,
@@ -121,9 +128,10 @@ test "getNames: main line offers menu not session commands" {
         .new = true,
         .save_as = true,
     }).getNames(&names);
-    try std.testing.expectEqual(@as(usize, 5), count);
-    try std.testing.expectEqualStrings("Hint", names[2]);
-    try std.testing.expectEqualStrings("Menu", names[4]);
+    try std.testing.expectEqual(@as(usize, 6), count);
+    try std.testing.expectEqualStrings("Pencil", names[1]);
+    try std.testing.expectEqualStrings("Hint", names[3]);
+    try std.testing.expectEqualStrings("Menu", names[5]);
 }
 
 test "formatLegend: five non-colliding commands → each prefix is 1 char" {

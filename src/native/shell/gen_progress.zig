@@ -24,7 +24,7 @@ const ProgressRecorder = struct {
     called: bool = false,
     last: ?puzzle_gen.GenProgressEvent = null,
 
-    fn render(_: *anyopaque, _: board.Board.BoardView, _: ?[]const u8, _: ?event_mod.CellCoord) facade_mod.Error!void {}
+    fn render(_: *anyopaque, _: board.Board.BoardView, _: ?[]const u8, _: ?event_mod.CellCoord, _: bool) facade_mod.Error!void {}
     fn showLegend(_: *anyopaque, _: legend_mod.Legend) facade_mod.Error!void {}
     fn promptMessage(_: *anyopaque, prompt: flow_step.PromptMessage) facade_mod.Error!usize {
         return prompt.defaultAnswer();
@@ -32,6 +32,7 @@ const ProgressRecorder = struct {
     fn getCommandInput(
         _: *anyopaque,
         _: []const []const u8,
+        _: bool,
         _: bool,
         _: bool,
         _: config.Difficulty,

@@ -59,6 +59,20 @@ pub fn bottomBorder() []const u8 {
     return " ╰───────┴───────┴───────╯\n";
 }
 
+/// The large board's border run across one box of three large cells.
+const LARGE_BOX_RULE = rule: {
+    var run: []const u8 = "";
+    for (0..board.BOX_DIMENSION * styler.LARGE_CELL_COLS) |_| run = run ++ "─";
+    break :rule run;
+};
+/// Large board (pencil marks shown): column letters centred over each large cell.
+const LARGE_COLUMN_HEADER = "    A    B    C  │  D    E    F  │  G    H    I  \n";
+const LARGE_TOP_BORDER = " ╭" ++ LARGE_BOX_RULE ++ "┼" ++ LARGE_BOX_RULE ++ "┼" ++ LARGE_BOX_RULE ++ "╮\n";
+const LARGE_MID_BORDER = " ├" ++ LARGE_BOX_RULE ++ "┼" ++ LARGE_BOX_RULE ++ "┼" ++ LARGE_BOX_RULE ++ "┤\n";
+const LARGE_BOTTOM_BORDER = " ╰" ++ LARGE_BOX_RULE ++ "┴" ++ LARGE_BOX_RULE ++ "┴" ++ LARGE_BOX_RULE ++ "╯\n";
+/// Bytes for one styled large-board line: nine cells of codes, marks and reset, plus borders.
+const LARGE_LINE_BUF = 512;
+
 /// Minimum visible width (columns) for status/error message boxes. Message
 /// lines and the legend can push it wider — never narrower than this.
 const box_min_width: usize = 80;
@@ -140,21 +154,40 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Draw the full board: column header, borders, styled rows via formatRow,
         /// with box-drawing borders between 3x3 boxes. When status_msg is non-null,
         /// draw it in a box frame below the grid — non-blocking, no input read;
-        /// null ⇒ plain board.
-        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?facade.Selection) anyerror!void {
+        /// null ⇒ plain board. With marks_visible the board is the large one, holding each cell's marks.
+        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?facade.Selection, marks_visible: bool) anyerror!void {
+            const styler_sel: ?styler.CellSelection = if (selection) |s| .{ .row = s.row, .col = s.col } else null;
+            if (marks_visible) try self.drawLargeBoard(view, styler_sel) else try self.drawBoard(view, styler_sel);
+            if (status_msg) |msg| try self.drawBox(msg);
+        }
+
+        /// The one-character-per-cell board.
+        fn drawBoard(self: *@This(), view: board.Board.BoardView, selection: ?styler.CellSelection) anyerror!void {
             try self.writer.writeAll(columnHeader());
             try self.writer.writeAll(topBorder());
             for (0..9) |row| {
                 var rowBuf: [256]u8 = undefined;
-                const styler_sel: ?styler.CellSelection = if (selection) |s| .{ .row = s.row, .col = s.col } else null;
-                const line = try self.styler.formatRow(row, view, styler_sel, &rowBuf);
+                const line = try self.styler.formatRow(row, view, selection, &rowBuf);
                 try self.writer.writeAll(line);
                 if (row == 2 or row == 5) {
                     try self.writer.writeAll(midBorder());
                 }
             }
             try self.writer.writeAll(bottomBorder());
-            if (status_msg) |msg| try self.drawBox(msg);
+        }
+
+        /// The large board: each cell a block of lines showing its pencil marks.
+        fn drawLargeBoard(self: *@This(), view: board.Board.BoardView, selection: ?styler.CellSelection) anyerror!void {
+            try self.writer.writeAll(LARGE_COLUMN_HEADER);
+            try self.writer.writeAll(LARGE_TOP_BORDER);
+            for (0..9) |row| {
+                for (0..styler.LARGE_CELL_LINES) |line| {
+                    var line_buf: [LARGE_LINE_BUF]u8 = undefined;
+                    try self.writer.writeAll(try self.styler.formatLargeLine(row, line, view, selection, &line_buf));
+                }
+                if (row == 2 or row == 5) try self.writer.writeAll(LARGE_MID_BORDER);
+            }
+            try self.writer.writeAll(LARGE_BOTTOM_BORDER);
         }
 
         /// Shared box frame for status and error messages. Width = max(box_min_width,
@@ -189,7 +222,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         /// Implement Facade showLegend_fn. Build command legend from Legend,
         /// disambiguate prefixes, print "Command: ...". Arena allocates temp strings.
         pub fn showLegend(self: *@This(), commands: legend.Legend) anyerror!void {
-            var names: [7][]const u8 = undefined;
+            var names: [_command.Commands.len][]const u8 = undefined;
             const count = commands.getNames(&names);
 
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -339,6 +372,7 @@ pub fn AsciiRenderer(StylerType: type) type {
         fn showSettingsMenu(
             self: *@This(),
             show_region: bool,
+            show_marks: bool,
             warn_solvability: bool,
             difficulty: Difficulty,
             log_level: logger.Severity,
@@ -384,16 +418,17 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "6")) return .{ .valid = _command.Command{ .toggle_auto_new = {} } };
             if (std.mem.eql(u8, pick, "7")) return .{ .valid = _command.Command{ .toggle_auto_save = {} } };
             if (std.mem.eql(u8, pick, "8")) {
-                return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+                return try self.showMenu(show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
             }
             try self.acknowledge("invalid settings choice");
-            return try self.showSettingsMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+            return try self.showSettingsMenu(show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
         }
 
         /// Numbered session/view submenu — file operations, view, hint, quit.
         pub fn showMenu(
             self: *@This(),
             show_region: bool,
+            show_marks: bool,
             warn_solvability: bool,
             difficulty: Difficulty,
             log_level: logger.Severity,
@@ -404,6 +439,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             hint_target: ?facade.Selection,
         ) facade.Error!_command.ParseCommandResult {
             const region_state = if (show_region) "on" else "off";
+            const marks_state = if (show_marks) "on" else "off";
             const auto_save_state = if (auto_save) "on" else "off";
             self.writer.writeAll("\nMenu:\n") catch return facade.Error.System;
             if (auto_save) {
@@ -428,6 +464,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.writeAll("  12) Copy puzzle\n") catch return facade.Error.System;
             self.writer.writeAll("  13) Paste puzzle\n") catch return facade.Error.System;
             self.writer.writeAll("  14) Settings\n") catch return facade.Error.System;
+            self.writer.print("  15) Show Pencil Marks ({s})\n", .{marks_state}) catch return facade.Error.System;
             self.writer.writeAll("> ") catch return facade.Error.System;
 
             const pick = self.readLine() catch return facade.Error.System;
@@ -445,20 +482,21 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
             if (std.mem.eql(u8, pick, "9")) {
                 try self.showAbout();
-                return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+                return try self.showMenu(show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
             }
             if (menuPickIsQuit(pick)) return .{ .valid = _command.Command.quit };
             if (std.mem.eql(u8, pick, "11")) {
-                if (!self.can_solve) return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+                if (!self.can_solve) return try self.showMenu(show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
                 return .{ .valid = _command.Command{ .solve_for_me = {} } };
             }
             if (std.mem.eql(u8, pick, "12")) return .{ .valid = _command.Command{ .copy = {} } };
             if (std.mem.eql(u8, pick, "13")) return .{ .valid = _command.Command{ .paste = .{ .line = null } } };
             if (std.mem.eql(u8, pick, "14")) {
-                return try self.showSettingsMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+                return try self.showSettingsMenu(show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
             }
+            if (std.mem.eql(u8, pick, "15")) return .{ .valid = _command.Command{ .toggle_show_marks = {} } };
             try self.acknowledge("invalid menu choice");
-            return try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+            return try self.showMenu(show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
         }
 
         /// Help/About — product metadata with acknowledgement.
@@ -497,6 +535,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             self: *@This(),
             names: []const []const u8,
             show_region: bool,
+            show_marks: bool,
             warn_solvability: bool,
             difficulty: Difficulty,
             log_level: logger.Severity,
@@ -517,7 +556,7 @@ pub fn AsciiRenderer(StylerType: type) type {
 
                 var rsl = parser.parseWithCommands(raw, names);
                 if (std.meta.activeTag(rsl) == .valid and std.meta.activeTag(rsl.valid) == .menu) {
-                    rsl = try self.showMenu(show_region, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+                    rsl = try self.showMenu(show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
                 }
                 // A cancelled dialog goes back to the command prompt quietly.
                 if (self.completeFromDialog(&rsl)) return rsl;
@@ -670,7 +709,7 @@ test "render: renders empty board end-to-end" {
     var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
 
     const b = board.Board.init();
-    try renderer.render(b.asView(), null, null);
+    try renderer.render(b.asView(), null, null, false);
 
     const contents = aw.writer.buffered();
 
@@ -715,7 +754,7 @@ test "render: renders with digits placed" {
     @memcpy(flat[27..], &rest);
 
     const b = try board.fromFlat(flat, .{});
-    try renderer.render(b.asView(), null, null);
+    try renderer.render(b.asView(), null, null, false);
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, "3") != null);
@@ -897,9 +936,9 @@ test "getCommandInput: New opens the difficulty dialog; the pick rides the comma
         .new = true,
         .save_as = false,
     };
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
             switch (cmd) {
@@ -948,9 +987,9 @@ test "getCommandInput: New dialog rejects retired pick slots beyond the three di
         .new = true,
         .save_as = false,
     };
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
     // The rejected pick cancels New quietly; the prompt reads again and the input has ended.
     try std.testing.expect(result == .valid and result.valid == .quit);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "cancelled") == null);
@@ -985,9 +1024,9 @@ test "getCommandInput: fill A1 5 returns valid Fill" {
         .save_as = true,
     };
 
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -1031,9 +1070,9 @@ test "getCommandInput: EOF returns Quit" {
         .save_as = false,
     };
 
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = avail.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
 
     switch (result) {
         .valid => |cmd| {
@@ -1063,10 +1102,10 @@ test "getCommandInput: save never prompts; core names the target" {
     var s = styler.PlainStyler{};
     var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "1\n", "m\n", "1\n" });
     defer renderer.deinit();
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = save_legend.getNames(&names);
     for (0..2) |_| {
-        const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+        const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
         try std.testing.expect(result.valid.save.path == null);
     }
     try std.testing.expect(std.mem.indexOf(u8, aw.writer.buffered(), SAVE_AS_PROMPT) == null);
@@ -1078,11 +1117,11 @@ test "getCommandInput: save as carries the typed path, or none for core's sugges
     var s = styler.PlainStyler{};
     var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "6\n", "mine.sud\n", "m\n", "6\n", "\n" });
     defer renderer.deinit();
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = save_legend.getNames(&names);
-    const typed = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const typed = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
     try std.testing.expectEqualStrings("mine.sud", typed.valid.save_as.path.?);
-    const suggested = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const suggested = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
     try std.testing.expect(suggested.valid.save_as.path == null);
 }
 
@@ -1092,9 +1131,9 @@ test "getCommandInput: open carries the typed path" {
     var s = styler.PlainStyler{};
     var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "2\n", "game.sud\n" });
     defer renderer.deinit();
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = save_legend.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
     try std.testing.expectEqualStrings("game.sud", result.valid.open.path.?);
 }
 
@@ -1105,9 +1144,9 @@ test "getCommandInput: paste carries the typed puzzle" {
     var s = styler.PlainStyler{};
     var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "13\n", line ++ "\n" });
     defer renderer.deinit();
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = save_legend.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
     try std.testing.expectEqualStrings(line, result.valid.paste.line.?);
 }
 
@@ -1118,9 +1157,9 @@ test "getCommandInput: a pasted puzzle keeps its edge space blanks while command
     var s = styler.PlainStyler{};
     var renderer = scriptedRenderer(&aw, &s, &.{ " m \n", " 13 \n", line ++ "\n" });
     defer renderer.deinit();
-    var names: [7][]const u8 = undefined;
+    var names: [_command.Commands.len][]const u8 = undefined;
     const count = save_legend.getNames(&names);
-    const result = try renderer.getCommandInput(names[0..count], false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.getCommandInput(names[0..count], false, true, false, .easy, .info, .dark, false, false, false, null);
     try std.testing.expectEqualStrings(line, result.valid.paste.line.?);
 }
 
@@ -1168,7 +1207,7 @@ test "showMenu: quit pick returns quit command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1191,7 +1230,7 @@ test "showMenu: paste pick returns paste command with null line" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "paste");
@@ -1217,7 +1256,7 @@ test "showMenu: copy pick returns copy command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "copy"),
         .error_msg => try std.testing.expect(false),
@@ -1240,7 +1279,7 @@ test "showMenu: import pick returns import command with null path" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "import");
@@ -1265,7 +1304,7 @@ test "showMenu: solve pick is ignored when unavailable" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1292,7 +1331,7 @@ test "showMenu: solve pick returns solve when available" {
     );
     renderer.can_solve = true;
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "solve_for_me"),
         .error_msg => try std.testing.expect(false),
@@ -1315,7 +1354,7 @@ test "showMenu: q pick returns quit command" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1338,7 +1377,7 @@ test "showMenu: invalid pick re-shows menu until valid choice" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
         .error_msg => try std.testing.expect(false),
@@ -1366,7 +1405,7 @@ test "showMenu: hint pick returns engine-pick when no target cell" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "hint");
@@ -1395,7 +1434,7 @@ test "showMenu: hint pick uses last cell for targeted hint" {
     );
 
     const target: facade.Selection = .{ .row = 2, .col = 4 };
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, target);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, target);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "hint");
@@ -1422,7 +1461,7 @@ test "showMenu: region pick is toggle_region" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "toggle_region");
@@ -1447,13 +1486,57 @@ test "showMenu: settings toggles solvability warnings" {
         source,
     );
 
-    const result = try renderer.showMenu(false, false, .easy, .info, .dark, false, false, false, null);
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
     switch (result) {
         .valid => |cmd| {
             try std.testing.expectEqualStrings(@tagName(cmd), "toggle_warn_solvability");
         },
         .error_msg => try std.testing.expect(false),
     }
+}
+
+test "showMenu: Show Pencil Marks shows its state and toggles the setting" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    const responses = [_][]const u8{"15\n"};
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+
+    const result = try renderer.showMenu(false, true, false, .easy, .info, .dark, false, false, false, null);
+    try std.testing.expect(result.valid == .toggle_show_marks);
+    try std.testing.expect(std.mem.indexOf(u8, aw.writer.buffered(), "15) Show Pencil Marks (on)") != null);
+}
+
+test "render: with marks visible the board is the large one, three lines per row" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, std.testing.io) },
+    );
+
+    var b = board.Board.init();
+    b.toggleMark(8, 8, .nine);
+    try renderer.render(b.asView(), null, null, true);
+
+    const contents = aw.writer.buffered();
+    try std.testing.expect(std.mem.startsWith(u8, contents, LARGE_COLUMN_HEADER ++ LARGE_TOP_BORDER));
+    try std.testing.expect(std.mem.endsWith(u8, contents, " ··9 │\n" ++ LARGE_BOTTOM_BORDER));
+    const frame_lines = 5; // column header, top border, two box rules, bottom border
+    try std.testing.expectEqual(9 * @as(usize, styler.LARGE_CELL_LINES) + frame_lines, std.mem.count(u8, contents, "\n"));
 }
 
 const region_on = "\x1b[48;5;238m";
@@ -1471,7 +1554,7 @@ test "render: no region shading when selection is null" {
     );
 
     const b = board.Board.init();
-    try renderer.render(b.asView(), null, null);
+    try renderer.render(b.asView(), null, null, false);
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) == null);
@@ -1490,7 +1573,7 @@ test "render: region shading when selection provided" {
     );
 
     const b = board.Board.init();
-    try renderer.render(b.asView(), null, .{ .row = 4, .col = 4 });
+    try renderer.render(b.asView(), null, .{ .row = 4, .col = 4 }, false);
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);

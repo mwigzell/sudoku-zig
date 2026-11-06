@@ -113,6 +113,7 @@ pub const Commands = &[_]CommandTableEntry{
     .{ .tag = .undo, .name = "Undo" },
     .{ .tag = .redo, .name = "Redo" },
     .{ .tag = .menu, .name = "Menu" },
+    .{ .tag = .pencil, .name = "Pencil" },
 };
 
 /// Session commands reachable from the terminal menu (not main-line legend).
@@ -186,6 +187,6 @@ test "getName returns correct display name for each tag" {
 
 test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    // Commands + SessionCommands + view/pref and pencil tags cover all CommandTag variants.
-    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 12);
+    // Commands + SessionCommands + view/pref and Pencil mode tags cover all CommandTag variants.
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 11);
 }

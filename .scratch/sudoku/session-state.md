@@ -1,8 +1,9 @@
 # Session state
 
-#107 steps 0-4 done and committed.
-- Step 4: settings reader ignores unknown fields (PARSE_OPTIONS); cell entry appends old_marks + cleared_peers (18 B),
-  solve entry appends 9 mark planes (144 B); reader reads known fields, ignores trailing bytes, reads pre-marks entries
-  with defaults, refuses entries shorter than base. ADR-0018 records "entries may grow".
-- Parity: relaunch_restores_marks_and_their_undo. Web demo: reload + Undo restores marks.
-- Next: step 5 (terminal) — wait for user.
+#107 steps 0-5 done and committed.
+- Step 5 (terminal): `pencil` verb (`p A1 5`) in Commands, legend `(P)encil`; Menu 15) Show Pencil Marks (on/off)
+  → toggle_show_marks. Facade: render gains `marks_visible`, getCommandInput gains `show_marks` (scalar, after
+  show_region). Large board: 3 lines × 5 cols per cell, `·` unset, filled cell digit centred; shared `largeLine` in
+  styler.zig (ANSI styles whole cell block). Terminal criterion ticked on #107.
+- Noted, not fixed: Import rejects a puzzle file with a trailing newline ("exactly 81 characters").
+- Next: step 6 (web shortcuts P, H, R, M; Ctrl/Cmd+S, Shift+S, O; Cmd undo/redo; menu shortcut labels) — wait for user.

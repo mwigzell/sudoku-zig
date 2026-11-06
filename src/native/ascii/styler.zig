@@ -44,6 +44,12 @@ pub const PlainStyler = struct {
             },
         );
     }
+
+    /// One text line of board row `row_idx` in the large board (pencil marks shown).
+    pub fn formatLargeLine(self: *PlainStyler, row_idx: usize, line: usize, view: board.Board.BoardView, selection: ?CellSelection, buf: []u8) ![]u8 {
+        _ = self;
+        return largeLine(row_idx, line, view, selection, false, buf);
+    }
 };
 
 // Tests (co-located) — PlainStyler produces bit-for-bit identical output
@@ -120,6 +126,94 @@ fn style_cell(
 }
 
 // ---------------------------------------------------------------------------
+/// The large board, drawn while pencil marks are shown: each cell is a block of
+/// LARGE_CELL_LINES lines of LARGE_CELL_COLS columns holding its 3×3 marks.
+pub const LARGE_CELL_LINES = board.BOX_DIMENSION;
+/// Columns of a large cell: a space, one slot per mark on the line, a space.
+pub const LARGE_CELL_COLS = board.BOX_DIMENSION + 2;
+/// An unset mark's slot.
+const UNSET_MARK = "·";
+/// Bytes of one line of a large cell's text (every slot unset at most).
+const LARGE_CELL_TEXT_MAX = 2 + board.BOX_DIMENSION * UNSET_MARK.len;
+
+/// Line `line` of the cell at (row, col): its marks for that line of the 3×3 grid, `·` for
+/// an unset one; a filled cell shows only its digit, in the middle of the middle line.
+fn largeCellText(view: board.Board.BoardView, row: u4, col: u4, line: usize, out: *[LARGE_CELL_TEXT_MAX]u8) []const u8 {
+    const value = view.get(row, col);
+    if (value != .zero) {
+        const shown: u8 = if (line == LARGE_CELL_LINES / 2) cell.displayChar(value) else ' ';
+        return std.fmt.bufPrint(out, "  {c}  ", .{shown}) catch unreachable;
+    }
+    const marks = view.marks(row, col);
+    var len: usize = 0;
+    out[len] = ' ';
+    len += 1;
+    for (0..board.BOX_DIMENSION) |slot| {
+        const plane = line * board.BOX_DIMENSION + slot;
+        if (marks & (@as(board.MarkSet, 1) << @intCast(plane)) != 0) {
+            out[len] = '1' + @as(u8, @intCast(plane));
+            len += 1;
+        } else {
+            @memcpy(out[len..][0..UNSET_MARK.len], UNSET_MARK);
+            len += UNSET_MARK.len;
+        }
+    }
+    out[len] = ' ';
+    return out[0 .. len + 1];
+}
+
+/// ANSI codes for a whole large cell, in style_cell's order: a conflicting entry is reversed,
+/// otherwise the selection or region shading, with givens dimmed.
+fn largeCellStyle(view: board.Board.BoardView, row: u4, col: u4, selection: ?CellSelection) []const u8 {
+    const value = view.get(row, col);
+    const given = view.isGiven(row, col) and value != .zero;
+    if (!given and value != .zero and view.isConflictingRowCol(row, col)) return CONFLICT_ON;
+    const selected = if (selection) |sel| sel.row == row and sel.col == col else false;
+    if (selected) return if (given) SELECT_ON ++ DIM_ON else SELECT_ON;
+    if (inPeerRegion(selection, row, col)) return if (given) REGION_ON ++ DIM_ON else REGION_ON;
+    return if (given) DIM_ON else "";
+}
+
+/// One text line of board row `row_idx` in the large board; the row number sits on the
+/// middle line. `styled` adds the ANSI cell styling.
+fn largeLine(row_idx: usize, line: usize, view: board.Board.BoardView, selection: ?CellSelection, styled: bool, buf: []u8) ![]u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    const row: u4 = @intCast(row_idx);
+    if (line == LARGE_CELL_LINES / 2) try w.print("{d}│", .{row_idx + 1}) else try w.writeAll(" │");
+    for (0..board.DIMENSION_SIZE) |c| {
+        const col: u4 = @intCast(c);
+        var text_buf: [LARGE_CELL_TEXT_MAX]u8 = undefined;
+        const style = if (styled) largeCellStyle(view, row, col, selection) else "";
+        try w.writeAll(style);
+        try w.writeAll(largeCellText(view, row, col, line, &text_buf));
+        if (style.len > 0) try w.writeAll(RESET);
+        if (c % board.BOX_DIMENSION == board.BOX_DIMENSION - 1) try w.writeAll("│");
+    }
+    try w.writeAll("\n");
+    return w.buffered();
+}
+
+test "large board: a marked empty cell shows its marks in place, a filled cell only its digit" {
+    var b = board.Board.init();
+    b.toggleMark(0, 0, .one);
+    b.toggleMark(0, 0, .five);
+    b.toggleMark(0, 0, .nine);
+    try b.setCell(0, 1, .seven);
+    const view = b.asView();
+    var buf: [512]u8 = undefined;
+    var plain = PlainStyler{};
+    const empty_box = " ···  ···  ··· │";
+    try std.testing.expectEqualStrings(
+        " │ 1··       ··· │" ++ empty_box ++ empty_box ++ "\n",
+        try plain.formatLargeLine(0, 0, view, null, &buf),
+    );
+    try std.testing.expectEqualStrings(
+        "1│ ·5·   7   ··· │" ++ empty_box ++ empty_box ++ "\n",
+        try plain.formatLargeLine(0, 1, view, null, &buf),
+    );
+}
+
+// ---------------------------------------------------------------------------
 /// AnsiStyler — fills buffer with formatted row string for `row_idx`.
 pub const AnsiStyler = struct {
     /// Fill the passed buffer with a formatted row string for `row_idx`.
@@ -158,6 +252,12 @@ pub const AnsiStyler = struct {
             s7[0..style_cell(vals[7], gives[7], conflicts[7], inPeerRegion(selection, row, 7), selection != null and selection.?.row == row and selection.?.col == 7, &s7)],
             s8[0..style_cell(vals[8], gives[8], conflicts[8], inPeerRegion(selection, row, 8), selection != null and selection.?.row == row and selection.?.col == 8, &s8)],
         });
+    }
+
+    /// One text line of board row `row_idx` in the large board, styled like formatRow's cells.
+    pub fn formatLargeLine(self: *AnsiStyler, row_idx: usize, line: usize, view: board.Board.BoardView, selection: ?CellSelection, buf: []u8) ![]u8 {
+        _ = self;
+        return largeLine(row_idx, line, view, selection, true, buf);
     }
 };
 

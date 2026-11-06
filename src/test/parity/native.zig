@@ -216,7 +216,7 @@ const Recorder = struct {
     }
 
     /// Keeps the status line the board was last drawn with, for the final state.
-    pub fn render(self: *Recorder, _: board.Board.BoardView, msg: ?[]const u8, _: ?facade_mod.Selection) !void {
+    pub fn render(self: *Recorder, _: board.Board.BoardView, msg: ?[]const u8, _: ?facade_mod.Selection, _: bool) !void {
         self.last_status = if (msg) |m| (if (m.len == 0) null else self.text(m) catch return error.System) else null;
     }
 
@@ -238,6 +238,7 @@ const Recorder = struct {
     pub fn getCommandInput(
         self: *Recorder,
         _: []const []const u8,
+        _: bool,
         _: bool,
         _: bool,
         _: config.Difficulty,
