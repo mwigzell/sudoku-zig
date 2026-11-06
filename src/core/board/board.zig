@@ -21,6 +21,25 @@ pub const Error = error{
 };
 pub const DIMENSION_SIZE: u8 = 9;
 pub const CELL_COUNT = DIMENSION_SIZE * DIMENSION_SIZE;
+
+/// One bit per cell: a set of cells, such as the givens or the cells in conflict.
+/// `cellBit` and `indexBit` are the only places that compute a cell's bit.
+pub const CellMask = u81;
+comptime {
+    std.debug.assert(@bitSizeOf(CellMask) == CELL_COUNT);
+}
+/// Every cell.
+pub const ALL_CELLS: CellMask = ~@as(CellMask, 0);
+
+/// The bit for the cell at flat index `idx` (row * 9 + col).
+pub fn indexBit(idx: usize) CellMask {
+    return @as(CellMask, 1) << @intCast(idx);
+}
+
+/// The bit for the cell at (row, col), both 0-based.
+pub fn cellBit(row: u4, col: u4) CellMask {
+    return indexBit(@as(usize, row) * DIMENSION_SIZE + @as(usize, col));
+}
 // Box dimension: a standard Sudoku box is 3x3.
 pub const BOX_DIMENSION: u4 = 3;
 // Cells per box = 9.
@@ -36,8 +55,8 @@ pub fn formatCellLabel(buf: *[2]u8, row: u4, col: u4) []const u8 {
 /// The canonical 9×9 Sudoku board state, backed by flat storage + a given-bitmask.
 pub const Board = struct {
     cells: [CELL_COUNT]Cell,
-    given_bits: u128, // bit-per-cell mask of immutable puzzle clues
-    conflict_bits: u128, // bit-per-cell mask of cells with duplicates
+    given_bits: CellMask, // the puzzle's clues, which never change
+    conflict_bits: CellMask, // cells that repeat a digit in their row, column or box
     digit_bits: [BoxCellCount]u32, // bitmask per box; bit k=0..8 -> digit D(k)=1..9
 
     /// Read-only borrowed lens over Board flat storage.
@@ -148,18 +167,17 @@ pub const Board = struct {
 
     /// Is this cell a puzzle clue (immutable)?
     pub fn isGiven(self: Board, row: u4, col: u4) bool {
-        const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
-        return ((self.given_bits >> @intCast(idx)) & 1) == 1;
+        return (self.given_bits & cellBit(row, col)) != 0;
     }
 
     /// Is this cell flagged in conflict with another cell?
     pub fn isConflicting(self: Board, idx: usize) bool {
-        return ((self.conflict_bits >> @intCast(idx)) & 1) == 1;
+        return (self.conflict_bits & indexBit(idx)) != 0;
     }
 
     /// Mark cell at flat index `idx` as conflicting.
     pub fn setConflictBit(self: *Board, idx: usize) void {
-        self.conflict_bits |= @as(u128, 1) << @intCast(idx);
+        self.conflict_bits |= indexBit(idx);
     }
 
     /// Clear all conflict bits (called before re-validation).
@@ -231,7 +249,7 @@ pub const Board = struct {
         const idx: usize = @as(usize, @intCast(row)) * DIMENSION_SIZE + @as(usize, @intCast(col));
         const old_val = self.cells[idx].value;
         self.cells[idx].value = .zero;
-        self.given_bits &= ~(@as(u128, 1) << @intCast(idx));
+        self.given_bits &= ~cellBit(row, col);
         self.updateDigitBits(row, col, old_val, .zero);
     }
 
@@ -347,7 +365,7 @@ test "Board: fromFlat derives given bits dynamically per cell" {
     // Every cell's given flag must match its data: non-zero → bit set, zero → clear
     for (flat, 0..) |v, i| {
         const expected_bit_set = v != 0;
-        const bit_set = ((b.given_bits >> @intCast(i)) & 1) == 1;
+        const bit_set = (b.given_bits & indexBit(i)) != 0;
         try std.testing.expectEqual(expected_bit_set, bit_set);
     }
 
@@ -593,4 +611,11 @@ test "Board: BoardView reflects mutation on reborrow" {
     // Cleared cell is zero on fresh view
     try std.testing.expectEqual(CellValue.zero, v2.get(7, 0));
     try std.testing.expect(!v2.isGiven(7, 0));
+}
+
+test "cellBit is the bit of the cell's flat index, row by row" {
+    try std.testing.expectEqual(indexBit(0), cellBit(0, 0));
+    try std.testing.expectEqual(indexBit(DIMENSION_SIZE), cellBit(1, 0));
+    try std.testing.expectEqual(indexBit(CELL_COUNT - 1), cellBit(8, 8));
+    try std.testing.expectEqual(ALL_CELLS, (indexBit(CELL_COUNT - 1) << 1) -% 1);
 }

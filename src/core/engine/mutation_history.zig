@@ -1,6 +1,7 @@
 // Undo/redo history: mutation entries with a forward pointer over them.
 const std = @import("std");
 const cell = @import("../board/cell.zig");
+const board = @import("../board/board.zig");
 
 /// One player fill or clear.
 pub const CellMutation = struct {
@@ -12,7 +13,7 @@ pub const CellMutation = struct {
 
 /// Board before a solve. Redo re-runs the solver from this snapshot.
 pub const BoardSnapshot = struct {
-    given_bits: u128,
+    given_bits: board.CellMask,
     flat: [81]u8,
 };
 
@@ -139,7 +140,7 @@ test "MutationHistory: push stores a cell and pushSolve stores one before snapsh
     }
     switch (h.entries.items[1]) {
         .solve_batch => |snap| {
-            try std.testing.expectEqual(@as(u128, 1), snap.given_bits);
+            try std.testing.expectEqual(@as(board.CellMask, 1), snap.given_bits);
             try std.testing.expectEqual(@as(u8, 4), snap.flat[0]);
         },
         .cell => return error.TestFailed,

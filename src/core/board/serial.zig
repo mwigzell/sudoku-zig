@@ -6,7 +6,7 @@ pub const Error = board.Error;
 
 pub const FlatOpts = struct {
     // When provided, use explicit given_bits mask; otherwise derive from nonzero cells.
-    given_bits: ?u128 = null,
+    given_bits: ?board.CellMask = null,
 };
 
 /// Serialize current cell values to a flat [81]u8 array for saving.
@@ -35,11 +35,11 @@ pub fn fromFlat(flat: [81]u8, opts: FlatOpts) Error!board.Board {
     }
 
     var b = board.Board.init();
-    var mask: u128 = 0;
+    var mask: board.CellMask = 0;
     for (flat, 0..) |v, i| {
         b.cells[i] = cell.Cell.init(cell.rawToCellValue(v));
         if (v != 0) {
-            mask |= @as(u128, 1) << @intCast(i);
+            mask |= board.indexBit(i);
             const row: u4 = @intCast(@divTrunc(i, board.DIMENSION_SIZE));
             const col: u4 = @intCast(@mod(i, board.DIMENSION_SIZE));
             b.updateDigitBits(row, col, .zero, cell.rawToCellValue(v));
@@ -317,7 +317,7 @@ test "Board: equal returns false when given_bits differ" {
     var b2 = try fromFlat(flat, .{});
 
     // b1 has cell 0 as given (non-zero in flat), b2 does not
-    b2.given_bits &= ~@as(u128, 1);
+    b2.given_bits &= ~board.indexBit(0);
 
     try std.testing.expect(!equal(b1, b2));
 }

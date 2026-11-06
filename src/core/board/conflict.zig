@@ -4,11 +4,11 @@ const validator = @import("validator.zig");
 
 /// Translate scope-relative conflict bits (0..8) to full board flat-storage positions
 /// using the View's index array.
-pub fn scopeToBoardMask(indices: *align(1) const [9]usize, scope_bits: u128) u128 {
-    var result: u128 = 0;
+pub fn scopeToBoardMask(indices: *align(1) const [9]usize, scope_bits: u128) board.CellMask {
+    var result: board.CellMask = 0;
     for (indices, 0..) |board_idx, i| {
         if ((scope_bits & (@as(u128, 1) << @intCast(i))) != 0) {
-            result |= @as(u128, 1) << @intCast(board_idx);
+            result |= board.indexBit(board_idx);
         }
     }
     return result;
@@ -16,29 +16,25 @@ pub fn scopeToBoardMask(indices: *align(1) const [9]usize, scope_bits: u128) u12
 
 /// Build a bitmask of every flat-storage index in the row, column,
 /// and box containing cell at (row, col).
-pub fn unitsMask(row: u4, col: u4) u128 {
-    var mask: u128 = 0;
+pub fn unitsMask(row: u4, col: u4) board.CellMask {
+    var mask: board.CellMask = 0;
 
     // Row cells
     for (0..board.DIMENSION_SIZE) |c| {
-        const idx: usize = @as(usize, @intCast(row)) * board.DIMENSION_SIZE + @as(usize, @intCast(c));
-        mask |= @as(u128, 1) << @intCast(idx);
+        mask |= board.cellBit(row, @intCast(c));
     }
 
     // Column cells
     for (0..board.DIMENSION_SIZE) |r| {
-        const idx: usize = @as(usize, @intCast(r)) * board.DIMENSION_SIZE + @as(usize, @intCast(col));
-        mask |= @as(u128, 1) << @intCast(idx);
+        mask |= board.cellBit(@intCast(r), col);
     }
 
     // Box cells
-    const box_row: usize = @divTrunc(@as(usize, @intCast(row)), board.BOX_DIMENSION);
-    const box_col: usize = @divTrunc(@as(usize, @intCast(col)), board.BOX_DIMENSION);
+    const box_row = (row / board.BOX_DIMENSION) * board.BOX_DIMENSION;
+    const box_col = (col / board.BOX_DIMENSION) * board.BOX_DIMENSION;
     for (0..board.BOX_DIMENSION) |r| {
         for (0..board.BOX_DIMENSION) |c| {
-            const idx: usize = (box_row * board.BOX_DIMENSION + r) * board.DIMENSION_SIZE +
-                box_col * board.BOX_DIMENSION + c;
-            mask |= @as(u128, 1) << @intCast(idx);
+            mask |= board.cellBit(box_row + @as(u4, @intCast(r)), box_col + @as(u4, @intCast(c)));
         }
     }
 
@@ -48,7 +44,7 @@ pub fn unitsMask(row: u4, col: u4) u128 {
 /// Walk every row, column, and box scope and update conflict_bits on the Board.
 pub fn validate(b: *board.Board) void {
     b.clearConflicts();
-    var mask: u128 = 0;
+    var mask: board.CellMask = 0;
 
     for (0..board.DIMENSION_SIZE) |r| {
         const rv = board.Board.asRow(@intCast(r));
@@ -79,7 +75,7 @@ pub fn refreshConflictsForCell(b: *board.Board, row: u4, col: u4) void {
     const umask = unitsMask(row, col);
     b.conflict_bits &= ~umask;
 
-    var new_mask: u128 = 0;
+    var new_mask: board.CellMask = 0;
 
     // Row
     const rv = board.Board.asRow(row);

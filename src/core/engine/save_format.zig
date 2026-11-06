@@ -186,7 +186,7 @@ fn packNibbles(high: u4, low: u4) u8 {
 /// Sections found while reading; board and givens are required, history and status are optional.
 const ReadSections = struct {
     flat: ?[BOARD_SIZE]u8 = null,
-    given_bits: ?u128 = null,
+    given_bits: ?board.CellMask = null,
     history: ?[]const u8 = null,
     status: []const u8 = &.{},
 };
@@ -226,7 +226,7 @@ fn readSection(r: *ByteReader, found: *ReadSections) Error!void {
         },
         .givens => {
             if (payload.len != GIVENS_SIZE) return error.InvalidSaveFile;
-            found.given_bits = std.mem.readInt(u128, payload[0..GIVENS_SIZE], .little);
+            found.given_bits = try readGivens(payload[0..GIVENS_SIZE]);
         },
         .history => found.history = payload,
         .status => found.status = payload,
@@ -269,13 +269,18 @@ fn readEntry(history: *mutation_history.MutationHistory, tag: EntryTag, entry: [
             @memcpy(&flat, entry[GIVENS_SIZE..][0..BOARD_SIZE]);
             for (flat) |v| _ = try cellValue(v);
             try history.pushSolve(.{
-                .given_bits = std.mem.readInt(u128, entry[0..GIVENS_SIZE], .little),
+                .given_bits = try readGivens(entry[0..GIVENS_SIZE]),
                 .flat = flat,
             });
             return true;
         },
         _ => return false,
     }
+}
+
+/// A givens mask, refused when a bit beyond the last cell is set.
+fn readGivens(bytes: *const [GIVENS_SIZE]u8) Error!board.CellMask {
+    return std.math.cast(board.CellMask, std.mem.readInt(u128, bytes, .little)) orelse error.InvalidSaveFile;
 }
 
 fn highNibble(byte: u8) u4 {
@@ -468,4 +473,18 @@ test "a cell entry with an out-of-range value is refused" {
     defer hist.deinit();
     try std.testing.expectError(error.InvalidSaveFile, readEntry(&hist, .cell, &.{ packNibbles(0, 0), packNibbles(0, 12) }));
     try std.testing.expectError(error.InvalidSaveFile, readEntry(&hist, .cell, &.{ packNibbles(9, 0), packNibbles(0, 1) }));
+}
+
+test "a givens mask with a bit beyond the last cell is refused" {
+    const b = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
+    var file: std.ArrayList(u8) = .empty;
+    defer file.deinit(std.testing.allocator);
+    try file.appendSlice(std.testing.allocator, &SaveFileMagic);
+    try file.appendSlice(std.testing.allocator, &.{ 1, 0, 2, 0 });
+    try appendSection(&file, @backingInt(SectionTag.board), &board.toFlat(b));
+    var givens: [GIVENS_SIZE]u8 = undefined;
+    std.mem.writeInt(u128, &givens, @as(u128, b.given_bits) | (@as(u128, 1) << board.CELL_COUNT), .little);
+    try appendSection(&file, @backingInt(SectionTag.givens), &givens);
+
+    try std.testing.expectError(error.InvalidSaveFile, fromSaveFormat(std.testing.allocator, file.items));
 }

@@ -547,7 +547,7 @@ test "openFromSave warns when SUD0 bytes encode an unsolvable grid" {
         0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
         0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
     };
-    const given_bits: u128 = 0x54949b0d901361b25254;
+    const given_bits: board.CellMask = 0x54949b0d901361b25254;
 
     var dead = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer dead.deinit();
@@ -574,7 +574,7 @@ test "openFromSave joins competing status sentences with a space" {
         0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
         0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
     };
-    const given_bits: u128 = 0x54949b0d901361b25254;
+    const given_bits: board.CellMask = 0x54949b0d901361b25254;
 
     var dead = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer dead.deinit();
@@ -847,7 +847,7 @@ test "inline unsolvable grid: fill warns and clear restores same dead board" {
         0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
         0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
     };
-    const given_bits: u128 = 0x54949b0d901361b25254;
+    const given_bits: board.CellMask = 0x54949b0d901361b25254;
 
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();

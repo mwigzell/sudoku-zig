@@ -192,7 +192,7 @@ pub const PuzzleGen = struct {
             for (to_clear) |idx_usize| {
                 const row: u4 = @intCast(@divTrunc(idx_usize, 9));
                 const col: u4 = @intCast(@mod(idx_usize, 9));
-                puzzle.given_bits &= ~(@as(u128, 1) << @intCast(idx_usize));
+                puzzle.given_bits &= ~board.indexBit(idx_usize);
                 puzzle.setCell(row, col, cell.CellValue.zero) catch unreachable;
                 puzzle.refreshConflictsForCell(row, col);
                 step +%= 1;
@@ -247,7 +247,7 @@ pub const PuzzleGen = struct {
                 const row: u4 = @intCast(@divTrunc(idx_usize, 9));
                 const col: u4 = @intCast(@mod(idx_usize, 9));
                 const saved_val = puzzle.getCellValue(row, col);
-                puzzle.given_bits &= ~(@as(u128, 1) << @intCast(idx_usize));
+                puzzle.given_bits &= ~board.indexBit(idx_usize);
                 puzzle.setCell(row, col, cell.CellValue.zero) catch unreachable;
                 puzzle.refreshConflictsForCell(row, col);
                 step +%= 1;
@@ -261,7 +261,7 @@ pub const PuzzleGen = struct {
                 const solutions = try solver.countSolutions(puzzle, 2);
                 if (solutions != 1) {
                     puzzle.setCell(row, col, saved_val) catch unreachable;
-                    puzzle.given_bits |= @as(u128, 1) << @intCast(idx_usize);
+                    puzzle.given_bits |= board.indexBit(idx_usize);
                     puzzle.refreshConflictsForCell(row, col);
                 }
             }
@@ -349,8 +349,8 @@ fn givensRange(diff: Difficulty) struct { min: usize, max: usize } {
     };
 }
 
-fn allGivensMask() u128 {
-    return (@as(u128, 1) << board.CELL_COUNT) - 1;
+fn allGivensMask() board.CellMask {
+    return board.ALL_CELLS;
 }
 
 fn countGivensBoard(b: *const board.Board) usize {
