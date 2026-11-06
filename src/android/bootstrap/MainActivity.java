@@ -542,10 +542,37 @@ public final class MainActivity extends Activity {
         return fallback;
     }
 
+    /** The bound file, or null; a bound file deleted outside the app is unbound here, so nothing asks to replace it. */
     private Uri currentUri() {
+        final Uri uri;
         synchronized (pickerLock) {
-            return currentFileUri;
+            uri = currentFileUri;
         }
+        if (uri == null || !isGone(uri)) return uri;
+        Log.i(LOG_IDENTITY, "bound file " + uri + " is gone; unbinding it");
+        forgetCurrentFileBinding(uri);
+        return null;
+    }
+
+    /** Whether the provider no longer lists `uri`; a file it cannot answer for (e.g. no permission) is not gone. */
+    private boolean isGone(Uri uri) {
+        final String[] projection = new String[] { OpenableColumns.DISPLAY_NAME };
+        try (Cursor cursor = getContentResolver().query(uri, projection, null, null, null)) {
+            return cursor != null && !cursor.moveToFirst();
+        } catch (RuntimeException err) {
+            Log.i(LOG_IDENTITY, "expected: cannot look up bound file " + uri + "; keeping it bound (" + err + ")");
+            return false;
+        }
+    }
+
+    /** Drop the binding to `uri`, unless another file was bound meanwhile. */
+    private void forgetCurrentFileBinding(Uri uri) {
+        synchronized (pickerLock) {
+            if (!uri.equals(currentFileUri)) return;
+            currentFileUri = null;
+            currentFileName = null;
+        }
+        fileBindingPrefs().edit().remove(FILE_BIND_URI_KEY).remove(FILE_BIND_NAME_KEY).apply();
     }
 
     private ActivityResultWaiter beginWaiterFor(int requestCode) {

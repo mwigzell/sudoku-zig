@@ -356,6 +356,29 @@ public final class FileBridgeTest {
     }
 
     @Test
+    public void aBoundFileDeletedOutsideTheAppIsUnboundAndTheNextMoveWritesANewDefaultFile() throws IOException {
+        launchApp();
+        startEasyGame();
+        fillAnEmptyCell();
+        final MediaEntry deleted = awaitDefaultEntry();
+        awaitBoundName();
+
+        sh("rm -f " + DEFAULT_PATH + "\n");
+        final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
+        while (!defaultOrRenamedEntries().isEmpty()) {
+            if (SystemClock.uptimeMillis() > deadline) fail("the deleted file is still listed");
+            SystemClock.sleep(POLL_MS);
+        }
+        fillAnEmptyCell();
+
+        final MediaEntry created = awaitDefaultEntry();
+        assertNotEquals("a new entry replaces the deleted one", deleted.id, created.id);
+        assertFalse("nothing asks to replace a file that is gone", device.hasObject(By.res(ASK_TEXT)));
+        assertEquals(DEFAULT_NAME, awaitBoundName());
+        assertEquals(DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
+    }
+
+    @Test
     public void pickItWritesTheEarlierFileBindsItAndKeepsAutosavingThere() throws IOException {
         final String earlierHash = reachTakenAskAfterReinstall();
 
