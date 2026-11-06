@@ -1,8 +1,8 @@
 # Session state
 
-#107 steps 0-3 done and committed (+ refactor 185f62d: one unitsMask; #115 filed for front-end region copies).
-- Step 3: Solve clears marks via placeSolution (shared by Solve and Redo, each digit through fill.clearMarks);
-  BoardSnapshot.mark_bits restores them on Undo. Hint test proves marks unchanged.
-- Parity: solve_clears_marks, solve_undo_restores_marks, hint_leaves_marks.
-- Not yet saved: cell entry old_marks/cleared_peers and solve entry mark_bits (step 4).
-- Next: step 4 (saved marks) — wait for user.
+#107 steps 0-4 done and committed.
+- Step 4: settings reader ignores unknown fields (PARSE_OPTIONS); cell entry appends old_marks + cleared_peers (18 B),
+  solve entry appends 9 mark planes (144 B); reader reads known fields, ignores trailing bytes, reads pre-marks entries
+  with defaults, refuses entries shorter than base. ADR-0018 records "entries may grow".
+- Parity: relaunch_restores_marks_and_their_undo. Web demo: reload + Undo restores marks.
+- Next: step 5 (terminal) — wait for user.

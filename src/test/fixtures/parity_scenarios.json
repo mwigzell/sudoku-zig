@@ -353,6 +353,32 @@
       }
     },
     {
+      "name": "relaunch_restores_marks_and_their_undo",
+      "summary": "Marks autosaved with Auto Save on come back on the next launch, and undoing a fill made before it puts back the marks the fill cleared.",
+      "config": {"auto_restore": true, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 0, "col": 0, "digit": 5}},
+        {"fill": {"row": 0, "col": 1, "digit": 5}},
+        {"fill": {"row": 1, "col": 1, "digit": 3}},
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 0, "col": 0, "digit": 5}},
+        {"relaunch": true},
+        {"undo": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "probes": [
+          {"row": 0, "col": 0, "value": 0, "given": false, "marks": 16},
+          {"row": 0, "col": 1, "value": 0, "given": false, "marks": 16},
+          {"row": 1, "col": 1, "value": 0, "given": false, "marks": 4}
+        ]
+      }
+    },
+    {
       "name": "clear_removes_marks",
       "summary": "Clear on an empty cell with marks removes them all and autosaves.",
       "config": {"auto_restore": false, "auto_new": false, "auto_save": true},

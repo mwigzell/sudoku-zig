@@ -46,6 +46,9 @@ pub const Error = error{
     System,
 };
 
+/// A field this app does not know (written by a newer app) is ignored; a missing one keeps its default.
+const PARSE_OPTIONS: std.json.ParseOptions = .{ .ignore_unknown_fields = true };
+
 const SETTINGS_PART = "player settings";
 const CURRENT_FILE_PART = "current file";
 
@@ -151,7 +154,7 @@ pub fn settingsPath(gpa: std.mem.Allocator, data_dir: []const u8) Error![]u8 {
 }
 
 fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
-    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch |err| {
+    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, PARSE_OPTIONS) catch |err| {
         noteParseFailure(err);
         return config.Config.default();
     };
@@ -163,7 +166,7 @@ fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
 }
 
 fn loadCurrentFileBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!?[]u8 {
-    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, .{}) catch |err| {
+    const parsed = std.json.parseFromSlice(JsonSettingsFile, gpa, bytes, PARSE_OPTIONS) catch |err| {
         noteParseFailure(err);
         return null;
     };
@@ -310,6 +313,34 @@ test "load ignores stale renderer keys on disk" {
     try std.testing.expectEqual(config.Difficulty.easy, loaded.difficulty);
     try std.testing.expectEqual(config.RendererKind.ansi, loaded.preferred_renderer);
     try std.testing.expectEqual(config.RendererKind.ansi, loaded.fallback_renderer.?);
+}
+
+test "a field this app does not know is ignored; every known setting and the current file still load" {
+    const newer =
+        \\{"difficulty":"hard","log_level":"warn","theme":"light","show_region":true,"warn_solvability":true,
+        \\"auto_restore":true,"auto_new":true,"auto_save":true,"show_marks":false,"from_a_newer_app":{"x":[1,2]},
+        \\"current_file":"/games/a.sud"}
+    ;
+    const cfg = try loadBytes(std.testing.allocator, newer);
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+    try std.testing.expect(cfg.show_region and cfg.warn_solvability and cfg.auto_restore and cfg.auto_new and cfg.auto_save);
+    try std.testing.expect(!cfg.show_marks);
+
+    const current = (try loadCurrentFileBytes(std.testing.allocator, newer)) orelse return error.TestFailed;
+    defer std.testing.allocator.free(current);
+    try std.testing.expectEqualStrings("/games/a.sud", current);
+}
+
+test "a settings file without show_marks loads it as on" {
+    const older =
+        \\{"difficulty":"easy","log_level":"info","theme":"dark","show_region":false,"warn_solvability":false,
+        \\"auto_restore":false,"auto_new":false,"auto_save":false}
+    ;
+    const cfg = try loadBytes(std.testing.allocator, older);
+    try std.testing.expect(cfg.show_marks);
+    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
 }
 
 test "settings round-trip preserves player fields" {

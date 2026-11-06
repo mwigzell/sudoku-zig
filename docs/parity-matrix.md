@@ -70,6 +70,7 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `solve_clears_marks` | Solve fills every empty cell and clears every mark, as player fills would. | native, web, android | — |
 | `solve_undo_restores_marks` | Undo of a Solve empties the cells it filled and puts back the marks it cleared. | native, web, android | — |
 | `hint_leaves_marks` | A hint on a marked cell leaves its marks as they were. | native, web, android | — |
+| `relaunch_restores_marks_and_their_undo` | Marks autosaved with Auto Save on come back on the next launch, and undoing a fill made before it puts back the marks the fill cleared. | native, web, android | — |
 | `clear_removes_marks` | Clear on an empty cell with marks removes them all and autosaves. | native, web, android | — |
 | `hint_reports_and_autosaves` | A hint shows its text in the status line, leaves the hinted cell empty, and autosaves like any other command. | native, web, android | — |
 | `solve_then_rejected_fill` | Solve fills the board, reports the win and autosaves; a move on a given cell is then rejected with an error and changes and writes nothing. | native, web, android | — |
