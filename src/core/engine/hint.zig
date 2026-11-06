@@ -122,8 +122,18 @@ fn appendEnginePickMsg(engine: *game_engine.GameEngine, solution: [81]u8) void {
     appendTargetedMsg(engine, row, col, solution, view);
 }
 
-/// Display-only hint; uses one `solver.solve` pass.
-pub fn execute(engine: *game_engine.GameEngine, hint: command.HintData) game_engine.Event {
+/// The hint's target, dropped when it is a given: a given is always right, so core picks the cell instead.
+fn effectiveTarget(engine: *const game_engine.GameEngine, hint: command.HintData) command.HintData {
+    const row = hint.row orelse return .{};
+    const col = hint.col orelse return .{};
+    if (engine.state.board.isGiven(row, col)) return .{};
+    return hint;
+}
+
+/// Display-only hint; uses one `solver.solve` pass. `requested` names the selected cell, if any:
+/// a player cell gets a hint about itself, a given or no cell gets core's pick. Returns `.ok` with the sentence on `msg`.
+pub fn execute(engine: *game_engine.GameEngine, requested: command.HintData) game_engine.Event {
+    const hint = effectiveTarget(engine, requested);
     const solved = solver.solve(engine.state.board) catch |err| switch (err) {
         error.Conflict => {
             appendNoSolutionFor(engine, hint);
@@ -162,16 +172,72 @@ test "hint: unsolvable board returns the no-solution sentence" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
 }
 
-fn firstEmptyPlayerCell(engine: *game_engine.GameEngine) ?struct { row: u4, col: u4, idx: usize } {
+const TestCell = struct { row: u4, col: u4, idx: usize };
+
+/// The first cell, in reading order, that `match` accepts.
+fn firstCellWhere(engine: *game_engine.GameEngine, comptime match: fn (*game_engine.GameEngine, u4, u4) bool) ?TestCell {
     var idx: usize = 0;
     while (idx < board.CELL_COUNT) : (idx += 1) {
         const row: u4 = @intCast(@divTrunc(idx, board.DIMENSION_SIZE));
         const col: u4 = @intCast(@mod(idx, board.DIMENSION_SIZE));
-        if (engine.state.board.isGiven(row, col)) continue;
-        if (engine.state.board.asView().get(row, col) != .zero) continue;
-        return .{ .row = row, .col = col, .idx = idx };
+        if (match(engine, row, col)) return .{ .row = row, .col = col, .idx = idx };
     }
     return null;
+}
+
+fn isEmptyPlayerCell(engine: *game_engine.GameEngine, row: u4, col: u4) bool {
+    return !engine.state.board.isGiven(row, col) and engine.state.board.asView().get(row, col) == .zero;
+}
+
+fn isGivenCell(engine: *game_engine.GameEngine, row: u4, col: u4) bool {
+    return engine.state.board.isGiven(row, col);
+}
+
+fn firstEmptyPlayerCell(engine: *game_engine.GameEngine) ?TestCell {
+    return firstCellWhere(engine, isEmptyPlayerCell);
+}
+
+fn firstGivenCell(engine: *game_engine.GameEngine) ?TestCell {
+    return firstCellWhere(engine, isGivenCell);
+}
+
+/// Room for any hint sentence a test copies out.
+const HINT_MSG_CAP = 128;
+
+/// The hint sentence for `hint`, copied out of the engine's reused message buffer.
+fn hintMsg(engine: *game_engine.GameEngine, hint: command.HintData, buf: *[HINT_MSG_CAP]u8) ![]const u8 {
+    const ev = engine.exec(command.Command{ .hint = hint });
+    if (ev != .ok) return error.TestFailed;
+    const msg = ev.ok.msg orelse return error.TestFailed;
+    if (msg.len > buf.len) return error.TestFailed;
+    @memcpy(buf[0..msg.len], msg);
+    return buf[0..msg.len];
+}
+
+test "hint: targeted at a given gives the untargeted hint" {
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+    const given = firstGivenCell(&engine) orelse return error.TestFailed;
+
+    var untargeted_buf: [HINT_MSG_CAP]u8 = undefined;
+    var targeted_buf: [HINT_MSG_CAP]u8 = undefined;
+    const untargeted = try hintMsg(&engine, .{}, &untargeted_buf);
+    const targeted = try hintMsg(&engine, .{ .row = given.row, .col = given.col }, &targeted_buf);
+    try std.testing.expectEqualStrings(untargeted, targeted);
+}
+
+test "hint: targeted at a given on a dead board gives the untargeted no-solution sentence" {
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+    engine.warn_dead_moves = true;
+    const fill_ev = engine.exec(command.Command{
+        .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
+    });
+    if (fill_ev != .ok) return error.TestFailed;
+    const given = firstGivenCell(&engine) orelse return error.TestFailed;
+
+    var buf: [HINT_MSG_CAP]u8 = undefined;
+    try std.testing.expectEqualStrings(no_solution_msg, try hintMsg(&engine, .{ .row = given.row, .col = given.col }, &buf));
 }
 
 test "hint: targeted consistent sentence" {
