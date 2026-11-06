@@ -6,9 +6,13 @@ export const PAD_REDO = "redo";
 export const PAD_HINT = "hint";
 export const PAD_REGION = "region";
 
+/** `data-play-key` of the Clear button; the other cell keys are digits. */
+const CLEAR_KEY = "0";
+
 /**
  * @typedef {Object} PlayPadControls
- * @property {HTMLElement[]} cellKeys Digits and Clear: they act on the selected cell.
+ * @property {HTMLElement[]} digits Digit keys: they fill the selected cell.
+ * @property {HTMLElement | null} clear Clears the selected cell.
  * @property {HTMLElement | null} undo
  * @property {HTMLElement | null} redo
  * @property {HTMLElement | null} hint
@@ -22,8 +26,10 @@ export const PAD_REGION = "region";
  */
 export function collectPlayPadControls(padEl) {
   const command = (name) => padEl?.querySelector?.(`[data-pad-command="${name}"]`) ?? null;
+  const cellKeys = padEl?.querySelectorAll ? [...padEl.querySelectorAll("[data-play-key]")] : [];
   return {
-    cellKeys: padEl?.querySelectorAll ? [...padEl.querySelectorAll("[data-play-key]")] : [],
+    digits: cellKeys.filter((key) => key.dataset.playKey !== CLEAR_KEY),
+    clear: cellKeys.find((key) => key.dataset.playKey === CLEAR_KEY) ?? null,
     undo: command(PAD_UNDO),
     redo: command(PAD_REDO),
     hint: command(PAD_HINT),
@@ -32,14 +38,16 @@ export function collectPlayPadControls(padEl) {
 }
 
 /**
- * Show core's state on the pad: Undo, Redo and Hint from the legend, Region from config; cell keys need a selection.
+ * Show core's state on the pad: Undo, Redo and Hint from the legend, Region from config.
+ * Digits need a selected cell; Clear needs one core marks `clearable`.
  * @param {PlayPadControls} controls
  * @param {Record<string, boolean>} legend
  * @param {{ show_region?: boolean }} config
- * @param {boolean} hasSelection
+ * @param {{ clearable?: boolean } | null} selectedCell The selected cell's snapshot, or null when none is selected.
  */
-export function syncPlayPad(controls, legend, config, hasSelection) {
-  for (const key of controls.cellKeys) key.disabled = !hasSelection;
+export function syncPlayPad(controls, legend, config, selectedCell) {
+  for (const key of controls.digits) key.disabled = selectedCell == null;
+  if (controls.clear) controls.clear.disabled = selectedCell?.clearable !== true;
   if (controls.undo) controls.undo.disabled = !legend[PAD_UNDO];
   if (controls.redo) controls.redo.disabled = !legend[PAD_REDO];
   if (controls.hint) controls.hint.disabled = !legend[PAD_HINT];

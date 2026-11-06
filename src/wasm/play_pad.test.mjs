@@ -29,7 +29,8 @@ function makeBtn() {
 
 function makePadControls() {
   return {
-    cellKeys: [makeBtn(), makeBtn()],
+    digits: [makeBtn(), makeBtn()],
+    clear: makeBtn(),
     undo: makeBtn(),
     redo: makeBtn(),
     hint: makeBtn(),
@@ -37,18 +38,23 @@ function makePadControls() {
   };
 }
 
-// ── sync: cell keys follow the selection, commands follow the legend, Region follows config ──
+// ── sync: digits follow the selection, Clear follows core's `clearable`, commands the legend, Region config ──
 {
   const pad = makePadControls();
-  playPad.syncPlayPad(pad, { undo: true, redo: false, hint: true }, { show_region: true }, false);
-  assert.ok(pad.cellKeys.every((key) => key.disabled), "digits and Clear are disabled without a selection");
+  playPad.syncPlayPad(pad, { undo: true, redo: false, hint: true }, { show_region: true }, null);
+  assert.ok(pad.digits.every((key) => key.disabled), "digits are disabled without a selection");
+  assert.equal(pad.clear.disabled, true, "Clear is disabled without a selection");
   assert.equal(pad.undo.disabled, false);
   assert.equal(pad.redo.disabled, true);
   assert.equal(pad.hint.disabled, false);
   assert.equal(pad.region.attrs["aria-pressed"], "true");
 
-  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, true);
-  assert.ok(pad.cellKeys.every((key) => !key.disabled), "digits and Clear are enabled with a selection");
+  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, { clearable: false });
+  assert.ok(pad.digits.every((key) => !key.disabled), "digits are enabled with a selection");
+  assert.equal(pad.clear.disabled, true, "Clear is disabled on a cell core says cannot be cleared");
+
+  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, { clearable: true });
+  assert.equal(pad.clear.disabled, false, "Clear is enabled on a cell core says can be cleared");
   assert.equal(pad.undo.disabled, true);
   assert.equal(pad.redo.disabled, false);
   assert.equal(pad.hint.disabled, true);
@@ -67,10 +73,22 @@ function makePadControls() {
   const selection = { getSelection: () => null, select() {}, deselect() {} };
   const menuControls = { undo: makeBtn(), redo: makeBtn(), hint: makeBtn(), viewRegion: makeBtn() };
   const pad = makePadControls();
+  const cellAt = ({ row, col }) => session.state.cells[board.cellIndex(row, col)];
   const syncControls = () => {
+    const sel = selection.getSelection();
     menuBar.syncMenuBar(session.legend, menuControls, session.config);
-    playPad.syncPlayPad(pad, session.legend, session.config, selection.getSelection() != null);
+    playPad.syncPlayPad(pad, session.legend, session.config, sel ? cellAt(sel) : null);
   };
+  const selectAndSync = (cell) => {
+    selection.getSelection = () => cell;
+    syncControls();
+  };
+  const givenCell = session.state.cells.findIndex((c) => c.given);
+  selectAndSync({ row: Math.floor(givenCell / 9), col: givenCell % 9 });
+  assert.equal(pad.clear.disabled, true, "Clear is disabled on a given");
+  selectAndSync({ row: FILL_MOVE.row, col: FILL_MOVE.col });
+  assert.equal(pad.clear.disabled, true, "Clear is disabled on an empty cell");
+  selectAndSync(null);
   const root = { addEventListener() {}, querySelector: () => null };
   const editMenu = menu.wireEditMenu(menuControls.undo, menuControls.redo, null, game, boardEl, selection, session, createElement, root, {
     steps,
@@ -83,6 +101,9 @@ function makePadControls() {
   assert.equal(pad.undo.disabled, false, "a move enables Undo on the pad");
   assert.equal(menuControls.undo.disabled, pad.undo.disabled);
   assert.equal(pad.hint.disabled, false, "core's legend offers Hint");
+  selectAndSync({ row: FILL_MOVE.row, col: FILL_MOVE.col });
+  assert.equal(pad.clear.disabled, false, "Clear is enabled on a cell the player filled");
+  selectAndSync(null);
 
   pad.undo.click();
   await settleFlow();

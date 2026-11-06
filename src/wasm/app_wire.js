@@ -101,8 +101,11 @@ export function wireSudokuApp({
 
   const menuBar = menuBarMod.wireMenuBar(menuControls, session, root);
   let selection;
-  const syncPad = () =>
-    playPad.syncPlayPad(padControls, session.legend, session.config, selection?.getSelection() != null);
+  const syncPad = () => {
+    const sel = selection?.getSelection();
+    const cell = sel ? session.state?.cells?.[board.cellIndex(sel.row, sel.col)] ?? null : null;
+    playPad.syncPlayPad(padControls, session.legend, session.config, cell);
+  };
   /** Menu bar and pad show the same legend and config, so they always redraw together. */
   const syncControls = () => {
     menuBar.sync();

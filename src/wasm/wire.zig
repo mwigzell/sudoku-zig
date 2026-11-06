@@ -4,6 +4,7 @@ const board = @import("../core/board/board.zig");
 const puzzle_gen = @import("../core/puzzle_gen/mod.zig");
 const logger = @import("../core/logger.zig");
 const config = @import("../core/config.zig");
+const clear_command = @import("../core/engine/clear.zig");
 
 /// Player-facing difficulty on the wasm boundary — explicit u8 wire values, no `.default`.
 pub const PlayerDifficulty = enum(u8) {
@@ -94,9 +95,11 @@ pub const CellSnapshot = struct {
     value: u8,
     given: bool,
     conflict: bool,
+    /// Core's Clear rule for this cell (`clear.canClear`), so front ends enable Clear without deciding it.
+    clearable: bool,
 };
 
-/// Serializable display twin of `BoardView` — value, given, and conflict per cell.
+/// Serializable display twin of `BoardView` — value, given, conflict and clearable per cell.
 pub const GameSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
 
@@ -111,6 +114,7 @@ pub const GameSnapshot = struct {
                     .value = @backingInt(view.get(row, col)),
                     .given = view.isGiven(row, col),
                     .conflict = view.isConflictingRowCol(row, col),
+                    .clearable = clear_command.canClear(view, row, col),
                 };
             }
         }
@@ -129,8 +133,8 @@ const JsonSnapshot = struct {
 pub fn writeCellJson(w: *std.Io.Writer, cell: CellSnapshot) !void {
     try std.Io.Writer.print(
         w,
-        "{{\"value\":{d},\"given\":{any},\"conflict\":{any}}}",
-        .{ cell.value, cell.given, cell.conflict },
+        "{{\"value\":{d},\"given\":{any},\"conflict\":{any},\"clearable\":{any}}}",
+        .{ cell.value, cell.given, cell.conflict, cell.clearable },
     );
 }
 
@@ -162,6 +166,7 @@ pub fn deserializeSnapshot(allocator: std.mem.Allocator, json_text: []const u8) 
             .value = cell.value,
             .given = cell.given,
             .conflict = cell.conflict,
+            .clearable = cell.clearable,
         };
     }
     return snap;
@@ -220,7 +225,7 @@ test "WireConfig round-trips config fields including view prefs" {
     try std.testing.expectEqual(domain.auto_save, restored.auto_save);
 }
 
-test "GameSnapshot captures value given conflict from BoardView" {
+test "GameSnapshot captures value given conflict clearable from BoardView" {
     var b = try board.fromPuzzle(puzzle_gen.PuzzleGen.default());
     try b.setCell(0, 2, .seven);
     b.refreshConflictsForCell(0, 2);
@@ -232,11 +237,17 @@ test "GameSnapshot captures value given conflict from BoardView" {
     try std.testing.expectEqual(@as(u8, 7), snap.cells[idx].value);
     try std.testing.expect(!snap.cells[idx].given);
     try std.testing.expect(snap.cells[idx].conflict);
+    try std.testing.expect(snap.cells[idx].clearable);
 
     const given_idx = @as(usize, 0) * board.DIMENSION_SIZE + @as(usize, 0);
     try std.testing.expectEqual(@as(u8, 6), snap.cells[given_idx].value);
     try std.testing.expect(snap.cells[given_idx].given);
     try std.testing.expect(!snap.cells[given_idx].conflict);
+    try std.testing.expect(!snap.cells[given_idx].clearable);
+
+    const empty_idx = @as(usize, 0) * board.DIMENSION_SIZE + @as(usize, 5);
+    try std.testing.expectEqual(@as(u8, 0), snap.cells[empty_idx].value);
+    try std.testing.expect(!snap.cells[empty_idx].clearable);
 }
 
 test "GameSnapshot JSON round-trip preserves all cells" {
