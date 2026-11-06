@@ -15,16 +15,9 @@ const file_policy = @import("../file_policy.zig");
 const event = @import("../event.zig");
 pub const Event = event.Event;
 
-// Backward-compat re-exports (moved to engine/save_format.zig)
+// SUD0 codec and the State it reads and writes.
 const save_format = @import("save_format.zig");
 const state_mod = @import("state.zig");
-pub const SaveFileMagic = save_format.SaveFileMagic;
-pub const SaveFileVersion = save_format.SaveFileVersion;
-pub const SaveFileHeader = save_format.SaveFileHeader;
-pub const SaveFileTrailer = save_format.SaveFileTrailer;
-pub const SaveEntry = save_format.SaveEntry;
-const SAVE_HEADER_SIZE = save_format.SAVE_HEADER_SIZE;
-const SAVE_TRAILER_SIZE = save_format.SAVE_TRAILER_SIZE;
 
 // Moved to src/core/engine/mutation_history.zig, re-exported for backward compat
 const mutation_history = @import("mutation_history.zig");
@@ -162,13 +155,6 @@ pub const GameEngine = struct {
         self.state.history = loaded.history;
         self.state.status = loaded.status;
         self.state.board.validate();
-        // Backward-compat migration: legacy saves could persist "You win!" on an
-        // unsolved board; heal that stale status at load.
-        if (!self.state.board.isSolved()) {
-            if (self.state.status.optional()) |msg| {
-                if (std.mem.eql(u8, msg, WIN_STATUS_MSG)) self.state.status.reset();
-            }
-        }
     }
 
     /// Open from SUD0 bytes — the core open command calls this on every platform.

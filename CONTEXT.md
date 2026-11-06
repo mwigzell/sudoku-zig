@@ -156,7 +156,7 @@ The platform code that carries out steps: native `Storage` and renderer; on web 
 ### What gets written
 
 **Saved game**:
-The full game (board, givens, history, status) in the SUD0 format, written by Save, Save As and autosave.
+The full game (board, givens, history, status) in the SUD0 format, written by Save, Save As and autosave. SUD0 is sectioned: a reader skips sections and history entries it does not know, so new data is a new section, not a new version (**ADR-0018**).
 _Avoid_: platform function names (`toSaveFormat`, `fromSaveFormat`) when describing behaviour
 
 **Puzzle**:
