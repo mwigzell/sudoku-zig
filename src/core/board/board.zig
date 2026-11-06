@@ -50,29 +50,6 @@ pub fn markPlane(digit: CellValue) usize {
     return @as(usize, @backingInt(digit)) - 1;
 }
 
-/// The cells that share a row, column or box with (row, col), not counting the cell itself.
-fn peerMask(row: u4, col: u4) CellMask {
-    return PEER_MASKS[@as(usize, row) * DIMENSION_SIZE + @as(usize, col)];
-}
-
-/// `peerMask` for every cell, built at compile time.
-const PEER_MASKS: [CELL_COUNT]CellMask = blk: {
-    @setEvalBranchQuota(@as(u32, CELL_COUNT) * CELL_COUNT * 4);
-    var masks: [CELL_COUNT]CellMask = @splat(0);
-    for (0..DIMENSION_SIZE) |r| {
-        for (0..DIMENSION_SIZE) |c| {
-            for (0..DIMENSION_SIZE) |r2| {
-                for (0..DIMENSION_SIZE) |c2| {
-                    if (r2 == r and c2 == c) continue;
-                    const same_box = r2 / BOX_DIMENSION == r / BOX_DIMENSION and c2 / BOX_DIMENSION == c / BOX_DIMENSION;
-                    if (r2 == r or c2 == c or same_box) masks[r * DIMENSION_SIZE + c] |= cellBit(r2, c2);
-                }
-            }
-        }
-    }
-    break :blk masks;
-};
-
 // Box dimension: a standard Sudoku box is 3x3.
 pub const BOX_DIMENSION: u4 = 3;
 // Cells per box = 9.
@@ -271,6 +248,11 @@ pub const Board = struct {
         return xv;
     }
 
+    /// Return the BoxView for the 3x3 box holding cell (row, col).
+    pub fn asBoxOf(row: u4, col: u4) BoxView {
+        return asBox(@intCast(row / BOX_DIMENSION), @intCast(col / BOX_DIMENSION));
+    }
+
     /// Return a borrowed read-only view of this board's cells.
     pub fn asView(self: *const Board) BoardView {
         return BoardView{ ._board = self };
@@ -320,7 +302,7 @@ pub const Board = struct {
     /// Returns the cells that lost the mark.
     pub fn clearPeerMarks(self: *Board, row: u4, col: u4, digit: CellValue) CellMask {
         const plane = &self.mark_bits[markPlane(digit)];
-        const cleared = plane.* & peerMask(row, col);
+        const cleared = plane.* & conflict.unitsMask(row, col) & ~cellBit(row, col);
         plane.* &= ~cleared;
         return cleared;
     }
@@ -707,16 +689,6 @@ test "toggleMark sets and removes one digit's mark in one cell" {
 
     b.toggleMark(2, 4, .one);
     try std.testing.expectEqual(@as(MarkSet, 0b1_0000_0000), b.asView().marks(2, 4));
-}
-
-test "peerMask holds the 20 cells sharing a row, column or box" {
-    const peers = peerMask(4, 4);
-    try std.testing.expectEqual(@as(u16, 20), @popCount(peers));
-    try std.testing.expect(peers & cellBit(4, 4) == 0);
-    try std.testing.expect(peers & cellBit(4, 0) != 0);
-    try std.testing.expect(peers & cellBit(0, 4) != 0);
-    try std.testing.expect(peers & cellBit(3, 5) != 0);
-    try std.testing.expect(peers & cellBit(3, 2) == 0);
 }
 
 test "setMarks replaces one cell's marks; clearPeerMarks and restoreMarks undo each other" {

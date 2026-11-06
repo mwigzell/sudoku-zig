@@ -2,30 +2,18 @@ const std = @import("std");
 const board = @import("../board/board.zig");
 const validator = @import("validator.zig");
 
-/// Build a bitmask of every flat-storage index in the row, column,
-/// and box containing cell at (row, col).
+/// The cells in the row, column and box of (row, col), the cell itself included.
+/// Built from the same row, column and box views the validator walks.
 pub fn unitsMask(row: u4, col: u4) board.CellMask {
+    const scopes = [_][board.DIMENSION_SIZE]usize{
+        board.Board.asRow(row).indices,
+        board.Board.asCol(col).indices,
+        board.Board.asBoxOf(row, col).indices,
+    };
     var mask: board.CellMask = 0;
-
-    // Row cells
-    for (0..board.DIMENSION_SIZE) |c| {
-        mask |= board.cellBit(row, @intCast(c));
+    for (scopes) |indices| {
+        for (indices) |idx| mask |= board.indexBit(idx);
     }
-
-    // Column cells
-    for (0..board.DIMENSION_SIZE) |r| {
-        mask |= board.cellBit(@intCast(r), col);
-    }
-
-    // Box cells
-    const box_row = (row / board.BOX_DIMENSION) * board.BOX_DIMENSION;
-    const box_col = (col / board.BOX_DIMENSION) * board.BOX_DIMENSION;
-    for (0..board.BOX_DIMENSION) |r| {
-        for (0..board.BOX_DIMENSION) |c| {
-            mask |= board.cellBit(box_row + @as(u4, @intCast(r)), box_col + @as(u4, @intCast(c)));
-        }
-    }
-
     return mask;
 }
 
@@ -71,9 +59,7 @@ pub fn refreshConflictsForCell(b: *board.Board, row: u4, col: u4) void {
     new_mask |= validator.Validator.flagScopeConflicts(&b.cells, &cv.indices);
 
     // Box
-    const box_row: u2 = @intCast(@divTrunc(@as(usize, @intCast(row)), board.BOX_DIMENSION));
-    const box_col: u2 = @intCast(@divTrunc(@as(usize, @intCast(col)), board.BOX_DIMENSION));
-    const xv = board.Board.asBox(box_row, box_col);
+    const xv = board.Board.asBoxOf(row, col);
     new_mask |= validator.Validator.flagScopeConflicts(&b.cells, &xv.indices);
 
     b.conflict_bits |= new_mask;
@@ -82,6 +68,16 @@ pub fn refreshConflictsForCell(b: *board.Board, row: u4, col: u4) void {
 // ---------------------------------------------------------------------------
 // Tests (co-located)
 // ---------------------------------------------------------------------------
+
+test "unitsMask holds the 21 cells of a cell's row, column and box" {
+    const units = unitsMask(4, 4);
+    try std.testing.expectEqual(@as(u16, 21), @popCount(units));
+    try std.testing.expect(units & board.cellBit(4, 4) != 0);
+    try std.testing.expect(units & board.cellBit(4, 0) != 0);
+    try std.testing.expect(units & board.cellBit(0, 4) != 0);
+    try std.testing.expect(units & board.cellBit(3, 5) != 0);
+    try std.testing.expect(units & board.cellBit(3, 2) == 0);
+}
 
 test "Board: conflict bits start clear and can be set/cleared individually" {
     var b = board.Board.init();
