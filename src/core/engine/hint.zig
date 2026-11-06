@@ -157,20 +157,9 @@ pub fn execute(engine: *game_engine.GameEngine, requested: command.HintData) gam
     }
 }
 
-test "hint: unsolvable board returns the no-solution sentence" {
-    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
-    defer engine.deinit();
-    engine.warn_dead_moves = true;
-    const fill_ev = engine.exec(command.Command{
-        .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
-    });
-    if (fill_ev != .ok) return error.TestFailed;
-
-    const ev = engine.exec(command.Command{ .hint = .{} });
-    try std.testing.expect(ev == .ok);
-    const msg = ev.ok.msg orelse return error.TestFailed;
-    try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
-}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 const TestCell = struct { row: u4, col: u4, idx: usize };
 
@@ -212,6 +201,21 @@ fn hintMsg(engine: *game_engine.GameEngine, hint: command.HintData, buf: *[HINT_
     if (msg.len > buf.len) return error.TestFailed;
     @memcpy(buf[0..msg.len], msg);
     return buf[0..msg.len];
+}
+
+test "hint: unsolvable board returns the no-solution sentence" {
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+    engine.warn_dead_moves = true;
+    const fill_ev = engine.exec(command.Command{
+        .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
+    });
+    if (fill_ev != .ok) return error.TestFailed;
+
+    const ev = engine.exec(command.Command{ .hint = .{} });
+    try std.testing.expect(ev == .ok);
+    const msg = ev.ok.msg orelse return error.TestFailed;
+    try std.testing.expect(std.mem.indexOf(u8, msg, "no solution") != null);
 }
 
 test "hint: targeted at a given gives the untargeted hint" {
