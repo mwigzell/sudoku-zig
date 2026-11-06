@@ -1,21 +1,22 @@
 const std = @import("std");
 const Cell = @import("cell.zig").Cell;
+const board = @import("board.zig");
 
 pub const Validator = struct {
-    /// Scan a scope (row/column/box) of 9 cells and return a bitmask where bit `i`
-    /// is set when cell at position `i` has a duplicate digit in that scope.
-    pub fn flagScopeConflicts(cells: []const Cell, indices: []const usize) u128 {
+    /// Scan a scope (row/column/box) of 9 cells, given by their board indices, and
+    /// return the board cells whose digit repeats within that scope.
+    pub fn flagScopeConflicts(cells: []const Cell, indices: []const usize) board.CellMask {
         var counts: [10]u8 = undefined;
         @memset(&counts, 0);
         for (indices) |idx| {
             const digit = cells[idx].value;
             if (digit != .zero) counts[@backingInt(digit)] += 1;
         }
-        var result: u128 = 0;
-        for (indices, 0..) |idx, i| {
+        var result: board.CellMask = 0;
+        for (indices) |idx| {
             const digit = cells[idx].value;
             if (digit != .zero and counts[@backingInt(digit)] > 1) {
-                result |= @as(u128, 1) << @intCast(i);
+                result |= board.indexBit(idx);
             }
         }
         return result;
@@ -32,7 +33,7 @@ test "flagScopeConflicts empty scope all clear" {
         cells[i] = Cell.init(.zero);
     }
     const indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    try std.testing.expectEqual(@as(u128, 0), Validator.flagScopeConflicts(&cells, &indices));
+    try std.testing.expectEqual(@as(board.CellMask, 0), Validator.flagScopeConflicts(&cells, &indices));
 }
 
 test "flagScopeConflicts row duplicate at positions 0 and 3" {
@@ -43,7 +44,7 @@ test "flagScopeConflicts row duplicate at positions 0 and 3" {
     cells[0].value = .five;
     cells[3].value = .five;
     const indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    try std.testing.expectEqual(@as(u128, (1 << 0) | (1 << 3)), Validator.flagScopeConflicts(&cells, &indices));
+    try std.testing.expectEqual(@as(board.CellMask, (1 << 0) | (1 << 3)), Validator.flagScopeConflicts(&cells, &indices));
 }
 
 test "flagScopeConflicts column duplicate at positions 2 and 7" {
@@ -54,7 +55,7 @@ test "flagScopeConflicts column duplicate at positions 2 and 7" {
     cells[2].value = .three;
     cells[7].value = .three;
     const indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    try std.testing.expectEqual(@as(u128, (1 << 2) | (1 << 7)), Validator.flagScopeConflicts(&cells, &indices));
+    try std.testing.expectEqual(@as(board.CellMask, (1 << 2) | (1 << 7)), Validator.flagScopeConflicts(&cells, &indices));
 }
 
 test "flagScopeConflicts box duplicate at positions 1 and 6" {
@@ -65,7 +66,7 @@ test "flagScopeConflicts box duplicate at positions 1 and 6" {
     cells[1].value = .seven;
     cells[6].value = .seven;
     const indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    try std.testing.expectEqual(@as(u128, (1 << 1) | (1 << 6)), Validator.flagScopeConflicts(&cells, &indices));
+    try std.testing.expectEqual(@as(board.CellMask, (1 << 1) | (1 << 6)), Validator.flagScopeConflicts(&cells, &indices));
 }
 
 test "flagScopeConflicts unique digits no false positives" {
@@ -81,7 +82,7 @@ test "flagScopeConflicts unique digits no false positives" {
         Cell.init(.four), // position 8
     };
     const indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    try std.testing.expectEqual(@as(u128, 0), Validator.flagScopeConflicts(&cells, &indices));
+    try std.testing.expectEqual(@as(board.CellMask, 0), Validator.flagScopeConflicts(&cells, &indices));
 }
 
 test "flagScopeConflicts three-of-a-kind all three flagged" {
@@ -93,5 +94,14 @@ test "flagScopeConflicts three-of-a-kind all three flagged" {
     cells[4].value = .four;
     cells[7].value = .four;
     const indices: [9]usize = .{ 0, 1, 2, 3, 4, 5, 6, 7, 8 };
-    try std.testing.expectEqual(@as(u128, (1 << 1) | (1 << 4) | (1 << 7)), Validator.flagScopeConflicts(&cells, &indices));
+    try std.testing.expectEqual(@as(board.CellMask, (1 << 1) | (1 << 4) | (1 << 7)), Validator.flagScopeConflicts(&cells, &indices));
+}
+
+test "flagScopeConflicts marks the board cells of a column, not their positions in it" {
+    var cells: [board.CELL_COUNT]Cell = undefined;
+    for (&cells) |*c| c.* = Cell.init(.zero);
+    const col = board.Board.asCol(2);
+    cells[col.indices[1]].value = .six;
+    cells[col.indices[8]].value = .six;
+    try std.testing.expectEqual(board.cellBit(1, 2) | board.cellBit(8, 2), Validator.flagScopeConflicts(&cells, &col.indices));
 }

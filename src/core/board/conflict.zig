@@ -2,18 +2,6 @@ const std = @import("std");
 const board = @import("../board/board.zig");
 const validator = @import("validator.zig");
 
-/// Translate scope-relative conflict bits (0..8) to full board flat-storage positions
-/// using the View's index array.
-pub fn scopeToBoardMask(indices: *align(1) const [9]usize, scope_bits: u128) board.CellMask {
-    var result: board.CellMask = 0;
-    for (indices, 0..) |board_idx, i| {
-        if ((scope_bits & (@as(u128, 1) << @intCast(i))) != 0) {
-            result |= board.indexBit(board_idx);
-        }
-    }
-    return result;
-}
-
 /// Build a bitmask of every flat-storage index in the row, column,
 /// and box containing cell at (row, col).
 pub fn unitsMask(row: u4, col: u4) board.CellMask {
@@ -48,21 +36,18 @@ pub fn validate(b: *board.Board) void {
 
     for (0..board.DIMENSION_SIZE) |r| {
         const rv = board.Board.asRow(@intCast(r));
-        const scope_bits = validator.Validator.flagScopeConflicts(&b.cells, &rv.indices);
-        mask |= scopeToBoardMask(&rv.indices, scope_bits);
+        mask |= validator.Validator.flagScopeConflicts(&b.cells, &rv.indices);
     }
 
     for (0..board.DIMENSION_SIZE) |c| {
         const cv = board.Board.asCol(@intCast(c));
-        const scope_bits = validator.Validator.flagScopeConflicts(&b.cells, &cv.indices);
-        mask |= scopeToBoardMask(&cv.indices, scope_bits);
+        mask |= validator.Validator.flagScopeConflicts(&b.cells, &cv.indices);
     }
 
     for (0..3) |br| {
         for (0..3) |bc| {
             const xv = board.Board.asBox(@intCast(br), @intCast(bc));
-            const scope_bits = validator.Validator.flagScopeConflicts(&b.cells, &xv.indices);
-            mask |= scopeToBoardMask(&xv.indices, scope_bits);
+            mask |= validator.Validator.flagScopeConflicts(&b.cells, &xv.indices);
         }
     }
 
@@ -79,17 +64,17 @@ pub fn refreshConflictsForCell(b: *board.Board, row: u4, col: u4) void {
 
     // Row
     const rv = board.Board.asRow(row);
-    new_mask |= scopeToBoardMask(&rv.indices, validator.Validator.flagScopeConflicts(&b.cells, &rv.indices));
+    new_mask |= validator.Validator.flagScopeConflicts(&b.cells, &rv.indices);
 
     // Column
     const cv = board.Board.asCol(col);
-    new_mask |= scopeToBoardMask(&cv.indices, validator.Validator.flagScopeConflicts(&b.cells, &cv.indices));
+    new_mask |= validator.Validator.flagScopeConflicts(&b.cells, &cv.indices);
 
     // Box
     const box_row: u2 = @intCast(@divTrunc(@as(usize, @intCast(row)), board.BOX_DIMENSION));
     const box_col: u2 = @intCast(@divTrunc(@as(usize, @intCast(col)), board.BOX_DIMENSION));
     const xv = board.Board.asBox(box_row, box_col);
-    new_mask |= scopeToBoardMask(&xv.indices, validator.Validator.flagScopeConflicts(&b.cells, &xv.indices));
+    new_mask |= validator.Validator.flagScopeConflicts(&b.cells, &xv.indices);
 
     b.conflict_bits |= new_mask;
 }
