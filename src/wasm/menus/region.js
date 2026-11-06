@@ -35,11 +35,14 @@ export function wireRegionMenu(
     }
   };
 
-  controls.viewRegion?.addEventListener("click", () => {
-    void stepRunner.runCommand(game, { action: TOGGLE_REGION }, steps, () => {
+  const toggle = () =>
+    stepRunner.runCommand(game, { action: TOGGLE_REGION }, steps, () => {
       syncBoard();
       onChange?.();
     });
+
+  controls.viewRegion?.addEventListener("click", () => {
+    void toggle();
   });
 
   syncBoard();
@@ -47,5 +50,6 @@ export function wireRegionMenu(
   return {
     isEnabled: () => session.config.show_region === true,
     sync: syncBoard,
+    toggle,
   };
 }

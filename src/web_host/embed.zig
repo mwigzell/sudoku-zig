@@ -17,6 +17,8 @@ pub const app_boot_js: []const u8 = @embedFile("../wasm/app_boot.js");
 pub const app_wire_js: []const u8 = @embedFile("../wasm/app_wire.js");
 /// Status bar text (`/status_bar.js`).
 pub const status_bar_js: []const u8 = @embedFile("../wasm/status_bar.js");
+/// Play pad (`/play_pad.js`).
+pub const play_pad_js: []const u8 = @embedFile("../wasm/play_pad.js");
 /// Prompt dialog (`/dialogs/prompt_dialog.js`).
 pub const prompt_dialog_js: []const u8 = @embedFile("../wasm/dialogs/prompt_dialog.js");
 /// Client diagnostics log (`/client_log.js`).

@@ -15,6 +15,7 @@ pub const RouteResult = enum {
     app_boot,
     app_wire,
     status_bar,
+    play_pad,
     prompt_dialog,
     client_log,
     session,
@@ -77,6 +78,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/app_boot.js")) return .app_boot;
         if (std.mem.eql(u8, path, "/app_wire.js")) return .app_wire;
         if (std.mem.eql(u8, path, "/status_bar.js")) return .status_bar;
+        if (std.mem.eql(u8, path, "/play_pad.js")) return .play_pad;
         if (std.mem.eql(u8, path, "/dialogs/prompt_dialog.js")) return .prompt_dialog;
         if (std.mem.eql(u8, path, "/client_log.js")) return .client_log;
         if (std.mem.eql(u8, path, "/flows/session.js")) return .session;
@@ -138,6 +140,7 @@ pub const Router = struct {
             .app_boot => embed.app_boot_js,
             .app_wire => embed.app_wire_js,
             .status_bar => embed.status_bar_js,
+            .play_pad => embed.play_pad_js,
             .prompt_dialog => embed.prompt_dialog_js,
             .client_log => embed.client_log_js,
             .session => embed.session_js,
@@ -184,7 +187,7 @@ pub const Router = struct {
             .build_info, .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
-            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .prompt_dialog, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .files, .steps, .web_steps, .android_steps, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .region, .help, .settings => "text/javascript",
+            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .play_pad, .prompt_dialog, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .files, .steps, .web_steps, .android_steps, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .region, .help, .settings => "text/javascript",
         };
     }
 };

@@ -525,10 +525,11 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
 fn writeLegendTo(w: *std.Io.Writer, legend: legend_mod.Legend) !void {
     try std.Io.Writer.print(
         w,
-        "{{\"fill\":{any},\"clear\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"paste\":{any},\"save_as\":{any},\"solve\":{any}}}",
+        "{{\"fill\":{any},\"clear\":{any},\"hint\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"paste\":{any},\"save_as\":{any},\"solve\":{any}}}",
         .{
             legend.fill,
             legend.clear,
+            legend.hint,
             legend.quit,
             legend.undo,
             legend.redo,

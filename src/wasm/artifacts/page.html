@@ -43,15 +43,21 @@
       --badge-warning-fg: #1a1d24;
       --cell-min: 2.25rem;
       --board-min: calc(var(--cell-min) * 10 + 2px);
-      --status-min-height: calc(0.9375rem * 1.45 + 1.25rem);
+      --status-pad-y: 0.625rem;
+      --status-min-height: calc(0.9375rem * 1.45 + (2 * var(--status-pad-y)));
+      --pad-bottom: 0.85rem;
       --page-inset: 1rem;
       --game-margin: 0.75rem;
       --menu-block: 2.75rem;
+      --pad-gap: 0.35rem;
+      --pad-row: calc(1rem * 1.2 + 0.9rem + 2px);
+      --pad-block: calc((3 * var(--pad-row)) + (3 * var(--pad-gap)) + var(--pad-bottom));
       --v-chrome: calc(
         (2 * var(--page-inset))
         + (2 * var(--game-margin))
         + var(--status-min-height)
         + var(--menu-block)
+        + var(--pad-block)
         + 1.5rem
       );
       --board-size: clamp(
@@ -229,12 +235,15 @@
       cursor: default;
     }
 
+    /* One line high: a longer message scrolls inside the bar, and `data-more` fades the bottom edge while text is hidden. */
     #status-bar {
       width: min(100%, var(--board-size));
-      min-height: var(--status-min-height);
+      height: calc(var(--status-min-height) + 2px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
       font-size: 0.9375rem;
       line-height: 1.45;
-      padding: 0.625rem 0.75rem;
+      padding: var(--status-pad-y) 0.75rem;
       margin-top: 0.35rem;
       border: 1px solid var(--status-border);
       border-bottom: var(--chrome-rule);
@@ -247,17 +256,21 @@
       width: min(100%, var(--board-size));
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 0.35rem;
-      margin-top: 0.35rem;
-      margin-bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
-    }
-    #play-pad[hidden] {
-      display: none !important;
+      gap: var(--pad-gap);
+      margin-top: var(--pad-gap);
+      margin-bottom: max(var(--pad-bottom), env(safe-area-inset-bottom, 0px));
     }
 
+    #status-bar[data-more="true"] {
+      mask-image: linear-gradient(to bottom, black calc(100% - 1.1em), transparent);
+    }
+
+    /* 1rem is the floor: every label fits in a fifth of a 360px-wide screen at this size. */
     .play-pad-btn {
       font: inherit;
       font-size: 1rem;
+      white-space: nowrap;
+      min-width: 0;
       line-height: 1.2;
       padding: 0.45rem 0.2rem;
       border: 1px solid var(--status-border);
@@ -265,6 +278,16 @@
       background: var(--cell-bg);
       color: var(--status-fg);
       touch-action: manipulation;
+    }
+
+    .play-pad-btn:disabled {
+      opacity: 0.45;
+    }
+
+    .play-pad-btn[aria-pressed="true"] {
+      border-color: var(--selection-ring);
+      background: var(--region-tint);
+      font-weight: 600;
     }
 
     #status-bar.error {
@@ -738,11 +761,14 @@
 
     /* Group-fit trigger: switch when the default menu+board+status stack can no longer
        fit at minimum board size plus default outer/shell spacing. */
+    /* Phones: menu bar, full-width board, status bar and pad must fit 360x568 without the page scrolling. */
     @media (max-width: calc(26rem + 2px)) {
       :root {
         --page-inset: 0;
         --game-margin: 0;
         --board-size: 100dvw;
+        --status-pad-y: 0.45rem;
+        --pad-bottom: var(--pad-gap);
       }
 
       body {
@@ -784,6 +810,7 @@
 
       #status-bar {
         width: 100dvw;
+        margin-top: 0;
         border-left: none;
         border-right: none;
         border-radius: 0;
@@ -847,17 +874,21 @@
     <div id="game-shell">
       <div id="board" class="board-frame"></div>
       <div id="status-bar" role="status" aria-live="polite"></div>
-      <div id="play-pad" role="group" aria-label="Cell input controls" hidden>
-        <button type="button" class="play-pad-btn" data-play-key="1">1</button>
-        <button type="button" class="play-pad-btn" data-play-key="2">2</button>
-        <button type="button" class="play-pad-btn" data-play-key="3">3</button>
-        <button type="button" class="play-pad-btn" data-play-key="4">4</button>
-        <button type="button" class="play-pad-btn" data-play-key="5">5</button>
-        <button type="button" class="play-pad-btn" data-play-key="6">6</button>
-        <button type="button" class="play-pad-btn" data-play-key="7">7</button>
-        <button type="button" class="play-pad-btn" data-play-key="8">8</button>
-        <button type="button" class="play-pad-btn" data-play-key="9">9</button>
-        <button type="button" class="play-pad-btn" data-play-key="0" aria-label="Clear selected cell">Clear</button>
+      <div id="play-pad" role="group" aria-label="Play pad">
+        <button type="button" class="play-pad-btn" data-play-key="1" disabled>1</button>
+        <button type="button" class="play-pad-btn" data-play-key="2" disabled>2</button>
+        <button type="button" class="play-pad-btn" data-play-key="3" disabled>3</button>
+        <button type="button" class="play-pad-btn" data-play-key="4" disabled>4</button>
+        <button type="button" class="play-pad-btn" data-play-key="5" disabled>5</button>
+        <button type="button" class="play-pad-btn" data-play-key="6" disabled>6</button>
+        <button type="button" class="play-pad-btn" data-play-key="7" disabled>7</button>
+        <button type="button" class="play-pad-btn" data-play-key="8" disabled>8</button>
+        <button type="button" class="play-pad-btn" data-play-key="9" disabled>9</button>
+        <button type="button" class="play-pad-btn" data-play-key="0" aria-label="Clear selected cell" disabled>Clear</button>
+        <button type="button" class="play-pad-btn" data-pad-command="undo" disabled>Undo</button>
+        <button type="button" class="play-pad-btn" data-pad-command="redo" disabled>Redo</button>
+        <button type="button" class="play-pad-btn" data-pad-command="hint" disabled>Hint</button>
+        <button type="button" class="play-pad-btn" data-pad-command="region" aria-label="Show Region" aria-pressed="false">Region</button>
       </div>
     </div>
   </main>

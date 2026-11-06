@@ -32,7 +32,7 @@ export const MENU_BAR_MENUS = [
       { id: "copy", label: "Copy", legendKey: LEGEND_WIRE_COPY },
       { id: "paste", label: "Paste", legendKey: LEGEND_WIRE_PASTE },
       { id: "solve", label: "Solve", legendKey: "solve" },
-      { id: "hint", label: "Hint" },
+      { id: "hint", label: "Hint", legendKey: "hint" },
       { id: "deselect", label: "Deselect Cell" },
     ],
   },

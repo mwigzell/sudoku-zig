@@ -6,6 +6,7 @@ import * as webSteps from "./flows/web_steps.js";
 import * as sessionMod from "./flows/session.js";
 import * as statusBarMod from "./status_bar.js";
 import * as board from "./board.js";
+import * as playPad from "./play_pad.js";
 import * as menu from "./menus/menu.js";
 import * as menuBarMod from "./menus/menu_bar.js";
 import * as theme from "./menus/theme.js";
@@ -34,16 +35,6 @@ import * as settings from "./menus/settings.js";
 export function platformSteps(game, session, options) {
   const bridge = (options.win ?? globalThis).AndroidFileBridge;
   return bridge ? androidSteps.androidSteps(game, session, bridge, options) : webSteps.webSteps(game, session, options);
-}
-
-function isTouchPlayPadPlatform(win = globalThis) {
-  if (!win || !win.navigator) return false;
-  return (
-    !!win.__SudokuAndroidBridge ||
-    !!win.AndroidFileBridge ||
-    /\bwv\b/.test(win.navigator.userAgent) ||
-    /Android/i.test(win.navigator.userAgent)
-  );
 }
 
 function settingsModalFromDom(root = document) {
@@ -91,7 +82,7 @@ export function wireSudokuApp({
   const statusBar = root.getElementById("status-bar");
   const boardEl = root.getElementById("board");
   const playPadEl = root.getElementById("play-pad");
-  const useTouchPlayPad = isTouchPlayPadPlatform(win);
+  const padControls = playPad.collectPlayPadControls(playPadEl);
   const menuControls = menuBarMod.collectMenuBarControls(root);
 
   const promptDialog = createPromptDialog(root, win);
@@ -106,35 +97,36 @@ export function wireSudokuApp({
   const settingsModal = settingsModalFromDom(root);
 
   board.setStatus(statusBar, "");
+  statusBarMod.wireStatusOverflow(statusBar, win);
 
   const menuBar = menuBarMod.wireMenuBar(menuControls, session, root);
-  const syncPlayPadVisibility = (sel) => {
-    if (!playPadEl) return;
-    if (!useTouchPlayPad) {
-      playPadEl.hidden = true;
-      return;
-    }
-    playPadEl.hidden = sel == null;
+  let selection;
+  const syncPad = () =>
+    playPad.syncPlayPad(padControls, session.legend, session.config, selection?.getSelection() != null);
+  /** Menu bar and pad show the same legend and config, so they always redraw together. */
+  const syncControls = () => {
+    menuBar.sync();
+    syncPad();
   };
-  syncPlayPadVisibility(null);
+  syncPad();
 
   const steps = platformSteps(game, session, { win, statusEl: statusBar, promptDialog, generatingModal, genWorker });
 
   const themeMenu = theme.wireThemeMenu(menuControls, game, session, {
     root,
-    onChange: () => menuBar.sync(),
+    onChange: syncControls,
     steps,
   });
 
   let editMenu;
-  const selection = board.wireSelection(boardEl, {
+  selection = board.wireSelection(boardEl, {
     regionEnabled: () => session.config.show_region === true,
-    onSelect: (sel) => {
-      syncPlayPadVisibility(sel);
+    onSelect: () => {
+      syncPad();
       editMenu?.sync();
     },
   });
-  syncPlayPadVisibility(selection.getSelection());
+  syncPad();
 
   const regionMenu = region.wireRegionMenu(
     menuControls,
@@ -142,7 +134,7 @@ export function wireSudokuApp({
     session,
     boardEl,
     () => selection.getSelection(),
-    { onChange: () => menuBar.sync(), steps },
+    { onChange: syncControls, steps },
   );
   const difficultyDialog = {
     el: root.getElementById("new-difficulty-modal"),
@@ -159,6 +151,7 @@ export function wireSudokuApp({
     onViewRefresh: () => {
       themeMenu.sync();
       regionMenu.sync();
+      syncPad();
     },
     steps,
   });
@@ -174,16 +167,17 @@ export function wireSudokuApp({
     undefined,
     root,
     {
-      syncLegend: () => menuBar.sync(),
+      syncLegend: syncControls,
       copyBtn: menuControls.copy,
       pasteBtn: menuControls.paste,
       closeMenus: () => menuBar.closeAll?.(),
       steps,
     },
   );
+  playPad.wirePlayPad(padControls, { runEdit: editMenu.run, toggleRegion: regionMenu.toggle });
 
   board.wirePlayLoop(boardEl, game, selection, session, {
-    onLegendChange: () => menuBar.sync(),
+    onLegendChange: syncControls,
     playPadEl,
     steps,
   });
@@ -202,7 +196,7 @@ export function wireSudokuApp({
     showGame: (step) => {
       board.renderBoard(boardEl, session.state);
       selection.deselect();
-      menuBar.sync();
+      syncControls();
       editMenu.sync();
       themeMenu.sync();
       regionMenu.sync();
