@@ -20,6 +20,17 @@ export type ExecAction =
   | { action: "open" | "import" | "paste" }
   | { action: "save" | "save_as" | "export" | "copy" };
 
+/** A keyboard shortcut: the key, its modifiers, and the control it presses. */
+export type Shortcut = {
+  /** Lower-case `KeyboardEvent.key`. */
+  key: string;
+  /** Needs Ctrl (Cmd on Mac). */
+  mod?: boolean;
+  shift?: boolean;
+  /** Selector of the menu item or pad button the key presses. */
+  target: string;
+};
+
 export type WebSession = ReturnType<typeof import("./flows/session.js").createWebSessionFromStartup>;
 /** Menubar item elements resolved from the page shell. */
 export type MenuBarControls = ReturnType<typeof import("./menus/menu_bar.js").collectMenuBarControls>;

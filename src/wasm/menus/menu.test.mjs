@@ -93,10 +93,7 @@ function makeMockBoard() {
   assert.equal(menu.handleDeselect(selection).handled, false);
 }
 
-// ── keyboard shortcuts ──
-assert.equal(menu.parseEditShortcut({ ctrlKey: true, altKey: false, key: "z", shiftKey: false }), "undo");
-assert.equal(menu.parseEditShortcut({ ctrlKey: true, altKey: false, key: "z", shiftKey: true }), "redo");
-assert.equal(menu.parseEditShortcut({ ctrlKey: false, key: "z", shiftKey: false }), null);
+// ── edit actions against a real game ──
 
 const statusStub = (text = "") => ({ textContent: text, className: "" });
 
@@ -227,18 +224,6 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
   await settleFlow();
   assert.equal(undoBtn.disabled, true);
   assert.equal(redoBtn.disabled, false);
-
-  let prevented = false;
-  listeners.keydown({
-    ctrlKey: true,
-    altKey: false,
-    key: "z",
-    shiftKey: false,
-    preventDefault() {
-      prevented = true;
-    },
-  });
-  assert.equal(prevented, false, "shortcut should not fire when undo disabled");
 
   selected = { row: 3, col: 3 };
   deselectBtn.click();

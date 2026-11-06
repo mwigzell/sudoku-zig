@@ -220,6 +220,18 @@
       cursor: pointer;
     }
 
+    .menu-panel button:has(.menu-shortcut) {
+      display: flex;
+      white-space: nowrap;
+    }
+
+    .menu-panel button .menu-shortcut {
+      margin-left: auto;
+      padding-left: 1.5rem;
+      opacity: 0.6;
+      font-weight: normal;
+    }
+
     .menu-panel button:hover:not(:disabled) {
       background: var(--cell-bg);
     }

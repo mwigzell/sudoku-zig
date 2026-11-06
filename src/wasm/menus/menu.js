@@ -23,14 +23,6 @@ export function syncEditMenu(legend, controls, selection, boardEl) {
   }
 }
 
-export function parseEditShortcut(event) {
-  if (!event.ctrlKey || event.altKey) return null;
-  if (event.key === "z" && !event.shiftKey) return "undo";
-  if (event.key === "z" && event.shiftKey) return "redo";
-  if (event.key === "Z" && event.shiftKey) return "redo";
-  return null;
-}
-
 /** Used by Escape handling to avoid deselect while a menubar popup is active. */
 export function anyMenuOpen(root) {
   if (typeof root.querySelectorAll !== "function") return false;
@@ -94,7 +86,7 @@ export function handleEditAction(
 }
 
 /**
- * Wires edit controls + keyboard shortcuts onto one shared edit action dispatcher.
+ * Wires edit controls and Escape (deselect) onto one shared edit action dispatcher.
  * @param {GameApi} game
  * @param {{ steps: FlowHandlers, syncLegend?: () => void, copyBtn?: HTMLElement, pasteBtn?: HTMLElement, closeMenus?: () => void }} options
  */
@@ -178,13 +170,7 @@ export function wireEditMenu(
       const outcome = runDeselect();
       if (!outcome.handled) return;
       event.preventDefault();
-      return;
     }
-    const action = parseEditShortcut(event);
-    if (!action) return;
-    const outcome = run(action);
-    if (!outcome.handled) return;
-    event.preventDefault();
   });
 
   return { sync: syncEdit, run, runDeselect };

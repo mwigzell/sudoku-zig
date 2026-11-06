@@ -15,6 +15,7 @@ import * as region from "./menus/region.js";
 import * as marks from "./menus/marks.js";
 import * as help from "./menus/help.js";
 import * as settings from "./menus/settings.js";
+import * as shortcuts from "./menus/shortcuts.js";
 
 /**
  * @typedef {import("./types").GameApi} GameApi
@@ -196,6 +197,8 @@ export function wireSudokuApp({
     closeMenus: () => menuBar.closeAll?.(),
     steps,
   });
+
+  shortcuts.wireShortcuts(root, win.navigator);
 
   if (win.matchMedia?.("(pointer: fine)")?.matches === true) {
     board.getPlayGrid(boardEl).focus();

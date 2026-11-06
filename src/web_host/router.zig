@@ -39,6 +39,7 @@ pub const RouteResult = enum {
     gen_progress_rows,
     region,
     marks,
+    shortcuts,
     help,
     settings,
     site_webmanifest,
@@ -103,6 +104,7 @@ pub const Router = struct {
         if (std.mem.eql(u8, path, "/gen/gen_progress_rows.js")) return .gen_progress_rows;
         if (std.mem.eql(u8, path, "/menus/region.js")) return .region;
         if (std.mem.eql(u8, path, "/menus/marks.js")) return .marks;
+        if (std.mem.eql(u8, path, "/menus/shortcuts.js")) return .shortcuts;
         if (std.mem.eql(u8, path, "/menus/help.js")) return .help;
         if (std.mem.eql(u8, path, "/menus/settings.js")) return .settings;
         if (std.mem.eql(u8, path, "/site.webmanifest")) return .site_webmanifest;
@@ -166,6 +168,7 @@ pub const Router = struct {
             .gen_progress_rows => embed.gen_progress_rows_js,
             .region => embed.region_js,
             .marks => embed.marks_js,
+            .shortcuts => embed.shortcuts_js,
             .help => embed.help_js,
             .settings => embed.settings_js,
             .site_webmanifest => embed.site_webmanifest,
@@ -190,7 +193,7 @@ pub const Router = struct {
             .build_info, .host_config => "application/json",
             .site_webmanifest => "application/manifest+json",
             .brand_favicon_16, .brand_favicon_32, .brand_apple_touch_icon, .brand_android_chrome_192, .brand_android_chrome_512, .brand_splash_mark_256, .brand_about_variant_96 => "image/png",
-            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .play_pad, .prompt_dialog, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .files, .steps, .web_steps, .android_steps, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .region, .marks, .help, .settings => "text/javascript",
+            .glue, .gen_client, .gen_worker, .app_boot, .app_wire, .status_bar, .play_pad, .prompt_dialog, .client_log, .session, .host_api, .generate, .clipboard, .autosave, .files, .steps, .web_steps, .android_steps, .startup, .board, .menu, .menu_bar, .theme, .file_menu, .step_runner, .android_bridge, .generating, .gen_progress_rows, .region, .marks, .shortcuts, .help, .settings => "text/javascript",
         };
     }
 };

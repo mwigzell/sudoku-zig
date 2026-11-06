@@ -676,6 +676,7 @@ test "web_host: embedded JS transitive imports resolve to embedded routes" {
         .{ .name = "menus/theme.js", .body = embed.theme_js },
         .{ .name = "menus/region.js", .body = embed.region_js },
         .{ .name = "menus/marks.js", .body = embed.marks_js },
+        .{ .name = "menus/shortcuts.js", .body = embed.shortcuts_js },
         .{ .name = "menus/help.js", .body = embed.help_js },
         .{ .name = "menus/settings.js", .body = embed.settings_js },
         .{ .name = "android_bridge.js", .body = embed.android_bridge_js },
@@ -784,6 +785,7 @@ test "web_host: route map resolves every served path" {
         .{ .path = "/gen/gen_progress_rows.js", .expected = .gen_progress_rows },
         .{ .path = "/menus/region.js", .expected = .region },
         .{ .path = "/menus/marks.js", .expected = .marks },
+        .{ .path = "/menus/shortcuts.js", .expected = .shortcuts },
         .{ .path = "/menus/help.js", .expected = .help },
         .{ .path = "/menus/settings.js", .expected = .settings },
         .{ .path = "/site.webmanifest", .expected = .site_webmanifest },
@@ -1398,6 +1400,9 @@ test "web_host: allDelivered false until each route marked, true after; re-marki
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.marks);
+    try std.testing.expect(!r.allDelivered());
+
+    r.markDelivered(.shortcuts);
     try std.testing.expect(!r.allDelivered());
 
     r.markDelivered(.help);

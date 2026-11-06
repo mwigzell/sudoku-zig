@@ -65,6 +65,8 @@ pub const gen_progress_rows_js: []const u8 = @embedFile("../wasm/gen/gen_progres
 pub const region_js: []const u8 = @embedFile("../wasm/menus/region.js");
 /// Show Pencil Marks and Pencil mode toggles (`/menus/marks.js`).
 pub const marks_js: []const u8 = @embedFile("../wasm/menus/marks.js");
+/// Keyboard shortcuts that press menu items and pad buttons (`/menus/shortcuts.js`).
+pub const shortcuts_js: []const u8 = @embedFile("../wasm/menus/shortcuts.js");
 /// Help copy (`/help.js`).
 pub const help_js: []const u8 = @embedFile("../wasm/menus/help.js");
 /// Settings panel (`/settings.js`).
@@ -192,6 +194,10 @@ test "embedded region.js is non-empty" {
 
 test "embedded marks.js is non-empty" {
     try std.testing.expect(marks_js.len > 0);
+}
+
+test "embedded shortcuts.js is non-empty" {
+    try std.testing.expect(shortcuts_js.len > 0);
 }
 
 test "embedded help.js is non-empty" {
