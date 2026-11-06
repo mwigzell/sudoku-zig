@@ -445,26 +445,36 @@ pub const GameEngine = struct {
         return self.finishOkAfterCellEdit(row, col);
     }
 
+    /// Place each solver digit the board lacks. Each one clears marks as a player fill does.
+    /// Returns the error event if a cell refuses its digit, otherwise null.
+    pub fn placeSolution(self: *@This(), grid: [board.CELL_COUNT]u8) ?Event {
+        for (grid, 0..) |digit, i| {
+            const row: u4 = @intCast(i / board.DIMENSION_SIZE);
+            const col: u4 = @intCast(i % board.DIMENSION_SIZE);
+            const value = cell.rawToCellValue(digit);
+            if (self.state.board.getCellValue(row, col) == value) continue;
+            self.state.board.setCell(row, col, value) catch |err| return self.eventFromSetCellError(row, col, err);
+            _ = fill_command.clearMarks(&self.state.board, row, col, value);
+        }
+        return null;
+    }
+
     /// Fill every empty cell from one solver pass. One history step, not N fills.
     fn solveForMe(self: *@This()) Event {
-        const before_flat = board.toFlat(self.state.board);
-        const before_given = self.state.board.given_bits;
+        const before: mutation_history.BoardSnapshot = .{
+            .given_bits = self.state.board.given_bits,
+            .flat = board.toFlat(self.state.board),
+            .mark_bits = self.state.board.mark_bits,
+        };
         const solved = solver.solve(self.state.board) catch |err| switch (err) {
             error.Conflict => return self.errorEvent(SOLVE_CONFLICT_MSG),
         };
         switch (solved) {
             .none => return self.finishOkEvent(self.state.board.asView(), false, null, false),
             .solution => |grid| {
-                for (grid, 0..) |digit, i| {
-                    const row: u4 = @intCast(i / 9);
-                    const col: u4 = @intCast(i % 9);
-                    if (self.state.board.getCellValue(row, col) == cell.rawToCellValue(digit)) continue;
-                    self.state.board.setCell(row, col, cell.rawToCellValue(digit)) catch |set_err| {
-                        return self.eventFromSetCellError(row, col, set_err);
-                    };
-                }
+                if (self.placeSolution(grid)) |failed| return failed;
                 self.state.history.truncateFuture();
-                self.state.history.pushSolve(.{ .given_bits = before_given, .flat = before_flat }) catch |push_err| {
+                self.state.history.pushSolve(before) catch |push_err| {
                     log.err("history push failed: {s}", .{@errorName(push_err)});
                     return self.errorEvent(MOVE_NOT_RECORDED_MSG);
                 };

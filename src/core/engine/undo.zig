@@ -21,12 +21,10 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },
         .solve_batch => |snap| {
-            const marks = engine.state.board.mark_bits;
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
                 return engine.errorEvent(game_engine.UNDO_FAILED_MSG);
             };
-            // Solve leaves marks alone, so undoing it does too.
-            engine.state.board.mark_bits = marks;
+            engine.state.board.mark_bits = snap.mark_bits;
             engine.state.board.validate();
             engine.beginEventMsg();
             return engine.finishOkEvent(engine.state.board.asView(), false, null, true);

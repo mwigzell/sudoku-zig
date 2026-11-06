@@ -396,3 +396,18 @@ test "fill on dead board uses no-solution hint copy only" {
     try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") == null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "unsolvable") == null);
 }
+
+test "hint: targeted or engine-picked, a hint leaves every mark as it was" {
+    var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+    const target = firstEmptyPlayerCell(&engine) orelse return error.TestFailed;
+    for ([_]cell.CellValue{ .one, .five, .nine }) |digit| {
+        _ = engine.exec(.{ .pencil = .{ .row = target.row, .col = target.col, .digit = digit } });
+    }
+    const marks = engine.state.board.mark_bits;
+
+    _ = engine.exec(.{ .hint = .{ .row = target.row, .col = target.col } });
+    try std.testing.expectEqual(marks, engine.state.board.mark_bits);
+    _ = engine.exec(.{ .hint = .{} });
+    try std.testing.expectEqual(marks, engine.state.board.mark_bits);
+}

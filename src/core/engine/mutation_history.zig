@@ -17,6 +17,7 @@ pub const CellMutation = struct {
 pub const BoardSnapshot = struct {
     given_bits: board.CellMask,
     flat: [81]u8,
+    mark_bits: [board.DIMENSION_SIZE]board.CellMask = @splat(0), // the marks the solve cleared
 };
 
 /// One pencil-mark toggle. `old_value` is the player digit the mark replaced, or zero.

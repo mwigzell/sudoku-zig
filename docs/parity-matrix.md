@@ -67,6 +67,9 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `pencil_mode_digit_marks_cell` | In Pencil mode a digit toggles that mark instead of filling the cell; each mark autosaves, the mode toggle does not. | native, web, android | — |
 | `fill_clears_peer_marks` | A fill replaces the cell's marks and removes its digit's marks from the cell's row, column and box; marks elsewhere stay. | native, web, android | — |
 | `fill_undo_restores_marks` | Undo of a fill that cleared marks puts back the cell's own marks and its row, column and box marks. | native, web, android | — |
+| `solve_clears_marks` | Solve fills every empty cell and clears every mark, as player fills would. | native, web, android | — |
+| `solve_undo_restores_marks` | Undo of a Solve empties the cells it filled and puts back the marks it cleared. | native, web, android | — |
+| `hint_leaves_marks` | A hint on a marked cell leaves its marks as they were. | native, web, android | — |
 | `clear_removes_marks` | Clear on an empty cell with marks removes them all and autosaves. | native, web, android | — |
 | `hint_reports_and_autosaves` | A hint shows its text in the status line, leaves the hinted cell empty, and autosaves like any other command. | native, web, android | — |
 | `solve_then_rejected_fill` | Solve fills the board, reports the win and autosaves; a move on a given cell is then rejected with an error and changes and writes nothing. | native, web, android | — |

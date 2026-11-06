@@ -23,27 +23,16 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },
         .solve_batch => |snap| {
-            const marks = engine.state.board.mark_bits;
             engine.state.board = board.fromFlat(snap.flat, .{ .given_bits = snap.given_bits }) catch {
                 return engine.errorEvent(game_engine.REDO_FAILED_MSG);
             };
-            // Solve leaves marks alone, so redoing it does too.
-            engine.state.board.mark_bits = marks;
+            engine.state.board.mark_bits = snap.mark_bits;
             const solved = solver.solve(engine.state.board) catch {
                 return engine.errorEvent(game_engine.REDO_FAILED_MSG);
             };
             switch (solved) {
                 .none => return engine.errorEvent(game_engine.REDO_FAILED_MSG),
-                .solution => |grid| {
-                    for (grid, 0..) |digit, i| {
-                        const row: u4 = @intCast(i / 9);
-                        const col: u4 = @intCast(i % 9);
-                        if (engine.state.board.getCellValue(row, col) == cell.rawToCellValue(digit)) continue;
-                        engine.state.board.setCell(row, col, cell.rawToCellValue(digit)) catch |err| {
-                            return engine.eventFromSetCellError(row, col, err);
-                        };
-                    }
-                },
+                .solution => |grid| if (engine.placeSolution(grid)) |failed| return failed,
             }
             engine.state.history.pointer += 1;
             engine.state.board.validate();
@@ -135,4 +124,29 @@ test "command.redo.execute re-solves a solve batch to the captured grid" {
     try std.testing.expect(std.mem.indexOf(u8, event.ok.msg.?, "You win!") != null);
     try std.testing.expect(engine.durableStatus() != null);
     try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
+}
+
+test "Solve clears every mark as player fills would; Undo restores them and Redo clears them again" {
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), @import("../config.zig").Config.default());
+    defer engine.deinit();
+    var marked: usize = 0;
+    for (0..board.CELL_COUNT) |i| {
+        const row: u4 = @intCast(i / board.DIMENSION_SIZE);
+        const col: u4 = @intCast(i % board.DIMENSION_SIZE);
+        if (engine.state.board.getCellValue(row, col) != .zero) continue;
+        _ = engine.exec(.{ .pencil = .{ .row = row, .col = col, .digit = .four } });
+        marked += 1;
+        if (marked == 3) break;
+    }
+    const before = engine.state.board.mark_bits;
+    const no_marks: [board.DIMENSION_SIZE]board.CellMask = @splat(0);
+
+    try std.testing.expect(engine.exec(.{ .solve_for_me = {} }) == .ok);
+    try std.testing.expectEqual(no_marks, engine.state.board.mark_bits);
+    _ = engine.exec(.{ .undo = {} });
+    try std.testing.expectEqual(before, engine.state.board.mark_bits);
+    _ = engine.exec(.{ .redo = {} });
+    try std.testing.expectEqual(no_marks, engine.state.board.mark_bits);
 }

@@ -289,6 +289,70 @@
       }
     },
     {
+      "name": "solve_clears_marks",
+      "summary": "Solve fills every empty cell and clears every mark, as player fills would.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"fill": {"row": 0, "col": 1, "digit": 8}},
+        {"toggle_pencil_mode": true},
+        {"solve": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "probes": [
+          {"row": 0, "col": 0, "value": 4, "given": false, "marks": 0},
+          {"row": 0, "col": 1, "value": 8, "given": false, "marks": 0}
+        ]
+      }
+    },
+    {
+      "name": "solve_undo_restores_marks",
+      "summary": "Undo of a Solve empties the cells it filled and puts back the marks it cleared.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"fill": {"row": 0, "col": 1, "digit": 8}},
+        {"toggle_pencil_mode": true},
+        {"solve": true},
+        {"undo": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "probes": [
+          {"row": 0, "col": 0, "value": 0, "given": false, "marks": 8},
+          {"row": 0, "col": 1, "value": 0, "given": false, "marks": 128}
+        ]
+      }
+    },
+    {
+      "name": "hint_leaves_marks",
+      "summary": "A hint on a marked cell leaves its marks as they were.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 4, "col": 5, "digit": 2}},
+        {"fill": {"row": 4, "col": 5, "digit": 7}},
+        {"toggle_pencil_mode": true},
+        {"hint": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "probes": [{"row": 4, "col": 5, "value": 0, "given": false, "marks": 66}]
+      }
+    },
+    {
       "name": "clear_removes_marks",
       "summary": "Clear on an empty cell with marks removes them all and autosaves.",
       "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
