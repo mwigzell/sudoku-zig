@@ -106,7 +106,7 @@ export type FlowStart =
 export type GenText = { title: string; busy: string; done: string; cancelling: string; fast_strip: string; dig_hole: string };
 
 /** Board snapshot as wasm `getState` and `show_game` report it. */
-export type GameState = { cells: Array<{ value: number; given: boolean; conflict: boolean; clearable: boolean }> };
+export type GameState = { cells: Array<{ value: number; given: boolean; conflict: boolean; clearable: boolean; fillable: boolean }> };
 
 /** Player settings as core writes them to `settings.json` (no renderer choice, no current file). */
 export type PlayerSettings = {

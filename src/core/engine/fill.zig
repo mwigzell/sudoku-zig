@@ -4,6 +4,12 @@ const command = @import("../command.zig");
 const cell = @import("../board/cell.zig");
 const config = @import("../config.zig");
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
+const board = @import("../board/board.zig");
+
+/// A digit can go in any cell but a given: givens are fixed.
+pub fn canFill(view: board.Board.BoardView, row: u4, col: u4) bool {
+    return !view.isGiven(row, col);
+}
 
 /// Execute a fill command on the game engine.
 pub fn execute(engine: *game_engine.GameEngine, fill_data: command.FillData) game_engine.Event {
@@ -40,6 +46,16 @@ test "command.fill.execute fails on a given cell" {
         .error_msg => {}, // expected
         .ok => return error.TestFailed,
     }
+}
+
+test "canFill holds for every cell but a given" {
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+
+    try std.testing.expect(!canFill(engine.eventBoard(), 0, 0));
+    try std.testing.expect(canFill(engine.eventBoard(), 0, 2));
+    _ = execute(&engine, command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.five });
+    try std.testing.expect(canFill(engine.eventBoard(), 0, 2));
 }
 
 test "command.fill.execute records mutation in history" {

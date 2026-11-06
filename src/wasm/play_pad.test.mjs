@@ -38,7 +38,7 @@ function makePadControls() {
   };
 }
 
-// ── sync: digits follow the selection, Clear follows core's `clearable`, commands the legend, Region config ──
+// ── sync: digits follow core's `fillable`, Clear core's `clearable`, commands the legend, Region config ──
 {
   const pad = makePadControls();
   playPad.syncPlayPad(pad, { undo: true, redo: false, hint: true }, { show_region: true }, null);
@@ -49,11 +49,14 @@ function makePadControls() {
   assert.equal(pad.hint.disabled, false);
   assert.equal(pad.region.attrs["aria-pressed"], "true");
 
-  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, { clearable: false });
-  assert.ok(pad.digits.every((key) => !key.disabled), "digits are enabled with a selection");
+  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, { clearable: false, fillable: false });
+  assert.ok(pad.digits.every((key) => key.disabled), "digits are disabled on a cell core says cannot be filled");
+
+  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, { clearable: false, fillable: true });
+  assert.ok(pad.digits.every((key) => !key.disabled), "digits are enabled on a cell core says can be filled");
   assert.equal(pad.clear.disabled, true, "Clear is disabled on a cell core says cannot be cleared");
 
-  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, { clearable: true });
+  playPad.syncPlayPad(pad, { undo: false, redo: true, hint: false }, { show_region: false }, { clearable: true, fillable: true });
   assert.equal(pad.clear.disabled, false, "Clear is enabled on a cell core says can be cleared");
   assert.equal(pad.undo.disabled, true);
   assert.equal(pad.redo.disabled, false);
@@ -86,8 +89,10 @@ function makePadControls() {
   const givenCell = session.state.cells.findIndex((c) => c.given);
   selectAndSync({ row: Math.floor(givenCell / 9), col: givenCell % 9 });
   assert.equal(pad.clear.disabled, true, "Clear is disabled on a given");
+  assert.ok(pad.digits.every((key) => key.disabled), "digits are disabled on a given");
   selectAndSync({ row: FILL_MOVE.row, col: FILL_MOVE.col });
   assert.equal(pad.clear.disabled, true, "Clear is disabled on an empty cell");
+  assert.ok(pad.digits.every((key) => !key.disabled), "digits are enabled on an empty cell");
   selectAndSync(null);
   const root = { addEventListener() {}, querySelector: () => null };
   const editMenu = menu.wireEditMenu(menuControls.undo, menuControls.redo, null, game, boardEl, selection, session, createElement, root, {

@@ -39,14 +39,14 @@ export function collectPlayPadControls(padEl) {
 
 /**
  * Show core's state on the pad: Undo, Redo and Hint from the legend, Region from config.
- * Digits need a selected cell; Clear needs one core marks `clearable`.
+ * Digits need a selected cell core marks `fillable`; Clear needs one core marks `clearable`.
  * @param {PlayPadControls} controls
  * @param {Record<string, boolean>} legend
  * @param {{ show_region?: boolean }} config
- * @param {{ clearable?: boolean } | null} selectedCell The selected cell's snapshot, or null when none is selected.
+ * @param {{ clearable?: boolean, fillable?: boolean } | null} selectedCell The selected cell's snapshot, or null when none is selected.
  */
 export function syncPlayPad(controls, legend, config, selectedCell) {
-  for (const key of controls.digits) key.disabled = selectedCell == null;
+  for (const key of controls.digits) key.disabled = selectedCell?.fillable !== true;
   if (controls.clear) controls.clear.disabled = selectedCell?.clearable !== true;
   if (controls.undo) controls.undo.disabled = !legend[PAD_UNDO];
   if (controls.redo) controls.redo.disabled = !legend[PAD_REDO];
