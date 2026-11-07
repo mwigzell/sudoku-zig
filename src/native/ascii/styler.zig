@@ -1,31 +1,24 @@
 const cell = @import("../../core/board/cell.zig");
 const board = @import("../../core/board/board.zig");
+const frame_mod = @import("../../core/frame.zig");
 const std = @import("std");
 
-pub const CellSelection = struct {
-    row: u4,
-    col: u4,
-};
+/// Core's frame: the board plus the selected cell and its region.
+const Frame = frame_mod.Frame;
 
-pub fn inPeerRegion(selection: ?CellSelection, row: u4, col: u4) bool {
-    const sel = selection orelse return false;
-    if (row == sel.row or col == sel.col) return true;
-    const sel_box_row: u4 = @intCast(@divTrunc(@as(usize, @intCast(sel.row)), 3) * 3);
-    const sel_box_col: u4 = @intCast(@divTrunc(@as(usize, @intCast(sel.col)), 3) * 3);
-    const cell_box_row: u4 = @intCast(@divTrunc(@as(usize, @intCast(row)), 3) * 3);
-    const cell_box_col: u4 = @intCast(@divTrunc(@as(usize, @intCast(col)), 3) * 3);
-    return sel_box_row == cell_box_row and sel_box_col == cell_box_col;
+/// The selected cell is marked only while its region is shaded (Show Region on).
+fn shadeSelected(frame: Frame, row: u4, col: u4) bool {
+    return frame.region != null and frame.isSelected(row, col);
 }
 
 // ---------------------------------------------------------------------------
 /// Plain styler — produces unadorned layout identical to original cellRow output.
 pub const PlainStyler = struct {
     /// Fill the passed buffer with a formatted row string for `row_idx`.
-    pub fn formatRow(self: *PlainStyler, row_idx: usize, view: board.Board.BoardView, selection: ?CellSelection, buf: []u8) ![]u8 {
+    pub fn formatRow(self: *PlainStyler, row_idx: usize, frame: Frame, buf: []u8) ![]u8 {
         _ = self;
-        _ = selection;
         const rv = board.Board.asRow(@intCast(row_idx));
-        const vals = view.resolve(&rv.indices);
+        const vals = frame.board.resolve(&rv.indices);
 
         return std.fmt.bufPrint(
             buf,
@@ -46,9 +39,9 @@ pub const PlainStyler = struct {
     }
 
     /// One text line of board row `row_idx` in the large board (pencil marks shown).
-    pub fn formatLargeLine(self: *PlainStyler, row_idx: usize, line: usize, view: board.Board.BoardView, selection: ?CellSelection, buf: []u8) ![]u8 {
+    pub fn formatLargeLine(self: *PlainStyler, row_idx: usize, line: usize, frame: Frame, buf: []u8) ![]u8 {
         _ = self;
-        return largeLine(row_idx, line, view, selection, false, buf);
+        return largeLine(row_idx, line, frame, false, buf);
     }
 };
 
@@ -61,7 +54,7 @@ test "PlainStyler formats empty board row 0 identically to cellRow" {
 
     var buf: [64]u8 = undefined;
     var styler = PlainStyler{};
-    const line = try styler.formatRow(0, view, null, &buf);
+    const line = try styler.formatRow(0, .{ .board = view }, &buf);
 
     try std.testing.expectEqualStrings("1│       │       │       │\n", line);
 }
@@ -164,28 +157,28 @@ fn largeCellText(view: board.Board.BoardView, row: u4, col: u4, line: usize, out
 
 /// ANSI codes for a whole large cell, in style_cell's order: a conflicting entry is reversed,
 /// otherwise the selection or region shading, with givens dimmed.
-fn largeCellStyle(view: board.Board.BoardView, row: u4, col: u4, selection: ?CellSelection) []const u8 {
+fn largeCellStyle(frame: Frame, row: u4, col: u4) []const u8 {
+    const view = frame.board;
     const value = view.get(row, col);
     const given = view.isGiven(row, col) and value != .zero;
     if (!given and value != .zero and view.isConflictingRowCol(row, col)) return CONFLICT_ON;
-    const selected = if (selection) |sel| sel.row == row and sel.col == col else false;
-    if (selected) return if (given) SELECT_ON ++ DIM_ON else SELECT_ON;
-    if (inPeerRegion(selection, row, col)) return if (given) REGION_ON ++ DIM_ON else REGION_ON;
+    if (shadeSelected(frame, row, col)) return if (given) SELECT_ON ++ DIM_ON else SELECT_ON;
+    if (frame.inRegion(row, col)) return if (given) REGION_ON ++ DIM_ON else REGION_ON;
     return if (given) DIM_ON else "";
 }
 
 /// One text line of board row `row_idx` in the large board; the row number sits on the
 /// middle line. `styled` adds the ANSI cell styling.
-fn largeLine(row_idx: usize, line: usize, view: board.Board.BoardView, selection: ?CellSelection, styled: bool, buf: []u8) ![]u8 {
+fn largeLine(row_idx: usize, line: usize, frame: Frame, styled: bool, buf: []u8) ![]u8 {
     var w: std.Io.Writer = .fixed(buf);
     const row: u4 = @intCast(row_idx);
     if (line == LARGE_CELL_LINES / 2) try w.print("{d}│", .{row_idx + 1}) else try w.writeAll(" │");
     for (0..board.DIMENSION_SIZE) |c| {
         const col: u4 = @intCast(c);
         var text_buf: [LARGE_CELL_TEXT_MAX]u8 = undefined;
-        const style = if (styled) largeCellStyle(view, row, col, selection) else "";
+        const style = if (styled) largeCellStyle(frame, row, col) else "";
         try w.writeAll(style);
-        try w.writeAll(largeCellText(view, row, col, line, &text_buf));
+        try w.writeAll(largeCellText(frame.board, row, col, line, &text_buf));
         if (style.len > 0) try w.writeAll(RESET);
         if (c % board.BOX_DIMENSION == board.BOX_DIMENSION - 1) try w.writeAll("│");
     }
@@ -205,11 +198,11 @@ test "large board: a marked empty cell shows its marks in place, a filled cell o
     const empty_box = " ···  ···  ··· │";
     try std.testing.expectEqualStrings(
         " │ 1··       ··· │" ++ empty_box ++ empty_box ++ "\n",
-        try plain.formatLargeLine(0, 0, view, null, &buf),
+        try plain.formatLargeLine(0, 0, .{ .board = view }, &buf),
     );
     try std.testing.expectEqualStrings(
         "1│ ·5·   7   ··· │" ++ empty_box ++ empty_box ++ "\n",
-        try plain.formatLargeLine(0, 1, view, null, &buf),
+        try plain.formatLargeLine(0, 1, .{ .board = view }, &buf),
     );
 }
 
@@ -217,8 +210,9 @@ test "large board: a marked empty cell shows its marks in place, a filled cell o
 /// AnsiStyler — fills buffer with formatted row string for `row_idx`.
 pub const AnsiStyler = struct {
     /// Fill the passed buffer with a formatted row string for `row_idx`.
-    pub fn formatRow(self: *AnsiStyler, row_idx: usize, view: board.Board.BoardView, selection: ?CellSelection, buf: []u8) ![]u8 {
+    pub fn formatRow(self: *AnsiStyler, row_idx: usize, frame: Frame, buf: []u8) ![]u8 {
         _ = self;
+        const view = frame.board;
         const rv = board.Board.asRow(@intCast(row_idx));
         const row: u4 = @intCast(row_idx);
 
@@ -242,22 +236,22 @@ pub const AnsiStyler = struct {
 
         return std.fmt.bufPrint(buf, "{d}│ {s} {s} {s} │ {s} {s} {s} │ {s} {s} {s} │\n", .{
             row_idx + 1,
-            s0[0..style_cell(vals[0], gives[0], conflicts[0], inPeerRegion(selection, row, 0), selection != null and selection.?.row == row and selection.?.col == 0, &s0)],
-            s1[0..style_cell(vals[1], gives[1], conflicts[1], inPeerRegion(selection, row, 1), selection != null and selection.?.row == row and selection.?.col == 1, &s1)],
-            s2[0..style_cell(vals[2], gives[2], conflicts[2], inPeerRegion(selection, row, 2), selection != null and selection.?.row == row and selection.?.col == 2, &s2)],
-            s3[0..style_cell(vals[3], gives[3], conflicts[3], inPeerRegion(selection, row, 3), selection != null and selection.?.row == row and selection.?.col == 3, &s3)],
-            s4[0..style_cell(vals[4], gives[4], conflicts[4], inPeerRegion(selection, row, 4), selection != null and selection.?.row == row and selection.?.col == 4, &s4)],
-            s5[0..style_cell(vals[5], gives[5], conflicts[5], inPeerRegion(selection, row, 5), selection != null and selection.?.row == row and selection.?.col == 5, &s5)],
-            s6[0..style_cell(vals[6], gives[6], conflicts[6], inPeerRegion(selection, row, 6), selection != null and selection.?.row == row and selection.?.col == 6, &s6)],
-            s7[0..style_cell(vals[7], gives[7], conflicts[7], inPeerRegion(selection, row, 7), selection != null and selection.?.row == row and selection.?.col == 7, &s7)],
-            s8[0..style_cell(vals[8], gives[8], conflicts[8], inPeerRegion(selection, row, 8), selection != null and selection.?.row == row and selection.?.col == 8, &s8)],
+            s0[0..style_cell(vals[0], gives[0], conflicts[0], frame.inRegion(row, 0), shadeSelected(frame, row, 0), &s0)],
+            s1[0..style_cell(vals[1], gives[1], conflicts[1], frame.inRegion(row, 1), shadeSelected(frame, row, 1), &s1)],
+            s2[0..style_cell(vals[2], gives[2], conflicts[2], frame.inRegion(row, 2), shadeSelected(frame, row, 2), &s2)],
+            s3[0..style_cell(vals[3], gives[3], conflicts[3], frame.inRegion(row, 3), shadeSelected(frame, row, 3), &s3)],
+            s4[0..style_cell(vals[4], gives[4], conflicts[4], frame.inRegion(row, 4), shadeSelected(frame, row, 4), &s4)],
+            s5[0..style_cell(vals[5], gives[5], conflicts[5], frame.inRegion(row, 5), shadeSelected(frame, row, 5), &s5)],
+            s6[0..style_cell(vals[6], gives[6], conflicts[6], frame.inRegion(row, 6), shadeSelected(frame, row, 6), &s6)],
+            s7[0..style_cell(vals[7], gives[7], conflicts[7], frame.inRegion(row, 7), shadeSelected(frame, row, 7), &s7)],
+            s8[0..style_cell(vals[8], gives[8], conflicts[8], frame.inRegion(row, 8), shadeSelected(frame, row, 8), &s8)],
         });
     }
 
     /// One text line of board row `row_idx` in the large board, styled like formatRow's cells.
-    pub fn formatLargeLine(self: *AnsiStyler, row_idx: usize, line: usize, view: board.Board.BoardView, selection: ?CellSelection, buf: []u8) ![]u8 {
+    pub fn formatLargeLine(self: *AnsiStyler, row_idx: usize, line: usize, frame: Frame, buf: []u8) ![]u8 {
         _ = self;
-        return largeLine(row_idx, line, view, selection, true, buf);
+        return largeLine(row_idx, line, frame, true, buf);
     }
 };
 
@@ -281,7 +275,7 @@ test "AnsiStyler wraps given digits in dim CSI codes" {
 
     var buf: [256]u8 = undefined;
     var styler = AnsiStyler{};
-    const line = try styler.formatRow(0, view, null, &buf);
+    const line = try styler.formatRow(0, .{ .board = view }, &buf);
 
     const dim_count = std.mem.count(u8, line, DIM_ON);
     const reset_count = std.mem.count(u8, line, RESET);
@@ -302,21 +296,23 @@ test "AnsiStyler: conflicting non-given cell gets distinct ANSI wrapping" {
 
     var buf: [256]u8 = undefined;
     var styler = AnsiStyler{};
-    const line = try styler.formatRow(0, view, null, &buf);
+    const line = try styler.formatRow(0, .{ .board = view }, &buf);
 
     // Row 0 should contain reverse-video (CONFLICT_ON) markers for the conflicting cells.
     const conflict_count = std.mem.count(u8, line, CONFLICT_ON);
     try std.testing.expectEqual(@as(usize, 2), conflict_count);
 }
 
+const conflict = @import("../../core/board/conflict.zig");
+
 test "AnsiStyler: peer region cells get region background when selection set" {
     var b = board.Board.init();
     const view = b.asView();
-    const selection = CellSelection{ .row = 4, .col = 4 };
+    const frame = Frame{ .board = view, .selected = .{ .row = 4, .col = 4 }, .region = conflict.unitsMask(4, 4) };
 
     var buf: [512]u8 = undefined;
     var ansi = AnsiStyler{};
-    const line = try ansi.formatRow(4, view, selection, &buf);
+    const line = try ansi.formatRow(4, frame, &buf);
 
     const region_count = std.mem.count(u8, line, REGION_ON);
     try std.testing.expect(region_count >= 5);
@@ -324,12 +320,14 @@ test "AnsiStyler: peer region cells get region background when selection set" {
     try std.testing.expectEqual(@as(usize, 1), select_count);
 }
 
-test "inPeerRegion: row, column, and box membership" {
-    const sel = CellSelection{ .row = 4, .col = 4 };
-    try std.testing.expect(inPeerRegion(sel, 4, 0));
-    try std.testing.expect(inPeerRegion(sel, 0, 4));
-    try std.testing.expect(inPeerRegion(sel, 3, 3));
-    try std.testing.expect(!inPeerRegion(sel, 0, 0));
+test "AnsiStyler: with Show Region off the selected cell is not marked" {
+    var b = board.Board.init();
+    const frame = Frame{ .board = b.asView(), .selected = .{ .row = 4, .col = 4 } };
+    var buf: [512]u8 = undefined;
+    var ansi = AnsiStyler{};
+    const line = try ansi.formatRow(4, frame, &buf);
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, line, SELECT_ON));
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, line, REGION_ON));
 }
 
 test "AnsiStyler: given cell takes precedence over conflict styling" {
@@ -349,7 +347,7 @@ test "AnsiStyler: given cell takes precedence over conflict styling" {
     const view = b.asView();
     var buf: [256]u8 = undefined;
     var styler = AnsiStyler{};
-    const line = try styler.formatRow(0, view, null, &buf);
+    const line = try styler.formatRow(0, .{ .board = view }, &buf);
 
     // Since both cells are givens, they should be styled with DIM_ON (not CONFLICT_ON).
     const dim_count = std.mem.count(u8, line, DIM_ON);

@@ -1,15 +1,18 @@
 const command = @import("../command.zig");
 const config = @import("../config.zig");
 const logger = @import("../logger.zig");
-const board = @import("../board/board.zig");
 const event = @import("../event.zig");
 const legend = @import("legend.zig");
 const flow_step = @import("../flow/step.zig");
+const frame_mod = @import("../frame.zig");
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const Legend = legend.Legend;
 
-/// Row/col passed into render for native region highlight; null ⇒ no shading.
+/// A cell named across the seam (the Menu's hint target).
 pub const Selection = event.CellCoord;
+
+/// One draw's worth of state, built by core (`frame.build`).
+pub const Frame = frame_mod.Frame;
 
 /// Concrete error set for all Facade method signatures.
 pub const Error = error{System};
@@ -25,7 +28,7 @@ pub const Error = error{System};
 ///   * A turn = getCommandInput → dispatch → render + showLegend after a
 ///     board change, or promptMessage when a message is produced. The renderer
 ///     itself completes each interactive call (see the method docs).
-///   * Borrowed arguments (view, commands, msg, names) are caller-owned;
+///   * Borrowed arguments (frame, commands, msg, names) are caller-owned;
 ///     a renderer must not retain them past the call.
 ///   * Live menu/settings labels cross only via scalar args on
 ///     getCommandInput (Sudoku passes engine config each turn). No bundled
@@ -34,7 +37,7 @@ pub const Error = error{System};
 pub const Facade = struct {
     context: *anyopaque,
 
-    render_fn: *const fn (*anyopaque, board.Board.BoardView, ?[]const u8, ?Selection, bool) Error!void,
+    render_fn: *const fn (*anyopaque, Frame) Error!void,
 
     showLegend_fn: *const fn (*anyopaque, Legend) Error!void,
 
@@ -59,11 +62,10 @@ pub const Facade = struct {
 
     deinit_fn: *const fn (*anyopaque) void,
 
-    /// Draw the current board in full. When status_msg is non-null, renderers
-    /// with a status surface draw it non-blocking (no input read); null ⇒ plain
-    /// board. marks_visible is core's choice of the board with pencil marks.
-    pub fn render(self: *const Facade, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection, marks_visible: bool) Error!void {
-        return self.render_fn(self.context, view, status_msg, selection, marks_visible);
+    /// Draw the game in full from core's frame. A non-null status is drawn non-blocking
+    /// (no input read) by renderers with a status surface.
+    pub fn render(self: *const Facade, frame: Frame) Error!void {
+        return self.render_fn(self.context, frame);
     }
 
     /// Draw the command legend for the caller-supplied available commands.
@@ -112,9 +114,9 @@ pub const Facade = struct {
 pub fn Make(comptime CT: type) type {
     return struct {
         /// Forward `render` through erased context to the concrete renderer.
-        pub fn render_wrapper(ctx: *anyopaque, view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?Selection, marks_visible: bool) Error!void {
+        pub fn render_wrapper(ctx: *anyopaque, frame: Frame) Error!void {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            self.render(view, status_msg, selection, marks_visible) catch return error.System;
+            self.render(frame) catch return error.System;
         }
         /// Forward `showLegend` through erased context to the concrete renderer.
         pub fn showLegend_wrapper(ctx: *anyopaque, commands: Legend) Error!void {

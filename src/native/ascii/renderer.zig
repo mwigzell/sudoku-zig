@@ -151,23 +151,22 @@ pub fn AsciiRenderer(StylerType: type) type {
             }
         }
 
-        /// Draw the full board: column header, borders, styled rows via formatRow,
-        /// with box-drawing borders between 3x3 boxes. When status_msg is non-null,
-        /// draw it in a box frame below the grid — non-blocking, no input read;
-        /// null ⇒ plain board. With marks_visible the board is the large one, holding each cell's marks.
-        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?facade.Selection, marks_visible: bool) anyerror!void {
-            const styler_sel: ?styler.CellSelection = if (selection) |s| .{ .row = s.row, .col = s.col } else null;
-            if (marks_visible) try self.drawLargeBoard(view, styler_sel) else try self.drawBoard(view, styler_sel);
-            if (status_msg) |msg| try self.drawBox(msg);
+        /// Draw core's frame: column header, borders, styled rows via formatRow,
+        /// with box-drawing borders between 3x3 boxes. A non-null status is drawn in a
+        /// box below the grid — non-blocking, no input read. With marks_visible the
+        /// board is the large one, holding each cell's marks.
+        pub fn render(self: *@This(), frame: facade.Frame) anyerror!void {
+            if (frame.marks_visible) try self.drawLargeBoard(frame) else try self.drawBoard(frame);
+            if (frame.status) |msg| try self.drawBox(msg);
         }
 
         /// The one-character-per-cell board.
-        fn drawBoard(self: *@This(), view: board.Board.BoardView, selection: ?styler.CellSelection) anyerror!void {
+        fn drawBoard(self: *@This(), frame: facade.Frame) anyerror!void {
             try self.writer.writeAll(columnHeader());
             try self.writer.writeAll(topBorder());
             for (0..9) |row| {
                 var rowBuf: [256]u8 = undefined;
-                const line = try self.styler.formatRow(row, view, selection, &rowBuf);
+                const line = try self.styler.formatRow(row, frame, &rowBuf);
                 try self.writer.writeAll(line);
                 if (row == 2 or row == 5) {
                     try self.writer.writeAll(midBorder());
@@ -177,13 +176,13 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// The large board: each cell a block of lines showing its pencil marks.
-        fn drawLargeBoard(self: *@This(), view: board.Board.BoardView, selection: ?styler.CellSelection) anyerror!void {
+        fn drawLargeBoard(self: *@This(), frame: facade.Frame) anyerror!void {
             try self.writer.writeAll(LARGE_COLUMN_HEADER);
             try self.writer.writeAll(LARGE_TOP_BORDER);
             for (0..9) |row| {
                 for (0..styler.LARGE_CELL_LINES) |line| {
                     var line_buf: [LARGE_LINE_BUF]u8 = undefined;
-                    try self.writer.writeAll(try self.styler.formatLargeLine(row, line, view, selection, &line_buf));
+                    try self.writer.writeAll(try self.styler.formatLargeLine(row, line, frame, &line_buf));
                 }
                 if (row == 2 or row == 5) try self.writer.writeAll(LARGE_MID_BORDER);
             }
@@ -709,7 +708,7 @@ test "render: renders empty board end-to-end" {
     var renderer = AsciiRenderer(styler.PlainStyler).init(std.testing.allocator, &aw.writer, &s, .{ .stdin = input_source.StdinSource.initStdin(std.testing.allocator, io) });
 
     const b = board.Board.init();
-    try renderer.render(b.asView(), null, null, false);
+    try renderer.render(.{ .board = b.asView() });
 
     const contents = aw.writer.buffered();
 
@@ -754,7 +753,7 @@ test "render: renders with digits placed" {
     @memcpy(flat[27..], &rest);
 
     const b = try board.fromFlat(flat, .{});
-    try renderer.render(b.asView(), null, null, false);
+    try renderer.render(.{ .board = b.asView() });
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, "3") != null);
@@ -1530,7 +1529,7 @@ test "render: with marks visible the board is the large one, three lines per row
 
     var b = board.Board.init();
     b.toggleMark(8, 8, .nine);
-    try renderer.render(b.asView(), null, null, true);
+    try renderer.render(.{ .board = b.asView(), .marks_visible = true });
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.startsWith(u8, contents, LARGE_COLUMN_HEADER ++ LARGE_TOP_BORDER));
@@ -1554,11 +1553,13 @@ test "render: no region shading when selection is null" {
     );
 
     const b = board.Board.init();
-    try renderer.render(b.asView(), null, null, false);
+    try renderer.render(.{ .board = b.asView() });
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) == null);
 }
+
+const conflict = @import("../../core/board/conflict.zig");
 
 test "render: region shading when selection provided" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
@@ -1573,7 +1574,7 @@ test "render: region shading when selection provided" {
     );
 
     const b = board.Board.init();
-    try renderer.render(b.asView(), null, .{ .row = 4, .col = 4 }, false);
+    try renderer.render(.{ .board = b.asView(), .selected = .{ .row = 4, .col = 4 }, .region = conflict.unitsMask(4, 4) });
 
     const contents = aw.writer.buffered();
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);

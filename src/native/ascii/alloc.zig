@@ -84,8 +84,8 @@ fn ctx(S: type) type {
         }
 
         /// Pass-through methods for Facade vtable wrappers.
-        pub fn render(self: *@This(), view: board.Board.BoardView, status_msg: ?[]const u8, selection: ?facade.Selection, marks_visible: bool) facade.Error!void {
-            self.renderer.render(view, status_msg, selection, marks_visible) catch return facade.Error.System;
+        pub fn render(self: *@This(), frame: facade.Frame) facade.Error!void {
+            self.renderer.render(frame) catch return facade.Error.System;
         }
 
         pub fn showLegend(self: *@This(), commands: legend.Legend) facade.Error!void {
@@ -225,7 +225,7 @@ test "integrated e2e - prodBranch renders real grid into in-memory writer" {
     defer fac.deinit();
 
     const b = board.Board.init();
-    try fac.render(b.asView(), null, null, false);
+    try fac.render(.{ .board = b.asView() });
 
     const contents = std.Io.Writer.buffered(&session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F │ G H I") != null);

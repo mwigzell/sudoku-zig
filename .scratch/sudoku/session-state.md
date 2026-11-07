@@ -24,3 +24,10 @@
 - Hand check show_marks off (mark, Undo, Redo; Clear): Android (user), web and terminal (agent, sandboxed) all pass.
 - Full android-test green on 360dp emulator (21 tests). Contradicting-mark core test added. #107 closed.
 - Next: #117 with #115; triage #116, #111.
+
+## #117 (core owns selection + frame)
+- Step 1 done: `src/core/frame.zig` (Frame: board, status, selected, region mask, marks_visible; `build(engine, status, selected)`);
+  `Facade.render(frame)`; styler shades from frame.region (inPeerRegion/CellSelection gone); selected cell marked only
+  while region shown (step 5 drops that). Selection still shell's last_cell. Demo -r ansi: fill A1 shades 20 cells.
+- Note: `zig test --test-filter` / `-Dtest-filter` don't match nested-module tests; check with the full `zig test src/entry_native.zig -lc` run.
+- Next: Step 2 (core owns selection, terminal) — wait for user.

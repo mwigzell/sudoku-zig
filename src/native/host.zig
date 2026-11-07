@@ -4,6 +4,7 @@
 const std = @import("std");
 const config = @import("../core/config.zig");
 const facade_mod = @import("../core/renderer/facade.zig");
+const frame_mod = @import("../core/frame.zig");
 const io_session = @import("io_session.zig");
 const input_source = @import("input_source.zig");
 const command = @import("../core/command.zig");
@@ -150,7 +151,7 @@ test "host: createForTest .ascii preference yields a working facade" {
     // Working facade: renders a real board view without error
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
-    try f.render(engine.eventBoard(), null, null, false);
+    try f.render(frame_mod.build(&engine, null, null));
 
     // And the injected mock reader drives the command parse path:
     // "fill A3 4" must round-trip into the very fill command it denotes
@@ -185,7 +186,7 @@ test "host: .tui preference falls back to .ascii and yields a working facade" {
     // Working fallback facade renders a real board view through its session.
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
-    try f.render(engine.eventBoard(), null, null, false);
+    try f.render(frame_mod.build(&engine, null, null));
 }
 
 test "host: both arms unsupported errors without building a terminal session" {

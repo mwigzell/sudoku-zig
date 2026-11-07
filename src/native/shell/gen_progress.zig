@@ -1,7 +1,6 @@
 // Shell adapter: puzzle_gen progress events → Facade (session writer).
 const std = @import("std");
 const facade_mod = @import("../../core/renderer/facade.zig");
-const board = @import("../../core/board/board.zig");
 const command = @import("../../core/command.zig");
 const config = @import("../../core/config.zig");
 const event_mod = @import("../../core/event.zig");
@@ -24,7 +23,7 @@ const ProgressRecorder = struct {
     called: bool = false,
     last: ?puzzle_gen.GenProgressEvent = null,
 
-    fn render(_: *anyopaque, _: board.Board.BoardView, _: ?[]const u8, _: ?event_mod.CellCoord, _: bool) facade_mod.Error!void {}
+    fn render(_: *anyopaque, _: facade_mod.Frame) facade_mod.Error!void {}
     fn showLegend(_: *anyopaque, _: legend_mod.Legend) facade_mod.Error!void {}
     fn promptMessage(_: *anyopaque, prompt: flow_step.PromptMessage) facade_mod.Error!usize {
         return prompt.defaultAnswer();

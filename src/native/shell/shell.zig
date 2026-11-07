@@ -2,6 +2,7 @@
 // game engine, and render each resulting event back through the renderer.
 const std = @import("std");
 const facade_mod = @import("../../core/renderer/facade.zig");
+const frame_mod = @import("../../core/frame.zig");
 const styler = @import("../ascii/styler.zig");
 const game_engine = @import("../../core/engine/game_engine.zig");
 const file_transport = @import("file_transport.zig");
@@ -158,15 +159,8 @@ pub const Sudoku = struct {
             if (game.file) |file| self.storage.persistCurrentFile(file);
         }
         if (game.cell) |c| self.last_cell = c;
-        const region: ?facade_mod.Selection = if (game.config.show_region) self.last_cell else null;
-        try self.renderer.render(game.board, game.status, region, game.marks_visible);
+        try self.renderer.render(frame_mod.build(&self.engine, game.status, self.last_cell));
         try self.renderer.showLegend(game.legend);
-    }
-
-    /// The cell whose region is shaded, when Show Region is on.
-    fn regionSelection(self: *const @This()) ?facade_mod.Selection {
-        if (!self.engine.cfg.show_region) return null;
-        return self.last_cell;
     }
 
     /// Dispatch one engine event to the renderer; returns true when the loop should end.
@@ -176,7 +170,7 @@ pub const Sudoku = struct {
             .ok => |ev| {
                 if (ev.cell) |c| self.last_cell = c;
                 if (ev.is_quit) return true;
-                try self.renderer.render(ev.board_view, ev.msg, self.regionSelection(), self.engine.marksVisible());
+                try self.renderer.render(frame_mod.build(&self.engine, ev.msg, self.last_cell));
                 try self.renderer.showLegend(self.engine.getLegend());
                 return false;
             },
@@ -233,7 +227,7 @@ pub const Sudoku = struct {
 
     /// First-screen render variant that allows a startup status line.
     pub fn showGameWithStatus(self: *@This(), status_msg: ?[]const u8) Error!void {
-        try self.renderer.render(self.engine.eventBoard(), status_msg, self.regionSelection(), self.engine.marksVisible());
+        try self.renderer.render(frame_mod.build(&self.engine, status_msg, self.last_cell));
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
@@ -286,10 +280,10 @@ const DeterministicFacade = struct {
     }
 
     /// Records render calls from Sudoku.handleEvent for deterministic branch tests.
-    pub fn render(self: *@This(), _: board.Board.BoardView, msg: ?[]const u8, _: ?facade_mod.Selection, marks_visible: bool) !void {
+    pub fn render(self: *@This(), frame: facade_mod.Frame) !void {
         self.render_calls += 1;
-        self.last_marks_visible = marks_visible;
-        self.last_render_msg = msg;
+        self.last_marks_visible = frame.marks_visible;
+        self.last_render_msg = frame.status;
     }
 
     /// Records legend refreshes from successful event handling.
@@ -973,7 +967,7 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     const transport = file_transport.NativeTransport.make(std.testing.io);
     var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
     defer sudoku.deinit();
-    try sudoku.renderer.render(sudoku.engine.state.board.asView(), null, null, false);
+    try sudoku.renderer.render(.{ .board = sudoku.engine.state.board.asView() });
 
     const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
     try std.testing.expect(std.mem.indexOf(u8, contents, "A B C │ D E F") != null);
