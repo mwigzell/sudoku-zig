@@ -5,3 +5,4 @@ build.log
 kcov-out/
 third_party/bundletool/
 src/wasm/artifacts/artifact.wasm
+.scratch/sudoku/session-state.md
