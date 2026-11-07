@@ -1500,7 +1500,7 @@ test "render: with marks visible the board is the large one, three lines per row
     try std.testing.expectEqual(9 * @as(usize, styler.LARGE_CELL_LINES) + frame_lines, std.mem.count(u8, contents, "\n"));
 }
 
-const region_on = "\x1b[48;5;238m";
+const region_on = styler.REGION_ON;
 
 test "render: no region shading when selection is null" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);

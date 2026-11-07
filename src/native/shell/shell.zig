@@ -1102,7 +1102,7 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
 }
 
 test "integrated e2e - fill does not shade region until show_region enabled" {
-    const region_on = "\x1b[48;5;238m";
+    const region_on = styler_t.REGION_ON;
     const cfg: config.Config = .{
         .difficulty = .hard,
         .preferred_renderer = .ansi,

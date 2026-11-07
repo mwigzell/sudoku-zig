@@ -6,11 +6,6 @@ const std = @import("std");
 /// Core's frame: the board plus the selected cell and its region.
 const Frame = frame_mod.Frame;
 
-/// The selected cell is marked only while its region is shaded (Show Region on).
-fn shadeSelected(frame: Frame, row: u4, col: u4) bool {
-    return frame.region != null and frame.isSelected(row, col);
-}
-
 // ---------------------------------------------------------------------------
 /// Plain styler — produces unadorned layout identical to original cellRow output.
 pub const PlainStyler = struct {
@@ -63,9 +58,26 @@ test "PlainStyler formats empty board row 0 identically to cellRow" {
 /// ANSI constants — Dim ON (givens) / Reset
 const DIM_ON = "\x1b[2m";
 const CONFLICT_ON = "\x1b[7m";
-const REGION_ON = "\x1b[48;5;238m";
-const SELECT_ON = "\x1b[48;5;237m";
 const RESET = "\x1b[0m";
+
+// Background greys on the 256-colour ramp (232 darkest … 255 lightest).
+/// An empty cell on the large board.
+const GREY_EMPTY: u8 = 235;
+/// The selected cell's row, column and box.
+const GREY_REGION: u8 = 238;
+/// The selected cell, lightest of the three.
+const GREY_SELECTED: u8 = 242;
+
+fn background(comptime grey: u8) []const u8 {
+    return std.fmt.comptimePrint("\x1b[48;5;{d}m", .{grey});
+}
+
+/// Background of an empty cell on the large board.
+pub const EMPTY_ON = background(GREY_EMPTY);
+/// Background of the selected cell's region.
+pub const REGION_ON = background(GREY_REGION);
+/// Background of the selected cell.
+pub const SELECT_ON = background(GREY_SELECTED);
 
 // ---------------------------------------------------------------------------
 /// Private helper: build styled string for one cell position
@@ -124,14 +136,18 @@ fn style_cell(
 pub const LARGE_CELL_LINES = board.BOX_DIMENSION;
 /// Columns of a large cell: a space, one slot per mark on the line, a space.
 pub const LARGE_CELL_COLS = board.BOX_DIMENSION + 2;
-/// An unset mark's slot.
+/// An unset mark's slot on the plain board, which has no shade to show the empty cell.
 const UNSET_MARK = "·";
+/// An unset mark's slot on the styled board, where the empty-cell shade shows the cell.
+const UNSET_MARK_SHADED = " ";
 /// Bytes of one line of a large cell's text (every slot unset at most).
 const LARGE_CELL_TEXT_MAX = 2 + board.BOX_DIMENSION * UNSET_MARK.len;
 
-/// Line `line` of the cell at (row, col): its marks for that line of the 3×3 grid, `·` for
-/// an unset one; a filled cell shows only its digit, in the middle of the middle line.
-fn largeCellText(view: board.Board.BoardView, row: u4, col: u4, line: usize, out: *[LARGE_CELL_TEXT_MAX]u8) []const u8 {
+/// Line `line` of the cell at (row, col): its marks for that line of the 3×3 grid, an unset one
+/// blank when `styled` (the shade shows the cell) or `·` when plain; a filled cell shows only
+/// its digit, in the middle of the middle line.
+fn largeCellText(view: board.Board.BoardView, row: u4, col: u4, line: usize, styled: bool, out: *[LARGE_CELL_TEXT_MAX]u8) []const u8 {
+    const unset = if (styled) UNSET_MARK_SHADED else UNSET_MARK;
     const value = view.get(row, col);
     if (value != .zero) {
         const shown: u8 = if (line == LARGE_CELL_LINES / 2) cell.displayChar(value) else ' ';
@@ -147,8 +163,8 @@ fn largeCellText(view: board.Board.BoardView, row: u4, col: u4, line: usize, out
             out[len] = '1' + @as(u8, @intCast(plane));
             len += 1;
         } else {
-            @memcpy(out[len..][0..UNSET_MARK.len], UNSET_MARK);
-            len += UNSET_MARK.len;
+            @memcpy(out[len..][0..unset.len], unset);
+            len += unset.len;
         }
     }
     out[len] = ' ';
@@ -156,14 +172,16 @@ fn largeCellText(view: board.Board.BoardView, row: u4, col: u4, line: usize, out
 }
 
 /// ANSI codes for a whole large cell, in style_cell's order: a conflicting entry is reversed,
-/// otherwise the selection or region shading, with givens dimmed.
+/// otherwise the selection or region shading, with givens dimmed; any other empty cell gets
+/// the empty-cell shade.
 fn largeCellStyle(frame: Frame, row: u4, col: u4) []const u8 {
     const view = frame.board;
     const value = view.get(row, col);
     const given = view.isGiven(row, col) and value != .zero;
     if (!given and value != .zero and view.isConflictingRowCol(row, col)) return CONFLICT_ON;
-    if (shadeSelected(frame, row, col)) return if (given) SELECT_ON ++ DIM_ON else SELECT_ON;
+    if (frame.isSelected(row, col)) return if (given) SELECT_ON ++ DIM_ON else SELECT_ON;
     if (frame.inRegion(row, col)) return if (given) REGION_ON ++ DIM_ON else REGION_ON;
+    if (value == .zero) return EMPTY_ON;
     return if (given) DIM_ON else "";
 }
 
@@ -178,7 +196,7 @@ fn largeLine(row_idx: usize, line: usize, frame: Frame, styled: bool, buf: []u8)
         var text_buf: [LARGE_CELL_TEXT_MAX]u8 = undefined;
         const style = if (styled) largeCellStyle(frame, row, col) else "";
         try w.writeAll(style);
-        try w.writeAll(largeCellText(frame.board, row, col, line, &text_buf));
+        try w.writeAll(largeCellText(frame.board, row, col, line, styled, &text_buf));
         if (style.len > 0) try w.writeAll(RESET);
         if (c % board.BOX_DIMENSION == board.BOX_DIMENSION - 1) try w.writeAll("│");
     }
@@ -236,15 +254,15 @@ pub const AnsiStyler = struct {
 
         return std.fmt.bufPrint(buf, "{d}│ {s} {s} {s} │ {s} {s} {s} │ {s} {s} {s} │\n", .{
             row_idx + 1,
-            s0[0..style_cell(vals[0], gives[0], conflicts[0], frame.inRegion(row, 0), shadeSelected(frame, row, 0), &s0)],
-            s1[0..style_cell(vals[1], gives[1], conflicts[1], frame.inRegion(row, 1), shadeSelected(frame, row, 1), &s1)],
-            s2[0..style_cell(vals[2], gives[2], conflicts[2], frame.inRegion(row, 2), shadeSelected(frame, row, 2), &s2)],
-            s3[0..style_cell(vals[3], gives[3], conflicts[3], frame.inRegion(row, 3), shadeSelected(frame, row, 3), &s3)],
-            s4[0..style_cell(vals[4], gives[4], conflicts[4], frame.inRegion(row, 4), shadeSelected(frame, row, 4), &s4)],
-            s5[0..style_cell(vals[5], gives[5], conflicts[5], frame.inRegion(row, 5), shadeSelected(frame, row, 5), &s5)],
-            s6[0..style_cell(vals[6], gives[6], conflicts[6], frame.inRegion(row, 6), shadeSelected(frame, row, 6), &s6)],
-            s7[0..style_cell(vals[7], gives[7], conflicts[7], frame.inRegion(row, 7), shadeSelected(frame, row, 7), &s7)],
-            s8[0..style_cell(vals[8], gives[8], conflicts[8], frame.inRegion(row, 8), shadeSelected(frame, row, 8), &s8)],
+            s0[0..style_cell(vals[0], gives[0], conflicts[0], frame.inRegion(row, 0), frame.isSelected(row, 0), &s0)],
+            s1[0..style_cell(vals[1], gives[1], conflicts[1], frame.inRegion(row, 1), frame.isSelected(row, 1), &s1)],
+            s2[0..style_cell(vals[2], gives[2], conflicts[2], frame.inRegion(row, 2), frame.isSelected(row, 2), &s2)],
+            s3[0..style_cell(vals[3], gives[3], conflicts[3], frame.inRegion(row, 3), frame.isSelected(row, 3), &s3)],
+            s4[0..style_cell(vals[4], gives[4], conflicts[4], frame.inRegion(row, 4), frame.isSelected(row, 4), &s4)],
+            s5[0..style_cell(vals[5], gives[5], conflicts[5], frame.inRegion(row, 5), frame.isSelected(row, 5), &s5)],
+            s6[0..style_cell(vals[6], gives[6], conflicts[6], frame.inRegion(row, 6), frame.isSelected(row, 6), &s6)],
+            s7[0..style_cell(vals[7], gives[7], conflicts[7], frame.inRegion(row, 7), frame.isSelected(row, 7), &s7)],
+            s8[0..style_cell(vals[8], gives[8], conflicts[8], frame.inRegion(row, 8), frame.isSelected(row, 8), &s8)],
         });
     }
 
@@ -320,14 +338,51 @@ test "AnsiStyler: peer region cells get region background when selection set" {
     try std.testing.expectEqual(@as(usize, 1), select_count);
 }
 
-test "AnsiStyler: with Show Region off the selected cell is not marked" {
+test "AnsiStyler: with Show Region off the selected cell is marked and nothing else is shaded" {
     var b = board.Board.init();
     const frame = Frame{ .board = b.asView(), .selected = .{ .row = 4, .col = 4 } };
     var buf: [512]u8 = undefined;
     var ansi = AnsiStyler{};
     const line = try ansi.formatRow(4, frame, &buf);
-    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, line, SELECT_ON));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, line, SELECT_ON));
     try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, line, REGION_ON));
+}
+
+test "the empty-cell, region and selected-cell greys are clearly apart, the selected cell lightest" {
+    // Ramp steps that keep two neighbouring greys clearly apart.
+    const min_step = 3;
+    try std.testing.expect(GREY_REGION - GREY_EMPTY >= min_step);
+    try std.testing.expect(GREY_SELECTED - GREY_REGION >= min_step);
+}
+
+test "large board, styled, Show Region off: the selected cell is marked and every other empty cell has the empty shade" {
+    var b = board.Board.init();
+    const frame = Frame{ .board = b.asView(), .selected = .{ .row = 0, .col = 0 } };
+    var buf: [1024]u8 = undefined;
+    var ansi = AnsiStyler{};
+    const top = try ansi.formatLargeLine(0, 0, frame, &buf);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, top, SELECT_ON));
+    try std.testing.expectEqual(@as(usize, 8), std.mem.count(u8, top, EMPTY_ON));
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, top, REGION_ON));
+}
+
+test "large board, styled: every empty cell is shaded without dots; the selected cell and its region have their own shades" {
+    var b = board.Board.init();
+    b.toggleMark(0, 0, .one);
+    const frame = Frame{ .board = b.asView(), .selected = .{ .row = 4, .col = 4 }, .region = conflict.unitsMask(4, 4) };
+    var buf: [1024]u8 = undefined;
+    var ansi = AnsiStyler{};
+
+    const top = try ansi.formatLargeLine(0, 0, frame, &buf);
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, top, UNSET_MARK));
+    try std.testing.expect(std.mem.startsWith(u8, top, " │" ++ EMPTY_ON ++ " 1   " ++ RESET));
+    try std.testing.expectEqual(@as(usize, 8), std.mem.count(u8, top, EMPTY_ON));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, top, REGION_ON));
+
+    const middle = try ansi.formatLargeLine(4, 0, frame, &buf);
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, middle, SELECT_ON));
+    try std.testing.expectEqual(@as(usize, 8), std.mem.count(u8, middle, REGION_ON));
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, middle, EMPTY_ON));
 }
 
 test "AnsiStyler: given cell takes precedence over conflict styling" {
