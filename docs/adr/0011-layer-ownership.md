@@ -11,7 +11,7 @@ Placement drift. A recurring failure mode across this project: implementation is
 - `save_format` manufacturing a `GameEngine` from bytes — codec smuggling a runtime object.
 - `WebGame` second app object in the wasm path — a parallel application beside the core instead of a thin entry (2026-08-31 owner ruling).
 - `showError` implemented as fire-and-forget in wasm — ack contract of an interactive surface dropped (issues #25/#26 era).
-- Region highlight memo (issue #46, 2026-12) — both attempts pulled the "last cell" memo into the **renderer**; it belongs in the driver (native) / page (web), exactly where sibling entries already keep selection.
+- Region highlight memo (issue #46, 2026-12) — both attempts pulled the "last cell" memo into the **renderer**; it belonged in the driver (native) / page (web), exactly where sibling entries then kept selection. Core now owns the selection and its region (ADR-0019).
 
 `AGENTS.md` says closed issues are historical and code is source of truth, but none of these was caught because there was no *written* rule saying which layer owns which concern. ADR-0010 pins the wasm boundary and engine I/O-freeness; **ADR-0014** pins persistent settings, host bootstrap, and in-app editing — but not the full placement law in this table.
 
@@ -32,12 +32,12 @@ Placement decisions cite a sibling entry before they invent a new home. Ownershi
 | Concern | Owning layer | Never in |
 |---|---|---|
 | Game state (board, history, `cfg`, SUD0 codec) | `GameEngine` / `src/board` | renderers, drivers, entries |
-| One-shot facts (conflict, win, last cell, msg) | engine → `Event`/`BoardView`, delivered per render | stored in renderer or driver across renders (except the memo below) |
-| Cursor / selection memo | **UI-session layer**: `driver` (native shell) / JS app (`board.js` `selection`, web) | renderer, engine, event as storage |
+| One-shot facts (conflict, win, last cell, msg) | engine → `Event`/`BoardView`, delivered per render | stored in renderer or driver across renders |
+| Selected cell and its region (superseded row, ADR-0019) | **core**: `GameEngine.selected`, drawn from core's `Frame` | renderer, driver (native shell), JS app, save file |
 | File I/O bytes | `FileTransport` arms (native `std.Io`; wasm JS imports, ADR-0010) | engine, board, facade |
 | Session lifecycle (`new`/`open`/`save`/`save_as`) | driver (native) / JS app (web) | renderers |
 | `io: std.Io` | host + transport arms, capability-injected (ADR-0010) | engine, facade, board, `event` |
-| Rendering (paint, shade, borders) | renderer, **stateless painter** over `(view, status, selection/args)` | any concern state; see #46 AC |
+| Rendering (paint, shade, borders) | renderer, **stateless painter** over core's `Frame` (ADR-0019) | any concern state; see #46 AC |
 | Nominal user prefs (`Config`, `settings.json`) | **`GameEngine.cfg`**; core **`SettingsFlow`** decides when to persist (`persist_settings` step); load/save via **`settings_store`** (native **`Storage`**, or **`web_host`** for the web POST) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
 | Settings / view pref **UI** | Native **Menu** (+ **`getCommandInput`** scalars from driver); web **menubar** + modals + **`exec`** | disk or CLI as the **only** way to change a persisted player-facing field (ADR-0014) |
 

@@ -59,11 +59,19 @@ _Avoid_: Column slice (implies copying)
 ### Rendering & Interaction
 
 **Renderer** (native):
-Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or plain) is the concrete implementation today; it receives `Event` snapshots from the game loop and never reads Board internals directly. **All native terminal output** (board, prompts, session dialogs, **live puzzle-gen progress**) goes through the renderer **`Facade`** and its session **`Io.Writer`** — not stdout or `Io` hooks from domain modules. Gen progress: `Facade.reportGenProgress(GenProgressEvent)`. The browser does **not** use a Zig renderer — JS builds the DOM from wasm JSON (`GameSnapshot`).
+Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or plain) is the concrete implementation today; it draws core's **Frame** (`Facade.render(frame)`) and never reads Board internals directly. **All native terminal output** (board, prompts, session dialogs, **live puzzle-gen progress**) goes through the renderer **`Facade`** and its session **`Io.Writer`** — not stdout or `Io` hooks from domain modules. Gen progress: `Facade.reportGenProgress(GenProgressEvent)`. The browser does **not** use a Zig renderer — JS builds the DOM from wasm JSON (`GameSnapshot`).
 _Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer); parallel `Sudoku.out` / domain stdout for progress
 
+**Frame** (`core/frame.zig`):
+One draw's state, built by core from one builder (`frame.build(engine, status)`): the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on, else none), `marks_visible` and `pencil_mode`. The terminal's `render` takes it as its only drawing argument; the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`). New drawing state is a frame field (ADR-0019).
+_Avoid_: front ends working out the region or the selection; a new `render` argument per piece of state
+
+**Selected cell** (`GameEngine.selected`):
+Core's selected cell, or none; session state, never saved. A select (web and Android: tap, arrow keys), a fill, clear or mark, and Undo or Redo of a single-cell change set it; Hint, a refused move, Solve and its Undo or Redo leave it; a deselect (tap the selected cell again, Esc, Edit → Deselect Cell) and every load clear it. Every front end marks it, Show Region or not; Show Region adds its row, column and box. The terminal has no select or deselect command (ADR-0019).
+_Avoid_: a selection kept by the shell or the page; Hint reading its target from the selection
+
 **Event**:
-Output of `GameEngine.exec()` after a gameplay command — `.ok` carries a `BoardView`, optional message, and `is_quit`; `.error_msg` carries a reason string. Native `Sudoku` passes this to the renderer facade. The wasm boundary serializes the same semantics as JSON (`boundary.zig` / `glue.js`). **Status copy is Event-sourced only**: `.ok.msg` → web status bar; `.error_msg` → acknowledgement modal (native `showError` analogue).
+Output of `GameEngine.exec()` after a gameplay command — `.ok` carries a `BoardView`, optional message, and `is_quit`; `.error_msg` carries a reason string. Native `Sudoku` draws the result as a **Frame** built from the engine and the event's message. The wasm boundary serializes the same semantics as JSON (`boundary.zig` / `glue.js`). **Status copy is Event-sourced only**: `.ok.msg` → web status bar; `.error_msg` → acknowledgement modal (native `showError` analogue).
 _Avoid_: Payload (ambiguous), State dump
 
 **Command**:
@@ -107,11 +115,11 @@ A cell you filled with a digit that **can't belong to any solution** of the boar
 _Avoid_: using "blocker" for conflict-flagged cells; a blocker is invisible to the validator
 
 **Engine-pick mode** (`hint` with no target):
-Engine picks the cell by locked ranking (issue #48): **(a) blocker** (name it) → **(b) empty cell with fewest local candidates** (solver-verified digit) → **(c) row-major tie-break**. Native: **`m` menu → Hint** with no `last_cell`; web: **Edit → Hint** while nothing is selected (deselect / Esc). The "what should I do next?" form.
+Engine picks the cell by locked ranking (issue #48): **(a) blocker** (name it) → **(b) empty cell with fewest local candidates** (solver-verified digit) → **(c) row-major tie-break**. Native: bare `hint` / `h` and **Menu → Hint**, whatever is selected; web and Android: **Edit → Hint** or the pad's Hint while nothing is selected (deselect / Esc). The "what should I do next?" form.
 _Avoid_: treating `hint` as always needing a named cell; answering a hint from local constraints alone
 
 **Targeted mode** (`hint` with `{row, col}`):
-User names the cell — native: `hint e5` (optional parser) or **menu Hint** when driver has `last_cell`; web: board `selection` when set (JS-owned, ADR-0011 target-as-arg). Engine answers that cell's solution-consistent digit (or the no-solution status).
+User names the cell — native: `hint e5`; web and Android: the selected cell, read from core's frame and sent as the command's target. The command carries its target; core never takes it from the selection. Engine answers that cell's solution-consistent digit (or the no-solution status).
 _Avoid_: "hint at position", implying local-constraint derivation; a permanent auto-selected cell that silently forces targeted mode
 
 ### Pencil marks
@@ -129,7 +137,7 @@ Placing a digit (player fill or Solve) replaces the cell's marks and removes tha
 _Avoid_: having a front end remove marks itself
 
 **Show Pencil Marks** (`show_marks`) and **`marks_visible`**:
-`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil mode or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells, `·` for an unset mark); web and Android draw only set marks.
+`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil mode or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers shade every empty cell and leave an unset mark blank, plain `ascii` shows `·`); web and Android draw only set marks.
 _Avoid_: front ends deciding visibility from `show_marks` alone
 
 ### Flows and steps
@@ -234,7 +242,7 @@ Carries out the native file and settings steps: name the default target, `save` 
 _Avoid_: policy here (which file, when to ask, what status to show — core decides)
 
 **Web app shell** (`page.html`, `glue.js` and the `src/wasm/` modules, one concern each, grouped by role: `menus/` (menubar and each menu), `flows/` (`step_runner.js`, the step handlers `steps.js` / `web_steps.js` / `android_steps.js`, `startup.js`, `autosave.js`, `session.js`), `dialogs/`, `gen/` (worker generation and progress), with `app_boot.js`, `app_wire.js`, `board.js`, `status_bar.js`, `host_api.js`, `files.js`, `clipboard.js`, `client_log.js` at the top):
-JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never parses SUD0 or projects a terminal screen. Gameplay goes through `exec(action_json)`; file and settings commands run core flows. Board cell selection (`readSelection`, pointer on the play grid) is shell-owned; **Edit → Hint** passes it as an optional hint target when set.
+JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never parses SUD0 or projects a terminal screen. Gameplay goes through `exec(action_json)`; file and settings commands run core flows. A tap, an arrow key, tapping the selected cell again or Esc sends `select` / `deselect` to core; the page draws the selection and its region from core's snapshot, and **Edit → Hint** sends the selected cell as the hint target when there is one.
 _Avoid_: reintroducing a wasm REPL or ASCII screen feed
 
 **RendererKind** (`-r`, native only):
@@ -315,7 +323,7 @@ Wasm wire twin of the `Config` fields JS reads/writes — `PlayerDifficulty` (1/
 _Avoid_: passing puzzle bytes across the boundary; ad-hoc config JSON shapes
 
 **GameSnapshot**:
-JSON-serializable display twin of `BoardView` — per-cell `value`, `given`, `conflict`. Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
+JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `pencil_mode`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
 _Avoid_: duplicating SaveFormat fields in JS
 
 **entry_wasm**:
@@ -328,4 +336,4 @@ _Avoid_: embedding game rules or SaveFormat parsing
 
 ## Architectural Decisions
 
-See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, ADR-0011 layer ownership, ADR-0014 persistent settings and in-app editing, ADR-0013 Android entry options).
+See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, ADR-0011 layer ownership, ADR-0014 persistent settings and in-app editing, ADR-0013 Android entry options, ADR-0019 core owns the selection and the frame).
