@@ -107,6 +107,19 @@ test "a mark toggles on and off in an empty cell, one history step each" {
     try std.testing.expectEqual(@as(usize, 2), engine.state.history.count());
 }
 
+test "a mark that contradicts its row is allowed and flags no conflict" {
+    var engine = try testEngine();
+    defer engine.deinit();
+    const first = engine.exec(.{ .pencil = .{ .row = EMPTY_ROW, .col = EMPTY_COL, .digit = .five } });
+    const row_given = first.ok.board_view.get(GIVEN_ROW, GIVEN_COL);
+
+    const ev = engine.exec(.{ .pencil = .{ .row = EMPTY_ROW, .col = EMPTY_COL, .digit = row_given } });
+    try std.testing.expect(ev == .ok);
+    try std.testing.expectEqual(markBit(.five) | markBit(row_given), ev.ok.board_view.marks(EMPTY_ROW, EMPTY_COL));
+    try std.testing.expect(!ev.ok.board_view.isConflictingRowCol(EMPTY_ROW, EMPTY_COL));
+    try std.testing.expect(!ev.ok.board_view.isConflictingRowCol(GIVEN_ROW, GIVEN_COL));
+}
+
 test "a mark on a given is refused and records nothing" {
     var engine = try testEngine();
     defer engine.deinit();

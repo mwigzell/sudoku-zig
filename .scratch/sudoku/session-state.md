@@ -21,5 +21,6 @@
   android compare it. CONTEXT.md "Pencil marks" section. verify + glue green.
 - Generating dialog: progress block holds its tallest height (wrapped rows on narrow phones made it jitter); user
   confirmed on phone, plus pencil marks on phone.
-- Next: user runs full android-test; tick remaining #107 boxes (hand checks with show_marks off: mark, Undo, Redo per
-  front end) then close #107. Then #117 with #115.
+- Hand check show_marks off (mark, Undo, Redo; Clear): Android (user), web and terminal (agent, sandboxed) all pass.
+- Full android-test green on 360dp emulator (21 tests). Contradicting-mark core test added. #107 closed.
+- Next: #117 with #115; triage #116, #111.
