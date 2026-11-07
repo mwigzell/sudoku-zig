@@ -1,6 +1,6 @@
 # Session state
 
-#107 steps 0-7 done and committed.
+#107 steps 0-8 done and committed.
 - Step 5 (terminal): `pencil` verb (`p A1 5`) in Commands, legend `(P)encil`; Menu 15) Show Pencil Marks (on/off)
   → toggle_show_marks. Facade: render gains `marks_visible`, getCommandInput gains `show_marks` (scalar, after
   show_region). Large board: 3 lines × 5 cols per cell, `·` unset, filled cell digit centred; shared `largeLine` in
@@ -17,4 +17,7 @@
   slot >= 8dp. Passed on the Pixel 8 and on a 360dp phone (720x1280 @320) (user dropped the 360dp resize; #107 criterion reworded and ticked).
   Few, spaced screen reads (5 × 1s): an earlier 250ms screenshot poll coincided with the emulator going offline.
 - Noted: marks are not read by screen readers (WebView a11y) — candidate issue.
-- Next: step 8 (parity fixtures, CONTEXT.md, verify/glue/android-test green; user runs full android-test) — wait for user.
+- Step 8: parity scenario mark_undo_redo (the only missing pencil case: Redo of a mark); mutation check proved web and
+  android compare it. CONTEXT.md "Pencil marks" section. verify + glue green.
+- Next: user runs full android-test; tick remaining #107 boxes (hand checks with show_marks off: mark, Undo, Redo per
+  front end) then close #107. Then #117 with #115.

@@ -236,6 +236,27 @@
       }
     },
     {
+      "name": "mark_undo_redo",
+      "summary": "Each mark is one Undo and Redo step: undoing two marks removes both, and Redo brings back the first; each autosaves.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"fill": {"row": 0, "col": 0, "digit": 7}},
+        {"undo": true},
+        {"undo": true},
+        {"redo": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "legend": {"undo": true, "redo": true},
+        "probes": [{"row": 0, "col": 0, "value": 0, "given": false, "marks": 8}]
+      }
+    },
+    {
       "name": "fill_clears_peer_marks",
       "summary": "A fill replaces the cell's marks and removes its digit's marks from the cell's row, column and box; marks elsewhere stay.",
       "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
