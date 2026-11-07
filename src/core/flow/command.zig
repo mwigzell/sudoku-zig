@@ -151,9 +151,7 @@ pub const CommandFlow = struct {
             .error_msg => |msg| return self.finish(step_mod.promptError(msg)),
             .ok => |ok| {
                 self.phase = .showing;
-                var shown = step_mod.showGame(self.engine, ok.msg, self.session.currentFile());
-                shown.show_game.cell = ok.cell;
-                return shown;
+                return step_mod.showGame(self.engine, ok.msg, self.session.currentFile());
             },
         }
     }
@@ -232,7 +230,7 @@ test "a move shows the board and the edited cell, then autosaves to the default 
     var flow = CommandFlow.init(&engine, &session, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
 
     const shown = flow.next(.start).show_game;
-    try testing.expectEqual(@as(u4, 0), shown.cell.?.row);
+    try testing.expectEqual(@as(u4, 0), shown.frame.selected.?.row);
     try testing.expect(shown.legend.undo);
     try testing.expect(flow.next(.ack) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).autosave.name);
@@ -319,7 +317,7 @@ test "paste with a line skips the clipboard; without one it reads the clipboard"
     var typed = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = line } });
     const shown = typed.next(.start).show_game;
     try testing.expect(shown.loaded);
-    try testing.expectEqualStrings(game_engine.PASTED_MSG, shown.status.?);
+    try testing.expectEqualStrings(game_engine.PASTED_MSG, shown.frame.status.?);
 
     var clipboard = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = null } });
     try testing.expect(clipboard.next(.start) == .paste_puzzle);

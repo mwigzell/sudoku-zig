@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 const board = @import("core/board/board.zig");
 const game_engine = @import("core/engine/game_engine.zig");
+const frame_mod = @import("core/frame.zig");
 const puzzle_gen = @import("core/puzzle_gen/mod.zig");
 const logger = @import("core/logger.zig");
 const boundary = @import("wasm/boundary.zig");
@@ -211,7 +212,7 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     };
 
     const ev = eng.exec(cmd);
-    boundary.writeEventJson(out, ev, wire.MarksDisplay.of(eng)) catch |err| return exportWriteFailed(out, err);
+    boundary.writeEventJson(out, ev, eng) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -270,7 +271,7 @@ export fn getConfig() callconv(.c) u32 {
 export fn getState() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
-    boundary.writeStateJson(out, eng.eventBoard(), wire.MarksDisplay.of(eng)) catch |err| return exportWriteFailed(out, err);
+    boundary.writeStateJson(out, frame_mod.build(eng, null)) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 

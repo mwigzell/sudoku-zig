@@ -74,8 +74,9 @@ pub const GameEngine = struct {
     pencil_mode: bool = false,
     /// The last command set or removed a mark (a mark, or its Undo or Redo).
     marks_changed: bool = false,
-    /// The selected cell: the last cell a move changed (fill, clear, mark, or their Undo or Redo).
-    /// Loading a game drops it; Hint, Solve and refused moves leave it. Session state, never saved.
+    /// The selected cell: set by a select, or by the last cell a move changed (fill, clear, mark,
+    /// or their Undo or Redo). Deselect and loading a game drop it; Hint, Solve and refused moves
+    /// leave it. Session state, never saved.
     selected: ?event.CellCoord = null,
 
     fn applySolvabilityWarningsFromConfig(self: *@This()) void {
@@ -310,7 +311,6 @@ pub const GameEngine = struct {
             .board_view = view,
             .msg = self.state.status.optional(),
             .is_quit = is_quit,
-            .cell = edited_cell,
         } };
     }
 
@@ -367,6 +367,14 @@ pub const GameEngine = struct {
             },
             .toggle_show_marks => {
                 self.cfg.show_marks = !self.cfg.show_marks;
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
+            },
+            .select => |s| {
+                self.selected = .{ .row = s.row, .col = s.col };
+                return self.finishOkEvent(self.state.board.asView(), false, null, false);
+            },
+            .deselect => {
+                self.selected = null;
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .clear => |c| {
@@ -868,6 +876,24 @@ test "a fill, clear or mark selects its cell; Undo and Redo select the cell they
     try expectSelected(&engine, 0, 1);
     _ = try expectOk(execTest(&engine, .{ .clear = .{ .row = 0, .col = 0 } }));
     try expectSelected(&engine, 0, 0);
+}
+
+test "select sets the selection and deselect drops it; neither changes the status line" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    _ = execTest(&engine, .{ .hint = .{} });
+    const status = engine.durableStatus().?;
+
+    const selected = execTest(&engine, .{ .select = .{ .row = 4, .col = 7 } });
+    try expectSelected(&engine, 4, 7);
+    try std.testing.expectEqualStrings(status, selected.ok.msg.?);
+    const given = execTest(&engine, .{ .select = .{ .row = 0, .col = 2 } });
+    try expectSelected(&engine, 0, 2);
+    try std.testing.expectEqualStrings(status, given.ok.msg.?);
+
+    const deselected = execTest(&engine, .{ .deselect = {} });
+    try std.testing.expectEqual(@as(?event.CellCoord, null), engine.selected);
+    try std.testing.expectEqualStrings(status, deselected.ok.msg.?);
 }
 
 test "Hint, Solve and a refused move leave the selection; loading a game drops it" {
@@ -1520,22 +1546,6 @@ test "durable status clears on solved-to-unsolved cell edit and re-announces on 
     try std.testing.expect(win_again == .ok);
     try std.testing.expect(win_again.ok.msg != null);
     try std.testing.expect(std.mem.indexOf(u8, win_again.ok.msg.?, "You win!") != null);
-}
-
-test "finishOkAfterCellEdit sets event cell to mutated coordinates" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer engine.deinit();
-
-    const result = execTest(&engine, command.Command{
-        .fill = command.FillData{ .row = 4, .col = 4, .digit = cell.CellValue.three },
-    });
-    switch (result) {
-        .ok => |data| {
-            try std.testing.expectEqual(@as(u4, 4), data.cell.?.row);
-            try std.testing.expectEqual(@as(u4, 4), data.cell.?.col);
-        },
-        .error_msg => return error.TestFailed,
-    }
 }
 
 test "getLegend: after fill Undo appears" {

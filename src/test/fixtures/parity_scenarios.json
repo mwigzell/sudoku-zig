@@ -374,6 +374,21 @@
       }
     },
     {
+      "name": "select_deselect_writes_nothing",
+      "summary": "Selecting and deselecting a cell runs through core and never writes the game file, with Auto Save on.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"select": {"row": 0, "col": 0}},
+        {"deselect": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": []
+      }
+    },
+    {
       "name": "relaunch_restores_marks_and_their_undo",
       "summary": "Marks autosaved with Auto Save on come back on the next launch, and undoing a fill made before it puts back the marks the fill cleared.",
       "config": {"auto_restore": true, "auto_new": false, "auto_save": true},

@@ -11,6 +11,8 @@ pub const FillData = struct { row: u4, col: u4, digit: cell_module.CellValue };
 pub const ClearData = struct { row: u4, col: u4 };
 /// Toggle the pencil mark for `digit` (1..9) in (row, col).
 pub const PencilData = struct { row: u4, col: u4, digit: cell_module.CellValue };
+/// Select the cell at (row, col).
+pub const SelectData = struct { row: u4, col: u4 };
 pub const HintData = struct {
     row: ?u4 = null,
     col: ?u4 = null,
@@ -53,6 +55,8 @@ pub const CommandTag = enum {
     pencil,
     toggle_pencil_mode,
     toggle_show_marks,
+    select,
+    deselect,
 };
 
 /// Command a player can issue to the game.
@@ -85,6 +89,8 @@ pub const Command = union(CommandTag) {
     pencil: PencilData,
     toggle_pencil_mode: void,
     toggle_show_marks: void,
+    select: SelectData,
+    deselect: void,
 };
 
 pub const ParseResultTag = enum { valid, error_msg };
@@ -162,9 +168,9 @@ pub const ExportFileResult = SaveFileResult;
 
 const std = @import("std");
 
-test "CommandTag enum has 28 variants" {
+test "CommandTag enum has 30 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 28), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 30), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -187,6 +193,6 @@ test "getName returns correct display name for each tag" {
 
 test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    // Commands + SessionCommands + view/pref and Pencil mode tags cover all CommandTag variants.
-    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 11);
+    // Commands + SessionCommands + view/pref, Pencil mode and select/deselect tags cover all CommandTag variants.
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 13);
 }

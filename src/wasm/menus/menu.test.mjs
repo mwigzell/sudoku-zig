@@ -86,6 +86,7 @@ function makeMockBoard() {
     getSelection: () => selected,
     deselect() {
       selected = null;
+      return Promise.resolve();
     },
   };
   assert.equal(menu.handleDeselect(selection).handled, true);
@@ -200,6 +201,7 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
     getSelection: () => selected,
     deselect() {
       selected = null;
+      return Promise.resolve();
     },
     select() {},
   };
@@ -227,6 +229,7 @@ function runEdit(action, game, session, { selection = { getSelection: () => null
 
   selected = { row: 3, col: 3 };
   deselectBtn.click();
+  await settleFlow();
   assert.equal(selected, null);
   assert.equal(deselectBtn.disabled, true);
 

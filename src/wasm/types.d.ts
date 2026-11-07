@@ -11,6 +11,8 @@ export type ExecAction =
   | { action: "quit" }
   | { action: "solve" }
   | { action: "hint"; row?: number; col?: number }
+  | { action: "select"; row: number; col: number }
+  | { action: "deselect" }
   | { action: "set_theme"; theme: "light" | "dark" | "system" }
   | { action: "toggle_region" | "toggle_warn_solvability" | "toggle_auto_restore" | "toggle_auto_new" | "toggle_auto_save" }
   | { action: "toggle_pencil_mode" | "toggle_show_marks" }
@@ -36,7 +38,7 @@ export type WebSession = ReturnType<typeof import("./flows/session.js").createWe
 export type MenuBarControls = ReturnType<typeof import("./menus/menu_bar.js").collectMenuBarControls>;
 /** Wired menubar: `sync()` re-applies legend/config enablement and labels; `closeAll()` closes open dropdowns. */
 export type MenuBar = ReturnType<typeof import("./menus/menu_bar.js").wireMenuBar>;
-/** Board cell selection: `getSelection()`, `deselect()`. */
+/** Core's cell selection as the page sees it: `getSelection()` reads it, `select()`/`deselect()` send it to core. */
 export type BoardSelection = ReturnType<typeof import("./board.js").wireSelection>;
 /** File menu items `wireFileMenu` wires; a missing item is skipped. */
 export type FileMenuControls = Partial<
@@ -46,7 +48,6 @@ export type FileMenuControls = Partial<
 export type FileMenuWiring = {
   game: GameApi;
   boardEl: HTMLElement;
-  selection: BoardSelection;
   statusEl: HTMLElement;
   session: WebSession;
   menuBar: MenuBar;
@@ -125,6 +126,10 @@ export type GameState = {
   pencil_mode: boolean;
   /** Draw pencil marks: core decides from the setting, Pencil mode and the last command. */
   marks_visible: boolean;
+  /** Core's selected cell, or null. */
+  selected: { row: number; col: number } | null;
+  /** Cell indices (`row * 9 + col`) Show Region shades around the selected cell; null when none are shaded. */
+  region: number[] | null;
 };
 
 /** Player settings as core writes them to `settings.json` (no renderer choice, no current file). */

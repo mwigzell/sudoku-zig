@@ -81,6 +81,8 @@ const Step = struct {
     pencil: ?Move = null,
     toggle_pencil_mode: ?bool = null,
     toggle_show_marks: ?bool = null,
+    select: ?CellAt = null,
+    deselect: ?bool = null,
     relaunch: ?bool = null,
     // Steps only web and Android carry out; a scenario using one names native in `not_on`.
     open_cancel: ?bool = null,
@@ -295,7 +297,7 @@ const Recorder = struct {
             .save_as => |w| event.replace = w.replace,
             .flush, .export_puzzle => |name| event.name = try self.baseName(name),
             .show_game => |g| {
-                event.status = if (g.status) |s| (if (s.len == 0) null else try self.text(s)) else null;
+                event.status = if (g.frame.status) |s| (if (s.len == 0) null else try self.text(s)) else null;
                 event.file = if (g.file) |f| try self.baseName(f) else null;
                 event.loaded = if (g.loaded) true else null;
             },
@@ -400,6 +402,8 @@ fn stepCommand(step: Step, view: ?board.Board.BoardView) !command.Command {
     if (step.pencil) |m| return .{ .pencil = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
     if (step.toggle_pencil_mode != null) return .{ .toggle_pencil_mode = {} };
     if (step.toggle_show_marks != null) return .{ .toggle_show_marks = {} };
+    if (step.select) |at| return .{ .select = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
+    if (step.deselect != null) return .{ .deselect = {} };
     if (step.set_theme) |name| return .{ .set_theme = std.meta.stringToEnum(config.ViewTheme, name) orelse return error.UnknownTheme };
     if (step.toggle_warn_solvability != null) return .{ .toggle_warn_solvability = {} };
     if (step.set_difficulty) |name| return .{ .set_difficulty = std.meta.stringToEnum(config.Difficulty, name) orelse return error.UnknownDifficulty };

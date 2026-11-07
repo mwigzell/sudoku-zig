@@ -261,7 +261,10 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
   const loaded = openBytes(fresh, saved.bytes);
   assert.equal(loaded.text, null, "solvable load should not warn");
-  assert.deepEqual(fresh.getState(), before, "open did not restore state");
+  const opened = fresh.getState();
+  assert.deepEqual(opened.cells, before.cells, "open did not restore the board");
+  assert.equal(opened.selected, null, "open drops the selection");
+  assert.equal(opened.region, null, "nothing selected shades nothing");
 }
 
 // ── open warns on dead puzzle (same as native open) ──

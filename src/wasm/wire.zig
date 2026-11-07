@@ -6,7 +6,8 @@ const logger = @import("../core/logger.zig");
 const config = @import("../core/config.zig");
 const clear_command = @import("../core/engine/clear.zig");
 const fill_command = @import("../core/engine/fill.zig");
-const game_engine = @import("../core/engine/game_engine.zig");
+const event = @import("../core/event.zig");
+const frame_mod = @import("../core/frame.zig");
 
 /// Player-facing difficulty on the wasm boundary — explicit u8 wire values, no `.default`.
 pub const PlayerDifficulty = enum(u8) {
@@ -108,27 +109,25 @@ pub const CellSnapshot = struct {
     marks: board.MarkSet,
 };
 
-/// How the game draws pencil marks; the engine decides both.
-pub const MarksDisplay = struct {
-    pencil_mode: bool,
-    marks_visible: bool,
-
-    /// The engine's current Pencil mode and mark visibility.
-    pub fn of(engine: *const game_engine.GameEngine) MarksDisplay {
-        return .{ .pencil_mode = engine.pencil_mode, .marks_visible = engine.marksVisible() };
-    }
-};
-
-/// Serializable display twin of `BoardView` (value, given, conflict, clearable, fillable and marks
-/// per cell) plus how marks are drawn.
+/// Serializable display twin of core's `Frame`: every cell of its board, how marks are drawn,
+/// and the selected cell with its shaded region. The status line travels beside it.
 pub const GameSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
-    marks_display: MarksDisplay,
+    pencil_mode: bool,
+    marks_visible: bool,
+    selected: ?event.CellCoord,
+    region: ?board.CellMask,
 
-    /// Snapshot every cell of `view`, with the engine's mark display.
-    pub fn fromView(view: board.Board.BoardView, marks_display: MarksDisplay) GameSnapshot {
-        var snap: GameSnapshot = undefined;
-        snap.marks_display = marks_display;
+    /// Snapshot what `frame` draws.
+    pub fn fromFrame(frame: frame_mod.Frame) GameSnapshot {
+        var snap: GameSnapshot = .{
+            .cells = undefined,
+            .pencil_mode = frame.pencil_mode,
+            .marks_visible = frame.marks_visible,
+            .selected = frame.selected,
+            .region = frame.region,
+        };
+        const view = frame.board;
         for (0..board.DIMENSION_SIZE) |r_u| {
             const row: u4 = @intCast(r_u);
             for (0..board.DIMENSION_SIZE) |c_u| {
@@ -152,10 +151,13 @@ pub const GameSnapshot = struct {
     }
 };
 
+/// JSON shape of `GameSnapshot`; the region is its cell indices, since JS numbers cannot hold 81 bits.
 const JsonSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
     pencil_mode: bool,
     marks_visible: bool,
+    selected: ?event.CellCoord,
+    region: ?[]const u8,
 };
 
 pub fn writeCellJson(w: *std.Io.Writer, cell: CellSnapshot) !void {
@@ -172,10 +174,29 @@ pub fn writeGameSnapshotJson(w: *std.Io.Writer, snap: GameSnapshot) !void {
         if (i > 0) try std.Io.Writer.writeAll(w, ",");
         try writeCellJson(w, cell);
     }
-    try std.Io.Writer.print(w, "],\"pencil_mode\":{any},\"marks_visible\":{any}}}", .{
-        snap.marks_display.pencil_mode,
-        snap.marks_display.marks_visible,
+    try std.Io.Writer.print(w, "],\"pencil_mode\":{any},\"marks_visible\":{any},\"selected\":", .{
+        snap.pencil_mode,
+        snap.marks_visible,
     });
+    if (snap.selected) |sel| {
+        try std.Io.Writer.print(w, "{{\"row\":{d},\"col\":{d}}}", .{ sel.row, sel.col });
+    } else try std.Io.Writer.writeAll(w, "null");
+    try std.Io.Writer.writeAll(w, ",\"region\":");
+    if (snap.region) |mask| try writeRegionJson(w, mask) else try std.Io.Writer.writeAll(w, "null");
+    try std.Io.Writer.writeAll(w, "}");
+}
+
+/// The region's cell indices (row * 9 + col), ascending.
+fn writeRegionJson(w: *std.Io.Writer, mask: board.CellMask) !void {
+    try std.Io.Writer.writeAll(w, "[");
+    var first = true;
+    for (0..board.CELL_COUNT) |i| {
+        if (mask & board.indexBit(i) == 0) continue;
+        if (!first) try std.Io.Writer.writeAll(w, ",");
+        first = false;
+        try std.Io.Writer.print(w, "{d}", .{i});
+    }
+    try std.Io.Writer.writeAll(w, "]");
 }
 
 /// Serialize a snapshot to a heap-owned JSON string.
@@ -191,19 +212,19 @@ pub fn serializeSnapshot(allocator: std.mem.Allocator, snap: GameSnapshot) ![]u8
 pub fn deserializeSnapshot(allocator: std.mem.Allocator, json_text: []const u8) !GameSnapshot {
     const parsed = try std.json.parseFromSlice(JsonSnapshot, allocator, json_text, .{});
     defer parsed.deinit();
-    var snap: GameSnapshot = undefined;
-    snap.marks_display = .{ .pencil_mode = parsed.value.pencil_mode, .marks_visible = parsed.value.marks_visible };
-    for (parsed.value.cells, 0..) |cell, i| {
-        snap.cells[i] = .{
-            .value = cell.value,
-            .given = cell.given,
-            .conflict = cell.conflict,
-            .clearable = cell.clearable,
-            .fillable = cell.fillable,
-            .marks = cell.marks,
-        };
+    var region: ?board.CellMask = null;
+    if (parsed.value.region) |indices| {
+        var mask: board.CellMask = 0;
+        for (indices) |i| mask |= board.indexBit(i);
+        region = mask;
     }
-    return snap;
+    return .{
+        .cells = parsed.value.cells,
+        .pencil_mode = parsed.value.pencil_mode,
+        .marks_visible = parsed.value.marks_visible,
+        .selected = parsed.value.selected,
+        .region = region,
+    };
 }
 
 test "PlayerDifficulty wire values are 1 2 3" {
@@ -261,14 +282,14 @@ test "WireConfig round-trips config fields including view prefs" {
     try std.testing.expectEqual(domain.show_marks, restored.show_marks);
 }
 
-test "GameSnapshot captures value given conflict clearable fillable from BoardView" {
+test "GameSnapshot captures value given conflict clearable fillable from the frame's board" {
     var b = try board.fromPuzzle(puzzle_gen.PuzzleGen.default());
     try b.setCell(0, 2, .seven);
     b.refreshConflictsForCell(0, 2);
     try b.setCell(0, 3, .seven);
     b.refreshConflictsForCell(0, 3);
 
-    const snap = GameSnapshot.fromView(b.asView(), .{ .pencil_mode = true, .marks_visible = false });
+    const snap = GameSnapshot.fromFrame(.{ .board = b.asView(), .pencil_mode = true });
     const idx = @as(usize, 0) * board.DIMENSION_SIZE + @as(usize, 2);
     try std.testing.expectEqual(@as(u8, 7), snap.cells[idx].value);
     try std.testing.expect(!snap.cells[idx].given);
@@ -289,15 +310,30 @@ test "GameSnapshot captures value given conflict clearable fillable from BoardVi
     try std.testing.expect(snap.cells[empty_idx].fillable);
 }
 
-test "GameSnapshot JSON round-trip preserves all cells" {
+test "GameSnapshot JSON round-trip preserves cells, selection and region" {
     var b = try board.fromPuzzle(puzzle_gen.PuzzleGen.medium());
     try b.setCell(1, 2, .five);
     b.refreshConflictsForCell(1, 2);
 
-    const original = GameSnapshot.fromView(b.asView(), .{ .pencil_mode = true, .marks_visible = false });
+    const original = GameSnapshot.fromFrame(.{
+        .board = b.asView(),
+        .pencil_mode = true,
+        .selected = .{ .row = 1, .col = 2 },
+        .region = conflict.unitsMask(1, 2),
+    });
     const json = try serializeSnapshot(std.testing.allocator, original);
     defer std.testing.allocator.free(json);
 
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"selected\":{\"row\":1,\"col\":2},\"region\":[0,1,2,") != null);
     const restored = try deserializeSnapshot(std.testing.allocator, json);
     try std.testing.expect(original.eql(restored));
 }
+
+test "GameSnapshot JSON writes null selection and region when nothing is selected" {
+    const b = try board.fromPuzzle(puzzle_gen.PuzzleGen.medium());
+    const json = try serializeSnapshot(std.testing.allocator, GameSnapshot.fromFrame(.{ .board = b.asView() }));
+    defer std.testing.allocator.free(json);
+    try std.testing.expect(std.mem.endsWith(u8, json, ",\"selected\":null,\"region\":null}"));
+}
+
+const conflict = @import("../core/board/conflict.zig");

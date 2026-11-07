@@ -3,10 +3,9 @@
 const std = @import("std");
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const config = @import("../config.zig");
-const board = @import("../board/board.zig");
 const legend_mod = @import("../renderer/legend.zig");
 const game_engine = @import("../engine/game_engine.zig");
-const event = @import("../event.zig");
+const frame_mod = @import("../frame.zig");
 
 /// What a prompt is about; front ends mark it with its icon.
 pub const MessageType = enum { information, warning, @"error" };
@@ -125,32 +124,23 @@ pub fn isTerminal(s: Step) bool {
 
 /// Everything the adapter draws for `show_game`, so it needs nothing else from the engine.
 pub const ShowGame = struct {
-    status: ?[]const u8,
+    /// The board, status line, selection and mark display to draw.
+    frame: frame_mod.Frame,
     /// The current file to label the game with; null for an unsaved game.
     file: ?[]const u8,
-    board: board.Board.BoardView,
     legend: legend_mod.Legend,
     config: config.Config,
-    /// Digits toggle pencil marks (core's Pencil mode).
-    pencil_mode: bool,
-    /// Draw pencil marks (`GameEngine.marksVisible`).
-    marks_visible: bool,
-    /// The cell the command edited, if any.
-    cell: ?event.CellCoord = null,
-    /// The game was replaced (new, open, import, paste): drop the selection and rebind to `file`.
+    /// The game was replaced (new, open, import, paste): rebind to `file`.
     loaded: bool = false,
 };
 
 /// The `show_game` step for the engine's current game.
 pub fn showGame(engine: *game_engine.GameEngine, status: ?[]const u8, file: ?[]const u8) Step {
     return .{ .show_game = .{
-        .status = status,
+        .frame = frame_mod.build(engine, status),
         .file = file,
-        .board = engine.eventBoard(),
         .legend = engine.getLegend(),
         .config = engine.getConfig(),
-        .pencil_mode = engine.pencil_mode,
-        .marks_visible = engine.marksVisible(),
     } };
 }
 

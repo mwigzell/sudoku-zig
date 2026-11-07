@@ -282,7 +282,7 @@ test "startup with nothing to restore and no auto new shows the idle board" {
     defer h.deinit();
     var f = h.flow(.{ .auto_restore = true, .auto_new = false, .difficulty = .easy }, null);
     const shown = f.next(.start);
-    try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.status.?);
+    try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.frame.status.?);
     try std.testing.expect(shown.show_game.file == null);
     try std.testing.expectEqual(Step.done, f.next(.ack));
 }
@@ -313,7 +313,7 @@ test "startup restore of a solved game asks, and New game generates" {
     try std.testing.expectEqualStrings(startup_policy.RESTORE_SOLVED_TITLE, asked.prompt_message.title);
     try std.testing.expectEqual(puzzle_gen.Difficulty.easy, f.next(.{ .pressed = step_mod.QUESTION_OK }).generate_game);
     const shown = f.next(.{ .generated = .{ .line = open_line } });
-    try std.testing.expect(shown.show_game.status != null);
+    try std.testing.expect(shown.show_game.frame.status != null);
     try std.testing.expectEqual(Step.done, f.next(.ack));
     try std.testing.expect(!h.engine.state.board.isSolved());
 }
@@ -338,7 +338,7 @@ test "startup restore failure shows idle, asks to delete, then forgets the file"
         var f = h.flow(restore_opts, test_file);
         _ = f.next(.start);
         const shown = f.next(.{ .read = .{ .failed = "readAll: FileNotFound" } });
-        try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.status.?);
+        try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.frame.status.?);
         const asked = f.next(.ack);
         try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, asked.prompt_message.title);
         try std.testing.expectEqualStrings(std.fmt.comptimePrint(RESTORE_FAILED_FMT, .{"game.sud"}), asked.prompt_message.text);
@@ -375,7 +375,7 @@ test "startup new cancelled shows the idle board" {
     var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .easy }, null);
     _ = f.next(.start);
     const shown = f.next(.{ .generated = .cancelled });
-    try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.status.?);
+    try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, shown.show_game.frame.status.?);
     try std.testing.expectEqual(Step.done, f.next(.ack));
 }
 

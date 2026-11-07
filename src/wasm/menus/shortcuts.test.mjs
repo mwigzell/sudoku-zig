@@ -122,9 +122,8 @@ function makeRoot(controls) {
   const steps = webSteps.webSteps(game, session, { statusEl: { textContent: "", className: "" }, promptDialog: promptDialogStub() });
   const boardEl = { children: [], replaceChildren() {} };
   const createElement = () => ({ dataset: {}, setAttribute() {}, appendChild() {}, classList: { add() {}, remove() {}, contains: () => false } });
-  const selection = { getSelection: () => null, select() {}, deselect() {} };
   const pencil = makeControl();
-  const marksMenu = marks.wireMarks({}, game, session, boardEl, selection, { steps, createElement });
+  const marksMenu = marks.wireMarks({}, game, session, boardEl, { steps, createElement });
   playPad.wirePlayPad({ pencil }, { runEdit() {}, toggleRegion() {}, togglePencilMode: marksMenu.togglePencilMode });
   const root = makeRoot({ [PENCIL]: pencil });
   shortcuts.wireShortcuts(/** @type {any} */ (root), { platform: "Linux x86_64" });

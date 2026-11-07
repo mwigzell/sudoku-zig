@@ -1,7 +1,6 @@
 // region.js — View menu region highlight via engine config.
 
 import * as board from "../board.js";
-import * as stepRunner from "../flows/step_runner.js";
 
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
 
@@ -15,41 +14,38 @@ export function syncRegionMenu(controls, config) {
 }
 
 /**
- * @param {{ onChange?: () => void, steps: FlowHandlers }} [options]
+ * View → Show Region: core shades the selected cell's region in the snapshot it returns.
+ * @param {{ onChange?: () => void, steps: FlowHandlers, createElement?: (tag: string) => HTMLElement }} [options]
  */
 export function wireRegionMenu(
   controls,
   game,
   session,
   boardEl,
-  getSelection,
-  { onChange, steps } = {},
+  { onChange, steps, createElement } = {},
 ) {
-  const syncBoard = () => {
-    syncRegionMenu(controls, session.config);
-    const sel = getSelection();
-    if (sel) {
-      board.applyRegionHighlight(boardEl, sel.row, sel.col, session.config.show_region === true);
-    } else {
-      board.applyRegionHighlight(boardEl, null, null, false);
-    }
-  };
+  const sync = () => syncRegionMenu(controls, session.config);
 
   const toggle = () =>
-    stepRunner.runCommand(game, { action: TOGGLE_REGION }, steps, () => {
-      syncBoard();
-      onChange?.();
+    board.runBoardCommand(game, { action: TOGGLE_REGION }, {
+      boardEl,
+      createElement,
+      steps,
+      onShown: () => {
+        sync();
+        onChange?.();
+      },
     });
 
   controls.viewRegion?.addEventListener("click", () => {
     void toggle();
   });
 
-  syncBoard();
+  sync();
 
   return {
     isEnabled: () => session.config.show_region === true,
-    sync: syncBoard,
+    sync,
     toggle,
   };
 }

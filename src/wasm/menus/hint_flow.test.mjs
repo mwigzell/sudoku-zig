@@ -1,4 +1,4 @@
-// hint_flow.test.mjs — web seam: new game → C1 Hint → C2 Hint (real wasm + selection DOM).
+// hint_flow.test.mjs — web seam: new game → select C1, Hint → select C2, Hint (real wasm; Hint targets core's selection).
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -120,13 +120,6 @@ function makeRenderElement() {
   };
 }
 
-function clickCell(board, row, col) {
-  const cell = boardMod.findCellElement(board.play, row, col);
-  const event = { target: { closest: () => cell } };
-  board.play._listeners.pointerdown?.(event);
-  board.play._listeners.click?.(event);
-}
-
 async function runHint(game, board, selection, session, status) {
   const outcome = menu.handleEditAction(
     "hint",
@@ -152,15 +145,16 @@ async function runHint(game, board, selection, session, status) {
     legend: game.getLegend(),
   };
   const status = { textContent: coreText.NEW_GAME_STARTED_MSG, className: "" };
-  const selection = boardMod.wireSelection(board);
+  const steps = webSteps.webSteps(game, session, { statusEl: status });
+  const selection = boardMod.wireSelection(board, { game, session, steps, createElement: makeRenderElement() });
 
-  clickCell(board, 0, 2);
+  await selection.select(0, 2);
   assert.deepEqual(selection.getSelection(), { row: 0, col: 2 });
   await runHint(game, board, selection, session, status);
   assert.match(status.textContent, /C1 takes [1-9]\./);
   const msgC1 = status.textContent;
 
-  clickCell(board, 1, 2);
+  await selection.select(1, 2);
   assert.deepEqual(selection.getSelection(), { row: 1, col: 2 });
   await runHint(game, board, selection, session, status);
   assert.match(status.textContent, /C2 takes [1-9]\./);
@@ -179,7 +173,8 @@ async function runHint(game, board, selection, session, status) {
   };
   const modal = { el: { hidden: true }, msgEl: { textContent: "" } };
   const status = { textContent: "", className: "" };
-  const selection = boardMod.wireSelection(board);
+  const steps = webSteps.webSteps(game, session, { statusEl: status });
+  const selection = boardMod.wireSelection(board, { game, session, steps, createElement: makeRenderElement() });
 
   const deadFill = game.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(deadFill.ok, true);

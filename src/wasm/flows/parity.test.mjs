@@ -488,10 +488,10 @@ async function launch(platform, cfg, world, ui) {
     viewSystem: makeMenuItem(),
   };
   const difficultyButtons = Object.keys(DIFFICULTY_WIRE).map((difficulty) => ({ el: makeBtn(), difficulty }));
-  region.wireRegionMenu(controls, game, session, ui.boardEl, () => null, { steps });
-  const marks = marksMod.wireMarks(controls, game, session, ui.boardEl, { getSelection: () => null, select() {} }, { createElement, steps });
+  region.wireRegionMenu(controls, game, session, ui.boardEl, { createElement, steps });
+  const marks = marksMod.wireMarks(controls, game, session, ui.boardEl, { createElement, steps });
   themeMod.wireThemeMenu(controls, game, session, { root: themeRoot(), steps });
-  fileMenu.wireFileMenu(controls, game, ui.boardEl, { select() {}, deselect() {} }, ui.statusEl, session, { sync() {} }, {
+  fileMenu.wireFileMenu(controls, game, ui.boardEl, ui.statusEl, session, { sync() {} }, {
     createElement,
     difficultyDialog: { el: { hidden: true }, buttons: difficultyButtons },
     steps,
@@ -580,6 +580,9 @@ async function runStep(run, world, ui, step) {
     controls.viewMarks.click();
     return settleFlow();
   }
+  // A tap on a cell, a tap on the selected cell, Esc and Edit → Deselect Cell all run `selectCell`.
+  if (step.select) return board.selectCell(game, step.select, { boardEl: ui.boardEl, createElement, steps });
+  if (step.deselect) return board.selectCell(game, null, { boardEl: ui.boardEl, createElement, steps });
   // The pad's Pencil button runs `togglePencilMode`.
   if (step.toggle_pencil_mode) return run.marks.togglePencilMode();
   if (step.set_theme) {

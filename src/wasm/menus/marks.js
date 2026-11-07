@@ -4,7 +4,6 @@ import * as board from "../board.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
-/** @typedef {import("../types").BoardSelection} BoardSelection */
 /** @typedef {import("../types").WebSession} WebSession */
 
 const TOGGLE_SHOW_MARKS = "toggle_show_marks";
@@ -29,16 +28,14 @@ export function syncMarksMenu(controls, config) {
  * @param {GameApi} game
  * @param {WebSession} session
  * @param {HTMLElement} boardEl
- * @param {BoardSelection} selection
  * @param {{ onChange?: () => void, steps: FlowHandlers, createElement?: (tag: string) => HTMLElement }} options
  */
-export function wireMarks(controls, game, session, boardEl, selection, { onChange, steps, createElement }) {
+export function wireMarks(controls, game, session, boardEl, { onChange, steps, createElement }) {
   const sync = () => syncMarksMenu(controls, session.config);
   /** @param {string} action */
   const run = (action) =>
     board.runBoardCommand(game, { action }, {
       boardEl,
-      selection,
       createElement,
       steps,
       onShown: () => {

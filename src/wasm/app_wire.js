@@ -125,7 +125,9 @@ export function wireSudokuApp({
 
   let editMenu;
   selection = board.wireSelection(boardEl, {
-    regionEnabled: () => session.config.show_region === true,
+    game,
+    session,
+    steps,
     onSelect: () => {
       syncPad();
       editMenu?.sync();
@@ -133,15 +135,8 @@ export function wireSudokuApp({
   });
   syncPad();
 
-  const regionMenu = region.wireRegionMenu(
-    menuControls,
-    game,
-    session,
-    boardEl,
-    () => selection.getSelection(),
-    { onChange: syncControls, steps },
-  );
-  const marksMenu = marks.wireMarks(menuControls, game, session, boardEl, selection, { onChange: syncControls, steps });
+  const regionMenu = region.wireRegionMenu(menuControls, game, session, boardEl, { onChange: syncControls, steps });
+  const marksMenu = marks.wireMarks(menuControls, game, session, boardEl, { onChange: syncControls, steps });
   const difficultyDialog = {
     el: root.getElementById("new-difficulty-modal"),
     buttons: [...root.querySelectorAll(".new-difficulty-btn")].map((btn) => ({
@@ -152,13 +147,14 @@ export function wireSudokuApp({
     cancelBtn: root.getElementById("new-difficulty-cancel"),
   };
 
-  fileMenu.wireFileMenu(menuControls, game, boardEl, selection, statusBar, session, menuBar, {
+  fileMenu.wireFileMenu(menuControls, game, boardEl, statusBar, session, menuBar, {
     difficultyDialog,
     onViewRefresh: () => {
       themeMenu.sync();
       regionMenu.sync();
       marksMenu.sync();
       syncPad();
+      editMenu?.sync();
     },
     steps,
   });
@@ -208,7 +204,6 @@ export function wireSudokuApp({
     steps,
     showGame: (step) => {
       board.renderBoard(boardEl, session.state);
-      selection.deselect();
       syncControls();
       editMenu.sync();
       themeMenu.sync();

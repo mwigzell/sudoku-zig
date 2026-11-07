@@ -11,7 +11,6 @@ import * as stepRunner from "../flows/step_runner.js";
 /** @typedef {import("../types").FileMenuControls} FileMenuControls */
 /** @typedef {import("../types").FileMenuWiring} FileMenuWiring */
 /** @typedef {import("../types").MenuBar} MenuBar */
-/** @typedef {import("../types").BoardSelection} BoardSelection */
 /** @typedef {import("../types").WebSession} WebSession */
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
 
@@ -26,14 +25,12 @@ const EXPORT_COMMAND = "export";
 /** View-only refresh used after session has already been updated through shell helpers. */
 export function refreshSessionView(
   boardEl,
-  selection,
   menuBar,
   state,
   createElement,
   onViewRefresh,
 ) {
   board.renderBoard(boardEl, state, createElement);
-  selection.deselect();
   menuBar.sync();
   onViewRefresh?.();
 }
@@ -78,9 +75,9 @@ export function wireDifficultyDialog(dialog, onChoose) {
  * @param {FileMenuWiring} wiring
  */
 function runFileCommand(wiring, action) {
-  const { game, session, boardEl, selection, menuBar, createElement, onViewRefresh, steps } = wiring;
+  const { game, session, boardEl, menuBar, createElement, onViewRefresh, steps } = wiring;
   return stepRunner.runCommand(game, action, steps, () =>
-    refreshSessionView(boardEl, selection, menuBar, session.state, createElement, onViewRefresh));
+    refreshSessionView(boardEl, menuBar, session.state, createElement, onViewRefresh));
 }
 
 /** New opens the difficulty chooser; generation starts only after a pick. */
@@ -140,7 +137,6 @@ function wireExport(button, wiring) {
  * @param {FileMenuControls} controls
  * @param {GameApi} game
  * @param {HTMLElement} boardEl
- * @param {BoardSelection} selection
  * @param {HTMLElement} statusEl
  * @param {WebSession} session
  * @param {MenuBar} menuBar
@@ -150,14 +146,13 @@ export function wireFileMenu(
   controls,
   game,
   boardEl,
-  selection,
   statusEl,
   session,
   menuBar,
   { steps, difficultyDialog, createElement, onViewRefresh },
 ) {
   /** @type {FileMenuWiring} */
-  const wiring = { game, boardEl, selection, statusEl, session, menuBar, createElement, onViewRefresh, steps };
+  const wiring = { game, boardEl, statusEl, session, menuBar, createElement, onViewRefresh, steps };
 
   wireNew(controls.new, wiring, difficultyDialog);
   wireLoad(controls.open, wiring, menuBarMod.LEGEND_WIRE_OPEN, OPEN_COMMAND);

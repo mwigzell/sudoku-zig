@@ -21,6 +21,7 @@ fn commandPersistsSettings(tag: command.CommandTag) bool {
         .toggle_auto_restore, .toggle_auto_new, .toggle_auto_save, .toggle_show_marks => true,
         .fill, .clear, .quit, .undo, .redo, .menu, .save, .open, .import, .@"export", .copy => false,
         .paste, .new, .save_as, .solve_for_me, .hint, .settings, .pencil, .toggle_pencil_mode => false,
+        .select, .deselect => false,
     };
 }
 

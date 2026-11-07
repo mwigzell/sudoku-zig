@@ -13,14 +13,10 @@ import * as stepRunner from "../flows/step_runner.js";
 const PASTE_COMMAND = "paste";
 const COPY_COMMAND = "copy";
 
-/** Mirror legend flags and deselect enablement (active only when a cell is selected). */
-export function syncEditMenu(legend, controls, selection, boardEl) {
+/** Mirror legend flags and deselect enablement (active only when core has a cell selected). */
+export function syncEditMenu(legend, controls, selection) {
   menuBarMod.syncMenuBar(legend, controls);
-  if (controls.deselect) {
-    const sel =
-      boardEl != null ? board.readSelection(boardEl, selection) : selection?.getSelection?.();
-    controls.deselect.disabled = sel == null;
-  }
+  if (controls.deselect) controls.deselect.disabled = selection?.getSelection?.() == null;
 }
 
 /** Used by Escape handling to avoid deselect while a menubar popup is active. */
@@ -51,16 +47,16 @@ export function handlePastePuzzle(game, session, steps, onShown) {
   return { handled: true, done: stepRunner.runCommand(game, { action: PASTE_COMMAND }, steps, onShown) };
 }
 
+/** Deselect in core when a cell is selected; `done` settles once the board is redrawn. */
 export function handleDeselect(selection) {
   if (!selection.getSelection()) return { handled: false };
-  selection.deselect();
-  return { handled: true };
+  return { handled: true, done: selection.deselect() };
 }
 
-/** Hint optionally includes selected cell; all other edit actions are command-only payloads. */
-function execPayloadForEditAction(action, boardEl, selection) {
+/** Hint carries core's selected cell as its target (board-wide when none); other edit actions carry nothing. */
+function execPayloadForEditAction(action, selection) {
   if (action !== "hint") return { action };
-  const sel = board.readSelection(boardEl, selection);
+  const sel = selection.getSelection();
   if (!sel) return { action: "hint" };
   return { action: "hint", row: sel.row, col: sel.col };
 }
@@ -80,8 +76,8 @@ export function handleEditAction(
   { steps, onShown },
 ) {
   if (action in session.legend && !session.legend[action]) return { handled: false };
-  const payload = execPayloadForEditAction(action, boardEl, selection);
-  const done = board.runBoardCommand(game, payload, { boardEl, selection, createElement, steps, onShown });
+  const payload = execPayloadForEditAction(action, selection);
+  const done = board.runBoardCommand(game, payload, { boardEl, createElement, steps, onShown });
   return { handled: true, done };
 }
 
@@ -112,7 +108,7 @@ export function wireEditMenu(
 
   const syncEdit = () => {
     if (syncLegend) syncLegend();
-    syncEditMenu(session.legend, controls, selection, boardEl);
+    syncEditMenu(session.legend, controls, selection);
   };
   syncEdit();
 
@@ -121,7 +117,7 @@ export function wireEditMenu(
 
   const runDeselect = () => {
     const outcome = handleDeselect(selection);
-    if (outcome.handled) syncEdit();
+    if (outcome.handled) void outcome.done.then(syncEdit);
     return outcome;
   };
 
@@ -147,7 +143,6 @@ export function wireEditMenu(
     event?.stopPropagation?.();
     handlePastePuzzle(game, session, steps, (step) => {
       board.renderBoard(boardEl, step.state, createElement);
-      selection.deselect();
       syncEdit();
     });
   });

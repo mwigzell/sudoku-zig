@@ -459,9 +459,9 @@ test "parseWithCommands: hint targeted coordinate" {
 }
 
 // comptime registration table tests (moved alongside parser)
-test "comptime invariant: CommandTag covers terminal commands plus view prefs" {
+test "comptime invariant: CommandTag covers terminal commands plus view prefs and select/deselect" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 11);
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 13);
 }
 
 test "Commands table: tag-name mapping" {

@@ -53,7 +53,7 @@ pub const EventMsg = struct {
     }
 };
 
-/// Last cell the user mutated; drives native region highlight when enabled.
+/// A cell on the board, by row and column.
 pub const CellCoord = struct {
     row: u4,
     col: u4,
@@ -65,7 +65,6 @@ pub const Event = union(enum) {
         board_view: board.Board.BoardView,
         msg: ?[]const u8,
         is_quit: bool,
-        cell: ?CellCoord = null,
     },
     error_msg: []const u8,
 };
@@ -95,35 +94,6 @@ test "Event.ok is_quit defaults false" {
     } };
     switch (e) {
         .ok => |data| try std.testing.expect(!data.is_quit),
-        .error_msg => return error.TestFailed,
-    }
-}
-
-test "Event.ok cell defaults null and can carry last mutated cell" {
-    var board_inst = try board.fromPuzzle(puzzle_gen.PuzzleGen.default());
-    const view = board_inst.asView();
-
-    const bare: Event = .{ .ok = .{
-        .board_view = view,
-        .msg = null,
-        .is_quit = false,
-    } };
-    switch (bare) {
-        .ok => |data| try std.testing.expect(data.cell == null),
-        .error_msg => return error.TestFailed,
-    }
-
-    const with_cell: Event = .{ .ok = .{
-        .board_view = view,
-        .msg = null,
-        .is_quit = false,
-        .cell = .{ .row = 4, .col = 4 },
-    } };
-    switch (with_cell) {
-        .ok => |data| {
-            try std.testing.expectEqual(@as(u4, 4), data.cell.?.row);
-            try std.testing.expectEqual(@as(u4, 4), data.cell.?.col);
-        },
         .error_msg => return error.TestFailed,
     }
 }

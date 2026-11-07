@@ -105,8 +105,8 @@ function makePadControls() {
     steps,
     syncLegend: syncControls,
   });
-  const regionMenu = region.wireRegionMenu(menuControls, game, session, boardEl, () => null, { onChange: syncControls, steps });
-  const marksMenu = marks.wireMarks(menuControls, game, session, boardEl, selection, { onChange: syncControls, steps, createElement });
+  const regionMenu = region.wireRegionMenu(menuControls, game, session, boardEl, { onChange: syncControls, steps, createElement });
+  const marksMenu = marks.wireMarks(menuControls, game, session, boardEl, { onChange: syncControls, steps, createElement });
   playPad.wirePlayPad(pad, { runEdit: editMenu.run, toggleRegion: regionMenu.toggle, togglePencilMode: marksMenu.togglePencilMode });
 
   await board.runBoardCommand(game, FILL_MOVE, { boardEl, selection, createElement, steps, onShown: syncControls });

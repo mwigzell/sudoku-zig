@@ -1,4 +1,4 @@
-// board.js — DOM board shell: render GameSnapshot, selection, play loop.
+// board.js — DOM board shell: render GameSnapshot (with core's selection and region), select input, play loop.
 
 import * as stepRunner from "./flows/step_runner.js";
 
@@ -71,34 +71,9 @@ function resolvePlayGrid(boardEl) {
   return boardEl;
 }
 
-/** Flat cell index used by region/highlight and state probe helpers. */
+/** Flat cell index, as core's snapshot numbers cells (`region` lists these). */
 export function cellIndex(row, col) {
   return row * GRID_SIZE + col;
-}
-
-export function cellsInRegion(row, col) {
-  const boxRow = Math.floor(row / 3) * 3;
-  const boxCol = Math.floor(col / 3) * 3;
-  const indices = new Set();
-  for (let c = 0; c < GRID_SIZE; c += 1) indices.add(cellIndex(row, c));
-  for (let r = 0; r < GRID_SIZE; r += 1) indices.add(cellIndex(r, col));
-  for (let r = boxRow; r < boxRow + 3; r += 1) {
-    for (let c = boxCol; c < boxCol + 3; c += 1) indices.add(cellIndex(r, c));
-  }
-  return indices;
-}
-
-export function applyRegionHighlight(boardEl, row, col, enabled) {
-  const playEl = resolvePlayGrid(boardEl);
-  const region =
-    enabled && row != null && col != null ? cellsInRegion(row, col) : null;
-  for (const cell of playEl.children) {
-    cell.classList.remove("region");
-    if (!region) continue;
-    const r = Number(cell.dataset.row);
-    const c = Number(cell.dataset.col);
-    if (region.has(cellIndex(r, c))) cell.classList.add("region");
-  }
 }
 
 /** The digits (1..9) marked in a cell's 9-bit `marks`: bit `k` is digit `k + 1`. */
@@ -144,15 +119,24 @@ export function cellClasses(row, col, cell) {
   return classes;
 }
 
+/**
+ * What to draw for each cell; the selected cell and its region come from core's snapshot.
+ * @param {import("./types").GameState} state
+ */
 export function boardCellDescriptors(state) {
+  const region = new Set(state.region ?? []);
+  const selected = state.selected ?? null;
   return state.cells.map((cell, index) => {
     const row = Math.floor(index / GRID_SIZE);
     const col = index % GRID_SIZE;
+    const classes = cellClasses(row, col, cell);
+    if (selected?.row === row && selected?.col === col) classes.push("selected");
+    if (region.has(index)) classes.push("region");
     return {
       row,
       col,
       cell,
-      classes: cellClasses(row, col, cell),
+      classes,
       text: formatDigit(cell),
       marks: shownMarks(state, cell),
     };
@@ -198,88 +182,30 @@ export function moveSelection(row, col, key) {
   }
 }
 
-/** Locate one rendered cell node by logical row/col coordinates. */
-export function findCellElement(boardEl, row, col) {
-  const playEl = resolvePlayGrid(boardEl);
-  for (const cell of playEl.children) {
-    if (Number(cell.dataset.row) === row && Number(cell.dataset.col) === col) return cell;
-  }
-  return null;
-}
-
-/** Remove visual selection marker from every play cell. */
-export function clearSelection(boardEl) {
-  const playEl = resolvePlayGrid(boardEl);
-  for (const cell of playEl.children) {
-    cell.classList.remove("selected");
-  }
-}
-
-/** Apply visual selection marker and return normalized selection payload. */
-export function applySelection(boardEl, row, col) {
-  const playEl = resolvePlayGrid(boardEl);
-  clearSelection(playEl);
-  const target = findCellElement(playEl, row, col);
-  if (target) target.classList.add("selected");
-  return { row, col };
-}
-
-/** Highlighted play cell from DOM (mouse selection truth when in sync with the grid). */
-export function selectionFromDom(boardEl) {
-  const playEl = resolvePlayGrid(boardEl);
-  const marked = playEl.querySelector?.(".selected[data-row][data-col]");
-  if (!marked) return null;
-  return { row: Number(marked.dataset.row), col: Number(marked.dataset.col) };
-}
-
-/** Selected cell for commands — DOM wins; resync controller when it drifted. */
-export function readSelection(boardEl, selection) {
-  const dom = selectionFromDom(boardEl);
-  const live = selection.getSelection?.() ?? null;
-  let picked = null;
-  if (dom) {
-    if (!live || live.row !== dom.row || live.col !== dom.col) {
-      selection.select?.(dom.row, dom.col);
-    }
-    picked = dom;
-  } else if (live) {
-    selection.select?.(live.row, live.col);
-    picked = live;
-  }
-  return picked;
-}
-
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
-/** Selection controller wiring for mouse/touch/arrow-key navigation. */
-export function wireSelection(frameEl, { row, col, onSelect, regionEnabled } = {}) {
+/**
+ * Select the cell at `at` in core, or deselect when `at` is null; the board redraws from core's frame.
+ * @param {GameApi} game
+ * @param {{ row: number, col: number } | null} at
+ * @param {{ boardEl: HTMLElement, createElement?: (tag: string) => HTMLElement, steps: FlowHandlers, onShown?: (step: FlowStep) => void }} options
+ */
+export function selectCell(game, at, options) {
+  const action = at ? { action: "select", row: at.row, col: at.col } : { action: "deselect" };
+  return runBoardCommand(game, action, options);
+}
+
+/**
+ * Tap, tap-again and arrow keys send select and deselect to core; the selection is core's, read from the session.
+ * @param {HTMLElement} frameEl
+ * @param {{ game: GameApi, session: import("./types").WebSession, steps: FlowHandlers, createElement?: (tag: string) => HTMLElement, onSelect?: () => void }} options
+ */
+export function wireSelection(frameEl, { game, session, steps, createElement, onSelect }) {
   const playEl = resolvePlayGrid(frameEl);
-  /** @type {{ row: number, col: number } | null} */
-  let selected = null;
-
-  const syncRegion = () => {
-    if (!regionEnabled) return;
-    if (selected) {
-      applyRegionHighlight(playEl, selected.row, selected.col, regionEnabled());
-    } else {
-      applyRegionHighlight(playEl, null, null, false);
-    }
-  };
-
-  const deselect = () => {
-    selected = null;
-    clearSelection(playEl);
-    syncRegion();
-    onSelect?.(null);
-    return null;
-  };
-
-  const select = (nextRow, nextCol) => {
-    selected = applySelection(playEl, nextRow, nextCol);
-    syncRegion();
-    onSelect?.(selected);
-    return selected;
-  };
+  /** @returns {{ row: number, col: number } | null} */
+  const current = () => session.state?.selected ?? null;
+  /** @param {{ row: number, col: number } | null} at */
+  const send = (at) => selectCell(game, at, { boardEl: frameEl, createElement, steps, onShown: () => onSelect?.() });
 
   playEl.tabIndex = 0;
 
@@ -305,39 +231,35 @@ export function wireSelection(frameEl, { row, col, onSelect, regionEnabled } = {
   playEl.addEventListener("click", (event) => {
     const cell = cellFromEvent(event);
     if (!cell) return;
-    const { row: nextRow, col: nextCol } = cell;
-    const sameAsSelected = selected?.row === nextRow && selected?.col === nextCol;
-    const sameAsPress =
-      pointerDownCell?.row === nextRow && pointerDownCell?.col === nextCol;
-    if (sameAsSelected && sameAsPress) {
-      deselect();
-      return;
-    }
-    select(nextRow, nextCol);
+    const selected = current();
+    const sameAsSelected = selected?.row === cell.row && selected?.col === cell.col;
+    const sameAsPress = pointerDownCell?.row === cell.row && pointerDownCell?.col === cell.col;
+    void send(sameAsSelected && sameAsPress ? null : cell);
   });
 
   const onArrowKey = (event) => {
     if (!ARROW_KEYS.has(event.key)) return;
+    const selected = current();
     if (!selected) return;
     const target = event.target;
     if (typeof target?.closest === "function") {
       if (target.closest("input, textarea, select, [contenteditable=true]")) return;
     }
     event.preventDefault();
-    const next = moveSelection(selected.row, selected.col, event.key);
-    select(next.row, next.col);
+    void send(moveSelection(selected.row, selected.col, event.key));
   };
 
   doc.addEventListener("keydown", onArrowKey);
 
-  if (row != null && col != null) select(row, col);
-
   return {
+    /** Core's selected cell, or null. */
     getSelection() {
+      const selected = current();
       return selected ? { ...selected } : null;
     },
-    select,
-    deselect,
+    /** @param {number} row @param {number} col */
+    select: (row, col) => send({ row, col }),
+    deselect: () => send(null),
   };
 }
 
@@ -364,16 +286,14 @@ export function parsePlayKey(key, code = "") {
 }
 
 /**
- * Run a board command through core and redraw from the game core shows; the selection survives.
+ * Run a board command through core and redraw from the game core shows.
  * @param {GameApi} game
  * @param {import("./types").ExecAction} action
- * @param {{ boardEl: HTMLElement, selection: import("./types").BoardSelection, createElement?: (tag: string) => HTMLElement, steps: FlowHandlers, onShown?: (step: FlowStep) => void }} options
+ * @param {{ boardEl: HTMLElement, createElement?: (tag: string) => HTMLElement, steps: FlowHandlers, onShown?: (step: FlowStep) => void }} options
  */
-export function runBoardCommand(game, action, { boardEl, selection, createElement, steps, onShown }) {
+export function runBoardCommand(game, action, { boardEl, createElement, steps, onShown }) {
   return stepRunner.runCommand(game, action, steps, (step) => {
     renderBoard(boardEl, step.state, createElement);
-    const sel = selection.getSelection();
-    if (sel) selection.select(sel.row, sel.col);
     onShown?.(step);
   });
 }
@@ -399,7 +319,7 @@ export function handlePlayKey(
   const { row, col } = sel;
   const action =
     play.type === "fill" ? { action: "fill", row, col, digit: play.digit } : { action: "clear", row, col };
-  const done = runBoardCommand(game, action, { boardEl, selection, createElement, steps, onShown });
+  const done = runBoardCommand(game, action, { boardEl, createElement, steps, onShown });
   return { handled: true, done };
 }
 

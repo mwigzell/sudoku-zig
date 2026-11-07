@@ -7,6 +7,7 @@ const config = @import("../core/config.zig");
 const logger = @import("../core/logger.zig");
 const event_mod = @import("../core/event.zig");
 const game_engine = @import("../core/engine/game_engine.zig");
+const frame_mod = @import("../core/frame.zig");
 const puzzle_gen = @import("../core/puzzle_gen/mod.zig");
 const about = @import("../core/about.zig");
 const legend_mod = @import("../core/renderer/legend.zig");
@@ -135,6 +136,12 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         const c = col orelse return error.MissingField;
         return .{ .clear = .{ .row = r, .col = c } };
     }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "select")) {
+        const r = row orelse return error.MissingField;
+        const c = col orelse return error.MissingField;
+        return .{ .select = .{ .row = r, .col = c } };
+    }
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "deselect")) return .{ .deselect = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "undo")) return .{ .undo = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "redo")) return .{ .redo = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "quit")) return .{ .quit = {} };
@@ -229,8 +236,8 @@ pub fn writeSystemErrorJson(out: OutBuffer) void {
     if (n < out.buf.len) out.buf[n] = 0;
 }
 
-/// Writes Event JSON: `{ok, is_quit, msg, state}` or an error object.
-pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event, marks_display: wire.MarksDisplay) !void {
+/// Writes Event JSON: `{ok, is_quit, msg, state}` or an error object; `state` is `engine`'s frame.
+pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event, engine: *game_engine.GameEngine) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
@@ -238,17 +245,17 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event, marks_display: wire.M
     switch (ev) {
         .error_msg => |msg| try writeErrorJsonTo(&jw.writer, msg),
         .ok => |data| {
-            const snap = wire.GameSnapshot.fromView(data.board_view, marks_display);
+            const frame = frame_mod.build(engine, data.msg);
             try std.Io.Writer.writeAll(&jw.writer, "{\"ok\":true,\"is_quit\":");
             try std.Io.Writer.print(&jw.writer, "{any},\"msg\":", .{data.is_quit});
-            if (data.msg) |m| {
+            if (frame.status) |m| {
                 try writeJsonString(&jw.writer, m);
                 try std.Io.Writer.writeAll(&jw.writer, ",");
             } else {
                 try std.Io.Writer.writeAll(&jw.writer, "null,");
             }
             try std.Io.Writer.writeAll(&jw.writer, "\"state\":");
-            try wire.writeGameSnapshotJson(&jw.writer, snap);
+            try wire.writeGameSnapshotJson(&jw.writer, wire.GameSnapshot.fromFrame(frame));
             try std.Io.Writer.writeAll(&jw.writer, "}");
         },
     }
@@ -388,16 +395,15 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
         },
         .show_game => |g| {
             try std.Io.Writer.writeAll(w, ",\"text\":");
-            try writeOptionalJsonString(w, g.status);
+            try writeOptionalJsonString(w, g.frame.status);
             try std.Io.Writer.writeAll(w, ",\"file\":");
             try writeOptionalJsonString(w, g.file);
             try std.Io.Writer.writeAll(w, ",\"state\":");
-            try wire.writeGameSnapshotJson(w, wire.GameSnapshot.fromView(g.board, .{ .pencil_mode = g.pencil_mode, .marks_visible = g.marks_visible }));
+            try wire.writeGameSnapshotJson(w, wire.GameSnapshot.fromFrame(g.frame));
             try std.Io.Writer.writeAll(w, ",\"legend\":");
             try writeLegendTo(w, g.legend);
             try std.Io.Writer.writeAll(w, ",\"config\":");
             try writeWireConfigTo(w, wire.WireConfig.fromConfig(g.config));
-            if (g.cell) |c| try std.Io.Writer.print(w, ",\"cell\":{{\"row\":{d},\"col\":{d}}}", .{ c.row, c.col });
             if (g.loaded) try std.Io.Writer.writeAll(w, ",\"loaded\":true");
         },
         .generate_game => |d| try std.Io.Writer.print(w, ",\"difficulty\":{d}", .{@backingInt(wire.PlayerDifficulty.fromPuzzleDifficulty(d))}),
@@ -580,14 +586,22 @@ fn writeWireConfigTo(w: *std.Io.Writer, wire_cfg: wire.WireConfig) !void {
     );
 }
 
-/// Writes the board snapshot JSON (`getState`), with how pencil marks are drawn.
-pub fn writeStateJson(out: OutBuffer, view: board.Board.BoardView, marks_display: wire.MarksDisplay) !void {
+/// Writes the snapshot JSON of `frame` (`getState`).
+pub fn writeStateJson(out: OutBuffer, frame: frame_mod.Frame) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
     JsonWriter.init(&mutable, &jw);
-    try wire.writeGameSnapshotJson(&jw.writer, wire.GameSnapshot.fromView(view, marks_display));
+    try wire.writeGameSnapshotJson(&jw.writer, wire.GameSnapshot.fromFrame(frame));
     try std.Io.Writer.flush(&jw.writer);
+}
+
+test "parseAction select carries its cell; deselect has none" {
+    const sel = try parseAction("{\"action\":\"select\",\"row\":4,\"col\":7}");
+    try std.testing.expectEqual(@as(u4, 4), sel.select.row);
+    try std.testing.expectEqual(@as(u4, 7), sel.select.col);
+    try std.testing.expectError(error.MissingField, parseAction("{\"action\":\"select\",\"row\":4}"));
+    try std.testing.expect(try parseAction("{\"action\":\"deselect\"}") == .deselect);
 }
 
 test "parseAction fill maps row col digit" {
@@ -652,7 +666,7 @@ test "writeEventJson ok embeds state snapshot" {
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
     const undone = engine.exec(.{ .undo = {} });
-    try writeEventJson(out, undone, wire.MarksDisplay.of(&engine));
+    try writeEventJson(out, undone, &engine);
 
     const json = out.finishJson();
     try std.testing.expect(std.mem.indexOf(u8, json, "\"ok\":true") != null);
@@ -787,10 +801,12 @@ test "writeErrorJson escapes quotes and newlines" {
 }
 
 test "writeEventJson error_msg escapes special characters" {
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
     var buf: [512]u8 = undefined;
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
-    try writeEventJson(out, .{ .error_msg = "bad \"input\"\nretry" }, .{ .pencil_mode = false, .marks_visible = true });
+    try writeEventJson(out, .{ .error_msg = "bad \"input\"\nretry" }, &engine);
 
     const parsed = try std.json.parseFromSlice(ErrorWire, std.testing.allocator, out.finishJson(), .{});
     defer parsed.deinit();
@@ -810,7 +826,7 @@ test "writeEventJson ok msg escapes special characters" {
         .is_quit = false,
         .msg = "saved \"game\"\nok",
     } };
-    try writeEventJson(out, ev, wire.MarksDisplay.of(&engine));
+    try writeEventJson(out, ev, &engine);
 
     const parsed = try std.json.parseFromSlice(OkEventWire, std.testing.allocator, out.finishJson(), .{
         .ignore_unknown_fields = true,
@@ -981,15 +997,14 @@ test "step JSON carries the tag and its payload" {
     try std.testing.expectEqualStrings("{\"step\":\"restore\",\"path\":\"/current-file\"}", out.finishJson());
     var shown_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer shown_engine.deinit();
+    shown_engine.selected = .{ .row = 1, .col = 2 };
     var shown = flow.step.showGame(&shown_engine, null, "g.sud");
-    shown.show_game.cell = .{ .row = 1, .col = 2 };
     try writeStepJson(out, shown);
     const shown_json = out.finishJson();
     try std.testing.expect(std.mem.startsWith(u8, shown_json, "{\"step\":\"show_game\",\"text\":null,\"file\":\"g.sud\",\"state\":{"));
     try std.testing.expect(std.mem.indexOf(u8, shown_json, ",\"legend\":{\"fill\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, shown_json, ",\"config\":{\"difficulty\":") != null);
-    try std.testing.expect(std.mem.endsWith(u8, shown_json, ",\"cell\":{\"row\":1,\"col\":2}}"));
-    shown.show_game.cell = null;
+    try std.testing.expect(std.mem.indexOf(u8, shown_json, "\"selected\":{\"row\":1,\"col\":2}") != null);
     shown.show_game.loaded = true;
     try writeStepJson(out, shown);
     try std.testing.expect(std.mem.endsWith(u8, out.finishJson(), ",\"loaded\":true}"));

@@ -79,7 +79,9 @@ const themeRoot = {
   const { game, session } = await gameAndSession();
   const { posts, steps } = recordingSteps(game, session);
   const controls = { viewRegion: clickable() };
-  region.wireRegionMenu(controls, game, session, { children: [] }, () => null, { steps });
+  const fakeEl = () => ({ classList: { add() {} }, dataset: {}, setAttribute() {}, appendChild() {} });
+  const boardEl = { classList: { contains: () => true }, children: [], replaceChildren() {} };
+  region.wireRegionMenu(controls, game, session, boardEl, { steps, createElement: fakeEl });
   controls.viewRegion.click();
   await settleFlow();
   assert.equal(posts.length, 1);
@@ -93,7 +95,7 @@ const themeRoot = {
   const controls = { viewMarks: clickable() };
   const fakeEl = () => ({ classList: { add() {} }, dataset: {}, setAttribute() {}, appendChild() {} });
   const boardEl = { classList: { contains: () => true }, children: [], replaceChildren() {} };
-  marks.wireMarks(controls, game, session, boardEl, { getSelection: () => null, select() {} }, { steps, createElement: fakeEl });
+  marks.wireMarks(controls, game, session, boardEl, { steps, createElement: fakeEl });
   controls.viewMarks.click();
   await settleFlow();
   assert.equal(posts.length, 1);

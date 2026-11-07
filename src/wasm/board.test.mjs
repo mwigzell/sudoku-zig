@@ -324,35 +324,25 @@ function makeMockBoard() {
   };
 }
 
-{
-  const board = makeMockBoard();
-  boardMod.applySelection(board, 1, 2);
-  assert.ok(boardMod.findCellElement(board, 1, 2).classList.contains("selected"));
-  assert.equal(
-    board.play.children.filter((c) => c.classList.contains("selected")).length,
-    1,
-  );
-  boardMod.applySelection(board, 4, 4);
-  assert.ok(!boardMod.findCellElement(board, 1, 2).classList.contains("selected"));
-  assert.ok(boardMod.findCellElement(board, 4, 4).classList.contains("selected"));
+/** The rendered cell at (row, col) on a mock board. */
+function cellAt(board, row, col) {
+  return board.play.children.find((c) => Number(c.dataset.row) === row && Number(c.dataset.col) === col);
+}
+
+/** Cells drawn with `name` on a mock board, as "row,col". */
+function cellsWith(board, name) {
+  return board.play.children.filter((c) => c.classList.contains(name)).map((c) => `${c.dataset.row},${c.dataset.col}`);
 }
 
 {
   const board = makeMockBoard();
-  boardMod.applySelection(board, 0, 3);
-  let synced = null;
-  assert.deepEqual(
-    boardMod.readSelection(board, {
-      getSelection: () => ({ row: 1, col: 2 }),
-      select(row, col) {
-        synced = { row, col };
-      },
-    }),
-    { row: 0, col: 3 },
-  );
-  assert.deepEqual(synced, { row: 0, col: 3 });
-  boardMod.applySelection(board, 5, 5);
-  assert.deepEqual(boardMod.readSelection(board, { getSelection: () => null }), { row: 5, col: 5 });
+  const state = { cells: Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false, marks: 0 })), selected: { row: 1, col: 2 }, region: [0, 1, 11] };
+  boardMod.renderBoard(board, state, makeRenderElement());
+  assert.deepEqual(cellsWith(board, "selected"), ["1,2"], "the selected cell comes from core's snapshot");
+  assert.deepEqual(cellsWith(board, "region"), ["0,0", "0,1", "1,2"], "the region is the cells core lists");
+  boardMod.renderBoard(board, { ...state, selected: null, region: null }, makeRenderElement());
+  assert.deepEqual(cellsWith(board, "selected"), []);
+  assert.deepEqual(cellsWith(board, "region"), []);
 }
 
 {
@@ -361,71 +351,18 @@ function makeMockBoard() {
   startNewGame(game);
   const session = { state: game.getState(), legend: game.getLegend() };
   const board = makeMockBoard();
-  boardMod.applySelection(board, 1, 2);
   const status = { textContent: "", className: "" };
   const outcome = handleEditAction(
     "hint",
     game,
     board,
-    { getSelection: () => ({ row: 0, col: 3 }), select() {} },
+    { getSelection: () => ({ row: 1, col: 2 }), select() {} },
     session,
     makeRenderElement(),
     { steps: webSteps.webSteps(game, session, { statusEl: status }) },
   );
   await outcome.done;
-  assert.match(status.textContent, /^C2 /, "hint targets the cell selected on the board");
-}
-
-{
-  const board = makeMockBoard();
-  const controller = boardMod.wireSelection(board);
-  assert.equal(board.tabIndex, 0);
-  assert.equal(controller.getSelection(), null);
-  assert.equal(
-    board.play.children.filter((c) => c.classList.contains("selected")).length,
-    0,
-  );
-
-  board.play._docListeners.keydown?.({
-    key: "ArrowRight",
-    preventDefault() {},
-    target: board.play,
-  });
-  assert.equal(controller.getSelection(), null);
-
-  const target = boardMod.findCellElement(board, 5, 5);
-  const clickCell = (cell) => {
-    const event = { target: { closest: () => cell } };
-    board.play._listeners.pointerdown?.(event);
-    board.play._listeners.click(event);
-  };
-  clickCell(target);
-  assert.deepEqual(controller.getSelection(), { row: 5, col: 5 });
-  assert.ok(target.classList.contains("selected"));
-
-  clickCell(target);
-  assert.equal(controller.getSelection(), null);
-  assert.ok(!target.classList.contains("selected"));
-
-  const c1 = boardMod.findCellElement(board, 0, 2);
-  const c2 = boardMod.findCellElement(board, 1, 2);
-  board.play._listeners.pointerdown?.({ target: { closest: () => c1 } });
-  board.play._listeners.click?.({ target: { closest: () => c2 } });
-  assert.deepEqual(controller.getSelection(), { row: 1, col: 2 });
-
-  controller.select(0, 0);
-  board.play._docListeners.keydown?.({
-    key: "ArrowRight",
-    preventDefault() {},
-    target: board.play,
-  });
-  assert.deepEqual(controller.getSelection(), { row: 0, col: 1 });
-}
-
-{
-  const board = makeMockBoard();
-  const controller = boardMod.wireSelection(board, { row: 0, col: 0 });
-  assert.deepEqual(controller.getSelection(), { row: 0, col: 0 });
+  assert.match(status.textContent, /^C2 /, "hint targets the selected cell");
 }
 
 // ── play loop ──
@@ -455,7 +392,51 @@ async function playGame(config = {}) {
 }
 
 function selectedAt(board, row, col) {
-  return { getSelection: () => ({ row, col }), select(r, c) { boardMod.applySelection(board, r, c); } };
+  return { getSelection: () => ({ row, col }), select() {} };
+}
+
+{
+  const { game, session } = await playGame({ show_region: true });
+  const board = makeMockBoard();
+  const createElement = makeRenderElement();
+  boardMod.renderBoard(board, session.state, createElement);
+  const steps = webSteps.webSteps(game, session, { statusEl: statusStub() });
+  let selects = 0;
+  const controller = boardMod.wireSelection(board, { game, session, steps, createElement, onSelect: () => (selects += 1) });
+  assert.equal(board.tabIndex, 0);
+  assert.equal(controller.getSelection(), null);
+
+  board.play._docListeners.keydown?.({ key: "ArrowRight", preventDefault() {}, target: board.play });
+  await settleFlow();
+  assert.equal(controller.getSelection(), null, "an arrow with nothing selected does nothing");
+
+  const clickCell = (row, col, pressRow = row, pressCol = col) => {
+    board.play._listeners.pointerdown?.({ target: { closest: () => cellAt(board, pressRow, pressCol) } });
+    board.play._listeners.click({ target: { closest: () => cellAt(board, row, col) } });
+    return settleFlow();
+  };
+  await clickCell(5, 5);
+  assert.deepEqual(controller.getSelection(), { row: 5, col: 5 }, "a tap selects in core");
+  assert.deepEqual(session.state.selected, { row: 5, col: 5 });
+  assert.deepEqual(cellsWith(board, "selected"), ["5,5"]);
+  assert.equal(cellsWith(board, "region").length, 21, "Show Region shades core's row, column and box");
+
+  await clickCell(5, 5);
+  assert.equal(controller.getSelection(), null, "tapping the selected cell again deselects");
+  assert.deepEqual(cellsWith(board, "selected"), []);
+  assert.deepEqual(cellsWith(board, "region"), []);
+
+  await clickCell(1, 2, 0, 2);
+  assert.deepEqual(controller.getSelection(), { row: 1, col: 2 }, "a click whose press began elsewhere selects");
+
+  await controller.select(0, 0);
+  board.play._docListeners.keydown?.({ key: "ArrowRight", preventDefault() {}, target: board.play });
+  await settleFlow();
+  assert.deepEqual(controller.getSelection(), { row: 0, col: 1 }, "an arrow moves core's selection");
+
+  await controller.deselect();
+  assert.equal(controller.getSelection(), null);
+  assert.equal(selects, 6, "every select and deselect reports once the board is redrawn");
 }
 
 {
@@ -466,8 +447,8 @@ function selectedAt(board, row, col) {
   assert.equal(outcome.handled, true);
   await outcome.done;
   assert.equal(session.state.cells[boardMod.cellIndex(0, 2)].value, 4);
-  assert.equal(boardMod.findCellElement(board, 0, 2).textContent, "4");
-  assert.ok(boardMod.findCellElement(board, 0, 2).classList.contains("selected"));
+  assert.equal(cellAt(board, 0, 2).textContent, "4");
+  assert.ok(cellAt(board, 0, 2).classList.contains("selected"), "a fill selects its cell in core");
   assert.equal(session.legend.undo, true);
 }
 

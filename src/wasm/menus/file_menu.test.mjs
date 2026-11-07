@@ -47,7 +47,7 @@ function wireFile(controls, game, session, { statusEl = makeStatus(), difficulty
       return generated.shift() ?? { ok: true, line: PUZZLE_LINE };
     },
   };
-  fileMenu.wireFileMenu(controls, game, makeBoard(), { select: () => {}, deselect: () => {} }, statusEl, session, { sync() {} }, {
+  fileMenu.wireFileMenu(controls, game, makeBoard(), statusEl, session, { sync() {} }, {
     difficultyDialog,
     createElement: makeRenderElement(),
     steps,

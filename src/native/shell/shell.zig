@@ -156,7 +156,7 @@ pub const Sudoku = struct {
         if (game.loaded) {
             if (game.file) |file| self.storage.persistCurrentFile(file);
         }
-        try self.renderer.render(frame_mod.build(&self.engine, game.status));
+        try self.renderer.render(game.frame);
         try self.renderer.showLegend(game.legend);
     }
 
