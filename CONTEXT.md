@@ -67,7 +67,7 @@ One draw's state, built by core from one builder (`frame.build(engine, status)`)
 _Avoid_: front ends working out the region or the selection; a new `render` argument per piece of state
 
 **Selected cell** (`GameEngine.selected`):
-Core's selected cell, or none; session state, never saved. A select (web and Android: tap, arrow keys), a fill, clear or mark, and Undo or Redo of a single-cell change set it; Hint, a refused move, Solve and its Undo or Redo leave it; a deselect (tap the selected cell again, Esc, Edit → Deselect Cell) and every load clear it. Every front end marks it, Show Region or not; Show Region adds its row, column and box. The terminal has no select or deselect command (ADR-0019).
+Core's selected cell, or none; session state, never saved. A select (web and Android: tap, arrow keys), a fill, clear or mark, and Undo or Redo of a single-cell change set it; Hint, a refused move, Solve and its Undo or Redo leave it; a deselect (tap the selected cell again, Esc, Edit → Deselect Cell) and every load clear it. Web and Android mark it, Show Region or not; Show Region adds its row, column and box. The terminal has no select or deselect command, so it marks the selected cell only while Show Region is on (ADR-0019).
 _Avoid_: a selection kept by the shell or the page; Hint reading its target from the selection
 
 **Event**:

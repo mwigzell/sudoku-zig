@@ -81,6 +81,12 @@ pub const REGION_ON = background(GREY_REGION);
 /// Background of the selected cell.
 pub const SELECT_ON = background(GREY_SELECTED);
 
+/// Is (row, col) shaded as the selected cell? Only while its region is shown: the terminal
+/// has no deselect, so a selection drawn with Show Region off could never be turned off.
+fn shadesSelected(frame: Frame, row: u4, col: u4) bool {
+    return frame.region != null and frame.isSelected(row, col);
+}
+
 // ---------------------------------------------------------------------------
 /// Private helper: build styled string for one cell position
 /// Writes the display character (optionally CSI-wrapped) into `out` buffer.
@@ -186,7 +192,7 @@ fn largeCellStyle(frame: Frame, row: u4, col: u4) []const u8 {
     const value = view.get(row, col);
     const given = view.isGiven(row, col) and value != .zero;
     if (!given and value != .zero and view.isConflictingRowCol(row, col)) return CONFLICT_ON;
-    if (frame.isSelected(row, col)) return if (given) SELECT_ON ++ DIM_ON else SELECT_ON;
+    if (shadesSelected(frame, row, col)) return if (given) SELECT_ON ++ DIM_ON else SELECT_ON;
     if (frame.inRegion(row, col)) return if (given) REGION_ON ++ DIM_ON else REGION_ON;
     return if (given) DIM_ON else "";
 }
@@ -260,15 +266,15 @@ pub const AnsiStyler = struct {
 
         return std.fmt.bufPrint(buf, "{d}│ {s} {s} {s} │ {s} {s} {s} │ {s} {s} {s} │\n", .{
             row_idx + 1,
-            s0[0..style_cell(vals[0], gives[0], conflicts[0], frame.inRegion(row, 0), frame.isSelected(row, 0), &s0)],
-            s1[0..style_cell(vals[1], gives[1], conflicts[1], frame.inRegion(row, 1), frame.isSelected(row, 1), &s1)],
-            s2[0..style_cell(vals[2], gives[2], conflicts[2], frame.inRegion(row, 2), frame.isSelected(row, 2), &s2)],
-            s3[0..style_cell(vals[3], gives[3], conflicts[3], frame.inRegion(row, 3), frame.isSelected(row, 3), &s3)],
-            s4[0..style_cell(vals[4], gives[4], conflicts[4], frame.inRegion(row, 4), frame.isSelected(row, 4), &s4)],
-            s5[0..style_cell(vals[5], gives[5], conflicts[5], frame.inRegion(row, 5), frame.isSelected(row, 5), &s5)],
-            s6[0..style_cell(vals[6], gives[6], conflicts[6], frame.inRegion(row, 6), frame.isSelected(row, 6), &s6)],
-            s7[0..style_cell(vals[7], gives[7], conflicts[7], frame.inRegion(row, 7), frame.isSelected(row, 7), &s7)],
-            s8[0..style_cell(vals[8], gives[8], conflicts[8], frame.inRegion(row, 8), frame.isSelected(row, 8), &s8)],
+            s0[0..style_cell(vals[0], gives[0], conflicts[0], frame.inRegion(row, 0), shadesSelected(frame, row, 0), &s0)],
+            s1[0..style_cell(vals[1], gives[1], conflicts[1], frame.inRegion(row, 1), shadesSelected(frame, row, 1), &s1)],
+            s2[0..style_cell(vals[2], gives[2], conflicts[2], frame.inRegion(row, 2), shadesSelected(frame, row, 2), &s2)],
+            s3[0..style_cell(vals[3], gives[3], conflicts[3], frame.inRegion(row, 3), shadesSelected(frame, row, 3), &s3)],
+            s4[0..style_cell(vals[4], gives[4], conflicts[4], frame.inRegion(row, 4), shadesSelected(frame, row, 4), &s4)],
+            s5[0..style_cell(vals[5], gives[5], conflicts[5], frame.inRegion(row, 5), shadesSelected(frame, row, 5), &s5)],
+            s6[0..style_cell(vals[6], gives[6], conflicts[6], frame.inRegion(row, 6), shadesSelected(frame, row, 6), &s6)],
+            s7[0..style_cell(vals[7], gives[7], conflicts[7], frame.inRegion(row, 7), shadesSelected(frame, row, 7), &s7)],
+            s8[0..style_cell(vals[8], gives[8], conflicts[8], frame.inRegion(row, 8), shadesSelected(frame, row, 8), &s8)],
         });
     }
 
@@ -344,13 +350,13 @@ test "AnsiStyler: peer region cells get region background when selection set" {
     try std.testing.expectEqual(@as(usize, 1), select_count);
 }
 
-test "AnsiStyler: with Show Region off the selected cell is marked and nothing else is shaded" {
+test "AnsiStyler: with Show Region off nothing is shaded, not even the selected cell" {
     var b = board.Board.init();
     const frame = Frame{ .board = b.asView(), .selected = .{ .row = 4, .col = 4 } };
     var buf: [512]u8 = undefined;
     var ansi = AnsiStyler{};
     const line = try ansi.formatRow(4, frame, &buf);
-    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, line, SELECT_ON));
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, line, SELECT_ON));
     try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, line, REGION_ON));
 }
 
@@ -360,15 +366,14 @@ test "the region and selected-cell greys are clearly apart, the selected cell li
     try std.testing.expect(GREY_SELECTED - GREY_REGION >= min_step);
 }
 
-test "large board, styled, Show Region off: only the selected cell is shaded" {
+test "large board, styled, Show Region off: nothing is shaded, not even the selected cell" {
     var b = board.Board.init();
     const frame = Frame{ .board = b.asView(), .selected = .{ .row = 0, .col = 0 } };
     var buf: [1024]u8 = undefined;
     var ansi = AnsiStyler{};
     const top = try ansi.formatLargeLine(0, 0, frame, &buf);
-    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, top, SELECT_ON));
+    try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, top, SELECT_ON));
     try std.testing.expectEqual(@as(usize, 0), std.mem.count(u8, top, REGION_ON));
-    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, top, RESET));
 }
 
 test "large board, styled: marks in their own colour, no dots, empty and filled cells unshaded outside the region" {

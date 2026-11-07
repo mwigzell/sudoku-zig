@@ -430,7 +430,9 @@ pub const GameEngine = struct {
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
             },
             .settings => @panic("settings routed in Sudoku"),
-            .menu => @panic("menu routed in renderer"),
+            // The renderer opens the Menu; it reaches core only when the player picked nothing,
+            // and then the game is shown again as it is.
+            .menu => return self.finishOkEvent(self.state.board.asView(), false, null, false),
             .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => @panic("load and write commands run in the core command flow"),
         }
     }
@@ -1512,6 +1514,22 @@ test "exec win is re-announced when a solved board is edited again" {
     try std.testing.expect(again == .ok);
     try std.testing.expect(again.ok.msg != null);
     try std.testing.expect(std.mem.indexOf(u8, again.ok.msg.?, "You win!") != null);
+}
+
+test "Menu with nothing picked shows the game again, its status kept and nothing changed" {
+    const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
+    var line: [81]u8 = undefined;
+    @memcpy(&line, full);
+    line[40] = '0';
+    var engine = try GameEngine.init(&line, config.Config.default());
+    defer engine.deinit();
+    const win = execTest(&engine, command.Command{ .fill = .{ .row = 4, .col = 4, .digit = cell.rawToCellValue(full[40] - '0') } });
+    const history_before = engine.state.history.count();
+
+    const shown = execTest(&engine, command.Command.menu);
+    try std.testing.expect(shown == .ok and !shown.ok.is_quit);
+    try std.testing.expectEqualStrings(win.ok.msg.?, shown.ok.msg.?);
+    try std.testing.expectEqual(history_before, engine.state.history.count());
 }
 
 test "durable status clears on solved-to-unsolved cell edit and re-announces on re-solve" {

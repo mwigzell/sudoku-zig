@@ -24,7 +24,7 @@ The terminal's `Facade.render(view, status, selection, marks_visible)` took one 
 
 ## Consequences
 
-- No front end keeps or computes the selection or its region; each draws them from core. Every front end marks the selected cell whether Show Region is on or off; Show Region adds its row, column and box.
+- No front end keeps or computes the selection or its region; each draws them from core. Web and Android mark the selected cell whether Show Region is on or off; Show Region adds its row, column and box. The terminal, which has no deselect, marks the selected cell only while Show Region is on, so the player can turn the shading off.
 - The parity transcripts compare `selected` and `region` in every scenario's final state, so a front end that diverges fails.
 - Renderers stay stateless painters (ADR-0011 rule 2); the memory between draws is core's, not the driver's or the page's.
 - A new piece of drawing state is a frame field, not a new `render` argument.
