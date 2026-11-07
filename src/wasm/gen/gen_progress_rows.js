@@ -115,12 +115,22 @@ export function renderGenProgressRows(containerEl, state, createElement, genText
   const hint = state.method ? genText[state.method] : "";
   hintEl.textContent = hint;
   hintEl.hidden = hint.length === 0;
+  holdTallestHeight(containerEl);
 }
 
-/** Show or hide the progress block (`#generating-progress-rows`). */
+/** Grow the block to its tallest height so far, never shrinking: on narrow screens wrapped rows outgrow the CSS floor. */
+function holdTallestHeight(containerEl) {
+  const height = containerEl.offsetHeight;
+  if (!containerEl.style || typeof height !== "number") return;
+  const held = Number.parseFloat(containerEl.style.minHeight) || 0;
+  if (height > held) containerEl.style.minHeight = `${height}px`;
+}
+
+/** Show or hide the progress block (`#generating-progress-rows`); hiding releases its held height. */
 export function setProgressRowsVisible(containerEl, visible) {
   if (containerEl?.style) {
     containerEl.style.display = visible ? "block" : "none";
+    if (!visible) containerEl.style.minHeight = "";
   }
 }
 

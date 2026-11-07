@@ -19,5 +19,7 @@
 - Noted: marks are not read by screen readers (WebView a11y) — candidate issue.
 - Step 8: parity scenario mark_undo_redo (the only missing pencil case: Redo of a mark); mutation check proved web and
   android compare it. CONTEXT.md "Pencil marks" section. verify + glue green.
+- Generating dialog: progress block holds its tallest height (wrapped rows on narrow phones made it jitter); user
+  confirmed on phone, plus pencil marks on phone.
 - Next: user runs full android-test; tick remaining #107 boxes (hand checks with show_marks off: mark, Undo, Redo per
   front end) then close #107. Then #117 with #115.

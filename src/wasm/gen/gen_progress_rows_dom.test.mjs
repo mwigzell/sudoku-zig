@@ -84,6 +84,23 @@ function makeCreateElement() {
 
 {
   const container = makeElement();
+  const createElement = makeCreateElement();
+  let state = genProgressRows.createGenProgressRowState();
+  genProgressRows.setProgressRowsVisible(container, true);
+  container.offsetHeight = 80;
+  state = genProgressRows.applyGenProgressRowEvent(state, 3, "progress line 3");
+  genProgressRows.renderGenProgressRows(container, state, createElement, genText);
+  assert.equal(container.style.minHeight, "80px");
+  container.offsetHeight = 40;
+  state = genProgressRows.applyGenProgressRowEvent(state, 0, "progress line 1");
+  genProgressRows.renderGenProgressRows(container, state, createElement, genText);
+  assert.equal(container.style.minHeight, "80px", "the block never shrinks while it is shown");
+  genProgressRows.setProgressRowsVisible(container, false);
+  assert.equal(container.style.minHeight, "", "hiding releases the held height for the next generation");
+}
+
+{
+  const container = makeElement();
   genProgressRows.setProgressRowsVisible(container, true);
   assert.equal(container.style.display, "block");
   genProgressRows.setProgressRowsVisible(container, false);
