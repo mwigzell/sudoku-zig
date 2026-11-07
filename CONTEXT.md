@@ -137,7 +137,7 @@ Placing a digit (player fill or Solve) replaces the cell's marks and removes tha
 _Avoid_: having a front end remove marks itself
 
 **Show Pencil Marks** (`show_marks`) and **`marks_visible`**:
-`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil mode or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers shade every empty cell and leave an unset mark blank, plain `ascii` shows `·`); web and Android draw only set marks.
+`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil mode or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`); web and Android draw only set marks.
 _Avoid_: front ends deciding visibility from `show_marks` alone
 
 ### Flows and steps
