@@ -211,7 +211,9 @@ or
 zig test src/entry_native.zig -lc
 - don't pass --summary it does nothing
 - for full console output (not server-mode) use the `zig test` form above
-- to filter a single test: `zig build test -Dtest-filter='exact test name'` (hyphen, not underscore)
+- **`zig build verify` is the gate and runs every test.** A test counts as passing only from a run whose output shows its name.
+- **Never filter from `src/entry_native.zig`** (`-Dtest-filter`, `--test-filter`): a file's tests are only found when a running test calls into it, so a filter can match nothing and still exit 0. `-Dtest-filter` is for single `android-test` methods.
+- **One Zig test on its own:** a temporary root in `src/` that imports the test's file (a root inside a subfolder cannot import `../`), e.g. `src/_one_test.zig` with `test { _ = @import("core/engine/pencil.zig"); }`, then `zig test src/_one_test.zig -lc --test-filter "<name>"`; check the name in the output, then delete the root.
 ## zig version
 zig -version
 # ANSWERING
