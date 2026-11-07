@@ -106,6 +106,7 @@ The terminal `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is **set
    - **HARD RULE (MANDATORY):** No undocumented public symbol is allowed in committed code. This applies to `pub fn`, `pub const` type declarations, and public fields that are not self-evident.
    - **HARD RULE (MANDATORY):** Any non-obvious logic block added or modified must include a short signpost comment explaining intent/constraint (what and why, not line-by-line narration).
 2. **DRY** — Don't repeat yourself. Extract duplication into shared helpers or functions as soon as repetition is obvious. No copy-paste logic; if two renderers share code, it lives in one place.
+ - **Shotgun plumbing is a smell — say so.** When a change edits several files the same mechanical way (one more argument, field, command tag or JSON key carried through each layer), stop before finishing it and tell the user, with the count (`rg -l <name> src | wc -l`). Propose the missing vehicle (one value carried end to end) even when the rule being followed requires the plumbing; do not widen the current issue without asking.
 3. **SOLID principles:**
    - **S**ingle Responsibility — a module has one reason to change. GameEngine orchestrates commands; Validator checks rules; Renderer draws output. Keep these roles distinct.
    - **O**pen/Closed — extend behavior by adding new implementations (renderers, puzzle sources), not modifying existing ones. When duplication exists, abstract behind interfaces.
