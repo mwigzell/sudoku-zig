@@ -91,6 +91,15 @@ public final class FileBridgeTest {
     private static final Pattern BOUNDS = Pattern.compile("\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]");
     private static final String COLUMN_LABELS = "ABCDEFGHI";
     private static final String FILL_DIGIT = "5";
+    /** The marks' CSS floor (8px, which is 8dp in a WebView): the smallest a mark may be drawn. */
+    private static final int MARK_FLOOR_DP = 8;
+    private static final int DIGIT_COUNT = 9;
+    private static final int MARK_GRID = 3;
+    /** How far a pixel's RGB sum must differ from its slot's background to count as a mark's ink. */
+    private static final int INK_CONTRAST = 150;
+    /** Screen reads while the marks draw: few and spaced, since each is a full-screen capture. */
+    private static final int MARK_SCREEN_READS = 5;
+    private static final long MARK_SCREEN_READ_GAP_MS = 1_000;
     // Page ids: the prompt dialog (core's question, its cancel button on the left, its answer on the right)
     // and the file label in the menu bar.
     private static final String ASK_TEXT = "prompt-dialog-text";
@@ -695,6 +704,62 @@ public final class FileBridgeTest {
         need(By.res(PICKER_SAVE), UI_WAIT_MS).click();
     }
 
+    @Test
+    public void pencilModeMarksACellWithAllNineMarksInsideItAtLeastTheFloorSize() throws IOException {
+        launchApp();
+        startEasyGame();
+        final int[] cell = firstEmptyCellCenter();
+        device.click(cell[0], cell[1]);
+        final UiObject2 pad = need(By.res("play-pad"), UI_WAIT_MS);
+        pad.findObject(By.text("Pencil")).click();
+        for (int d = 1; d <= DIGIT_COUNT; d++) {
+            need(By.res("play-pad"), UI_WAIT_MS).findObject(By.text(String.valueOf(d))).click();
+        }
+        final int half = cell[2] / 2;
+        final Rect cellRect = new Rect(cell[0] - half, cell[1] - half, cell[0] + half, cell[1] + half);
+        final int floorPx = Math.round(MARK_FLOOR_DP * Resources.getSystem().getDisplayMetrics().density);
+        assertTrue("a mark's slot in " + cellRect + " is under " + floorPx + "px", cellRect.width() / MARK_GRID >= floorPx);
+        // WebView does not report a cell's marks to accessibility, so read them off the screen.
+        int inked = 0;
+        for (int read = 0; read < MARK_SCREEN_READS && inked < DIGIT_COUNT; read++) {
+            device.waitForIdle();
+            SystemClock.sleep(MARK_SCREEN_READ_GAP_MS);
+            inked = inkedMarkSlots(cellRect);
+        }
+        assertEquals("marks drawn in the nine slots of " + cellRect, DIGIT_COUNT, inked);
+    }
+
+    /** How many of the cell's nine mark slots have ink in their middle, against the slot's own corner as background. */
+    private int inkedMarkSlots(Rect cellRect) {
+        final Bitmap frame = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+        assertNotNull("no screenshot", frame);
+        final int slot = cellRect.width() / MARK_GRID;
+        final int inset = slot / 4;
+        int inked = 0;
+        for (int k = 0; k < DIGIT_COUNT; k++) {
+            final int left = cellRect.left + (k % MARK_GRID) * slot;
+            final int top = cellRect.top + (k / MARK_GRID) * slot;
+            final int background = rgbSum(frame.getPixel(left + inset / 2, top + inset / 2));
+            boolean ink = false;
+            for (int y = top + inset; y < top + slot - inset && !ink; y++) {
+                for (int x = left + inset; x < left + slot - inset && !ink; x++) {
+                    ink = Math.abs(rgbSum(frame.getPixel(x, y)) - background) > INK_CONTRAST;
+                }
+            }
+            if (ink) inked++;
+        }
+        frame.recycle();
+        return inked;
+    }
+
+    /** One window hierarchy snapshot, parsed. */
+    private List<SnapshotNode> windowNodes() throws IOException {
+        device.waitForIdle();
+        final ByteArrayOutputStream xml = new ByteArrayOutputStream();
+        device.dumpWindowHierarchy(xml);
+        return SnapshotNode.parse(xml.toString(StandardCharsets.UTF_8.name()));
+    }
+
     /** Tap the first empty cell not yet tapped (found from the row and column labels) and enter a digit on the play pad. */
     private void fillAnEmptyCell() throws IOException {
         final int[] cell = firstEmptyCellCenter();
@@ -703,16 +768,16 @@ public final class FileBridgeTest {
         need(By.res("play-pad"), UI_WAIT_MS).findObject(By.text(FILL_DIGIT)).click();
     }
 
-    /** Read one hierarchy snapshot (live WebView nodes are replaced while the board redraws); a snapshot taken mid-rebuild may lack the board, so take another. */
+    /**
+     * The first empty cell not yet tapped, as {centre x, centre y, cell pitch}. Reads one hierarchy snapshot (live WebView
+     * nodes are replaced while the board redraws); a snapshot taken mid-rebuild may lack the board, so take another.
+     */
     private int[] firstEmptyCellCenter() throws IOException {
         final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
         List<SnapshotNode> nodes;
         Rect board;
         do {
-            device.waitForIdle();
-            final ByteArrayOutputStream xml = new ByteArrayOutputStream();
-            device.dumpWindowHierarchy(xml);
-            nodes = SnapshotNode.parse(xml.toString(StandardCharsets.UTF_8.name()));
+            nodes = windowNodes();
             board = null;
             for (SnapshotNode n : nodes) {
                 if ("board".equals(n.resourceId)) board = n.bounds;
@@ -736,7 +801,7 @@ public final class FileBridgeTest {
         for (int y : rowY) {
             for (int x : columnX) {
                 if (x == 0 || y == 0) fail("board labels are not all shown");
-                if (!containsPoint(filled, x, y) && !tappedCells.contains(x + "," + y)) return new int[] { x, y };
+                if (!containsPoint(filled, x, y) && !tappedCells.contains(x + "," + y)) return new int[] { x, y, columnX[1] - columnX[0] };
             }
         }
         fail("the board has no empty cell");
