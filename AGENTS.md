@@ -92,11 +92,11 @@ Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 
 ### Native renderer facade seam
 
-The terminal `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is **settled**. Web play does not use it (wasm JSON + JS menubar).
+The `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is the **terminal's** renderer seam only. Web and Android do not use it: they draw from core's wasm JSON. It was once meant to be the command API shared by every front end; that never happened, so nothing about it needs to stay frozen for other front ends.
 
-- **Change the vtable only** when a new *kind* of Sudoku→renderer interaction is needed (a new method), not to model config or menu state more neatly.
-- **Menu and Settings UI** need live prefs (region, warn, difficulty, theme, log level, …). Pass them as **extra scalar parameters on the existing `getCommandInput` call** — `Sudoku.turn()` copies from `engine.getConfig()` each turn. Ugly parameter lists are fine; they keep the seam explicit.
-- **Do not** introduce facade-side config structs (e.g. bundled “menu prefs” types), sync hooks, or renderer-held config pointers to avoid lengthening that parameter list.
+- **Add a method** when a new *kind* of interaction is needed; reshape an existing method when its arguments belong together.
+- **Arguments are values core builds for that call.** A struct is the right shape when its fields travel together (one draw's state, the current settings); a long list of scalars that always move as a group is a smell (see "Shotgun plumbing" below).
+- **The renderer holds no pointer to core state** and gets no hooks pushing changes to it; it receives values per call and returns the player's input.
 - **Product rule:** every field in `settings.json` must be editable in-app on each supported platform. Renderer choice is **not** in that file — use CLI (`-r`) per run. Native edits flow as `Command` results from the menu path, then persist like today.
 
 ## Coding standards
