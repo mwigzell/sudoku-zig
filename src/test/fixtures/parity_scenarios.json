@@ -385,7 +385,122 @@
       ],
       "expect": {
         "questions": 0,
-        "written": []
+        "written": [],
+        "nothing_selected": true
+      }
+    },
+    {
+      "name": "fill_selects_cell_and_shades_region",
+      "summary": "A fill selects its cell; with Show Region on, its row, column and box are shaded.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"toggle_region": true},
+        {"select": {"row": 4, "col": 4}},
+        {"fill": {"row": 0, "col": 0, "digit": 4}}
+      ],
+      "expect": {
+        "errors": 0,
+        "selected": {"row": 0, "col": 0}
+      }
+    },
+    {
+      "name": "mark_selects_cell",
+      "summary": "In Pencil mode a digit selects the cell it marks.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"select": {"row": 0, "col": 0}},
+        {"toggle_pencil_mode": true},
+        {"fill": {"row": 4, "col": 5, "digit": 2}}
+      ],
+      "expect": {
+        "errors": 0,
+        "selected": {"row": 4, "col": 5}
+      }
+    },
+    {
+      "name": "undo_redo_select_cell_they_change",
+      "summary": "Undo and Redo of a move select the cell they change, wherever the selection was.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"select": {"row": 8, "col": 8}},
+        {"undo": true},
+        {"select": {"row": 8, "col": 8}},
+        {"redo": true}
+      ],
+      "expect": {
+        "errors": 0,
+        "legend": {"undo": true, "redo": false},
+        "selected": {"row": 0, "col": 0}
+      }
+    },
+    {
+      "name": "hint_leaves_selection",
+      "summary": "A board-wide hint leaves the selected cell selected.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"toggle_region": true},
+        {"select": {"row": 4, "col": 4}},
+        {"hint": true}
+      ],
+      "expect": {
+        "errors": 0,
+        "selected": {"row": 4, "col": 4}
+      }
+    },
+    {
+      "name": "solve_and_its_undo_leave_selection",
+      "summary": "Solve and the Undo of a Solve leave the selected cell selected.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"select": {"row": 4, "col": 4}},
+        {"solve": true},
+        {"undo": true}
+      ],
+      "expect": {
+        "errors": 0,
+        "selected": {"row": 4, "col": 4}
+      }
+    },
+    {
+      "name": "refused_move_leaves_selection",
+      "summary": "A move refused on a given shows core's error and leaves the selection where it was.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"select": {"row": 4, "col": 4}},
+        {"fill": {"row": 0, "col": 2, "digit": 1}}
+      ],
+      "expect": {
+        "errors": 1,
+        "selected": {"row": 4, "col": 4}
+      }
+    },
+    {
+      "name": "paste_drops_selection",
+      "summary": "Pasting a puzzle loads a new game with nothing selected.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"toggle_region": true},
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"paste": "483921657967345821251876493548132976729564138136798245372689514814253769695417380"}
+      ],
+      "expect": {
+        "errors": 0,
+        "nothing_selected": true
+      }
+    },
+    {
+      "name": "open_drops_selection",
+      "summary": "Opening a saved game loads it with nothing selected.",
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "steps": [
+        {"toggle_region": true},
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"open": {"name": "saved.sud", "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300", "moves": [{"row": 0, "col": 1, "digit": 8}]}}
+      ],
+      "expect": {
+        "errors": 0,
+        "nothing_selected": true
       }
     },
     {

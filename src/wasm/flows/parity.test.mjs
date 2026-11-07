@@ -626,6 +626,9 @@ function finalState(run, ui) {
     redo: legend.redo,
     file: baseName(session.boundFilename),
     status: ui.statusEl.textContent || null,
+    // The page draws the selection and its region from the session's snapshot.
+    selected: session.state.selected,
+    region: session.state.region,
     config: {
       difficulty: DIFFICULTY_NAMES[config.difficulty],
       log_level: LOG_LEVEL_NAMES[config.log_level],
@@ -656,6 +659,9 @@ function checkExpect(expect, events, world, run) {
     assert.equal(c.given, p.given, `probe ${p.row},${p.col} given`);
     if (p.marks !== undefined) assert.equal(c.marks, p.marks, `probe ${p.row},${p.col} marks`);
   }
+  const selected = run.session.state.selected ?? null;
+  if (expect.selected) assert.deepEqual(selected, expect.selected, "selected cell");
+  if (expect.nothing_selected) assert.equal(selected, null, "nothing selected");
 }
 
 const isSolved = (state) => state.cells.every((c) => c.value !== 0 && !c.conflict);

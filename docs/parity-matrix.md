@@ -25,7 +25,7 @@ Each event is one step core issued, with the fields that matter for it, and the 
 | `forget_current_file` | `delete` |
 | `show_status` | `text` |
 
-The final state is the board's cells and givens, whether Undo and Redo are offered, the session's file, the status bar and every setting.
+The final state is the board's cells and givens, whether Undo and Redo are offered, the session's file, the status bar, the selected cell and the shaded region the board is drawn with, and every setting. Native reads the selection and region from the last frame the terminal drew; web and Android from the snapshot the page draws.
 
 Two steps differ only in how the terminal takes its input, so they are left out when comparing with native: `paste_puzzle` (the terminal's Paste carries its line) and the `resolve_default_target` before `save_as` (the terminal's Save As carries its file name).
 
@@ -42,6 +42,8 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `settings` | Stored settings fields after the steps. |
 | `legend` | Whether Undo / Redo are offered after the steps. |
 | `probes` | Cell value and given flag after the steps. |
+| `selected` | The cell drawn as selected after the steps. |
+| `nothing_selected` | No cell is drawn as selected after the steps. |
 
 ## Completeness
 
@@ -72,6 +74,14 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `solve_undo_restores_marks` | Undo of a Solve empties the cells it filled and puts back the marks it cleared. | native, web, android | — |
 | `hint_leaves_marks` | A hint on a marked cell leaves its marks as they were. | native, web, android | — |
 | `select_deselect_writes_nothing` | Selecting and deselecting a cell runs through core and never writes the game file, with Auto Save on. | native, web, android | — |
+| `fill_selects_cell_and_shades_region` | A fill selects its cell; with Show Region on, its row, column and box are shaded. | native, web, android | — |
+| `mark_selects_cell` | In Pencil mode a digit selects the cell it marks. | native, web, android | — |
+| `undo_redo_select_cell_they_change` | Undo and Redo of a move select the cell they change, wherever the selection was. | native, web, android | — |
+| `hint_leaves_selection` | A board-wide hint leaves the selected cell selected. | native, web, android | — |
+| `solve_and_its_undo_leave_selection` | Solve and the Undo of a Solve leave the selected cell selected. | native, web, android | — |
+| `refused_move_leaves_selection` | A move refused on a given shows core's error and leaves the selection where it was. | native, web, android | — |
+| `paste_drops_selection` | Pasting a puzzle loads a new game with nothing selected. | native, web, android | — |
+| `open_drops_selection` | Opening a saved game loads it with nothing selected. | native, web, android | — |
 | `relaunch_restores_marks_and_their_undo` | Marks autosaved with Auto Save on come back on the next launch, and undoing a fill made before it puts back the marks the fill cleared. | native, web, android | — |
 | `clear_removes_marks` | Clear on an empty cell with marks removes them all and autosaves. | native, web, android | — |
 | `hint_reports_and_autosaves` | A hint shows its text in the status line, leaves the hinted cell empty, and autosaves like any other command. | native, web, android | — |

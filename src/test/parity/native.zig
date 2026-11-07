@@ -113,6 +113,10 @@ const Expect = struct {
     settings: ?Settings = null,
     legend: ?Legend = null,
     probes: []const Probe = &.{},
+    /// The cell drawn as selected after the steps.
+    selected: ?CellAt = null,
+    /// Nothing is drawn as selected after the steps.
+    nothing_selected: ?bool = null,
 };
 
 /// An entry that cannot run the scenario yet; the drift check requires the gap and an open issue.
@@ -193,6 +197,10 @@ const Final = struct {
     redo: bool,
     file: ?[]const u8,
     status: ?[]const u8,
+    /// The selected cell the board was last drawn with.
+    selected: ?CellAt,
+    /// The shaded cells' indices (row * 9 + col) the board was last drawn with.
+    region: ?[]const usize,
     config: FinalConfig,
 };
 
@@ -207,6 +215,8 @@ const Recorder = struct {
     /// The command the next `turn` reads.
     pending: ?command.Command = null,
     last_status: ?[]const u8 = null,
+    last_selected: ?CellAt = null,
+    last_region: ?[]const usize = null,
     recording: bool = true,
 
     fn asFacade(self: *Recorder) facade_mod.Facade {
@@ -217,9 +227,18 @@ const Recorder = struct {
         return .{ .ctx = @ptrCast(self), .onStep = onStep };
     }
 
-    /// Keeps the status line the board was last drawn with, for the final state.
+    /// Keeps the status line, selection and region the board was last drawn with, for the final state.
     pub fn render(self: *Recorder, frame: facade_mod.Frame) !void {
         self.last_status = if (frame.status) |m| (if (m.len == 0) null else self.text(m) catch return error.System) else null;
+        self.last_selected = if (frame.selected) |s| .{ .row = s.row, .col = s.col } else null;
+        self.last_region = if (frame.region) |mask| self.regionCells(mask) catch return error.System else null;
+    }
+
+    /// The indices of the cells `mask` shades, in board order.
+    fn regionCells(self: *Recorder, mask: board.CellMask) ![]const usize {
+        var cells: std.ArrayListUnmanaged(usize) = .empty;
+        for (0..board.CELL_COUNT) |i| if (mask & board.indexBit(i) != 0) try cells.append(self.arena, i);
+        return cells.items;
     }
 
     /// The legend is read from the engine at the end, not from the screen.
@@ -462,6 +481,8 @@ fn finalState(arena: std.mem.Allocator, app: *shell.Sudoku, recorder: *Recorder)
         .redo = legend.redo,
         .file = if (app.file_session.currentFile()) |f| try arena.dupe(u8, std.fs.path.basename(f)) else null,
         .status = recorder.last_status,
+        .selected = recorder.last_selected,
+        .region = recorder.last_region,
         .config = .{
             .difficulty = @tagName(cfg.difficulty),
             .log_level = @tagName(cfg.log_level),
@@ -524,12 +545,12 @@ fn runScenario(arena: std.mem.Allocator, io: std.Io, data_dir: []const u8, scena
 
     const written = try arena.alloc([]const u8, transport.written.items.len);
     for (transport.written.items, written) |path, *name| name.* = try arena.dupe(u8, std.fs.path.basename(path));
-    try checkExpect(io, settings_dir, scenario.expect, recorder.events.items, written, &app);
+    try checkExpect(io, settings_dir, scenario.expect, recorder.events.items, written, &app, &recorder);
     return .{ .name = scenario.name, .events = recorder.events.items, .final = try finalState(arena, &app, &recorder) };
 }
 
 /// The scenario's own expectations, checked here as the web and Android runs check them.
-fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const Event, written: []const []const u8, app: *shell.Sudoku) !void {
+fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const Event, written: []const []const u8, app: *shell.Sudoku, recorder: *const Recorder) !void {
     var questions: usize = 0;
     var errors: usize = 0;
     for (events) |e| if (e.buttons) |b| {
@@ -561,6 +582,8 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         try std.testing.expectEqual(p.given, view.isGiven(row, col));
         if (p.marks) |want| try std.testing.expectEqual(want, view.marks(row, col));
     }
+    if (expect.selected) |want| try std.testing.expectEqual(@as(?CellAt, want), recorder.last_selected);
+    if (expect.nothing_selected != null) try std.testing.expectEqual(@as(?CellAt, null), recorder.last_selected);
 }
 
 /// Every command reaches core in some scenario, or is named as one no flow runs for.
