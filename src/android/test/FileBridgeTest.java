@@ -334,7 +334,8 @@ public final class FileBridgeTest {
         final List<MediaEntry> entries = defaultOrRenamedEntries();
         assertEquals("only the earlier install's file: " + entries, 1, entries.size());
         assertEquals(DEFAULT_NAME, entries.get(0).name);
-        assertEquals("no renamed copy on disk", DEFAULT_PATH + "\n", sh("ls " + SAVE_DIR + "/*.sud\n"));
+        // Only renamed copies count: the player's own files may share the folder.
+        assertEquals("no renamed copy on disk", "", sh("ls " + SAVE_DIR + "/sudoku\\ \\(*\\).sud 2>/dev/null\n"));
         assertEquals("the earlier file is untouched", earlierHash, fileHash(DEFAULT_PATH));
         assertEquals("nothing is bound before the user answers", "", boundNameNow());
     }
