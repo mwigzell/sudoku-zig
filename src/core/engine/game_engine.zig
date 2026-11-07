@@ -74,6 +74,9 @@ pub const GameEngine = struct {
     pencil_mode: bool = false,
     /// The last command set or removed a mark (a mark, or its Undo or Redo).
     marks_changed: bool = false,
+    /// The selected cell: the last cell a move changed (fill, clear, mark, or their Undo or Redo).
+    /// Loading a game drops it; Hint, Solve and refused moves leave it. Session state, never saved.
+    selected: ?event.CellCoord = null,
 
     fn applySolvabilityWarningsFromConfig(self: *@This()) void {
         self.warn_dead_moves = self.cfg.warn_solvability;
@@ -167,6 +170,7 @@ pub const GameEngine = struct {
         self.state.history = loaded.history;
         self.state.status = loaded.status;
         self.state.board.validate();
+        self.selected = null;
     }
 
     /// Open from SUD0 bytes — the core open command calls this on every platform.
@@ -194,6 +198,7 @@ pub const GameEngine = struct {
         self.state.history.deinit();
         self.state.history = MutationHistory.init(std.heap.page_allocator);
         self.state.board = imported;
+        self.selected = null;
     }
 
     /// The game as a puzzle: the board's cell values as 81 characters, `0` for an empty cell.
@@ -286,6 +291,7 @@ pub const GameEngine = struct {
     }
 
     /// Build `.ok` using accumulated msg (null when nothing was appended).
+    /// A non-null `edited_cell` becomes the selection.
     pub fn finishOkEvent(
         self: *@This(),
         view: board.Board.BoardView,
@@ -293,6 +299,7 @@ pub const GameEngine = struct {
         edited_cell: ?event.CellCoord,
         clear_when_empty: bool,
     ) Event {
+        if (edited_cell) |c| self.selected = c;
         if (self.event_msg.optional()) |msg| {
             self.state.status.reset();
             self.state.status.append(msg);
@@ -836,6 +843,53 @@ test "exec fill non-given cell → .ok" {
     _ = try expectOk(execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
+}
+
+fn expectSelected(engine: *const GameEngine, row: u4, col: u4) !void {
+    try std.testing.expectEqual(@as(?event.CellCoord, .{ .row = row, .col = col }), engine.selected);
+}
+
+test "a fill, clear or mark selects its cell; Undo and Redo select the cell they change" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    try std.testing.expectEqual(@as(?event.CellCoord, null), engine.selected);
+
+    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
+    try expectSelected(&engine, 0, 0);
+    _ = try expectOk(execTest(&engine, .{ .pencil = .{ .row = 0, .col = 1, .digit = .eight } }));
+    try expectSelected(&engine, 0, 1);
+    _ = try expectOk(execTest(&engine, .{ .undo = {} }));
+    try expectSelected(&engine, 0, 1);
+    _ = try expectOk(execTest(&engine, .{ .undo = {} }));
+    try expectSelected(&engine, 0, 0);
+    _ = try expectOk(execTest(&engine, .{ .redo = {} }));
+    try expectSelected(&engine, 0, 0);
+    _ = try expectOk(execTest(&engine, .{ .redo = {} }));
+    try expectSelected(&engine, 0, 1);
+    _ = try expectOk(execTest(&engine, .{ .clear = .{ .row = 0, .col = 0 } }));
+    try expectSelected(&engine, 0, 0);
+}
+
+test "Hint, Solve and a refused move leave the selection; loading a game drops it" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+
+    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
+    _ = execTest(&engine, .{ .hint = .{} });
+    try expectSelected(&engine, 0, 0);
+    try expectErrorResult(execTest(&engine, .{ .fill = .{ .row = 0, .col = 2, .digit = .nine } }));
+    try expectSelected(&engine, 0, 0);
+    _ = try expectOk(execTest(&engine, .{ .solve_for_me = {} }));
+    try expectSelected(&engine, 0, 0);
+
+    const saved = try engine.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(saved);
+    try engine.fromSaveFormat(saved);
+    try std.testing.expectEqual(@as(?event.CellCoord, null), engine.selected);
+
+    _ = try expectOk(execTest(&engine, .{ .clear = .{ .row = 0, .col = 0 } }));
+    try engine.applyOneLinePuzzle(puzzle_gen.PuzzleGen.easy());
+    try std.testing.expectEqual(@as(?event.CellCoord, null), engine.selected);
 }
 
 test "exec fill given cell → .error_msg" {

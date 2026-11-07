@@ -33,9 +33,10 @@ pub const Frame = struct {
     }
 };
 
-/// Build the frame for the engine's current game, with this status line and selected cell.
-pub fn build(engine: *game_engine.GameEngine, status: ?[]const u8, selected: ?event.CellCoord) Frame {
+/// Build the frame for the engine's current game and selection, with this status line.
+pub fn build(engine: *game_engine.GameEngine, status: ?[]const u8) Frame {
     const show_region = engine.getConfig().show_region;
+    const selected = engine.selected;
     return .{
         .board = engine.eventBoard(),
         .status = status,
@@ -54,7 +55,8 @@ test "the frame shades the selected cell's row, column and box only while Show R
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
     defer engine.deinit();
 
-    const on = build(&engine, null, .{ .row = 4, .col = 4 });
+    engine.selected = .{ .row = 4, .col = 4 };
+    const on = build(&engine, null);
     try std.testing.expect(on.isSelected(4, 4));
     try std.testing.expect(on.inRegion(4, 0));
     try std.testing.expect(on.inRegion(0, 4));
@@ -62,7 +64,7 @@ test "the frame shades the selected cell's row, column and box only while Show R
     try std.testing.expect(!on.inRegion(0, 0));
 
     engine.cfg.show_region = false;
-    const off = build(&engine, null, .{ .row = 4, .col = 4 });
+    const off = build(&engine, null);
     try std.testing.expect(off.isSelected(4, 4));
     try std.testing.expectEqual(@as(?board.CellMask, null), off.region);
 }
@@ -71,7 +73,7 @@ test "the frame carries the status line and core's marks_visible; nothing select
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
-    const frame = build(&engine, "status line 1", null);
+    const frame = build(&engine, "status line 1");
     try std.testing.expectEqualStrings("status line 1", frame.status.?);
     try std.testing.expectEqual(engine.marksVisible(), frame.marks_visible);
     try std.testing.expectEqual(@as(?board.CellMask, null), frame.region);

@@ -247,7 +247,6 @@ const Recorder = struct {
         _: bool,
         _: bool,
         _: bool,
-        _: ?facade_mod.Selection,
     ) !command.ParseCommandResult {
         const cmd = self.pending orelse return .{ .valid = .{ .quit = {} } };
         self.pending = null;

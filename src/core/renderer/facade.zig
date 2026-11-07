@@ -1,15 +1,11 @@
 const command = @import("../command.zig");
 const config = @import("../config.zig");
 const logger = @import("../logger.zig");
-const event = @import("../event.zig");
 const legend = @import("legend.zig");
 const flow_step = @import("../flow/step.zig");
 const frame_mod = @import("../frame.zig");
 const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const Legend = legend.Legend;
-
-/// A cell named across the seam (the Menu's hint target).
-pub const Selection = event.CellCoord;
 
 /// One draw's worth of state, built by core (`frame.build`).
 pub const Frame = frame_mod.Frame;
@@ -55,7 +51,6 @@ pub const Facade = struct {
         auto_restore: bool,
         auto_new: bool,
         auto_save: bool,
-        hint_target: ?Selection,
     ) Error!command.ParseCommandResult,
 
     report_gen_progress_fn: *const fn (*anyopaque, puzzle_gen.GenProgressEvent) Error!void,
@@ -93,9 +88,8 @@ pub const Facade = struct {
         auto_restore: bool,
         auto_new: bool,
         auto_save: bool,
-        hint_target: ?Selection,
     ) Error!command.ParseCommandResult {
-        return self.getCommandInput_fn(self.context, names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target);
+        return self.getCommandInput_fn(self.context, names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save);
     }
 
     /// Live puzzle generation feedback (native terminal); not gameplay `Event` status.
@@ -142,10 +136,9 @@ pub fn Make(comptime CT: type) type {
             auto_restore: bool,
             auto_new: bool,
             auto_save: bool,
-            hint_target: ?Selection,
         ) Error!command.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save, hint_target) catch error.System;
+            return self.getCommandInput(names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save) catch error.System;
         }
 
         /// Forward generator progress events through the facade seam.

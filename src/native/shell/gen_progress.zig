@@ -3,7 +3,6 @@ const std = @import("std");
 const facade_mod = @import("../../core/renderer/facade.zig");
 const command = @import("../../core/command.zig");
 const config = @import("../../core/config.zig");
-const event_mod = @import("../../core/event.zig");
 const legend_mod = @import("../../core/renderer/legend.zig");
 const logger = @import("../../core/logger.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
@@ -40,7 +39,6 @@ const ProgressRecorder = struct {
         _: bool,
         _: bool,
         _: bool,
-        _: ?event_mod.CellCoord,
     ) facade_mod.Error!command.ParseCommandResult {
         return .{ .valid = .{ .quit = {} } };
     }

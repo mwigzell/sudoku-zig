@@ -151,12 +151,12 @@ test "host: createForTest .ascii preference yields a working facade" {
     // Working facade: renders a real board view without error
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
-    try f.render(frame_mod.build(&engine, null, null));
+    try f.render(frame_mod.build(&engine, null));
 
     // And the injected mock reader drives the command parse path:
     // "fill A3 4" must round-trip into the very fill command it denotes
     // (names = the set of commands offered to the parser; a lone "Fill" is unambiguous).
-    const parsed = try f.getCommandInput(&.{"Fill"}, false, true, false, .easy, .info, .dark, false, false, false, null);
+    const parsed = try f.getCommandInput(&.{"Fill"}, false, true, false, .easy, .info, .dark, false, false, false);
     switch (parsed) {
         .error_msg => return error.ExpectedValidParse,
         .valid => |c| {
@@ -186,7 +186,7 @@ test "host: .tui preference falls back to .ascii and yields a working facade" {
     // Working fallback facade renders a real board view through its session.
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
-    try f.render(frame_mod.build(&engine, null, null));
+    try f.render(frame_mod.build(&engine, null));
 }
 
 test "host: both arms unsupported errors without building a terminal session" {

@@ -109,7 +109,6 @@ fn ctx(S: type) type {
             auto_restore: bool,
             auto_new: bool,
             auto_save: bool,
-            hint_target: ?facade.Selection,
         ) facade.Error!command.ParseCommandResult {
             return self.renderer.getCommandInput(
                 names,
@@ -122,7 +121,6 @@ fn ctx(S: type) type {
                 auto_restore,
                 auto_new,
                 auto_save,
-                hint_target,
             );
         }
 

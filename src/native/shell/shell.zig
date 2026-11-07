@@ -33,7 +33,6 @@ pub const Sudoku = struct {
     renderer: facade_mod.Facade,
     storage: storage_mod.Storage,
     out: *std.Io.Writer,
-    last_cell: ?facade_mod.Selection = null,
     file_session: flow_mod.FileSession = .{},
     /// The one flow in progress; terminal step text points into it until the next flow starts.
     flow: flow_mod.Flow = undefined,
@@ -151,15 +150,13 @@ pub const Sudoku = struct {
         }
     }
 
-    /// Carry out a `show_game` step: draw what core reports, remembering the edited cell for region shading.
+    /// Carry out a `show_game` step: draw what core reports.
     /// A loaded game's file is also remembered for the next launch.
     fn showStep(self: *@This(), game: flow_mod.step.ShowGame) Error!void {
         if (game.loaded) {
-            self.last_cell = null;
             if (game.file) |file| self.storage.persistCurrentFile(file);
         }
-        if (game.cell) |c| self.last_cell = c;
-        try self.renderer.render(frame_mod.build(&self.engine, game.status, self.last_cell));
+        try self.renderer.render(frame_mod.build(&self.engine, game.status));
         try self.renderer.showLegend(game.legend);
     }
 
@@ -168,9 +165,8 @@ pub const Sudoku = struct {
     fn handleEvent(self: *@This(), event: game_engine.Event) Error!bool {
         switch (event) {
             .ok => |ev| {
-                if (ev.cell) |c| self.last_cell = c;
                 if (ev.is_quit) return true;
-                try self.renderer.render(frame_mod.build(&self.engine, ev.msg, self.last_cell));
+                try self.renderer.render(frame_mod.build(&self.engine, ev.msg));
                 try self.renderer.showLegend(self.engine.getLegend());
                 return false;
             },
@@ -215,7 +211,6 @@ pub const Sudoku = struct {
             self.engine.cfg.auto_restore,
             self.engine.cfg.auto_new,
             self.engine.cfg.auto_save,
-            self.last_cell,
         ) catch return error.System;
         return try self.handleResult(result);
     }
@@ -227,7 +222,7 @@ pub const Sudoku = struct {
 
     /// First-screen render variant that allows a startup status line.
     pub fn showGameWithStatus(self: *@This(), status_msg: ?[]const u8) Error!void {
-        try self.renderer.render(frame_mod.build(&self.engine, status_msg, self.last_cell));
+        try self.renderer.render(frame_mod.build(&self.engine, status_msg));
         try self.renderer.showLegend(self.engine.getLegend());
     }
 
@@ -320,7 +315,6 @@ const DeterministicFacade = struct {
         _: bool,
         _: bool,
         _: bool,
-        _: ?facade_mod.Selection,
     ) !command.ParseCommandResult {
         if (self.idx >= self.steps.len) return .{ .valid = .{ .quit = {} } };
         const step = self.steps[self.idx];
@@ -1163,7 +1157,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     const first_board_end = std.mem.indexOf(u8, contents, board_marker) orelse return error.TestFailed;
     const after_fill = contents[0 .. first_board_end + board_marker.len];
     try std.testing.expect(std.mem.indexOf(u8, after_fill, region_on) == null);
-    try std.testing.expect(sudoku.last_cell != null);
+    try std.testing.expect(sudoku.engine.selected != null);
     try std.testing.expect(sudoku.engine.cfg.show_region);
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);
 }
