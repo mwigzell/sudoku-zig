@@ -14,7 +14,7 @@
 - Noted, not fixed: digit keys still reach the board while the generating dialog is open (filled A1 in the demo).
 - Step 7 (Android): FileBridgeTest#pencilModeMarksACellWithAllNineMarksInsideItAtLeastTheFloorSize — Pencil + 1..9 on
   an empty cell; WebView does not expose marks to accessibility, so it reads the screen: ink in each of the nine slots,
-  slot >= 8dp. Runs on the Pixel 8 as is (user dropped the 360dp resize; #107 criterion reworded and ticked).
+  slot >= 8dp. Passed on the Pixel 8 and on a 360dp phone (720x1280 @320) (user dropped the 360dp resize; #107 criterion reworded and ticked).
   Few, spaced screen reads (5 × 1s): an earlier 250ms screenshot poll coincided with the emulator going offline.
 - Noted: marks are not read by screen readers (WebView a11y) — candidate issue.
 - Next: step 8 (parity fixtures, CONTEXT.md, verify/glue/android-test green; user runs full android-test) — wait for user.
