@@ -207,6 +207,7 @@ test "marks are visible with the setting on, in Pencil mode, or right after a ma
     _ = engine.exec(.{ .toggle_pencil_mode = {} });
     try std.testing.expect(!engine.marksVisible());
 
-    _ = engine.exec(.{ .toggle_show_marks = {} });
+    cfg.show_marks = true;
+    engine.useConfig(cfg);
     try std.testing.expect(engine.marksVisible());
 }

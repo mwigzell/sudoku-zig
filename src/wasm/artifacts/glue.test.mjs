@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import * as glue from "./glue.js";
-import { openBytes, startNewGame } from "../test_support.mjs";
+import { openBytes, runConfigCommand, startNewGame } from "../test_support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifact.wasm"));
@@ -18,7 +18,7 @@ const EASY_FIXTURE =
 
 assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
-// ── host startup config (CLI / disk analogue) drives GameEngine.cfg ──
+// ── host startup config (CLI / disk analogue) drives the Config ──
 {
   const hostGame = await glue.loadArtifact(wasmBytes);
   const boot = hostGame.bootstrapHostConfig({
@@ -230,13 +230,11 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(config.show_region, false);
   assert.equal(config.warn_solvability, false);
 
-  const light = game.exec({ action: "set_theme", theme: "light" });
-  assert.equal(light.ok, true);
+  runConfigCommand(game, { action: "set_theme", theme: "light" });
   config = game.getConfig();
   assert.equal(config.theme, "light");
 
-  const region = game.exec({ action: "toggle_region" });
-  assert.equal(region.ok, true);
+  runConfigCommand(game, { action: "toggle_region" });
   config = game.getConfig();
   assert.equal(config.show_region, true);
 }
@@ -271,7 +269,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const dead = await glue.loadArtifact(wasmBytes);
   assert.equal(dead.init({ difficulty: 1 }).ok, true);
-  assert.equal(dead.exec({ action: "toggle_warn_solvability" }).ok, true);
+  runConfigCommand(dead, { action: "toggle_warn_solvability" });
   assert.equal(startNewGame(dead, EASY_FIXTURE).loaded, true);
   const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(bad.ok, true);
@@ -282,13 +280,13 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 
   const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init({ difficulty: 1 }).ok, true);
-  assert.equal(fresh.exec({ action: "toggle_warn_solvability" }).ok, true);
+  runConfigCommand(fresh, { action: "toggle_warn_solvability" });
   const loaded = openBytes(fresh, saved.bytes);
   assert.match(loaded.text ?? "", /no solution/i);
 
   const named = await glue.loadArtifact(wasmBytes);
   assert.equal(named.init({ difficulty: 1 }).ok, true);
-  assert.equal(named.exec({ action: "toggle_warn_solvability" }).ok, true);
+  runConfigCommand(named, { action: "toggle_warn_solvability" });
   const opened = openBytes(named, saved.bytes, "dead.sud");
   assert.match(opened.text ?? "", /The file dead\.sud is open\./);
   assert.match(opened.text ?? "", /no solution/i);

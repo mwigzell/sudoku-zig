@@ -1,11 +1,12 @@
 //! Frame — one draw's worth of state, built by core so no front end works any of it out.
 
-// Board window, cell coordinates, core's region rule and the engine the builder reads.
+// Board window, cell coordinates, core's region rule, and the engine and Config the builder reads.
 const std = @import("std");
 const board = @import("board/board.zig");
 const conflict = @import("board/conflict.zig");
 const event = @import("event.zig");
 const game_engine = @import("engine/game_engine.zig");
+const config = @import("config.zig");
 
 /// Everything a renderer needs to draw the game once.
 pub const Frame = struct {
@@ -35,21 +36,20 @@ pub const Frame = struct {
     }
 };
 
-/// Build the frame for the engine's current game and selection, with this status line.
-pub fn build(engine: *game_engine.GameEngine, status: ?[]const u8) Frame {
-    const show_region = engine.getConfig().show_region;
+/// Build the frame for the engine's current game and selection, with this status line;
+/// `cfg` is the player's Config (Show Region shades the selected cell's units).
+pub fn build(engine: *game_engine.GameEngine, cfg: config.Config, status: ?[]const u8) Frame {
     const selected = engine.selected;
     return .{
         .board = engine.eventBoard(),
         .status = status,
         .selected = selected,
-        .region = if (selected) |sel| (if (show_region) conflict.unitsMask(sel.row, sel.col) else null) else null,
+        .region = if (selected) |sel| (if (cfg.show_region) conflict.unitsMask(sel.row, sel.col) else null) else null,
         .marks_visible = engine.marksVisible(),
         .pencil_mode = engine.pencil_mode,
     };
 }
 
-const config = @import("config.zig");
 const puzzle_gen = @import("puzzle_gen/mod.zig");
 
 test "the frame shades the selected cell's row, column and box only while Show Region is on" {
@@ -59,15 +59,15 @@ test "the frame shades the selected cell's row, column and box only while Show R
     defer engine.deinit();
 
     engine.selected = .{ .row = 4, .col = 4 };
-    const on = build(&engine, null);
+    const on = build(&engine, cfg, null);
     try std.testing.expect(on.isSelected(4, 4));
     try std.testing.expect(on.inRegion(4, 0));
     try std.testing.expect(on.inRegion(0, 4));
     try std.testing.expect(on.inRegion(3, 3));
     try std.testing.expect(!on.inRegion(0, 0));
 
-    engine.cfg.show_region = false;
-    const off = build(&engine, null);
+    cfg.show_region = false;
+    const off = build(&engine, cfg, null);
     try std.testing.expect(off.isSelected(4, 4));
     try std.testing.expectEqual(@as(?board.CellMask, null), off.region);
 }
@@ -76,7 +76,7 @@ test "the frame carries the status line, marks_visible and Pencil mode; nothing 
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
-    const frame = build(&engine, "status line 1");
+    const frame = build(&engine, config.Config.default(), "status line 1");
     try std.testing.expectEqualStrings("status line 1", frame.status.?);
     try std.testing.expectEqual(engine.marksVisible(), frame.marks_visible);
     try std.testing.expectEqual(engine.pencil_mode, frame.pencil_mode);

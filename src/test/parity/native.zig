@@ -472,8 +472,8 @@ fn finalState(arena: std.mem.Allocator, app: *shell.Sudoku, recorder: *Recorder)
         cells[i] = line[i];
         givens[i] = if (view.isGiven(@intCast(r), @intCast(c))) '1' else '0';
     };
-    const legend = app.engine.getLegend();
-    const cfg = app.engine.getConfig();
+    const legend = app.engine.getLegend(app.cfg.auto_save);
+    const cfg = app.cfg;
     return .{
         .cells = cells,
         .givens = givens,
@@ -531,7 +531,7 @@ fn runScenario(arena: std.mem.Allocator, io: std.Io, data_dir: []const u8, scena
             if (written.len == 0) return error.NothingToRelaunch;
             const path = try gpa.dupe(u8, std.fs.path.basename(written[written.len - 1]));
             defer gpa.free(path);
-            const next = try rig.launch(app.engine.getConfig());
+            const next = try rig.launch(app.cfg);
             app.deinit();
             app = next;
             try app.runStartupFlow(path);
@@ -570,7 +570,7 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         if (want.show_marks) |on| try std.testing.expectEqual(on, saved.show_marks);
     }
     if (expect.legend) |want| {
-        const got = app.engine.getLegend();
+        const got = app.engine.getLegend(app.cfg.auto_save);
         if (want.undo) |on| try std.testing.expectEqual(on, got.undo);
         if (want.redo) |on| try std.testing.expectEqual(on, got.redo);
     }

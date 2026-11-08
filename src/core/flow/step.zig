@@ -134,13 +134,13 @@ pub const ShowGame = struct {
     loaded: bool = false,
 };
 
-/// The `show_game` step for the engine's current game.
-pub fn showGame(engine: *game_engine.GameEngine, status: ?[]const u8, file: ?[]const u8) Step {
+/// The `show_game` step for the engine's current game under the player's Config.
+pub fn showGame(engine: *game_engine.GameEngine, cfg: config.Config, status: ?[]const u8, file: ?[]const u8) Step {
     return .{ .show_game = .{
-        .frame = frame_mod.build(engine, status),
+        .frame = frame_mod.build(engine, cfg, status),
         .file = file,
-        .legend = engine.getLegend(),
-        .config = engine.getConfig(),
+        .legend = engine.getLegend(cfg.auto_save),
+        .config = cfg,
     } };
 }
 

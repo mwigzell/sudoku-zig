@@ -64,8 +64,9 @@ const LoadStatusMode = enum {
 
 pub const GameEngine = struct {
     state: state_mod.State,
-    cfg: config.Config,
     event_msg: event.EventMsg = .{},
+    /// The player's Show Pencil Marks, given by whoever holds Config (`useConfig`).
+    show_marks: bool = false,
     /// After a player move, probe solvability and warn when the board has no completion.
     warn_dead_moves: bool = false,
     /// On open/load, probe solvability and warn when the puzzle has no completion.
@@ -79,12 +80,15 @@ pub const GameEngine = struct {
     /// leave it. Session state, never saved.
     selected: ?event.CellCoord = null,
 
-    fn applySolvabilityWarningsFromConfig(self: *@This()) void {
-        self.warn_dead_moves = self.cfg.warn_solvability;
-        self.warn_unsolvable_load = self.cfg.warn_solvability;
+    /// Take the Config fields the engine plays by: solvability warnings and Show Pencil Marks.
+    /// The engine keeps no Config; whoever holds it calls this again after a change.
+    pub fn useConfig(self: *@This(), cfg: config.Config) void {
+        self.warn_dead_moves = cfg.warn_solvability;
+        self.warn_unsolvable_load = cfg.warn_solvability;
+        self.show_marks = cfg.show_marks;
     }
 
-    /// Build an engine from a one-line puzzle string and nominal config.
+    /// Build an engine from a one-line puzzle string, playing by `cfg` (see `useConfig`).
     pub fn init(puzzle_str: []const u8, cfg: config.Config) Error!@This() {
         const brd = board.fromPuzzle(puzzle_str) catch return Error.System;
         var self = @This(){
@@ -92,9 +96,8 @@ pub const GameEngine = struct {
                 .board = brd,
                 .history = MutationHistory.init(std.heap.page_allocator),
             },
-            .cfg = cfg,
         };
-        self.applySolvabilityWarningsFromConfig();
+        self.useConfig(cfg);
         self.state.board.validate();
         return self;
     }
@@ -109,8 +112,8 @@ pub const GameEngine = struct {
         return self.state.board.asView();
     }
 
-    /// Which commands are available in the current game state.
-    pub fn getLegend(self: *const @This()) Legend {
+    /// Which commands are available in the current game state; Save is offered only while Auto Save is off.
+    pub fn getLegend(self: *const @This(), auto_save: bool) Legend {
         return Legend{
             .fill = true,
             .pencil = true,
@@ -120,7 +123,7 @@ pub const GameEngine = struct {
             .undo = self.state.history.pointer > 0,
             .redo = self.state.history.pointer < self.state.history.entries.items.len,
             .menu = true,
-            .save = !self.cfg.auto_save,
+            .save = !auto_save,
             .open = true,
             .new = true,
             .import = true,
@@ -144,12 +147,7 @@ pub const GameEngine = struct {
     /// Whether front ends draw pencil marks: the setting is on, Pencil mode is on,
     /// or the last command changed a mark, so a player always sees the mark they made.
     pub fn marksVisible(self: *const @This()) bool {
-        return self.cfg.show_marks or self.pencil_mode or self.marks_changed;
-    }
-
-    /// Current nominal configuration (theme, region highlight, difficulty, log level).
-    pub fn getConfig(self: *const @This()) config.Config {
-        return self.cfg;
+        return self.show_marks or self.pencil_mode or self.marks_changed;
     }
 
     /// Serialize full game state to a heap-allocated byte buffer.
@@ -314,6 +312,13 @@ pub const GameEngine = struct {
         } };
     }
 
+    /// The game shown again as it is, after a command that changed nothing on the board.
+    pub fn unchanged(self: *@This()) Event {
+        self.beginEventMsg();
+        self.marks_changed = false;
+        return self.finishOkEvent(self.state.board.asView(), false, null, false);
+    }
+
     /// One error string in engine scratch — safe for wasm JSON after exec returns.
     pub fn errorEvent(self: *@This(), part: []const u8) Event {
         self.event_msg.reset();
@@ -365,10 +370,6 @@ pub const GameEngine = struct {
             .toggle_pencil_mode => {
                 return pencil_command.toggleMode(self);
             },
-            .toggle_show_marks => {
-                self.cfg.show_marks = !self.cfg.show_marks;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
             .select => |s| {
                 self.selected = .{ .row = s.row, .col = s.col };
                 return self.finishOkEvent(self.state.board.asView(), false, null, false);
@@ -395,44 +396,11 @@ pub const GameEngine = struct {
             .hint => |h| {
                 return hint_command.execute(self, h);
             },
-            .set_theme => |theme| {
-                self.cfg.theme = theme;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
-            .toggle_region => {
-                self.cfg.show_region = !self.cfg.show_region;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
-            .toggle_warn_solvability => {
-                self.cfg.warn_solvability = !self.cfg.warn_solvability;
-                self.applySolvabilityWarningsFromConfig();
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
-            .toggle_auto_restore => {
-                self.cfg.auto_restore = !self.cfg.auto_restore;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
-            .toggle_auto_new => {
-                self.cfg.auto_new = !self.cfg.auto_new;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
-            .toggle_auto_save => {
-                self.cfg.auto_save = !self.cfg.auto_save;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
-            .set_difficulty => |diff| {
-                self.cfg.difficulty = diff;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
-            .set_log_level => |level| {
-                self.cfg.log_level = level;
-                logger.min_level = level;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
-            },
             .settings => @panic("settings routed in Sudoku"),
             // The renderer opens the Menu; it reaches core only when the player picked nothing,
             // and then the game is shown again as it is.
-            .menu => return self.finishOkEvent(self.state.board.asView(), false, null, false),
+            .menu => return self.unchanged(),
+            .set_theme, .toggle_region, .toggle_show_marks, .toggle_warn_solvability, .toggle_auto_restore, .toggle_auto_new, .toggle_auto_save, .set_difficulty, .set_log_level => @panic("config commands run in the core command flow"),
             .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => @panic("load and write commands run in the core command flow"),
         }
     }
@@ -561,7 +529,7 @@ test "exec solve_for_me fills a known partial as one solve batch" {
     try std.testing.expect(std.mem.indexOf(u8, ev.ok.msg.?, "You win!") != null);
     try std.testing.expect(engine.durableStatus() != null);
     try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
-    try std.testing.expect(!engine.getLegend().solve);
+    try std.testing.expect(!engine.getLegend(false).solve);
 }
 
 test "exec solve_for_me returns ok and leaves an unsolvable board unchanged" {
@@ -596,11 +564,11 @@ test "exec solve_for_me errors when the board has a conflict" {
 test "legend solve is on only when the board has empties and no conflict" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer engine.deinit();
-    try std.testing.expect(engine.getLegend().solve);
+    try std.testing.expect(engine.getLegend(false).solve);
 
     try engine.state.board.setCell(0, 1, .three);
     engine.state.board.validate();
-    try std.testing.expect(!engine.getLegend().solve);
+    try std.testing.expect(!engine.getLegend(false).solve);
 }
 
 test "openFromSave warns when SUD0 bytes encode an unsolvable grid" {
@@ -764,25 +732,25 @@ test "a puzzle with surrounding whitespace is not trimmed and is rejected for it
 test "legend offers import in the web session menu" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
-    try std.testing.expect(engine.getLegend().import);
+    try std.testing.expect(engine.getLegend(false).import);
 }
 
 test "legend offers export in the web session menu" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
-    try std.testing.expect(engine.getLegend().@"export");
+    try std.testing.expect(engine.getLegend(false).@"export");
 }
 
 test "legend offers copy in the web session menu" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
-    try std.testing.expect(engine.getLegend().copy);
+    try std.testing.expect(engine.getLegend(false).copy);
 }
 
 test "legend offers paste in the web session menu" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
-    try std.testing.expect(engine.getLegend().paste);
+    try std.testing.expect(engine.getLegend(false).paste);
 }
 
 test "toSaveFormat serializes state without engine file methods" {
@@ -1447,7 +1415,7 @@ test "getLegend: fresh engine has Fill/Clear/Quit only" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
-    const cmds = engine.getLegend();
+    const cmds = engine.getLegend(false);
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -1574,7 +1542,7 @@ test "getLegend: after fill Undo appears" {
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.seven },
     }));
 
-    const cmds = engine.getLegend();
+    const cmds = engine.getLegend(false);
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -1592,7 +1560,7 @@ test "getLegend: after undo-one-of-one Redo appears Undo disappears" {
 
     _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
 
-    const cmds = engine.getLegend();
+    const cmds = engine.getLegend(false);
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -1613,7 +1581,7 @@ test "getLegend: after partial undo both Undo and Redo available" {
 
     _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
 
-    const cmds = engine.getLegend();
+    const cmds = engine.getLegend(false);
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -1635,7 +1603,7 @@ test "getLegend: after full undo Undo hidden Redo replays" {
     _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
     _ = try expectOk(execTest(&engine, command.Command{ .undo = {} }));
 
-    const cmds = engine.getLegend();
+    const cmds = engine.getLegend(false);
     try std.testing.expect(cmds.fill);
     try std.testing.expect(cmds.clear);
     try std.testing.expect(cmds.quit);
@@ -1646,89 +1614,26 @@ test "getLegend: Save and Open always available" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
-    const cmds = engine.getLegend();
+    const cmds = engine.getLegend(false);
     // Save and Open are always available like Fill/Clear/Quit (not state-contingent)
     try std.testing.expect(cmds.save);
     try std.testing.expect(cmds.open);
+    try std.testing.expect(!engine.getLegend(true).save);
 }
 
-test "getConfig: default view prefs are system theme and region off" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer engine.deinit();
-
-    const cfg = engine.getConfig();
-    try std.testing.expectEqual(config.ViewTheme.system, cfg.theme);
-    try std.testing.expect(!cfg.show_region);
-}
-
-test "exec toggle_warn_solvability flips engine warning flags" {
+test "useConfig gives the engine the solvability warnings and Show Pencil Marks" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try std.testing.expect(!engine.warn_dead_moves);
     try std.testing.expect(!engine.warn_unsolvable_load);
 
-    _ = try expectOk(execTest(&engine, command.Command{ .toggle_warn_solvability = {} }));
+    var cfg = config.Config.default();
+    cfg.warn_solvability = true;
+    cfg.show_marks = !cfg.show_marks;
+    engine.useConfig(cfg);
     try std.testing.expect(engine.warn_dead_moves);
     try std.testing.expect(engine.warn_unsolvable_load);
-    try std.testing.expect(engine.getConfig().warn_solvability);
-
-    _ = try expectOk(execTest(&engine, command.Command{ .toggle_warn_solvability = {} }));
-    try std.testing.expect(!engine.warn_dead_moves);
-    try std.testing.expect(!engine.warn_unsolvable_load);
-}
-
-test "exec set_theme and toggle_region update view config" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer engine.deinit();
-
-    _ = try expectOk(execTest(&engine, command.Command{ .set_theme = .light }));
-    var cfg = engine.getConfig();
-    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
-
-    _ = try expectOk(execTest(&engine, command.Command{ .toggle_region = {} }));
-    cfg = engine.getConfig();
-    try std.testing.expect(cfg.show_region);
-}
-
-test "exec set_difficulty and set_log_level update config" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer engine.deinit();
-
-    _ = try expectOk(execTest(&engine, command.Command{ .set_difficulty = .hard }));
-    try std.testing.expectEqual(config.Difficulty.hard, engine.getConfig().difficulty);
-
-    _ = try expectOk(execTest(&engine, command.Command{ .set_log_level = .debug }));
-    try std.testing.expectEqual(logger.Severity.debug, engine.getConfig().log_level);
-    try std.testing.expectEqual(logger.Severity.debug, logger.min_level);
-}
-
-test "exec startup auto toggles flip config" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer engine.deinit();
-
-    _ = try expectOk(execTest(&engine, command.Command{ .toggle_auto_restore = {} }));
-    _ = try expectOk(execTest(&engine, command.Command{ .toggle_auto_new = {} }));
-    _ = try expectOk(execTest(&engine, command.Command{ .toggle_auto_save = {} }));
-
-    const cfg = engine.getConfig();
-    try std.testing.expect(cfg.auto_restore);
-    try std.testing.expect(cfg.auto_new);
-    try std.testing.expect(cfg.auto_save);
-}
-
-test "fromSaveFormat preserves view config" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-    defer engine.deinit();
-    engine.cfg.theme = .light;
-    engine.cfg.show_region = true;
-
-    const buf = try engine.toSaveFormat(std.testing.allocator);
-    defer std.testing.allocator.free(buf);
-
-    try engine.fromSaveFormat(buf);
-    const cfg = engine.getConfig();
-    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
-    try std.testing.expect(cfg.show_region);
+    try std.testing.expectEqual(cfg.show_marks, engine.show_marks);
 }
 
 test "every engine error message reads as a sentence" {

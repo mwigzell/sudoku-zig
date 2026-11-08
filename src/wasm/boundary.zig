@@ -236,8 +236,8 @@ pub fn writeSystemErrorJson(out: OutBuffer) void {
     if (n < out.buf.len) out.buf[n] = 0;
 }
 
-/// Writes Event JSON: `{ok, is_quit, msg, state}` or an error object; `state` is `engine`'s frame.
-pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event, engine: *game_engine.GameEngine) !void {
+/// Writes Event JSON: `{ok, is_quit, msg, state}` or an error object; `state` is `engine`'s frame under `cfg`.
+pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event, engine: *game_engine.GameEngine, cfg: config.Config) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
@@ -245,7 +245,7 @@ pub fn writeEventJson(out: OutBuffer, ev: event_mod.Event, engine: *game_engine.
     switch (ev) {
         .error_msg => |msg| try writeErrorJsonTo(&jw.writer, msg),
         .ok => |data| {
-            const frame = frame_mod.build(engine, data.msg);
+            const frame = frame_mod.build(engine, cfg, data.msg);
             try std.Io.Writer.writeAll(&jw.writer, "{\"ok\":true,\"is_quit\":");
             try std.Io.Writer.print(&jw.writer, "{any},\"msg\":", .{data.is_quit});
             if (frame.status) |m| {
@@ -666,7 +666,7 @@ test "writeEventJson ok embeds state snapshot" {
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
     const undone = engine.exec(.{ .undo = {} });
-    try writeEventJson(out, undone, &engine);
+    try writeEventJson(out, undone, &engine, config.Config.default());
 
     const json = out.finishJson();
     try std.testing.expect(std.mem.indexOf(u8, json, "\"ok\":true") != null);
@@ -806,7 +806,7 @@ test "writeEventJson error_msg escapes special characters" {
     var buf: [512]u8 = undefined;
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
-    try writeEventJson(out, .{ .error_msg = "bad \"input\"\nretry" }, &engine);
+    try writeEventJson(out, .{ .error_msg = "bad \"input\"\nretry" }, &engine, config.Config.default());
 
     const parsed = try std.json.parseFromSlice(ErrorWire, std.testing.allocator, out.finishJson(), .{});
     defer parsed.deinit();
@@ -826,7 +826,7 @@ test "writeEventJson ok msg escapes special characters" {
         .is_quit = false,
         .msg = "saved \"game\"\nok",
     } };
-    try writeEventJson(out, ev, &engine);
+    try writeEventJson(out, ev, &engine, config.Config.default());
 
     const parsed = try std.json.parseFromSlice(OkEventWire, std.testing.allocator, out.finishJson(), .{
         .ignore_unknown_fields = true,
@@ -998,7 +998,7 @@ test "step JSON carries the tag and its payload" {
     var shown_engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
     defer shown_engine.deinit();
     shown_engine.selected = .{ .row = 1, .col = 2 };
-    var shown = flow.step.showGame(&shown_engine, null, "g.sud");
+    var shown = flow.step.showGame(&shown_engine, config.Config.default(), null, "g.sud");
     try writeStepJson(out, shown);
     const shown_json = out.finishJson();
     try std.testing.expect(std.mem.startsWith(u8, shown_json, "{\"step\":\"show_game\",\"text\":null,\"file\":\"g.sud\",\"state\":{"));

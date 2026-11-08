@@ -321,7 +321,7 @@ Core's read-only list of Config fields, one row each: label, kind (on/off or fix
 _Avoid_: per-front-end field lists or labels
 
 **State**:
-Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State` and nominal `Config`.
+Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State`; Config is held beside it and the engine is given the fields it plays by.
 _Avoid_: Engine (engine is a runtime object)
 
 ### WASM Wire (`wasm/wire.zig`, `wasm/boundary.zig`, `entry_wasm.zig`)

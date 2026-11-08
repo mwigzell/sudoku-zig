@@ -1,4 +1,4 @@
-// CommandFlow: one player command end to end — gather what a load needs, apply it, show
+// CommandFlow: one player command end to end — gather what a load needs or change the Config, apply it, show
 // the result, then persist settings and autosave as the command needs, in that order on every platform.
 // Save, Save As, Export and Copy run their write flow instead.
 const std = @import("std");
@@ -35,6 +35,8 @@ pub const LOAD_ENDED_STATUS = "";
 pub const CommandFlow = struct {
     engine: *game_engine.GameEngine,
     session: *FileSession,
+    /// The player's Config, held beside the engine; config commands change it here.
+    cfg: *config.Config,
     cmd: command.Command,
     phase: Phase = .start,
     settings: SettingsFlow = undefined,
@@ -44,9 +46,9 @@ pub const CommandFlow = struct {
     const Phase = enum { start, gathering, writing, showing, persisting, autosaving, clearing, finished };
     const Write = union(enum) { save: SaveFlow, @"export": ExportFlow };
 
-    /// Run `cmd` on `engine`; `session` is the file the follow-up autosave writes.
-    pub fn init(engine: *game_engine.GameEngine, session: *FileSession, cmd: command.Command) CommandFlow {
-        return .{ .engine = engine, .session = session, .cmd = cmd };
+    /// Run `cmd` on `engine` under `cfg`; `session` is the file the follow-up autosave writes.
+    pub fn init(engine: *game_engine.GameEngine, session: *FileSession, cfg: *config.Config, cmd: command.Command) CommandFlow {
+        return .{ .engine = engine, .session = session, .cfg = cfg, .cmd = cmd };
     }
 
     /// Answer the last step; returns the next step (`.start` first).
@@ -60,7 +62,7 @@ pub const CommandFlow = struct {
             .writing => return self.continueWrite(input),
             .showing => {
                 if (input != .ack) return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG));
-                self.settings = SettingsFlow.afterCommand(self.engine.getConfig(), self.cmd);
+                self.settings = SettingsFlow.afterCommand(self.cfg.*, self.cmd);
                 self.phase = .persisting;
                 return self.continueSettings(.start);
             },
@@ -77,15 +79,18 @@ pub const CommandFlow = struct {
             .new => |data| if (data.puzzle) |line|
                 return self.load(.new_game, line)
             else
-                .{ .generate_game = data.difficulty orelse self.engine.cfg.difficulty },
+                .{ .generate_game = data.difficulty orelse self.cfg.difficulty },
             .open => |data| .{ .open = data.path },
             .import => |data| .{ .import_puzzle = data.path },
             .paste => |data| if (data.line) |line| return self.load(.paste, line) else .paste_puzzle,
-            .save => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save, data.path, self.engine.cfg.auto_save) }),
-            .save_as => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save_as, data.path, self.engine.cfg.auto_save) }),
+            .save => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save, data.path, self.cfg.auto_save) }),
+            .save_as => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save_as, data.path, self.cfg.auto_save) }),
             .@"export" => |data| return self.startWrite(.{ .@"export" = ExportFlow.toFile(data.path) }),
             .copy => return self.startWrite(.{ .@"export" = ExportFlow.toClipboard() }),
-            else => return self.show(self.engine.exec(self.cmd)),
+            else => {
+                if (self.applyConfig()) return self.show(self.engine.unchanged());
+                return self.show(self.engine.exec(self.cmd));
+            },
         };
         self.phase = .gathering;
         return step;
@@ -123,6 +128,28 @@ pub const CommandFlow = struct {
         }
     }
 
+    /// Apply a config command to Config and hand the engine its fields again; false for any other command.
+    fn applyConfig(self: *CommandFlow) bool {
+        const cfg = self.cfg;
+        switch (self.cmd) {
+            .set_theme => |theme| cfg.theme = theme,
+            .toggle_region => cfg.show_region = !cfg.show_region,
+            .toggle_show_marks => cfg.show_marks = !cfg.show_marks,
+            .toggle_warn_solvability => cfg.warn_solvability = !cfg.warn_solvability,
+            .toggle_auto_restore => cfg.auto_restore = !cfg.auto_restore,
+            .toggle_auto_new => cfg.auto_new = !cfg.auto_new,
+            .toggle_auto_save => cfg.auto_save = !cfg.auto_save,
+            .set_difficulty => |diff| cfg.difficulty = diff,
+            .set_log_level => |level| {
+                cfg.log_level = level;
+                logger.min_level = level;
+            },
+            else => return false,
+        }
+        self.engine.useConfig(cfg.*);
+        return true;
+    }
+
     /// Replace the game from `data` and record the load, so later writes know whose file this is.
     fn load(self: *CommandFlow, loaded: file_session_mod.Load, data: []const u8) Step {
         const ev = switch (loaded) {
@@ -138,7 +165,7 @@ pub const CommandFlow = struct {
         if (ev == .ok) {
             self.session.noteLoad(loaded);
             if (self.cmd == .new) {
-                if (self.cmd.new.difficulty) |d| self.engine.cfg.difficulty = d;
+                if (self.cmd.new.difficulty) |d| self.cfg.difficulty = d;
             }
         }
         var step = self.show(ev);
@@ -151,7 +178,7 @@ pub const CommandFlow = struct {
             .error_msg => |msg| return self.finish(step_mod.promptError(msg)),
             .ok => |ok| {
                 self.phase = .showing;
-                return step_mod.showGame(self.engine, ok.msg, self.session.currentFile());
+                return step_mod.showGame(self.engine, self.cfg.*, ok.msg, self.session.currentFile());
             },
         }
     }
@@ -177,7 +204,7 @@ pub const CommandFlow = struct {
             .show_status, .prompt_message => return self.finish(step),
             else => return step,
         }
-        self.autosave = AutosaveFlow.afterCommand(self.session, self.engine.cfg.auto_save, self.cmd);
+        self.autosave = AutosaveFlow.afterCommand(self.session, self.cfg.auto_save, self.cmd);
         self.phase = .autosaving;
         return self.continueAutosave(.start);
     }
@@ -213,7 +240,7 @@ test "a toggle shows the new setting, then persists it, and does not autosave" {
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, .{ .toggle_auto_save = {} });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .toggle_auto_save = {} });
 
     const shown = flow.next(.start).show_game;
     try testing.expect(shown.config.auto_save);
@@ -227,7 +254,7 @@ test "a move shows the board and the edited cell, then autosaves to the default 
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
 
     const shown = flow.next(.start).show_game;
     try testing.expectEqual(@as(u4, 0), shown.frame.selected.?.row);
@@ -238,33 +265,63 @@ test "a move shows the board and the edited cell, then autosaves to the default 
 }
 
 test "a rejected command shows the engine's error and nothing else" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, .{ .fill = .{ .row = 0, .col = 2, .digit = .four } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .fill = .{ .row = 0, .col = 2, .digit = .four } });
     try testing.expect(flow.next(.start) == .prompt_message);
     try testing.expect(flow.next(.ack) == .done);
 }
 
 test "a failed settings write ends the command with the error" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, .{ .set_theme = .light });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_theme = .light });
     _ = flow.next(.start);
     _ = flow.next(.ack);
     try testing.expectEqualStrings(settings_mod.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).prompt_message.text);
 }
 
+test "config commands change the Config held beside the engine, and the engine takes its fields" {
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
+    defer engine.deinit();
+    var session = FileSession{};
+    const before_level = logger.min_level;
+    defer logger.min_level = before_level;
+    const shown_marks = !cfg.show_marks;
+    for ([_]command.Command{
+        .{ .set_theme = .light },           .{ .toggle_region = {} },       .{ .toggle_show_marks = {} },
+        .{ .toggle_warn_solvability = {} }, .{ .toggle_auto_restore = {} }, .{ .toggle_auto_new = {} },
+        .{ .toggle_auto_save = {} },        .{ .set_difficulty = .hard },   .{ .set_log_level = .debug },
+    }) |cmd| {
+        var flow = CommandFlow.init(&engine, &session, &cfg, cmd);
+        const shown = flow.next(.start).show_game.config;
+        try testing.expectEqual(cfg, shown);
+    }
+    try testing.expectEqual(config.ViewTheme.light, cfg.theme);
+    try testing.expect(cfg.show_region and cfg.warn_solvability and cfg.auto_restore and cfg.auto_new and cfg.auto_save);
+    try testing.expectEqual(shown_marks, cfg.show_marks);
+    try testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try testing.expectEqual(logger.Severity.debug, cfg.log_level);
+    try testing.expectEqual(logger.Severity.debug, logger.min_level);
+    try testing.expect(engine.warn_dead_moves and engine.warn_unsolvable_load);
+    try testing.expectEqual(shown_marks, engine.show_marks);
+}
+
 test "open asks for a game file, loads the pick and makes it the current file" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
     const saved = try engine.toSaveFormat(testing.allocator);
     defer testing.allocator.free(saved);
     _ = engine.exec(.{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
 
-    var flow = CommandFlow.init(&engine, &session, .{ .open = .{ .path = null } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .open = .{ .path = null } });
     try testing.expect(flow.next(.start).open == null);
     const shown = flow.next(.{ .read = .{ .file = .{ .bytes = saved, .name = "game.sud" } } }).show_game;
     try testing.expect(shown.loaded);
@@ -275,22 +332,24 @@ test "open asks for a game file, loads the pick and makes it the current file" {
 }
 
 test "a typed path rides the import step; backing out of the picker clears the status" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
     const before = engine.state.board;
-    var flow = CommandFlow.init(&engine, &session, .{ .import = .{ .path = "puzzle.txt" } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .import = .{ .path = "puzzle.txt" } });
     try testing.expectEqualStrings("puzzle.txt", flow.next(.start).import_puzzle.?);
     try testing.expectEqualStrings(LOAD_ENDED_STATUS, flow.next(.{ .read = .cancelled }).show_status);
     try testing.expect(@import("../board/board.zig").equal(engine.state.board, before));
 }
 
 test "an import that is not a puzzle shows the error and keeps the board" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
     const before = engine.state.board;
-    var flow = CommandFlow.init(&engine, &session, .{ .import = .{ .path = null } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .import = .{ .path = null } });
     _ = flow.next(.start);
     try testing.expect(flow.next(.{ .read = .{ .file = .{ .bytes = "123", .name = "bad.txt" } } }) == .prompt_message);
     try testing.expectEqualStrings(LOAD_ENDED_STATUS, flow.next(.{ .pressed = 0 }).show_status);
@@ -298,10 +357,11 @@ test "an import that is not a puzzle shows the error and keeps the board" {
 }
 
 test "an open the platform could not read shows the error, then clears the status" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, .{ .open = .{ .path = null } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .open = .{ .path = null } });
     _ = flow.next(.start);
     try testing.expectEqualStrings(OPEN_FAILED_MSG, flow.next(.{ .read = .{ .failed = "disk gone" } }).prompt_message.text);
     try testing.expectEqualStrings(LOAD_ENDED_STATUS, flow.next(.{ .pressed = 0 }).show_status);
@@ -309,17 +369,18 @@ test "an open the platform could not read shows the error, then clears the statu
 }
 
 test "paste with a line skips the clipboard; without one it reads the clipboard" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
     const line = puzzle_gen.PuzzleGen.medium();
 
-    var typed = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = line } });
+    var typed = CommandFlow.init(&engine, &session, &cfg, .{ .paste = .{ .line = line } });
     const shown = typed.next(.start).show_game;
     try testing.expect(shown.loaded);
     try testing.expectEqualStrings(game_engine.PASTED_MSG, shown.frame.status.?);
 
-    var clipboard = CommandFlow.init(&engine, &session, .{ .paste = .{ .line = null } });
+    var clipboard = CommandFlow.init(&engine, &session, &cfg, .{ .paste = .{ .line = null } });
     try testing.expect(clipboard.next(.start) == .paste_puzzle);
     try testing.expectEqualStrings(PASTE_FAILED_MSG, clipboard.next(.{ .read = .{ .failed = "denied" } }).prompt_message.text);
 }
@@ -333,7 +394,7 @@ test "new generates at the chosen difficulty, which the game then keeps" {
     session.setCurrentFile("game.sud");
     session.apply(.open_success);
 
-    var flow = CommandFlow.init(&engine, &session, .{ .new = .{ .difficulty = .easy } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .new = .{ .difficulty = .easy } });
     try testing.expectEqual(puzzle_gen.Difficulty.easy, flow.next(.start).generate_game);
     const shown = flow.next(.{ .generated = .{ .line = puzzle_gen.PuzzleGen.easy() } }).show_game;
     try testing.expect(shown.loaded);
@@ -342,10 +403,11 @@ test "new generates at the chosen difficulty, which the game then keeps" {
 }
 
 test "save with no current file asks for the default target, writes it and reports where" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, .{ .save = .{ .path = null } });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .save = .{ .path = null } });
     try testing.expect(flow.next(.start) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).save.name);
     try testing.expectEqualStrings(std.fmt.comptimePrint(@import("../file_policy.zig").SAVED_TO_FMT, .{"sudoku.sud"}), flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }).show_status);
@@ -354,32 +416,34 @@ test "save with no current file asks for the default target, writes it and repor
 }
 
 test "save as suggests the current file; export and copy hand over the puzzle" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
     session.setCurrentFile("game.sud");
-    var save_as = CommandFlow.init(&engine, &session, .{ .save_as = .{ .path = null } });
+    var save_as = CommandFlow.init(&engine, &session, &cfg, .{ .save_as = .{ .path = null } });
     try testing.expectEqualStrings("game.sud", save_as.next(.start).save_as.name);
 
-    var exported = CommandFlow.init(&engine, &session, .{ .@"export" = .{ .path = null } });
+    var exported = CommandFlow.init(&engine, &session, &cfg, .{ .@"export" = .{ .path = null } });
     try testing.expectEqualStrings(export_mod.DEFAULT_EXPORT_FILE, exported.next(.start).export_puzzle);
     try testing.expectEqualStrings(std.fmt.comptimePrint(export_mod.EXPORTED_TO_FMT, .{"puzzle.txt"}), exported.next(.{ .wrote = .{ .ok = "puzzle.txt" } }).show_status);
 
-    var copied = CommandFlow.init(&engine, &session, .{ .copy = {} });
+    var copied = CommandFlow.init(&engine, &session, &cfg, .{ .copy = {} });
     try testing.expect(copied.next(.start) == .copy_puzzle);
     try testing.expectEqualStrings(export_mod.COPIED_MSG, copied.next(.{ .copied = .ok }).show_status);
     try testing.expectEqualStrings("game.sud", session.currentFile().?);
 }
 
 test "stopping generation ends New by clearing the status; a wrong answer is an error" {
-    var engine = try testEngine(config.Config.default());
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var stopped = CommandFlow.init(&engine, &session, .{ .new = .{} });
+    var stopped = CommandFlow.init(&engine, &session, &cfg, .{ .new = .{} });
     _ = stopped.next(.start);
     try testing.expectEqualStrings(LOAD_ENDED_STATUS, stopped.next(.{ .generated = .cancelled }).show_status);
 
-    var wrong = CommandFlow.init(&engine, &session, .{ .new = .{} });
+    var wrong = CommandFlow.init(&engine, &session, &cfg, .{ .new = .{} });
     _ = wrong.next(.start);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, wrong.next(.ack).prompt_message.text);
 }

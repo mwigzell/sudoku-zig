@@ -24,6 +24,8 @@ var have_engine: bool = false;
 var host_debug_build: bool = false;
 var gen_abort_requested: bool = false;
 
+/// The player's Config, held beside the engine; the command flow changes it.
+var cfg: config.Config = config.Config.default();
 /// Web write context and current file; resets on page reload.
 var file_session: flow.FileSession = .{};
 /// The one flow in progress; the JS step runner never overlaps flows.
@@ -74,11 +76,6 @@ const empty_puzzle_line: [81]u8 = blk: {
     break :blk line;
 };
 
-fn preservedViewPrefs() struct { theme: config.ViewTheme, show_region: bool, show_marks: bool } {
-    if (!have_engine) return .{ .theme = .system, .show_region = false, .show_marks = config.Config.default().show_marks };
-    return .{ .theme = engine.cfg.theme, .show_region = engine.cfg.show_region, .show_marks = engine.cfg.show_marks };
-}
-
 fn deinitEngineIfAny() void {
     if (have_engine) {
         engine.deinit();
@@ -120,7 +117,8 @@ export fn bootstrapHostConfig(
     startup_config.applyLoggerFromStartup(game_cfg);
     deinitEngineIfAny();
 
-    engine = game_engine.GameEngine.init(empty_puzzle_line[0..], game_cfg) catch |err| {
+    cfg = game_cfg;
+    engine = game_engine.GameEngine.init(empty_puzzle_line[0..], cfg) catch |err| {
         return exportFailure(out, "engine init failed", err);
     };
     have_engine = true;
@@ -177,21 +175,18 @@ export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
 
     logger.min_level = wire_cfg.log_level;
 
-    const prefs = preservedViewPrefs();
     deinitEngineIfAny();
 
-    var game_cfg = wire_cfg.toConfig();
-    game_cfg.theme = prefs.theme;
-    game_cfg.show_region = prefs.show_region;
-    game_cfg.show_marks = prefs.show_marks;
+    cfg.difficulty = wire_cfg.difficulty.toPuzzleDifficulty();
+    cfg.log_level = wire_cfg.log_level;
 
     if (builtin.cpu.arch == .wasm32) {
         puzzle_gen.PuzzleGen.setPlayProgress(wasmGenProgress, null);
     }
     defer if (builtin.cpu.arch == .wasm32) puzzle_gen.PuzzleGen.setPlayProgress(null, null);
 
-    const puzzle_str = puzzle_gen.PuzzleGen.generate(game_cfg.difficulty);
-    engine = game_engine.GameEngine.init(puzzle_str, game_cfg) catch |err| {
+    const puzzle_str = puzzle_gen.PuzzleGen.generate(cfg.difficulty);
+    engine = game_engine.GameEngine.init(puzzle_str, cfg) catch |err| {
         return exportFailure(out, "engine init failed", err);
     };
     have_engine = true;
@@ -212,7 +207,7 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     };
 
     const ev = eng.exec(cmd);
-    boundary.writeEventJson(out, ev, eng) catch |err| return exportWriteFailed(out, err);
+    boundary.writeEventJson(out, ev, eng, cfg) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -254,15 +249,15 @@ export fn getCoreText() callconv(.c) u32 {
 export fn getLegend() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
-    boundary.writeLegendJson(out, eng.getLegend()) catch |err| return exportWriteFailed(out, err);
+    boundary.writeLegendJson(out, eng.getLegend(cfg.auto_save)) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
-/// Current nominal config as WireConfig JSON.
+/// The player's Config as WireConfig JSON; an error until the host config has booted the engine.
 export fn getConfig() callconv(.c) u32 {
     const out = outBuffer();
-    const eng = engineOrError(out) orelse return returnJson(out);
-    const wire_cfg = wire.WireConfig.fromConfig(eng.getConfig());
+    _ = engineOrError(out) orelse return returnJson(out);
+    const wire_cfg = wire.WireConfig.fromConfig(cfg);
     boundary.writeWireConfigJson(out, wire_cfg) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
@@ -271,7 +266,7 @@ export fn getConfig() callconv(.c) u32 {
 export fn getState() callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
-    boundary.writeStateJson(out, frame_mod.build(eng, null)) catch |err| return exportWriteFailed(out, err);
+    boundary.writeStateJson(out, frame_mod.build(eng, cfg, null)) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -329,12 +324,8 @@ export fn flowStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     const start = boundary.parseFlowStart(arena.allocator(), json) catch |err| return exportFailure(out, "invalid flow start", err);
     active_flow = switch (start) {
-        .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, eng.cfg.auto_save) },
-        .startup => |file| .{ .startup = flow.StartupFlow.init(eng, &file_session, .{
-            .auto_restore = eng.cfg.auto_restore,
-            .auto_new = eng.cfg.auto_new,
-            .difficulty = eng.cfg.difficulty,
-        }, if (file) |f| .{ .path = f.path, .name = f.name, .current = f.name } else null) },
+        .autosave_flush => .{ .autosave = flow.AutosaveFlow.flush(&file_session, cfg.auto_save) },
+        .startup => |file| .{ .startup = flow.StartupFlow.init(eng, &file_session, &cfg, if (file) |f| .{ .path = f.path, .name = f.name, .current = f.name } else null) },
     };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
@@ -346,7 +337,7 @@ export fn commandStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const eng = engineOrError(out) orelse return returnJson(out);
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
     const cmd = boundary.parseAction(json) catch |err| return exportFailure(out, "invalid action", err);
-    active_flow = .{ .command = flow.CommandFlow.init(eng, &file_session, cmd) };
+    active_flow = .{ .command = flow.CommandFlow.init(eng, &file_session, &cfg, cmd) };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
 }

@@ -105,6 +105,21 @@ export function openAs(game, name) {
   return openBytes(game, saved.bytes, name);
 }
 
+/**
+ * Run a config command on a real wasm game to its end, as the menus do: show the game, then persist the Config.
+ * @param {import("./types").ExecAction} action
+ * @returns {object} the `show_game` step
+ */
+export function runConfigCommand(game, action) {
+  const shown = game.commandStart(action);
+  if (shown.step !== "show_game") throw new Error(`${action.action} began with ${JSON.stringify(shown)}`);
+  const persist = game.flowNext({ input: "ack" });
+  if (persist.step !== "persist_settings") throw new Error(`${action.action} did not persist: ${JSON.stringify(persist)}`);
+  const step = game.flowNext({ input: "persisted", ok: true });
+  if (step.step !== "done") throw new Error(`${action.action} ended with ${JSON.stringify(step)}`);
+  return shown;
+}
+
 /** Fetch fake answering `/current-file-exists` with `exists` and recording every call. */
 export function hostFetch({ exists = false, calls = [] } = {}) {
   const fetchFn = async (url, init = {}) => {

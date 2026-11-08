@@ -26,9 +26,10 @@ const PASTE_NO_PUZZLE_MSG: []const u8 = "paste: no puzzle specified";
 const NO_FLUSH_MSG: []const u8 = "flush: the terminal has no closing write";
 const NO_RECLAIM_MSG: []const u8 = "reclaim_file: the terminal has no earlier-install files";
 
-/// One running game: engine + renderer; each entry shows the game, then turns it.
+/// One running game: engine, Config and file session side by side, plus the renderer; each entry shows the game, then turns it.
 pub const Sudoku = struct {
     engine: game_engine.GameEngine,
+    /// The player's Config; the command flow changes it and hands the engine its fields.
     cfg: config.Config,
     renderer: facade_mod.Facade,
     storage: storage_mod.Storage,
@@ -107,10 +108,7 @@ pub const Sudoku = struct {
                     self.storage.forgetCurrentFile(forget);
                     break :blk .ack;
                 },
-                .persist_settings => |cfg| blk: {
-                    self.cfg = cfg;
-                    break :blk .{ .persisted = self.storage.persistSettings(cfg) };
-                },
+                .persist_settings => |cfg| .{ .persisted = self.storage.persistSettings(cfg) },
                 .copy_puzzle => .{ .copied = self.printPuzzle() },
                 // Only the web flushes, when its page closes; a terminal game is written after every command.
                 .flush => .{ .wrote = .{ .failed = NO_FLUSH_MSG } },
@@ -143,7 +141,7 @@ pub const Sudoku = struct {
 
     /// Run one player command through the core command flow.
     fn runCommandFlow(self: *@This(), cmd: command.Command) Error!void {
-        self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, cmd) };
+        self.flow = .{ .command = flow_mod.CommandFlow.init(&self.engine, &self.file_session, &self.cfg, cmd) };
         switch (try self.runFlow()) {
             .show_status => |text| try self.showGameWithStatus(text),
             else => {},
@@ -166,8 +164,8 @@ pub const Sudoku = struct {
         switch (event) {
             .ok => |ev| {
                 if (ev.is_quit) return true;
-                try self.renderer.render(frame_mod.build(&self.engine, ev.msg));
-                try self.renderer.showLegend(self.engine.getLegend());
+                try self.renderer.render(frame_mod.build(&self.engine, self.cfg, ev.msg));
+                try self.renderer.showLegend(self.engine.getLegend(self.cfg.auto_save));
                 return false;
             },
             .error_msg => |msg| {
@@ -197,20 +195,20 @@ pub const Sudoku = struct {
     /// error: input failed at the facade (renderer-level errors are already
     /// folded to error.System one level down) or dispatch/render failed.
     pub fn turn(self: *@This()) Error!bool {
-        const avail = self.engine.getLegend();
+        const avail = self.engine.getLegend(self.cfg.auto_save);
         var names: [command.Commands.len][]const u8 = undefined;
         const count = avail.getNames(&names);
         const result = self.renderer.getCommandInput(
             names[0..count],
-            self.engine.cfg.show_region,
-            self.engine.cfg.show_marks,
-            self.engine.cfg.warn_solvability,
-            self.engine.cfg.difficulty,
-            self.engine.cfg.log_level,
-            self.engine.cfg.theme,
-            self.engine.cfg.auto_restore,
-            self.engine.cfg.auto_new,
-            self.engine.cfg.auto_save,
+            self.cfg.show_region,
+            self.cfg.show_marks,
+            self.cfg.warn_solvability,
+            self.cfg.difficulty,
+            self.cfg.log_level,
+            self.cfg.theme,
+            self.cfg.auto_restore,
+            self.cfg.auto_new,
+            self.cfg.auto_save,
         ) catch return error.System;
         return try self.handleResult(result);
     }
@@ -222,8 +220,8 @@ pub const Sudoku = struct {
 
     /// First-screen render variant that allows a startup status line.
     pub fn showGameWithStatus(self: *@This(), status_msg: ?[]const u8) Error!void {
-        try self.renderer.render(frame_mod.build(&self.engine, status_msg));
-        try self.renderer.showLegend(self.engine.getLegend());
+        try self.renderer.render(frame_mod.build(&self.engine, self.cfg, status_msg));
+        try self.renderer.showLegend(self.engine.getLegend(self.cfg.auto_save));
     }
 
     /// Run the shared startup flow: restore `current_file`, start a new game, or show the idle board.
@@ -232,11 +230,7 @@ pub const Sudoku = struct {
             .{ .path = path, .name = std.fs.path.basename(path), .current = path }
         else
             null;
-        self.flow = .{ .startup = flow_mod.StartupFlow.init(&self.engine, &self.file_session, .{
-            .auto_restore = self.engine.cfg.auto_restore,
-            .auto_new = self.engine.cfg.auto_new,
-            .difficulty = self.engine.cfg.difficulty,
-        }, current) };
+        self.flow = .{ .startup = flow_mod.StartupFlow.init(&self.engine, &self.file_session, &self.cfg, current) };
         _ = try self.runFlow();
     }
 
@@ -357,7 +351,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
 
     // Assert (a): engine has undo available after mutation.
     {
-        const avail = sudoku.engine.getLegend();
+        const avail = sudoku.engine.getLegend(sudoku.cfg.auto_save);
         try std.testing.expect(avail.undo);
     }
 
@@ -482,7 +476,7 @@ test "deterministic major path: new without a puzzle generates one at the chosen
     while (true) if (try app.turn()) break;
 
     try std.testing.expectEqual(@as(usize, 0), app.engine.state.history.entries.items.len);
-    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, app.engine.cfg.difficulty);
+    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, app.cfg.difficulty);
     try std.testing.expectEqualStrings(game_engine.NEW_GAME_STARTED_MSG, app.engine.state.status.optional().?);
 }
 
@@ -1142,7 +1136,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     const after_fill = contents[0 .. first_board_end + board_marker.len];
     try std.testing.expect(std.mem.indexOf(u8, after_fill, region_on) == null);
     try std.testing.expect(sudoku.engine.selected != null);
-    try std.testing.expect(sudoku.engine.cfg.show_region);
+    try std.testing.expect(sudoku.cfg.show_region);
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);
 }
 
@@ -1166,7 +1160,7 @@ test "integrated e2e: menu Settings persists difficulty to config.json" {
     try app.showGame();
     while (true) if (try app.turn()) break;
 
-    try std.testing.expectEqual(config.Difficulty.hard, app.engine.cfg.difficulty);
+    try std.testing.expectEqual(config.Difficulty.hard, app.cfg.difficulty);
     const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expectEqual(config.Difficulty.hard, restored.difficulty);
 }
@@ -1191,7 +1185,7 @@ test "integrated e2e: menu Settings persists warn_solvability to config.json" {
     try app.showGame();
     while (true) if (try app.turn()) break;
 
-    try std.testing.expect(app.engine.cfg.warn_solvability);
+    try std.testing.expect(app.cfg.warn_solvability);
     const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expect(restored.warn_solvability);
 }
@@ -1221,9 +1215,9 @@ test "integrated e2e: menu Settings persists auto startup/save flags to config.j
     try app.showGame();
     while (true) if (try app.turn()) break;
 
-    try std.testing.expect(app.engine.cfg.auto_restore);
-    try std.testing.expect(app.engine.cfg.auto_new);
-    try std.testing.expect(app.engine.cfg.auto_save);
+    try std.testing.expect(app.cfg.auto_restore);
+    try std.testing.expect(app.cfg.auto_new);
+    try std.testing.expect(app.cfg.auto_save);
 
     const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expect(restored.auto_restore);

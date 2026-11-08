@@ -32,13 +32,6 @@ pub const CurrentFile = struct {
     current: []const u8,
 };
 
-/// Player settings that shape startup.
-pub const Options = struct {
-    auto_restore: bool,
-    auto_new: bool,
-    difficulty: puzzle_gen.Difficulty,
-};
-
 /// Fixed-size copy of a string the flow hands out in later steps.
 const Text = struct {
     buf: [MAX_NAME_LEN]u8 = undefined,
@@ -58,7 +51,8 @@ const Text = struct {
 pub const StartupFlow = struct {
     engine: *game_engine.GameEngine,
     session: *FileSession,
-    options: Options,
+    /// The player's Config: Auto Restore, Auto New and the difficulty shape startup.
+    cfg: *const config.Config,
     has_current: bool = false,
     path: Text = .{},
     name: Text = .{},
@@ -84,8 +78,8 @@ pub const StartupFlow = struct {
     };
 
     /// A flow for this launch; `current` is the file the platform remembers, if any.
-    pub fn init(engine: *game_engine.GameEngine, session: *FileSession, options: Options, current: ?CurrentFile) StartupFlow {
-        var flow = StartupFlow{ .engine = engine, .session = session, .options = options };
+    pub fn init(engine: *game_engine.GameEngine, session: *FileSession, cfg: *const config.Config, current: ?CurrentFile) StartupFlow {
+        var flow = StartupFlow{ .engine = engine, .session = session, .cfg = cfg };
         if (current) |file| {
             flow.has_current = true;
             flow.path.set(file.path);
@@ -101,8 +95,8 @@ pub const StartupFlow = struct {
             .start => {
                 if (input != .start) return self.fail(UNEXPECTED_INPUT_MSG);
                 const decision = startup_policy.evaluate(.{
-                    .auto_restore = self.options.auto_restore,
-                    .auto_new = self.options.auto_new,
+                    .auto_restore = self.cfg.auto_restore,
+                    .auto_new = self.cfg.auto_new,
                     .has_current_file = self.has_current,
                 });
                 return switch (decision.action) {
@@ -202,7 +196,7 @@ pub const StartupFlow = struct {
 
     fn generate(self: *StartupFlow) Step {
         self.phase = .generating;
-        return .{ .generate_game = self.options.difficulty };
+        return .{ .generate_game = self.cfg.difficulty };
     }
 
     fn showGame(self: *StartupFlow, phase: Phase, status: ?[]const u8) Step {
@@ -211,7 +205,7 @@ pub const StartupFlow = struct {
             self.text.set(s);
             break :blk self.text.get();
         } else null;
-        return step_mod.showGame(self.engine, shown, if (self.restored) self.name.get() else null);
+        return step_mod.showGame(self.engine, self.cfg.*, shown, if (self.restored) self.name.get() else null);
     }
 
     /// Idle board with the welcome line; `phase` says what follows once it is drawn.
@@ -219,7 +213,7 @@ pub const StartupFlow = struct {
         self.session.setCurrentFile(null);
         self.session.apply(.startup_idle);
         self.phase = phase;
-        return step_mod.showGame(self.engine, startup_policy.IDLE_STARTUP_STATUS, null);
+        return step_mod.showGame(self.engine, self.cfg.*, startup_policy.IDLE_STARTUP_STATUS, null);
     }
 
     fn restoreFailed(self: *StartupFlow, reason: []const u8) Step {
@@ -251,9 +245,17 @@ pub const StartupFlow = struct {
 const solved_line = "534678912672195348198342567859761423426853791713924856961537284287419635345286179";
 const open_line = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
 
+/// The Config fields startup reads, set per test.
+const Options = struct {
+    auto_restore: bool,
+    auto_new: bool,
+    difficulty: puzzle_gen.Difficulty,
+};
+
 const Harness = struct {
     engine: game_engine.GameEngine,
     session: FileSession = .{},
+    cfg: config.Config = config.Config.default(),
 
     fn init() !Harness {
         return .{ .engine = try game_engine.GameEngine.init(open_line, config.Config.default()) };
@@ -264,7 +266,10 @@ const Harness = struct {
     }
 
     fn flow(self: *Harness, options: Options, current: ?CurrentFile) StartupFlow {
-        return StartupFlow.init(&self.engine, &self.session, options, current);
+        self.cfg.auto_restore = options.auto_restore;
+        self.cfg.auto_new = options.auto_new;
+        self.cfg.difficulty = options.difficulty;
+        return StartupFlow.init(&self.engine, &self.session, &self.cfg, current);
     }
 
     fn saveBytes(line: []const u8) ![]u8 {

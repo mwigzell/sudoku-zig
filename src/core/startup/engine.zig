@@ -13,13 +13,13 @@ fn emptyPuzzleLine() [81]u8 {
 
 /// Build a startup `GameEngine` from resolved startup config.
 /// startup: full startup config after settings + CLI resolution.
-/// Returns: empty-grid engine carrying the startup config and synced log level.
+/// Returns: empty-grid engine playing by the startup config, with the log level synced.
 pub fn initEngineFromStartup(startup: config.Config) game_engine.Error!game_engine.GameEngine {
     logger.min_level = startup.log_level;
     return game_engine.GameEngine.init(emptyPuzzleLine()[0..], startup);
 }
 
-test "initEngineFromStartup seeds empty board and syncs startup config + logger" {
+test "initEngineFromStartup seeds an empty board, gives the engine its Config fields and syncs the logger" {
     var startup = config.Config.default();
     startup.difficulty = .hard;
     startup.log_level = .warn;
@@ -35,15 +35,9 @@ test "initEngineFromStartup seeds empty board and syncs startup config + logger"
 
     try std.testing.expectEqual(startup.log_level, logger.min_level);
 
-    const live = engine.getConfig();
-    try std.testing.expectEqual(startup.difficulty, live.difficulty);
-    try std.testing.expectEqual(startup.log_level, live.log_level);
-    try std.testing.expectEqual(startup.theme, live.theme);
-    try std.testing.expectEqual(startup.show_region, live.show_region);
-    try std.testing.expectEqual(startup.warn_solvability, live.warn_solvability);
-    try std.testing.expectEqual(startup.auto_restore, live.auto_restore);
-    try std.testing.expectEqual(startup.auto_new, live.auto_new);
-    try std.testing.expectEqual(startup.auto_save, live.auto_save);
+    try std.testing.expectEqual(startup.warn_solvability, engine.warn_dead_moves);
+    try std.testing.expectEqual(startup.warn_solvability, engine.warn_unsolvable_load);
+    try std.testing.expectEqual(startup.show_marks, engine.show_marks);
 
     const board = engine.eventBoard();
     var row: u4 = 0;

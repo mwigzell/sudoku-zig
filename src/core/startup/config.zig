@@ -103,12 +103,8 @@ pub fn formatHostStartupJsonWithCurrentFile(
 }
 
 fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
-    const live = engine.getConfig();
-    try std.testing.expectEqual(startup.difficulty, live.difficulty);
-    try std.testing.expectEqual(startup.log_level, live.log_level);
-    try std.testing.expectEqual(startup.theme, live.theme);
-    try std.testing.expectEqual(startup.show_region, live.show_region);
-    try std.testing.expectEqual(startup.warn_solvability, live.warn_solvability);
+    try std.testing.expectEqual(startup.warn_solvability, engine.warn_dead_moves);
+    try std.testing.expectEqual(startup.show_marks, engine.show_marks);
 }
 
 /// Load player prefs from disk, apply CLI on full `Config`, persist player prefs only.
@@ -218,7 +214,7 @@ test "host startup JSON points at the current file when the host has one" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_save_path\":\"/current-file\"") != null);
 }
 
-test "CLI-resolved startup config is GameEngine.cfg and logger min_level" {
+test "CLI-resolved startup config gives the engine its fields and sets logger min_level" {
     const startup_engine = @import("engine.zig");
     const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "hard", "-v", "warn" };
     var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
@@ -232,7 +228,7 @@ test "CLI-resolved startup config is GameEngine.cfg and logger min_level" {
     try std.testing.expectEqual(startup.log_level, logger.min_level);
 }
 
-test "host wire startup config matches GameEngine.cfg (web host analogue)" {
+test "host wire startup config gives the engine its fields (web host analogue)" {
     const startup_engine = @import("engine.zig");
     const startup = try configFromHostWire(
         @backingInt(wire.PlayerDifficulty.hard),
