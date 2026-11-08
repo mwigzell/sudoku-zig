@@ -1,6 +1,7 @@
 // menu_bar.test.mjs — menu bar legend sync contract.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import * as menuBar from "./menu_bar.js";
 import * as settings from "./settings.js";
 import { configTable } from "../test_support.mjs";
@@ -426,6 +427,21 @@ function makeControls() {
   panelListeners.click({ stopPropagation() {}, target: action });
   assert.equal(menu.dataset.open, "false");
   assert.equal(panel.hidden, true);
+}
+
+// ── File menu groups: New/Open/Save, then Import/Export, then Settings ──
+{
+  const html = readFileSync(new URL("../artifacts/page.html", import.meta.url), "utf8");
+  const panel = html.match(/<div class="menu-panel" id="menu-file-panel"[^>]*>([\s\S]*?)\n\s*<\/div>\n/)?.[1];
+  assert.ok(panel, "page.html has the File menu panel");
+  const entries = [...panel.matchAll(/<button[^>]*id="([^"]+)"|role="separator"/g)].map((m) => m[1] ?? "|");
+  assert.deepEqual(entries, [
+    "file-new", "file-open", "file-save", "file-save-as", "file-auto-save",
+    "|", "file-import", "file-export",
+    "|", "file-settings",
+  ]);
+  // A separator is a plain div, so the item selectors that drive clicks and drag-release never match it.
+  assert.ok(!/<button[^>]*role="separator"/.test(panel));
 }
 
 console.log("menu_bar.test.mjs OK");

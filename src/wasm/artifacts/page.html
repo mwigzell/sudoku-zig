@@ -234,6 +234,12 @@
       font-weight: normal;
     }
 
+    .menu-separator {
+      height: 1px;
+      margin: 0.25rem 0;
+      background: var(--overlay-border);
+    }
+
     .menu-panel button:hover:not(:disabled) {
       background: var(--cell-bg);
     }
@@ -869,11 +875,13 @@
         <div class="menu-panel" id="menu-file-panel" role="menu" hidden>
           <button type="button" role="menuitem" id="file-new">New</button>
           <button type="button" role="menuitem" id="file-open">Open</button>
-          <button type="button" role="menuitem" id="file-import">Import</button>
-          <button type="button" role="menuitem" id="file-export">Export</button>
           <button type="button" role="menuitem" id="file-save">Save</button>
           <button type="button" role="menuitem" id="file-save-as">Save As</button>
           <button type="button" role="menuitemcheckbox" id="file-auto-save" aria-checked="false">Auto Save (Off)</button>
+          <div class="menu-separator" role="separator"></div>
+          <button type="button" role="menuitem" id="file-import">Import</button>
+          <button type="button" role="menuitem" id="file-export">Export</button>
+          <div class="menu-separator" role="separator"></div>
           <button type="button" role="menuitem" id="file-settings">Settings</button>
         </div>
       </div>
