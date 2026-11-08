@@ -22,6 +22,7 @@ import android.util.Xml;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.uiautomator.By;
 import androidx.test.uiautomator.BySelector;
+import androidx.test.uiautomator.Direction;
 import androidx.test.uiautomator.UiDevice;
 import androidx.test.uiautomator.UiObject2;
 import androidx.test.uiautomator.Until;
@@ -109,6 +110,9 @@ public final class FileBridgeTest {
     private static final String WEB_VIEW = "android.webkit.WebView";
     // DocumentsUI views: a listed file's name, the create picker's name field, and its Save button.
     private static final String PICKER_ITEM_NAME = "android:id/title";
+    private static final String PICKER_FILE_LIST = "com.google.android.documentsui:id/dir_list";
+    /** How far up one swipe moves the picker's file list, as a share of its height. */
+    private static final float PICKER_SWIPE_PERCENT = 0.5f;
     private static final String PICKER_NAME_FIELD = "android:id/title";
     private static final String PICKER_SAVE = "android:id/button1";
     private static final int PICKER_BACK_LIMIT = 5;
@@ -393,7 +397,7 @@ public final class FileBridgeTest {
         final String earlierHash = reachTakenAskAfterReinstall();
 
         need(By.res(ASK_OK), UI_WAIT_MS).click();
-        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS).click();
+        needPickerItem(DEFAULT_NAME).click();
         final String pickedHash = awaitFileHashOtherThan(DEFAULT_PATH, earlierHash);
         assertEquals(DEFAULT_NAME, awaitBoundName());
         assertEquals(DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
@@ -426,7 +430,7 @@ public final class FileBridgeTest {
         final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
 
         need(By.res(ASK_OK), UI_WAIT_MS).click();
-        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        needPickerItem(DEFAULT_NAME);
         backOutOfPicker();
         assertEquals("asked again after backing out of Pick it", question, need(By.res(ASK_TEXT), UI_WAIT_MS).getText());
 
@@ -504,7 +508,7 @@ public final class FileBridgeTest {
         assertTrue("the prompt is the question, not an error", device.hasObject(By.res(ASK_OK)));
 
         need(By.res(ASK_OK), UI_WAIT_MS).click();
-        need(By.res(PICKER_ITEM_NAME).text(chosenName), UI_WAIT_MS).click();
+        needPickerItem(chosenName).click();
         final String pickedHash = awaitFileHashOtherThan(chosenPath, savedHash);
         assertEquals("the binding stays", chosenName, awaitBoundName());
 
@@ -520,9 +524,9 @@ public final class FileBridgeTest {
         startEasyGame();
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-save-as"), UI_WAIT_MS).click();
-        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        needPickerItem(DEFAULT_NAME);
         device.pressBack();
-        need(By.res(PICKER_ITEM_NAME).text(SAVE_FOLDER_NAME), UI_WAIT_MS);
+        needPickerItem(SAVE_FOLDER_NAME);
         saveInCreatePicker(CHOSEN_NAME);
         final String chosenPath = awaitChosenNamePath();
         assertEquals("saved in the folder above the default folder", OTHER_FOLDER + "/" + CHOSEN_NAME, chosenPath);
@@ -532,7 +536,7 @@ public final class FileBridgeTest {
         startEasyGame();
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-save-as"), UI_WAIT_MS).click();
-        need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        needPickerItem(DEFAULT_NAME);
         assertFalse("the picker is in the default folder, not the folder above it",
             device.hasObject(By.res(PICKER_ITEM_NAME).text(SAVE_FOLDER_NAME)));
         backOutOfPicker();
@@ -555,7 +559,7 @@ public final class FileBridgeTest {
         sh("cp '" + chosenPath + "' " + DEFAULT_PATH + "\n");
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-open"), UI_WAIT_MS).click();
-        final UiObject2 listed = need(By.res(PICKER_ITEM_NAME).text(DEFAULT_NAME), UI_WAIT_MS);
+        final UiObject2 listed = needPickerItem(DEFAULT_NAME);
         SystemClock.sleep(LONG_PICK_MS);
         listed.click();
         assertEquals("a slow Open loads the picked file", DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
@@ -827,6 +831,23 @@ public final class FileBridgeTest {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) automation.clearCache();
         }
         assertNotNull("not shown within " + timeoutMs + " ms: " + selector, found);
+        return found;
+    }
+
+    /**
+     * A picker entry by name. Other files in the folder can push it under the navigation bar, and the file list
+     * does not report itself scrollable while its header can still collapse, so a swipe brings the entry up.
+     */
+    private UiObject2 needPickerItem(String name) {
+        final BySelector item = By.res(PICKER_ITEM_NAME).text(name);
+        final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
+        UiObject2 found;
+        while ((found = device.wait(Until.findObject(item), NODE_CACHE_WAIT_MS)) == null
+            && SystemClock.uptimeMillis() < deadline) {
+            final UiObject2 list = device.findObject(By.res(PICKER_FILE_LIST));
+            if (list != null) list.swipe(Direction.UP, PICKER_SWIPE_PERCENT);
+        }
+        assertNotNull("not listed within " + UI_WAIT_MS + " ms: " + item, found);
         return found;
     }
 
