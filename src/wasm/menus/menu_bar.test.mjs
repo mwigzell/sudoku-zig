@@ -2,6 +2,11 @@
 
 import assert from "node:assert/strict";
 import * as menuBar from "./menu_bar.js";
+import * as settings from "./settings.js";
+import { configTable } from "../test_support.mjs";
+
+const rowLabel = (field) => settings.configRow(configTable, field).label;
+const choiceLabel = (field, name) => settings.choiceLabel(configTable, field, name);
 
 function makeBtn() {
   return { disabled: false, textContent: "", setAttribute() {} };
@@ -23,9 +28,11 @@ function makeControls() {
     paste: makeBtn(),
     solve: makeBtn(),
     deselect: makeBtn(),
+    viewSystem: makeBtn(),
     viewLight: makeBtn(),
     viewDark: makeBtn(),
     viewRegion: makeBtn(),
+    viewMarks: makeBtn(),
     about: makeBtn(),
   };
 }
@@ -73,9 +80,28 @@ function makeControls() {
 
 {
   const controls = makeControls();
-  menuBar.syncMenuBar({ save: false }, controls, { auto_save: true });
+  menuBar.syncMenuBar({ save: false }, controls);
   assert.equal(controls.save.disabled, true, "core's legend turns Save off while Auto Save is on");
-  assert.equal(controls.autoSave.textContent, "Auto Save (On)");
+}
+
+// ── Auto Save shows its row label and core's word for its value ──
+{
+  const controls = makeControls();
+  menuBar.syncAutoSave(controls, { auto_save: true }, configTable);
+  assert.equal(controls.autoSave.textContent, `${rowLabel("auto_save")} (${configTable.on})`);
+  menuBar.syncAutoSave(controls, { auto_save: false }, configTable);
+  assert.equal(controls.autoSave.textContent, `${rowLabel("auto_save")} (${configTable.off})`);
+}
+
+// ── View items that set a Config field carry the table's labels ──
+{
+  const controls = makeControls();
+  menuBar.labelConfigItems(controls, configTable);
+  assert.equal(controls.viewSystem.textContent, choiceLabel("theme", "system"));
+  assert.equal(controls.viewLight.textContent, choiceLabel("theme", "light"));
+  assert.equal(controls.viewDark.textContent, choiceLabel("theme", "dark"));
+  assert.equal(controls.viewRegion.textContent, rowLabel("show_region"));
+  assert.equal(controls.viewMarks.textContent, rowLabel("show_marks"));
 }
 
 {
@@ -112,8 +138,11 @@ function makeControls() {
   const controls = makeControls();
   const session = {
     legend: { new: true, open: true, save: true, save_as: true, undo: false, redo: false },
+    config: { auto_save: true },
+    configTable,
   };
   menuBar.wireMenuBar(controls, session);
+  assert.equal(controls.autoSave.textContent, `${rowLabel("auto_save")} (${configTable.on})`);
   assert.equal(controls.undo.disabled, true);
   assert.equal(controls.redo.disabled, true);
   assert.equal(controls.new.disabled, false);

@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import * as clientLog from "./client_log.js";
 import { loadGame, openAs, startNewGame } from "./test_support.mjs";
 
-const WARN_RANK = 2;
 const CLIENT_LOG_PATH = "./client-log";
 
 /** Capture console writes and `/client-log` posts while `body` runs. */
@@ -118,7 +117,7 @@ for (const [fail, reason] of [
   assert.equal(dropped.details.dropped, 3);
 }
 
-const game = await loadGame({ logLevel: WARN_RANK });
+const game = await loadGame({ log_level: "warn" });
 
 // Core's filter: with min_level warn, debug and info don't run, warn and err do.
 assert.deepEqual(
@@ -128,7 +127,7 @@ assert.deepEqual(
 
 // Debug lines run only for a debug host build, and then only when min_level allows.
 {
-  const debugGame = await loadGame({ logLevel: 0 });
+  const debugGame = await loadGame({ log_level: "debug" });
   debugGame.setHostBuildInfo({ debug_build: false });
   assert.equal(debugGame.logEnabled("debug"), false, "a release host build never runs debug lines");
   assert.equal(debugGame.logEnabled("info"), true, "a release host build runs info and above");

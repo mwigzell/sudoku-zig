@@ -6,56 +6,33 @@ import * as stepRunner from "./step_runner.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 
-/** Keys the web shell requires on `boot.config` after `initializeWebSession`. */
-export const REQUIRED_WEB_BOOT_CONFIG_KEYS = [
-  "difficulty",
-  "log_level",
-  "theme",
-  "show_region",
-  "warn_solvability",
-  "auto_restore",
-  "auto_new",
-  "auto_save",
-  "show_marks",
-];
-
-/** Throw unless `config` carries every key in `REQUIRED_WEB_BOOT_CONFIG_KEYS`. */
-export function assertWebBootConfig(config, label = "boot.config") {
+/**
+ * Throw unless `config` carries a value for every row of core's config table.
+ * @param {import("../types").Config} config
+ * @param {import("../types").ConfigTable} table
+ */
+export function assertWebBootConfig(config, table, label = "boot.config") {
   if (!config || typeof config !== "object") {
     throw new Error(`${label}: missing config object`);
   }
-  for (const key of REQUIRED_WEB_BOOT_CONFIG_KEYS) {
-    if (config[key] === undefined) {
-      throw new Error(`${label}: missing ${key}`);
+  for (const row of table.rows) {
+    if (config[row.field] === undefined) {
+      throw new Error(`${label}: missing ${row.field}`);
     }
   }
 }
 
-/** Required keys from `/host-config.json` before engine bootstrap. */
-export function assertHostStartupConfig(config, label = "host-config") {
-  assertWebBootConfig(config, label);
-  if (config.default_save_filename === undefined) {
+/** Required keys from `/host-config.json` before engine bootstrap: the config object and the host's file facts. */
+export function assertHostStartupConfig(hostCfg, label = "host-config") {
+  if (!hostCfg?.config || typeof hostCfg.config !== "object") {
+    throw new Error(`${label}: missing config object`);
+  }
+  if (hostCfg.default_save_filename === undefined) {
     throw new Error(`${label}: missing default_save_filename`);
   }
-  if (config.startup_save_path === undefined) {
+  if (hostCfg.startup_save_path === undefined) {
     throw new Error(`${label}: missing startup_save_path`);
   }
-}
-
-/** Bridge host config JSON to wasm bootstrap wire names and booleans. */
-/** @param {GameApi} game */
-function bootstrapEngineFromHostConfig(game, hostCfg) {
-  return game.bootstrapHostConfig({
-    difficulty: hostCfg.difficulty,
-    logLevel: hostCfg.log_level,
-    theme: hostCfg.theme,
-    show_region: hostCfg.show_region,
-    warn_solvability: hostCfg.warn_solvability === true,
-    auto_restore: hostCfg.auto_restore === true,
-    auto_new: hostCfg.auto_new === true,
-    auto_save: hostCfg.auto_save === true,
-    show_marks: hostCfg.show_marks === true,
-  });
 }
 
 /**
@@ -66,8 +43,8 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
   // Phase 1: fetch host startup contract payload and validate required keys.
   const hostCfg = await hostApi.fetchHostStartupConfig(fetchFn);
   assertHostStartupConfig(hostCfg);
-  // Phase 2: bootstrap engine config from host contract (difficulty/theme/flags).
-  const boot = bootstrapEngineFromHostConfig(game, hostCfg);
+  // Phase 2: bootstrap engine config from host contract.
+  const boot = game.bootstrapHostConfig(hostCfg.config);
   if (!boot.ok) return boot;
   game.setHostBuildInfo(await hostApi.fetchHostBuildInfo(fetchFn));
   clientLog.useCore(game);
@@ -78,6 +55,7 @@ export async function initializeWebSession(game, { fetchFn } = {}) {
     state: game.getState(),
     legend: game.getLegend(),
     config: game.getConfig(),
+    config_table: game.getConfigTable(),
     msg: boot.msg ?? null,
     default_save_filename: hostCfg.default_save_filename,
     startup_save_path: hostCfg.startup_save_path ?? null,

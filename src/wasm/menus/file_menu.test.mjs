@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import * as fileMenu from "./file_menu.js";
 import * as webSteps from "../flows/web_steps.js";
-import { PUZZLE_LINE, noPromptDialog, promptDialogStub, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow, coreText, fillText } from "../test_support.mjs";
+import { PUZZLE_LINE, noPromptDialog, promptDialogStub, hostFetch, loadGame, moveWithAutosave, openAs, postedCurrentFile, startNewGame, withCoreFlow, coreText, configTable, fakeElement, fillText } from "../test_support.mjs";
+import * as settings from "./settings.js";
 import * as menuBar from "./menu_bar.js";
 
 function makeBtn() {
@@ -55,12 +56,26 @@ function wireFile(controls, game, session, { statusEl = makeStatus(), difficulty
   return { difficulties, steps };
 }
 
+/** New's difficulty buttons as the page wires them: one per choice of the table's difficulty row, by name. */
+const DIFFICULTY_BUTTONS = settings
+  .configRow(configTable, settings.DIFFICULTY_FIELD)
+  .choices.map((c) => ({ label: c.label, difficulty: c.name }));
+
+// ── New's buttons are generated from the table: core's label, the choice's name ──
+{
+  const container = fakeElement("div");
+  const buttons = fileMenu.buildDifficultyButtons(container, configTable, fakeElement);
+  assert.deepEqual(buttons.map((b) => [b.difficulty, b.el.textContent]), DIFFICULTY_BUTTONS.map((d) => [d.difficulty, d.label]));
+  assert.equal(container.children.length, buttons.length);
+  assert.equal(buttons[0].el.className, "new-difficulty-btn");
+}
+
 function makeStatus() {
   return { textContent: "", className: "" };
 }
 
 function easyDialog() {
-  return { el: { hidden: true }, buttons: fileMenu.DIFFICULTIES.map((d) => ({ ...d, el: makeBtn() })) };
+  return { el: { hidden: true }, buttons: DIFFICULTY_BUTTONS.map((d) => ({ ...d, el: makeBtn() })) };
 }
 
 {
@@ -166,7 +181,7 @@ function easyDialog() {
   assert.equal(difficulties.length, 0, "no puzzle generated until a difficulty is picked");
   await difficultyDialog.buttons[1].el.click();
   assert.equal(difficultyDialog.el.hidden, true, "dialog closes after a pick");
-  assert.deepEqual(difficulties, [2], "the picked difficulty is generated");
+  assert.deepEqual(difficulties, ["medium"], "the picked difficulty is generated");
   assert.equal(session.state.cells[0].value, 5, "board resets to the generated game");
 }
 
@@ -206,22 +221,17 @@ function easyDialog() {
 }
 
 {
-  assert.equal(fileMenu.DIFFICULTIES.length, 3);
-  assert.deepEqual(
-    fileMenu.DIFFICULTIES.map((d) => d.difficulty),
-    [1, 2, 3],
-    "web New dialog matches native easy/medium/hard wire values",
-  );
+  assert.deepEqual(DIFFICULTY_BUTTONS.map((d) => d.difficulty), ["easy", "medium", "hard"]);
   let chosen = null;
   const dialog = {
     el: { hidden: true },
-    buttons: fileMenu.DIFFICULTIES.map((d) => ({ ...d, el: makeBtn() })),
+    buttons: DIFFICULTY_BUTTONS.map((d) => ({ ...d, el: makeBtn() })),
   };
   fileMenu.wireDifficultyDialog(dialog, (difficulty) => {
     chosen = difficulty;
   });
   await dialog.buttons[2].el.click();
-  assert.equal(chosen, 3);
+  assert.equal(chosen, "hard");
   assert.equal(dialog.el.hidden, true);
 }
 
@@ -229,7 +239,7 @@ function easyDialog() {
   let chosen = null;
   const dialog = {
     el: { hidden: false },
-    buttons: fileMenu.DIFFICULTIES.map((d) => ({ ...d, el: makeBtn() })),
+    buttons: DIFFICULTY_BUTTONS.map((d) => ({ ...d, el: makeBtn() })),
     cancelBtn: makeBtn(),
   };
   fileMenu.wireDifficultyDialog(dialog, (difficulty) => {

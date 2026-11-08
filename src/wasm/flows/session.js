@@ -7,8 +7,10 @@ export const CURRENT_FILE_UNSAVED_LABEL = "unsaved";
 
 export const REQUIRED_STARTUP_READY_KEYS = ["default_save_filename"];
 
-/** The web session before startup has shown a game: the engine's idle board, no bound file.
- * `fileHandle` is the browser file a save writes again; Android's bound file lives in the bridge. */
+/** The web session before startup has shown a game: the engine's idle board, its Config and core's config table, no bound file.
+ * `fileHandle` is the browser file a save writes again; Android's bound file lives in the bridge.
+ * @param {{ state: unknown, legend: Record<string, boolean>, config: import("../types").Config, config_table: import("../types").ConfigTable, default_save_filename: string }} boot
+ */
 export function createWebSessionFromStartup(boot) {
   for (const key of REQUIRED_STARTUP_READY_KEYS) {
     if (boot?.[key] === undefined) {
@@ -19,6 +21,7 @@ export function createWebSessionFromStartup(boot) {
     state: boot.state,
     legend: boot.legend,
     config: boot.config,
+    configTable: boot.config_table,
     default_save_filename: boot.default_save_filename,
     boundFilename: null,
     /** @type {FileSystemFileHandle | null} */

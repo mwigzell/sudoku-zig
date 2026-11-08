@@ -164,6 +164,20 @@ fn parse(comptime T: type, comptime r: Row, value: Value) Error!T {
     return std.meta.stringToEnum(T, name) orelse Error.BadValue;
 }
 
+/// The choice `name` of the field `field`, read as that field's type; only the row's choices are accepted.
+pub fn parseChoice(comptime T: type, comptime field: []const u8, name: []const u8) Error!T {
+    return parse(T, comptime row(field), .{ .choice = name });
+}
+
+/// A JSON value as a table value: a bool is on/off, a string names a choice; anything else is no value.
+pub fn valueFromJson(json: std.json.Value) ?Value {
+    return switch (json) {
+        .bool => |on| .{ .on = on },
+        .string => |name| .{ .choice = name },
+        else => null,
+    };
+}
+
 /// The current value of the field `r` describes.
 pub fn get(cfg: Config, r: Row) Value {
     inline for (@typeInfo(Config).@"struct".field_names) |name| {
@@ -183,6 +197,17 @@ pub fn toggle(cfg: Config, r: Row) Change {
 }
 
 const testing = std.testing;
+
+test "parseChoice reads a row's choice and refuses a value the row does not offer" {
+    try testing.expectEqual(config.Difficulty.hard, try parseChoice(config.Difficulty, "difficulty", "hard"));
+    try testing.expectError(Error.BadValue, parseChoice(config.Difficulty, "difficulty", "default"));
+}
+
+test "valueFromJson takes a bool or a string and nothing else" {
+    try testing.expect(valueFromJson(.{ .bool = true }).?.on);
+    try testing.expectEqualStrings("dark", valueFromJson(.{ .string = "dark" }).?.choice);
+    try testing.expect(valueFromJson(.{ .integer = 2 }) == null);
+}
 
 test "apply sets an on/off field and a choice field by name" {
     var cfg = Config.default();

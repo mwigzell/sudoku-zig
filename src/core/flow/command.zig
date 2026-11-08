@@ -8,7 +8,7 @@ const config_table = @import("../config_table.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
-const settings_mod = @import("settings.zig");
+const config_flow = @import("config.zig");
 const autosave_mod = @import("autosave.zig");
 const save_mod = @import("save.zig");
 const export_mod = @import("export.zig");
@@ -19,7 +19,7 @@ const log = logger.Logger(.flow);
 const Step = step_mod.Step;
 const Input = step_mod.Input;
 const FileSession = file_session_mod.FileSession;
-const SettingsFlow = settings_mod.SettingsFlow;
+const ConfigFlow = config_flow.ConfigFlow;
 const AutosaveFlow = autosave_mod.AutosaveFlow;
 const SaveFlow = save_mod.SaveFlow;
 const ExportFlow = export_mod.ExportFlow;
@@ -40,7 +40,7 @@ pub const CommandFlow = struct {
     cfg: *config.Config,
     cmd: command.Command,
     phase: Phase = .start,
-    settings: SettingsFlow = undefined,
+    persist: ConfigFlow = undefined,
     autosave: AutosaveFlow = undefined,
     write: Write = undefined,
 
@@ -63,11 +63,11 @@ pub const CommandFlow = struct {
             .writing => return self.continueWrite(input),
             .showing => {
                 if (input != .ack) return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG));
-                self.settings = SettingsFlow.afterCommand(self.cfg.*, self.cmd);
+                self.persist = ConfigFlow.afterCommand(self.cfg.*, self.cmd);
                 self.phase = .persisting;
-                return self.continueSettings(.start);
+                return self.continuePersist(.start);
             },
-            .persisting => return self.continueSettings(input),
+            .persisting => return self.continuePersist(input),
             .autosaving => return self.continueAutosave(input),
             .clearing => return self.finish(.{ .show_status = LOAD_ENDED_STATUS }),
             .finished => return .done,
@@ -188,8 +188,8 @@ pub const CommandFlow = struct {
         return if (step_mod.isTerminal(step)) self.finish(step) else step;
     }
 
-    fn continueSettings(self: *CommandFlow, input: Input) Step {
-        const step = self.settings.next(input);
+    fn continuePersist(self: *CommandFlow, input: Input) Step {
+        const step = self.persist.next(input);
         switch (step) {
             .done => {},
             .show_status, .prompt_message => return self.finish(step),
@@ -235,7 +235,7 @@ test "a config change shows the new setting, then persists it, and does not auto
 
     const shown = flow.next(.start).show_game;
     try testing.expect(shown.config.auto_save);
-    try testing.expect(flow.next(.ack).persist_settings.auto_save);
+    try testing.expect(flow.next(.ack).persist_config.auto_save);
     try testing.expect(flow.next(.{ .persisted = .ok }) == .done);
 }
 
@@ -265,7 +265,7 @@ test "a rejected command shows the engine's error and nothing else" {
     try testing.expect(flow.next(.ack) == .done);
 }
 
-test "a failed settings write ends the command with the error" {
+test "a failed config write ends the command with the error" {
     var cfg = config.Config.default();
     var engine = try testEngine(cfg);
     defer engine.deinit();
@@ -273,7 +273,7 @@ test "a failed settings write ends the command with the error" {
     var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "theme", .value = .{ .choice = "light" } } });
     _ = flow.next(.start);
     _ = flow.next(.ack);
-    try testing.expectEqualStrings(settings_mod.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).prompt_message.text);
+    try testing.expectEqualStrings(config_flow.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).prompt_message.text);
 }
 
 test "set_config changes the Config held beside the engine, and the engine takes its fields" {
@@ -462,6 +462,6 @@ test "every message a command can show in a dialog reads as a sentence" {
         save_mod.NAME_TOO_LONG_MSG,
         export_mod.EXPORT_FAILED_MSG,
         export_mod.COPY_FAILED_MSG,
-        settings_mod.PERSIST_FAILED_MSG,
+        config_flow.PERSIST_FAILED_MSG,
     }) |msg| try sentence.expectSentence(msg);
 }

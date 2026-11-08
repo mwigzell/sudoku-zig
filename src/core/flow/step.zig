@@ -102,7 +102,7 @@ pub const Step = union(enum) {
     /// Stop restoring this current file at startup; answered with `ack`.
     forget_current_file: ForgetCurrentFile,
     /// Store this Config in `config.json`.
-    persist_settings: config.Config,
+    persist_config: config.Config,
     show_status: []const u8,
     done,
 };
@@ -172,7 +172,7 @@ pub const Generated = union(enum) {
     failed: []const u8,
 };
 
-/// Outcome of a step that either worked or failed with a reason (`persist_settings`, `copy_puzzle`).
+/// Outcome of a step that either worked or failed with a reason (`persist_config`, `copy_puzzle`).
 pub const Outcome = union(enum) {
     ok,
     failed: []const u8,

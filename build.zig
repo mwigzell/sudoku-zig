@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) void {
         "--export=getAbout",            "--export=outPtr",           "--export=flowStart",
         "--export=flowNext",            "--export=setHostBuildInfo", "--export=commandStart",
         "--export=getGenText",          "--export=getCoreText",      "--export=logEnabled",
+        "--export=getConfigTable",
     });
     const mkdir_artifacts = b.addSystemCommand(&.{ "mkdir", "-p", "src/wasm/artifacts" });
     wasm_emit.step.dependOn(&mkdir_artifacts.step);

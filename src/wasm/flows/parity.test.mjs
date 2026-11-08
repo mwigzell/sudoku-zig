@@ -18,7 +18,7 @@ import * as menu from "../menus/menu.js";
 import * as region from "../menus/region.js";
 import * as settingsMenu from "../menus/settings.js";
 import * as themeMod from "../menus/theme.js";
-import { generatingModalStub, loadGame, settleFlow } from "../test_support.mjs";
+import { fakeSettingsDialog, generatingModalStub, loadGame, settleFlow } from "../test_support.mjs";
 
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").FlowStep} FlowStep */
@@ -38,9 +38,6 @@ const WEB = "web";
 const ANDROID = "android";
 const PLATFORMS = [WEB, ANDROID];
 const PROMPT_TYPES = ["information", "warning", "error"];
-const DIFFICULTY_NAMES = { 1: "easy", 2: "medium", 3: "hard" };
-const DIFFICULTY_WIRE = { easy: 1, medium: 2, hard: 3 };
-const LOG_LEVEL_NAMES = ["debug", "info", "warn", "err", "fatal"];
 const DEFAULT_SAVE_NAME = "sudoku.sud";
 /** The engine's own default; the test game otherwise starts dark. */
 const NATIVE_DEFAULT_THEME = "system";
@@ -98,7 +95,7 @@ function describeStep(step) {
       Object.assign(event, { status: step.text || null, file: baseName(step.file ?? null), loaded: step.loaded ? true : null });
       break;
     case stepRunner.STEP_GENERATE_GAME:
-      event.difficulty = DIFFICULTY_NAMES[step.difficulty];
+      event.difficulty = step.difficulty;
       break;
     case stepRunner.STEP_FORGET_CURRENT_FILE:
       event.delete = step.delete;
@@ -434,13 +431,14 @@ async function launch(platform, cfg, world, ui) {
   game.generatePuzzle = ({ difficulty }) => {
     if (world.generate === "cancelled") return { ok: false, error: "cancelled" };
     if (world.generate === "failed") return { ok: false, error: FAILED_REASON };
-    return { ok: true, line: NATIVE.generated_lines[DIFFICULTY_NAMES[difficulty]] };
+    return { ok: true, line: NATIVE.generated_lines[difficulty] };
   };
   const recorder = recordSteps(game);
   const boot = {
     state: game.getState(),
     legend: game.getLegend(),
     config: game.getConfig(),
+    config_table: game.getConfigTable(),
     default_save_filename: world.current ?? DEFAULT_SAVE_NAME,
     startup_save_path: world.current ? CURRENT_FILE : null,
   };
@@ -487,7 +485,9 @@ async function launch(platform, cfg, world, ui) {
     viewDark: makeMenuItem(),
     viewSystem: makeMenuItem(),
   };
-  const difficultyButtons = Object.keys(DIFFICULTY_WIRE).map((difficulty) => ({ el: makeBtn(), difficulty }));
+  const difficultyButtons = settingsMenu
+    .configRow(session.configTable, "difficulty")
+    .choices.map((c) => ({ el: makeBtn(), difficulty: c.name }));
   region.wireRegionMenu(controls, game, session, ui.boardEl, { createElement, steps });
   const marks = marksMod.wireMarks(controls, game, session, ui.boardEl, { createElement, steps });
   themeMod.wireThemeMenu(controls, game, session, { root: themeRoot(), steps });
@@ -496,31 +496,28 @@ async function launch(platform, cfg, world, ui) {
     difficultyDialog: { el: { hidden: true }, buttons: difficultyButtons },
     steps,
   });
-  const modal = {
-    el: { hidden: true },
-    checkbox: makeBtn(),
-    difficultySelect: { ...makeBtn(), value: "" },
-    logLevelSelect: { ...makeBtn(), value: "" },
-    autoRestoreCheckbox: makeBtn(),
-    autoNewCheckbox: makeBtn(),
-    autoSaveCheckbox: makeBtn(),
-    dismissEl: makeBtn(),
-  };
+  const settingsDialog = fakeSettingsDialog();
   const settingsBtn = makeBtn();
-  settingsMenu.wireSettingsMenu(settingsBtn, game, session, modal, { steps });
+  settingsMenu.wireSettingsMenu(settingsBtn, game, session, settingsDialog.modal, {
+    steps,
+    createElement: settingsDialog.createElement,
+  });
   autosave.wireFlushOnClose(game, steps, { win });
-  return { platform, game, session, steps, controls, difficultyButtons, modal, settingsBtn, win, recorder, marks };
+  return { platform, game, session, steps, controls, difficultyButtons, settingsField: settingsDialog.field, settingsBtn, win, recorder, marks };
 }
 
 /** Carry out one scenario step through the shell's own entry points. */
 async function runStep(run, world, ui, step) {
-  const { game, session, steps, controls, modal, settingsBtn } = run;
+  const { game, session, steps, controls, settingsField, settingsBtn } = run;
   const edit = (action, selected = null) =>
     menu.handleEditAction(action, game, ui.boardEl, { getSelection: () => selected, select() {}, deselect() {} }, session, createElement, { steps }).done;
-  const setting = async (el, value) => {
+  /** File → Settings, then pick `value` in the field's select, or click its checkbox when no value is given. */
+  const setting = async (field, value) => {
     await settingsBtn.click();
+    const el = settingsField(field);
     if (value !== undefined) el.value = value;
-    await el.change();
+    else el.checked = !el.checked;
+    await el.onchange();
   };
   if (step.undo) return edit("undo");
   if (step.redo) return edit("redo");
@@ -589,11 +586,11 @@ async function runStep(run, world, ui, step) {
     ({ light: controls.viewLight, dark: controls.viewDark, system: controls.viewSystem })[step.set_theme].click();
     return settleFlow();
   }
-  if (step.toggle_warn_solvability) return setting(modal.checkbox);
-  if (step.set_difficulty) return setting(modal.difficultySelect, step.set_difficulty);
-  if (step.set_log_level) return setting(modal.logLevelSelect, step.set_log_level);
-  if (step.toggle_auto_restore) return setting(modal.autoRestoreCheckbox);
-  if (step.toggle_auto_new) return setting(modal.autoNewCheckbox);
+  if (step.toggle_warn_solvability) return setting("warn_solvability");
+  if (step.set_difficulty) return setting("difficulty", step.set_difficulty);
+  if (step.set_log_level) return setting("log_level", step.set_log_level);
+  if (step.toggle_auto_restore) return setting("auto_restore");
+  if (step.toggle_auto_new) return setting("auto_new");
   if (step.close) {
     if (run.platform === WEB) run.win.dispatch("pagehide");
     else run.win[autosave.FLUSH_ON_CLOSE_HOOK]();
@@ -630,8 +627,8 @@ function finalState(run, ui) {
     selected: session.state.selected,
     region: session.state.region,
     config: {
-      difficulty: DIFFICULTY_NAMES[config.difficulty],
-      log_level: LOG_LEVEL_NAMES[config.log_level],
+      difficulty: config.difficulty,
+      log_level: config.log_level,
       theme: config.theme,
       show_region: config.show_region,
       warn_solvability: config.warn_solvability,
@@ -669,7 +666,6 @@ const isSolved = (state) => state.cells.every((c) => c.value !== 0 && !c.conflic
 /** Run `scenario` on `platform`; returns its transcript. */
 async function runScenario(scenario, platform) {
   const cfg = { theme: NATIVE_DEFAULT_THEME, ...scenario.config };
-  if (typeof cfg.difficulty === "string") cfg.difficulty = DIFFICULTY_WIRE[cfg.difficulty];
   const world = await makeWorld(scenario);
   const answers = [...(scenario.answers ?? [])];
   const ui = {

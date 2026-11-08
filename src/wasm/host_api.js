@@ -1,6 +1,6 @@
-// host_api.js — HTTP calls to the serving host: startup config, build facts, settings and the current file.
+// host_api.js — HTTP calls to the serving host: startup config, build facts, the Config and the current file.
 
-/** @typedef {import("./types").PlayerSettings} PlayerSettings */
+/** @typedef {import("./types").Config} Config */
 /** @typedef {import("./types").PersistResult} PersistResult */
 /** @typedef {import("./types").HostBuildInfo} HostBuildInfo */
 
@@ -13,7 +13,7 @@ const FILENAME_HEADER = "X-Sudoku-Filename";
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
 
-/** The host's startup config: player settings, default save name and the current file to restore. */
+/** The host's startup config: the Config, default save name and the current file to restore. */
 export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
   const res = await fetchFn(HOST_CONFIG_PATH);
   if (!res.ok) throw new Error(`host-config fetch failed: ${res.status}`);
@@ -47,15 +47,15 @@ export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) 
 }
 
 /**
- * Hand core's player settings to the host, which stores them in `config.json`.
- * @param {PlayerSettings} settings
+ * Hand core's Config to the host, which stores it in `config.json`.
+ * @param {Config} config
  * @returns {Promise<PersistResult>}
  */
-export async function persistSettings(settings, fetchFn) {
+export async function persistConfig(config, fetchFn) {
   const res = await fetchFn(HOST_CONFIG_BODY_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(settings),
+    body: JSON.stringify(config),
   });
   if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
   return { ok: true };

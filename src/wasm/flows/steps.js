@@ -108,7 +108,7 @@ export function sharedSteps(ctx) {
     },
     generateGame: (difficulty) => generate.generateWithModal(game, generatingModal, { difficulty, genWorker }),
     forgetCurrentFile: (forget) => hostApi.forgetCurrentFile(forget.delete, fetchFn),
-    persistSettings: (settings) => hostApi.persistSettings(settings, fetchFn),
+    persistConfig: (config) => hostApi.persistConfig(config, fetchFn),
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);
       if (statusEl) statusBar.showStatusText(statusEl, text);

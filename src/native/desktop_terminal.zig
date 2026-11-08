@@ -35,12 +35,12 @@ pub fn run(io: std.Io, gpa: std.mem.Allocator, cfg: config.Config, data_dir: []c
         break :blk null;
     };
     defer if (visible_save_dir) |dir| gpa.free(dir);
-    const settings_persist: ?storage.SettingsPersist = if (std.mem.eql(u8, data_dir, "."))
+    const config_persist: ?storage.ConfigPersist = if (std.mem.eql(u8, data_dir, "."))
         null
     else
         .{ .io = io, .data_dir = data_dir, .visible_save_dir = visible_save_dir orelse data_dir };
 
-    var game = try sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io), host.writer(), settings_persist);
+    var game = try sudoku.Sudoku.init(cfg, facade_f, file_transport.NativeTransport.make(host.io), host.writer(), config_persist);
     defer game.deinit();
 
     const current_file = game.storage.loadCurrentFile(gpa);

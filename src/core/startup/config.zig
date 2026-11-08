@@ -3,7 +3,6 @@
 const std = @import("std");
 const config = @import("../config.zig");
 const logger = @import("../logger.zig");
-const wire = @import("../../wasm/wire.zig");
 const cli = @import("../../native/cli.zig");
 const config_store = @import("../config_store.zig");
 const path = @import("../../native/shell/path.zig");
@@ -11,38 +10,12 @@ const save_defaults = @import("../save_defaults.zig");
 
 const log = logger.Logger(.startup);
 
-/// View/theme fields the host wire carries alongside difficulty and log level.
-pub fn configFromHostWire(
-    difficulty: u8,
-    log_level: u8,
-    theme: config.ViewTheme,
-    show_region: bool,
-    warn_solvability: bool,
-    auto_restore: bool,
-    auto_new: bool,
-    auto_save: bool,
-    show_marks: bool,
-) error{InvalidHostWire}!config.Config {
-    const partial = wire.WireConfig.fromWire(difficulty, log_level) orelse return error.InvalidHostWire;
-    var cfg = config.Config.default();
-    cfg.difficulty = partial.difficulty.toPuzzleDifficulty();
-    cfg.log_level = partial.log_level;
-    cfg.theme = theme;
-    cfg.show_region = show_region;
-    cfg.warn_solvability = warn_solvability;
-    cfg.auto_restore = auto_restore;
-    cfg.auto_new = auto_new;
-    cfg.auto_save = auto_save;
-    cfg.show_marks = show_marks;
-    return cfg;
-}
-
 /// Sync global logger severity from resolved startup config.
 pub fn applyLoggerFromStartup(startup: config.Config) void {
     logger.min_level = startup.log_level;
 }
 
-/// JSON body for `/host-config.json` — same shape as wasm `getConfig()`.
+/// JSON body for `/host-config.json`: `{"config": …}` in `config.json`'s shape, plus the host's file facts.
 pub fn writeHostStartupJson(w: *std.Io.Writer, startup: config.Config) !void {
     return writeHostStartupJsonWithCurrentFile(w, startup, false, save_defaults.DEFAULT_SAVE_FILE);
 }
@@ -56,29 +29,11 @@ pub fn writeHostStartupJsonWithCurrentFile(
     default_save_filename: []const u8,
 ) !void {
     const startup_save_path = if (has_current_file) "/current-file" else null;
-    const wire_cfg = wire.WireConfig.fromConfig(startup);
-    const theme_name: []const u8 = switch (wire_cfg.theme) {
-        .dark => "dark",
-        .light => "light",
-        .system => "system",
-    };
-    try std.Io.Writer.print(
-        w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"show_marks\":{any},\"default_save_filename\":\"{s}\",\"startup_save_path\":{f}}}",
-        .{
-            @backingInt(wire_cfg.difficulty),
-            @backingInt(wire_cfg.log_level),
-            theme_name,
-            wire_cfg.show_region,
-            wire_cfg.warn_solvability,
-            startup.auto_restore,
-            startup.auto_new,
-            startup.auto_save,
-            startup.show_marks,
-            default_save_filename,
-            std.json.fmt(startup_save_path, .{}),
-        },
-    );
+    try w.writeAll("{\"config\":");
+    try config_store.writeConfigJson(w, startup);
+    try w.writeAll(",\"default_save_filename\":");
+    try std.json.Stringify.value(default_save_filename, .{}, w);
+    try w.print(",\"startup_save_path\":{f}}}", .{std.json.fmt(startup_save_path, .{})});
 }
 
 /// Serialize startup config into a fixed buffer for host-config responses.
@@ -178,27 +133,7 @@ test "host startup JSON reflects Config loaded from config.json on disk" {
     var buf: [1024]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
-        json,
-    );
-}
-
-test "host startup JSON matches Config wire fields" {
-    const startup = config.Config{
-        .difficulty = .medium,
-        .renderers = .{ .preferred = .web, .fallback = .ansi },
-        .log_level = .debug,
-        .theme = .light,
-        .show_region = true,
-        .auto_restore = true,
-        .auto_new = false,
-        .auto_save = true,
-    };
-
-    var buf: [1024]u8 = undefined;
-    const json = try formatHostStartupJson(startup, &buf);
-    try std.testing.expectEqualStrings(
-        "{\"difficulty\":2,\"log_level\":0,\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":false,\"auto_save\":true,\"show_marks\":true,\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
+        "{\"config\":{\"difficulty\":\"medium\",\"log_level\":\"debug\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":true},\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
         json,
     );
 }
@@ -228,23 +163,23 @@ test "CLI-resolved startup config gives the engine its fields and sets logger mi
     try std.testing.expectEqual(startup.log_level, logger.min_level);
 }
 
-test "host wire startup config gives the engine its fields (web host analogue)" {
+test "host startup JSON's config reads back into the engine's fields (web host analogue)" {
     const startup_engine = @import("engine.zig");
-    const startup = try configFromHostWire(
-        @backingInt(wire.PlayerDifficulty.hard),
-        @backingInt(logger.Severity.warn),
-        .light,
-        true,
-        false,
-        true,
-        true,
-        true,
-        false,
-    );
-    try std.testing.expect(!startup.show_marks);
+    var sent = config.Config.default();
+    sent.warn_solvability = true;
+    sent.show_marks = false;
+    var buf: [1024]u8 = undefined;
+    const json = try formatHostStartupJson(sent, &buf);
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, json, .{});
+    defer parsed.deinit();
+    var body: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer body.deinit();
+    try std.json.Stringify.value(parsed.value.object.get("config").?, .{}, &body.writer);
 
+    var startup = config.Config.default();
+    try config_store.applyConfigJson(std.testing.allocator, &startup, body.written());
     var engine = try startup_engine.initEngineFromStartup(startup);
     defer engine.deinit();
-
     try expectStartupConfigOnEngine(&engine, startup);
+    try std.testing.expect(!engine.show_marks);
 }

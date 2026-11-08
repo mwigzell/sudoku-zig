@@ -5,64 +5,43 @@ import * as sessionMod from "./session.js";
 import * as startupMod from "./startup.js";
 import * as webSteps from "./web_steps.js";
 import * as board from "../board.js";
-import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAutosave, noPromptDialog, postedCurrentFile, startNewGame, coreText, fillText } from "../test_support.mjs";
+import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAutosave, noPromptDialog, postedCurrentFile, startNewGame, coreText, configTable, fillText } from "../test_support.mjs";
 
-// ── initializeWebSession: host config boot + host startup policy payload ──
-{
-  const hostCfg = {
-    difficulty: 2,
-    log_level: 1,
-    theme: "dark",
-    show_region: false,
-    warn_solvability: false,
-    auto_restore: false,
-    auto_new: false,
-    auto_save: false,
-    show_marks: false,
-    default_save_filename: "sudoku_save.sud",
-    startup_save_path: "/current-file",
-  };
-  /** @type {unknown[]} */
-  const buildInfoCalls = [];
-  const game = {
+/** A Config in `config.json`'s shape, as the host serves it. */
+const PLAYER_CONFIG = {
+  difficulty: "medium",
+  log_level: "info",
+  theme: "dark",
+  show_region: false,
+  warn_solvability: false,
+  auto_restore: false,
+  auto_new: false,
+  auto_save: false,
+  show_marks: false,
+};
+
+/** A fake game answering the boot calls with `config`, recording what bootstrap received. */
+function bootGame(config, { bootCalls = [], buildInfoCalls = [] } = {}) {
+  return {
     bootstrapHostConfig(cfg) {
-      assert.deepEqual(cfg, {
-        difficulty: 2,
-        logLevel: 1,
-        theme: "dark",
-        show_region: false,
-        warn_solvability: false,
-        auto_restore: false,
-        auto_new: false,
-        auto_save: false,
-        show_marks: false,
-      });
+      bootCalls.push(cfg);
       return { ok: true, msg: "engine ready" };
     },
     logEnabled: () => false,
-    setHostBuildInfo(info) {
-      buildInfoCalls.push(info);
-    },
-    getState() {
-      return { cells: [{ value: 0, given: false, conflict: false }] };
-    },
-    getLegend() {
-      return { new: true };
-    },
-    getConfig() {
-      return {
-        difficulty: 2,
-        log_level: 1,
-        theme: "dark",
-        show_region: false,
-        warn_solvability: false,
-        auto_restore: false,
-        auto_new: false,
-        auto_save: false,
-        show_marks: false,
-      };
-    },
+    setHostBuildInfo: (info) => buildInfoCalls.push(info),
+    getState: () => ({ cells: [{ value: 0, given: false, conflict: false }] }),
+    getLegend: () => ({ new: true }),
+    getConfig: () => config,
+    getConfigTable: () => configTable,
   };
+}
+
+// ── initializeWebSession: host config boot + host startup policy payload ──
+{
+  const hostCfg = { config: PLAYER_CONFIG, default_save_filename: "sudoku_save.sud", startup_save_path: "/current-file" };
+  const bootCalls = [];
+  const buildInfoCalls = [];
+  const game = bootGame(PLAYER_CONFIG, { bootCalls, buildInfoCalls });
   const out = await startupMod.initializeWebSession(game, {
     fetchFn: async (url) => ({
       ok: true,
@@ -70,43 +49,17 @@ import { flushDialogPaint, generatingModalStub, hostFetch, loadGame, moveWithAut
     }),
   });
   assert.equal(out.ok, true);
+  assert.deepEqual(bootCalls, [PLAYER_CONFIG], "the host's config object reaches core unchanged");
   assert.deepEqual(buildInfoCalls, [{ debug_build: true }], "host build facts reach wasm apart from config");
-  assert.equal(out.config.difficulty, 2);
+  assert.equal(out.config.difficulty, "medium");
+  assert.equal(out.config_table, configTable);
   assert.equal(out.startup_save_path, "/current-file");
   assert.equal(out.default_save_filename, "sudoku_save.sud");
 }
 
 {
-  const hostCfg = {
-    difficulty: 1,
-    log_level: 1,
-    theme: "dark",
-    show_region: false,
-    warn_solvability: false,
-    auto_restore: false,
-    auto_new: false,
-    auto_save: false,
-    show_marks: false,
-    default_save_filename: "sudoku_save.sud",
-    startup_save_path: null,
-  };
-  const game = {
-    bootstrapHostConfig() {
-      return { ok: true };
-    },
-    logEnabled: () => false,
-    setHostBuildInfo() {},
-    getState() {
-      return { cells: [{ value: 5, given: true, conflict: false }] };
-    },
-    getLegend() {
-      return {};
-    },
-    getConfig() {
-      return hostCfg;
-    },
-  };
-  const out = await startupMod.initializeWebSession(game, {
+  const hostCfg = { config: PLAYER_CONFIG, default_save_filename: "sudoku_save.sud", startup_save_path: null };
+  const out = await startupMod.initializeWebSession(bootGame(PLAYER_CONFIG), {
     fetchFn: async () => ({ ok: true, json: async () => hostCfg }),
   });
   assert.equal(out.ok, true);
@@ -150,6 +103,7 @@ async function runStartupScenario({ config = {}, currentFile = null, answers = [
     state: game.getState(),
     legend: game.getLegend(),
     config: game.getConfig(),
+    config_table: game.getConfigTable(),
     default_save_filename: currentFile?.name ?? "sudoku.sud",
     startup_save_path: currentFile ? HOST_CURRENT_FILE : null,
   };
@@ -239,7 +193,7 @@ for (const deleteIt of [true, false]) {
   // Restored game already solved: core asks; New game generates at the saved difficulty.
   const bytes = await savedGameBytes(SOLVED_LINE);
   const run = await runStartupScenario({
-    config: { auto_restore: true, difficulty: 3 },
+    config: { auto_restore: true, difficulty: "hard" },
     currentFile: { name: "game.sud", bytes },
     answers: [true],
     generated: [{ ok: true, line: OPEN_LINE }],
@@ -248,7 +202,7 @@ for (const deleteIt of [true, false]) {
   assert.equal(run.asked[0].title, "Puzzle solved");
   assert.equal(run.asked[0].type, "information");
   assert.equal(run.asked[0].buttons[run.asked[0].default], "New game");
-  assert.deepEqual(run.generateCalls, [3]);
+  assert.deepEqual(run.generateCalls, ["hard"]);
   assert.equal(run.shown.length, 2);
   assert.equal(run.session.state.cells[0].value, 5);
 }
@@ -268,9 +222,9 @@ for (const deleteIt of [true, false]) {
 
 {
   // Auto new: core imports the generated line itself.
-  const run = await runStartupScenario({ config: { auto_new: true, difficulty: 2 }, generated: [{ ok: true, line: OPEN_LINE }] });
+  const run = await runStartupScenario({ config: { auto_new: true, difficulty: "medium" }, generated: [{ ok: true, line: OPEN_LINE }] });
   assert.equal(run.outcome.kind, "done");
-  assert.deepEqual(run.generateCalls, [2]);
+  assert.deepEqual(run.generateCalls, ["medium"]);
   assert.equal(run.shown.length, 1);
   assert.notEqual(run.shown[0].text, WELCOME_STATUS);
   assert.equal(run.session.state.cells[0].value, 5);
@@ -295,12 +249,12 @@ for (const deleteIt of [true, false]) {
 {
   // The web generate_game step hands core the line; Continue still closes the modal.
   const game = {
-    getConfig: () => ({ difficulty: 1, log_level: 1 }),
-    generatePuzzle: ({ difficulty }) => ({ ok: true, line: `${difficulty}`.repeat(81) }),
+    getConfig: () => ({ difficulty: "easy", log_level: "info" }),
+    generatePuzzle: ({ difficulty }) => ({ ok: true, line: (difficulty === "medium" ? "2" : "1").repeat(81) }),
   };
   const modal = generatingModalStub();
   const steps = webSteps.webSteps(game, {}, { generatingModal: modal });
-  const running = steps.generateGame(2);
+  const running = steps.generateGame("medium");
   await flushDialogPaint();
   assert.equal(modal.el.hidden, false, "startup generation waits for Continue");
   modal.continueBtn.click();
@@ -310,62 +264,17 @@ for (const deleteIt of [true, false]) {
 }
 
 {
-  for (const key of startupMod.REQUIRED_WEB_BOOT_CONFIG_KEYS) {
-    const cfg = {
-      difficulty: 1,
-      log_level: 1,
-      theme: "dark",
-      show_region: false,
-      warn_solvability: false,
-      auto_restore: false,
-      auto_new: false,
-      auto_save: false,
-      show_marks: false,
-      default_save_filename: "sudoku_save.sud",
-    };
-    delete cfg[key];
-    assert.throws(() => startupMod.assertWebBootConfig(cfg), new RegExp(`missing ${key}`));
+  // Boot needs a value for every row of core's config table.
+  for (const row of configTable.rows) {
+    const cfg = { ...PLAYER_CONFIG };
+    delete cfg[row.field];
+    assert.throws(() => startupMod.assertWebBootConfig(cfg, configTable), new RegExp(`missing ${row.field}`));
   }
+  assert.doesNotThrow(() => startupMod.assertWebBootConfig(PLAYER_CONFIG, configTable));
 }
 
-{
-  const hostCfg = {
-    difficulty: 1,
-    log_level: 1,
-    theme: "dark",
-    show_region: false,
-    warn_solvability: false,
-    auto_restore: false,
-    auto_new: false,
-    auto_save: false,
-    show_marks: false,
-    default_save_filename: "sudoku_save.sud",
-    startup_save_path: null,
-  };
-  delete hostCfg.startup_save_path;
-  assert.throws(
-    () => startupMod.assertHostStartupConfig(hostCfg),
-    /missing startup_save_path/,
-  );
-}
-
-{
-  const hostCfg = {
-    difficulty: 1,
-    log_level: 1,
-    theme: "dark",
-    show_region: false,
-    warn_solvability: false,
-    auto_restore: false,
-    auto_new: false,
-    auto_save: false,
-    show_marks: false,
-    default_save_filename: "sudoku_save.sud",
-    startup_save_path: null,
-  };
-  delete hostCfg.default_save_filename;
-  assert.throws(
-    () => startupMod.assertHostStartupConfig(hostCfg),
-    /missing default_save_filename/,
-  );
+for (const key of ["config", "default_save_filename", "startup_save_path"]) {
+  const hostCfg = { config: PLAYER_CONFIG, default_save_filename: "sudoku_save.sud", startup_save_path: null };
+  delete hostCfg[key];
+  assert.throws(() => startupMod.assertHostStartupConfig(hostCfg), new RegExp(`missing ${key}`));
 }

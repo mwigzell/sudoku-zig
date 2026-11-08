@@ -1,114 +1,103 @@
-// settings.test.mjs — Settings dialog contract.
+// settings.test.mjs — Settings dialog generated from core's config table, and the set_config actions.
 
 import assert from "node:assert/strict";
 import * as settings from "./settings.js";
 import * as webSteps from "../flows/web_steps.js";
-import { loadGame } from "../test_support.mjs";
+import { configTable, coreText, fakeSettingsDialog, loadGame } from "../test_support.mjs";
 
+// ── the actions every Config control sends ──
 {
-  const modal = {
-    el: { hidden: true },
-    checkbox: { checked: false },
-    difficultySelect: { value: "easy" },
-    logLevelSelect: { value: "info" },
-    autoRestoreCheckbox: { checked: false },
-    autoNewCheckbox: { checked: false },
-    autoSaveCheckbox: { checked: false },
-  };
-  settings.syncSettingsModal(modal, { warn_solvability: true, difficulty: 2, log_level: 2, auto_restore: true, auto_new: true, auto_save: true });
-  assert.equal(modal.checkbox.checked, true);
-  assert.equal(modal.difficultySelect.value, "medium");
-  assert.equal(modal.logLevelSelect.value, "warn");
-  assert.equal(modal.autoRestoreCheckbox.checked, true);
-  assert.equal(modal.autoNewCheckbox.checked, true);
-  assert.equal(modal.autoSaveCheckbox.checked, true);
-  settings.syncSettingsModal(modal, { warn_solvability: false });
-  assert.equal(modal.checkbox.checked, false);
+  assert.deepEqual(settings.setConfigAction("theme", "dark"), { action: "set_config", field: "theme", value: "dark" });
+  assert.deepEqual(settings.toggleConfigAction({ show_region: true }, "show_region"), { action: "set_config", field: "show_region", value: false });
+  assert.deepEqual(settings.toggleConfigAction({ show_region: false }, "show_region"), { action: "set_config", field: "show_region", value: true });
+  assert.throws(() => settings.configRow(configTable, "no_such_field"), /no row for no_such_field/);
+  assert.throws(() => settings.choiceLabel(configTable, "theme", "plaid"), /no choice plaid/);
 }
 
+// ── one control per table row: a checkbox for on/off, a select of the row's choices ──
 {
-  const modal = {
-    el: { hidden: true },
-    checkbox: { checked: false },
-  };
-  settings.showSettingsModal(modal, { warn_solvability: true });
-  assert.equal(modal.el.hidden, false);
-  assert.equal(modal.checkbox.checked, true);
+  const { modal, createElement, field } = fakeSettingsDialog();
+  const controls = settings.buildSettingsFields(modal, configTable, createElement);
+  assert.deepEqual(Object.keys(controls), configTable.rows.map((r) => r.field), "Settings order is the table's");
+  assert.equal(modal.fieldsEl.children.length, configTable.rows.length);
+  for (const row of configTable.rows) {
+    const input = field(row.field);
+    if (row.choices) {
+      assert.equal(input.tagName, "SELECT");
+      assert.deepEqual(input.children.map((o) => [o.value, o.textContent]), row.choices.map((c) => [c.name, c.label]));
+    } else {
+      assert.equal(input.type, "checkbox");
+    }
+  }
+
+  const config = { ...Object.fromEntries(configTable.rows.map((r) => [r.field, r.choices ? r.choices[0].name : true])) };
+  config.difficulty = "hard";
+  settings.syncSettingsFields(controls, config);
+  assert.equal(field("difficulty").value, "hard");
+  assert.equal(field("warn_solvability").checked, true);
 }
 
-/** Real wasm game, its session, and web step handlers that record every settings write. */
+/** Real wasm game, its session, and web step handlers that record every config write and shown error. */
 async function settingsHarness() {
   const game = await loadGame();
-  const session = { config: game.getConfig(), legend: game.getLegend(), state: game.getState() };
+  const session = { config: game.getConfig(), configTable, legend: game.getLegend(), state: game.getState() };
   const persisted = [];
+  const errors = [];
   const steps = webSteps.webSteps(game, session, {
     fetchFn: async (url, init) => {
       persisted.push(JSON.parse(init.body));
       return { ok: true, status: 204 };
     },
+    promptDialog: {
+      show: async (step) => {
+        errors.push(step.text);
+        return step.default;
+      },
+      dismiss() {},
+    },
   });
-  return { game, session, persisted, steps };
+  const dialog = fakeSettingsDialog();
+  const btn = dialog.createElement("button");
+  settings.wireSettingsMenu(btn, game, session, dialog.modal, { steps, createElement: dialog.createElement });
+  return { game, session, persisted, errors, btn, ...dialog };
 }
 
-/** A control that records its listener for `type` under `on<type>`. */
-const control = (extra = {}) => ({
-  ...extra,
-  addEventListener(type, fn) {
-    this[`on${type}`] = fn;
-  },
-});
-
+// ── open, change a checkbox, dismiss ──
 {
-  const { game, session, persisted, steps } = await settingsHarness();
-  const modal = { el: { hidden: true }, checkbox: control({ checked: false }), dismissEl: control() };
-  const btn = control();
-  settings.wireSettingsMenu(btn, game, session, modal, { steps });
-
+  const { session, persisted, btn, modal, field } = await settingsHarness();
   btn.onclick();
   assert.equal(modal.el.hidden, false);
+  assert.equal(field("warn_solvability").checked, false, "opening syncs from the session's Config");
 
-  modal.checkbox.checked = true;
-  await modal.checkbox.onchange();
+  field("warn_solvability").checked = true;
+  await field("warn_solvability").onchange();
   assert.equal(session.config.warn_solvability, true);
-  assert.equal(modal.checkbox.checked, true);
-  assert.equal(persisted.length, 1, "core asks to persist after the settings change");
+  assert.equal(field("warn_solvability").checked, true);
+  assert.equal(persisted.length, 1, "core asks to persist after the change");
   assert.equal(persisted[0].warn_solvability, true);
 
   modal.dismissEl.onclick();
   assert.equal(modal.el.hidden, true);
 }
 
+// ── a select sends the picked choice by name ──
 {
-  const { game, session, steps } = await settingsHarness();
-  const modal = {
-    el: { hidden: true },
-    checkbox: control(),
-    difficultySelect: control({ value: "easy" }),
-    logLevelSelect: control(),
-    dismissEl: control(),
-  };
-  settings.wireSettingsMenu(control(), game, session, modal, { steps });
-  modal.difficultySelect.value = "hard";
-  await modal.difficultySelect.onchange();
-  assert.equal(session.config.difficulty, 3);
-  assert.equal(modal.difficultySelect.value, "hard");
+  const { session, persisted, field } = await settingsHarness();
+  field("difficulty").value = "hard";
+  await field("difficulty").onchange();
+  assert.equal(session.config.difficulty, "hard");
+  assert.equal(field("difficulty").value, "hard");
+  assert.equal(persisted.at(-1).difficulty, "hard");
 }
 
+// ── a value core refuses shows core's text and the control returns to the session's value ──
 {
-  const { game, session, persisted, steps } = await settingsHarness();
-  const modal = {
-    el: { hidden: true },
-    checkbox: control(),
-    difficultySelect: control(),
-    logLevelSelect: control(),
-    autoSaveCheckbox: control({ checked: false }),
-    dismissEl: control(),
-  };
-  settings.wireSettingsMenu(control(), game, session, modal, { steps });
-  modal.autoSaveCheckbox.checked = true;
-  await modal.autoSaveCheckbox.onchange();
-  assert.equal(session.config.auto_save, true);
-  assert.equal(persisted.at(-1).auto_save, true);
+  const { session, persisted, errors, field } = await settingsHarness();
+  field("theme").value = "plaid";
+  await field("theme").onchange();
+  assert.deepEqual(errors, [coreText.BAD_VALUE_MSG]);
+  assert.equal(persisted.length, 0, "a refused change writes nothing");
+  assert.equal(field("theme").value, session.config.theme);
 }
 
 console.log("settings.test.mjs OK");

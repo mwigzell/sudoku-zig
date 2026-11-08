@@ -1220,8 +1220,8 @@ test "web_host: host-config body reflects active host Config" {
         .host_config_body_buf = undefined,
     };
     const body = try session.hostConfigBody();
-    try std.testing.expect(std.mem.indexOf(u8, body, "\"difficulty\":2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, body, "\"log_level\":0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"difficulty\":\"medium\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "\"log_level\":\"debug\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, body, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, body, "true") != null);
 }

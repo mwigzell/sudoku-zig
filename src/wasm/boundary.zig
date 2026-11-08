@@ -18,7 +18,7 @@ const config_store = @import("../core/config_store.zig");
 const file_policy = @import("../core/file_policy.zig");
 const startup_policy = @import("../core/startup/policy.zig");
 const flow_command = @import("../core/flow/command.zig");
-const flow_settings = @import("../core/flow/settings.zig");
+const flow_config = @import("../core/flow/config.zig");
 const flow_export = @import("../core/flow/export.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
@@ -93,54 +93,43 @@ const JsonAction = struct {
     row: ?u8 = null,
     col: ?u8 = null,
     digit: ?u8 = null,
-    theme: ?[]const u8 = null,
     difficulty: ?[]const u8 = null,
-    log_level: ?[]const u8 = null,
+    /// `set_config`: the Config field's name and its new value (a bool, or a choice's name).
+    field: ?[]const u8 = null,
+    value: ?std.json.Value = null,
 };
 
+/// Longest field or choice name a `set_config` action may carry.
+const CHANGE_TEXT_CAP = 64;
+// A `set_config` change is read by the command flow after `parseAction` frees its JSON, so its text is kept here.
+var change_field_buf: [CHANGE_TEXT_CAP]u8 = undefined;
+var change_choice_buf: [CHANGE_TEXT_CAP]u8 = undefined;
+
+fn keepText(buf: []u8, text: []const u8) ![]const u8 {
+    if (text.len > buf.len) return error.TextTooLong;
+    @memcpy(buf[0..text.len], text);
+    return buf[0..text.len];
+}
+
+/// The change a `set_config` action names; core checks the field and value.
+fn parseChange(action: JsonAction) !config_table.Change {
+    const field = try keepText(&change_field_buf, action.field orelse return error.MissingField);
+    const value = config_table.valueFromJson(action.value orelse return error.MissingField) orelse return error.InvalidValue;
+    return .{ .field = field, .value = switch (value) {
+        .on => value,
+        .choice => |name| .{ .choice = try keepText(&change_choice_buf, name) },
+    } };
+}
+
 fn parseDifficulty(name: []const u8) !config.Difficulty {
-    if (std.ascii.eqlIgnoreCase(name, "easy")) return .easy;
-    if (std.ascii.eqlIgnoreCase(name, "medium")) return .medium;
-    if (std.ascii.eqlIgnoreCase(name, "hard")) return .hard;
-    return error.InvalidDifficulty;
-}
-
-/// The page names config changes per field; each becomes `set_config`, a toggle flipping the field's
-/// value in `cfg`. Null for any other action.
-fn configChange(action: JsonAction, cfg: config.Config) !?config_table.Change {
-    const row = config_table.row;
-    const toggles = [_]struct { action: []const u8, change: config_table.Change }{
-        .{ .action = "toggle_region", .change = config_table.toggle(cfg, row("show_region")) },
-        .{ .action = "toggle_show_marks", .change = config_table.toggle(cfg, row("show_marks")) },
-        .{ .action = "toggle_warn_solvability", .change = config_table.toggle(cfg, row("warn_solvability")) },
-        .{ .action = "toggle_auto_restore", .change = config_table.toggle(cfg, row("auto_restore")) },
-        .{ .action = "toggle_auto_new", .change = config_table.toggle(cfg, row("auto_new")) },
-        .{ .action = "toggle_auto_save", .change = config_table.toggle(cfg, row("auto_save")) },
-    };
-    for (toggles) |t| {
-        if (std.ascii.eqlIgnoreCase(action.action, t.action)) return t.change;
-    }
-    if (std.ascii.eqlIgnoreCase(action.action, "set_theme")) return try choiceChange(row("theme"), action.theme);
-    if (std.ascii.eqlIgnoreCase(action.action, "set_difficulty")) return try choiceChange(row("difficulty"), action.difficulty);
-    if (std.ascii.eqlIgnoreCase(action.action, "set_log_level")) return try choiceChange(row("log_level"), action.log_level);
-    return null;
-}
-
-/// A choice change naming the table's own string, so it outlives the parsed JSON.
-fn choiceChange(comptime r: config_table.Row, name: ?[]const u8) !config_table.Change {
-    const wanted = name orelse return error.MissingField;
-    for (r.kind.choices) |choice| {
-        if (std.ascii.eqlIgnoreCase(choice.name, wanted)) return .{ .field = r.field, .value = .{ .choice = choice.name } };
-    }
-    return error.InvalidChoice;
+    return config_table.parseChoice(config.Difficulty, "difficulty", name) catch error.InvalidDifficulty;
 }
 
 /// Load actions carry no path or line: core asks the page for the file or clipboard text.
-/// `cfg` is the player's Config, which a toggle flips.
-pub fn parseAction(json_text: []const u8, cfg: config.Config) !command.Command {
+pub fn parseAction(json_text: []const u8) !command.Command {
     const parsed = try std.json.parseFromSlice(JsonAction, std.heap.page_allocator, json_text, .{});
     defer parsed.deinit();
-    if (try configChange(parsed.value, cfg)) |change| return .{ .set_config = change };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_config")) return .{ .set_config = try parseChange(parsed.value) };
 
     const row: ?u4 = if (parsed.value.row) |r| blk: {
         if (r > 8) return error.InvalidCoordinate;
@@ -411,17 +400,20 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
             try std.Io.Writer.writeAll(w, ",\"legend\":");
             try writeLegendTo(w, g.legend);
             try std.Io.Writer.writeAll(w, ",\"config\":");
-            try writeWireConfigTo(w, wire.WireConfig.fromConfig(g.config));
+            try config_store.writeConfigJson(w, g.config);
             if (g.loaded) try std.Io.Writer.writeAll(w, ",\"loaded\":true");
         },
-        .generate_game => |d| try std.Io.Writer.print(w, ",\"difficulty\":{d}", .{@backingInt(wire.PlayerDifficulty.fromPuzzleDifficulty(d))}),
+        .generate_game => |d| {
+            try std.Io.Writer.writeAll(w, ",\"difficulty\":");
+            try writeJsonString(w, @tagName(d));
+        },
         .forget_current_file => |f| {
             try std.Io.Writer.writeAll(w, ",\"path\":");
             try writeJsonString(w, f.path);
             try std.Io.Writer.print(w, ",\"delete\":{any}", .{f.delete});
         },
-        .persist_settings => |cfg| {
-            try std.Io.Writer.writeAll(w, ",\"settings\":");
+        .persist_config => |cfg| {
+            try std.Io.Writer.writeAll(w, ",\"config\":");
             try config_store.writeConfigJson(w, cfg);
         },
     }
@@ -515,7 +507,9 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "IMPORT_FAILED_MSG", .text = flow_command.IMPORT_FAILED_MSG },
         .{ .key = "PASTE_FAILED_MSG", .text = flow_command.PASTE_FAILED_MSG },
         .{ .key = "LOAD_ENDED_STATUS", .text = flow_command.LOAD_ENDED_STATUS },
-        .{ .key = "PERSIST_FAILED_MSG", .text = flow_settings.PERSIST_FAILED_MSG },
+        .{ .key = "PERSIST_FAILED_MSG", .text = flow_config.PERSIST_FAILED_MSG },
+        .{ .key = "UNKNOWN_FIELD_MSG", .text = config_table.UNKNOWN_FIELD_MSG },
+        .{ .key = "BAD_VALUE_MSG", .text = config_table.BAD_VALUE_MSG },
         .{ .key = "EXPORTED_TO_FMT", .text = flow_export.EXPORTED_TO_FMT },
         .{ .key = "EXPORT_FAILED_MSG", .text = flow_export.EXPORT_FAILED_MSG },
         .{ .key = "COPIED_MSG", .text = flow_export.COPIED_MSG },
@@ -562,36 +556,61 @@ fn writeLegendTo(w: *std.Io.Writer, legend: legend_mod.Legend) !void {
     );
 }
 
-pub fn writeWireConfigJson(out: OutBuffer, wire_cfg: wire.WireConfig) !void {
+/// The player's Config as JSON, in `config.json`'s shape (`getConfig`).
+pub fn writeConfigJson(out: OutBuffer, cfg: config.Config) !void {
     var mutable = out;
     out.reset();
     var jw: JsonWriter = undefined;
     JsonWriter.init(&mutable, &jw);
-    try writeWireConfigTo(&jw.writer, wire_cfg);
+    try config_store.writeConfigJson(&jw.writer, cfg);
     try std.Io.Writer.flush(&jw.writer);
 }
 
-fn writeWireConfigTo(w: *std.Io.Writer, wire_cfg: wire.WireConfig) !void {
-    const theme_name: []const u8 = switch (wire_cfg.theme) {
-        .dark => "dark",
-        .light => "light",
-        .system => "system",
-    };
-    try std.Io.Writer.print(
-        w,
-        "{{\"difficulty\":{d},\"log_level\":{d},\"theme\":\"{s}\",\"show_region\":{any},\"warn_solvability\":{any},\"auto_restore\":{any},\"auto_new\":{any},\"auto_save\":{any},\"show_marks\":{any}}}",
-        .{
-            @backingInt(wire_cfg.difficulty),
-            @backingInt(wire_cfg.log_level),
-            theme_name,
-            wire_cfg.show_region,
-            wire_cfg.warn_solvability,
-            wire_cfg.auto_restore,
-            wire_cfg.auto_new,
-            wire_cfg.auto_save,
-            wire_cfg.show_marks,
-        },
-    );
+/// Core's config table as JSON (`getConfigTable`): `{on, off, rows}` — the words for an on/off value,
+/// then one row per saved field in Settings order, `{field, label, choices}` (`choices` null for on/off).
+pub fn writeConfigTableJson(out: OutBuffer) !void {
+    var mutable = out;
+    out.reset();
+    var jw: JsonWriter = undefined;
+    JsonWriter.init(&mutable, &jw);
+    var s: std.json.Stringify = .{ .writer = &jw.writer };
+    try s.beginObject();
+    try s.objectField("on");
+    try s.write(config_table.ON_LABEL);
+    try s.objectField("off");
+    try s.write(config_table.OFF_LABEL);
+    try s.objectField("rows");
+    try s.beginArray();
+    for (config_table.rows) |row| {
+        try s.beginObject();
+        try s.objectField("field");
+        try s.write(row.field);
+        try s.objectField("label");
+        try s.write(row.label);
+        try s.objectField("choices");
+        switch (row.kind) {
+            .on_off => try s.write(null),
+            .choices => |choices| try s.write(choices),
+        }
+        try s.endObject();
+    }
+    try s.endArray();
+    try s.endObject();
+    try std.Io.Writer.flush(&jw.writer);
+}
+
+/// What the generation worker asks for: the difficulty, the log level it runs at and its entropy.
+pub const GenRequest = struct {
+    difficulty: config.Difficulty,
+    log_level: logger.Severity,
+    seed: u32,
+};
+
+/// Parse a `generatePuzzle` request; choices are named as in `config.json`.
+pub fn parseGenRequest(json_text: []const u8) !GenRequest {
+    const parsed = try std.json.parseFromSlice(GenRequest, std.heap.page_allocator, json_text, .{});
+    defer parsed.deinit();
+    return parsed.value;
 }
 
 /// Writes the snapshot JSON of `frame` (`getState`).
@@ -604,19 +623,16 @@ pub fn writeStateJson(out: OutBuffer, frame: frame_mod.Frame) !void {
     try std.Io.Writer.flush(&jw.writer);
 }
 
-/// The Config the parse tests flip toggles from.
-const test_cfg = config.Config.default();
-
 test "parseAction select carries its cell; deselect has none" {
-    const sel = try parseAction("{\"action\":\"select\",\"row\":4,\"col\":7}", test_cfg);
+    const sel = try parseAction("{\"action\":\"select\",\"row\":4,\"col\":7}");
     try std.testing.expectEqual(@as(u4, 4), sel.select.row);
     try std.testing.expectEqual(@as(u4, 7), sel.select.col);
-    try std.testing.expectError(error.MissingField, parseAction("{\"action\":\"select\",\"row\":4}", test_cfg));
-    try std.testing.expect(try parseAction("{\"action\":\"deselect\"}", test_cfg) == .deselect);
+    try std.testing.expectError(error.MissingField, parseAction("{\"action\":\"select\",\"row\":4}"));
+    try std.testing.expect(try parseAction("{\"action\":\"deselect\"}") == .deselect);
 }
 
 test "parseAction fill maps row col digit" {
-    const cmd = try parseAction("{\"action\":\"fill\",\"row\":2,\"col\":0,\"digit\":3}", test_cfg);
+    const cmd = try parseAction("{\"action\":\"fill\",\"row\":2,\"col\":0,\"digit\":3}");
     switch (cmd) {
         .fill => |f| {
             try std.testing.expectEqual(@as(u4, 2), f.row);
@@ -628,43 +644,43 @@ test "parseAction fill maps row col digit" {
 }
 
 test "parseAction rejects unknown action" {
-    const result = parseAction("{\"action\":\"xyzzy\"}", test_cfg);
+    const result = parseAction("{\"action\":\"xyzzy\"}");
     try std.testing.expectError(error.UnknownAction, result);
 }
 
 test "parseAction hint maps optional row col" {
-    const bare = try parseAction("{\"action\":\"hint\"}", test_cfg);
+    const bare = try parseAction("{\"action\":\"hint\"}");
     try std.testing.expect(bare == .hint);
     try std.testing.expect(bare.hint.row == null and bare.hint.col == null);
 
-    const targeted = try parseAction("{\"action\":\"hint\",\"row\":2,\"col\":4}", test_cfg);
+    const targeted = try parseAction("{\"action\":\"hint\",\"row\":2,\"col\":4}");
     try std.testing.expect(targeted == .hint);
     try std.testing.expectEqual(@as(?u4, 2), targeted.hint.row);
     try std.testing.expectEqual(@as(?u4, 4), targeted.hint.col);
 
-    const d1 = try parseAction("{\"action\":\"hint\",\"row\":0,\"col\":3}", test_cfg);
+    const d1 = try parseAction("{\"action\":\"hint\",\"row\":0,\"col\":3}");
     try std.testing.expectEqual(@as(?u4, 0), d1.hint.row);
     try std.testing.expectEqual(@as(?u4, 3), d1.hint.col);
 }
 
 test "parseAction writes carry no path; core chooses the name" {
-    try std.testing.expect((try parseAction("{\"action\":\"save\"}", test_cfg)).save.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"save_as\"}", test_cfg)).save_as.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"export\"}", test_cfg)).@"export".path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"copy\"}", test_cfg)) == .copy);
+    try std.testing.expect((try parseAction("{\"action\":\"save\"}")).save.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"save_as\"}")).save_as.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"export\"}")).@"export".path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"copy\"}")) == .copy);
 }
 
 test "parseAction loads carry no path or line; new takes an optional difficulty" {
-    try std.testing.expect((try parseAction("{\"action\":\"open\"}", test_cfg)).open.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"import\"}", test_cfg)).import.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"paste\"}", test_cfg)).paste.line == null);
-    try std.testing.expect((try parseAction("{\"action\":\"new\"}", test_cfg)).new.difficulty == null);
-    try std.testing.expectEqual(config.Difficulty.hard, (try parseAction("{\"action\":\"new\",\"difficulty\":\"hard\"}", test_cfg)).new.difficulty.?);
-    try std.testing.expectError(error.InvalidDifficulty, parseAction("{\"action\":\"new\",\"difficulty\":\"wild\"}", test_cfg));
+    try std.testing.expect((try parseAction("{\"action\":\"open\"}")).open.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"import\"}")).import.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"paste\"}")).paste.line == null);
+    try std.testing.expect((try parseAction("{\"action\":\"new\"}")).new.difficulty == null);
+    try std.testing.expectEqual(config.Difficulty.hard, (try parseAction("{\"action\":\"new\",\"difficulty\":\"hard\"}")).new.difficulty.?);
+    try std.testing.expectError(error.InvalidDifficulty, parseAction("{\"action\":\"new\",\"difficulty\":\"wild\"}"));
 }
 
 test "parseAction solve maps to solve_for_me" {
-    const cmd = try parseAction("{\"action\":\"solve\"}", test_cfg);
+    const cmd = try parseAction("{\"action\":\"solve\"}");
     try std.testing.expect(cmd == .solve_for_me);
 }
 
@@ -684,48 +700,60 @@ test "writeEventJson ok embeds state snapshot" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"state\"") != null);
 }
 
-test "parseAction turns per-field config actions into set_config" {
-    const theme = (try parseAction("{\"action\":\"set_theme\",\"theme\":\"light\"}", test_cfg)).set_config;
+test "parseAction set_config carries the field and a bool or a choice name" {
+    const region = (try parseAction("{\"action\":\"set_config\",\"field\":\"show_region\",\"value\":true}")).set_config;
+    try std.testing.expectEqualStrings("show_region", region.field);
+    try std.testing.expect(region.value.on);
+    const theme = (try parseAction("{\"action\":\"set_config\",\"field\":\"theme\",\"value\":\"light\"}")).set_config;
     try std.testing.expectEqualStrings("theme", theme.field);
     try std.testing.expectEqualStrings("light", theme.value.choice);
-
-    const region = (try parseAction("{\"action\":\"toggle_region\"}", test_cfg)).set_config;
-    try std.testing.expectEqualStrings("show_region", region.field);
-    try std.testing.expectEqual(!test_cfg.show_region, region.value.on);
-
-    const level = (try parseAction("{\"action\":\"set_log_level\",\"log_level\":\"warn\"}", test_cfg)).set_config;
-    try std.testing.expectEqualStrings("log_level", level.field);
-    try std.testing.expectEqualStrings("warn", level.value.choice);
-
-    for ([_][]const u8{ "toggle_show_marks", "toggle_warn_solvability", "toggle_auto_restore", "toggle_auto_new", "toggle_auto_save" }) |name| {
-        var buf: [64]u8 = undefined;
-        const json = try std.fmt.bufPrint(&buf, "{{\"action\":\"{s}\"}}", .{name});
-        try std.testing.expect(try parseAction(json, test_cfg) == .set_config);
-    }
-    try std.testing.expect(try parseAction("{\"action\":\"toggle_pencil_mode\"}", test_cfg) == .toggle_pencil_mode);
-    try std.testing.expectError(error.InvalidChoice, parseAction("{\"action\":\"set_difficulty\",\"difficulty\":\"wild\"}", test_cfg));
+    try std.testing.expect(try parseAction("{\"action\":\"toggle_pencil_mode\"}") == .toggle_pencil_mode);
+    try std.testing.expectError(error.MissingField, parseAction("{\"action\":\"set_config\",\"field\":\"theme\"}"));
+    try std.testing.expectError(error.InvalidValue, parseAction("{\"action\":\"set_config\",\"field\":\"theme\",\"value\":3}"));
 }
 
-test "writeWireConfigJson emits WireConfig wire shape" {
+test "the config table JSON lists every row with its label and choices" {
+    var buf: [2048]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeConfigTableJson(out);
+    const json = out.finishJson();
+    const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, json, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings(config_table.ON_LABEL, parsed.value.object.get("on").?.string);
+    const rows = parsed.value.object.get("rows").?.array.items;
+    try std.testing.expectEqual(config_table.rows.len, rows.len);
+    for (config_table.rows, rows) |want, got| {
+        try std.testing.expectEqualStrings(want.field, got.object.get("field").?.string);
+        try std.testing.expectEqualStrings(want.label, got.object.get("label").?.string);
+        const choices = got.object.get("choices").?;
+        switch (want.kind) {
+            .on_off => try std.testing.expect(choices == .null),
+            .choices => |c| try std.testing.expectEqualStrings(c[0].name, choices.array.items[0].object.get("name").?.string),
+        }
+    }
+}
+
+test "parseGenRequest reads the difficulty and log level by name" {
+    const req = try parseGenRequest("{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"seed\":7}");
+    try std.testing.expectEqual(config.Difficulty.hard, req.difficulty);
+    try std.testing.expectEqual(logger.Severity.warn, req.log_level);
+    try std.testing.expectEqual(@as(u32, 7), req.seed);
+}
+
+test "writeConfigJson writes the Config as config.json does: bools, choices by name" {
     var buf: [512]u8 = undefined;
     var len: u32 = 0;
     const out: OutBuffer = .{ .buf = &buf, .len = &len };
-    try writeWireConfigJson(out, .{
-        .difficulty = .medium,
-        .log_level = .info,
-        .theme = .light,
-        .show_region = true,
-        .auto_restore = true,
-        .auto_new = true,
-        .auto_save = true,
-    });
+    var cfg = config.Config.default();
+    cfg.difficulty = .medium;
+    cfg.show_region = true;
+    try writeConfigJson(out, cfg);
     const json = out.finishJson();
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"difficulty\":2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"theme\":\"light\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"difficulty\":\"medium\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"log_level\":\"info\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"show_region\":true") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"auto_restore\":true") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"auto_new\":true") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "\"auto_save\":true") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "renderers") == null);
 }
 
 const ErrorWire = struct {
@@ -1012,14 +1040,14 @@ test "step JSON carries the tag and its payload" {
     try writeStepJson(out, .paste_puzzle);
     try std.testing.expectEqualStrings("{\"step\":\"paste_puzzle\"}", out.finishJson());
     try writeStepJson(out, .{ .generate_game = .hard });
-    try std.testing.expectEqualStrings("{\"step\":\"generate_game\",\"difficulty\":3}", out.finishJson());
+    try std.testing.expectEqualStrings("{\"step\":\"generate_game\",\"difficulty\":\"hard\"}", out.finishJson());
     try writeStepJson(out, .{ .forget_current_file = .{ .path = "/current-file", .delete = true } });
     try std.testing.expectEqualStrings("{\"step\":\"forget_current_file\",\"path\":\"/current-file\",\"delete\":true}", out.finishJson());
     var cfg = config.Config.default();
     cfg.theme = .light;
-    try writeStepJson(out, .{ .persist_settings = cfg });
+    try writeStepJson(out, .{ .persist_config = cfg });
     const json = out.finishJson();
-    try std.testing.expect(std.mem.startsWith(u8, json, "{\"step\":\"persist_settings\",\"settings\":{\"difficulty\":"));
+    try std.testing.expect(std.mem.startsWith(u8, json, "{\"step\":\"persist_config\",\"config\":{\"difficulty\":"));
     try std.testing.expect(std.mem.indexOf(u8, json, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "current_file") == null);
 }

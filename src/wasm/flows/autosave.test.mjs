@@ -78,12 +78,17 @@ function makePageHideWin() {
   const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([1]) }) }, { autoSave: true });
   const host = hostFetch();
   const session = { default_save_filename: "sudoku.sud" };
-  const outcome = await stepRunner.runCommand(game, { action: "toggle_region" }, {
+  const persisted = [];
+  const outcome = await stepRunner.runCommand(game, { action: "set_config", field: "show_region", value: true }, {
     ...webSteps.webSteps(game, session, { fetchFn: host.fetchFn }),
     showGame() {},
-    persistSettings: () => ({ ok: true }),
+    persistConfig: (config) => {
+      persisted.push(config.show_region);
+      return { ok: true };
+    },
   });
   assert.equal(outcome.kind, "done");
+  assert.deepEqual(persisted, [true], "the change ran and persisted its Config");
   assert.equal(host.calls.length, 0);
 }
 

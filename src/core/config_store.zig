@@ -1,6 +1,7 @@
 // Persist `Config` and the current-file pointer in `config.json` under the platform data directory.
 const std = @import("std");
 const config = @import("config.zig");
+const config_table = @import("config_table.zig");
 const logger = @import("logger.zig");
 const path = @import("../native/shell/path.zig");
 
@@ -21,9 +22,6 @@ pub const Error = error{
     WriteFailed,
     System,
 };
-
-/// A field this app does not know (written by a newer app) is ignored; a missing one keeps its value.
-const PARSE_OPTIONS: std.json.ParseOptions = .{ .ignore_unknown_fields = true };
 
 const CONFIG_PART = "config";
 const CURRENT_FILE_PART = "current file";
@@ -69,13 +67,13 @@ fn writeConfigObject(s: *std.json.Stringify, cfg: config.Config) std.Io.Writer.E
 }
 
 /// Set each saved Config field present in `object`; absent and unknown members are left alone.
-fn applyObject(arena: std.mem.Allocator, cfg: *config.Config, object: std.json.ObjectMap) Error!void {
-    inline for (@typeInfo(config.Config).@"struct".field_names) |name| {
-        if (comptime config.Config.isSaved(name)) {
-            if (object.get(name)) |value| {
-                @field(cfg, name) = std.json.parseFromValueLeaky(@FieldType(config.Config, name), arena, value, PARSE_OPTIONS) catch return Error.UnsupportedValue;
-            }
-        }
+/// Each table row present in `object` goes through the table's check, so the file takes only values Settings offers.
+/// A field this app does not know (written by a newer app) is ignored; a missing one keeps its value.
+fn applyObject(cfg: *config.Config, object: std.json.ObjectMap) Error!void {
+    for (config_table.rows) |r| {
+        const json = object.get(r.field) orelse continue;
+        const value = config_table.valueFromJson(json) orelse return Error.UnsupportedValue;
+        config_table.apply(cfg, .{ .field = r.field, .value = value }) catch return Error.UnsupportedValue;
     }
 }
 
@@ -98,7 +96,7 @@ pub fn applyConfigJson(gpa: std.mem.Allocator, cfg: *config.Config, bytes: []con
         return Error.InvalidJson;
     }
     var patched = cfg.*;
-    applyObject(parsed.arena.allocator(), &patched, parsed.value.object) catch |err| {
+    applyObject(&patched, parsed.value.object) catch |err| {
         log.warn("config body has a bad value: {s}", .{@errorName(err)});
         return err;
     };
@@ -148,7 +146,7 @@ fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) config.Config {
         noteParseFailure(Error.InvalidJson);
         return cfg;
     }
-    applyObject(parsed.arena.allocator(), &cfg, stored.object) catch |err| {
+    applyObject(&cfg, stored.object) catch |err| {
         noteParseFailure(err);
         return config.Config.default();
     };
@@ -364,6 +362,14 @@ test "applyConfigJson patches only the fields it carries; a bad value changes no
     const before = cfg;
     try std.testing.expectError(Error.UnsupportedValue, applyConfigJson(std.testing.allocator, &cfg, "{\"show_region\":true,\"difficulty\":\"brutal\"}"));
     try std.testing.expectError(Error.InvalidJson, applyConfigJson(std.testing.allocator, &cfg, "{\"theme\":"));
+    try expectSavedFieldsEqual(before, cfg);
+}
+
+test "applyConfigJson takes only values Settings offers: difficulty default and a numeric level are refused" {
+    var cfg = config.Config.default();
+    const before = cfg;
+    try std.testing.expectError(Error.UnsupportedValue, applyConfigJson(std.testing.allocator, &cfg, "{\"difficulty\":\"default\"}"));
+    try std.testing.expectError(Error.UnsupportedValue, applyConfigJson(std.testing.allocator, &cfg, "{\"log_level\":1}"));
     try expectSavedFieldsEqual(before, cfg);
 }
 

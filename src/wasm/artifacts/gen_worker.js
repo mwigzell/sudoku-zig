@@ -20,10 +20,7 @@ self.onmessage = async (event) => {
     game.setGenProgressListener((phase, text) => {
       self.postMessage({ type: "progress", phase, text });
     });
-    const result = game.generatePuzzle({
-      difficulty: msg.difficulty ?? 1,
-      logLevel: msg.logLevel ?? 1,
-    });
+    const result = game.generatePuzzle({ difficulty: msg.difficulty, logLevel: msg.logLevel });
     game.setGenProgressListener(null);
     if (result.error === "cancelled") {
       self.postMessage({ type: "cancelled" });

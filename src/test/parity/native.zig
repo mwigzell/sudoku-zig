@@ -316,7 +316,7 @@ const Recorder = struct {
             // The web host serves the current file at a fixed address, so restoring and forgetting it compare without its name.
             .forget_current_file => |f| event.delete = f.delete,
             .show_status => |s| event.text = try self.text(s),
-            .resolve_default_target, .reclaim_file, .copy_puzzle, .paste_puzzle, .restore, .open, .import_puzzle, .persist_settings, .done => {},
+            .resolve_default_target, .reclaim_file, .copy_puzzle, .paste_puzzle, .restore, .open, .import_puzzle, .persist_config, .done => {},
         }
         if (answer) |a| event.answer = try self.describeAnswer(a);
         return event;

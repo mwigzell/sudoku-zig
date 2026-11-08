@@ -1,10 +1,9 @@
 // region.js — View menu region highlight via engine config.
 
 import * as board from "../board.js";
+import * as settings from "./settings.js";
 
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
-
-const TOGGLE_REGION = "toggle_region";
 
 export function syncRegionMenu(controls, config) {
   if (!controls.viewRegion) return;
@@ -27,7 +26,7 @@ export function wireRegionMenu(
   const sync = () => syncRegionMenu(controls, session.config);
 
   const toggle = () =>
-    board.runBoardCommand(game, { action: TOGGLE_REGION }, {
+    board.runBoardCommand(game, settings.toggleConfigAction(session.config, settings.SHOW_REGION_FIELD), {
       boardEl,
       createElement,
       steps,

@@ -1,4 +1,9 @@
-// menu_bar.js — top menu bar: legend-driven enablement.
+// menu_bar.js — top menu bar: legend-driven enablement; Config items labelled from core's config table.
+
+import * as settings from "./settings.js";
+
+/** @typedef {import("../types").Config} Config */
+/** @typedef {import("../types").ConfigTable} ConfigTable */
 
 /** Wasm legend JSON key — pairs with Zig `Legend.@"export"` / `CommandTag.@"export"` (see legend.zig). */
 export const LEGEND_WIRE_EXPORT = "export";
@@ -53,7 +58,7 @@ export const MENU_BAR_MENUS = [
 ];
 
 /** Mirror wasm Legend flags onto File + Edit controls. View/Help stay enabled. */
-export function syncMenuBar(legend, controls, config = {}) {
+export function syncMenuBar(legend, controls) {
   for (const menu of MENU_BAR_MENUS) {
     for (const item of menu.items) {
       if (!item.legendKey) continue;
@@ -68,12 +73,34 @@ export function syncMenuBar(legend, controls, config = {}) {
   if (controls.viewMarks) controls.viewMarks.disabled = false;
   if (controls.about) controls.about.disabled = false;
   if (controls.settings) controls.settings.disabled = false;
-  const autoSaveOn = config.auto_save === true;
-  if (controls.autoSave) {
-    controls.autoSave.disabled = false;
-    controls.autoSave.setAttribute("aria-checked", autoSaveOn ? "true" : "false");
-    controls.autoSave.textContent = `Auto Save (${autoSaveOn ? "On" : "Off"})`;
+}
+
+/**
+ * File → Auto Save shows its row label and core's word for the current value, e.g. "Auto Save (On)".
+ * @param {{ autoSave?: HTMLElement | null }} controls
+ * @param {Config} config
+ * @param {ConfigTable} table
+ */
+export function syncAutoSave(controls, config, table) {
+  if (!controls.autoSave) return;
+  const on = config?.auto_save === true;
+  controls.autoSave.disabled = false;
+  controls.autoSave.setAttribute("aria-checked", on ? "true" : "false");
+  controls.autoSave.textContent = `${settings.configRow(table, settings.AUTO_SAVE_FIELD).label} (${settings.onOffLabel(table, on)})`;
+}
+
+/**
+ * View items that set a Config field carry the table's words: the theme choices and the on/off rows.
+ * @param {{ viewSystem?: HTMLElement | null, viewLight?: HTMLElement | null, viewDark?: HTMLElement | null, viewRegion?: HTMLElement | null, viewMarks?: HTMLElement | null }} controls
+ * @param {ConfigTable} table
+ */
+export function labelConfigItems(controls, table) {
+  const themeItems = { system: controls.viewSystem, light: controls.viewLight, dark: controls.viewDark };
+  for (const [name, el] of Object.entries(themeItems)) {
+    if (el) el.textContent = settings.choiceLabel(table, settings.THEME_FIELD, name);
   }
+  if (controls.viewRegion) controls.viewRegion.textContent = settings.configRow(table, settings.SHOW_REGION_FIELD).label;
+  if (controls.viewMarks) controls.viewMarks.textContent = settings.configRow(table, settings.SHOW_MARKS_FIELD).label;
 }
 
 /** Resolve menu control elements from the page shell. */
@@ -103,7 +130,7 @@ export function collectMenuBarControls(root) {
   };
 }
 
-/** Keep menu controls aligned with session.legend; File handlers wired in C.6. */
+/** Menubar dropdowns: open on mousedown, drag across titles, release on an item to run it; Escape or a click outside closes. */
 export function wireMenuDropdowns(root = document) {
   const menus = [...root.querySelectorAll("#menu-bar .menu")];
 
@@ -205,10 +232,14 @@ export function wireMenuDropdowns(root = document) {
   return { closeAll, openMenu };
 }
 
-/** Keep menu controls aligned with session.legend; File handlers wired in C.6. */
+/** Wire the dropdowns, label the Config items from the table, and keep enablement and Auto Save in step with the session. */
 export function wireMenuBar(controls, session, root) {
   const dropdowns = root ? wireMenuDropdowns(root) : null;
-  const sync = () => syncMenuBar(session.legend, controls, session.config ?? {});
+  labelConfigItems(controls, session.configTable);
+  const sync = () => {
+    syncMenuBar(session.legend, controls);
+    syncAutoSave(controls, session.config, session.configTable);
+  };
   sync();
   return { sync, closeAll: () => dropdowns?.closeAll() };
 }

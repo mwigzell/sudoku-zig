@@ -2,10 +2,10 @@
 
 import * as stepRunner from "../flows/step_runner.js";
 import * as startup from "../flows/startup.js";
+import * as settings from "./settings.js";
 
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
 
-const SET_THEME = "set_theme";
 const THEME_LIGHT = "light";
 const THEME_DARK = "dark";
 const THEME_SYSTEM = "system";
@@ -50,7 +50,7 @@ export function applyBootTheme(boot, root = document) {
 
 /** page.html boot order: full engine config, then theme on `<html>` before any modal. */
 export function primeWebBootChrome(boot, root = document) {
-  startup.assertWebBootConfig(boot.config);
+  startup.assertWebBootConfig(boot.config, boot.config_table);
   applyBootTheme(boot, root);
 }
 
@@ -97,7 +97,7 @@ export function wireThemeMenu(
 
   const chooseTheme = async (theme) => {
     if (session.config.theme === theme) return;
-    await stepRunner.runCommand(game, { action: SET_THEME, theme }, steps, () => {
+    await stepRunner.runCommand(game, settings.setConfigAction(settings.THEME_FIELD, theme), steps, () => {
       sync();
       onChange?.();
     });

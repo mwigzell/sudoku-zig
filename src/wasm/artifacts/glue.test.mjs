@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import * as glue from "./glue.js";
-import { openBytes, runConfigCommand, startNewGame } from "../test_support.mjs";
+import { coreText, openBytes, runConfigCommand, startNewGame } from "../test_support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmBytes = readFileSync(join(here, "artifact.wasm"));
@@ -22,8 +22,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const hostGame = await glue.loadArtifact(wasmBytes);
   const boot = hostGame.bootstrapHostConfig({
-    difficulty: 3,
-    logLevel: 2,
+    difficulty: "hard",
+    log_level: "warn",
     theme: "light",
     show_region: true,
     warn_solvability: true,
@@ -33,8 +33,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   });
   assert.equal(boot.ok, true, `bootstrapHostConfig failed: ${JSON.stringify(boot)}`);
   const cfg = hostGame.getConfig();
-  assert.equal(cfg.difficulty, 3, "wasm engine difficulty must match host startup wire");
-  assert.equal(cfg.log_level, 2, "wasm engine log_level must match host startup wire");
+  assert.equal(cfg.difficulty, "hard", "the engine takes the host's difficulty by name");
+  assert.equal(cfg.log_level, "warn", "the engine takes the host's log level by name");
   assert.equal(cfg.theme, "light");
   assert.equal(cfg.show_region, true);
   assert.equal(cfg.warn_solvability, true);
@@ -58,8 +58,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 {
   const handoff = await glue.loadArtifact(wasmBytes);
   const boot = handoff.bootstrapHostConfig({
-    difficulty: 2,
-    logLevel: 1,
+    difficulty: "medium",
+    log_level: "info",
     theme: "dark",
     show_region: false,
     warn_solvability: false,
@@ -72,7 +72,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(empty, true, "host bootstrap starts from an empty grid");
   const progress = [];
   handoff.setGenProgressListener((phase, text) => progress.push([phase, text]));
-  const gen = handoff.generatePuzzle({ difficulty: 2, logLevel: 1 });
+  const gen = handoff.generatePuzzle({ difficulty: "medium", logLevel: "info" });
   handoff.setGenProgressListener(null);
   assert.equal(gen.ok, true, `generatePuzzle failed: ${JSON.stringify(gen)}`);
   assert.equal(gen.line.length, 81);
@@ -80,12 +80,12 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(progress[0][0], 0, "generation opens with a new attempt");
   assert.ok(progress.every(([, text]) => /^[A-Z].*\.$/.test(text)), "every progress line is a sentence from core");
   startNewGame(handoff, gen.line, "medium");
-  assert.equal(handoff.getConfig().difficulty, 2, "New takes the chosen difficulty");
+  assert.equal(handoff.getConfig().difficulty, "medium", "New takes the chosen difficulty");
 }
 
 // ── init (sync main-thread path; glue contract) ──
 {
-  const res = game.init({ difficulty: 1, logLevel: 1 });
+  const res = game.init();
   assert.equal(res.ok, true, `init failed: ${JSON.stringify(res)}`);
 }
 
@@ -100,7 +100,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 // ── clear dead-end cell then targeted hint → placement on restored grid ──
 {
   const fresh = await glue.loadArtifact(wasmBytes);
-  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  assert.equal(fresh.init().ok, true);
   assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
   assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
   assert.equal(fresh.exec({ action: "clear", row: 1, col: 1 }).ok, true);
@@ -112,7 +112,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 // ── hint (engine-pick placement must show ASCII digit, not control char) ──
 {
   const fresh = await glue.loadArtifact(wasmBytes);
-  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  assert.equal(fresh.init().ok, true);
   const res = fresh.exec({ action: "hint" });
   assert.equal(res.ok, true, `hint failed: ${JSON.stringify(res)}`);
   assert.match(res.msg ?? "", / takes [1-9]\./);
@@ -123,7 +123,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 // ── hint on dead board: ok msg with no-solution tag (not error) ──
 {
   const fresh = await glue.loadArtifact(wasmBytes);
-  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  assert.equal(fresh.init().ok, true);
   assert.equal(startNewGame(fresh, EASY_FIXTURE).loaded, true);
   assert.equal(fresh.exec({ action: "fill", row: 1, col: 1, digit: 8 }).ok, true);
   const pick = fresh.exec({ action: "hint" });
@@ -149,11 +149,11 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.ok(about.summary.includes(about.commit));
 }
 
-// ── config defaults (WireConfig shape) ──
+// ── config defaults, choices by name ──
 {
   const config = game.getConfig();
-  assert.equal(config.difficulty, 1);
-  assert.equal(config.log_level, 1);
+  assert.equal(config.difficulty, "easy");
+  assert.equal(config.log_level, "info");
   assert.equal(config.theme, "system");
   assert.equal(config.show_region, false);
 }
@@ -230,13 +230,39 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(config.show_region, false);
   assert.equal(config.warn_solvability, false);
 
-  runConfigCommand(game, { action: "set_theme", theme: "light" });
+  runConfigCommand(game, { action: "set_config", field: "theme", value: "light" });
   config = game.getConfig();
   assert.equal(config.theme, "light");
 
-  runConfigCommand(game, { action: "toggle_region" });
+  runConfigCommand(game, { action: "set_config", field: "show_region", value: true });
   config = game.getConfig();
   assert.equal(config.show_region, true);
+}
+
+// ── core refuses a set_config it cannot apply and shows its own text ──
+{
+  for (const [action, msg] of [
+    [{ action: "set_config", field: "no_such_field", value: true }, coreText.UNKNOWN_FIELD_MSG],
+    [{ action: "set_config", field: "theme", value: "plaid" }, coreText.BAD_VALUE_MSG],
+    [{ action: "set_config", field: "show_region", value: "plaid" }, coreText.BAD_VALUE_MSG],
+  ]) {
+    const before = game.getConfig();
+    const step = game.commandStart(action);
+    assert.equal(step.step, "prompt_message", JSON.stringify(step));
+    assert.equal(step.text, msg);
+    assert.equal(game.flowNext({ input: "pressed", index: step.dismiss }).step, "done");
+    assert.deepEqual(game.getConfig(), before, "a refused change leaves the Config");
+  }
+}
+
+// ── the config table names every Config field, its label and its choices ──
+{
+  const table = game.getConfigTable();
+  assert.deepEqual(table.rows.map((r) => r.field).sort(), Object.keys(game.getConfig()).sort());
+  const theme = table.rows.find((r) => r.field === "theme");
+  assert.deepEqual(theme.choices.map((c) => c.name), ["system", "light", "dark"]);
+  assert.equal(table.rows.find((r) => r.field === "show_region").choices, null);
+  assert.ok(table.on.length > 0 && table.off.length > 0);
 }
 
 // ── toSaveFormat errors ──
@@ -255,7 +281,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.ok(saved.bytes.length > 16, "SUD0 blob too small");
 
   const fresh = await glue.loadArtifact(wasmBytes);
-  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  assert.equal(fresh.init().ok, true);
 
   const loaded = openBytes(fresh, saved.bytes);
   assert.equal(loaded.text, null, "solvable load should not warn");
@@ -268,8 +294,8 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
 // ── open warns on dead puzzle (same as native open) ──
 {
   const dead = await glue.loadArtifact(wasmBytes);
-  assert.equal(dead.init({ difficulty: 1 }).ok, true);
-  runConfigCommand(dead, { action: "toggle_warn_solvability" });
+  assert.equal(dead.init().ok, true);
+  runConfigCommand(dead, { action: "set_config", field: "warn_solvability", value: true });
   assert.equal(startNewGame(dead, EASY_FIXTURE).loaded, true);
   const bad = dead.exec({ action: "fill", row: 1, col: 1, digit: 8 });
   assert.equal(bad.ok, true);
@@ -279,14 +305,14 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(saved.ok, true);
 
   const fresh = await glue.loadArtifact(wasmBytes);
-  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
-  runConfigCommand(fresh, { action: "toggle_warn_solvability" });
+  assert.equal(fresh.init().ok, true);
+  runConfigCommand(fresh, { action: "set_config", field: "warn_solvability", value: true });
   const loaded = openBytes(fresh, saved.bytes);
   assert.match(loaded.text ?? "", /no solution/i);
 
   const named = await glue.loadArtifact(wasmBytes);
-  assert.equal(named.init({ difficulty: 1 }).ok, true);
-  runConfigCommand(named, { action: "toggle_warn_solvability" });
+  assert.equal(named.init().ok, true);
+  runConfigCommand(named, { action: "set_config", field: "warn_solvability", value: true });
   const opened = openBytes(named, saved.bytes, "dead.sud");
   assert.match(opened.text ?? "", /The file dead\.sud is open\./);
   assert.match(opened.text ?? "", /no solution/i);
@@ -313,7 +339,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.notEqual(result.state.cells[idx].value, 7, "new clears player fill");
   assert.notDeepEqual(result.state, fill.state, "new replaces board");
   assert.equal(result.legend.undo, false);
-  assert.equal(result.config.difficulty, 2);
+  assert.equal(result.config.difficulty, "medium");
 }
 
 // ── shell session round-trip ──
@@ -329,10 +355,10 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.deepEqual(game.getConfig(), configBefore, "view config survives open on same instance");
 
   const fresh = await glue.loadArtifact(wasmBytes);
-  assert.equal(fresh.init({ difficulty: 2, logLevel: 1 }).ok, true);
+  assert.equal(fresh.init().ok, true);
   const started = startNewGame(fresh, EASY_FIXTURE, "medium");
   assert.equal(started.config.theme, "system");
-  assert.equal(started.config.difficulty, 2);
+  assert.equal(started.config.difficulty, "medium");
   openBytes(fresh, saved.bytes);
   assert.deepEqual(fresh.getState(), before);
   assert.equal(fresh.getConfig().theme, "system", "SUD0 does not carry view config");
@@ -352,7 +378,7 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   assert.equal(res.ok, false, "export before init should fail");
   assert.ok(res.error);
 
-  assert.equal(fresh.init({ difficulty: 1 }).ok, true);
+  assert.equal(fresh.init().ok, true);
   let exported = fresh.toPuzzle();
   assert.equal(exported.ok, true, `toPuzzle failed: ${JSON.stringify(exported)}`);
   assert.equal(exported.bytes.length, 81);

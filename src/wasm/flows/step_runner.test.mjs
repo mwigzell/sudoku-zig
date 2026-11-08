@@ -304,13 +304,13 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
 {
   const line = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
   const ok = startupRecorder({ generated: { ok: true, line } });
-  assert.equal((await stepRunner.runFlow(await loadGame({ auto_new: true, difficulty: 2 }), { flow: stepRunner.FLOW_STARTUP }, ok)).kind, "done");
-  assert.deepEqual(ok.log[0], ["generate", 2]);
+  assert.equal((await stepRunner.runFlow(await loadGame({ auto_new: true, difficulty: "medium" }), { flow: stepRunner.FLOW_STARTUP }, ok)).kind, "done");
+  assert.deepEqual(ok.log[0], ["generate", "medium"]);
   assert.notEqual(ok.log[1][1], WELCOME);
 
   const cancelled = startupRecorder({ generated: { ok: false, cancelled: true } });
   await stepRunner.runFlow(await loadGame({ auto_new: true }), { flow: stepRunner.FLOW_STARTUP }, cancelled);
-  assert.deepEqual(cancelled.log, [["generate", 1], ["show", WELCOME, null]]);
+  assert.deepEqual(cancelled.log, [["generate", "easy"], ["show", WELCOME, null]]);
 
   const failed = startupRecorder({ generated: { ok: false } });
   const outcome = await stepRunner.runFlow(await loadGame({ auto_new: true }), { flow: stepRunner.FLOW_STARTUP }, failed);
@@ -319,7 +319,7 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
 }
 
 // A command runs end to end in core: show_game carries what the adapter draws, then
-// persist_settings hands core's settings over; failures and throws come back as core's sentence.
+// persist_config hands core's Config over; failures and throws come back as core's sentence.
 {
   const game = await loadGame({ theme: "dark" });
   const shown = [];
@@ -327,8 +327,8 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const errors = [];
   const handlers = {
     showGame: (step) => shown.push(step),
-    persistSettings: (settings) => {
-      persisted.push(settings.theme);
+    persistConfig: (config) => {
+      persisted.push(config.theme);
       return { ok: true };
     },
     promptMessage: (step) => {
@@ -336,21 +336,21 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
       return step.default;
     },
   };
-  assert.deepEqual(await stepRunner.runCommand(game, { action: "set_theme", theme: "light" }, handlers), { kind: "done" });
+  assert.deepEqual(await stepRunner.runCommand(game, { action: "set_config", field: "theme", value: "light" }, handlers), { kind: "done" });
   assert.equal(shown[0].config.theme, "light");
   assert.equal(shown[0].legend.fill, true);
   assert.equal(shown[0].state.cells.length, 81);
   assert.deepEqual(persisted, ["light"]);
 
-  const failed = await stepRunner.runCommand(game, { action: "toggle_region" }, {
+  const failed = await stepRunner.runCommand(game, { action: "set_config", field: "show_region", value: true }, {
     ...handlers,
-    persistSettings: () => ({ ok: false }),
+    persistConfig: () => ({ ok: false }),
   });
   assert.deepEqual(failed, { kind: "done" });
 
-  const thrown = await stepRunner.runCommand(game, { action: "toggle_region" }, {
+  const thrown = await stepRunner.runCommand(game, { action: "set_config", field: "show_region", value: false }, {
     ...handlers,
-    persistSettings: () => {
+    persistConfig: () => {
       throw new Error("offline");
     },
   });

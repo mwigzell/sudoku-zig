@@ -95,43 +95,17 @@ export async function loadArtifact(wasmBytes) {
       return rank >= 0 && exports.logEnabled(rank) !== 0;
     },
 
-    // Engine startup entry (same semantics as native new-game init).
-    init({ difficulty = 1, logLevel = 1 } = {}) {
-      return readJson(exports.init(difficulty, logLevel));
+    // Engine startup entry (same semantics as native new-game init), at the Config's difficulty.
+    init() {
+      return readJson(exports.init());
     },
 
-    /** Host-resolved startup config (native disk+CLI analogue). All fields required — no glue defaults. */
-    bootstrapHostConfig({
-      difficulty,
-      logLevel,
-      theme,
-      show_region,
-      warn_solvability,
-      auto_restore,
-      auto_new,
-      auto_save,
-      show_marks,
-    }) {
-      const themeWire = theme === "light" ? 1 : (theme === "system" ? 2 : 0);
-      const regionWire = show_region ? 1 : 0;
-      const warnWire = warn_solvability ? 1 : 0;
-      const autoRestoreWire = auto_restore ? 1 : 0;
-      const autoNewWire = auto_new ? 1 : 0;
-      const autoSaveWire = auto_save ? 1 : 0;
-      const showMarksWire = show_marks ? 1 : 0;
-      return readJson(
-        exports.bootstrapHostConfig(
-          difficulty,
-          logLevel,
-          themeWire,
-          regionWire,
-          warnWire,
-          autoRestoreWire,
-          autoNewWire,
-          autoSaveWire,
-          showMarksWire,
-        ),
-      );
+    /**
+     * Host-resolved startup config (native disk+CLI analogue), in `config.json`'s shape.
+     * @param {import("../types").Config} config
+     */
+    bootstrapHostConfig(config) {
+      return callJsonPayload(exports.bootstrapHostConfig, config);
     },
 
     /**
@@ -142,10 +116,13 @@ export async function loadArtifact(wasmBytes) {
       exports.setHostBuildInfo(debug_build ? 1 : 0);
     },
 
-    /** Run `generateForPlay` in this instance; returns `{ ok, line }` JSON for worker handoff. */
-    generatePuzzle({ difficulty = 1, logLevel = 1, seed } = {}) {
+    /**
+     * Run `generateForPlay` in this instance; returns `{ ok, line }` JSON for worker handoff.
+     * @param {{ difficulty: string, logLevel: import("../types").LogLevel, seed?: number }} request choices by name
+     */
+    generatePuzzle({ difficulty, logLevel, seed }) {
       const entropy = Number.isInteger(seed) ? (seed >>> 0) : randomSeed32();
-      return readJson(exports.generatePuzzle(difficulty, logLevel, entropy));
+      return callJsonPayload(exports.generatePuzzle, { difficulty, log_level: logLevel, seed: entropy });
     },
 
     /** Ask in-flight `generatePuzzle` to stop at the next progress boundary. */
@@ -181,8 +158,14 @@ export async function loadArtifact(wasmBytes) {
       return readJson(exports.getCoreText());
     },
 
+    /** @returns {import("../types").Config} */
     getConfig() {
       return readJson(exports.getConfig());
+    },
+
+    /** @returns {import("../types").ConfigTable} */
+    getConfigTable() {
+      return readJson(exports.getConfigTable());
     },
 
     getState() {

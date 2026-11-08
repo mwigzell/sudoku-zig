@@ -4,7 +4,7 @@ const std = @import("std");
 const save_mod = @import("save.zig");
 const autosave_mod = @import("autosave.zig");
 const startup_mod = @import("startup.zig");
-const settings_mod = @import("settings.zig");
+const config_flow = @import("config.zig");
 const export_mod = @import("export.zig");
 const command_mod = @import("command.zig");
 
@@ -43,7 +43,7 @@ test {
     _ = save_mod;
     _ = autosave_mod;
     _ = startup_mod;
-    _ = settings_mod;
+    _ = config_flow;
     _ = export_mod;
     _ = command_mod;
     _ = file_session;

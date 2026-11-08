@@ -1,12 +1,12 @@
 // marks.js — pencil marks: View → Show Pencil Marks and the pad's Pencil mode, both run through core.
 
 import * as board from "../board.js";
+import * as settings from "./settings.js";
 
 /** @typedef {import("../types").GameApi} GameApi */
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
 /** @typedef {import("../types").WebSession} WebSession */
 
-const TOGGLE_SHOW_MARKS = "toggle_show_marks";
 const TOGGLE_PENCIL_MODE = "toggle_pencil_mode";
 
 /**
@@ -32,9 +32,9 @@ export function syncMarksMenu(controls, config) {
  */
 export function wireMarks(controls, game, session, boardEl, { onChange, steps, createElement }) {
   const sync = () => syncMarksMenu(controls, session.config);
-  /** @param {string} action */
+  /** @param {import("../types").ExecAction} action */
   const run = (action) =>
-    board.runBoardCommand(game, { action }, {
+    board.runBoardCommand(game, action, {
       boardEl,
       createElement,
       steps,
@@ -45,12 +45,12 @@ export function wireMarks(controls, game, session, boardEl, { onChange, steps, c
     });
 
   controls.viewMarks?.addEventListener("click", () => {
-    void run(TOGGLE_SHOW_MARKS);
+    void run(settings.toggleConfigAction(session.config, settings.SHOW_MARKS_FIELD));
   });
   sync();
 
   return {
     sync,
-    togglePencilMode: () => run(TOGGLE_PENCIL_MODE),
+    togglePencilMode: () => run({ action: TOGGLE_PENCIL_MODE }),
   };
 }

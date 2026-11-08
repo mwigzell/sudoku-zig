@@ -14,7 +14,6 @@ import * as stepRunner from "../flows/step_runner.js";
 /** @typedef {import("../types").WebSession} WebSession */
 /** @typedef {import("../types").FlowHandlers} FlowHandlers */
 
-const TOGGLE_AUTO_SAVE = "toggle_auto_save";
 const NEW_COMMAND = "new";
 const OPEN_COMMAND = "open";
 const IMPORT_COMMAND = "import";
@@ -35,12 +34,24 @@ export function refreshSessionView(
   onViewRefresh?.();
 }
 
-/** Difficulty choices for the New sub-dialog — labels + the difficulty value the game init accepts. */
-export const DIFFICULTIES = [
-  { label: "Easy", difficulty: 1 },
-  { label: "Medium", difficulty: 2 },
-  { label: "Hard", difficulty: 3 },
-];
+/**
+ * Fill `container` with one New button per choice of the table's difficulty row, labelled by core.
+ * @param {HTMLElement} container
+ * @param {import("../types").ConfigTable} table
+ * @param {(tag: string) => HTMLElement} createElement
+ * @returns {{ label: string, difficulty: string, el: HTMLElement }[]}
+ */
+export function buildDifficultyButtons(container, table, createElement) {
+  container.replaceChildren();
+  return settings.configRow(table, settings.DIFFICULTY_FIELD).choices.map((choice) => {
+    const el = createElement("button");
+    el.setAttribute("type", "button");
+    el.className = "new-difficulty-btn";
+    el.textContent = choice.label;
+    container.append(el);
+    return { label: choice.label, difficulty: choice.name, el };
+  });
+}
 
 /** Difficulty sub-dialog for New — picking a level closes the dialog and drives generation. */
 export function wireDifficultyDialog(dialog, onChoose) {
@@ -85,7 +96,7 @@ function runFileCommand(wiring, action) {
 function wireNew(button, wiring, difficultyDialog) {
   const { session, menuBar } = wiring;
   const startNewGame = (difficulty) =>
-    runFileCommand(wiring, { action: NEW_COMMAND, difficulty: settings.difficultyName({ difficulty }) });
+    runFileCommand(wiring, { action: NEW_COMMAND, difficulty });
   const newDialog = wireDifficultyDialog(difficultyDialog, startNewGame);
   button?.addEventListener("click", () => {
     if (!session.legend.new) return;
@@ -116,7 +127,7 @@ function wireSave(button, wiring, legendKey, command) {
 /** @param {FileMenuWiring} wiring */
 function wireAutoSave(button, wiring) {
   button?.addEventListener("click", async () => {
-    await stepRunner.runCommand(wiring.game, { action: TOGGLE_AUTO_SAVE }, wiring.steps, () => {
+    await stepRunner.runCommand(wiring.game, settings.toggleConfigAction(wiring.session.config, settings.AUTO_SAVE_FIELD), wiring.steps, () => {
       wiring.menuBar.sync();
       wiring.onViewRefresh?.();
     });

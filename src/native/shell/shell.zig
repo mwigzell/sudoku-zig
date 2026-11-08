@@ -53,7 +53,7 @@ pub const Sudoku = struct {
         facade: facade_mod.Facade,
         transport: file_transport.FileTransport,
         out: *std.Io.Writer,
-        settings_persist: ?storage_mod.SettingsPersist,
+        config_persist: ?storage_mod.ConfigPersist,
     ) Error!@This() {
         // Startup policy owns if/when puzzle generation occurs.
         var renderer_facade = facade;
@@ -62,7 +62,7 @@ pub const Sudoku = struct {
         var sudoku = @This(){
             .cfg = cfg,
             .renderer = facade,
-            .storage = .{ .transport = transport, .settings_persist = settings_persist },
+            .storage = .{ .transport = transport, .config_persist = config_persist },
             .out = out,
             .engine = try startup_engine.initEngineFromStartup(cfg),
         };
@@ -108,7 +108,7 @@ pub const Sudoku = struct {
                     self.storage.forgetCurrentFile(forget);
                     break :blk .ack;
                 },
-                .persist_settings => |cfg| .{ .persisted = self.storage.persistSettings(cfg) },
+                .persist_config => |cfg| .{ .persisted = self.storage.persistConfig(cfg) },
                 .copy_puzzle => .{ .copied = self.printPuzzle() },
                 // Only the web flushes, when its page closes; a terminal game is written after every command.
                 .flush => .{ .wrote = .{ .failed = NO_FLUSH_MSG } },

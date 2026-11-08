@@ -1,6 +1,7 @@
 const std = @import("std");
 const config = @import("../core/config.zig");
 const logger = @import("../core/logger.zig");
+const config_table = @import("../core/config_table.zig");
 const version = @import("../core/version.zig");
 
 pub const ParseError = error{
@@ -44,15 +45,15 @@ pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Confi
             const diff = iterator.next() orelse {
                 failFlag("--difficulty requires a value.", .{});
             };
-            cfg.difficulty = parseDifficulty(diff) orelse {
-                failFlag("invalid difficulty '{s}'.", .{diff});
+            cfg.difficulty = config_table.parseChoice(config.Difficulty, "difficulty", diff) catch |err| {
+                failFlag("invalid difficulty '{s}' ({s}).", .{ diff, @errorName(err) });
             };
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--log-level")) {
             const lvl = iterator.next() orelse {
                 failFlag("--log-level requires a value.", .{});
             };
-            cfg.log_level = parseLogLevel(lvl) orelse {
-                failFlag("invalid log level '{s}'.", .{lvl});
+            cfg.log_level = config_table.parseChoice(logger.Severity, "log_level", lvl) catch |err| {
+                failFlag("invalid log level '{s}' ({s}).", .{ lvl, @errorName(err) });
             };
         } else if (std.mem.startsWith(u8, arg, "-")) {
             failFlag("Unknown flag: '{s}'.", .{arg});
@@ -81,22 +82,6 @@ fn parseRenderer(kind: []const u8) ?config.RendererKind {
     if (std.mem.eql(u8, kind, "ascii")) return .ascii;
     if (std.mem.eql(u8, kind, "tui")) return .tui;
     if (std.mem.eql(u8, kind, "web")) return .web;
-    return null;
-}
-
-fn parseDifficulty(diff: []const u8) ?config.Difficulty {
-    if (std.mem.eql(u8, diff, "easy")) return .easy;
-    if (std.mem.eql(u8, diff, "medium")) return .medium;
-    if (std.mem.eql(u8, diff, "hard")) return .hard;
-    return null;
-}
-
-fn parseLogLevel(lvl: []const u8) ?logger.Severity {
-    if (std.mem.eql(u8, lvl, "debug")) return .debug;
-    if (std.mem.eql(u8, lvl, "info")) return .info;
-    if (std.mem.eql(u8, lvl, "warn")) return .warn;
-    if (std.mem.eql(u8, lvl, "err")) return .err;
-    if (std.mem.eql(u8, lvl, "fatal")) return .fatal;
     return null;
 }
 

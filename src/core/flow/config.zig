@@ -1,5 +1,5 @@
-// SettingsFlow: after a command that changes a player setting, ask the platform
-// to persist the current settings.
+// ConfigFlow: after a command that changes the player's Config, ask the platform
+// to persist it.
 const std = @import("std");
 const config = @import("../config.zig");
 const command = @import("../command.zig");
@@ -15,7 +15,7 @@ const Input = step_mod.Input;
 pub const PERSIST_FAILED_MSG = "Your settings could not be saved.";
 
 /// True when the command's change belongs in `config.json`.
-fn commandPersistsSettings(tag: command.CommandTag) bool {
+fn commandPersistsConfig(tag: command.CommandTag) bool {
     return switch (tag) {
         .set_config => true,
         .fill, .clear, .quit, .undo, .redo, .menu, .save, .open, .import, .@"export", .copy => false,
@@ -24,7 +24,7 @@ fn commandPersistsSettings(tag: command.CommandTag) bool {
     };
 }
 
-pub const SettingsFlow = struct {
+pub const ConfigFlow = struct {
     cfg: config.Config,
     command: command.CommandTag,
     phase: Phase = .start,
@@ -32,18 +32,18 @@ pub const SettingsFlow = struct {
     const Phase = enum { start, persisting, finished };
 
     /// Persist `cfg` after `tag` ran; skipped when the command changes no setting.
-    pub fn afterCommand(cfg: config.Config, tag: command.CommandTag) SettingsFlow {
+    pub fn afterCommand(cfg: config.Config, tag: command.CommandTag) ConfigFlow {
         return .{ .cfg = cfg, .command = tag };
     }
 
     /// Answer the last step; returns the next step (`.start` first).
-    pub fn next(self: *SettingsFlow, input: Input) Step {
+    pub fn next(self: *ConfigFlow, input: Input) Step {
         switch (self.phase) {
             .start => {
                 if (input != .start) return self.finish(step_mod.promptError(step_mod.UNEXPECTED_INPUT_MSG));
-                if (!commandPersistsSettings(self.command)) return self.finish(.done);
+                if (!commandPersistsConfig(self.command)) return self.finish(.done);
                 self.phase = .persisting;
-                return .{ .persist_settings = self.cfg };
+                return .{ .persist_config = self.cfg };
             },
             .persisting => switch (input) {
                 .persisted => |result| switch (result) {
@@ -59,7 +59,7 @@ pub const SettingsFlow = struct {
         }
     }
 
-    fn finish(self: *SettingsFlow, terminal: Step) Step {
+    fn finish(self: *ConfigFlow, terminal: Step) Step {
         self.phase = .finished;
         return terminal;
     }
@@ -67,28 +67,28 @@ pub const SettingsFlow = struct {
 
 const testing = std.testing;
 
-test "every settings command asks the platform to persist the current settings once" {
+test "every config command asks the platform to persist the current Config once" {
     var cfg = config.Config.default();
     cfg.theme = .light;
     for (std.enums.values(command.CommandTag)) |tag| {
-        if (!commandPersistsSettings(tag)) continue;
-        var flow = SettingsFlow.afterCommand(cfg, tag);
+        if (!commandPersistsConfig(tag)) continue;
+        var flow = ConfigFlow.afterCommand(cfg, tag);
         const step = flow.next(.start);
-        try testing.expectEqual(config.ViewTheme.light, step.persist_settings.theme);
+        try testing.expectEqual(config.ViewTheme.light, step.persist_config.theme);
         try testing.expect(flow.next(.{ .persisted = .ok }) == .done);
         try testing.expect(flow.next(.start) == .done);
     }
 }
 
-test "commands that change no setting persist nothing" {
+test "commands that change no Config persist nothing" {
     for ([_]command.CommandTag{ .fill, .undo, .new, .save, .quit }) |tag| {
-        var flow = SettingsFlow.afterCommand(config.Config.default(), tag);
+        var flow = ConfigFlow.afterCommand(config.Config.default(), tag);
         try testing.expect(flow.next(.start) == .done);
     }
 }
 
 test "a persist failure shows core's sentence, not the platform's reason" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_config);
+    var flow = ConfigFlow.afterCommand(config.Config.default(), .set_config);
     _ = flow.next(.start);
     try testing.expectEqualStrings(
         PERSIST_FAILED_MSG,
@@ -96,13 +96,13 @@ test "a persist failure shows core's sentence, not the platform's reason" {
     );
 }
 
-test "a wrong answer to persist_settings ends the flow with an error" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_config);
+test "a wrong answer to persist_config ends the flow with an error" {
+    var flow = ConfigFlow.afterCommand(config.Config.default(), .set_config);
     _ = flow.next(.start);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).prompt_message.text);
 }
 
 test "the flow must be started with start" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_config);
+    var flow = ConfigFlow.afterCommand(config.Config.default(), .set_config);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).prompt_message.text);
 }

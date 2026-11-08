@@ -18,8 +18,8 @@ const SYSTEM_ERROR_MSG: []const u8 = "system error";
 const RESOLVE_STAGE: []const u8 = "resolve";
 const READ_STAGE: []const u8 = "readAll";
 
-/// Where settings and the current-file pointer live, and the folder for the default save file.
-pub const SettingsPersist = struct {
+/// Where config.json and the current-file pointer live, and the folder for the default save file.
+pub const ConfigPersist = struct {
     io: std.Io,
     data_dir: []const u8,
     /// User-visible folder for the default autosave file when there is no current file.
@@ -36,20 +36,20 @@ pub const ReadResult = struct {
 pub const Storage = struct {
     transport: file_transport.FileTransport,
     /// Null when the run has nowhere to keep settings; settings and pointer writes are then skipped.
-    settings_persist: ?SettingsPersist = null,
+    config_persist: ?ConfigPersist = null,
 
     /// The current-file pointer saved by the last run, owned by `gpa`; null when there is none.
     pub fn loadCurrentFile(self: *const @This(), gpa: std.mem.Allocator) ?[]u8 {
-        const sp = self.settings_persist orelse return null;
+        const sp = self.config_persist orelse return null;
         return config_store.loadCurrentFile(gpa, sp.io, sp.data_dir) catch |err| {
             log.warn("current file setting unreadable: {s}", .{@errorName(err)});
             return null;
         };
     }
 
-    /// Carry out the write half of a `persist_settings` step.
-    pub fn persistSettings(self: *const @This(), cfg: config.Config) flow_mod.step.Outcome {
-        const sp = self.settings_persist orelse return .ok;
+    /// Carry out the write half of a `persist_config` step.
+    pub fn persistConfig(self: *const @This(), cfg: config.Config) flow_mod.step.Outcome {
+        const sp = self.config_persist orelse return .ok;
         config_store.save(std.heap.page_allocator, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
         return .ok;
     }
@@ -80,10 +80,10 @@ pub const Storage = struct {
     }
 
     /// Carry out a `resolve_default_target` step: `<visible_save_dir>/sudoku.sud`, or the bare
-    /// default name without settings persistence. Only the default folder is created on demand;
+    /// default name without config persistence. Only the default folder is created on demand;
     /// a missing current-file folder must still fail the write.
     pub fn resolveDefaultTarget(self: *const @This(), scratch: []u8) []const u8 {
-        const sp = self.settings_persist orelse return copyInto(scratch, save_defaults.DEFAULT_SAVE_FILE);
+        const sp = self.config_persist orelse return copyInto(scratch, save_defaults.DEFAULT_SAVE_FILE);
         std.Io.Dir.cwd().createDirPath(sp.io, sp.visible_save_dir) catch |err| {
             log.warn("could not create save folder {s}: {s}", .{ sp.visible_save_dir, @errorName(err) });
         };
@@ -97,7 +97,7 @@ pub const Storage = struct {
 
     /// Remember `path` as the file the next launch restores; null forgets it.
     pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) void {
-        const sp = self.settings_persist orelse return;
+        const sp = self.config_persist orelse return;
         config_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err| {
             log.err("could not remember the current file: {s}", .{@errorName(err)});
         };
@@ -164,7 +164,7 @@ pub const Storage = struct {
 
     /// Carry out a `forget_current_file` step: stop restoring it, and delete it when asked.
     pub fn forgetCurrentFile(self: *const @This(), forget: flow_mod.step.ForgetCurrentFile) void {
-        const sp = self.settings_persist orelse return;
+        const sp = self.config_persist orelse return;
         if (forget.delete) delete: {
             const resolved = self.transport.resolve(self.transport.context, forget.path) catch |err| {
                 log.warn("could not resolve {s} to delete it: {s}", .{ forget.path, @errorName(err) });
@@ -241,7 +241,7 @@ const TestRoot = struct {
     fn storage(self: *const @This(), visible: []const u8) Storage {
         return .{
             .transport = file_transport.NativeTransport.make(std.testing.io),
-            .settings_persist = .{ .io = std.testing.io, .data_dir = self.dir, .visible_save_dir = visible },
+            .config_persist = .{ .io = std.testing.io, .data_dir = self.dir, .visible_save_dir = visible },
         };
     }
 
@@ -264,7 +264,7 @@ test "exists: a written file is there and a missing one is not" {
     try std.testing.expect(!store.exists(missing));
 }
 
-test "resolveDefaultTarget: the default file in the visible folder, creating the folder; the bare name without settings" {
+test "resolveDefaultTarget: the default file in the visible folder, creating the folder; the bare name without config persistence" {
     var root = try TestRoot.init();
     defer root.deinit();
     const visible = try root.path("Documents/Sudoku");
@@ -408,16 +408,16 @@ test "importPuzzle and restore: a typed path's bytes come back, with the resolve
     try std.testing.expectEqualSlices(u8, payload, bytes);
 }
 
-test "persistSettings: writes the settings file; without settings there is nothing to write" {
+test "persistConfig: writes config.json; without config persistence there is nothing to write" {
     var root = try TestRoot.init();
     defer root.deinit();
     var cfg = config.Config.default();
     cfg.difficulty = .hard;
 
-    try std.testing.expect(root.storage(root.dir).persistSettings(cfg) == .ok);
+    try std.testing.expect(root.storage(root.dir).persistConfig(cfg) == .ok);
     const saved = try config_store.loadOrDefault(std.testing.allocator, std.testing.io, root.dir);
     try std.testing.expectEqual(config.Difficulty.hard, saved.difficulty);
 
     const bare: Storage = .{ .transport = file_transport.NativeTransport.make(std.testing.io) };
-    try std.testing.expect(bare.persistSettings(cfg) == .ok);
+    try std.testing.expect(bare.persistConfig(cfg) == .ok);
 }

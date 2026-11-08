@@ -13,12 +13,9 @@ export type ExecAction =
   | { action: "hint"; row?: number; col?: number }
   | { action: "select"; row: number; col: number }
   | { action: "deselect" }
-  | { action: "set_theme"; theme: "light" | "dark" | "system" }
-  | { action: "toggle_region" | "toggle_warn_solvability" | "toggle_auto_restore" | "toggle_auto_new" | "toggle_auto_save" }
-  | { action: "toggle_pencil_mode" | "toggle_show_marks" }
-  | { action: "set_difficulty"; difficulty: "easy" | "medium" | "hard" }
-  | { action: "set_log_level"; log_level: LogLevel }
-  | { action: "new"; difficulty?: "easy" | "medium" | "hard" }
+  | { action: "set_config"; field: string; value: boolean | string }
+  | { action: "toggle_pencil_mode" }
+  | { action: "new"; difficulty?: string }
   | { action: "open" | "import" | "paste" }
   | { action: "save" | "save_as" | "export" | "copy" };
 
@@ -132,20 +129,26 @@ export type GameState = {
   region: number[] | null;
 };
 
-/** Player settings as core writes them to `config.json` (no renderer choice, no current file). */
-export type PlayerSettings = {
-  difficulty: "easy" | "medium" | "hard" | "default";
-  log_level: LogLevel;
-  theme: "light" | "dark" | "system";
-  show_region: boolean;
-  warn_solvability: boolean;
-  auto_restore: boolean;
-  auto_new: boolean;
-  auto_save: boolean;
-  show_marks: boolean;
+/** The Config as core writes it to `config.json`: one entry per config table row, on/off as a boolean, a choice by name. */
+export type Config = Record<string, boolean | string>;
+
+/** One choice of a config table row: the name `config.json` stores and the label the player sees. */
+export type ConfigChoice = { name: string; label: string };
+
+/** One saved Config field: its name, its label, and its choices (null for an on/off field). */
+export type ConfigRow = { field: string; label: string; choices: ConfigChoice[] | null };
+
+/** Core's config table (`getConfigTable`): the words for on and off, then the rows in Settings order. */
+export type ConfigTable = { on: string; off: string; rows: ConfigRow[] };
+
+/** File → Settings: the dialog, the box core's rows are generated into, and its OK button. */
+export type SettingsModal = {
+  el: HTMLElement | null;
+  fieldsEl: HTMLElement;
+  dismissEl: HTMLElement | null;
 };
 
-/** The serving host's build facts (`/build-info.json`), separate from player settings. */
+/** The serving host's build facts (`/build-info.json`), separate from the Config. */
 export type HostBuildInfo = {
   debug_build: boolean;
 };
@@ -167,13 +170,13 @@ export type FlowStep =
       file: string | null;
       state: GameState;
       legend: Record<string, boolean>;
-      config: Record<string, unknown>;
+      config: Config;
       cell?: { row: number; col: number };
       loaded?: true;
     }
-  | { step: "generate_game"; difficulty: number }
+  | { step: "generate_game"; difficulty: string }
   | { step: "forget_current_file"; path: string; delete: boolean }
-  | { step: "persist_settings"; settings: PlayerSettings }
+  | { step: "persist_config"; config: Config }
   | { step: "show_status"; text: string }
   | { step: "done" }
   | { ok: false; error: string; step?: undefined };
@@ -190,7 +193,7 @@ export type PickResult =
   | { ok: true; bytes: Uint8Array; name?: string; handle?: FileSystemFileHandle }
   | { ok: false; cancelled?: boolean; error?: string };
 
-/** Platform result of a `persist_settings` or `copy_puzzle` step. */
+/** Platform result of a `persist_config` or `copy_puzzle` step. */
 export type PersistResult = { ok: true } | { ok: false; error?: string };
 
 /** Platform result of a `generate_game` step. */
@@ -212,9 +215,9 @@ export type FlowHandlers = {
   open: (path: string | null) => PickResult | Promise<PickResult>;
   importPuzzle: (path: string | null) => PickResult | Promise<PickResult>;
   showGame: (step: Extract<FlowStep, { step: "show_game" }>) => void | Promise<void>;
-  generateGame: (difficulty: number) => GenerateResult | Promise<GenerateResult>;
+  generateGame: (difficulty: string) => GenerateResult | Promise<GenerateResult>;
   forgetCurrentFile: (forget: { path: string; delete: boolean }) => void | Promise<void>;
-  persistSettings: (settings: PlayerSettings) => PersistResult | Promise<PersistResult>;
+  persistConfig: (config: Config) => PersistResult | Promise<PersistResult>;
   showStatus: (text: string) => void;
 };
 

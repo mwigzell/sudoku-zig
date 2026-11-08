@@ -25,7 +25,7 @@ export const STEP_IMPORT_PUZZLE = "import_puzzle";
 export const STEP_SHOW_GAME = "show_game";
 export const STEP_GENERATE_GAME = "generate_game";
 export const STEP_FORGET_CURRENT_FILE = "forget_current_file";
-export const STEP_PERSIST_SETTINGS = "persist_settings";
+export const STEP_PERSIST_CONFIG = "persist_config";
 export const STEP_SHOW_STATUS = "show_status";
 export const STEP_DONE = "done";
 
@@ -94,7 +94,7 @@ function generatedInput(result) {
 }
 
 /**
- * Normalize a handler's settings write outcome to the wasm `persisted` input.
+ * Normalize a handler's config write outcome to the wasm `persisted` input.
  * @param {{ ok?: boolean, error?: string }} result
  */
 function persistedInput(result) {
@@ -280,9 +280,9 @@ async function stepThrough(game, first, handlers) {
         step = game.flowNext({ input: INPUT_ACK });
         break;
       }
-      case STEP_PERSIST_SETTINGS: {
-        const settings = step.settings;
-        step = game.flowNext(persistedInput(await settle(() => handlers.persistSettings(settings))));
+      case STEP_PERSIST_CONFIG: {
+        const config = step.config;
+        step = game.flowNext(persistedInput(await settle(() => handlers.persistConfig(config))));
         break;
       }
       case STEP_SHOW_STATUS:

@@ -1,100 +1,11 @@
-// JSON wire types for the wasm export boundary — WireConfig and board snapshot.
+// JSON wire types for the wasm export boundary — the board snapshot.
 const std = @import("std");
 const board = @import("../core/board/board.zig");
 const puzzle_gen = @import("../core/puzzle_gen/mod.zig");
-const logger = @import("../core/logger.zig");
-const config = @import("../core/config.zig");
 const clear_command = @import("../core/engine/clear.zig");
 const fill_command = @import("../core/engine/fill.zig");
 const event = @import("../core/event.zig");
 const frame_mod = @import("../core/frame.zig");
-
-/// Player-facing difficulty on the wasm boundary — explicit u8 wire values, no `.default`.
-pub const PlayerDifficulty = enum(u8) {
-    easy = 1,
-    medium = 2,
-    hard = 3,
-
-    pub fn fromWire(n: u8) ?PlayerDifficulty {
-        return switch (n) {
-            1 => .easy,
-            2 => .medium,
-            3 => .hard,
-            else => null,
-        };
-    }
-
-    /// The player-facing level for a generator difficulty (`default` plays as easy).
-    pub fn fromPuzzleDifficulty(d: puzzle_gen.Difficulty) PlayerDifficulty {
-        return switch (d) {
-            .easy, .default => .easy,
-            .medium => .medium,
-            .hard => .hard,
-        };
-    }
-
-    pub fn toPuzzleDifficulty(self: PlayerDifficulty) puzzle_gen.Difficulty {
-        return switch (self) {
-            .easy => .easy,
-            .medium => .medium,
-            .hard => .hard,
-        };
-    }
-};
-
-/// Wasm wire twin of the config fields JS reads/writes (`init` args and `getConfig` JSON).
-pub const WireConfig = struct {
-    difficulty: PlayerDifficulty,
-    log_level: logger.Severity = .info,
-    theme: config.ViewTheme = .dark,
-    show_region: bool = false,
-    warn_solvability: bool = false,
-    auto_restore: bool = false,
-    auto_new: bool = false,
-    auto_save: bool = false,
-    show_marks: bool = true,
-
-    pub fn fromWire(difficulty: u8, log_level: u8) ?WireConfig {
-        const pd = PlayerDifficulty.fromWire(difficulty) orelse return null;
-        const ll: logger.Severity = switch (log_level) {
-            0 => .debug,
-            1 => .info,
-            2 => .warn,
-            3 => .err,
-            4 => .fatal,
-            else => return null,
-        };
-        return .{ .difficulty = pd, .log_level = ll };
-    }
-
-    pub fn toConfig(self: WireConfig) config.Config {
-        var cfg = config.Config.default();
-        cfg.difficulty = self.difficulty.toPuzzleDifficulty();
-        cfg.log_level = self.log_level;
-        cfg.theme = self.theme;
-        cfg.show_region = self.show_region;
-        cfg.warn_solvability = self.warn_solvability;
-        cfg.auto_restore = self.auto_restore;
-        cfg.auto_new = self.auto_new;
-        cfg.auto_save = self.auto_save;
-        cfg.show_marks = self.show_marks;
-        return cfg;
-    }
-
-    pub fn fromConfig(cfg: config.Config) WireConfig {
-        return .{
-            .difficulty = PlayerDifficulty.fromPuzzleDifficulty(cfg.difficulty),
-            .log_level = cfg.log_level,
-            .theme = cfg.theme,
-            .show_region = cfg.show_region,
-            .warn_solvability = cfg.warn_solvability,
-            .auto_restore = cfg.auto_restore,
-            .auto_new = cfg.auto_new,
-            .auto_save = cfg.auto_save,
-            .show_marks = cfg.show_marks,
-        };
-    }
-};
 
 /// Serializable display twin of one board cell.
 pub const CellSnapshot = struct {
@@ -225,61 +136,6 @@ pub fn deserializeSnapshot(allocator: std.mem.Allocator, json_text: []const u8) 
         .selected = parsed.value.selected,
         .region = region,
     };
-}
-
-test "PlayerDifficulty wire values are 1 2 3" {
-    try std.testing.expectEqual(@as(u8, 1), @backingInt(PlayerDifficulty.easy));
-    try std.testing.expectEqual(@as(u8, 2), @backingInt(PlayerDifficulty.medium));
-    try std.testing.expectEqual(@as(u8, 3), @backingInt(PlayerDifficulty.hard));
-}
-
-test "PlayerDifficulty has no default variant on boundary" {
-    try std.testing.expectEqual(@as(usize, 3), @typeInfo(PlayerDifficulty).@"enum".field_names.len);
-    try std.testing.expect(PlayerDifficulty.fromWire(0) == null);
-}
-
-test "PlayerDifficulty.fromWire rejects invalid wire values" {
-    try std.testing.expect(PlayerDifficulty.fromWire(4) == null);
-    try std.testing.expect(PlayerDifficulty.fromWire(255) == null);
-}
-
-test "WireConfig.fromWire maps difficulty and log level" {
-    const cfg = WireConfig.fromWire(2, @backingInt(logger.Severity.warn)).?;
-    try std.testing.expectEqual(PlayerDifficulty.medium, cfg.difficulty);
-    try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
-    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
-    try std.testing.expect(!cfg.show_region);
-}
-
-test "WireConfig round-trips config fields including view prefs" {
-    var domain = config.Config.default();
-    domain.difficulty = .hard;
-    domain.log_level = .warn;
-    domain.theme = .light;
-    domain.show_region = true;
-    domain.auto_restore = true;
-    domain.auto_new = true;
-    domain.auto_save = true;
-    domain.show_marks = false;
-
-    const wire_cfg = WireConfig.fromConfig(domain);
-    try std.testing.expectEqual(PlayerDifficulty.hard, wire_cfg.difficulty);
-    try std.testing.expectEqual(logger.Severity.warn, wire_cfg.log_level);
-    try std.testing.expectEqual(config.ViewTheme.light, wire_cfg.theme);
-    try std.testing.expect(wire_cfg.show_region);
-    try std.testing.expect(wire_cfg.auto_restore);
-    try std.testing.expect(wire_cfg.auto_new);
-    try std.testing.expect(wire_cfg.auto_save);
-
-    const restored = wire_cfg.toConfig();
-    try std.testing.expectEqual(domain.difficulty, restored.difficulty);
-    try std.testing.expectEqual(domain.log_level, restored.log_level);
-    try std.testing.expectEqual(domain.theme, restored.theme);
-    try std.testing.expectEqual(domain.show_region, restored.show_region);
-    try std.testing.expectEqual(domain.auto_restore, restored.auto_restore);
-    try std.testing.expectEqual(domain.auto_new, restored.auto_new);
-    try std.testing.expectEqual(domain.auto_save, restored.auto_save);
-    try std.testing.expectEqual(domain.show_marks, restored.show_marks);
 }
 
 test "GameSnapshot captures value given conflict clearable fillable from the frame's board" {

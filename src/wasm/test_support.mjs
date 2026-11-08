@@ -17,6 +17,8 @@ const textGame = await glue.loadArtifact(wasmBytes);
 export const genText = textGame.getGenText();
 /** Core's dialog and status text by constant name, read from the real artifact. */
 export const coreText = textGame.getCoreText();
+/** Core's config table, read from the real artifact. */
+export const configTable = textGame.getConfigTable();
 
 /** Fill a core `*_FMT` text's `{s}`/`{c}`/`{d}` placeholders in order. */
 export function fillText(fmt, ...args) {
@@ -28,8 +30,8 @@ export function fillText(fmt, ...args) {
 export async function loadGame(config = {}) {
   const game = await glue.loadArtifact(wasmBytes);
   const boot = game.bootstrapHostConfig({
-    difficulty: 1,
-    logLevel: 1,
+    difficulty: "easy",
+    log_level: "info",
     theme: "dark",
     show_region: false,
     warn_solvability: false,
@@ -114,10 +116,51 @@ export function runConfigCommand(game, action) {
   const shown = game.commandStart(action);
   if (shown.step !== "show_game") throw new Error(`${action.action} began with ${JSON.stringify(shown)}`);
   const persist = game.flowNext({ input: "ack" });
-  if (persist.step !== "persist_settings") throw new Error(`${action.action} did not persist: ${JSON.stringify(persist)}`);
+  if (persist.step !== "persist_config") throw new Error(`${action.action} did not persist: ${JSON.stringify(persist)}`);
   const step = game.flowNext({ input: "persisted", ok: true });
   if (step.step !== "done") throw new Error(`${action.action} ended with ${JSON.stringify(step)}`);
   return shown;
+}
+
+/** A node element fake for generated dialogs: children, dataset, class list, text, listeners as `on<type>`. */
+export function fakeElement(tag) {
+  return {
+    tagName: tag.toUpperCase(),
+    children: [],
+    dataset: {},
+    textContent: "",
+    className: "",
+    classList: { add() {} },
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
+    append(...nodes) {
+      for (const node of nodes) if (typeof node === "object") this.children.push(node);
+    },
+    replaceChildren() {
+      this.children = [];
+    },
+    addEventListener(type, fn) {
+      this[`on${type}`] = fn;
+    },
+  };
+}
+
+/**
+ * A fake File → Settings dialog for `settings.wireSettingsMenu`, plus a lookup of the control generated for a field.
+ * @returns {{ modal: import("./types").SettingsModal, createElement: (tag: string) => any, field: (name: string) => any }}
+ */
+export function fakeSettingsDialog() {
+  const modal = { el: { hidden: true }, fieldsEl: fakeElement("div"), dismissEl: fakeElement("button") };
+  const field = (name) => {
+    for (const label of modal.fieldsEl.children) {
+      const input = label.children.find((c) => c.dataset.field === name);
+      if (input) return input;
+    }
+    throw new Error(`no Settings control for ${name}`);
+  };
+  return { modal, createElement: fakeElement, field };
 }
 
 /** Fetch fake answering `/current-file-exists` with `exists` and recording every call. */

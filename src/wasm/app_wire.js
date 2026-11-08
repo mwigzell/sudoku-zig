@@ -39,16 +39,25 @@ export function platformSteps(game, session, options) {
   return bridge ? androidSteps.androidSteps(game, session, bridge, options) : webSteps.webSteps(game, session, options);
 }
 
+/** @returns {import("./types").SettingsModal} */
 function settingsModalFromDom(root = document) {
   return {
     el: root.getElementById("settings-modal"),
-    checkbox: root.getElementById("settings-warn-solvability"),
-    difficultySelect: root.getElementById("settings-difficulty"),
-    logLevelSelect: root.getElementById("settings-log-level"),
-    autoRestoreCheckbox: root.getElementById("settings-auto-restore"),
-    autoNewCheckbox: root.getElementById("settings-auto-new"),
-    autoSaveCheckbox: root.getElementById("settings-auto-save"),
+    fieldsEl: root.getElementById("settings-fields"),
     dismissEl: root.getElementById("settings-modal-dismiss"),
+  };
+}
+
+/**
+ * File → New's dialog, one button per choice of the table's difficulty row, labelled by core.
+ * @param {Document} root
+ * @param {import("./types").ConfigTable} table
+ */
+function difficultyDialogFromDom(root, table) {
+  return {
+    el: root.getElementById("new-difficulty-modal"),
+    buttons: fileMenu.buildDifficultyButtons(root.getElementById("new-difficulty-buttons"), table, (tag) => root.createElement(tag)),
+    cancelBtn: root.getElementById("new-difficulty-cancel"),
   };
 }
 
@@ -137,15 +146,7 @@ export function wireSudokuApp({
 
   const regionMenu = region.wireRegionMenu(menuControls, game, session, boardEl, { onChange: syncControls, steps });
   const marksMenu = marks.wireMarks(menuControls, game, session, boardEl, { onChange: syncControls, steps });
-  const difficultyDialog = {
-    el: root.getElementById("new-difficulty-modal"),
-    buttons: [...root.querySelectorAll(".new-difficulty-btn")].map((btn) => ({
-      label: btn.textContent,
-      difficulty: Number(btn.dataset.difficulty),
-      el: btn,
-    })),
-    cancelBtn: root.getElementById("new-difficulty-cancel"),
-  };
+  const difficultyDialog = difficultyDialogFromDom(root, session.configTable);
 
   fileMenu.wireFileMenu(menuControls, game, boardEl, statusBar, session, menuBar, {
     difficultyDialog,

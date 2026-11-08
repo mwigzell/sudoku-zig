@@ -613,24 +613,14 @@
       line-height: 1.45;
     }
 
-    #settings-warn-solvability-label {
+    #settings-modal .settings-check {
       display: flex;
       align-items: flex-start;
       gap: 0.5rem;
       cursor: pointer;
     }
 
-    #settings-auto-restore-label,
-    #settings-auto-new-label,
-    #settings-auto-save-label {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.5rem;
-      cursor: pointer;
-    }
-
-    #settings-difficulty-label select,
-    #settings-log-level-label select {
+    #settings-modal .settings-field select {
       display: block;
       margin-top: 0.35rem;
       width: 100%;
@@ -947,40 +937,7 @@
   <div id="settings-modal" hidden role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
     <div class="settings-dialog">
       <h2 id="settings-modal-title">Settings</h2>
-      <label id="settings-warn-solvability-label">
-        <input type="checkbox" id="settings-warn-solvability" />
-        Warn when the puzzle has no solution
-      </label>
-      <label id="settings-difficulty-label">
-        Default difficulty
-        <select id="settings-difficulty">
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-        </select>
-      </label>
-      <label id="settings-log-level-label">
-        Log level
-        <select id="settings-log-level">
-          <option value="debug">Debug</option>
-          <option value="info">Info</option>
-          <option value="warn">Warn</option>
-          <option value="err">Error</option>
-          <option value="fatal">Fatal</option>
-        </select>
-      </label>
-      <label id="settings-auto-restore-label">
-        <input type="checkbox" id="settings-auto-restore" />
-        Auto restore current file on startup
-      </label>
-      <label id="settings-auto-new-label">
-        <input type="checkbox" id="settings-auto-new" />
-        Auto start new game when restore is unavailable
-      </label>
-      <label id="settings-auto-save-label">
-        <input type="checkbox" id="settings-auto-save" />
-        Auto save after changes
-      </label>
+      <div id="settings-fields"></div>
       <button type="button" id="settings-modal-dismiss">OK</button>
     </div>
   </div>
@@ -1012,9 +969,7 @@
     <div class="about-dialog">
       <h2 id="new-difficulty-title">New game</h2>
       <p id="new-difficulty-prompt">Choose a difficulty:</p>
-      <button type="button" class="new-difficulty-btn" data-difficulty="1">Easy</button>
-      <button type="button" class="new-difficulty-btn" data-difficulty="2">Medium</button>
-      <button type="button" class="new-difficulty-btn" data-difficulty="3">Hard</button>
+      <div id="new-difficulty-buttons"></div>
       <button type="button" id="new-difficulty-cancel">Cancel</button>
     </div>
   </div>

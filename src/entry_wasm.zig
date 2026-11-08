@@ -8,7 +8,7 @@ const frame_mod = @import("core/frame.zig");
 const puzzle_gen = @import("core/puzzle_gen/mod.zig");
 const logger = @import("core/logger.zig");
 const boundary = @import("wasm/boundary.zig");
-const wire = @import("wasm/wire.zig");
+const config_store = @import("core/config_store.zig");
 const config = @import("core/config.zig");
 const startup_config = @import("core/startup/config.zig");
 const flow = @import("core/flow/mod.zig");
@@ -84,35 +84,12 @@ fn deinitEngineIfAny() void {
 }
 
 /// Empty-grid engine from host-resolved startup config (disk + CLI via serve — same contract as native).
-/// theme: 0 = dark, 1 = light, 2 = system; the flags are 0 = false, 1 = true.
-export fn bootstrapHostConfig(
-    difficulty: u32,
-    log_level: u32,
-    theme: u32,
-    show_region: u32,
-    warn_solvability: u32,
-    auto_restore: u32,
-    auto_new: u32,
-    auto_save: u32,
-    show_marks: u32,
-) callconv(.c) u32 {
+/// The payload is the host's Config object in `config.json`'s shape.
+export fn bootstrapHostConfig(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
-    const theme_enum: config.ViewTheme = switch (theme) {
-        1 => .light,
-        2 => .system,
-        else => .dark,
-    };
-    const game_cfg = startup_config.configFromHostWire(
-        @intCast(difficulty),
-        @intCast(log_level),
-        theme_enum,
-        show_region != 0,
-        warn_solvability != 0,
-        auto_restore != 0,
-        auto_new != 0,
-        auto_save != 0,
-        show_marks != 0,
-    ) catch |err| return exportFailure(out, "invalid host startup config", err);
+    const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    var game_cfg = config.Config.default();
+    config_store.applyConfigJson(std.heap.page_allocator, &game_cfg, json) catch |err| return exportFailure(out, "invalid host startup config", err);
 
     startup_config.applyLoggerFromStartup(game_cfg);
     deinitEngineIfAny();
@@ -136,15 +113,14 @@ fn wasmPlayAbortCheck(_: ?*anyopaque) bool {
     return gen_abort_requested;
 }
 
-/// Generate a puzzle line off the main engine (Web Worker entry).
-export fn generatePuzzle(difficulty: u32, log_level: u32, entropy: u32) callconv(.c) u32 {
+/// Generate a puzzle line off the main engine (Web Worker entry); the payload is `{difficulty, log_level, seed}`.
+export fn generatePuzzle(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
-    const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
-        return exportError(out, "invalid wire config");
-    };
+    const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
+    const req = boundary.parseGenRequest(json) catch |err| return exportFailure(out, "invalid generate request", err);
 
-    logger.min_level = wire_cfg.log_level;
-    puzzle_gen.PuzzleGen.addEntropy(@as(u64, entropy));
+    logger.min_level = req.log_level;
+    puzzle_gen.PuzzleGen.addEntropy(@as(u64, req.seed));
 
     gen_abort_requested = false;
     if (builtin.cpu.arch == .wasm32) {
@@ -158,7 +134,7 @@ export fn generatePuzzle(difficulty: u32, log_level: u32, entropy: u32) callconv
         }
     }
 
-    const puzzle_str = puzzle_gen.PuzzleGen.generate(wire_cfg.toConfig().difficulty);
+    const puzzle_str = puzzle_gen.PuzzleGen.generate(req.difficulty);
     if (puzzle_gen.PuzzleGen.takePlayAborted()) {
         return exportError(out, "cancelled");
     }
@@ -166,19 +142,11 @@ export fn generatePuzzle(difficulty: u32, log_level: u32, entropy: u32) callconv
     return returnJson(out);
 }
 
-/// Start a fresh game from WireConfig difficulty and log level.
-export fn init(difficulty: u32, log_level: u32) callconv(.c) u32 {
+/// Start a fresh game at the Config's difficulty.
+export fn init() callconv(.c) u32 {
     const out = outBuffer();
-    const wire_cfg = wire.WireConfig.fromWire(@intCast(difficulty), @intCast(log_level)) orelse {
-        return exportError(out, "invalid wire config");
-    };
-
-    logger.min_level = wire_cfg.log_level;
-
+    logger.min_level = cfg.log_level;
     deinitEngineIfAny();
-
-    cfg.difficulty = wire_cfg.difficulty.toPuzzleDifficulty();
-    cfg.log_level = wire_cfg.log_level;
 
     if (builtin.cpu.arch == .wasm32) {
         puzzle_gen.PuzzleGen.setPlayProgress(wasmGenProgress, null);
@@ -202,7 +170,7 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const eng = engineOrError(out) orelse return returnJson(out);
 
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const cmd = boundary.parseAction(json, cfg) catch |err| {
+    const cmd = boundary.parseAction(json) catch |err| {
         return exportFailure(out, "invalid action", err);
     };
 
@@ -253,12 +221,18 @@ export fn getLegend() callconv(.c) u32 {
     return returnJson(out);
 }
 
-/// The player's Config as WireConfig JSON; an error until the host config has booted the engine.
+/// The player's Config as JSON in `config.json`'s shape; an error until the host config has booted the engine.
 export fn getConfig() callconv(.c) u32 {
     const out = outBuffer();
     _ = engineOrError(out) orelse return returnJson(out);
-    const wire_cfg = wire.WireConfig.fromConfig(cfg);
-    boundary.writeWireConfigJson(out, wire_cfg) catch |err| return exportWriteFailed(out, err);
+    boundary.writeConfigJson(out, cfg) catch |err| return exportWriteFailed(out, err);
+    return returnJson(out);
+}
+
+/// Core's config table as JSON: the rows the page builds its Settings dialog and labels from.
+export fn getConfigTable() callconv(.c) u32 {
+    const out = outBuffer();
+    boundary.writeConfigTableJson(out) catch |err| return exportWriteFailed(out, err);
     return returnJson(out);
 }
 
@@ -336,7 +310,7 @@ export fn commandStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const cmd = boundary.parseAction(json, cfg) catch |err| return exportFailure(out, "invalid action", err);
+    const cmd = boundary.parseAction(json) catch |err| return exportFailure(out, "invalid action", err);
     active_flow = .{ .command = flow.CommandFlow.init(eng, &file_session, &cfg, cmd) };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));
