@@ -277,6 +277,16 @@
       mask-image: linear-gradient(to bottom, black calc(100% - 1.1em), transparent);
     }
 
+    /* A styled scrollbar stays drawn; Android's default one is an overlay shown only while scrolling. */
+    #status-bar::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #status-bar::-webkit-scrollbar-thumb {
+      background: var(--status-border);
+      border-radius: 3px;
+    }
+
     /* 1rem is the floor: every label fits in a fifth of a 360px-wide screen at this size. */
     .play-pad-btn {
       font: inherit;
