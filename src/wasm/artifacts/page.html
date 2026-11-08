@@ -109,7 +109,9 @@
       height: 100%;
     }
 
+    /* Nothing on the page is for copying; a long press would otherwise select text and open the copy menu. */
     body {
+      user-select: none;
       font-family: system-ui, sans-serif;
       margin: 0;
       min-height: 100dvh;
@@ -682,7 +684,6 @@
       min-width: 0;
       min-height: 0;
       background: var(--gutter-bg);
-      user-select: none;
       border: none;
     }
 
@@ -715,7 +716,6 @@
       color: var(--cell-fg);
       border-right: 1px solid var(--line-cell);
       border-bottom: 1px solid var(--line-cell);
-      user-select: none;
     }
 
     .cell:nth-child(9n) {
