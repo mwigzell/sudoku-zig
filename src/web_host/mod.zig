@@ -330,9 +330,14 @@ fn acceptLoop(io: std.Io, server: *net.Server, session: *Session) ServeError!voi
             if (shutdown_requested.load(.acquire)) return;
             return ServeError.System;
         };
-        errdefer client.close(io);
-        try serveClient(io, session, &rt_router, client);
+        try serveAndClose(io, session, &rt_router, client);
     }
+}
+
+/// Serves one accepted connection and closes it; the accept loop owns every accepted stream until here.
+fn serveAndClose(io: std.Io, session: *Session, rt_router: *Router, client: net.Stream) ServeError!void {
+    defer client.close(io);
+    try serveClient(io, session, rt_router, client);
 }
 
 fn workerEntry(ctx: *WorkerCtx) void {
@@ -1140,6 +1145,42 @@ fn testSession(data_path: []const u8, visible_path: []const u8) Session {
         .current_file = null,
         .host_config_body_buf = undefined,
     };
+}
+
+/// How long a test waits for the host's end of a connection before calling it left open.
+const CLOSE_WAIT_MS: i32 = 2000;
+
+/// Reads `client` to end of stream, failing if the peer keeps the connection open past `CLOSE_WAIT_MS`.
+fn expectStreamEnds(io: std.Io, client: net.Stream) !void {
+    var buf: [512]u8 = undefined;
+    while (true) {
+        var fds = [_]std.posix.pollfd{.{ .fd = client.socket.handle, .events = std.posix.POLL.IN, .revents = 0 }};
+        const ready = try std.posix.poll(&fds, CLOSE_WAIT_MS);
+        if (ready == 0) return error.ConnectionLeftOpen;
+        var data: [1][]u8 = .{buf[0..]};
+        const result = try client.readWithControl(io, &data, &.{});
+        if (result.data_len == 0) return;
+    }
+}
+
+test "web_host: the host closes a connection once it has served the request" {
+    const io = std.testing.io;
+    var server = try bindLoopback(io, 0);
+    defer server.deinit(io);
+    const client = try server.socket.address.connect(io, .{ .mode = .stream });
+    defer client.close(io);
+
+    var w_buf: [64]u8 = undefined;
+    var w = client.writer(io, &w_buf);
+    try w.interface.writeAll("GET /nope HTTP/1.1\r\n\r\n");
+    try w.interface.flush();
+
+    var session = testSession(".", ".");
+    var router = Router.init();
+    const accepted = try server.accept(io);
+    try serveAndClose(io, &session, &router, accepted);
+
+    try expectStreamEnds(io, client);
 }
 
 test "current-file exists reports the visible target the next write lands on" {
