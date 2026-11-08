@@ -3,7 +3,7 @@
 const std = @import("std");
 const game_engine = @import("../../core/engine/game_engine.zig");
 const config = @import("../../core/config.zig");
-const settings_store = @import("../../core/settings_store.zig");
+const config_store = @import("../../core/config_store.zig");
 const flow_mod = @import("../../core/flow/mod.zig");
 const file_transport = @import("file_transport.zig");
 const path_mod = @import("path.zig");
@@ -41,7 +41,7 @@ pub const Storage = struct {
     /// The current-file pointer saved by the last run, owned by `gpa`; null when there is none.
     pub fn loadCurrentFile(self: *const @This(), gpa: std.mem.Allocator) ?[]u8 {
         const sp = self.settings_persist orelse return null;
-        return settings_store.loadCurrentFile(gpa, sp.io, sp.data_dir) catch |err| {
+        return config_store.loadCurrentFile(gpa, sp.io, sp.data_dir) catch |err| {
             log.warn("current file setting unreadable: {s}", .{@errorName(err)});
             return null;
         };
@@ -50,7 +50,7 @@ pub const Storage = struct {
     /// Carry out the write half of a `persist_settings` step.
     pub fn persistSettings(self: *const @This(), cfg: config.Config) flow_mod.step.Outcome {
         const sp = self.settings_persist orelse return .ok;
-        settings_store.save(std.heap.page_allocator, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
+        config_store.save(std.heap.page_allocator, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
         return .ok;
     }
 
@@ -98,7 +98,7 @@ pub const Storage = struct {
     /// Remember `path` as the file the next launch restores; null forgets it.
     pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) void {
         const sp = self.settings_persist orelse return;
-        settings_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err| {
+        config_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err| {
             log.err("could not remember the current file: {s}", .{@errorName(err)});
         };
     }
@@ -246,7 +246,7 @@ const TestRoot = struct {
     }
 
     fn currentFile(self: *const @This()) !?[]u8 {
-        return settings_store.loadCurrentFile(std.testing.allocator, std.testing.io, self.dir);
+        return config_store.loadCurrentFile(std.testing.allocator, std.testing.io, self.dir);
     }
 };
 
@@ -415,7 +415,7 @@ test "persistSettings: writes the settings file; without settings there is nothi
     cfg.difficulty = .hard;
 
     try std.testing.expect(root.storage(root.dir).persistSettings(cfg) == .ok);
-    const saved = try settings_store.loadOrDefault(std.testing.allocator, std.testing.io, root.dir);
+    const saved = try config_store.loadOrDefault(std.testing.allocator, std.testing.io, root.dir);
     try std.testing.expectEqual(config.Difficulty.hard, saved.difficulty);
 
     const bare: Storage = .{ .transport = file_transport.NativeTransport.make(std.testing.io) };

@@ -13,7 +13,7 @@ const about = @import("../core/about.zig");
 const legend_mod = @import("../core/renderer/legend.zig");
 const wire = @import("wire.zig");
 const flow = @import("../core/flow/mod.zig");
-const settings_store = @import("../core/settings_store.zig");
+const config_store = @import("../core/config_store.zig");
 const file_policy = @import("../core/file_policy.zig");
 const startup_policy = @import("../core/startup/policy.zig");
 const flow_command = @import("../core/flow/command.zig");
@@ -414,7 +414,7 @@ pub fn writeStepJson(out: OutBuffer, step: flow.Step) !void {
         },
         .persist_settings => |cfg| {
             try std.Io.Writer.writeAll(w, ",\"settings\":");
-            try settings_store.writePlayerSettingsJson(w, cfg);
+            try config_store.writeConfigJson(w, cfg);
         },
     }
     try std.Io.Writer.writeAll(w, "}");

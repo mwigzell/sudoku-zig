@@ -14,7 +14,7 @@ const board = @import("../../core/board/board.zig");
 const cell = @import("../../core/board/cell.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 const game_engine = @import("../../core/engine/game_engine.zig");
-const settings_store = @import("../../core/settings_store.zig");
+const config_store = @import("../../core/config_store.zig");
 const test_defaults = @import("../config_defaults.zig");
 const MemoryTransport = @import("../../native/shell/memory_transport.zig").MemoryTransport;
 
@@ -563,7 +563,7 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         for (want, written) |w, got| try std.testing.expectEqualStrings(w, got);
     }
     if (expect.settings) |want| {
-        const saved = try settings_store.loadOrDefault(std.testing.allocator, io, data_dir);
+        const saved = try config_store.loadOrDefault(std.testing.allocator, io, data_dir);
         if (want.auto_save) |on| try std.testing.expectEqual(on, saved.auto_save);
         if (want.show_region) |on| try std.testing.expectEqual(on, saved.show_region);
         if (want.theme) |name| try std.testing.expectEqualStrings(name, @tagName(saved.theme));

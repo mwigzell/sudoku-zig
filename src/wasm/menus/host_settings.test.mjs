@@ -1,5 +1,5 @@
 // host_settings.test.mjs — settings menus on a real wasm game: core's command flow decides
-// what is persisted and produces the `POST /settings.json` body.
+// what is persisted and produces the `POST /config.json` body.
 
 import assert from "node:assert/strict";
 import * as webSteps from "../flows/web_steps.js";
@@ -70,7 +70,7 @@ const themeRoot = {
   themeMod.wireThemeMenu(controls, game, session, { root: themeRoot, steps });
   controls.viewLight.click();
   await settleFlow();
-  assert.deepEqual(posts, [{ url: "./settings.json", method: "POST", body: { ...DEFAULT_SETTINGS, theme: "light" } }]);
+  assert.deepEqual(posts, [{ url: "./config.json", method: "POST", body: { ...DEFAULT_SETTINGS, theme: "light" } }]);
   assert.deepEqual(errors, []);
 }
 

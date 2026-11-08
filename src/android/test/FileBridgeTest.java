@@ -68,13 +68,13 @@ public final class FileBridgeTest {
     private static final String CHOSEN_NAME = "bridge-test.sud";
     private static final String CHOSEN_NAME_LIKE = "bridge-test%.sud";
     /** Auto Save on; `%b` is Auto Restore. */
-    private static final String AUTO_SAVE_SETTINGS_FMT =
-        "{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"system\",\"show_region\":false,"
-            + "\"warn_solvability\":false,\"auto_restore\":%b,\"auto_new\":false,\"auto_save\":true}";
+    private static final String AUTO_SAVE_CONFIG_FMT =
+        "{\"config\":{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"system\",\"show_region\":false,"
+            + "\"warn_solvability\":false,\"auto_restore\":%b,\"auto_new\":false,\"auto_save\":true}}";
     /** Light theme, nothing to restore. */
-    private static final String LIGHT_THEME_SETTINGS =
-        "{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"light\",\"show_region\":false,"
-            + "\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":false}";
+    private static final String LIGHT_THEME_CONFIG =
+        "{\"config\":{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"light\",\"show_region\":false,"
+            + "\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":false}}";
     /** Launch frames are sampled for this long; the splash shows for a minimum time, then fades. */
     private static final long LAUNCH_WATCH_MS = 6_000;
     private static final int DARK_RGB_SUM = 120;
@@ -210,7 +210,7 @@ public final class FileBridgeTest {
             + "pm clear " + APP + "\n"
             + "rm -f " + DEFAULT_PATH + " " + SAVE_DIR + "/sudoku\\ \\(*\\).sud\n");
         deleteChosenNameFiles();
-        writeAutoSaveSettings(false);
+        writeAutoSaveConfig(false);
     }
 
     @After
@@ -220,7 +220,7 @@ public final class FileBridgeTest {
 
     @Test
     public void systemBarsStayDarkUntilTheSplashIsGoneThenTakeTheTheme() throws IOException {
-        writeSettings(LIGHT_THEME_SETTINGS);
+        writeConfig(LIGHT_THEME_CONFIG);
         sh("am start -n " + APP + "/.MainActivity\n");
         final UiAutomation automation = InstrumentationRegistry.getInstrumentation().getUiAutomation();
         final long started = SystemClock.uptimeMillis();
@@ -461,7 +461,7 @@ public final class FileBridgeTest {
 
     @Test
     public void autoRestoreReopensTheBoundFileAndTheNextMoveWritesIt() throws IOException {
-        writeAutoSaveSettings(true);
+        writeAutoSaveConfig(true);
         launchApp();
         startEasyGame();
         need(By.text("File"), UI_WAIT_MS).click();
@@ -484,7 +484,7 @@ public final class FileBridgeTest {
 
     @Test
     public void aRestoredBindingWithoutPermissionAsksToChooseTheFileAgainAndKeepsSavingThere() throws IOException {
-        writeAutoSaveSettings(true);
+        writeAutoSaveConfig(true);
         launchApp();
         startEasyGame();
         need(By.text("File"), UI_WAIT_MS).click();
@@ -635,7 +635,7 @@ public final class FileBridgeTest {
         final String earlierHash = fileHash(DEFAULT_PATH);
 
         reinstallApp();
-        writeAutoSaveSettings(false);
+        writeAutoSaveConfig(false);
         tappedCells.clear();
 
         launchApp();
@@ -668,13 +668,13 @@ public final class FileBridgeTest {
         return Color.red(color) + Color.green(color) + Color.blue(color);
     }
 
-    private void writeAutoSaveSettings(boolean autoRestore) throws IOException {
-        writeSettings(String.format(AUTO_SAVE_SETTINGS_FMT, autoRestore));
+    private void writeAutoSaveConfig(boolean autoRestore) throws IOException {
+        writeConfig(String.format(AUTO_SAVE_CONFIG_FMT, autoRestore));
     }
 
-    private void writeSettings(String settings) throws IOException {
+    private void writeConfig(String config) throws IOException {
         sh("run-as " + APP + " mkdir -p files\n"
-            + "echo '" + settings + "' | run-as " + APP + " sh -c 'cat > files/settings.json'\n");
+            + "echo '" + config + "' | run-as " + APP + " sh -c 'cat > files/config.json'\n");
     }
 
     private void launchApp() throws IOException {

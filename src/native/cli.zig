@@ -37,7 +37,7 @@ pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Confi
             const kind = iterator.next() orelse {
                 failFlag("--renderer requires a value.", .{});
             };
-            cfg.preferred_renderer = parseRenderer(kind) orelse {
+            cfg.renderers.preferred = parseRenderer(kind) orelse {
                 failFlag("invalid renderer kind '{s}'.", .{kind});
             };
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--difficulty")) {
@@ -109,7 +109,7 @@ test "-d medium sets medium difficulty and preserves default renderer" {
     var it = initIt(argv);
     const cfg = parseCLI(&it) catch unreachable;
     try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ansi, cfg.preferred_renderer);
+    try std.testing.expectEqual(config.RendererKind.ansi, cfg.renderers.preferred);
 }
 
 test "-d hard sets hard difficulty" {
@@ -131,7 +131,7 @@ test "-d medium and -r ascii both overlay defaults" {
     var it = initIt(argv);
     const cfg = parseCLI(&it) catch unreachable;
     try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ascii, cfg.preferred_renderer);
+    try std.testing.expectEqual(config.RendererKind.ascii, cfg.renderers.preferred);
 }
 
 test "--difficulty long form sets easy" {
@@ -154,7 +154,7 @@ test "-v warn preserves difficulty and renderer defaults" {
     const cfg = parseCLI(&it) catch unreachable;
     try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
     try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ansi, cfg.preferred_renderer);
+    try std.testing.expectEqual(config.RendererKind.ansi, cfg.renderers.preferred);
 }
 
 test "no -v leaves log level at default info" {
@@ -177,5 +177,5 @@ test "-d medium and -v debug both overlay defaults" {
     const cfg = parseCLI(&it) catch unreachable;
     try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
     try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
-    try std.testing.expectEqual(config.RendererKind.ansi, cfg.preferred_renderer);
+    try std.testing.expectEqual(config.RendererKind.ansi, cfg.renderers.preferred);
 }

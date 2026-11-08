@@ -17,13 +17,13 @@ pub fn run(io: std.Io, gpa: std.mem.Allocator, cfg: config.Config, data_dir: []c
         if (err == error.UnsupportedRenderer) {
             log.fatal(
                 "renderer '{s}' is not available in this build.\nAvailable renderers: ansi, ascii.",
-                .{@tagName(cfg.preferred_renderer)},
+                .{@tagName(cfg.renderers.preferred)},
             );
         }
         if (err == error.NoFallbackConfigured) {
             log.fatal(
                 "renderer '{s}' is unavailable and no fallback renderer is configured.",
-                .{@tagName(cfg.preferred_renderer)},
+                .{@tagName(cfg.renderers.preferred)},
             );
         }
         return err;

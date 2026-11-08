@@ -5,7 +5,7 @@ const config = @import("../config.zig");
 const logger = @import("../logger.zig");
 const wire = @import("../../wasm/wire.zig");
 const cli = @import("../../native/cli.zig");
-const settings_store = @import("../settings_store.zig");
+const config_store = @import("../config_store.zig");
 const path = @import("../../native/shell/path.zig");
 const save_defaults = @import("../save_defaults.zig");
 
@@ -116,19 +116,19 @@ pub fn resolveStartupConfig(
     gpa: std.mem.Allocator,
     io: std.Io,
     cli_it: *std.process.Args.Iterator,
-) settings_store.Error!config.Config {
+) config_store.Error!config.Config {
     const data_dir = path.computeDataDir(gpa) catch |err| {
         log.warn("data dir unavailable, reading settings from the working directory: {s}", .{@errorName(err)});
-        return settings_store.loadOrDefault(gpa, io, ".");
+        return config_store.loadOrDefault(gpa, io, ".");
     };
     defer gpa.free(data_dir);
-    settings_store.ensureSettingsDir(io, data_dir);
+    config_store.ensureConfigDir(io, data_dir);
 
-    var cfg = try settings_store.loadOrDefault(gpa, io, data_dir);
+    var cfg = try config_store.loadOrDefault(gpa, io, data_dir);
     cfg = cli.parseCLIWithBase(cli_it, cfg) catch |err| switch (err) {
         cli.ParseError.HelpRequested, cli.ParseError.UnknownFlag => unreachable,
     };
-    try settings_store.save(gpa, io, data_dir, cfg);
+    try config_store.save(gpa, io, data_dir, cfg);
     return cfg;
 }
 
@@ -139,13 +139,12 @@ test "CLI overrides persist on top of saved settings" {
 
     const saved = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
         .theme = .dark,
         .show_region = false,
     };
-    try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, saved);
+    try config_store.saveInDir(std.testing.allocator, io, tmp.dir, saved);
 
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
@@ -153,16 +152,16 @@ test "CLI overrides persist on top of saved settings" {
     const argv: [3][*:0]const u8 = .{ "sudoku", "-d", "hard" };
     var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
 
-    var cfg = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    var cfg = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     cfg = try cli.parseCLIWithBase(&it, cfg);
-    try settings_store.save(std.testing.allocator, io, data_path, cfg);
+    try config_store.save(std.testing.allocator, io, data_path, cfg);
 
-    const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expectEqual(config.Difficulty.hard, restored.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ansi, restored.preferred_renderer);
+    try std.testing.expectEqual(config.RendererKind.ansi, restored.renderers.preferred);
 }
 
-test "host startup JSON reflects Config loaded from settings.json on disk" {
+test "host startup JSON reflects Config loaded from config.json on disk" {
     const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -177,9 +176,9 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
     on_disk.auto_restore = true;
     on_disk.auto_new = true;
     on_disk.auto_save = true;
-    try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, on_disk);
+    try config_store.saveInDir(std.testing.allocator, io, tmp.dir, on_disk);
 
-    const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    const loaded = try config_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
     var buf: [1024]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
@@ -191,8 +190,7 @@ test "host startup JSON reflects Config loaded from settings.json on disk" {
 test "host startup JSON matches Config wire fields" {
     const startup = config.Config{
         .difficulty = .medium,
-        .preferred_renderer = .web,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .web, .fallback = .ansi },
         .log_level = .debug,
         .theme = .light,
         .show_region = true,

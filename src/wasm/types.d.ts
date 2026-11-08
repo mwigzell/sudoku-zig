@@ -132,7 +132,7 @@ export type GameState = {
   region: number[] | null;
 };
 
-/** Player settings as core writes them to `settings.json` (no renderer choice, no current file). */
+/** Player settings as core writes them to `config.json` (no renderer choice, no current file). */
 export type PlayerSettings = {
   difficulty: "easy" | "medium" | "hard" | "default";
   log_level: LogLevel;

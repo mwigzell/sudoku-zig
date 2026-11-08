@@ -5,7 +5,7 @@ const logger = @import("../core/logger.zig");
 const log = logger.Logger(.web_host);
 const config = @import("../core/config.zig");
 const startup_config = @import("../core/startup/config.zig");
-const settings_store = @import("../core/settings_store.zig");
+const config_store = @import("../core/config_store.zig");
 const file_transport = @import("../native/shell/file_transport.zig");
 const file_path = @import("../native/shell/path.zig");
 const save_defaults = @import("../core/save_defaults.zig");
@@ -69,42 +69,8 @@ const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
 const CURRENT_FILE_PATH = "/current-file";
 const CURRENT_FILE_EXISTS_PATH = "/current-file-exists";
 
-const SettingsPostBody = struct {
-    difficulty: ?[]const u8 = null,
-    log_level: ?[]const u8 = null,
-    theme: ?[]const u8 = null,
-    show_region: ?bool = null,
-    warn_solvability: ?bool = null,
-    auto_restore: ?bool = null,
-    auto_new: ?bool = null,
-    auto_save: ?bool = null,
-    show_marks: ?bool = null,
-};
-
-fn mergeDifficultyPatch(cfg: *config.Config, name: []const u8) void {
-    if (std.mem.eql(u8, name, "easy")) cfg.difficulty = .easy else if (std.mem.eql(u8, name, "medium")) cfg.difficulty = .medium else if (std.mem.eql(u8, name, "hard")) cfg.difficulty = .hard;
-}
-
-fn mergeLogLevelPatch(cfg: *config.Config, name: []const u8) void {
-    if (std.mem.eql(u8, name, "debug")) cfg.log_level = .debug else if (std.mem.eql(u8, name, "info")) cfg.log_level = .info else if (std.mem.eql(u8, name, "warn")) cfg.log_level = .warn else if (std.mem.eql(u8, name, "err")) cfg.log_level = .err else if (std.mem.eql(u8, name, "fatal")) cfg.log_level = .fatal;
-}
-
-fn mergeThemePatch(cfg: *config.Config, name: []const u8) void {
-    if (std.mem.eql(u8, name, "light")) cfg.theme = .light else if (std.mem.eql(u8, name, "dark")) cfg.theme = .dark else if (std.mem.eql(u8, name, "system")) cfg.theme = .system;
-}
-
-/// Applies partial fields from a `POST /settings.json` body onto host `Config` (shared with the HTTP handler).
-pub fn mergeSettingsPostPatch(cfg: *config.Config, patch: SettingsPostBody) void {
-    if (patch.difficulty) |name| mergeDifficultyPatch(cfg, name);
-    if (patch.log_level) |name| mergeLogLevelPatch(cfg, name);
-    if (patch.theme) |name| mergeThemePatch(cfg, name);
-    if (patch.show_region) |enabled| cfg.show_region = enabled;
-    if (patch.warn_solvability) |enabled| cfg.warn_solvability = enabled;
-    if (patch.auto_restore) |enabled| cfg.auto_restore = enabled;
-    if (patch.auto_new) |enabled| cfg.auto_new = enabled;
-    if (patch.auto_save) |enabled| cfg.auto_save = enabled;
-    if (patch.show_marks) |enabled| cfg.show_marks = enabled;
-}
+/// The host route that receives core's Config body and stores it in `config.json`.
+const CONFIG_PATH = "/config.json";
 
 fn requestBody(request: []const u8) ?[]const u8 {
     const sep = std.mem.indexOf(u8, request, "\r\n\r\n") orelse return null;
@@ -203,14 +169,13 @@ fn headerFlag(request: []const u8, key: []const u8) bool {
     return std.ascii.eqlIgnoreCase(value, "true") or std.mem.eql(u8, value, "1");
 }
 
-fn applySettingsPost(io: std.Io, session: *Session, body: []const u8) ServeError!void {
-    const parsed = std.json.parseFromSlice(SettingsPostBody, std.heap.page_allocator, body, .{}) catch return ServeError.System;
-    defer parsed.deinit();
-    mergeSettingsPostPatch(&session.host_config, parsed.value);
+/// Apply core's Config body onto the host Config and store it; config_store logs a body it refuses.
+fn applyConfigPost(io: std.Io, session: *Session, body: []const u8) ServeError!void {
+    config_store.applyConfigJson(std.heap.page_allocator, &session.host_config, body) catch return ServeError.System;
     const gpa = std.heap.page_allocator;
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
-    settings_store.ensureSettingsDir(io, session.data_dir);
-    settings_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
+    config_store.ensureConfigDir(io, session.data_dir);
+    config_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
 }
 
 /// Owned write path for a current-file write, and whether it is only the hidden restore copy.
@@ -271,14 +236,14 @@ fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]co
 fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8, restore_copy: bool) ServeError!void {
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
 
-    settings_store.ensureSettingsDir(io, session.data_dir);
+    config_store.ensureConfigDir(io, session.data_dir);
     const target = currentFileTarget(io, session, save_name, restore_copy) catch return ServeError.System;
     defer std.heap.page_allocator.free(target.path);
 
     const transport = file_transport.NativeTransport.make(io);
     transport.write(transport.context, target.path, body) catch return ServeError.System;
 
-    settings_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, target.path) catch return ServeError.System;
+    config_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, target.path) catch return ServeError.System;
 
     if (session.current_file) |old| std.heap.page_allocator.free(old);
     session.current_file = std.heap.page_allocator.dupe(u8, target.path) catch return ServeError.System;
@@ -294,7 +259,7 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Serv
         else => return ServeError.System,
     };
     if (session.data_dir.len != 0 and !std.mem.eql(u8, session.data_dir, ".")) {
-        settings_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, null) catch return ServeError.System;
+        config_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, null) catch return ServeError.System;
     }
     log.info("current-file forget: path={s} deleted={any}", .{ current, delete_file });
     std.heap.page_allocator.free(current);
@@ -417,7 +382,7 @@ fn bindProbe(io: std.Io, bind: BindFn, gate: *ReadyGate, session: *Session) Serv
 pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, visible_save_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
     shutdown_requested.store(false, .release);
 
-    const current_file = settings_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch |err| blk: {
+    const current_file = config_store.loadCurrentFile(std.heap.page_allocator, io, data_dir) catch |err| blk: {
         log.warn("current file setting unreadable: {s}", .{@errorName(err)});
         break :blk null;
     };
@@ -453,7 +418,7 @@ pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: 
     thread.join();
 }
 
-/// Host-resolved startup config, caller-owned settings directory for POST persistence, and the
+/// Host-resolved startup config, caller-owned config directory for POST persistence, and the
 /// platform's user-visible folder for the default autosave file.
 pub fn runWithHostConfig(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: []const u8, visible_save_dir: []const u8, on_ready: OnReadyFn) ServeError!void {
     return runBlocking(io, bind, host_cfg, data_dir, visible_save_dir, on_ready);
@@ -484,9 +449,9 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     var w_buf: [4096]u8 = undefined;
     var w = client.writer(io, w_buf[0..]);
 
-    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, "/settings.json")) {
+    if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, CONFIG_PATH)) {
         const body = requestBody(request) orelse return ServeError.System;
-        try applySettingsPost(io, session, body);
+        try applyConfigPost(io, session, body);
         try writeFull(&w.interface, "204 No Content", "application/json", "");
         return;
     }
@@ -814,52 +779,13 @@ test "web_host: build-info body carries this host's build mode, apart from confi
     try std.testing.expectEqualStrings("application/json", Router.contentType(.build_info));
 }
 
-test "mergeSettingsPostPatch updates view prefs on Config" {
-    var cfg = config.Config.default();
-    mergeSettingsPostPatch(&cfg, .{
-        .difficulty = "hard",
-        .log_level = "debug",
-        .theme = "light",
-        .show_region = true,
-        .warn_solvability = true,
-        .auto_restore = true,
-        .auto_new = true,
-        .auto_save = true,
-    });
-    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
-    try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
-    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
-    try std.testing.expect(cfg.show_region);
-    try std.testing.expect(cfg.warn_solvability);
-    try std.testing.expect(cfg.auto_restore);
-    try std.testing.expect(cfg.auto_new);
-    try std.testing.expect(cfg.auto_save);
-}
-
-test "mergeSettingsPostPatch ignores unknown difficulty/log level/theme" {
-    var cfg = config.Config.default();
-    cfg.difficulty = .medium;
-    cfg.log_level = .warn;
-    cfg.theme = .light;
-
-    mergeSettingsPostPatch(&cfg, .{
-        .difficulty = "legendary",
-        .log_level = "trace",
-        .theme = "sepia",
-    });
-
-    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
-    try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
-    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
-}
-
 test "requestBody returns null when header separator is missing" {
     try std.testing.expect(requestBody("GET / HTTP/1.1\r\nHost: localhost\r\n") == null);
 }
 
 test "requestBody returns payload bytes after header separator" {
     const req =
-        "POST /settings.json HTTP/1.1\r\nHost: localhost\r\nContent-Length: 13\r\n\r\n{\"theme\":1}";
+        "POST /config.json HTTP/1.1\r\nHost: localhost\r\nContent-Length: 13\r\n\r\n{\"theme\":1}";
     const body = requestBody(req).?;
     try std.testing.expectEqualStrings("{\"theme\":1}", body);
 }
@@ -887,7 +813,7 @@ test "contentLength parses header value case-insensitively" {
     try std.testing.expectEqual(@as(usize, 12), len);
 }
 
-test "applySettingsPost returns System on invalid JSON" {
+test "applyConfigPost returns System on invalid JSON" {
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = ".",
@@ -896,10 +822,10 @@ test "applySettingsPost returns System on invalid JSON" {
         .current_file = null,
         .host_config_body_buf = undefined,
     };
-    try std.testing.expectError(ServeError.System, applySettingsPost(std.testing.io, &session, "{\"theme\":"));
+    try std.testing.expectError(ServeError.System, applyConfigPost(std.testing.io, &session, "{\"theme\":"));
 }
 
-test "applySettingsPost updates in-memory host config even when disk persistence is disabled" {
+test "applyConfigPost updates in-memory host config even when disk persistence is disabled" {
     var session = Session{
         .host_config = config.Config.default(),
         .data_dir = ".",
@@ -909,7 +835,7 @@ test "applySettingsPost updates in-memory host config even when disk persistence
         .host_config_body_buf = undefined,
     };
     const body = "{\"difficulty\":\"hard\",\"log_level\":\"debug\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true}";
-    try applySettingsPost(std.testing.io, &session, body);
+    try applyConfigPost(std.testing.io, &session, body);
     try std.testing.expectEqual(config.Difficulty.hard, session.host_config.difficulty);
     try std.testing.expectEqual(logger.Severity.debug, session.host_config.log_level);
     try std.testing.expectEqual(config.ViewTheme.light, session.host_config.theme);
@@ -920,19 +846,17 @@ test "applySettingsPost updates in-memory host config even when disk persistence
     try std.testing.expect(session.host_config.auto_save);
 }
 
-test "settings POST JSON patch is written to settings.json on disk" {
+test "a config POST body is written to config.json on disk" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
     var cfg = config.Config.default();
     const body = "{\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":false,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true}";
-    const parsed = std.json.parseFromSlice(SettingsPostBody, std.testing.allocator, body, .{}) catch unreachable;
-    defer parsed.deinit();
-    mergeSettingsPostPatch(&cfg, parsed.value);
-    try settings_store.saveInDir(std.testing.allocator, io, tmp.dir, cfg);
+    try config_store.applyConfigJson(std.testing.allocator, &cfg, body);
+    try config_store.saveInDir(std.testing.allocator, io, tmp.dir, cfg);
 
-    const bytes = tmp.dir.readFileAlloc(io, settings_store.file_name, std.testing.allocator, std.Io.Limit.unlimited) catch unreachable;
+    const bytes = tmp.dir.readFileAlloc(io, config_store.file_name, std.testing.allocator, std.Io.Limit.unlimited) catch unreachable;
     defer std.testing.allocator.free(bytes);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"theme\":\"light\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"show_region\":true") != null);
@@ -941,7 +865,7 @@ test "settings POST JSON patch is written to settings.json on disk" {
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"auto_new\":true") != null);
     try std.testing.expect(std.mem.indexOf(u8, bytes, "\"auto_save\":true") != null);
 
-    const loaded = try settings_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    const loaded = try config_store.loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
     try std.testing.expectEqual(config.ViewTheme.light, loaded.theme);
     try std.testing.expect(loaded.show_region);
     try std.testing.expect(!loaded.warn_solvability);
@@ -975,7 +899,7 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     defer std.testing.allocator.free(expected);
     try std.testing.expectEqualStrings(expected, session.current_file.?);
 
-    const loaded_ptr = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    const loaded_ptr = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (loaded_ptr) |p| std.testing.allocator.free(p);
     try std.testing.expect(loaded_ptr != null);
     try std.testing.expectEqualStrings(expected, loaded_ptr.?);
@@ -1014,7 +938,7 @@ fn forgetScenario(delete_file: bool) !void {
 
     try std.testing.expect(session.current_file == null);
     try std.testing.expect(!session.has_current_file);
-    const pointer = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    const pointer = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (pointer) |p| std.testing.allocator.free(p);
     try std.testing.expect(pointer == null);
     const still_there = if (std.Io.Dir.cwd().statFile(io, written, .{})) |_| true else |_| false;
@@ -1284,8 +1208,7 @@ test "web_host: host-config body reflects active host Config" {
     var session = Session{
         .host_config = .{
             .difficulty = .medium,
-            .preferred_renderer = .web,
-            .fallback_renderer = .ansi,
+            .renderers = .{ .preferred = .web, .fallback = .ansi },
             .log_level = .debug,
             .theme = .light,
             .show_region = true,

@@ -253,7 +253,7 @@ const logger = @import("../../core/logger.zig");
 const styler_t = @import("../ascii/styler.zig");
 const ascii_renderer = @import("../ascii/renderer.zig");
 
-const settings_store = @import("../../core/settings_store.zig");
+const config_store = @import("../../core/config_store.zig");
 const save_defaults = @import("../../core/save_defaults.zig");
 
 /// Scripted renderer: feeds preset commands and yes/no answers, records what the shell showed.
@@ -335,8 +335,7 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -490,8 +489,7 @@ test "deterministic major path: new without a puzzle generates one at the chosen
 test "integrated e2e - run: open then save reuses opened path without filename prompt" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -534,8 +532,7 @@ test "integrated e2e - run: open then save reuses opened path without filename p
 test "integrated e2e - run: save_as writes file and re-renders" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -567,8 +564,7 @@ test "integrated e2e - run: save_as failure does not persist current_file pointe
 
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -588,7 +584,7 @@ test "integrated e2e - run: save_as failure does not persist current_file pointe
     try app.showGame();
     while (true) if (try app.turn()) break;
 
-    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    const current = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expect(current == null);
 }
@@ -597,8 +593,7 @@ test "integrated e2e - run: save_as failure does not persist current_file pointe
 test "integrated e2e - run: new command resets board and history" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -627,8 +622,7 @@ test "integrated e2e - run: new command resets board and history" {
 test "new shows core's generation progress through the renderer" {
     const cfg: config.Config = .{
         .difficulty = .easy,
-        .preferred_renderer = .ascii,
-        .fallback_renderer = .ascii,
+        .renderers = .{ .preferred = .ascii, .fallback = .ascii },
         .log_level = .info,
     };
     const responses = [_][]const u8{ "m", "5", "1", "quit" };
@@ -651,8 +645,8 @@ test "new command with auto_save enabled does not print saved-to status" {
     var cfg = config.Config.default();
     cfg.auto_save = true;
     cfg.difficulty = .hard;
-    cfg.preferred_renderer = .ansi;
-    cfg.fallback_renderer = .ansi;
+    cfg.renderers.preferred = .ansi;
+    cfg.renderers.fallback = .ansi;
     cfg.log_level = .info;
 
     const responses = [_][]const u8{
@@ -722,8 +716,8 @@ test "autosave does not clobber undo win status with saved-to message" {
     var cfg = config.Config.default();
     cfg.auto_save = true;
     cfg.difficulty = .hard;
-    cfg.preferred_renderer = .ansi;
-    cfg.fallback_renderer = .ansi;
+    cfg.renderers.preferred = .ansi;
+    cfg.renderers.fallback = .ansi;
     cfg.log_level = .info;
 
     const responses = [_][]const u8{
@@ -754,8 +748,7 @@ test "autosave does not clobber undo win status with saved-to message" {
 test "integrated e2e - run: import via menu loads puzzle and clears history" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -794,8 +787,7 @@ test "integrated e2e - run: import via menu loads puzzle and clears history" {
 test "integrated e2e - run: import failure leaves board and history intact" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -827,8 +819,7 @@ test "integrated e2e - run: import failure leaves board and history intact" {
 test "integrated e2e - run: export via menu writes one-line file" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -864,8 +855,7 @@ test "integrated e2e - run: export via menu writes one-line file" {
 test "integrated e2e - run: copy via menu prints one-line puzzle; history untouched" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -896,8 +886,7 @@ test "integrated e2e - run: copy via menu prints one-line puzzle; history untouc
 test "integrated e2e - run: export failure leaves board and history intact" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
     std.Io.Dir.deleteFileAbsolute(std.testing.io, "/tmp/sudoku_e2e_export_missing_dir/x.txt") catch {};
@@ -924,8 +913,7 @@ test "integrated e2e - run: export failure leaves board and history intact" {
 test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
 
@@ -949,8 +937,7 @@ test "integrated e2e - run: host-built ansi facade processes quit cleanly" {
 test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
     const cfg: config.Config = .{
         .difficulty = .easy,
-        .preferred_renderer = .ascii,
-        .fallback_renderer = .ascii,
+        .renderers = .{ .preferred = .ascii, .fallback = .ascii },
         .log_level = .info,
     };
     // The host's mock output buffer keeps the rendered grid observable.
@@ -973,8 +960,7 @@ test "integrated e2e - .ascii renderer kind renders plain unstyled grid" {
 test "integrated e2e - .ok.msg status is non-blocking; next line is a command" {
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
     const io = std.testing.io;
@@ -1061,8 +1047,7 @@ test "integrated e2e - .error_msg ack preserved: Enter is an ack, not a command"
     const parser = @import("../ascii/parser.zig");
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
     };
     // bare fill → .error_msg; the empty line is the user's ack Enter; quit ends the loop.
@@ -1105,8 +1090,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     const region_on = styler_t.REGION_ON;
     const cfg: config.Config = .{
         .difficulty = .hard,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
         .show_marks = false, // the small board's bottom border marks where each board ends
     };
@@ -1162,7 +1146,7 @@ test "integrated e2e - fill does not shade region until show_region enabled" {
     try std.testing.expect(std.mem.indexOf(u8, contents, region_on) != null);
 }
 
-test "integrated e2e: menu Settings persists difficulty to settings.json" {
+test "integrated e2e: menu Settings persists difficulty to config.json" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1183,11 +1167,11 @@ test "integrated e2e: menu Settings persists difficulty to settings.json" {
     while (true) if (try app.turn()) break;
 
     try std.testing.expectEqual(config.Difficulty.hard, app.engine.cfg.difficulty);
-    const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expectEqual(config.Difficulty.hard, restored.difficulty);
 }
 
-test "integrated e2e: menu Settings persists warn_solvability to settings.json" {
+test "integrated e2e: menu Settings persists warn_solvability to config.json" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1208,11 +1192,11 @@ test "integrated e2e: menu Settings persists warn_solvability to settings.json" 
     while (true) if (try app.turn()) break;
 
     try std.testing.expect(app.engine.cfg.warn_solvability);
-    const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expect(restored.warn_solvability);
 }
 
-test "integrated e2e: menu Settings persists auto startup/save flags to settings.json" {
+test "integrated e2e: menu Settings persists auto startup/save flags to config.json" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1241,7 +1225,7 @@ test "integrated e2e: menu Settings persists auto startup/save flags to settings
     try std.testing.expect(app.engine.cfg.auto_new);
     try std.testing.expect(app.engine.cfg.auto_save);
 
-    const restored = try settings_store.loadOrDefault(std.testing.allocator, io, data_path);
+    const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expect(restored.auto_restore);
     try std.testing.expect(restored.auto_new);
     try std.testing.expect(restored.auto_save);
@@ -1363,7 +1347,7 @@ fn restoreFailureScenario(delete: bool) !void {
     defer std.testing.allocator.free(broken_path);
     const transport = file_transport.NativeTransport.make(io);
     try transport.write(transport.context, broken_path, "not a save");
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, broken_path);
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, broken_path);
 
     var cfg = test_defaults.testConfigDefaults();
     cfg.auto_restore = true;
@@ -1385,7 +1369,7 @@ fn restoreFailureScenario(delete: bool) !void {
     try std.testing.expectEqualStrings(startup_policy.IDLE_STARTUP_STATUS, facade_impl.last_render_msg.?);
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
     try std.testing.expect(app.file_session.currentFile() == null);
-    const pointer = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    const pointer = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (pointer) |p| std.testing.allocator.free(p);
     try std.testing.expect(pointer == null);
     const still_there = if (std.Io.Dir.cwd().statFile(io, broken_path, .{})) |_| true else |_| false;
@@ -1432,7 +1416,7 @@ test "autosave: first autosave with no current file writes the visible save fold
 
     const expected = try std.fmt.allocPrint(std.testing.allocator, "{s}/Documents/Sudoku/sudoku.sud", .{tmp_abs});
     defer std.testing.allocator.free(expected);
-    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    const current = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expectEqualStrings(expected, current orelse return error.TestFailed);
 
@@ -1475,7 +1459,7 @@ test "autosave: successful open updates current_file pointer" {
     try app.showGame();
     while (true) if (try app.turn()) break;
 
-    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    const current = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expect(current != null);
     try std.testing.expectEqualStrings(tmp_path, current.?);
@@ -1491,7 +1475,7 @@ test "autosave: save failure surfaces error and keeps existing current_file poin
 
     var cfg = config.Config.default();
     cfg.auto_save = true;
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, bad_path);
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, bad_path);
 
     const responses = [_][]const u8{ "fill A3 7", "quit" };
     var host = host_mod.Host.createForTest(cfg, &responses);
@@ -1504,7 +1488,7 @@ test "autosave: save failure surfaces error and keeps existing current_file poin
     try app.showGame();
     while (true) if (try app.turn()) break;
 
-    const current = try settings_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    const current = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (current) |p| std.testing.allocator.free(p);
     try std.testing.expect(current != null);
     try std.testing.expectEqualStrings(bad_path, current.?);
@@ -1566,7 +1550,7 @@ test "replace confirm: paste detaches and requires replace confirm before autosa
     const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_defaults.DEFAULT_SAVE_FILE});
     defer std.testing.allocator.free(default_virtual);
     try transport_impl.put(default_virtual, "OLD");
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
     var out = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer out.deinit();
 
@@ -1602,7 +1586,7 @@ test "replace confirm: undo autosave in detached context requires prompt before 
     const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_defaults.DEFAULT_SAVE_FILE});
     defer std.testing.allocator.free(default_virtual);
     try transport_impl.put(default_virtual, "OLD");
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
     var out = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer out.deinit();
 
@@ -1641,7 +1625,7 @@ test "replace confirm: redo autosave in detached context requires prompt before 
     const default_virtual = try std.fmt.allocPrint(std.testing.allocator, "/virtual/{s}", .{save_defaults.DEFAULT_SAVE_FILE});
     defer std.testing.allocator.free(default_virtual);
     try transport_impl.put(default_virtual, "OLD");
-    try settings_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, default_virtual);
     var out = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer out.deinit();
 

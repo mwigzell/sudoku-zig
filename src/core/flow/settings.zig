@@ -14,7 +14,7 @@ const Input = step_mod.Input;
 /// Shown when the platform could not store the settings; its reason goes to the log.
 pub const PERSIST_FAILED_MSG = "Your settings could not be saved.";
 
-/// True when the command's change belongs in `settings.json`.
+/// True when the command's change belongs in `config.json`.
 fn commandPersistsSettings(tag: command.CommandTag) bool {
     return switch (tag) {
         .set_theme, .toggle_region, .toggle_warn_solvability, .set_difficulty, .set_log_level => true,

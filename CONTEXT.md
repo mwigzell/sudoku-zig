@@ -309,8 +309,16 @@ Fn-pointer vtable for file read/write/resolve. **Owned by native `Storage`** (he
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
 **Config** (`config.zig`):
-Nominal preferences — `difficulty`, `log_level`, `theme`, `show_region`, `warn_solvability` on disk; **`Config`** also carries renderer kinds for native host routing (CLI per run, not **`settings.json`**). Not puzzle cells or undo history. `GameEngine` owns `cfg` at `init`. Startup: load player prefs → CLI on full `Config` → save player prefs (**ADR-0014**). In session, disk-backed fields mutate via commands/`exec` and platform UI. They do not live in `Legend`, `State`, or SUD0.
-_Avoid_: folding prefs into Legend or save files; JS boot defaults that override host-resolved config
+The player's configuration: difficulty, log level, theme, show region, show pencil marks, warn solvability, auto restore, auto new, auto save, plus a `renderers` section (CLI per run, native only, never saved). Stored in `config.json` as `{"config": …, "current_file": …}`. Startup: defaults → `config.json` → CLI overrides → save. Held beside the engine, like `FileSession`; changed only by `set_config`. Not puzzle cells or undo history; not in `Legend`, `State`, or SUD0.
+_Avoid_: "settings" or "prefs" for Config or its fields; folding Config into Legend or save files; JS boot defaults that override host-resolved config
+
+**Settings**:
+The menu where the player edits Config (terminal Menu → Settings, web File → Settings). It shows every Config field; other menus may repeat a field as an extra (View → Show Region, File → Auto Save).
+_Avoid_: Settings as a name for the data
+
+**Config table**:
+Core's read-only list of Config fields, one row each: label, kind (on/off or fixed choices) and choices. Every Settings menu is drawn from it; its labels are the only labels a field has.
+_Avoid_: per-front-end field lists or labels
 
 **State**:
 Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State` and nominal `Config`.

@@ -101,7 +101,7 @@ pub const Step = union(enum) {
     generate_game: puzzle_gen.Difficulty,
     /// Stop restoring this current file at startup; answered with `ack`.
     forget_current_file: ForgetCurrentFile,
-    /// Store these player settings in `settings.json`.
+    /// Store this Config in `config.json`.
     persist_settings: config.Config,
     show_status: []const u8,
     done,

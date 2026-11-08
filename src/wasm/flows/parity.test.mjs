@@ -55,7 +55,7 @@ const STEP_FLOW_FAILED = "flow_failed";
 
 const CURRENT_FILE = "./current-file";
 const CURRENT_FILE_EXISTS = "./current-file-exists";
-const SETTINGS = "./settings.json";
+const CONFIG_BODY = "./config.json";
 const FILENAME_HEADER = "X-Sudoku-Filename";
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
@@ -257,7 +257,7 @@ async function makeWorld(scenario) {
       if (!bytes) return { ok: false, status: 404 };
       return { ok: true, arrayBuffer: async () => bytes.slice().buffer };
     }
-    if (url === SETTINGS && init.method === "POST") {
+    if (url === CONFIG_BODY && init.method === "POST") {
       if (world.settingsFail) return { ok: false, status: 500 };
       world.settings = JSON.parse(init.body);
       return { ok: true, status: 204 };

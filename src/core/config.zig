@@ -1,3 +1,4 @@
+const std = @import("std");
 const puzzle_gen = @import("puzzle_gen/mod.zig");
 const logger = @import("logger.zig");
 
@@ -9,14 +10,20 @@ pub const RendererKind = enum { ansi, ascii, tui, web };
 /// Presentation preference for UI shells.
 pub const ViewTheme = enum { dark, light, system };
 
-/// Nominal game configuration — preference + escape hatch.
+/// Renderer choice for one native run: set from the CLI, never saved.
+pub const Renderers = struct {
+    /// Tried first by the native Host.
+    preferred: RendererKind,
+    /// Tried when the preferred renderer cannot be constructed; null forbids a fallback.
+    fallback: ?RendererKind,
+};
+
+/// The player's configuration. Every field except `renderers` is saved and editable in Settings.
 pub const Config = struct {
     /// Puzzle generation difficulty for new games.
     difficulty: puzzle_gen.Difficulty,
-    /// Preferred renderer type. If it fails at init, the native Host falls back here.
-    preferred_renderer: RendererKind,
-    /// Fallback tried when the preferred renderer cannot be constructed; "null" forbids the fallback.
-    fallback_renderer: ?RendererKind,
+    /// Renderer choice for this run (CLI only).
+    renderers: Renderers,
     /// Runtime minimum log severity emitted by the Logger; defaults to .info.
     log_level: logger.Severity,
     /// Current UI theme preference.
@@ -38,18 +45,22 @@ pub const Config = struct {
     pub fn default() Config {
         return .{
             .difficulty = .easy,
-            .preferred_renderer = .ansi,
-            .fallback_renderer = .ansi,
+            .renderers = .{ .preferred = .ansi, .fallback = .ansi },
             .log_level = .info,
         };
+    }
+
+    /// Is the field named `name` saved in `config.json`? All are but the CLI-only `renderers`.
+    pub fn isSaved(comptime name: []const u8) bool {
+        return !std.mem.eql(u8, name, "renderers");
     }
 };
 
 test "config.default produces valid config" {
     const cfg = Config.default();
     if (cfg.difficulty != .easy) return error.TestFailed;
-    if (cfg.preferred_renderer != .ansi) return error.TestFailed;
-    if (cfg.fallback_renderer != .ansi) return error.TestFailed;
+    if (cfg.renderers.preferred != .ansi) return error.TestFailed;
+    if (cfg.renderers.fallback != .ansi) return error.TestFailed;
     if (cfg.theme != .system) return error.TestFailed;
     if (cfg.show_region) return error.TestFailed;
     if (cfg.warn_solvability) return error.TestFailed;

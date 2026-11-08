@@ -3,7 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const web_host = @import("../web_host/mod.zig");
 const config = @import("../core/config.zig");
-const settings_store = @import("../core/settings_store.zig");
+const config_store = @import("../core/config_store.zig");
 const startup_config = @import("../core/startup/config.zig");
 const save_defaults = @import("../core/save_defaults.zig");
 const logcat = @import("logcat.zig");
@@ -45,7 +45,7 @@ fn hostThreadMain(state: *HostState) void {
     const threaded = state.threaded orelse return;
     const io = threaded.io();
     log.start("starting android host: {s}", .{about.summaryLine(build_info.debug_build)});
-    const cfg = settings_store.loadOrDefault(std.heap.page_allocator, io, state.data_dir) catch |err| blk: {
+    const cfg = config_store.loadOrDefault(std.heap.page_allocator, io, state.data_dir) catch |err| blk: {
         log.warn("settings load failed, using defaults: {s}", .{@errorName(err)});
         break :blk config.Config.default();
     };

@@ -5,8 +5,7 @@ const config = @import("../core/config.zig");
 pub fn testConfigDefaults() config.Config {
     return .{
         .difficulty = .easy,
-        .preferred_renderer = .ansi,
-        .fallback_renderer = .ansi,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
         .theme = .system,
         .show_region = false,

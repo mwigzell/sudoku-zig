@@ -5,7 +5,7 @@
 /** @typedef {import("./types").HostBuildInfo} HostBuildInfo */
 
 const HOST_CONFIG_PATH = "./host-config.json";
-const HOST_SETTINGS_PATH = "./settings.json";
+const HOST_CONFIG_BODY_PATH = "./config.json";
 const CURRENT_FILE_PATH = "./current-file";
 const BUILD_INFO_PATH = "./build-info.json";
 const CURRENT_FILE_EXISTS_PATH = "./current-file-exists";
@@ -47,12 +47,12 @@ export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) 
 }
 
 /**
- * Hand core's player settings to the host, which stores them in `settings.json`.
+ * Hand core's player settings to the host, which stores them in `config.json`.
  * @param {PlayerSettings} settings
  * @returns {Promise<PersistResult>}
  */
 export async function persistSettings(settings, fetchFn) {
-  const res = await fetchFn(HOST_SETTINGS_PATH, {
+  const res = await fetchFn(HOST_CONFIG_BODY_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),

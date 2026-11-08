@@ -10,7 +10,7 @@ const shell_path = @import("native/shell/path.zig");
 // Wasm JSON contract tests — not reachable from the native play path (see entry_wasm.zig).
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
-const settings_store = @import("core/settings_store.zig");
+const config_store = @import("core/config_store.zig");
 const web_host = @import("web_host/mod.zig");
 const open_browser = @import("native/open_browser.zig");
 const android_jni_host = @import("android/jni_host.zig");
@@ -26,12 +26,12 @@ fn armLabel(arm: EntryArm) []const u8 {
 }
 
 fn selectEntryArm(cfg: config.Config) EntryArm {
-    if (cfg.preferred_renderer == .web) return .web;
+    if (cfg.renderers.preferred == .web) return .web;
     return .terminal;
 }
 
 test {
-    _ = .{ shell, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, settings_store };
+    _ = .{ shell, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, config_store };
 }
 
 /// Resolve startup config and dispatch to web or terminal desktop entry.
@@ -62,12 +62,12 @@ pub fn main(init: std.process.Init) shell.Error!void {
 
 test "selectEntryArm routes web renderer to desktop web entry" {
     var cfg = config.Config.default();
-    cfg.preferred_renderer = .web;
+    cfg.renderers.preferred = .web;
     try std.testing.expectEqual(EntryArm.web, selectEntryArm(cfg));
 }
 
 test "selectEntryArm routes non-web renderers to terminal entry" {
     var cfg = config.Config.default();
-    cfg.preferred_renderer = .ansi;
+    cfg.renderers.preferred = .ansi;
     try std.testing.expectEqual(EntryArm.terminal, selectEntryArm(cfg));
 }

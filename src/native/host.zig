@@ -53,8 +53,8 @@ pub const Host = struct {
     /// Materialize the facade for the configured preference: the preferred arm
     /// first, then the configured fallback; an unconfigured fallback is an error.
     pub fn facade(self: *Host) Error!facade_mod.Facade {
-        return self.facadeFor(self.cfg.preferred_renderer) catch {
-            const fallback = self.cfg.fallback_renderer orelse return error.NoFallbackConfigured;
+        return self.facadeFor(self.cfg.renderers.preferred) catch {
+            const fallback = self.cfg.renderers.fallback orelse return error.NoFallbackConfigured;
             return self.facadeFor(fallback) catch return error.UnsupportedRenderer;
         };
     }
@@ -121,8 +121,7 @@ pub const Host = struct {
 test "host: .tui preference, no fallback configured refuses facade without a session" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .tui,
-        .fallback_renderer = null,
+        .renderers = .{ .preferred = .tui, .fallback = null },
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
@@ -135,8 +134,7 @@ test "host: .tui preference, no fallback configured refuses facade without a ses
 test "host: createForTest .ascii preference yields a working facade" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .ascii,
-        .fallback_renderer = .ascii,
+        .renderers = .{ .preferred = .ascii, .fallback = .ascii },
         .log_level = .info,
     };
 
@@ -171,8 +169,7 @@ test "host: createForTest .ascii preference yields a working facade" {
 test "host: .tui preference falls back to .ascii and yields a working facade" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .tui,
-        .fallback_renderer = .ascii,
+        .renderers = .{ .preferred = .tui, .fallback = .ascii },
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
@@ -192,8 +189,7 @@ test "host: .tui preference falls back to .ascii and yields a working facade" {
 test "host: both arms unsupported errors without building a terminal session" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .tui,
-        .fallback_renderer = .tui,
+        .renderers = .{ .preferred = .tui, .fallback = .tui },
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
@@ -206,8 +202,7 @@ test "host: both arms unsupported errors without building a terminal session" {
 test "host: no fallback configured yields NoFallbackConfigured" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .tui,
-        .fallback_renderer = null,
+        .renderers = .{ .preferred = .tui, .fallback = null },
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
@@ -220,8 +215,7 @@ test "host: no fallback configured yields NoFallbackConfigured" {
 test "host: data dir is created once at startup and exists on disk" {
     const cfg = config.Config{
         .difficulty = .easy,
-        .preferred_renderer = .ascii,
-        .fallback_renderer = .ascii,
+        .renderers = .{ .preferred = .ascii, .fallback = .ascii },
         .log_level = .info,
     };
     var host = Host.createForTest(cfg, &[0][]const u8{});
