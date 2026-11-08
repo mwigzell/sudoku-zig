@@ -316,6 +316,7 @@ test "a refused set_config shows core's sentence, changes nothing and persists n
 
 test "open asks for a game file, loads the pick and makes it the current file" {
     var cfg = config.Config.default();
+    cfg.auto_save = false;
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
@@ -406,6 +407,7 @@ test "new generates at the chosen difficulty, which the game then keeps" {
 
 test "save with no current file asks for the default target, writes it and reports where" {
     var cfg = config.Config.default();
+    cfg.auto_save = false;
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};

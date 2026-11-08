@@ -354,8 +354,10 @@ test "deterministic major path: save_as then open restores saved snapshot" {
     defer transport_impl.deinit();
     var out = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer out.deinit();
+    var cfg = config.Config.default();
+    cfg.auto_save = false;
 
-    var app = try Sudoku.init(config.Config.default(), facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
     defer app.deinit();
 
     try app.showGame();
@@ -724,6 +726,7 @@ test "integrated e2e - run: import via menu loads puzzle and clears history" {
         .difficulty = .hard,
         .renderers = .{ .preferred = .ansi, .fallback = .ansi },
         .log_level = .info,
+        .auto_save = false,
     };
 
     const board_mod = @import("../../core/board/board.zig");
@@ -1177,7 +1180,10 @@ test "integrated e2e: menu Settings persists auto startup/save flags to config.j
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    const cfg = config.Config.default();
+    var cfg = config.Config.default();
+    cfg.auto_restore = false;
+    cfg.auto_new = false;
+    cfg.auto_save = false;
     const responses = [_][]const u8{
         "menu\n", "14\n", "5\n", // auto_restore on
         "menu\n", "14\n", "6\n", // auto_new on
@@ -1633,8 +1639,10 @@ test "replace confirm: save cancel leaves existing target unchanged" {
     try transport_impl.put("/virtual/existing.sud", "OLD");
     var out = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer out.deinit();
+    var cfg = config.Config.default();
+    cfg.auto_save = false;
 
-    var app = try Sudoku.init(config.Config.default(), facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
     defer app.deinit();
 
     try app.showGame();

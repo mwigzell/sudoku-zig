@@ -37,11 +37,11 @@ pub const Config = struct {
     /// Proactive solvability warnings after moves and on load (single player toggle).
     warn_solvability: bool = false,
     /// Startup policy: attempt automatic restore from current-file metadata.
-    auto_restore: bool = false,
+    auto_restore: bool = true,
     /// Startup policy: start a new game when no restore occurred.
-    auto_new: bool = false,
+    auto_new: bool = true,
     /// Save policy: write successful state-changing commands automatically.
-    auto_save: bool = false,
+    auto_save: bool = true,
     /// Draw pencil marks. Hiding them never removes them.
     show_marks: bool = true,
     /// Exists only in test builds, to prove a new field needs no production code beyond this struct and the config table.
@@ -70,8 +70,8 @@ test "config.default produces valid config" {
     if (cfg.theme != .system) return error.TestFailed;
     if (cfg.show_region) return error.TestFailed;
     if (cfg.warn_solvability) return error.TestFailed;
-    if (cfg.auto_restore) return error.TestFailed;
-    if (cfg.auto_new) return error.TestFailed;
-    if (cfg.auto_save) return error.TestFailed;
+    if (!cfg.auto_restore) return error.TestFailed;
+    if (!cfg.auto_new) return error.TestFailed;
+    if (!cfg.auto_save) return error.TestFailed;
     if (!cfg.show_marks) return error.TestFailed;
 }

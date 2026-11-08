@@ -333,8 +333,9 @@ test "a missing field keeps its default" {
         \\{"config":{"theme":"dark","show_region":true},"current_file":null}
     ;
     const cfg = loadBytes(std.testing.allocator, older);
-    try std.testing.expect(cfg.show_marks);
-    try std.testing.expect(!cfg.auto_save);
+    const defaults = config.Config.default();
+    try std.testing.expectEqual(defaults.show_marks, cfg.show_marks);
+    try std.testing.expectEqual(defaults.auto_save, cfg.auto_save);
     try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
     try std.testing.expect(cfg.show_region);
 }
