@@ -129,9 +129,20 @@ public final class MainActivity extends Activity {
     /** While a prompt is open Back dismisses it instead of leaving the app. */
     private boolean promptOpen;
     private OnBackInvokedCallback promptBackCallback;
+    /** This instance only stood in for the running game and finished at once; it owns nothing to tear down. */
+    private boolean duplicateLaunch;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // After an installer's Open, the launcher icon stacks a second instance on the running game instead of
+        // bringing it forward; finishing this one shows the game that is already running.
+        if (!isTaskRoot() && isLauncherIntent(getIntent())) {
+            duplicateLaunch = true;
+            Log.i(LOG_IDENTITY, "launcher started a second instance over the running game; showing the running one");
+            finish();
+            return;
+        }
         restoreCurrentFileBinding();
         logStartupIdentity();
 
@@ -223,6 +234,11 @@ public final class MainActivity extends Activity {
         }, SPLASH_BOOT_TIMEOUT_MS);
     }
 
+    private static boolean isLauncherIntent(Intent intent) {
+        return intent != null && Intent.ACTION_MAIN.equals(intent.getAction())
+            && intent.hasCategory(Intent.CATEGORY_LAUNCHER);
+    }
+
     private void logStartupIdentity() {
         final int uid = getApplicationInfo().uid;
         final int userId = uid / ANDROID_UID_PER_USER_RANGE;
@@ -304,6 +320,10 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (duplicateLaunch) {
+            super.onDestroy();
+            return;
+        }
         cancelPendingPicks();
         if (!isChangingConfigurations()) {
             JniHost.stopHost();
