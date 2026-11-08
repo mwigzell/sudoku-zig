@@ -17,7 +17,7 @@ What each front end (web JS, Android WebView + bridge, native terminal) still do
 | Export | `ExportFlow` (`write` step, "exported to:" status, errors) | Text picker or download; native writes through the file transport | `CORE` |
 | Copy | `ExportFlow.toClipboard` (`copy_puzzle` step, status, errors) | Clipboard write (web) or printing the line (native: no clipboard) | `CORE` |
 | Undo / Redo / Hint / Solve / fill | Engine command, status text, win detection ("You win!"), then the autosave flow | Key and menu wiring, render | `CORE` |
-| Settings edits | `SettingsFlow` decides whether `settings.json` is written | Settings dialog; host POST or native `settings_store` write | `CORE` |
+| Config edits | `set_config` checked against core's config table; `ConfigFlow` decides whether `config.json` is written | Settings drawn from the table; host POST or native `config_store` write | `CORE` |
 | Startup | `StartupFlow`: restore, auto-new, first board | Fetching host config and the current file | `CORE` |
 | Menu enablement | `GameEngine.getLegend()` (Save off while Auto Save is on) | Disabling items from the legend | `CORE` |
 

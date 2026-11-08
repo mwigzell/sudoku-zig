@@ -133,7 +133,7 @@ test "host startup JSON reflects Config loaded from config.json on disk" {
     var buf: [1024]u8 = undefined;
     const json = try formatHostStartupJson(loaded, &buf);
     try std.testing.expectEqualStrings(
-        "{\"config\":{\"difficulty\":\"medium\",\"log_level\":\"debug\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":true},\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
+        "{\"config\":{\"difficulty\":\"medium\",\"log_level\":\"debug\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":true,\"test_probe\":false},\"default_save_filename\":\"sudoku.sud\",\"startup_save_path\":null}",
         json,
     );
 }

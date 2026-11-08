@@ -49,4 +49,4 @@ Wire format for slice B: **length-prefixed or NUL-terminated JSON strings** in w
 - Native session commands stay in the command parser; `Sudoku.handleResult` intercepts before `exec` (minimal parser churn).
 - A future real DOM front-end (splash, modals, FS Access) is JS-owned; wasm never blocks for UI acknowledgement.
 - Parity tests (shared action fixtures, compare state JSON native vs wasm) are recommended after slice B basics land.
-- Player **`settings.json`** and menubar/menu editing are **not** defined in this ADR — see **ADR-0014** (#61–#63).
+- Player **`config.json`** and menubar/menu editing are **not** defined in this ADR — see **ADR-0014** and **ADR-0020**.

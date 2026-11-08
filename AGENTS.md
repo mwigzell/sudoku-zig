@@ -95,9 +95,9 @@ Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 The `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is the **terminal's** renderer seam only. Web and Android do not use it: they draw from core's wasm JSON. It was once meant to be the command API shared by every front end; that never happened, so nothing about it needs to stay frozen for other front ends.
 
 - **Add a method** when a new *kind* of interaction is needed; reshape an existing method when its arguments belong together.
-- **Arguments are values core builds for that call.** A struct is the right shape when its fields travel together (one draw's state, the current settings); a long list of scalars that always move as a group is a smell (see "Shotgun plumbing" below).
-- **The renderer holds no pointer to core state** and gets no hooks pushing changes to it; it receives values per call and returns the player's input.
-- **Product rule:** every field in `settings.json` must be editable in-app on each supported platform. Renderer choice is **not** in that file — use CLI (`-r`) per run. Native edits flow as `Command` results from the menu path, then persist like today.
+- **Arguments are values core builds for that call.** A struct is the right shape when its fields travel together (one draw's state, the current Config); a long list of scalars that always move as a group is a smell (see "Shotgun plumbing" below).
+- **The renderer holds no pointer to core state** and gets no hooks pushing changes to it; it receives values per call and returns the player's input. `getCommandInput` and the menus take a copy of `Config` per call; the renderer may import core's read-only config table (`src/core/config_table.zig`) for labels and choices.
+- **Product rule:** every Config field in `config.json` is editable in Settings on each supported platform; every Settings menu is drawn from core's config table and every change is one `set_config { field, value }`. Adding a field touches only `Config` and the config table in production code. Renderer choice is **not** in that file — use CLI (`-r`) per run.
 
 ## Coding standards
 

@@ -26,6 +26,6 @@ The bar for retroactive readability improvements on working comptime code is hig
 - Future contributors encounter the `Make(CT)` pattern as-is and learn the binding convention
 - If WASM renderer integration reveals a genuine flaw in how function pointers are bound, that earns its own ADR with evidence
 - The current pattern constrains future changes implicitly: any new facade method must be added to both the struct field and every concrete renderer's function table — that coupling is intentional and worth keeping visible
-- More native menu/settings prefs extend **`getCommandInput` scalar parameters** from `Sudoku` (engine config snapshot per turn), not new facade types or pref-sync methods — see AGENTS.md “Native renderer facade seam”
+- Native menus take `Config` as one value per call (`getCommandInput(names, cfg)`) and draw Settings from core's config table, not per-pref scalar parameters or pref-sync methods — see [ADR-0020](0020-config-beside-the-engine-and-the-config-table.md) and AGENTS.md “Native renderer facade seam”
 - Messages the player must answer go through one method, `promptMessage` — see [ADR-0017](0017-prompt-message-step.md)
 - `render` takes core's `Frame` (`src/core/frame.zig`) as its only drawing argument, replacing `(view, status, selection, marks_visible)`; new drawing state is a frame field, not a new argument — see [ADR-0019](0019-core-owns-selection-and-frame.md)

@@ -734,6 +734,26 @@ test "the config table JSON lists every row with its label and choices" {
     }
 }
 
+test "the test-only Config field crosses the wire: in the table, set by set_config, written and read back" {
+    const field = "test_probe";
+    var buf: [2048]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeConfigTableJson(out);
+    try std.testing.expect(std.mem.indexOf(u8, out.finishJson(), "\"field\":\"" ++ field ++ "\"") != null);
+
+    var cfg = config.Config.default();
+    try config_table.apply(&cfg, (try parseAction("{\"action\":\"set_config\",\"field\":\"" ++ field ++ "\",\"value\":true}")).set_config);
+    len = 0;
+    try writeConfigJson(out, cfg);
+    const json = out.finishJson();
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"" ++ field ++ "\":true") != null);
+
+    var read_back = config.Config.default();
+    try config_store.applyConfigJson(std.testing.allocator, &read_back, json);
+    try std.testing.expect(read_back.test_probe);
+}
+
 test "parseGenRequest reads the difficulty and log level by name" {
     const req = try parseGenRequest("{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"seed\":7}");
     try std.testing.expectEqual(config.Difficulty.hard, req.difficulty);

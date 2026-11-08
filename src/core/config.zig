@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const puzzle_gen = @import("puzzle_gen/mod.zig");
 const logger = @import("logger.zig");
 
@@ -9,6 +10,9 @@ pub const RendererKind = enum { ansi, ascii, tui, web };
 
 /// Presentation preference for UI shells.
 pub const ViewTheme = enum { dark, light, system };
+
+/// The test-only field's type: a bool in test builds, nothing (`void`, never saved) in the app.
+const TestProbe = if (builtin.is_test) bool else void;
 
 /// Renderer choice for one native run: set from the CLI, never saved.
 pub const Renderers = struct {
@@ -40,6 +44,8 @@ pub const Config = struct {
     auto_save: bool = false,
     /// Draw pencil marks. Hiding them never removes them.
     show_marks: bool = true,
+    /// Exists only in test builds, to prove a new field needs no production code beyond this struct and the config table.
+    test_probe: TestProbe = if (builtin.is_test) false else {},
 
     /// Hard-coded defaults — entry_native.zig supplies this to the Sudoku layer at init time.
     pub fn default() Config {
@@ -50,9 +56,9 @@ pub const Config = struct {
         };
     }
 
-    /// Is the field named `name` saved in `config.json`? All are but the CLI-only `renderers`.
+    /// Is the field named `name` saved in `config.json`? All are but the CLI-only `renderers` and a `void` field.
     pub fn isSaved(comptime name: []const u8) bool {
-        return !std.mem.eql(u8, name, "renderers");
+        return !std.mem.eql(u8, name, "renderers") and @FieldType(Config, name) != void;
     }
 };
 

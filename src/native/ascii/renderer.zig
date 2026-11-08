@@ -1430,6 +1430,21 @@ test "showMenu: Settings lists every config table row; an on/off row flips its f
     for (config_table.rows) |r| try std.testing.expect(std.mem.indexOf(u8, written, r.label) != null);
 }
 
+test "showMenu: the test-only Config field is listed in Settings and set like any other" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var pick_buf: [8]u8 = undefined;
+    // The test build's row is appended after the app's rows, so it is the last Settings entry.
+    const pick = try std.fmt.bufPrint(&pick_buf, "{d}\n", .{config_table.rows.len});
+    var renderer = scriptedRenderer(&aw, &s, &.{ "14\n", pick });
+
+    const result = (try renderer.showMenu(test_cfg)).?;
+    try std.testing.expectEqualStrings("test_probe", result.valid.set_config.field);
+    try std.testing.expect(result.valid.set_config.value.on);
+    try std.testing.expect(std.mem.indexOf(u8, aw.writer.buffered(), config_table.row("test_probe").label) != null);
+}
+
 test "showMenu: Settings offers a choice row's choices and sends the picked name" {
     var aw = Io.Writer.Allocating.init(std.testing.allocator);
     defer aw.deinit();

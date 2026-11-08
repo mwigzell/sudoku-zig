@@ -1,6 +1,6 @@
 # ADR-0014 — Persistent settings, host bootstrap, and in-app editing
 
-Status: accepted
+Status: accepted; "Authority and runtime copy", "Persistence file" and the native menu seam superseded by [ADR-0020](0020-config-beside-the-engine-and-the-config-table.md)
 Date: 2026-09-28
 
 ## Context
@@ -16,6 +16,8 @@ Gaps that motivated this ADR as a **standing product rule** (not only a one-off 
 ## Decision
 
 ### Authority and runtime copy
+
+*Superseded by ADR-0020: Config is held beside the engine; one `set_config` command replaces the per-field commands.*
 
 | Layer | Role |
 |--------|------|
@@ -38,6 +40,8 @@ One pipeline (**`resolveStartupConfig`** / **`startup/config.zig`**):
 Web session boot (**#62**): fetch host config → bootstrap engine → optional **SUD0 resume** from page session storage; if boot is empty (no resume), **generating New Game** uses host/default difficulty — not glue/page literals. **File → New** keeps an explicit difficulty picker for that action.
 
 ### Persistence file
+
+*Superseded by ADR-0020: `config.json` (`{"config", "current_file"}`) via `config_store`, `ConfigFlow` → `persist_config`, `POST /config.json`.*
 
 - **Path:** `settings.json` under the platform data directory (`settings_store`; paths documented in README).
 - **Keys (stable JSON):** `difficulty`, `log_level`, `theme`, `show_region`, `warn_solvability` only. **`preferred_renderer` / `fallback_renderer` are not part of this file** — choose deployment with CLI `-r` each run; stale renderer keys in old files are ignored on load.
@@ -63,7 +67,7 @@ Renderer / fallback kinds live on **`Config`** for host routing but are **outsid
 
 Splitting controls across **File → Settings** and **View** on web is acceptable; hiding a persisted field behind disk-only edit is **not**.
 
-Implementation seam for **native** menu state: scalar parameters on existing **`Facade.getCommandInput`** from **`Sudoku.turn()`** (engine config snapshot per turn) — see AGENTS.md “Native renderer facade seam” and ADR-0009. **Web** uses **`exec`** + DOM; no facade.
+*Superseded by ADR-0020 (Settings drawn from core's config table; `getCommandInput` takes `Config`):* implementation seam for **native** menu state: scalar parameters on existing **`Facade.getCommandInput`** from **`Sudoku.turn()`** (engine config snapshot per turn) — see AGENTS.md “Native renderer facade seam” and ADR-0009. **Web** uses **`exec`** + DOM; no facade.
 
 ### Solvability warnings
 

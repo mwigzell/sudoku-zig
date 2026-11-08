@@ -37,6 +37,22 @@ import { configTable, coreText, fakeSettingsDialog, loadGame } from "../test_sup
   assert.equal(field("warn_solvability").checked, true);
 }
 
+// ── the dialog is generic over the table's rows: any row gets its control and sends set_config for its field ──
+{
+  const extra = "extra_field";
+  const onOffRow = configTable.rows.find((r) => r.choices === null);
+  const table = { ...configTable, rows: [...configTable.rows, { ...onOffRow, field: extra, label: "extra row" }] };
+  const sent = [];
+  const game = { commandStart: (action) => (sent.push(action), { step: "done" }) };
+  const session = { config: { [extra]: false }, configTable: table };
+  const { modal, createElement, field } = fakeSettingsDialog();
+  settings.wireSettingsMenu(createElement("button"), game, session, modal, { steps: {}, createElement });
+  assert.equal(modal.fieldsEl.children.length, table.rows.length);
+  field(extra).checked = true;
+  await field(extra).onchange();
+  assert.deepEqual(sent, [settings.setConfigAction(extra, true)]);
+}
+
 /** Real wasm game, its session, and web step handlers that record every config write and shown error. */
 async function settingsHarness() {
   const game = await loadGame();

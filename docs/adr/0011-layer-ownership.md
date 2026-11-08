@@ -38,8 +38,8 @@ Placement decisions cite a sibling entry before they invent a new home. Ownershi
 | Session lifecycle (`new`/`open`/`save`/`save_as`) | driver (native) / JS app (web) | renderers |
 | `io: std.Io` | host + transport arms, capability-injected (ADR-0010) | engine, facade, board, `event` |
 | Rendering (paint, shade, borders) | renderer, **stateless painter** over core's `Frame` (ADR-0019) | any concern state; see #46 AC |
-| Nominal user prefs (`Config`, `settings.json`) | **`GameEngine.cfg`**; core **`SettingsFlow`** decides when to persist (`persist_settings` step); load/save via **`settings_store`** (native **`Storage`**, or **`web_host`** for the web POST) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
-| Settings / view pref **UI** | Native **Menu** (+ **`getCommandInput`** scalars from driver); web **menubar** + modals + **`exec`** | disk or CLI as the **only** way to change a persisted player-facing field (ADR-0014) |
+| Config (`config.json`) | held **beside the engine** by each platform (ADR-0020); core **`ConfigFlow`** decides when to persist (`persist_config` step); load/save via **`config_store`** (native **`Storage`**, or **`web_host`** for the web POST) | renderers holding prefs; JS boot literals overriding host config; engine reading disk directly |
+| Settings / view **UI** | drawn from core's **config table**; native **Menu** (`getCommandInput` takes `Config`); web **menubar** + generated Settings dialog; every change one **`set_config`** | disk or CLI as the **only** way to change a persisted player-facing field (ADR-0014) |
 
 Rules:
 

@@ -1,6 +1,7 @@
 // Config table: one row per saved Config field — its label and the values every Settings menu offers.
 // Core owns the words; front ends draw their menus from these rows and change Config through `apply`.
 const std = @import("std");
+const builtin = @import("builtin");
 const config = @import("config.zig");
 const logger = @import("logger.zig");
 
@@ -75,7 +76,14 @@ pub const BAD_VALUE_MSG = "That value is not one this setting can take.";
 pub const Error = error{ UnknownField, BadValue };
 
 /// Every saved Config field, in the order the Settings menus list them.
-pub const rows = [_]Row{
+pub const rows = app_rows ++ test_rows;
+
+/// The test build's extra row, for `Config.test_probe`.
+const test_rows = if (builtin.is_test) [_]Row{
+    .{ .field = "test_probe", .label = "Test Probe", .kind = .on_off },
+} else [_]Row{};
+
+const app_rows = [_]Row{
     .{ .field = "warn_solvability", .label = "Solvability Warnings", .kind = .on_off },
     .{ .field = "difficulty", .label = "Default Difficulty", .kind = .{ .choices = &.{
         .{ .name = "easy", .label = "Easy" },

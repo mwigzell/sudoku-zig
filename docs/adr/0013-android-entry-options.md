@@ -81,5 +81,5 @@ Rationale: reuses shipped wasm/JS UI; matches “UI-agnostic engine + thin entry
 - `Open` uses `ACTION_OPEN_DOCUMENT` and returns `{ ok, name, base64 }` to JS; `Save` / `Save As` use `ACTION_CREATE_DOCUMENT`.
 - The app stores the selected document URI as the current file target for subsequent `Save` writes in the same app lifetime.
 - Folder navigation and picker chrome come from the Android system Documents UI (not app-controlled custom dialogs).
-- Settings persistence requires host `data_dir` from Java `getFilesDir()`; JNI startup now forwards that path into `src/android/jni_host.zig` so `/settings.json` POST updates survive app restart.
+- Config persistence requires host `data_dir` from Java `getFilesDir()`; JNI startup now forwards that path into `src/android/jni_host.zig` so `/config.json` POST updates survive app restart.
 

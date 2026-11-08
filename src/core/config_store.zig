@@ -273,6 +273,7 @@ fn nonDefaultConfig() config.Config {
         .auto_new = true,
         .auto_save = true,
         .show_marks = false,
+        .test_probe = true,
     };
 }
 
@@ -309,7 +310,7 @@ test "the config object writes bools as bools and choices by name" {
     var w = std.Io.Writer.fixed(&buf);
     try writeConfigJson(&w, nonDefaultConfig());
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":false}",
+        "{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":false,\"test_probe\":true}",
         w.buffered(),
     );
 }
@@ -317,7 +318,7 @@ test "the config object writes bools as bools and choices by name" {
 test "a field this app does not know is ignored; the known fields and the current file still load" {
     const newer =
         \\{"config":{"difficulty":"hard","log_level":"warn","theme":"light","show_region":true,"warn_solvability":true,
-        \\"auto_restore":true,"auto_new":true,"auto_save":true,"show_marks":false,"from_a_newer_app":{"x":[1,2]}},
+        \\"auto_restore":true,"auto_new":true,"auto_save":true,"show_marks":false,"test_probe":true,"from_a_newer_app":{"x":[1,2]}},
         \\"also_newer":1,"current_file":"/games/a.sud"}
     ;
     try expectSavedFieldsEqual(nonDefaultConfig(), loadBytes(std.testing.allocator, newer));

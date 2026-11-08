@@ -27,7 +27,7 @@ The codebase was produced with a local AI agent in a tight loop: Pi (terminal ag
 - **Conflicts** — the board tracks and displays cell conflicts as you play
 - **Command disambiguation** — type partial or prefix-matched commands (`sa` → save-as, `f` → fill)
 - **Save & restore** — binary save format with versioned header/trailer, stored under the platform data directory (see below)
-- **Persistent settings** — `settings.json` beside saves; native **Menu → Settings** / **Region**, web **File → Settings** and **View**, CLI flags merged at startup
+- **Persistent Config** — `config.json` beside saves; native **Menu → Settings** / **Region**, web **File → Settings** and **View**, CLI flags merged at startup
 - **ANSI styled** terminal renderer (styler is swappable)
 - **Web UI (loopback + WASM)** — `-r web` serves embedded wasm/JS on localhost; same engine and save format as native, no separate web codebase for game logic
 
@@ -57,18 +57,18 @@ Web UI: `zig build web` (or `zig-out/bin/sudoku -r web`) opens/logs a loopback U
 
 Android: no-Gradle APK build with SDK/NDK configured — see [docs/android-ndk.md](docs/android-ndk.md) (`zig build android` → `zig-out/android/sudoku.apk`, `zig build android-lib` → `zig-out/lib/libsudoku_zig.so`).
 
-## Settings (`settings.json`)
+## Config (`config.json`)
 
-Player preferences (difficulty, log level, theme, region shading, solvability warnings) are stored as JSON in the **same data directory** as native save files. Pick the UI with **`-r`** (`ansi`, `web`, …) on each launch — not via `settings.json`:
+The player's Config (difficulty, log level, theme, region shading, pencil marks, solvability warnings, auto restore, auto new, auto save) is stored as `{"config": {…}, "current_file": …}` in the **same data directory** as native save files. Pick the UI with **`-r`** (`ansi`, `web`, …) on each launch — not via `config.json`:
 
-| OS | `settings.json` |
+| OS | `config.json` |
 |----|-----------------|
-| **macOS** | `~/Library/Application Support/sudoku/settings.json` |
-| **Linux** | `~/.local/share/sudoku/settings.json` |
+| **macOS** | `~/Library/Application Support/sudoku/config.json` |
+| **Linux** | `~/.local/share/sudoku/config.json` |
 
-**Native terminal:** on startup the app loads this file, applies CLI overrides, and saves the merged result. In session, **Menu → 14) Settings** (terminal submenu) edits warnings, difficulty, log level, and theme; **7) Region** toggles region shading — all write back to `settings.json`. (Web uses **File → Settings** in the menubar — different shell, same `settings.json` fields.)
+On startup the app loads this file, applies CLI overrides, and saves the merged result. In session, **Settings** lists every field with core's labels — terminal **Menu → 14) Settings**, web **File → Settings** — and every change is written back to `config.json`. Some fields are repeated in other menus (terminal **7) Region**, **15) Show Pencil Marks**; web **View** and **File → Auto Save**).
 
-**Web (`-r web`):** the host serves `/host-config.json` from that file at startup. **File → Settings** (warn, difficulty, log level) and **View** (theme, region) POST partial updates to `/settings.json` on the host, which merges and saves to disk.
+**Web (`-r web`):** the host serves `/host-config.json` from that file at startup; each change is posted to `/config.json` on the host, which saves it to disk.
 
 ## Known to run on
 

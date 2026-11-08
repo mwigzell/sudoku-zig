@@ -97,7 +97,7 @@ Play path: **live generation** for `easy` / `medium` / `hard` via `generateForPl
 _Avoid_: stdout, threadlocal `Io`, or platform-specific generator policy inside `puzzle_gen`; treating canned lines as the play path outside tests
 
 **Puzzle Repository** (domain slot):
-Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — live gen for play, fixtures for deterministic tests; no `PuzzleSource` trait yet. The wasm boundary passes difficulty via **`WireConfig`** at `init`; generated grids load as engine state (not a separate puzzle export on New). One-line strings cross to JS only as opaque text — picked or pasted puzzles go in through the core command flow (`flowRead`), `toPuzzle` brings them out — never by reimplementing the codec in JS.
+Where puzzle data comes from. **`PuzzleGen` is the only implementation shipped** — live gen for play, fixtures for deterministic tests; no `PuzzleSource` trait yet. The wasm boundary passes difficulty by name in the **Config JSON**; generated grids load as engine state (not a separate puzzle export on New). One-line strings cross to JS only as opaque text — picked or pasted puzzles go in through the core command flow (`flowRead`), `toPuzzle` brings them out — never by reimplementing the codec in JS.
 _Avoid_: Puzzle store, PuzzleSource (name reserved for a future interface)
 
 **Solver Service**:
@@ -168,7 +168,7 @@ _Avoid_: generic steps told apart by a flag; a handler set per flow
 | `show_game` | draws the game with a status line |
 | `generate_game` | generates a puzzle at the given difficulty |
 | `forget_current_file` | stops restoring the file at startup, deleting it when told |
-| `persist_settings` | stores the settings |
+| `persist_config` | stores the Config in `config.json` |
 | `show_status`, `done` | ends the flow |
 
 `save`, `save_as` and `autosave` carry `replace`: a handler writing a fixed file (native path, host default file, bound file) answers `exists` without writing when the file is there and `replace` is false; core then reissues with `replace` or asks "Replace file?" first, per the **Lane**. A picker never answers `exists`. A step a platform never receives (e.g. `reclaim_file` on native and web) answers failed with a reason for the log.
@@ -238,11 +238,11 @@ Owns the command loop and the renderer facade. Each command runs through the cor
 _Avoid_: folding session I/O into GameEngine
 
 **Storage** (`native/shell/storage.zig`, native app shell):
-Carries out the native file and settings steps: name the default target, `save` / `save_as` / `autosave` (`saveGame`), `export_puzzle`, `restore`, `open` / `import_puzzle` (the typed path), forget the current file, persist settings and the current-file pointer. Owns the `FileTransport` and `SettingsPersist`; decides nothing.
+Carries out the native file and config steps: name the default target, `save` / `save_as` / `autosave` (`saveGame`), `export_puzzle`, `restore`, `open` / `import_puzzle` (the typed path), forget the current file, persist the Config and the current-file pointer. Owns the `FileTransport` and `ConfigPersist`; decides nothing.
 _Avoid_: policy here (which file, when to ask, what status to show — core decides)
 
 **Web app shell** (`page.html`, `glue.js` and the `src/wasm/` modules, one concern each, grouped by role: `menus/` (menubar and each menu), `flows/` (`step_runner.js`, the step handlers `steps.js` / `web_steps.js` / `android_steps.js`, `startup.js`, `autosave.js`, `session.js`), `dialogs/`, `gen/` (worker generation and progress), with `app_boot.js`, `app_wire.js`, `board.js`, `status_bar.js`, `host_api.js`, `files.js`, `clipboard.js`, `client_log.js` at the top):
-JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never parses SUD0 or projects a terminal screen. Gameplay goes through `exec(action_json)`; file and settings commands run core flows. A tap, an arrow key, tapping the selected cell again or Esc sends `select` / `deselect` to core; the page draws the selection and its region from core's snapshot, and **Edit → Hint** sends the selected cell as the hint target when there is one.
+JS owns fetch, DOM, file UX, and user acknowledgement. Calls wasm exports; never parses SUD0 or projects a terminal screen. Gameplay goes through `exec(action_json)`; file and config commands run core flows. File → Settings is generated from the **Config table**; every Config control sends `set_config`. A tap, an arrow key, tapping the selected cell again or Esc sends `select` / `deselect` to core; the page draws the selection and its region from core's snapshot, and **Edit → Hint** sends the selected cell as the hint target when there is one.
 _Avoid_: reintroducing a wasm REPL or ASCII screen feed
 
 **RendererKind** (`-r`, native only):
@@ -254,7 +254,7 @@ Native terminal substrate — builds `IoSession`, selects AsciiRenderer facade a
 _Avoid_: folding `serve` / loopback into `Host`; "session" (that's the terminal substrate under it)
 
 **web_host** (`src/web_host/`):
-Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, settings POST. Desktop `-r web` and Android WebView both use this layer; desktop browser open stays in **`native/desktop_web.zig`** (`open_browser`), not inside `web_host`.
+Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, `POST /config.json`. Desktop `-r web` and Android WebView both use this layer; desktop browser open stays in **`native/desktop_web.zig`** (`open_browser`), not inside `web_host`.
 _Avoid_: duplicating menubar/DOM in native or Java; calling it `native/host`
 
 ### Platform thinness contract (all front-end entries)
@@ -266,7 +266,7 @@ Front-end layers are adapters. They do I/O, lifecycle, and presentation; shared 
 | Domain rules and state semantics | `src/core/engine/`, `src/core/board/`, shared codecs | submit commands, render returned state | reimplementing game behavior |
 | Session semantics (save/open/restore/new, conflict rules) | shared policy modules + host/domain seams | issue intent requests, present user prompts/results | local policy forks in JS/Java/renderer |
 | Startup behavior | `src/core/startup/policy.zig` + `src/core/flow/startup.zig` (`StartupFlow`) | read the current file, draw, ask, generate, forget the file when told | per-platform startup decision trees |
-| Configuration meaning and persistence schema | `src/core/config.zig` + `src/core/settings_store.zig` + host persistence seam | edit/view settings through exposed interfaces | parallel config schemas or defaults that override host contract |
+| Configuration meaning and persistence schema | `src/core/config.zig` + `src/core/config_table.zig` + `src/core/config_store.zig` + host persistence seam | draw Settings from core's config table; send `set_config` | parallel config schemas or defaults that override host contract |
 | Cross-platform command availability semantics | engine/legend + shared contracts | wire controls to existing contracts | feature-specific rule variants per platform |
 | Text the user sees (dialogs, status line, generation progress) | whoever implements the behaviour: core for engine, flows and generation (`src/core/`), the platform only for what it alone does | show core's text as-is; report a failure with a reason for the log | wording, fallback messages or raw error text for behaviour core owns; copies of core's formatters |
 
@@ -286,7 +286,7 @@ Use this as a quick audit table when reviewing changes. Core owns policy; platfo
 | Overwrite/replace lane policy (`detached` vs `continuation`) | `src/core/file_policy.zig`; state in `src/core/flow/file_session.zig` (`FileSession`) | Core records each load inside the command (`FileSession.noteLoad` for New/Open/Import/Paste). Native and web/Android run New/Open/Import/Paste through the core command flow (`open`, `import_puzzle`, `paste_puzzle`, `generate_game` steps); no adapter or host-side context. |
 | Save / Save As / autosave choreography (name the target: typed path, else current file, else the platform default → write without `replace` → on `exists` reissue or ask → status; Save refused while Auto Save is on; Android "Can't save" ask (`taken`) → `reclaim_file` / `save_as`) | `src/core/flow/{step,save,autosave}.zig` (`Step` / `Input`); Save / Save As run inside `CommandFlow` | Native: `src/native/shell/shell.zig` (`runCommandFlow` → `runFlow`), file steps in `src/native/shell/storage.zig` (`Storage`). Web/Android: `src/wasm/flows/step_runner.js` (`runCommand`) with the handlers in `web_steps.js` / `android_steps.js`. Fixed-file writes answer `exists`; pickers own their own overwrite question. |
 | Export / Copy (puzzle to a file or clipboard, default export name, status text) | `src/core/flow/export.zig` (`ExportFlow` → `export_puzzle` / `copy_puzzle`), run inside `CommandFlow` | Native: `src/native/shell/shell.zig` (`runCommandFlow`; Copy prints the puzzle). Web/Android: `file_menu.js` Export and `menu.js` `handleCopyPuzzle` via `runCommand`. |
-| Settings schema + persistence semantics (which commands persist, the `settings.json` body) | `src/core/config.zig`, `src/core/settings_store.zig`, `src/core/flow/settings.zig` (`SettingsFlow` → `persist_settings`, run as a phase of `src/core/flow/command.zig` `CommandFlow`) | Native: `src/native/shell/shell.zig` (`runCommandFlow` → `runFlow`) → `src/native/shell/storage.zig` (`Storage.persistSettings` → `settings_store.save`). Web/Android: the shared `persistSettings` handler (`src/wasm/flows/steps.js`) posts core's body as-is through `host_api.js`; `src/web_host/mod.zig` merges/saves via `settings_store`. |
+| Config fields, labels, values and persistence (`set_config` checked against the config table; which commands persist; the `config.json` body) | `src/core/config.zig`, `src/core/config_table.zig`, `src/core/config_store.zig`, `src/core/flow/config.zig` (`ConfigFlow` → `persist_config`, run as a phase of `src/core/flow/command.zig` `CommandFlow`) | Native: Menu → Settings drawn from the table (`src/native/ascii/renderer.zig`); `src/native/shell/shell.zig` (`runCommandFlow` → `runFlow`) → `src/native/shell/storage.zig` (`Storage.persistConfig` → `config_store.save`). Web/Android: File → Settings generated from `getConfigTable` (`src/wasm/menus/settings.js`); the shared `persistConfig` handler (`src/wasm/flows/steps.js`) posts core's body as-is through `host_api.js`; `src/web_host/mod.zig` saves via `config_store`. |
 | Save format (SUD0 codec) | `src/core/engine/game_engine.zig` (+ wasm export surface in `src/entry_wasm.zig`) | Native: `src/native/shell/storage.zig` (`Storage.saveGame` for Save, Save As and autosave, `open` for Open) via `FileTransport`. Web/Android: wasm `toSaveFormat` out; picked bytes in through `flowRead`. |
 | Log-level filtering policy | `src/core/logger.zig` (`shouldEmit`: `min_level`, and debug only for a debug build — on wasm the host's build mode) + startup/config wiring | Native: CLI/startup + engine config updates. Web/Android: core's wasm lines reach `client_log.js` through the `sudoku_log` import; JS lines ask core (`logEnabled`); both go to the console and `/client-log` (`src/web_host/mod.zig`, terminal or logcat). |
 
@@ -317,7 +317,7 @@ The menu where the player edits Config (terminal Menu → Settings, web File →
 _Avoid_: Settings as a name for the data
 
 **Config table**:
-Core's read-only list of Config fields, one row each: label, kind (on/off or fixed choices) and choices. Every Settings menu is drawn from it; its labels are the only labels a field has.
+Core's read-only list of Config fields, one row each: label, kind (on/off or fixed choices) and choices (`config_table.zig`). Every Settings menu is drawn from it (the page gets it once at boot through `getConfigTable`); its labels are the only labels a field has. `set_config { field, value }` and every Config read (`config.json`, host config, CLI choices) are checked against it, so only the values Settings offers are accepted. Adding a field touches only `Config` and the table in production code (tests that spell out the whole config JSON list it too); test builds carry one (`test_probe`) to prove it.
 _Avoid_: per-front-end field lists or labels
 
 **State**:
@@ -326,16 +326,16 @@ _Avoid_: Engine (engine is a runtime object)
 
 ### WASM Wire (`wasm/wire.zig`, `wasm/boundary.zig`, `entry_wasm.zig`)
 
-**WireConfig**:
-Wasm wire twin of the `Config` fields JS reads/writes — `PlayerDifficulty` (1/2/3), log level, `theme`, `show_region`. Maps to `config.Config` at `init`; `getConfig()` returns the same JSON shape. Native-only renderer fields stay off the wire.
-_Avoid_: passing puzzle bytes across the boundary; ad-hoc config JSON shapes
+**Config JSON**:
+The Config on the wire, in the same shape as `config.json`'s `config` object: bools, choices by name (`"easy"`, `"info"`, `"dark"`). `getConfig()`, the host config, `persist_config` and `bootstrapHostConfig` all use it; `renderers` stays off the wire.
+_Avoid_: passing puzzle bytes across the boundary; numeric choice values; per-field wire structs
 
 **GameSnapshot**:
 JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `pencil_mode`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
 _Avoid_: duplicating SaveFormat fields in JS
 
 **entry_wasm**:
-Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getState`, `toSaveFormat`, `toPuzzle`, and the core flow (`commandStart` / `flowNext` / `flowRead`, and `flowFail` when the web side cannot carry a flow on). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
+Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getConfigTable`, `getState`, `toSaveFormat`, `toPuzzle`, and the core flow (`commandStart` / `flowNext` / `flowRead`, and `flowFail` when the web side cannot carry a flow on). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.
 _Avoid_: `step(line)`, `page_bytes_out`, or other REPL imports (removed — see ADR-0010)
 
 **glue.js**:
