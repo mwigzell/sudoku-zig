@@ -76,7 +76,7 @@ public final class FileBridgeTest {
     private static final String LIGHT_THEME_CONFIG =
         "{\"config\":{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"light\",\"show_region\":false,"
             + "\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":false}}";
-    /** Launch frames are sampled for this long; the splash shows for a minimum time, then fades. */
+    /** Launch frames are sampled for this long; the splash shows for a minimum time, then gives way to the game. */
     private static final long LAUNCH_WATCH_MS = 6_000;
     private static final int DARK_RGB_SUM = 120;
     private static final int LIGHT_RGB_SUM = 600;

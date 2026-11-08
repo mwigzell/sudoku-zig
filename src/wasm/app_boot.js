@@ -26,8 +26,9 @@ export async function bootSudokuWebApp(root = document) {
       platform: globalThis.AndroidFileBridge ? "android" : "web",
       user_agent: globalThis.navigator?.userAgent ?? "",
     });
-    // Boot phase 1: ensure first paint/splash is visible before wasm/network work.
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    // Boot phase 1: ensure first paint/splash is visible before wasm/network work. Android holds the window's
+    // draws behind its launch splash until boot-ready, so a frame would never come there.
+    if (!globalThis.AndroidFileBridge) await new Promise((resolve) => requestAnimationFrame(resolve));
     clientLog.clientLog("startup", "debug", "after_first_paint");
 
     // Boot phase 2: fetch + instantiate wasm artifact.

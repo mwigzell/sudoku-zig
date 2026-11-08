@@ -2,6 +2,9 @@
 <resources>
     <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@drawable/splash_background</item>
+        <!-- The launch splash's bars below API 35, where the window does not draw under them. -->
+        <item name="android:statusBarColor">@color/splash_background_dark</item>
+        <item name="android:navigationBarColor">@color/splash_background_dark</item>
     </style>
     <style name="AppTheme.Starting" parent="@style/AppTheme" />
 </resources>

@@ -26,6 +26,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -113,9 +114,10 @@ public final class MainActivity extends Activity {
 
     private FrameLayout root;
     private WebView webView;
-    private View launchSplashView;
     private long launchSplashShownAtMs;
+    /** Set once the splash is asked to go; it goes after `MIN_LAUNCH_SPLASH_MS`, which sets `splashReleased`. */
     private boolean splashDismissed = false;
+    private boolean splashReleased = false;
     private boolean bootErrorShown = false;
     private final Object pickerLock = new Object();
     private ActivityResultWaiter openWaiter;
@@ -142,14 +144,6 @@ public final class MainActivity extends Activity {
         webView.clearCache(true);
         webView.addJavascriptInterface(new AndroidFileBridge(), "__SudokuAndroidBridge");
         webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-                if (url != null && url.startsWith("http://127.0.0.1:")) {
-                    dismissLaunchSplash();
-                }
-            }
-
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
@@ -195,7 +189,6 @@ public final class MainActivity extends Activity {
         });
 
         launchSplashShownAtMs = SystemClock.elapsedRealtime();
-        launchSplashView = makeLaunchSplashView();
         root = new FrameLayout(this);
         padClearOfSystemBars(root);
         root.addView(
@@ -205,16 +198,10 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         );
-        root.addView(
-            launchSplashView,
-            new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        );
 
         webView.loadUrl("about:blank");
         setContentView(root);
+        holdLaunchSplash();
         applySystemBarsTheme(THEME_DARK);
 
         JniHost.startHost(getFilesDir().getAbsolutePath(), new JniHost.ReadyCallback() {
@@ -417,36 +404,28 @@ public final class MainActivity extends Activity {
         applySystemBarsTheme(theme);
     }
 
-    private View makeLaunchSplashView() {
-        View overlay = new View(this);
-        int splashBgResId = getResources().getIdentifier("splash_background", "drawable", getPackageName());
-        if (splashBgResId != 0) {
-            overlay.setBackgroundResource(splashBgResId);
-        } else {
-            overlay.setBackgroundColor(Color.parseColor("#16181d"));
-        }
-        return overlay;
+    /** Android's launch splash stays up until the window first draws; hold every draw until the splash is released. */
+    private void holdLaunchSplash() {
+        root.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                if (!splashReleased) return false;
+                root.getViewTreeObserver().removeOnPreDrawListener(this);
+                return true;
+            }
+        });
     }
 
+    /** Let the window draw once the splash has shown for `MIN_LAUNCH_SPLASH_MS`; the first frame replaces the splash. */
     private void dismissLaunchSplash() {
+        if (splashDismissed) return;
         splashDismissed = true;
-        final View splash = launchSplashView;
-        if (splash == null) return;
-        long elapsed = SystemClock.elapsedRealtime() - launchSplashShownAtMs;
-        long remaining = Math.max(0L, MIN_LAUNCH_SPLASH_MS - elapsed);
-        splash.postDelayed(() -> {
-            final View current = launchSplashView;
-            if (current == null) return;
-            current.animate()
-                .alpha(0f)
-                .setDuration(120)
-                .withEndAction(() -> {
-                    ViewGroup parent = (ViewGroup) current.getParent();
-                    if (parent != null) parent.removeView(current);
-                    launchSplashView = null;
-                    if (webBootReady) applyDeferredSystemBarsTheme();
-                })
-                .start();
+        final long elapsed = SystemClock.elapsedRealtime() - launchSplashShownAtMs;
+        final long remaining = Math.max(0L, MIN_LAUNCH_SPLASH_MS - elapsed);
+        root.postDelayed(() -> {
+            splashReleased = true;
+            if (webBootReady) applyDeferredSystemBarsTheme();
+            root.invalidate();
         }, remaining);
     }
 
@@ -906,7 +885,7 @@ public final class MainActivity extends Activity {
         public void notifyWebBootReady() {
             runOnUiThread(() -> {
                 webBootReady = true;
-                if (launchSplashView == null) applyDeferredSystemBarsTheme();
+                if (splashReleased) applyDeferredSystemBarsTheme();
                 dismissLaunchSplash();
             });
         }
@@ -915,8 +894,8 @@ public final class MainActivity extends Activity {
         public void setSystemBars(String themeName) {
             final String resolved = THEME_LIGHT.equals(themeName) ? THEME_LIGHT : THEME_DARK;
             runOnUiThread(() -> {
-                // The bars stay dark until the splash is gone; the splash's fade-out applies the held theme.
-                if (!webBootReady || launchSplashView != null) {
+                // The bars stay dark until the splash is gone; releasing the splash applies the held theme.
+                if (!webBootReady || !splashReleased) {
                     pendingSystemBarsTheme = resolved;
                     return;
                 }
