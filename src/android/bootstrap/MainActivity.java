@@ -390,23 +390,19 @@ public final class MainActivity extends Activity {
         if (window == null) return;
         final int chromeColor = lightTheme ? CHROME_LIGHT : CHROME_DARK;
         root.setBackgroundColor(chromeColor);
-        window.setStatusBarColor(chromeColor);
-        window.setNavigationBarColor(chromeColor);
-        final View decor = window.getDecorView();
-        if (decor == null) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            final WindowInsetsController controller = window.getInsetsController();
-            if (controller == null) return;
-            final int lightMask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-            controller.setSystemBarsAppearance(lightTheme ? lightMask : 0, lightMask);
-            return;
-        }
-        int flags = decor.getSystemUiVisibility();
-        final int legacyMask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        if (lightTheme) flags |= legacyMask;
-        else flags &= ~legacyMask;
-        decor.setSystemUiVisibility(flags);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) colourSystemBars(window, chromeColor);
+        final WindowInsetsController controller = window.getInsetsController();
+        if (controller == null) return;
+        final int lightMask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+            | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+        controller.setSystemBarsAppearance(lightTheme ? lightMask : 0, lightMask);
+    }
+
+    /** Below API 35 the system bars draw their own colour; from 35 they are transparent and the root's colour shows. */
+    @SuppressWarnings("deprecation") // Deprecated from API 35 only; the one way to colour the bars on API 30-34.
+    private static void colourSystemBars(Window window, int color) {
+        window.setStatusBarColor(color);
+        window.setNavigationBarColor(color);
     }
 
     private String resolveSystemBarsThemeFromSystem() {
