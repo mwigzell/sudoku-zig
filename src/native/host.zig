@@ -154,7 +154,7 @@ test "host: createForTest .ascii preference yields a working facade" {
     // And the injected mock reader drives the command parse path:
     // "fill A3 4" must round-trip into the very fill command it denotes
     // (names = the set of commands offered to the parser; a lone "Fill" is unambiguous).
-    const parsed = try f.getCommandInput(&.{"Fill"}, false, true, false, .easy, .info, .dark, false, false, false);
+    const parsed = try f.getCommandInput(&.{"Fill"}, config.Config.default());
     switch (parsed) {
         .error_msg => return error.ExpectedValidParse,
         .valid => |c| {

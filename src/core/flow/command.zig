@@ -4,6 +4,7 @@
 const std = @import("std");
 const command = @import("../command.zig");
 const config = @import("../config.zig");
+const config_table = @import("../config_table.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
@@ -35,7 +36,7 @@ pub const LOAD_ENDED_STATUS = "";
 pub const CommandFlow = struct {
     engine: *game_engine.GameEngine,
     session: *FileSession,
-    /// The player's Config, held beside the engine; config commands change it here.
+    /// The player's Config, held beside the engine; `set_config` changes it here.
     cfg: *config.Config,
     cmd: command.Command,
     phase: Phase = .start,
@@ -87,10 +88,8 @@ pub const CommandFlow = struct {
             .save_as => |data| return self.startWrite(.{ .save = SaveFlow.forCommand(self.session, .save_as, data.path, self.cfg.auto_save) }),
             .@"export" => |data| return self.startWrite(.{ .@"export" = ExportFlow.toFile(data.path) }),
             .copy => return self.startWrite(.{ .@"export" = ExportFlow.toClipboard() }),
-            else => {
-                if (self.applyConfig()) return self.show(self.engine.unchanged());
-                return self.show(self.engine.exec(self.cmd));
-            },
+            .set_config => |change| return self.setConfig(change),
+            else => return self.show(self.engine.exec(self.cmd)),
         };
         self.phase = .gathering;
         return step;
@@ -128,26 +127,18 @@ pub const CommandFlow = struct {
         }
     }
 
-    /// Apply a config command to Config and hand the engine its fields again; false for any other command.
-    fn applyConfig(self: *CommandFlow) bool {
-        const cfg = self.cfg;
-        switch (self.cmd) {
-            .set_theme => |theme| cfg.theme = theme,
-            .toggle_region => cfg.show_region = !cfg.show_region,
-            .toggle_show_marks => cfg.show_marks = !cfg.show_marks,
-            .toggle_warn_solvability => cfg.warn_solvability = !cfg.warn_solvability,
-            .toggle_auto_restore => cfg.auto_restore = !cfg.auto_restore,
-            .toggle_auto_new => cfg.auto_new = !cfg.auto_new,
-            .toggle_auto_save => cfg.auto_save = !cfg.auto_save,
-            .set_difficulty => |diff| cfg.difficulty = diff,
-            .set_log_level => |level| {
-                cfg.log_level = level;
-                logger.min_level = level;
-            },
-            else => return false,
-        }
-        self.engine.useConfig(cfg.*);
-        return true;
+    /// Change one Config field and hand the engine its fields again; a refused change shows core's sentence.
+    fn setConfig(self: *CommandFlow, change: config_table.Change) Step {
+        config_table.apply(self.cfg, change) catch |err| {
+            log.warn("set_config {s} refused: {s}", .{ change.field, @errorName(err) });
+            return self.finish(step_mod.promptError(switch (err) {
+                error.UnknownField => config_table.UNKNOWN_FIELD_MSG,
+                error.BadValue => config_table.BAD_VALUE_MSG,
+            }));
+        };
+        logger.min_level = self.cfg.log_level;
+        self.engine.useConfig(self.cfg.*);
+        return self.show(self.engine.unchanged());
     }
 
     /// Replace the game from `data` and record the load, so later writes know whose file this is.
@@ -234,13 +225,13 @@ fn testEngine(cfg: config.Config) !game_engine.GameEngine {
     return game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), cfg);
 }
 
-test "a toggle shows the new setting, then persists it, and does not autosave" {
+test "a config change shows the new setting, then persists it, and does not autosave" {
     var cfg = config.Config.default();
     cfg.auto_save = false;
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .toggle_auto_save = {} });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "auto_save", .value = .{ .on = true } } });
 
     const shown = flow.next(.start).show_game;
     try testing.expect(shown.config.auto_save);
@@ -279,37 +270,48 @@ test "a failed settings write ends the command with the error" {
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
-    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_theme = .light });
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "theme", .value = .{ .choice = "light" } } });
     _ = flow.next(.start);
     _ = flow.next(.ack);
     try testing.expectEqualStrings(settings_mod.PERSIST_FAILED_MSG, flow.next(.{ .persisted = .{ .failed = "disk full" } }).prompt_message.text);
 }
 
-test "config commands change the Config held beside the engine, and the engine takes its fields" {
+test "set_config changes the Config held beside the engine, and the engine takes its fields" {
     var cfg = config.Config.default();
     var engine = try testEngine(cfg);
     defer engine.deinit();
     var session = FileSession{};
     const before_level = logger.min_level;
     defer logger.min_level = before_level;
-    const shown_marks = !cfg.show_marks;
-    for ([_]command.Command{
-        .{ .set_theme = .light },           .{ .toggle_region = {} },       .{ .toggle_show_marks = {} },
-        .{ .toggle_warn_solvability = {} }, .{ .toggle_auto_restore = {} }, .{ .toggle_auto_new = {} },
-        .{ .toggle_auto_save = {} },        .{ .set_difficulty = .hard },   .{ .set_log_level = .debug },
-    }) |cmd| {
-        var flow = CommandFlow.init(&engine, &session, &cfg, cmd);
+    for ([_]config_table.Change{
+        .{ .field = "warn_solvability", .value = .{ .on = true } },
+        .{ .field = "show_marks", .value = .{ .on = false } },
+        .{ .field = "log_level", .value = .{ .choice = "debug" } },
+    }) |change| {
+        var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = change });
         const shown = flow.next(.start).show_game.config;
         try testing.expectEqual(cfg, shown);
     }
-    try testing.expectEqual(config.ViewTheme.light, cfg.theme);
-    try testing.expect(cfg.show_region and cfg.warn_solvability and cfg.auto_restore and cfg.auto_new and cfg.auto_save);
-    try testing.expectEqual(shown_marks, cfg.show_marks);
-    try testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
-    try testing.expectEqual(logger.Severity.debug, cfg.log_level);
     try testing.expectEqual(logger.Severity.debug, logger.min_level);
     try testing.expect(engine.warn_dead_moves and engine.warn_unsolvable_load);
-    try testing.expectEqual(shown_marks, engine.show_marks);
+    try testing.expect(!engine.show_marks);
+}
+
+test "a refused set_config shows core's sentence, changes nothing and persists nothing" {
+    var cfg = config.Config.default();
+    const before = cfg;
+    var engine = try testEngine(cfg);
+    defer engine.deinit();
+    var session = FileSession{};
+    for ([_]struct { change: config_table.Change, msg: []const u8 }{
+        .{ .change = .{ .field = "nope", .value = .{ .on = true } }, .msg = config_table.UNKNOWN_FIELD_MSG },
+        .{ .change = .{ .field = "theme", .value = .{ .choice = "pink" } }, .msg = config_table.BAD_VALUE_MSG },
+    }) |case| {
+        var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = case.change });
+        try testing.expectEqualStrings(case.msg, flow.next(.start).prompt_message.text);
+        try testing.expect(flow.next(.ack) == .done);
+    }
+    try testing.expectEqual(before, cfg);
 }
 
 test "open asks for a game file, loads the pick and makes it the current file" {

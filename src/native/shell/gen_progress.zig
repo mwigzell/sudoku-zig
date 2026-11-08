@@ -30,15 +30,7 @@ const ProgressRecorder = struct {
     fn getCommandInput(
         _: *anyopaque,
         _: []const []const u8,
-        _: bool,
-        _: bool,
-        _: bool,
-        _: config.Difficulty,
-        _: logger.Severity,
-        _: config.ViewTheme,
-        _: bool,
-        _: bool,
-        _: bool,
+        _: config.Config,
     ) facade_mod.Error!command.ParseCommandResult {
         return .{ .valid = .{ .quit = {} } };
     }

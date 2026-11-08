@@ -8,7 +8,7 @@ const facade_mod = @import("../../core/renderer/facade.zig");
 const flow_mod = @import("../../core/flow/mod.zig");
 const command = @import("../../core/command.zig");
 const config = @import("../../core/config.zig");
-const logger = @import("../../core/logger.zig");
+const config_table = @import("../../core/config_table.zig");
 const legend_mod = @import("../../core/renderer/legend.zig");
 const board = @import("../../core/board/board.zig");
 const cell = @import("../../core/board/cell.zig");
@@ -259,15 +259,7 @@ const Recorder = struct {
     pub fn getCommandInput(
         self: *Recorder,
         _: []const []const u8,
-        _: bool,
-        _: bool,
-        _: bool,
-        _: config.Difficulty,
-        _: logger.Severity,
-        _: config.ViewTheme,
-        _: bool,
-        _: bool,
-        _: bool,
+        _: config.Config,
     ) !command.ParseCommandResult {
         const cmd = self.pending orelse return .{ .valid = .{ .quit = {} } };
         self.pending = null;
@@ -397,8 +389,10 @@ fn firstEmptyLegalFill(view: board.Board.BoardView) !command.FillData {
     return error.NoLegalFill;
 }
 
-/// The command a scenario step issues; `view` picks the cell for `fill_first_empty`.
-fn stepCommand(step: Step, view: ?board.Board.BoardView) !command.Command {
+/// The command a scenario step issues; `view` picks the cell for `fill_first_empty`, and a
+/// config step is the `set_config` the menus send from `cfg`.
+fn stepCommand(step: Step, view: ?board.Board.BoardView, cfg: config.Config) !command.Command {
+    if (configChange(step, cfg)) |change| return .{ .set_config = change };
     if (step.fill) |m| return .{ .fill = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
     if (step.clear) |at| return .{ .clear = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
     if (step.fill_first_empty != null) return .{ .fill = if (view) |v| try firstEmptyLegalFill(v) else .{ .row = 0, .col = 0, .digit = .zero } };
@@ -416,19 +410,10 @@ fn stepCommand(step: Step, view: ?board.Board.BoardView) !command.Command {
     if (step.new) |name| return .{ .new = .{ .difficulty = std.meta.stringToEnum(config.Difficulty, name) orelse return error.UnknownDifficulty } };
     if (step.new_line) |line| return .{ .new = .{ .puzzle = line } };
     if (step.@"export" != null) return .{ .@"export" = .{ .path = null } };
-    if (step.toggle_auto_save != null) return .{ .toggle_auto_save = {} };
-    if (step.toggle_region != null) return .{ .toggle_region = {} };
     if (step.pencil) |m| return .{ .pencil = .{ .row = @intCast(m.row), .col = @intCast(m.col), .digit = cell.rawToCellValue(m.digit) } };
     if (step.toggle_pencil_mode != null) return .{ .toggle_pencil_mode = {} };
-    if (step.toggle_show_marks != null) return .{ .toggle_show_marks = {} };
     if (step.select) |at| return .{ .select = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
     if (step.deselect != null) return .{ .deselect = {} };
-    if (step.set_theme) |name| return .{ .set_theme = std.meta.stringToEnum(config.ViewTheme, name) orelse return error.UnknownTheme };
-    if (step.toggle_warn_solvability != null) return .{ .toggle_warn_solvability = {} };
-    if (step.set_difficulty) |name| return .{ .set_difficulty = std.meta.stringToEnum(config.Difficulty, name) orelse return error.UnknownDifficulty };
-    if (step.set_log_level) |name| return .{ .set_log_level = std.meta.stringToEnum(logger.Severity, name) orelse return error.UnknownLogLevel };
-    if (step.toggle_auto_restore != null) return .{ .toggle_auto_restore = {} };
-    if (step.toggle_auto_new != null) return .{ .toggle_auto_new = {} };
     if (step.open_cancel != null) return .{ .open = .{ .path = null } };
     if (step.import_cancel != null) return .{ .import = .{ .path = null } };
     if (step.save_as_cancel != null) return .{ .save_as = .{ .path = null } };
@@ -436,6 +421,21 @@ fn stepCommand(step: Step, view: ?board.Board.BoardView) !command.Command {
     if (step.paste_fails != null) return .{ .paste = .{ .line = null } };
     if (step.copy_fails != null) return .{ .copy = {} };
     return error.UnknownScenarioStep;
+}
+
+/// A config step's change: toggles flip the field's value in `cfg`, choices go by name.
+fn configChange(step: Step, cfg: config.Config) ?config_table.Change {
+    const row = config_table.row;
+    if (step.toggle_auto_save != null) return config_table.toggle(cfg, row("auto_save"));
+    if (step.toggle_region != null) return config_table.toggle(cfg, row("show_region"));
+    if (step.toggle_show_marks != null) return config_table.toggle(cfg, row("show_marks"));
+    if (step.toggle_warn_solvability != null) return config_table.toggle(cfg, row("warn_solvability"));
+    if (step.toggle_auto_restore != null) return config_table.toggle(cfg, row("auto_restore"));
+    if (step.toggle_auto_new != null) return config_table.toggle(cfg, row("auto_new"));
+    if (step.set_theme) |name| return .{ .field = row("theme").field, .value = .{ .choice = name } };
+    if (step.set_difficulty) |name| return .{ .field = row("difficulty").field, .value = .{ .choice = name } };
+    if (step.set_log_level) |name| return .{ .field = row("log_level").field, .value = .{ .choice = name } };
+    return null;
 }
 
 /// What one launch of the shell runs against; a relaunch keeps all of it.
@@ -540,7 +540,7 @@ fn runScenario(arena: std.mem.Allocator, io: std.Io, data_dir: []const u8, scena
         if (step.close != null) return error.CloseIsNotANativeStep;
         if (step.open) |file| try putFile(gpa, cfg, &transport, file);
         if (step.import) |text| try transport.put(FOLDER_PREFIX ++ IMPORT_NAME, text);
-        try Rig.run(&app, &recorder, try stepCommand(step, app.engine.eventBoard()));
+        try Rig.run(&app, &recorder, try stepCommand(step, app.engine.eventBoard(), app.cfg));
     }
 
     const written = try arena.alloc([]const u8, transport.written.items.len);
@@ -591,7 +591,7 @@ fn checkEveryCommandCovered(parsed: Scenarios) !void {
     var seen = std.EnumSet(command.CommandTag).empty;
     for (parsed.scenarios) |scenario| for (scenario.steps) |step| {
         if (step.relaunch != null or step.close != null) continue;
-        seen.insert(std.meta.activeTag(try stepCommand(step, null)));
+        seen.insert(std.meta.activeTag(try stepCommand(step, null, config.Config.default())));
     };
     for (std.meta.tags(command.CommandTag)) |tag| {
         if (seen.contains(tag) or parsed.flowless_commands.map.contains(@tagName(tag))) continue;

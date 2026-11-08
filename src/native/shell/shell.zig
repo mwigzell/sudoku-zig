@@ -198,18 +198,7 @@ pub const Sudoku = struct {
         const avail = self.engine.getLegend(self.cfg.auto_save);
         var names: [command.Commands.len][]const u8 = undefined;
         const count = avail.getNames(&names);
-        const result = self.renderer.getCommandInput(
-            names[0..count],
-            self.cfg.show_region,
-            self.cfg.show_marks,
-            self.cfg.warn_solvability,
-            self.cfg.difficulty,
-            self.cfg.log_level,
-            self.cfg.theme,
-            self.cfg.auto_restore,
-            self.cfg.auto_new,
-            self.cfg.auto_save,
-        ) catch return error.System;
+        const result = self.renderer.getCommandInput(names[0..count], self.cfg) catch return error.System;
         return try self.handleResult(result);
     }
 
@@ -243,7 +232,6 @@ pub const Sudoku = struct {
 
 const board = @import("../../core/board/board.zig");
 const cell = @import("../../core/board/cell.zig");
-const logger = @import("../../core/logger.zig");
 const styler_t = @import("../ascii/styler.zig");
 const ascii_renderer = @import("../ascii/renderer.zig");
 
@@ -300,15 +288,7 @@ const DeterministicFacade = struct {
     pub fn getCommandInput(
         self: *@This(),
         _: []const []const u8,
-        _: bool,
-        _: bool,
-        _: bool,
-        _: config.Difficulty,
-        _: logger.Severity,
-        _: config.ViewTheme,
-        _: bool,
-        _: bool,
-        _: bool,
+        _: config.Config,
     ) !command.ParseCommandResult {
         if (self.idx >= self.steps.len) return .{ .valid = .{ .quit = {} } };
         const step = self.steps[self.idx];

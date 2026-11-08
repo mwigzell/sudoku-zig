@@ -1,6 +1,5 @@
 const command = @import("../command.zig");
 const config = @import("../config.zig");
-const logger = @import("../logger.zig");
 const legend = @import("legend.zig");
 const flow_step = @import("../flow/step.zig");
 const frame_mod = @import("../frame.zig");
@@ -26,9 +25,8 @@ pub const Error = error{System};
 ///     itself completes each interactive call (see the method docs).
 ///   * Borrowed arguments (frame, commands, msg, names) are caller-owned;
 ///     a renderer must not retain them past the call.
-///   * Live menu/settings labels cross only via scalar args on
-///     getCommandInput (Sudoku passes engine config each turn). No bundled
-///     pref types on the facade — see AGENTS.md “Native renderer facade seam”.
+///   * The menus read the player's Config, a copy passed to getCommandInput each
+///     turn, and draw Settings from core's config table.
 ///   * The facade is caller-owned and dead after deinit.
 pub const Facade = struct {
     context: *anyopaque,
@@ -42,15 +40,7 @@ pub const Facade = struct {
     getCommandInput_fn: *const fn (
         *anyopaque,
         []const []const u8,
-        show_region: bool,
-        show_marks: bool,
-        warn_solvability: bool,
-        difficulty: config.Difficulty,
-        log_level: logger.Severity,
-        theme: config.ViewTheme,
-        auto_restore: bool,
-        auto_new: bool,
-        auto_save: bool,
+        cfg: config.Config,
     ) Error!command.ParseCommandResult,
 
     report_gen_progress_fn: *const fn (*anyopaque, puzzle_gen.GenProgressEvent) Error!void,
@@ -75,21 +65,13 @@ pub const Facade = struct {
     }
 
     /// Show a prompt and get user command input, parsed against the offered
-    /// command names. End-of-input reports as error.System.
+    /// command names; `cfg` is the player's Config the menus show. End-of-input reports as error.System.
     pub fn getCommandInput(
         self: *const Facade,
         names: []const []const u8,
-        show_region: bool,
-        show_marks: bool,
-        warn_solvability: bool,
-        difficulty: config.Difficulty,
-        log_level: logger.Severity,
-        theme: config.ViewTheme,
-        auto_restore: bool,
-        auto_new: bool,
-        auto_save: bool,
+        cfg: config.Config,
     ) Error!command.ParseCommandResult {
-        return self.getCommandInput_fn(self.context, names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save);
+        return self.getCommandInput_fn(self.context, names, cfg);
     }
 
     /// Live puzzle generation feedback (native terminal); not gameplay `Event` status.
@@ -123,22 +105,14 @@ pub fn Make(comptime CT: type) type {
             return self.promptMessage(prompt) catch return error.System;
         }
 
-        /// Forward `getCommandInput` through erased context with live prefs args.
+        /// Forward `getCommandInput` through erased context with the player's Config.
         pub fn getCommandInput_wrapper(
             ctx: *anyopaque,
             names: []const []const u8,
-            show_region: bool,
-            show_marks: bool,
-            warn_solvability: bool,
-            difficulty: config.Difficulty,
-            log_level: logger.Severity,
-            theme: config.ViewTheme,
-            auto_restore: bool,
-            auto_new: bool,
-            auto_save: bool,
+            cfg: config.Config,
         ) Error!command.ParseCommandResult {
             const self: *CT = @ptrCast(@alignCast(@constCast(ctx)));
-            return self.getCommandInput(names, show_region, show_marks, warn_solvability, difficulty, log_level, theme, auto_restore, auto_new, auto_save) catch error.System;
+            return self.getCommandInput(names, cfg) catch error.System;
         }
 
         /// Forward generator progress events through the facade seam.

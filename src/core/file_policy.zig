@@ -87,9 +87,8 @@ pub fn nextWriteContext(current: WriteContext, event: WriteContextEvent) WriteCo
 pub fn commandTriggersAutoSave(tag: command.CommandTag) bool {
     return switch (tag) {
         .fill, .clear, .undo, .redo, .hint, .solve_for_me, .open, .import, .paste, .pencil => true,
-        .quit, .menu, .save, .@"export", .copy, .new, .save_as, .set_theme, .toggle_region => false,
-        .toggle_warn_solvability, .set_difficulty, .set_log_level, .toggle_auto_restore, .toggle_auto_new => false,
-        .toggle_auto_save, .settings, .toggle_pencil_mode, .toggle_show_marks, .select, .deselect => false,
+        .quit, .menu, .save, .@"export", .copy, .new, .save_as, .set_config => false,
+        .settings, .toggle_pencil_mode, .select, .deselect => false,
     };
 }
 
@@ -164,7 +163,7 @@ test "game-changing commands trigger autosave; saves and settings do not" {
     for ([_]command.CommandTag{ .fill, .undo, .hint, .solve_for_me, .open, .paste }) |tag| {
         try std.testing.expect(commandTriggersAutoSave(tag));
     }
-    for ([_]command.CommandTag{ .save, .save_as, .@"export", .set_theme }) |tag| {
+    for ([_]command.CommandTag{ .save, .save_as, .@"export", .set_config }) |tag| {
         try std.testing.expect(!commandTriggersAutoSave(tag));
     }
 }

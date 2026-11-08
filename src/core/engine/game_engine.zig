@@ -400,7 +400,7 @@ pub const GameEngine = struct {
             // The renderer opens the Menu; it reaches core only when the player picked nothing,
             // and then the game is shown again as it is.
             .menu => return self.unchanged(),
-            .set_theme, .toggle_region, .toggle_show_marks, .toggle_warn_solvability, .toggle_auto_restore, .toggle_auto_new, .toggle_auto_save, .set_difficulty, .set_log_level => @panic("config commands run in the core command flow"),
+            .set_config => @panic("config commands run in the core command flow"),
             .save, .open, .import, .@"export", .copy, .paste, .new, .save_as => @panic("load and write commands run in the core command flow"),
         }
     }

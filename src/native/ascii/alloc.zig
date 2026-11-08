@@ -9,7 +9,6 @@ const board = @import("../../core/board/board.zig");
 const legend = @import("../../core/renderer/legend.zig");
 const command = @import("../../core/command.zig");
 const config = @import("../../core/config.zig");
-const logger = @import("../../core/logger.zig");
 const io_session = @import("../../native/io_session.zig");
 const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 const flow_step = @import("../../core/flow/step.zig");
@@ -100,28 +99,9 @@ fn ctx(S: type) type {
         pub fn getCommandInput(
             self: *@This(),
             names: []const []const u8,
-            show_region: bool,
-            show_marks: bool,
-            warn_solvability: bool,
-            difficulty: config.Difficulty,
-            log_level: logger.Severity,
-            theme: config.ViewTheme,
-            auto_restore: bool,
-            auto_new: bool,
-            auto_save: bool,
+            cfg: config.Config,
         ) facade.Error!command.ParseCommandResult {
-            return self.renderer.getCommandInput(
-                names,
-                show_region,
-                show_marks,
-                warn_solvability,
-                difficulty,
-                log_level,
-                theme,
-                auto_restore,
-                auto_new,
-                auto_save,
-            );
+            return self.renderer.getCommandInput(names, cfg);
         }
 
         pub fn reportGenProgress(self: *@This(), event: puzzle_gen.GenProgressEvent) facade.Error!void {

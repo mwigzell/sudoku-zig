@@ -95,7 +95,7 @@ test "autosave off does nothing" {
 
 test "commands that do not change the game do not autosave" {
     var session = FileSession{};
-    var flow = AutosaveFlow.afterCommand(&session, true, .set_theme);
+    var flow = AutosaveFlow.afterCommand(&session, true, .set_config);
     try testing.expect(flow.next(.start) == .done);
 }
 

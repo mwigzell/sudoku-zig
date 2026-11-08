@@ -1,7 +1,7 @@
 // Command vocabulary of the game — data tags + parse entry point.
 const cell_module = @import("board/cell.zig");
 const config = @import("config.zig");
-const logger = @import("logger.zig");
+const config_table = @import("config_table.zig");
 
 // ---------------------------------------------------------------------------
 // Command Data Types — domain-neutral, consumed by GameEngine.exec()
@@ -43,18 +43,10 @@ pub const CommandTag = enum {
     save_as,
     solve_for_me,
     hint,
-    set_theme,
-    toggle_region,
-    toggle_warn_solvability,
-    set_difficulty,
-    set_log_level,
-    toggle_auto_restore,
-    toggle_auto_new,
-    toggle_auto_save,
+    set_config,
     settings,
     pencil,
     toggle_pencil_mode,
-    toggle_show_marks,
     select,
     deselect,
 };
@@ -77,18 +69,11 @@ pub const Command = union(CommandTag) {
     save_as: SaveData,
     solve_for_me: void,
     hint: HintData,
-    set_theme: config.ViewTheme,
-    toggle_region: void,
-    toggle_warn_solvability: void,
-    set_difficulty: config.Difficulty,
-    set_log_level: logger.Severity,
-    toggle_auto_restore: void,
-    toggle_auto_new: void,
-    toggle_auto_save: void,
+    /// Change one Config field; core checks the field and value against the config table.
+    set_config: config_table.Change,
     settings: void,
     pencil: PencilData,
     toggle_pencil_mode: void,
-    toggle_show_marks: void,
     select: SelectData,
     deselect: void,
 };
@@ -168,9 +153,9 @@ pub const ExportFileResult = SaveFileResult;
 
 const std = @import("std");
 
-test "CommandTag enum has 30 variants" {
+test "CommandTag enum has 22 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 30), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 22), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -191,8 +176,8 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Hint", getName(.hint));
 }
 
-test "comptime invariant: CommandTag covers terminal line plus session and view prefs" {
+test "comptime invariant: CommandTag covers terminal line plus session and config commands" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    // Commands + SessionCommands + view/pref, Pencil mode and select/deselect tags cover all CommandTag variants.
-    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 13);
+    // Commands + SessionCommands + set_config, settings, Pencil mode and select/deselect cover all CommandTag variants.
+    try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 5);
 }

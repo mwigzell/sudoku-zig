@@ -202,7 +202,7 @@ export fn exec(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const eng = engineOrError(out) orelse return returnJson(out);
 
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const cmd = boundary.parseAction(json) catch |err| {
+    const cmd = boundary.parseAction(json, cfg) catch |err| {
         return exportFailure(out, "invalid action", err);
     };
 
@@ -336,7 +336,7 @@ export fn commandStart(in_ptr: u32, in_len: u32) callconv(.c) u32 {
     const out = outBuffer();
     const eng = engineOrError(out) orelse return returnJson(out);
     const json = @as([*]const u8, @ptrFromInt(in_ptr))[0..in_len];
-    const cmd = boundary.parseAction(json) catch |err| return exportFailure(out, "invalid action", err);
+    const cmd = boundary.parseAction(json, cfg) catch |err| return exportFailure(out, "invalid action", err);
     active_flow = .{ .command = flow.CommandFlow.init(eng, &file_session, &cfg, cmd) };
     have_flow = true;
     return returnStep(out, active_flow.next(.start));

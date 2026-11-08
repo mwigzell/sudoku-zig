@@ -17,8 +17,7 @@ pub const PERSIST_FAILED_MSG = "Your settings could not be saved.";
 /// True when the command's change belongs in `config.json`.
 fn commandPersistsSettings(tag: command.CommandTag) bool {
     return switch (tag) {
-        .set_theme, .toggle_region, .toggle_warn_solvability, .set_difficulty, .set_log_level => true,
-        .toggle_auto_restore, .toggle_auto_new, .toggle_auto_save, .toggle_show_marks => true,
+        .set_config => true,
         .fill, .clear, .quit, .undo, .redo, .menu, .save, .open, .import, .@"export", .copy => false,
         .paste, .new, .save_as, .solve_for_me, .hint, .settings, .pencil, .toggle_pencil_mode => false,
         .select, .deselect => false,
@@ -89,7 +88,7 @@ test "commands that change no setting persist nothing" {
 }
 
 test "a persist failure shows core's sentence, not the platform's reason" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_theme);
+    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_config);
     _ = flow.next(.start);
     try testing.expectEqualStrings(
         PERSIST_FAILED_MSG,
@@ -98,12 +97,12 @@ test "a persist failure shows core's sentence, not the platform's reason" {
 }
 
 test "a wrong answer to persist_settings ends the flow with an error" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), .toggle_region);
+    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_config);
     _ = flow.next(.start);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).prompt_message.text);
 }
 
 test "the flow must be started with start" {
-    var flow = SettingsFlow.afterCommand(config.Config.default(), .toggle_region);
+    var flow = SettingsFlow.afterCommand(config.Config.default(), .set_config);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.ack).prompt_message.text);
 }

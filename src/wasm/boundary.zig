@@ -4,6 +4,7 @@ const board = @import("../core/board/board.zig");
 const cell = @import("../core/board/cell.zig");
 const command = @import("../core/command.zig");
 const config = @import("../core/config.zig");
+const config_table = @import("../core/config_table.zig");
 const logger = @import("../core/logger.zig");
 const event_mod = @import("../core/event.zig");
 const game_engine = @import("../core/engine/game_engine.zig");
@@ -104,10 +105,42 @@ fn parseDifficulty(name: []const u8) !config.Difficulty {
     return error.InvalidDifficulty;
 }
 
+/// The page names config changes per field; each becomes `set_config`, a toggle flipping the field's
+/// value in `cfg`. Null for any other action.
+fn configChange(action: JsonAction, cfg: config.Config) !?config_table.Change {
+    const row = config_table.row;
+    const toggles = [_]struct { action: []const u8, change: config_table.Change }{
+        .{ .action = "toggle_region", .change = config_table.toggle(cfg, row("show_region")) },
+        .{ .action = "toggle_show_marks", .change = config_table.toggle(cfg, row("show_marks")) },
+        .{ .action = "toggle_warn_solvability", .change = config_table.toggle(cfg, row("warn_solvability")) },
+        .{ .action = "toggle_auto_restore", .change = config_table.toggle(cfg, row("auto_restore")) },
+        .{ .action = "toggle_auto_new", .change = config_table.toggle(cfg, row("auto_new")) },
+        .{ .action = "toggle_auto_save", .change = config_table.toggle(cfg, row("auto_save")) },
+    };
+    for (toggles) |t| {
+        if (std.ascii.eqlIgnoreCase(action.action, t.action)) return t.change;
+    }
+    if (std.ascii.eqlIgnoreCase(action.action, "set_theme")) return try choiceChange(row("theme"), action.theme);
+    if (std.ascii.eqlIgnoreCase(action.action, "set_difficulty")) return try choiceChange(row("difficulty"), action.difficulty);
+    if (std.ascii.eqlIgnoreCase(action.action, "set_log_level")) return try choiceChange(row("log_level"), action.log_level);
+    return null;
+}
+
+/// A choice change naming the table's own string, so it outlives the parsed JSON.
+fn choiceChange(comptime r: config_table.Row, name: ?[]const u8) !config_table.Change {
+    const wanted = name orelse return error.MissingField;
+    for (r.kind.choices) |choice| {
+        if (std.ascii.eqlIgnoreCase(choice.name, wanted)) return .{ .field = r.field, .value = .{ .choice = choice.name } };
+    }
+    return error.InvalidChoice;
+}
+
 /// Load actions carry no path or line: core asks the page for the file or clipboard text.
-pub fn parseAction(json_text: []const u8) !command.Command {
+/// `cfg` is the player's Config, which a toggle flips.
+pub fn parseAction(json_text: []const u8, cfg: config.Config) !command.Command {
     const parsed = try std.json.parseFromSlice(JsonAction, std.heap.page_allocator, json_text, .{});
     defer parsed.deinit();
+    if (try configChange(parsed.value, cfg)) |change| return .{ .set_config = change };
 
     const row: ?u4 = if (parsed.value.row) |r| blk: {
         if (r > 8) return error.InvalidCoordinate;
@@ -130,7 +163,6 @@ pub fn parseAction(json_text: []const u8) !command.Command {
         } };
     }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_pencil_mode")) return .{ .toggle_pencil_mode = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_show_marks")) return .{ .toggle_show_marks = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "clear")) {
         const r = row orelse return error.MissingField;
         const c = col orelse return error.MissingField;
@@ -145,21 +177,6 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "undo")) return .{ .undo = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "redo")) return .{ .redo = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "quit")) return .{ .quit = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_theme")) {
-        const theme_name = parsed.value.theme orelse return error.MissingField;
-        if (std.ascii.eqlIgnoreCase(theme_name, "light")) return .{ .set_theme = .light };
-        if (std.ascii.eqlIgnoreCase(theme_name, "dark")) return .{ .set_theme = .dark };
-        if (std.ascii.eqlIgnoreCase(theme_name, "system")) return .{ .set_theme = .system };
-        return error.InvalidTheme;
-    }
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_region")) return .{ .toggle_region = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_warn_solvability")) return .{ .toggle_warn_solvability = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_restore")) return .{ .toggle_auto_restore = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_new")) return .{ .toggle_auto_new = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "toggle_auto_save")) return .{ .toggle_auto_save = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_difficulty")) {
-        return .{ .set_difficulty = try parseDifficulty(parsed.value.difficulty orelse return error.MissingField) };
-    }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "new")) {
         const difficulty = if (parsed.value.difficulty) |name| try parseDifficulty(name) else null;
         return .{ .new = .{ .difficulty = difficulty } };
@@ -171,15 +188,6 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "save_as")) return .{ .save_as = .{ .path = null } };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "export")) return .{ .@"export" = .{ .path = null } };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "copy")) return .{ .copy = {} };
-    if (std.ascii.eqlIgnoreCase(parsed.value.action, "set_log_level")) {
-        const name = parsed.value.log_level orelse return error.MissingField;
-        if (std.ascii.eqlIgnoreCase(name, "debug")) return .{ .set_log_level = .debug };
-        if (std.ascii.eqlIgnoreCase(name, "info")) return .{ .set_log_level = .info };
-        if (std.ascii.eqlIgnoreCase(name, "warn")) return .{ .set_log_level = .warn };
-        if (std.ascii.eqlIgnoreCase(name, "err")) return .{ .set_log_level = .err };
-        if (std.ascii.eqlIgnoreCase(name, "fatal")) return .{ .set_log_level = .fatal };
-        return error.InvalidLogLevel;
-    }
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "solve")) return .{ .solve_for_me = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "hint")) {
         if ((row == null) != (col == null)) return error.MissingField;
@@ -596,16 +604,19 @@ pub fn writeStateJson(out: OutBuffer, frame: frame_mod.Frame) !void {
     try std.Io.Writer.flush(&jw.writer);
 }
 
+/// The Config the parse tests flip toggles from.
+const test_cfg = config.Config.default();
+
 test "parseAction select carries its cell; deselect has none" {
-    const sel = try parseAction("{\"action\":\"select\",\"row\":4,\"col\":7}");
+    const sel = try parseAction("{\"action\":\"select\",\"row\":4,\"col\":7}", test_cfg);
     try std.testing.expectEqual(@as(u4, 4), sel.select.row);
     try std.testing.expectEqual(@as(u4, 7), sel.select.col);
-    try std.testing.expectError(error.MissingField, parseAction("{\"action\":\"select\",\"row\":4}"));
-    try std.testing.expect(try parseAction("{\"action\":\"deselect\"}") == .deselect);
+    try std.testing.expectError(error.MissingField, parseAction("{\"action\":\"select\",\"row\":4}", test_cfg));
+    try std.testing.expect(try parseAction("{\"action\":\"deselect\"}", test_cfg) == .deselect);
 }
 
 test "parseAction fill maps row col digit" {
-    const cmd = try parseAction("{\"action\":\"fill\",\"row\":2,\"col\":0,\"digit\":3}");
+    const cmd = try parseAction("{\"action\":\"fill\",\"row\":2,\"col\":0,\"digit\":3}", test_cfg);
     switch (cmd) {
         .fill => |f| {
             try std.testing.expectEqual(@as(u4, 2), f.row);
@@ -617,43 +628,43 @@ test "parseAction fill maps row col digit" {
 }
 
 test "parseAction rejects unknown action" {
-    const result = parseAction("{\"action\":\"xyzzy\"}");
+    const result = parseAction("{\"action\":\"xyzzy\"}", test_cfg);
     try std.testing.expectError(error.UnknownAction, result);
 }
 
 test "parseAction hint maps optional row col" {
-    const bare = try parseAction("{\"action\":\"hint\"}");
+    const bare = try parseAction("{\"action\":\"hint\"}", test_cfg);
     try std.testing.expect(bare == .hint);
     try std.testing.expect(bare.hint.row == null and bare.hint.col == null);
 
-    const targeted = try parseAction("{\"action\":\"hint\",\"row\":2,\"col\":4}");
+    const targeted = try parseAction("{\"action\":\"hint\",\"row\":2,\"col\":4}", test_cfg);
     try std.testing.expect(targeted == .hint);
     try std.testing.expectEqual(@as(?u4, 2), targeted.hint.row);
     try std.testing.expectEqual(@as(?u4, 4), targeted.hint.col);
 
-    const d1 = try parseAction("{\"action\":\"hint\",\"row\":0,\"col\":3}");
+    const d1 = try parseAction("{\"action\":\"hint\",\"row\":0,\"col\":3}", test_cfg);
     try std.testing.expectEqual(@as(?u4, 0), d1.hint.row);
     try std.testing.expectEqual(@as(?u4, 3), d1.hint.col);
 }
 
 test "parseAction writes carry no path; core chooses the name" {
-    try std.testing.expect((try parseAction("{\"action\":\"save\"}")).save.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"save_as\"}")).save_as.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"export\"}")).@"export".path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"copy\"}")) == .copy);
+    try std.testing.expect((try parseAction("{\"action\":\"save\"}", test_cfg)).save.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"save_as\"}", test_cfg)).save_as.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"export\"}", test_cfg)).@"export".path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"copy\"}", test_cfg)) == .copy);
 }
 
 test "parseAction loads carry no path or line; new takes an optional difficulty" {
-    try std.testing.expect((try parseAction("{\"action\":\"open\"}")).open.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"import\"}")).import.path == null);
-    try std.testing.expect((try parseAction("{\"action\":\"paste\"}")).paste.line == null);
-    try std.testing.expect((try parseAction("{\"action\":\"new\"}")).new.difficulty == null);
-    try std.testing.expectEqual(config.Difficulty.hard, (try parseAction("{\"action\":\"new\",\"difficulty\":\"hard\"}")).new.difficulty.?);
-    try std.testing.expectError(error.InvalidDifficulty, parseAction("{\"action\":\"new\",\"difficulty\":\"wild\"}"));
+    try std.testing.expect((try parseAction("{\"action\":\"open\"}", test_cfg)).open.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"import\"}", test_cfg)).import.path == null);
+    try std.testing.expect((try parseAction("{\"action\":\"paste\"}", test_cfg)).paste.line == null);
+    try std.testing.expect((try parseAction("{\"action\":\"new\"}", test_cfg)).new.difficulty == null);
+    try std.testing.expectEqual(config.Difficulty.hard, (try parseAction("{\"action\":\"new\",\"difficulty\":\"hard\"}", test_cfg)).new.difficulty.?);
+    try std.testing.expectError(error.InvalidDifficulty, parseAction("{\"action\":\"new\",\"difficulty\":\"wild\"}", test_cfg));
 }
 
 test "parseAction solve maps to solve_for_me" {
-    const cmd = try parseAction("{\"action\":\"solve\"}");
+    const cmd = try parseAction("{\"action\":\"solve\"}", test_cfg);
     try std.testing.expect(cmd == .solve_for_me);
 }
 
@@ -673,40 +684,26 @@ test "writeEventJson ok embeds state snapshot" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"state\"") != null);
 }
 
-test "parseAction set_theme and toggles" {
-    const theme_cmd = try parseAction("{\"action\":\"set_theme\",\"theme\":\"light\"}");
-    switch (theme_cmd) {
-        .set_theme => |theme| try std.testing.expectEqual(config.ViewTheme.light, theme),
-        else => return error.TestFailed,
-    }
-    const system_theme_cmd = try parseAction("{\"action\":\"set_theme\",\"theme\":\"system\"}");
-    switch (system_theme_cmd) {
-        .set_theme => |theme| try std.testing.expectEqual(config.ViewTheme.system, theme),
-        else => return error.TestFailed,
-    }
+test "parseAction turns per-field config actions into set_config" {
+    const theme = (try parseAction("{\"action\":\"set_theme\",\"theme\":\"light\"}", test_cfg)).set_config;
+    try std.testing.expectEqualStrings("theme", theme.field);
+    try std.testing.expectEqualStrings("light", theme.value.choice);
 
-    const toggles = [_]struct { json: []const u8, tag: command.CommandTag }{
-        .{ .json = "{\"action\":\"toggle_region\"}", .tag = .toggle_region },
-        .{ .json = "{\"action\":\"toggle_warn_solvability\"}", .tag = .toggle_warn_solvability },
-        .{ .json = "{\"action\":\"toggle_auto_restore\"}", .tag = .toggle_auto_restore },
-        .{ .json = "{\"action\":\"toggle_auto_new\"}", .tag = .toggle_auto_new },
-        .{ .json = "{\"action\":\"toggle_auto_save\"}", .tag = .toggle_auto_save },
-        .{ .json = "{\"action\":\"toggle_pencil_mode\"}", .tag = .toggle_pencil_mode },
-        .{ .json = "{\"action\":\"toggle_show_marks\"}", .tag = .toggle_show_marks },
-    };
-    for (toggles) |t| try std.testing.expectEqual(t.tag, std.meta.activeTag(try parseAction(t.json)));
+    const region = (try parseAction("{\"action\":\"toggle_region\"}", test_cfg)).set_config;
+    try std.testing.expectEqualStrings("show_region", region.field);
+    try std.testing.expectEqual(!test_cfg.show_region, region.value.on);
 
-    const diff_cmd = try parseAction("{\"action\":\"set_difficulty\",\"difficulty\":\"medium\"}");
-    switch (diff_cmd) {
-        .set_difficulty => |diff| try std.testing.expectEqual(config.Difficulty.medium, diff),
-        else => return error.TestFailed,
-    }
+    const level = (try parseAction("{\"action\":\"set_log_level\",\"log_level\":\"warn\"}", test_cfg)).set_config;
+    try std.testing.expectEqualStrings("log_level", level.field);
+    try std.testing.expectEqualStrings("warn", level.value.choice);
 
-    const log_cmd = try parseAction("{\"action\":\"set_log_level\",\"log_level\":\"warn\"}");
-    switch (log_cmd) {
-        .set_log_level => |level| try std.testing.expectEqual(logger.Severity.warn, level),
-        else => return error.TestFailed,
+    for ([_][]const u8{ "toggle_show_marks", "toggle_warn_solvability", "toggle_auto_restore", "toggle_auto_new", "toggle_auto_save" }) |name| {
+        var buf: [64]u8 = undefined;
+        const json = try std.fmt.bufPrint(&buf, "{{\"action\":\"{s}\"}}", .{name});
+        try std.testing.expect(try parseAction(json, test_cfg) == .set_config);
     }
+    try std.testing.expect(try parseAction("{\"action\":\"toggle_pencil_mode\"}", test_cfg) == .toggle_pencil_mode);
+    try std.testing.expectError(error.InvalidChoice, parseAction("{\"action\":\"set_difficulty\",\"difficulty\":\"wild\"}", test_cfg));
 }
 
 test "writeWireConfigJson emits WireConfig wire shape" {
