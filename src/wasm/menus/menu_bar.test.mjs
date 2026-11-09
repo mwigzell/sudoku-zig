@@ -444,4 +444,15 @@ function makeControls() {
   assert.ok(!/<button[^>]*role="separator"/.test(panel));
 }
 
+// ── The menubar is opaque: page content must never show through it ──
+{
+  const html = readFileSync(new URL("../artifacts/page.html", import.meta.url), "utf8");
+  const rule = html.match(/\n\s*#menu-bar \{([\s\S]*?)\n\s*\}/)?.[1];
+  assert.ok(rule, "page.html has the #menu-bar rule");
+  const background = rule.match(/(?:^|\s)background(?:-color)?:\s*([^;]+);/)?.[1].trim();
+  assert.ok(background, "#menu-bar declares a background");
+  const transparent = /^(?:transparent|none|initial|unset)$/i.test(background) || /rgba?\([^)]*,\s*0(?:\.0+)?\s*\)$/.test(background);
+  assert.ok(!transparent, `#menu-bar background must not be transparent (got ${background})`);
+}
+
 console.log("menu_bar.test.mjs OK");
