@@ -117,6 +117,8 @@ public final class FileBridgeTest {
     private static final String PICKER_SAVE = "android:id/button1";
     private static final int PICKER_BACK_LIMIT = 5;
     private static final long UI_WAIT_MS = 20_000;
+    /** The developer option "Don't keep activities". */
+    private static final String ALWAYS_FINISH_ACTIVITIES = "always_finish_activities";
     /** Longer than a minute in a picker. */
     private static final long LONG_PICK_MS = 65_000;
     private static final String EMPTY_FILE_HASH = "d41d8cd98f00b204e9800998ecf8427e";
@@ -268,6 +270,25 @@ public final class FileBridgeTest {
         launchApp();
         device.pressBack();
         assertTrue("Back left the app", device.wait(Until.gone(By.pkg(APP)), UI_WAIT_MS));
+    }
+
+    /**
+     * Back destroys the activity while the process lives on: on Android 11 by itself, on later versions with
+     * "Don't keep activities". Launching without waiting lets a hung teardown fail the board check instead of the shell.
+     */
+    @Test
+    public void reopeningAfterBackShowsTheGame() throws IOException {
+        final String keepSetting = sh("settings get global " + ALWAYS_FINISH_ACTIVITIES + "\n").trim();
+        sh("settings put global " + ALWAYS_FINISH_ACTIVITIES + " 1\n");
+        try {
+            launchApp();
+            device.pressBack();
+            assertTrue("Back left the app", device.wait(Until.gone(By.pkg(APP)), UI_WAIT_MS));
+            sh("am start -n " + APP + "/.MainActivity\n");
+            need(By.res("board"), UI_WAIT_MS);
+        } finally {
+            sh("settings put global " + ALWAYS_FINISH_ACTIVITIES + " " + ("1".equals(keepSetting) ? "1" : "0") + "\n");
+        }
     }
 
     @Test

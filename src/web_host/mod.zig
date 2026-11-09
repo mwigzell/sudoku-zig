@@ -270,17 +270,22 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Serv
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
 var listener_guard: std.Io.Mutex = .init;
-var active_listener: ?*net.Server = null;
+/// Port the accept loop listens on while it runs, so shutdown can reach it.
+var active_port: ?u16 = null;
 
-/// Stops the active accept loop by closing the listener; `runBlocking` returns after the worker thread exits.
+/// Stops the accept loop: sets the flag, then connects once so a blocked `accept` returns (on Linux, closing
+/// the listener from another thread does not wake it). The host thread closes the listener; `runBlocking` then returns.
 pub fn requestShutdown(io: std.Io) void {
     shutdown_requested.store(true, .release);
     listener_guard.lockUncancelable(io);
     defer listener_guard.unlock(io);
-    if (active_listener) |srv| {
-        srv.deinit(io);
-        active_listener = null;
-    }
+    const port = active_port orelse return;
+    const addr = net.IpAddress{ .ip4 = net.Ip4Address.loopback(port) };
+    const wake = addr.connect(io, .{ .mode = .stream }) catch |err| {
+        log.warn("could not wake the accept loop on port {d}: {s}", .{ port, @errorName(err) });
+        return;
+    };
+    wake.close(io);
 }
 
 const ReadyGate = struct {
@@ -331,6 +336,11 @@ fn acceptLoop(io: std.Io, server: *net.Server, session: *Session) ServeError!voi
             if (shutdown_requested.load(.acquire)) return;
             return ServeError.System;
         };
+        // The connection that woke us for shutdown carries no request.
+        if (shutdown_requested.load(.acquire)) {
+            client.close(io);
+            return;
+        }
         try serveAndClose(io, session, &rt_router, client);
     }
 }
@@ -367,11 +377,11 @@ fn bindProbe(io: std.Io, bind: BindFn, gate: *ReadyGate, session: *Session) Serv
     var server: net.Server = srv orelse return ServeError.AddressInUse;
 
     listener_guard.lockUncancelable(io);
-    active_listener = &server;
+    active_port = bound_port;
     listener_guard.unlock(io);
     defer {
         listener_guard.lockUncancelable(io);
-        if (active_listener == &server) active_listener = null;
+        active_port = null;
         listener_guard.unlock(io);
         server.deinit(io);
     }
@@ -1194,6 +1204,40 @@ fn serveOneRequest(io: std.Io, server: *net.Server, session: *Session, router: *
     try w.interface.flush();
     try serveAndClose(io, session, router, try server.accept(io));
     try expectStreamEnds(io, client);
+}
+
+/// How long a test waits for the host to stop after `requestShutdown`.
+const SHUTDOWN_WAIT_MS = 2000;
+const POLL_MS = 10;
+
+var host_stopped = std.atomic.Value(bool).init(false);
+
+fn runHostUntilStopped(io: std.Io) void {
+    runBlockingForTest(io, bindLoopback) catch |err| log.warn("test host ended with {s}", .{@errorName(err)});
+    host_stopped.store(true, .release);
+}
+
+/// Sleeps one poll interval; tests have no reason to be cancelled mid-wait.
+fn pollSleep(io: std.Io) void {
+    io.sleep(.fromMilliseconds(POLL_MS), .awake) catch |err| log.info("expected: poll sleep cut short ({s})", .{@errorName(err)});
+}
+
+test "web_host: requestShutdown wakes the blocked accept loop and the host stops" {
+    const io = std.testing.io;
+    ready_count = 0;
+    host_stopped.store(false, .release);
+    const host = try std.Thread.spawn(.{}, runHostUntilStopped, .{io});
+
+    var waited: u32 = 0;
+    while (@atomicLoad(usize, &ready_count, .acquire) == 0 and waited < SHUTDOWN_WAIT_MS) : (waited += POLL_MS) pollSleep(io);
+    try std.testing.expect(@atomicLoad(usize, &ready_count, .acquire) == 1);
+
+    requestShutdown(io);
+    waited = 0;
+    while (!host_stopped.load(.acquire) and waited < SHUTDOWN_WAIT_MS) : (waited += POLL_MS) pollSleep(io);
+    // A host still blocked in accept is left behind rather than joined, so the failure reports instead of hanging.
+    try std.testing.expect(host_stopped.load(.acquire));
+    host.join();
 }
 
 /// Requests per round in the long-session leak test; each round is what one autosaved move can send.
