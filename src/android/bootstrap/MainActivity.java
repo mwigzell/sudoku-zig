@@ -45,6 +45,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
+import android.window.SplashScreenView;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -115,6 +116,9 @@ public final class MainActivity extends Activity {
     private FrameLayout root;
     private WebView webView;
     private long launchSplashShownAtMs;
+    /** From Android 12: the window's own splash, and the system splash when the launch showed one. */
+    private View launchSplashView;
+    private SplashScreenView systemSplashView;
     /** Set once the splash is asked to go; it goes after `MIN_LAUNCH_SPLASH_MS`, which sets `splashReleased`. */
     private boolean splashDismissed = false;
     private boolean splashReleased = false;
@@ -212,7 +216,7 @@ public final class MainActivity extends Activity {
 
         webView.loadUrl("about:blank");
         setContentView(root);
-        holdLaunchSplash();
+        coverLaunch();
         applySystemBarsTheme(THEME_DARK);
 
         JniHost.startHost(getFilesDir().getAbsolutePath(), new JniHost.ReadyCallback() {
@@ -424,6 +428,38 @@ public final class MainActivity extends Activity {
         applySystemBarsTheme(theme);
     }
 
+    /**
+     * From Android 12 the system splash appears only for some launches (not a shell start), so the window draws its own
+     * splash beneath it and, when the system splash is there, keeps that too; both go together on release. Before
+     * Android 12 every launch has the theme's starting window, so holding the first draw keeps it up.
+     */
+    private void coverLaunch() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            holdLaunchSplash();
+            return;
+        }
+        launchSplashView = new View(this);
+        // The build packages resources without generating R, so the drawable is found by name.
+        launchSplashView.setBackgroundResource(getResources().getIdentifier("splash_background", "drawable", getPackageName()));
+        root.addView(launchSplashView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        getSplashScreen().setOnExitAnimationListener(view -> {
+            if (splashReleased) view.remove();
+            else systemSplashView = view;
+        });
+    }
+
+    /** Removes the splash views `coverLaunch` keeps on Android 12 and later. */
+    private void removeLaunchSplashViews() {
+        if (launchSplashView != null) {
+            root.removeView(launchSplashView);
+            launchSplashView = null;
+        }
+        if (systemSplashView != null) {
+            systemSplashView.remove();
+            systemSplashView = null;
+        }
+    }
+
     /** Android's launch splash stays up until the window first draws; hold every draw until the splash is released. */
     private void holdLaunchSplash() {
         root.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
@@ -436,7 +472,7 @@ public final class MainActivity extends Activity {
         });
     }
 
-    /** Let the window draw once the splash has shown for `MIN_LAUNCH_SPLASH_MS`; the first frame replaces the splash. */
+    /** Release the splash once it has shown for `MIN_LAUNCH_SPLASH_MS`: the game replaces it. */
     private void dismissLaunchSplash() {
         if (splashDismissed) return;
         splashDismissed = true;
@@ -444,6 +480,7 @@ public final class MainActivity extends Activity {
         final long remaining = Math.max(0L, MIN_LAUNCH_SPLASH_MS - elapsed);
         root.postDelayed(() -> {
             splashReleased = true;
+            removeLaunchSplashViews();
             if (webBootReady) applyDeferredSystemBarsTheme();
             root.invalidate();
         }, remaining);
