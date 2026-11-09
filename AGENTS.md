@@ -90,6 +90,10 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+### Handoff
+
+`/handoff` is a stop signal, not a work item: write the doc, then halt. Do not continue the step you were mid-way through — the request means context is spent.
+
 ### Native renderer facade seam
 
 The `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is the **terminal's** renderer seam only. Web and Android do not use it: they draw from core's wasm JSON. It was once meant to be the command API shared by every front end; that never happened, so nothing about it needs to stay frozen for other front ends.
