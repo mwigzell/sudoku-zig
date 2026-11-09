@@ -52,6 +52,8 @@ const Session = struct {
     has_current_file: bool,
     current_file: ?[]const u8,
     host_config_body_buf: [1024]u8,
+    /// Allocator for per-request paths and `current_file`; tests pass a leak-checking one.
+    gpa: std.mem.Allocator = std.heap.page_allocator,
 
     fn hostConfigBody(self: *Session) ServeError![]const u8 {
         const startup_name = startupFilename(self.current_file);
@@ -171,11 +173,10 @@ fn headerFlag(request: []const u8, key: []const u8) bool {
 
 /// Apply core's Config body onto the host Config and store it; config_store logs a body it refuses.
 fn applyConfigPost(io: std.Io, session: *Session, body: []const u8) ServeError!void {
-    config_store.applyConfigJson(std.heap.page_allocator, &session.host_config, body) catch return ServeError.System;
-    const gpa = std.heap.page_allocator;
+    config_store.applyConfigJson(session.gpa, &session.host_config, body) catch return ServeError.System;
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
     config_store.ensureConfigDir(io, session.data_dir);
-    config_store.save(gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
+    config_store.save(session.gpa, io, session.data_dir, session.host_config) catch return ServeError.System;
 }
 
 /// Owned write path for a current-file write, and whether it is only the hidden restore copy.
@@ -187,7 +188,7 @@ const CurrentFileTarget = struct {
 /// No current file: the default visible file. Current file with the same (or no) name: that file
 /// in place. A restore copy, or a different name, goes to the hidden data dir.
 fn currentFileTarget(io: std.Io, session: *const Session, save_name: ?[]const u8, restore_copy: bool) !CurrentFileTarget {
-    const gpa = std.heap.page_allocator;
+    const gpa = session.gpa;
     const requested: ?[]const u8 = if (save_name) |n| blk: {
         const trimmed = std.mem.trim(u8, n, " \t");
         break :blk if (validSaveName(trimmed)) trimmed else null;
@@ -218,7 +219,7 @@ fn isRestoreCopyPath(session: *const Session, path: []const u8) bool {
 /// True when a write of `save_name` would land on an existing file the user can see.
 fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]const u8) ServeError!bool {
     const target = currentFileTarget(io, session, save_name, false) catch return ServeError.System;
-    defer std.heap.page_allocator.free(target.path);
+    defer session.gpa.free(target.path);
     if (target.restore_copy) return false;
     _ = std.Io.Dir.cwd().statFile(io, target.path, .{}) catch |err| switch (err) {
         error.FileNotFound => {
@@ -238,15 +239,15 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
 
     config_store.ensureConfigDir(io, session.data_dir);
     const target = currentFileTarget(io, session, save_name, restore_copy) catch return ServeError.System;
-    defer std.heap.page_allocator.free(target.path);
+    defer session.gpa.free(target.path);
 
     const transport = file_transport.NativeTransport.make(io);
     transport.write(transport.context, target.path, body) catch return ServeError.System;
 
-    config_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, target.path) catch return ServeError.System;
+    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch return ServeError.System;
 
-    if (session.current_file) |old| std.heap.page_allocator.free(old);
-    session.current_file = std.heap.page_allocator.dupe(u8, target.path) catch return ServeError.System;
+    if (session.current_file) |old| session.gpa.free(old);
+    session.current_file = session.gpa.dupe(u8, target.path) catch return ServeError.System;
     session.has_current_file = true;
     log.info("current-file write: bytes={d} target={s} restore_copy={any}", .{ body.len, target.path, target.restore_copy });
 }
@@ -259,10 +260,10 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Serv
         else => return ServeError.System,
     };
     if (session.data_dir.len != 0 and !std.mem.eql(u8, session.data_dir, ".")) {
-        config_store.setCurrentFile(std.heap.page_allocator, io, session.data_dir, null) catch return ServeError.System;
+        config_store.setCurrentFile(session.gpa, io, session.data_dir, null) catch return ServeError.System;
     }
     log.info("current-file forget: path={s} deleted={any}", .{ current, delete_file });
-    std.heap.page_allocator.free(current);
+    session.gpa.free(current);
     session.current_file = null;
     session.has_current_file = false;
 }
@@ -405,7 +406,7 @@ pub fn runBlocking(io: std.Io, bind: BindFn, host_cfg: config.Config, data_dir: 
         .current_file = current_file,
         .host_config_body_buf = undefined,
     };
-    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+    defer if (session.current_file) |p| session.gpa.free(p);
     var gate: ReadyGate = .{};
     var ctx = WorkerCtx{
         .io = io,
@@ -1181,6 +1182,55 @@ test "web_host: the host closes a connection once it has served the request" {
     try serveAndClose(io, &session, &router, accepted);
 
     try expectStreamEnds(io, client);
+}
+
+/// Sends `request` over a fresh loopback connection, serves it the way the accept loop does, and drains the reply.
+fn serveOneRequest(io: std.Io, server: *net.Server, session: *Session, router: *Router, request: []const u8) !void {
+    const client = try server.socket.address.connect(io, .{ .mode = .stream });
+    defer client.close(io);
+    var w_buf: [256]u8 = undefined;
+    var w = client.writer(io, &w_buf);
+    try w.interface.writeAll(request);
+    try w.interface.flush();
+    try serveAndClose(io, session, router, try server.accept(io));
+    try expectStreamEnds(io, client);
+}
+
+/// Requests per round in the long-session leak test; each round is what one autosaved move can send.
+const LEAK_ROUNDS = 50;
+
+test "web_host: a long session of moves, config changes and restores leaks nothing" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    var session = testSession(data_path, data_path);
+    session.gpa = std.testing.allocator;
+    defer if (session.current_file) |p| std.testing.allocator.free(p);
+
+    var config_buf: [1024]u8 = undefined;
+    var config_w: std.Io.Writer = .fixed(&config_buf);
+    try config_store.writeConfigJson(&config_w, config.Config.default());
+    const config_body = config_w.buffered();
+    const game = "SUD0 v1 sample";
+
+    var request_buf: [2048]u8 = undefined;
+    const requests = [_][]const u8{
+        try std.fmt.bufPrint(request_buf[0..1024], "POST {s} HTTP/1.1\r\nContent-Length: {d}\r\n\r\n{s}", .{ CONFIG_PATH, config_body.len, config_body }),
+        try std.fmt.bufPrint(request_buf[1024..1280], "POST {s} HTTP/1.1\r\nContent-Length: {d}\r\n\r\n{s}", .{ CURRENT_FILE_PATH, game.len, game }),
+        try std.fmt.bufPrint(request_buf[1280..1536], "POST {s} HTTP/1.1\r\n{s}: true\r\nContent-Length: {d}\r\n\r\n{s}", .{ CURRENT_FILE_PATH, RESTORE_COPY_HEADER, game.len, game }),
+        try std.fmt.bufPrint(request_buf[1536..1792], "GET {s} HTTP/1.1\r\n\r\n", .{CURRENT_FILE_EXISTS_PATH}),
+        try std.fmt.bufPrint(request_buf[1792..2048], "GET {s} HTTP/1.1\r\n\r\n", .{CURRENT_FILE_PATH}),
+    };
+
+    var server = try bindLoopback(io, 0);
+    defer server.deinit(io);
+    var router = Router.init();
+    for (0..LEAK_ROUNDS) |_| {
+        for (requests) |request| try serveOneRequest(io, &server, &session, &router, request);
+    }
+    try std.testing.expect(session.current_file != null);
 }
 
 test "current-file exists reports the visible target the next write lands on" {
