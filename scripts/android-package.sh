@@ -5,8 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ "$#" -ne 11 ]]; then
-  echo "usage: $0 <sdk_root> <min_api> <out_dir> <main_java> <jni_java> <manifest> <res_dir> <so_path> <apk_name> <version_code> <version_name>" >&2
+if [[ "$#" -ne 12 ]]; then
+  echo "usage: $0 <sdk_root> <min_api> <out_dir> <main_java> <jni_java> <manifest> <res_dir> <so_path_arm64> <so_path_x86_64> <apk_name> <version_code> <version_name>" >&2
   exit 1
 fi
 
@@ -18,9 +18,10 @@ JNI_JAVA="$5"
 MANIFEST_PATH="$6"
 RESOURCE_PATH="$7"
 SO_PATH="$8"
-APK_NAME="$9"
-VERSION_CODE="${10}"
-VERSION_NAME="${11}"
+SO_PATH_X86_64="$9"
+APK_NAME="${10}"
+VERSION_CODE="${11}"
+VERSION_NAME="${12}"
 
 source "$ROOT/scripts/android-sdk-tools.sh"
 resolve_android_tools "$SDK_ROOT" "$MIN_API"
@@ -29,7 +30,7 @@ OUT="$ROOT/$OUT_REL"
 APK_ROOT="$OUT/apk-root"
 CLASSES="$OUT/classes"
 rm -rf "$OUT"
-mkdir -p "$APK_ROOT/lib/arm64-v8a" "$CLASSES"
+mkdir -p "$APK_ROOT/lib/arm64-v8a" "$APK_ROOT/lib/x86_64" "$CLASSES"
 
 "$JAVAC" --release 17 -cp "$ANDROID_JAR" -d "$CLASSES" "$MAIN_JAVA" "$JNI_JAVA"
 
@@ -47,6 +48,7 @@ fi
 "$AAPT" package -f --debug-mode --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" --replace-version -M "$MANIFEST_PATH" -S "$RESOURCE_PATH" -I "$ANDROID_JAR" -F "$OUT/unsigned.apk"
 cp "$OUT/classes.dex" "$APK_ROOT/classes.dex"
 cp "$SO_PATH" "$APK_ROOT/lib/arm64-v8a/libsudoku_zig.so"
+cp "$SO_PATH_X86_64" "$APK_ROOT/lib/x86_64/libsudoku_zig.so"
 cp "$OUT/unsigned.apk" "$OUT/unaligned.apk"
 (cd "$APK_ROOT" && zip -qr "$OUT/unaligned.apk" classes.dex lib)
 "$ZIPALIGN" -f 4 "$OUT/unaligned.apk" "$OUT/aligned.apk"

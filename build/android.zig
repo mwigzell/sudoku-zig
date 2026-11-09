@@ -10,10 +10,13 @@ pub const BundleName = "sudoku.aab";
 const OutDir = "zig-out/android";
 const BundleOutDir = "zig-out/android-bundle";
 const SoSubPathDebug = "libsudoku_zig.so";
+/// The x86_64 build: emulators on x86_64 hosts, alongside the arm64 device build.
+const SoSubPathDebugX86 = "x86_64/libsudoku_zig.so";
 const SoSubPathRelease = "release/libsudoku_zig.so";
 const SoPathDebug = "zig-out/lib/" ++ SoSubPathDebug;
+const SoPathDebugX86 = "zig-out/lib/" ++ SoSubPathDebugX86;
 const SoPathRelease = "zig-out/lib/" ++ SoSubPathRelease;
-const AndroidStepDesc = "Build a debug-signed Android APK (arm64-v8a, no Gradle)";
+const AndroidStepDesc = "Build a debug-signed Android APK (arm64-v8a + x86_64, no Gradle)";
 const AndroidTestStepDesc = "Run the UiAutomator file bridge tests against a connected emulator";
 const AndroidBundleStepDesc = "Build a release-signed Android App Bundle for Google Play (arm64-v8a, no Gradle)";
 const BootstrapRoot = "src/android/bootstrap";
@@ -25,6 +28,57 @@ const JniHelpersC = "src/android/jni_helpers.c";
 const TestOutDir = "zig-out/android-test";
 const TestManifestPath = "src/android/test/AndroidManifest.xml";
 const TestJavaSource = "src/android/test/FileBridgeTest.java";
+
+/// The NDK sysroot library directory for an Android ABI, as the linker names it.
+fn androidLibDir(arch: std.Target.Cpu.Arch) []const u8 {
+    return switch (arch) {
+        .aarch64 => "aarch64-linux-android",
+        .x86_64 => "x86_64-linux-android",
+        else => @panic("unsupported Android ABI"),
+    };
+}
+
+/// Cross-compile the JNI library for one Android ABI and install it under `zig-out/lib/<dest_sub_path>`.
+/// The sources are shared, so an ABI costs one call: this is where an emulator ABI is added or retired.
+fn addAndroidLib(
+    b: *std.Build,
+    sysroot: []const u8,
+    arch: std.Target.Cpu.Arch,
+    optimize: std.builtin.OptimizeMode,
+    dest_sub_path: []const u8,
+    wasm_emit: *std.Build.Step,
+    gen_build_info: *std.Build.Step,
+) *std.Build.Step.InstallArtifact {
+    const module = b.createModule(.{
+        .root_source_file = b.path("src/entry_android.zig"),
+        .target = b.resolveTargetQuery(.{
+            .cpu_arch = arch,
+            .os_tag = .linux,
+            .abi = .android,
+            .android_api_level = android_api_level,
+        }),
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    module.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{
+        sysroot,
+        "usr",
+        "lib",
+        androidLibDir(arch),
+        b.fmt("{d}", .{android_api_level}),
+    }) });
+    module.linkSystemLibrary("dl", .{});
+    module.linkSystemLibrary("log", .{});
+
+    const lib = b.addLibrary(.{ .name = LibName, .root_module = module, .linkage = .dynamic });
+    lib.root_module.addCSourceFile(.{ .file = b.path(JniHelpersC) });
+    lib.setLibCFile(bionicLibCFile(b, sysroot, android_api_level, arch));
+    lib.root_module.pic = true;
+    lib.step.dependOn(wasm_emit);
+    lib.step.dependOn(gen_build_info);
+    return b.addInstallArtifact(lib, .{ .dest_sub_path = dest_sub_path });
+}
+
 
 pub fn addAndroidStep(b: *std.Build, deps: struct {
     wasm_emit: *std.Build.Step,
@@ -52,12 +106,6 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         return android_fail;
     };
 
-    const target = b.resolveTargetQuery(.{
-        .cpu_arch = .aarch64,
-        .os_tag = .linux,
-        .abi = .android,
-        .android_api_level = android_api_level,
-    });
     // Keep debug APK debug-friendly by default; callers can still override with -Doptimize.
     const optimize_debug = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
     // The bundle's native library is always built with release optimization.
@@ -73,77 +121,14 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         "sysroot",
     });
 
-    const lib_mod_debug = b.createModule(.{
-        .root_source_file = b.path("src/entry_android.zig"),
-        .target = target,
-        .optimize = optimize_debug,
-        .link_libc = true,
-    });
-    lib_mod_debug.addLibraryPath(.{
-        .cwd_relative = b.pathJoin(&.{
-            sysroot,
-            "usr",
-            "lib",
-            "aarch64-linux-android",
-            b.fmt("{d}", .{android_api_level}),
-        }),
-    });
-    lib_mod_debug.linkSystemLibrary("dl", .{});
-    lib_mod_debug.linkSystemLibrary("log", .{});
+    const install_debug = addAndroidLib(b, sysroot, .aarch64, optimize_debug, SoSubPathDebug, deps.wasm_emit, deps.gen_build_info);
+    const install_debug_x86 = addAndroidLib(b, sysroot, .x86_64, optimize_debug, SoSubPathDebugX86, deps.wasm_emit, deps.gen_build_info);
 
-    const shared_debug = b.addLibrary(.{
-        .name = LibName,
-        .root_module = lib_mod_debug,
-        .linkage = .dynamic,
-    });
-    shared_debug.root_module.addCSourceFile(.{
-        .file = b.path(JniHelpersC),
-    });
-    shared_debug.setLibCFile(bionicLibCFile(b, sysroot, android_api_level));
-    shared_debug.root_module.pic = true;
-    shared_debug.step.dependOn(deps.wasm_emit);
-    shared_debug.step.dependOn(deps.gen_build_info);
-
-    const install_debug = b.addInstallArtifact(shared_debug, .{
-        .dest_sub_path = SoSubPathDebug,
-    });
-    const android_lib_step = b.step("android-lib", "Cross-compile libsudoku_zig.so for aarch64-linux-android (arm64-v8a)");
+    const android_lib_step = b.step("android-lib", "Cross-compile libsudoku_zig.so for arm64-v8a and x86_64 (no Gradle)");
     android_lib_step.dependOn(&install_debug.step);
+    android_lib_step.dependOn(&install_debug_x86.step);
 
-    const lib_mod_release = b.createModule(.{
-        .root_source_file = b.path("src/entry_android.zig"),
-        .target = target,
-        .optimize = optimize_release,
-        .link_libc = true,
-    });
-    lib_mod_release.addLibraryPath(.{
-        .cwd_relative = b.pathJoin(&.{
-            sysroot,
-            "usr",
-            "lib",
-            "aarch64-linux-android",
-            b.fmt("{d}", .{android_api_level}),
-        }),
-    });
-    lib_mod_release.linkSystemLibrary("dl", .{});
-    lib_mod_release.linkSystemLibrary("log", .{});
-
-    const shared_release = b.addLibrary(.{
-        .name = LibName,
-        .root_module = lib_mod_release,
-        .linkage = .dynamic,
-    });
-    shared_release.root_module.addCSourceFile(.{
-        .file = b.path(JniHelpersC),
-    });
-    shared_release.setLibCFile(bionicLibCFile(b, sysroot, android_api_level));
-    shared_release.root_module.pic = true;
-    shared_release.step.dependOn(deps.wasm_emit);
-    shared_release.step.dependOn(deps.gen_build_info);
-
-    const install_release = b.addInstallArtifact(shared_release, .{
-        .dest_sub_path = SoSubPathRelease,
-    });
+    const install_release = addAndroidLib(b, sysroot, .aarch64, optimize_release, SoSubPathRelease, deps.wasm_emit, deps.gen_build_info);
 
     const sdk_opt = b.option([]const u8, "sdk", "Android SDK root (default: $ANDROID_HOME or $ANDROID_SDK_ROOT)");
     const sdk_root = resolveSdkRoot(b, sdk_opt) orelse {
@@ -173,11 +158,13 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         ManifestPath,
         ResourcePath,
         SoPathDebug,
+        SoPathDebugX86,
         ApkName,
         b.fmt("{d}", .{deps.version_code}),
         deps.version_name,
     });
     package_apk.step.dependOn(&install_debug.step);
+    package_apk.step.dependOn(&install_debug_x86.step);
 
     const android_step = b.step("android", AndroidStepDesc);
     android_step.dependOn(&package_apk.step);
@@ -248,12 +235,12 @@ fn lookupEnvBuild(b: *std.Build, name: []const u8) ?[]const u8 {
     return null;
 }
 
-fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.LazyPath {
-    const crt_dir = detectCrtDir(b, sysroot, api_level);
+fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32, arch: std.Target.Cpu.Arch) std.Build.LazyPath {
+    const crt_dir = detectCrtDir(b, sysroot, api_level, arch);
     const wf = b.addWriteFiles();
     const contents = b.fmt(
         \\include_dir={s}/usr/include
-        \\sys_include_dir={s}/usr/include/aarch64-linux-android
+        \\sys_include_dir={s}/usr/include/{s}
         \\crt_dir={s}
         \\msvc_lib_dir=
         \\kernel32_lib_dir=
@@ -261,7 +248,7 @@ fn bionicLibCFile(b: *std.Build, sysroot: []const u8, api_level: u32) std.Build.
         \\gcc_dir={s}
         \\darwin_sdk_dir=
         \\
-    , .{ sysroot, sysroot, crt_dir, crt_dir, crt_dir });
+    , .{ sysroot, sysroot, androidLibDir(arch), crt_dir, crt_dir, crt_dir });
     return wf.add("android-bionic-libc.txt", contents);
 }
 
@@ -287,12 +274,13 @@ fn hostPrebuiltCandidates() []const []const u8 {
     };
 }
 
-fn detectCrtDir(b: *std.Build, sysroot: []const u8, api_level: u32) []const u8 {
+fn detectCrtDir(b: *std.Build, sysroot: []const u8, api_level: u32, arch: std.Target.Cpu.Arch) []const u8 {
     const io = b.graph.io;
-    const api_dir = b.pathJoin(&.{ sysroot, "usr", "lib", "aarch64-linux-android", b.fmt("{d}", .{api_level}) });
+    const abi = androidLibDir(arch);
+    const api_dir = b.pathJoin(&.{ sysroot, "usr", "lib", abi, b.fmt("{d}", .{api_level}) });
     if (std.Io.Dir.cwd().access(io, api_dir, .{})) |_| return api_dir else |_| {}
 
-    const abi_dir = b.pathJoin(&.{ sysroot, "usr", "lib", "aarch64-linux-android" });
+    const abi_dir = b.pathJoin(&.{ sysroot, "usr", "lib", abi });
     if (std.Io.Dir.cwd().access(io, abi_dir, .{})) |_| return abi_dir else |_| {}
 
     const lib64_dir = b.pathJoin(&.{ sysroot, "usr", "lib64" });
