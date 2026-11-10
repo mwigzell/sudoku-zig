@@ -43,18 +43,22 @@
       --badge-warning-fg: #1a1d24;
       --cell-min: 2.25rem;
       --board-min: calc(var(--cell-min) * 10 + 2px);
+      /* The board never draws smaller than this, however small the window gets. */
+      --board-floor: var(--board-min);
       --status-pad-y: 0.625rem;
       --status-min-height: calc(0.9375rem * 1.45 + (2 * var(--status-pad-y)));
       --pad-bottom: 0.85rem;
       --page-inset: 1rem;
       --game-margin: 0.75rem;
+      /* Side gutter the shell adds inside the game margin; phones use it to keep the board off the glass. */
+      --shell-gutter-x: 0px;
       --menu-block: 2.75rem;
       --pad-gap: 0.35rem;
       --pad-row: calc(1rem * 1.2 + 0.9rem + 2px);
       --pad-block: calc((3 * var(--pad-row)) + (3 * var(--pad-gap)) + var(--pad-bottom));
       --v-chrome: calc(
         (2 * var(--page-inset))
-        + (2 * var(--game-margin))
+        + (2 * (var(--game-margin) + var(--shell-gutter-x)))
         + var(--status-min-height)
         + var(--menu-block)
         + var(--pad-block)
@@ -63,7 +67,7 @@
       --board-size: clamp(
         var(--board-min),
         min(
-          calc(100dvw - (2 * var(--page-inset)) - (2 * var(--game-margin))),
+          calc(100dvw - (2 * var(--page-inset)) - (2 * (var(--game-margin) + var(--shell-gutter-x)))),
           calc(100dvh - var(--v-chrome))
         ),
         100%
@@ -107,6 +111,8 @@
 
     html {
       height: 100%;
+      /* The shell owns the viewport: the document itself never scrolls. */
+      overflow: hidden;
     }
 
     /* Nothing on the page is for copying; a long press would otherwise select text and open the copy menu. */
@@ -114,7 +120,8 @@
       user-select: none;
       font-family: system-ui, sans-serif;
       margin: 0;
-      min-height: 100dvh;
+      height: 100dvh;
+      overflow: hidden;
       padding: var(--page-inset);
       padding-bottom: max(var(--page-inset), env(safe-area-inset-bottom, 0px));
       display: flex;
@@ -129,9 +136,11 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.75rem;
+      /* The board hugs the menubar; the space it cannot fill belongs below it. */
+      gap: 0;
       width: 100%;
-      flex: 0 1 auto;
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     #game-shell {
@@ -139,10 +148,28 @@
       flex-direction: column;
       align-items: center;
       gap: 0;
-      width: min(100%, calc(var(--board-size) + (2 * var(--game-margin))));
-      padding: var(--game-margin);
+      /* The shell spans the page so the space it offers the board never depends on the board's own size. */
+      width: 100%;
+      padding: var(--game-margin) calc(var(--game-margin) + var(--shell-gutter-x));
+      /* The menubar stays full width: the side gutter starts below it, at the board. */
+      padding-top: 0;
       margin-bottom: max(var(--game-margin), env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    /* The one flexible region: the board hugs the top and the status bar centres in the space below it. */
+    #play-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      flex: 1 1 0;
+      min-height: 0;
+      min-width: 0;
+      width: 100%;
+      overflow: hidden;
     }
 
     #menu-bar {
@@ -261,12 +288,15 @@
     #status-bar {
       width: min(100%, var(--board-size));
       height: calc(var(--status-min-height) + 2px);
+      flex: none;
       overflow-y: auto;
       overscroll-behavior: contain;
       font-size: 0.9375rem;
       line-height: 1.45;
       padding: var(--status-pad-y) 0.75rem;
-      margin-top: 0.35rem;
+      /* Attached to the board: a small gutter, no air of its own. */
+      margin-top: var(--pad-gap);
+      margin-bottom: 0;
       border: 1px solid var(--status-border);
       border-bottom: var(--chrome-rule);
       border-radius: 6px;
@@ -279,8 +309,12 @@
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: var(--pad-gap);
+      /* The pad is part of the fixture: it hangs off the status bar, not off the screen floor. */
       margin-top: var(--pad-gap);
-      margin-bottom: max(var(--pad-bottom), env(safe-area-inset-bottom, 0px));
+      margin-bottom: 0;
+      /* The pad keeps its buttons at full size; it is the last resort that may give height back. */
+      flex: 0 1 auto;
+      min-height: 0;
     }
 
     #status-bar[data-more="true"] {
@@ -679,6 +713,10 @@
       grid-template-columns: 1fr repeat(9, 2fr) 1fr;
       grid-template-rows: 1fr repeat(9, 2fr) 1fr;
       width: var(--board-size);
+      /* The floor is enforced here, in CSS: below it the window edge moves in, not the board. */
+      min-width: var(--board-floor);
+      /* Sized by the slot's measurement, never grown by the flex line. */
+      flex: none;
       aspect-ratio: 1;
       border: 1px solid var(--frame-border);
       background: var(--gutter-bg);
@@ -809,7 +847,10 @@
       :root {
         --page-inset: 0;
         --game-margin: 0;
-        --board-size: 100dvw;
+        /* Phones keep the board off the glass: a small side gutter, and none at the top. */
+        --shell-gutter-x: 0.5rem;
+        /* A phone can be narrower than the desktop floor; there the screen itself is the limit. */
+        --board-floor: 0px;
         --status-pad-y: 0.45rem;
         --pad-bottom: var(--pad-gap);
       }
@@ -821,48 +862,28 @@
 
       #app {
         width: 100%;
-        min-height: 100dvh;
+        height: 100%;
         align-items: stretch;
-        gap: 0.25rem;
+        gap: 0;
       }
 
       #game-shell {
         width: 100%;
         flex: 1 1 auto;
-        align-items: stretch;
+        align-items: center;
         justify-content: flex-start;
-        gap: 0.25rem;
-        padding: 0;
+        gap: 0;
+        padding: 0 var(--shell-gutter-x);
       }
 
+      /* Normal flow: with no document scroll the bar cannot leave the screen, so it needs no sticky. */
       #menu-bar {
         width: 100%;
-        position: sticky;
-        top: env(safe-area-inset-top, 0px);
-        z-index: 9;
       }
 
       .menu-trigger {
         padding: 0.45rem 0.55rem;
       }
-
-
-      .board-frame {
-        width: 100dvw;
-      }
-
-      #status-bar {
-        width: 100dvw;
-        margin-top: 0;
-        border-left: none;
-        border-right: none;
-        border-radius: 0;
-      }
-
-      #play-pad {
-        margin-top: auto;
-      }
-
     }
   </style>
 </head>
@@ -918,24 +939,26 @@
       <span id="current-file-desktop" aria-live="polite"></span>
     </nav>
     <div id="game-shell">
-      <div id="board" class="board-frame"></div>
-      <div id="status-bar" role="status" aria-live="polite"></div>
-      <div id="play-pad" role="group" aria-label="Play pad">
-        <button type="button" class="play-pad-btn" data-play-key="1" disabled>1</button>
-        <button type="button" class="play-pad-btn" data-play-key="2" disabled>2</button>
-        <button type="button" class="play-pad-btn" data-play-key="3" disabled>3</button>
-        <button type="button" class="play-pad-btn" data-play-key="4" disabled>4</button>
-        <button type="button" class="play-pad-btn" data-play-key="5" disabled>5</button>
-        <button type="button" class="play-pad-btn" data-play-key="6" disabled>6</button>
-        <button type="button" class="play-pad-btn" data-play-key="7" disabled>7</button>
-        <button type="button" class="play-pad-btn" data-play-key="8" disabled>8</button>
-        <button type="button" class="play-pad-btn" data-play-key="9" disabled>9</button>
-        <button type="button" class="play-pad-btn" data-play-key="0" aria-label="Clear selected cell" disabled>Clear</button>
-        <button type="button" class="play-pad-btn" data-pad-command="undo" disabled>Undo</button>
-        <button type="button" class="play-pad-btn" data-pad-command="redo" disabled>Redo</button>
-        <button type="button" class="play-pad-btn" data-pad-command="pencil" aria-label="Pencil mode" aria-pressed="false">Pencil</button>
-        <button type="button" class="play-pad-btn" data-pad-command="hint" disabled>Hint</button>
-        <button type="button" class="play-pad-btn" data-pad-command="region" aria-label="Show Region" aria-pressed="false">Region</button>
+      <div id="play-area">
+        <div id="board" class="board-frame"></div>
+        <div id="status-bar" role="status" aria-live="polite"></div>
+        <div id="play-pad" role="group" aria-label="Play pad">
+          <button type="button" class="play-pad-btn" data-play-key="1" disabled>1</button>
+          <button type="button" class="play-pad-btn" data-play-key="2" disabled>2</button>
+          <button type="button" class="play-pad-btn" data-play-key="3" disabled>3</button>
+          <button type="button" class="play-pad-btn" data-play-key="4" disabled>4</button>
+          <button type="button" class="play-pad-btn" data-play-key="5" disabled>5</button>
+          <button type="button" class="play-pad-btn" data-play-key="6" disabled>6</button>
+          <button type="button" class="play-pad-btn" data-play-key="7" disabled>7</button>
+          <button type="button" class="play-pad-btn" data-play-key="8" disabled>8</button>
+          <button type="button" class="play-pad-btn" data-play-key="9" disabled>9</button>
+          <button type="button" class="play-pad-btn" data-play-key="0" aria-label="Clear selected cell" disabled>Clear</button>
+          <button type="button" class="play-pad-btn" data-pad-command="undo" disabled>Undo</button>
+          <button type="button" class="play-pad-btn" data-pad-command="redo" disabled>Redo</button>
+          <button type="button" class="play-pad-btn" data-pad-command="pencil" aria-label="Pencil mode" aria-pressed="false">Pencil</button>
+          <button type="button" class="play-pad-btn" data-pad-command="hint" disabled>Hint</button>
+          <button type="button" class="play-pad-btn" data-pad-command="region" aria-label="Show Region" aria-pressed="false">Region</button>
+        </div>
       </div>
     </div>
   </main>
@@ -1090,6 +1113,51 @@
 
   <script type="module">
     import * as appBoot from "../app_boot.js";
+
+    // The play area is the only flexible region: the board takes what the status bar leaves of it, so the
+    // document never has anything to scroll. The CSS clamp covers the first frame before this runs.
+    const playArea = document.getElementById("play-area");
+    const statusBar = document.getElementById("status-bar");
+    const playPad = document.getElementById("play-pad");
+    /** Height one element takes in the column, including the gutter above it. */
+    function blockOf(el) {
+      if (!el) return 0;
+      return el.getBoundingClientRect().height + (parseFloat(getComputedStyle(el).marginTop) || 0);
+    }
+    let appliedSize = "";
+    function applyBoardSize() {
+      if (!playArea) return;
+      // Board, status bar and pad are one fixture, so the board takes what the other two leave.
+      const room = playArea.clientHeight - blockOf(statusBar) - blockOf(playPad);
+      // The floor lives in CSS (min-width), so the board never shrinks into nothing.
+      const size = Math.floor(Math.min(playArea.clientWidth, room));
+      if (size <= 0) return;
+      const value = `${size}px`;
+      // Writing the same size again would only re-notify the observers below.
+      if (value === appliedSize) return;
+      appliedSize = value;
+      document.documentElement.style.setProperty("--board-size", value);
+    }
+    let fitQueued = false;
+    /** Fit after this frame: resizing inside an observer callback leaves notifications undelivered. */
+    function queueFit() {
+      if (fitQueued) return;
+      fitQueued = true;
+      requestAnimationFrame(() => {
+        fitQueued = false;
+        applyBoardSize();
+      });
+    }
+    if (playArea) {
+      applyBoardSize();
+      // Observe the page, not the shell: the shell's width follows the board, which would never settle.
+      new ResizeObserver(queueFit).observe(playArea);
+      // The neighbours change height when the board resizes their text, which must re-fit the board.
+      for (const sibling of [statusBar, playPad]) {
+        if (sibling) new ResizeObserver(queueFit).observe(sibling);
+      }
+      window.addEventListener("resize", queueFit);
+    }
 
     await appBoot.bootSudokuWebApp(document);
   </script>

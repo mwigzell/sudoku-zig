@@ -701,10 +701,44 @@ test "web_host: compact layout contract uses group-fit trigger and zero outer sh
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "@media (max-width: calc(26rem + 2px))") != null);
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "padding: 0;") != null);
     try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "justify-content: flex-start;") != null);
-    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "width: 100dvw;") != null);
-    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "position: sticky;") != null);
-    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "top: env(safe-area-inset-top, 0px);") != null);
-    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "z-index: 9;") != null);
+}
+
+test "web_host: the shell is pinned to the viewport and the board is sized from its area" {
+    // The document cannot scroll and the menubar never needs to stay pinned by sticky:
+    // the play area takes the space the fixed chrome leaves, and one measurement sizes the board from it.
+    // The measured-layout gate proves the result; these checks keep the mechanism from drifting.
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "id=\"play-area\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "#play-area {") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "flex: 1 1 0;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "overflow: hidden;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "ResizeObserver") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "position: sticky;") == null);
+}
+
+test "web_host: the status bar hangs off the board's bottom edge" {
+    // The bar is attached to the board by a small gutter and owns no air of its own above.
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "margin-top: var(--pad-gap);") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "margin-bottom: 0;") != null);
+}
+
+test "web_host: board, status bar and pad form one fixture" {
+    // The pad hangs off the status bar, and nothing is pinned to the screen floor any more.
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "<div id=\"play-area\">") != null);
+    const area_at = std.mem.indexOf(u8, embed.page_html, "<div id=\"play-area\">").?;
+    const pad_at = std.mem.indexOf(u8, embed.page_html, "<div id=\"play-pad\"").?;
+    try std.testing.expect(pad_at > area_at);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "margin-top: auto;") == null);
+}
+
+test "web_host: the board has a floor so it cannot shrink into nothing" {
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "--board-floor:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "min-width: var(--board-floor);") != null);
+}
+
+test "web_host: phones keep a side gutter under a full-width menubar" {
+    // The gutter is a shell side padding, so the menubar above it still spans the screen.
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "--shell-gutter-x: 0.5rem;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, embed.page_html, "padding: 0 var(--shell-gutter-x);") != null);
 }
 
 test "web_host: current file visibility contract exposes menu-bar filename slot" {

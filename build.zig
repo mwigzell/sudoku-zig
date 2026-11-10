@@ -71,6 +71,12 @@ pub fn build(b: *std.Build) void {
     glue_parity.step.dependOn(&wasm_emit.step);
     glue_step.dependOn(&glue_parity.step);
 
+    // Measured-layout gate: drives headless Chromium against the served shell and asserts the page fits.
+    const shell_fit = b.addSystemCommand(&.{ "node", "src/wasm/artifacts/shell_fit.test.mjs" });
+    shell_fit.step.dependOn(&wasm_emit.step); // the page boots the emitted artifact
+    const shell_fit_step = b.step("shell-fit", "Run the measured-layout check (headless Chromium)");
+    shell_fit_step.dependOn(&shell_fit.step);
+
     // --- Tests ---
     // entry_native.zig transitively imports the domain modules; addTest discovers every co-located `test {}`
     // block via Zig's import-graph discovery.
@@ -180,6 +186,7 @@ pub fn build(b: *std.Build) void {
     verify_run_step.dependOn(&parity_check.step);
     verify_run_step.dependOn(&glue.step);
     verify_run_step.dependOn(&glue_parity.step);
+    verify_run_step.dependOn(&shell_fit.step);
     verify_run_step.dependOn(&kcov_sum.step);
 
     const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });
