@@ -49,9 +49,17 @@ const copyToWorktree = ["node_modules"];
 const HOST_PI_AGENT_DIR = `${process.env.HOME}/.pi/agent`;
 const agentSandbox = () =>
   bwrap({ mounts: [{ hostPath: HOST_PI_AGENT_DIR, sandboxPath: HOST_PI_AGENT_DIR }] });
+const PI_SESSIONS_DIR = `${HOST_PI_AGENT_DIR}/sessions`;
+
 const workerAgent = () =>
   sandcastle.pi("ollama/sandcastle-worker", {
     env: { PI_CODING_AGENT_DIR: HOST_PI_AGENT_DIR },
+    // Session capture defaults to the sandbox home; pi writes under the mounted
+    // config dir instead, so both sides of the capture point at that path.
+    sessionStorage: {
+      hostSessionsDir: PI_SESSIONS_DIR,
+      sandboxSessionsDir: PI_SESSIONS_DIR,
+    },
   });
 
 // ---------------------------------------------------------------------------
