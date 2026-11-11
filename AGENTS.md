@@ -6,6 +6,10 @@
 - Source modules: `src/core/{board,engine,renderer}/` + `src/core/command.zig` — domain packages with co-located tests
 - Docs: `docs/adr/` (architectural decisions), other reference docs live under `docs/`
 
+## Shell working directory
+
+Every bash call already starts in this repo, so a leading `cd /home/mark/Dev/src/sudoku` is noise the owner has to read past. Do not prefix commands with `cd` into the repo. Reach anything outside it by absolute path (`~/...`, `/tmp/...`) in the command itself; ask before touching anything outside the workspace at all.
+
 ## Development Approach — Vertical Slicing First
 
 When proposing work or building features, prioritise end-to-end completeness over depth:
