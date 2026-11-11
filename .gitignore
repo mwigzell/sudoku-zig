@@ -5,3 +5,6 @@ build.log
 kcov-out/
 third_party/bundletool/
 src/wasm/artifacts/artifact.wasm
+
+# Sandcastle trial toolchain (chore/sandcastle)
+node_modules/
