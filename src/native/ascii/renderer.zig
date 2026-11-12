@@ -339,39 +339,45 @@ pub fn AsciiRenderer(StylerType: type) type {
         }
 
         /// Ask which of `r`'s choices to take; asks again until the answer is one of them.
-        fn pickChoice(self: *@This(), r: config_table.Row, choices: []const config_table.Choice) facade.Error![]const u8 {
+        /// Ends with the Menu's `Enter) Back` row; null means the player left the menu.
+        fn pickChoice(self: *@This(), r: config_table.Row, choices: []const config_table.Choice) facade.Error!?[]const u8 {
             self.writer.print("{s}:\n", .{r.label}) catch return facade.Error.System;
             for (choices, 1..) |choice, i| {
                 self.writer.print("  {d}) {s}\n", .{ i, choice.label }) catch return facade.Error.System;
             }
-            self.writer.writeAll("> ") catch return facade.Error.System;
+            self.writer.writeAll(MENU_BACK_ROW ++ "> ") catch return facade.Error.System;
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
+            // A bare Enter leaves the menu, exactly as it does in the Menu itself.
+            if (pick.len == 0) return null;
             if (numberedPick(pick, choices.len)) |i| return choices[i].name;
             try self.acknowledge("invalid choice");
             return try self.pickChoice(r, choices);
         }
 
-        /// Terminal settings sheet (native): one numbered row per config table row. Back leads to
-        /// the Menu, so null means the player then went back from the Menu too.
+        /// Terminal settings sheet (native): one numbered row per config table row, ending with the
+        /// Menu's `Enter) Back` row. null means the player left the menu (back to the game).
         fn showSettingsMenu(self: *@This(), cfg: config.Config) facade.Error!?_command.ParseCommandResult {
             self.writer.writeAll("\nSettings:\n") catch return facade.Error.System;
             for (config_table.rows, 1..) |r, i| {
                 self.writer.print("  {d}) {s} ({s})\n", .{ i, r.label, r.valueLabel(config_table.get(cfg, r)) }) catch return facade.Error.System;
             }
-            const back_index = config_table.rows.len;
-            self.writer.print("  {d}) Back\n> ", .{back_index + 1}) catch return facade.Error.System;
+            self.writer.writeAll(MENU_BACK_ROW ++ "> ") catch return facade.Error.System;
             const pick = self.readLine() catch return facade.Error.System;
             defer self.allocator.free(pick);
-            const i = numberedPick(pick, back_index + 1) orelse {
+            // A bare Enter leaves the menu, exactly as it does in the Menu itself.
+            if (pick.len == 0) return null;
+            const i = numberedPick(pick, config_table.rows.len) orelse {
                 try self.acknowledge("invalid settings choice");
                 return try self.showSettingsMenu(cfg);
             };
-            if (i == back_index) return try self.showMenu(cfg);
             const r = config_table.rows[i];
             const change: config_table.Change = switch (r.kind) {
                 .on_off => config_table.toggle(cfg, r),
-                .choices => |choices| .{ .field = r.field, .value = .{ .choice = try self.pickChoice(r, choices) } },
+                .choices => |choices| change: {
+                    const chosen = try self.pickChoice(r, choices) orelse return null;
+                    break :change .{ .field = r.field, .value = .{ .choice = chosen } };
+                },
             };
             return .{ .valid = .{ .set_config = change } };
         }
@@ -1460,6 +1466,74 @@ test "showMenu: Settings offers a choice row's choices and sends the picked name
     var buf: [64]u8 = undefined;
     try std.testing.expect(std.mem.indexOf(u8, written, try std.fmt.bufPrint(&buf, "4) {s} ({s})", .{ theme.label, dark })) != null);
     try std.testing.expect(std.mem.indexOf(u8, written, try std.fmt.bufPrint(&buf, "3) {s}", .{dark})) != null);
+}
+
+test "getCommandInput: a bare Enter in Settings leaves the menu quietly" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "14\n", "\n" });
+    defer renderer.deinit();
+    var names: [_command.Commands.len][]const u8 = undefined;
+    const count = save_legend.getNames(&names);
+
+    const result = try renderer.getCommandInput(names[0..count], test_cfg);
+    try std.testing.expect(result.valid == .menu);
+
+    const written = aw.writer.buffered();
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, written, "Settings:\n"));
+    try std.testing.expect(std.mem.endsWith(u8, written, MENU_BACK_ROW ++ "> "));
+    try std.testing.expect(std.mem.indexOf(u8, written, "invalid settings choice") == null);
+    var buf: [32]u8 = undefined;
+    const numbered_back = try std.fmt.bufPrint(&buf, "{d}) Back", .{config_table.rows.len + 1});
+    try std.testing.expect(std.mem.indexOf(u8, written, numbered_back) == null);
+}
+
+test "getCommandInput: a bare Enter in a choice list leaves the menu and sends no change" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    // Settings → Theme → a bare Enter at the choice list.
+    var renderer = scriptedRenderer(&aw, &s, &.{ "m\n", "14\n", "4\n", "\n" });
+    defer renderer.deinit();
+    var names: [_command.Commands.len][]const u8 = undefined;
+    const count = save_legend.getNames(&names);
+
+    const result = try renderer.getCommandInput(names[0..count], test_cfg);
+    try std.testing.expect(result.valid == .menu);
+
+    const written = aw.writer.buffered();
+    // The Menu, the Settings sheet and the choice list each end with the Back row.
+    try std.testing.expectEqual(@as(usize, 3), std.mem.count(u8, written, MENU_BACK_ROW));
+    try std.testing.expect(std.mem.endsWith(u8, written, MENU_BACK_ROW ++ "> "));
+    try std.testing.expect(std.mem.indexOf(u8, written, "invalid choice") == null);
+}
+
+test "showMenu: a number past the last Settings row is refused" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    var buf: [32]u8 = undefined;
+    const past_last = try std.fmt.bufPrint(&buf, "{d}\n", .{config_table.rows.len + 1});
+    // The refusal's acknowledgement reads a line of its own before Settings is drawn again.
+    var renderer = scriptedRenderer(&aw, &s, &.{ "14\n", past_last, "\n", "\n" });
+
+    try std.testing.expect((try renderer.showMenu(test_cfg)) == null);
+    const written = aw.writer.buffered();
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, written, "Settings:\n"));
+    try std.testing.expect(std.mem.indexOf(u8, written, "invalid settings choice") != null);
+}
+
+test "showMenu: a number past a choice list's last choice is refused" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+    var s = styler.PlainStyler{};
+    // The refusal's acknowledgement reads a line of its own before the choice list is drawn again.
+    var renderer = scriptedRenderer(&aw, &s, &.{ "14\n", "4\n", "9\n", "\n", "\n" });
+
+    try std.testing.expect((try renderer.showMenu(test_cfg)) == null);
+    const written = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, written, "invalid choice") != null);
 }
 
 test "showMenu: Show Pencil Marks shows its state and toggles the setting" {

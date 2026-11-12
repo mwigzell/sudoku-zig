@@ -24,7 +24,7 @@ Adding or removing one Config field meant editing every layer by hand, in the sa
 - In the app `Config` still has a `test_probe: void` field; every walk over Config's fields goes through `Config.isSaved` or the table, which skip it.
 - Front ends keep no field lists or labels of their own; a front end that needs a field's words reads the table.
 - Field names a front end places by hand (View items, Auto Save) are named once per front end (`settings.js` constants).
-- Native Settings numbering follows the table's row order.
+- Native Settings numbering follows the table's row order; the terminal's last row is the Menu's unnumbered `Enter) Back`, which leaves the menu.
 
 ## References
 

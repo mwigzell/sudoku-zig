@@ -313,7 +313,7 @@ The player's configuration: difficulty, log level, theme, show region, show penc
 _Avoid_: "settings" or "prefs" for Config or its fields; folding Config into Legend or save files; JS boot defaults that override host-resolved config
 
 **Settings**:
-The menu where the player edits Config (terminal Menu → Settings, web File → Settings). It shows every Config field; other menus may repeat a field as an extra (View → Show Region, File → Auto Save).
+The menu where the player edits Config (terminal Menu → Settings, web File → Settings). It shows every Config field; other menus may repeat a field as an extra (View → Show Region, File → Auto Save). Terminal: it ends with the Menu's `Enter) Back` row and a bare Enter leaves the menu, as does a bare Enter in a setting's choice list (which changes nothing); the web dialog is a DOM dialog with its own close control.
 _Avoid_: Settings as a name for the data
 
 **Config table**:
