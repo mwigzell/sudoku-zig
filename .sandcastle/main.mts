@@ -23,6 +23,59 @@
 
 import * as sandcastle from "@ai-hero/sandcastle";
 import { bwrap } from "@ai-hero/sandcastle/sandboxes/bwrap";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+
+// ---------------------------------------------------------------------------
+// Preflight
+//
+// A run starts from HEAD and leaves a worktree and a branch behind, so the
+// repo has to be in a state where that is safe. Each check throws: a run that
+// would misbehave should not start at all.
+// ---------------------------------------------------------------------------
+
+const git = (args: string[]): string => execFileSync("git", args, { encoding: "utf8" }).trim();
+
+/** Every run leaves a worktree, so more than one line means an earlier run was never settled. */
+function checkNoLeftoverWorktrees(): void {
+  const worktrees = git(["worktree", "list", "--porcelain"])
+    .split("\n\n")
+    .filter((block) => block.trim().length > 0);
+  if (worktrees.length > 1) {
+    throw new Error(`a previous run's worktree is still here (${worktrees.length} worktrees): accept or drop it first`);
+  }
+}
+
+/** Commits on a sandcastle/* branch are work from an earlier run that was never accepted. */
+function checkNoUnsettledBranches(): void {
+  const branches = git(["branch", "--list", "sandcastle/*", "--format=%(refname:short)"]);
+  if (branches.length > 0) {
+    throw new Error(`unaccepted runs remain: ${branches.split("\n").join(", ")}`);
+  }
+}
+
+/** The implementer commits into a worktree cut from HEAD, so uncommitted work would not travel with it. */
+function checkCleanTree(): void {
+  const dirty = git(["status", "--porcelain"]);
+  if (dirty.length > 0) {
+    throw new Error(`working tree is not clean:\n${dirty}`);
+  }
+}
+
+/** bwrap hides the host's gh login, so the agent's first gh call needs a token in .env. */
+function checkGitHubToken(): void {
+  const envPath = new URL(".env", import.meta.url);
+  if (!existsSync(envPath) || !/^GH_TOKEN=\S+/mu.test(readFileSync(envPath, "utf8"))) {
+    throw new Error(".sandcastle/.env has no GH_TOKEN; the agent cannot read issues without one");
+  }
+}
+
+checkNoLeftoverWorktrees();
+checkNoUnsettledBranches();
+checkCleanTree();
+checkGitHubToken();
+
+import { bwrap } from "@ai-hero/sandcastle/sandboxes/bwrap";
 
 // ---------------------------------------------------------------------------
 // Configuration
