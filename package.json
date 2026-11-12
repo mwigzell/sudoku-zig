@@ -6,6 +6,8 @@
     "tsx": "^4.23.15"
   },
   "scripts": {
-    "sandcastle": "npx tsx .sandcastle/main.mts"
+    "sandcastle": "npx tsx .sandcastle/main.mts",
+    "sandcastle:verdict": "scripts/sandcastle-verdict.sh",
+    "sandcastle:drop": "scripts/sandcastle-drop.sh"
   }
 }
