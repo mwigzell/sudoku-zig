@@ -5,6 +5,8 @@ const about_format = @import("about_format.zig");
 const board = @import("../../core/board/board.zig");
 const cell = @import("../../core/board/cell.zig");
 const parser = @import("parser.zig");
+const legend_line = @import("legend_line.zig");
+const disambiguate = @import("disambiguate.zig");
 
 /// Shown when no command can be typed at the prompt.
 const NO_COMMANDS_MSG = "No commands are available right now.";
@@ -233,7 +235,7 @@ pub fn AsciiRenderer(StylerType: type) type {
             defer arena.deinit();
 
             const entries = try disambiguate.getMinimumPrefixes(arena.allocator(), names[0..count]);
-            const str = try legend.formatLegend(arena.allocator(), entries);
+            const str = try legend_line.formatLegend(arena.allocator(), entries);
             _ = try self.writer.print("  Command: {s}\n", .{str});
             self.legend_line_width = 11 + str.len;
             self.can_solve = commands.solve;
@@ -591,7 +593,6 @@ pub fn AsciiRenderer(StylerType: type) type {
 // capture output for assertions instead of hitting stdout.
 
 const game_engine = @import("../../core/engine/game_engine.zig");
-const disambiguate = @import("disambiguate.zig");
 const legend = @import("../../core/renderer/legend.zig");
 
 /// The Config the menu tests show: defaults with the dark theme.
