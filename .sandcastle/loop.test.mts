@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readEvents } from "./events.mts";
 import { ledgerPath, readLedger } from "./ledger.mts";
 import { runSteps, type StepSandbox } from "./loop.mts";
 import { makePlan } from "./plan.mts";
@@ -136,6 +137,20 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
       ledger?.criteria.map((tick) => tick.position),
       [1],
       "a criterion the final pass proved is recorded too, so a drop takes it back as well",
+    );
+
+    // The run's log is the record of what happened, in the order it happened.
+    const events = readEvents(dirs.runsDir);
+    assert.deepEqual(
+      [...new Set(events.map((entry) => entry.kind))],
+      ["run", "step", "agent-start", "agent-end", "verdict", "tick", "criterion"],
+      "every transition the loop makes is one line, and no kind is missing",
+    );
+    assert.equal(events[0]?.kind, "run", "the log opens with the run");
+    assert.equal(
+      events.filter((entry) => entry.kind === "agent-start").length,
+      5,
+      "an agent start per role per step, plus the whole-branch review",
     );
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });

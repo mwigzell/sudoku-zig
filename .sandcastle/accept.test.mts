@@ -30,7 +30,7 @@ test("accepting a run closes the issue its record names, and says which", () => 
       issue: 116,
       branch: "sandcastle/sequential-reviewer/1",
       targetBranch: "develop",
-      startedAt: "2026-11-13T10:00:00.000Z",
+      startedAt: "t1",
     });
     const closer = fakeCloser();
 

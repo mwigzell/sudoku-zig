@@ -11,7 +11,7 @@ const RECORD = {
   issue: 116,
   branch: "sandcastle/sequential-reviewer/1",
   targetBranch: "develop",
-  startedAt: "2026-11-13T10:00:00.000Z",
+  startedAt: "t1",
 };
 
 test("a run's aim survives a write and a read, and makes its own directory", () => {

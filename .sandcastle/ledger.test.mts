@@ -22,11 +22,11 @@ const BODY = `## Steps
 
 test("the ledger records each tick on the issue it belongs to, in the order they landed", () => {
   const empty = { issue: 116, ticks: [], criteria: [] };
-  const one = recordTick(empty, 2, "2026-11-13T10:00:00.000Z");
+  const one = recordTick(empty, 2, "t1");
   const two = recordTick(one, 3, "2026-11-13T10:05:00.000Z");
 
   assert.deepEqual(two.ticks, [
-    { position: 2, at: "2026-11-13T10:00:00.000Z" },
+    { position: 2, at: "t1" },
     { position: 3, at: "2026-11-13T10:05:00.000Z" },
   ]);
   assert.equal(empty.ticks.length, 0, "recording returns a new ledger and leaves the old one alone");
@@ -36,7 +36,7 @@ test("a ledger survives a write and a read", () => {
   const dir = mkdtempSync(join(tmpdir(), "sandcastle-ledger-"));
   try {
     const file = ledgerPath(dir);
-    const ledger = recordTick({ issue: 116, ticks: [], criteria: [] }, 2, "2026-11-13T10:00:00.000Z");
+    const ledger = recordTick({ issue: 116, ticks: [], criteria: [] }, 2, "t1");
     writeLedger(file, ledger);
 
     assert.deepEqual(readLedger(file), ledger);
@@ -98,9 +98,9 @@ const CRITERIA_BODY = `## Steps
 test("a criterion ticked by the whole-branch review is recorded and taken back on a drop", () => {
   const body = CRITERIA_BODY;
   const ticked = tickCriterion(body, 1)!;
-  const ledger = recordCriterion({ issue: 116, ticks: [], criteria: [] }, 1, "2026-11-13T11:00:00.000Z");
+  const ledger = recordCriterion({ issue: 116, ticks: [], criteria: [] }, 1, "t3");
 
-  assert.deepEqual(ledger.criteria, [{ position: 1, at: "2026-11-13T11:00:00.000Z" }]);
+  assert.deepEqual(ledger.criteria, [{ position: 1, at: "t3" }]);
   assert.equal(ledger.ticks.length, 0, "a criterion is not a step");
   assert.equal(untickRecorded(ticked, ledger), body, "the drop puts the criterion back");
 });

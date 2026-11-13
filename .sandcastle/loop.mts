@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
 import { ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
+import { appendEvent, type EventKind } from "./events.mts";
 import { writeRunRecord } from "./run_record.mts";
 import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
 import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
@@ -97,10 +98,17 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
   const { plan, sandbox, tracker, agent, runsDir } = options;
   mkdirSync(runsDir, { recursive: true });
 
-  console.log(`[run] ${plan.branch} on step loop for the issue in ${runsDir}`);
+  // One call per transition: what a person sees on stdout is also what the run's log keeps.
+  const event = (kind: EventKind, message: string): void => {
+    const at = new Date().toISOString();
+    appendEvent(runsDir, { at, kind, message });
+    console.log(`[${kind}] ${message}`);
+  };
+
+  event("run", `${plan.branch} on the step loop for issue #${plan.issue}, logs in ${runsDir}`);
 
   const stop = (reason: string): number => {
-    console.log(`[stop] ${reason}`);
+    event("stop", reason);
     return 1;
   };
 
@@ -123,7 +131,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if (step === null) {
       // Every step is ticked, so this iteration is the whole-branch review: the run's last agent,
       // and the only place the issue's acceptance criteria are judged. It reports; it never ticks.
-      return await finalReview({ plan, sandbox, tracker, agent, runsDir, ledgerFile }, stop);
+      return await finalReview({ plan, sandbox, tracker, agent, runsDir, ledgerFile }, stop, event);
     }
 
     const stage = `step ${step.position}/${steps.length}`;
@@ -138,7 +146,8 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       BASE_BRANCH: plan.targetBranch,
     };
 
-    console.log(`[${stage}] implementer…`);
+    event("step", `${stage}: ${step.title}`);
+    event("agent-start", `${stage} implementer`);
     const implement = await sandbox.run({
       name: `implementer-${stage.replace(" ", "-").replace("/", "of")}`,
       maxIterations: 1,
@@ -146,12 +155,13 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       promptFile: IMPLEMENT_PROMPT,
       promptArgs,
     });
+    event("agent-end", `${stage} implementer`);
     if (implement.commits.length === 0) return stop(`the implementer committed nothing for ${stage}`);
     if (implement.commits.length > 1) {
       return stop(`the implementer made ${implement.commits.length} commits for ${stage}; a step is one commit`);
     }
 
-    console.log(`[${stage}] reviewer…`);
+    event("agent-start", `${stage} reviewer`);
     const review = await sandbox.run({
       name: `reviewer-${stage.replace(" ", "-").replace("/", "of")}`,
       maxIterations: 1,
@@ -159,6 +169,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       promptFile: REVIEW_PROMPT,
       promptArgs,
     });
+    event("agent-end", `${stage} reviewer`);
     if (review.commits.length > 0) return stop(`the reviewer committed to ${plan.branch}; a review may not write`);
 
     const verdictPath = join(sandbox.worktreePath, VERDICT_FILE);
@@ -170,6 +181,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if ("problem" in read) return stop(read.problem);
 
     const decision = decide(read.verdict, step.position);
+    event("verdict", `${stage}: ${decision.kind === "tick" ? "PASS" : `STOP — ${decision.reason}`}`);
     if (decision.kind === "stop") return stop(decision.reason);
 
     // The tick is the host's write: the worker never edits the tracker, so a drop can undo
@@ -183,7 +195,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     // Only ticks that landed are recorded, so the record is exactly what a drop has to take back.
     const ledger = readLedger(ledgerFile) ?? { issue: plan.issue, ticks: [] };
     writeLedger(ledgerFile, recordTick(ledger, decision.step, new Date().toISOString()));
-    console.log(`[${stage}] ticked`);
+    event("tick", `${stage}: step ${decision.step} ticked on #${plan.issue}`);
     console.log(`[${stage}] ticked`);
   }
 
@@ -200,10 +212,11 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
 async function finalReview(
   options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "tracker" | "agent" | "runsDir">> & { ledgerFile: string },
   stop: (reason: string) => number,
+  logEvent: (kind: EventKind, message: string) => void,
 ): Promise<number> {
   const { plan, sandbox, tracker, agent, runsDir, ledgerFile } = options;
 
-  console.log(`[final] whole-branch review against the issue's acceptance criteria…`);
+  logEvent("agent-start", "final reviewer: the issue's acceptance criteria");
   const review = await sandbox.run({
     name: "final-review",
     maxIterations: 1,
@@ -211,6 +224,7 @@ async function finalReview(
     promptFile: FINAL_REVIEW_PROMPT,
     promptArgs: { ISSUE: plan.issue, BASE_BRANCH: plan.targetBranch },
   });
+  logEvent("agent-end", "final reviewer");
   if (review.commits.length > 0) return stop(`the whole-branch reviewer committed to ${plan.branch}; a review may not write`);
 
   const verdictPath = join(sandbox.worktreePath, FINAL_VERDICT_FILE);
@@ -224,9 +238,9 @@ async function finalReview(
 
   const decision = decideFinal(read.verdict);
   for (const entry of read.verdict.criteria) {
-    console.log(`[final] ${entry.status === "proven" ? "proven" : "UNPROVEN"}  ${entry.criterion}`);
+    logEvent("verdict", `${entry.status === "proven" ? "proven" : "UNPROVEN"}: ${entry.criterion}`);
   }
-  for (const concern of read.verdict.concerns) console.log(`[final] concern: ${concern}`);
+  for (const concern of read.verdict.concerns) logEvent("verdict", `concern: ${concern}`);
 
   if (decision.kind === "stop") return stop(decision.reason);
 
@@ -244,9 +258,9 @@ async function finalReview(
     const at = new Date().toISOString();
     for (const position of ticked.positions) recorded = recordCriterion(recorded, position, at);
     writeLedger(ledgerFile, recorded);
-    console.log(`[final] ticked acceptance criteria: ${ticked.positions.join(", ")}`);
+    logEvent("criterion", `ticked acceptance criteria ${ticked.positions.join(", ")} on #${plan.issue}`);
   }
 
-  console.log(`[final] every acceptance criterion is proven; the issue is left open for accept or drop`);
+  logEvent("run", "every acceptance criterion is proven; the issue is left open for accept or drop");
   return 0;
 }
