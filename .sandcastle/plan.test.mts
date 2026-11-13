@@ -2,7 +2,19 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { agentRuns, formatPlan, makePlan, maxSteps, nextStep, parseSteps, runBranch, tickStep } from "./plan.mts";
+import {
+  agentRuns,
+  formatPlan,
+  makePlan,
+  maxSteps,
+  nextStep,
+  parseSteps,
+  readCriteria,
+  runBranch,
+  tickCriterion,
+  tickStep,
+  untickCriterion,
+} from "./plan.mts";
 
 /** A numbered step list, as several issues write them: not tickable, so refused. */
 const NUMBERED = `## Problem
@@ -165,4 +177,44 @@ test("ticking a step marks only that step, leaving the rest of the body byte for
 test("a step position that is not a checkbox step has no tick to write", () => {
   assert.equal(tickStep(CHECKBOXES, 9), null);
   assert.equal(tickStep(NUMBERED, 1), null, "a numbered step cannot be ticked without rewriting it");
+});
+
+/** An issue body whose acceptance criteria are the four a run must adjudicate once, at the end. */
+const CRITERIA_BODY = `## Steps
+
+- [x] **Step one:** landed.
+
+## Acceptance criteria
+
+- [ ] No core file imports a native adapter.
+- [x] The legend line is unchanged.
+- [ ] A test fails if the import returns.
+
+## Front ends
+
+- **Native:** in scope.
+`;
+
+test("the acceptance criteria are read from their own heading, never as steps", () => {
+  assert.deepEqual(
+    readCriteria(CRITERIA_BODY).map((entry) => [entry.position, entry.ticked, entry.text]),
+    [
+      [1, false, "No core file imports a native adapter."],
+      [2, true, "The legend line is unchanged."],
+      [3, false, "A test fails if the import returns."],
+    ],
+  );
+  assert.equal(readCriteria(CRITERIA_BODY).length, 3, "the front-ends list is not a criterion list");
+});
+
+test("an issue with no acceptance criteria heading has none to tick", () => {
+  assert.deepEqual(readCriteria("## Steps\n\n- [ ] **Step one:** to do.\n"), []);
+});
+
+test("a criterion is ticked and unticked by position, leaving every other byte alone", () => {
+  const ticked = tickCriterion(CRITERIA_BODY, 1);
+  assert.equal(ticked, CRITERIA_BODY.replace("- [ ] No core file", "- [x] No core file"));
+  assert.equal(untickCriterion(ticked, 1), CRITERIA_BODY, "unticking puts the bytes back");
+  assert.equal(untickCriterion(ticked, 1)?.length, CRITERIA_BODY.length);
+  assert.equal(tickCriterion(CRITERIA_BODY, 9), null, "a position that is not a criterion has no tick");
 });

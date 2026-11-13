@@ -45,6 +45,8 @@ export interface Plan {
 
 /** The section heading the host reads steps from. */
 const STEP_HEADING = /^##\s+steps\s*$/i;
+/** The heading that opens the acceptance criteria: judged once, by the whole-branch reviewer. */
+const CRITERIA_HEADING = /^##\s+acceptance criteria\s*$/i;
 /** The next level-2 heading closes the section, so acceptance criteria are never read as steps. */
 const NEXT_SECTION = /^##\s+\S/;
 /** Shapes an issue may write its steps in that the host cannot tick. */
@@ -59,8 +61,13 @@ const FINAL_REVIEW_RUNS = 1;
 
 /** The body lines inside `## Steps`, or `null` when the issue has no such section. */
 function stepsSection(body: string): string[] | null {
+  return sectionUnder(body, STEP_HEADING);
+}
+
+/** The lines under the first level-2 heading matching `heading`; the next `##` closes it. */
+function sectionUnder(body: string, heading: RegExp): string[] | null {
   const lines = body.split("\n");
-  const start = lines.findIndex((line) => STEP_HEADING.test(line));
+  const start = lines.findIndex((line) => heading.test(line));
   if (start === -1) return null;
 
   const section: string[] = [];
@@ -111,6 +118,45 @@ export function nextStep(steps: Step[]): Step | null {
   return steps.find((step) => !step.ticked) ?? null;
 }
 
+/** One acceptance criterion the host may tick, as the issue body words it. */
+export interface Criterion {
+  /** 1-based position among the issue's criteria, in body order. */
+  position: number;
+  /** The criterion's text, without its checkbox. */
+  text: string;
+  /** Whether the issue already marks it done. */
+  ticked: boolean;
+}
+
+/**
+ * Read the acceptance criteria out of an issue body.
+ *
+ * Only checkbox items under `## Acceptance criteria` count. They are judged once by the
+ * whole-branch reviewer and ticked by the host on its evidence, never per step.
+ */
+export function readCriteria(body: string): Criterion[] {
+  const section = sectionUnder(body, CRITERIA_HEADING);
+  if (section === null) return [];
+
+  const criteria: Criterion[] = [];
+  for (const line of section) {
+    const checkbox = CHECKBOX_ITEM.exec(line);
+    if (checkbox === null) continue;
+    criteria.push({ position: criteria.length + 1, text: checkbox[2].trim(), ticked: checkbox[1] !== " " });
+  }
+  return criteria;
+}
+
+/** Tick one acceptance criterion by position; `null` when the position is not a criterion. */
+export function tickCriterion(body: string, position: number): string | null {
+  return flipMarkUnder(body, CRITERIA_HEADING, position, "[ ]", "[x]");
+}
+
+/** Take one acceptance criterion's mark back out; `null` when the position is not a criterion. */
+export function untickCriterion(body: string, position: number): string | null {
+  return flipMarkUnder(body, CRITERIA_HEADING, position, "[x]", "[ ]");
+}
+
 /**
  * Write a step's done mark into an issue body.
  *
@@ -133,13 +179,13 @@ export function untickStep(body: string, position: number): string | null {
   return flipStepMark(body, position, "[x]", "[ ]");
 }
 
-/** Replace one checkbox step's mark; `null` when the position is not a checkbox step. */
-function flipStepMark(body: string, position: number, from: string, to: string): string | null {
+/** Replace one checkbox item's mark under `heading`; `null` when the position is not one. */
+function flipMarkUnder(body: string, heading: RegExp, position: number, from: string, to: string): string | null {
   const lines = body.split("\n");
-  const start = lines.findIndex((line) => STEP_HEADING.test(line));
+  const start = lines.findIndex((line) => heading.test(line));
   if (start === -1) return null;
 
-  // Walk the section the same way `readSteps` does, so position means the same step in both.
+  // Walk the section the same way the reader does, so position means the same item in both.
   let seen = 0;
   for (let index = start + 1; index < lines.length; index++) {
     const line = lines[index];
@@ -151,6 +197,11 @@ function flipStepMark(body: string, position: number, from: string, to: string):
     return lines.join("\n");
   }
   return null;
+}
+
+/** Replace one checkbox step's mark; `null` when the position is not a checkbox step. */
+function flipStepMark(body: string, position: number, from: string, to: string): string | null {
+  return flipMarkUnder(body, STEP_HEADING, position, from, to);
 }
 
 /** Iteration bound for a run: one per step plus the final review, so a box that never ticks cannot loop forever. */

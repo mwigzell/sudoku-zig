@@ -39,8 +39,10 @@ Only one run exists at a time: a second `sandcastle/*` branch blocks both a new 
 5. **The host reads the verdict** and decides (see below). On a pass it ticks that step on the issue and
    records the tick. Nothing else is ever written to the issue, and acceptance criteria are never touched.
 6. **After the last tick, the whole-branch review** runs: one more session reads the entire diff and judges
-   the issue's acceptance criteria, writing `.sandcastle/final-verdict.json`. The run exits 0 only if every
-   criterion is proven with evidence.
+   the issue's acceptance criteria, writing `.sandcastle/final-verdict.json`. The host then ticks every
+   criterion that session proved — matched one for one against the issue body, so a criterion it invented
+   or skipped stops the run — and leaves the issue open. The run exits 0 only if every criterion is proven
+   with evidence.
 
 The iteration bound is the **unticked** steps plus that final review; agent runs are two per step plus one.
 A resumed issue therefore costs only what is left.
@@ -62,16 +64,19 @@ A step verdict (`verdict.mts`), every field evidence the reviewer produced itsel
 
 The whole-branch verdict carries `criteria` (`criterion`, `status` of `proven`/`unproven`, `evidence`),
 `standards` and `concerns`. It passes only when every criterion is `proven` **with non-empty evidence** and
-standards are `clean`; an unproven or unevidenced criterion stops the run and names itself.
+standards are `clean`; an unproven or unevidenced criterion stops the run and names itself. Each criterion
+is matched against the issue body by its text: one the issue does not word that way, or one the matrix
+leaves out, is a stop — the reviewer may neither invent a criterion nor skip the one it could not prove.
+The proven ones are then ticked by the host, exactly as a step is.
 
 A malformed verdict file is always a problem, never an empty pass.
 
 ## The tick ledger
 
-Every tick the host writes is recorded in `.sandcastle/logs/<stamp>/ticks.json` — the issue and the
-position of each step ticked, in order. That record is what makes `sandcastle:drop` able to rewrite exactly
-the bytes the run wrote: it re-reads the issue as it stands now, flips those checkboxes back to `- [ ]`, and
-says which steps it took back. A run with no record (from before the ledger existed) prints that the issue
+Every tick the host writes is recorded in `.sandcastle/logs/<stamp>/ticks.json` — the issue, the position of
+each step ticked as it passed, and the position of each acceptance criterion the final pass proved. That record is what makes `sandcastle:drop` able to rewrite exactly
+the bytes the run wrote: it re-reads the issue as it stands now, flips those checkboxes back to `- [ ]` — steps and
+criteria alike — and says which positions it took back. A run with no record (from before the ledger existed) prints that the issue
 is being left as it is, and the drop continues.
 
 ## Accept, drop, verdict
@@ -83,8 +88,8 @@ is being left as it is, and the drop continues.
   verdicts and the ledger stay in the log directory as the record of what the run did.
 - **verdict** is read-only: it never merges, never deletes, and never touches the issue.
 
-Neither accept nor drop ticks acceptance criteria or closes the issue: that is the human's, after reading
-the report.
+Ticking acceptance criteria is the whole-branch reviewer's call, carried out by the host on its evidence —
+the same split as a step. Closing the issue is not built yet: `accept` currently merges and cleans up only.
 
 ## Files
 

@@ -184,3 +184,40 @@ export function decideFinal(verdict: FinalVerdict): FinalDecision {
 
   return { kind: "pass" };
 }
+
+/** The criteria the host may tick for a passing verdict, or why it may not. */
+export type TickedCriteria = { positions: number[] } | { problem: string };
+
+/**
+ * Map a passing verdict onto the issue's own criteria list.
+ *
+ * The matrix is matched one for one against the issue body, so a reviewer can neither invent a
+ * criterion nor silently skip the one it could not prove, and only the criteria it marked
+ * `proven` — with evidence, as `decideFinal` requires — are handed back to be ticked.
+ * `criteria`: the issue's criteria, in body order, as read from the tracker.
+ */
+export function tickedCriteria(
+  verdict: FinalVerdict,
+  criteria: ReadonlyArray<{ position: number; text: string; ticked: boolean }>,
+): TickedCriteria {
+  const byText = new Map(criteria.map((entry) => [entry.text, entry]));
+
+  for (const entry of verdict.criteria) {
+    if (!byText.has(entry.criterion)) {
+      return { problem: `the verdict names a criterion the issue does not have: ${entry.criterion}` };
+    }
+  }
+
+  const judged = new Set(verdict.criteria.map((entry) => entry.criterion));
+  const unjudged = criteria.filter((entry) => !judged.has(entry.text));
+  if (unjudged.length > 0) {
+    return { problem: `the verdict left unjudged: ${unjudged.map((entry) => entry.text).join("; ")}` };
+  }
+
+  const positions = verdict.criteria
+    .filter((entry) => entry.status === "proven" && entry.evidence.trim().length > 0)
+    .map((entry) => byText.get(entry.criterion)!.position)
+    .filter((position) => !criteria.find((entry) => entry.position === position)?.ticked);
+
+  return { positions };
+}

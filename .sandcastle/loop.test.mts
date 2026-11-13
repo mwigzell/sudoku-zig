@@ -35,7 +35,7 @@ const passingVerdict = (step: number) => ({
 
 /** A whole-branch verdict in which the issue's one criterion is proven, so the run may pass. */
 const passingFinal = () => ({
-  criteria: [{ criterion: "Something at issue level", status: "proven", evidence: "a test asserts it" }],
+  criteria: [{ criterion: "Something at issue level.", status: "proven", evidence: "a test asserts it" }],
   standards: "clean",
   concerns: [],
 });
@@ -122,7 +122,8 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
     assert.ok(existsSync(join(dirs.runsDir, "final-verdict.json")), "the whole-branch verdict is kept");
     assert.match(tracker.body, /- \[x\] \*\*Step one:\*\*/, "step one was ticked on the issue");
     assert.match(tracker.body, /- \[x\] \*\*Step two:\*\*/, "step two was ticked on the issue");
-    assert.doesNotMatch(tracker.body, /- \[x\] Something at issue level/, "an acceptance criterion is not a step");
+    // A step's PASS ticks the step only; the criterion waits for the whole-branch review, which ticks it.
+    assert.match(tracker.body, /- \[x\] Something at issue level\./, "the proven criterion is ticked by the final pass");
     assert.ok(existsSync(join(dirs.runsDir, "step-1-verdict.json")), "the first verdict is kept");
     assert.ok(existsSync(join(dirs.runsDir, "step-2-verdict.json")), "the second verdict is kept");
     const ledger = readLedger(ledgerPath(dirs.runsDir));
@@ -130,6 +131,11 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
       ledger?.ticks.map((tick) => tick.position),
       [1, 2],
       "the ticks the host wrote are recorded in the order they landed, so a drop can take them back",
+    );
+    assert.deepEqual(
+      ledger?.criteria.map((tick) => tick.position),
+      [1],
+      "a criterion the final pass proved is recorded too, so a drop takes it back as well",
     );
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
@@ -142,8 +148,8 @@ test("a branch whose criteria the whole-branch review cannot prove stops the run
     const tracker = fakeTracker(TWO_STEPS);
     const unproven = {
       criteria: [
-        { criterion: "Something at issue level", status: "unproven", evidence: "" },
-        { criterion: "Another criterion", status: "proven", evidence: "a test asserts it" },
+        { criterion: "Something at issue level.", status: "unproven", evidence: "" },
+        { criterion: "Another criterion.", status: "proven", evidence: "a test asserts it" },
       ],
       standards: "clean",
       concerns: ["the second criterion rests on a test that runs only on the web path"],

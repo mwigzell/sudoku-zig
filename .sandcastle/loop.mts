@@ -7,9 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
-import { ledgerPath, readLedger, recordTick, writeLedger } from "./ledger.mts";
-import { nextStep, readSteps, tickStep, type Plan } from "./plan.mts";
-import { decide, decideFinal, readFinalVerdict, readVerdict } from "./verdict.mts";
+import { ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
+import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
+import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
 
 /** Where the reviewer writes its verdict inside the worktree; the host copies it out from there. */
 const VERDICT_FILE = ".sandcastle/verdict.json";
@@ -115,7 +115,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if (step === null) {
       // Every step is ticked, so this iteration is the whole-branch review: the run's last agent,
       // and the only place the issue's acceptance criteria are judged. It reports; it never ticks.
-      return await finalReview({ plan, sandbox, agent, runsDir }, stop);
+      return await finalReview({ plan, sandbox, tracker, agent, runsDir, ledgerFile }, stop);
     }
 
     const stage = `step ${step.position}/${steps.length}`;
@@ -190,10 +190,10 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
  * when every criterion is proven with evidence. Returns the process exit code.
  */
 async function finalReview(
-  options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "agent" | "runsDir">>,
+  options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "tracker" | "agent" | "runsDir">> & { ledgerFile: string },
   stop: (reason: string) => number,
 ): Promise<number> {
-  const { plan, sandbox, agent, runsDir } = options;
+  const { plan, sandbox, tracker, agent, runsDir, ledgerFile } = options;
 
   console.log(`[final] whole-branch review against the issue's acceptance criteria…`);
   const review = await sandbox.run({
@@ -221,6 +221,24 @@ async function finalReview(
   for (const concern of read.verdict.concerns) console.log(`[final] concern: ${concern}`);
 
   if (decision.kind === "stop") return stop(decision.reason);
-  console.log(`[final] every acceptance criterion is proven; the run is ready to accept`);
+
+  // The matrix is matched against the issue's own criteria, so the host ticks exactly what the
+  // reviewer proved and nothing it invented or skipped. Ticking is the host's write, as for a step.
+  const ticked = tickedCriteria(read.verdict, readCriteria(tracker.read(plan.issue).body));
+  if ("problem" in ticked) return stop(ticked.problem);
+  if (ticked.positions.length > 0) {
+    let body = tracker.read(plan.issue).body;
+    for (const position of ticked.positions) body = tickCriterion(body, position) ?? body;
+    tracker.writeBody(plan.issue, body);
+
+    const ledger = readLedger(ledgerFile) ?? { issue: plan.issue, ticks: [], criteria: [] };
+    let recorded = ledger;
+    const at = new Date().toISOString();
+    for (const position of ticked.positions) recorded = recordCriterion(recorded, position, at);
+    writeLedger(ledgerFile, recorded);
+    console.log(`[final] ticked acceptance criteria: ${ticked.positions.join(", ")}`);
+  }
+
+  console.log(`[final] every acceptance criterion is proven; the issue is left open for accept or drop`);
   return 0;
 }

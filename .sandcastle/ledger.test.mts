@@ -2,9 +2,9 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ledgerPath, readLedger, recordTick, untickRecorded, untickRun, writeLedger } from "./ledger.mts";
-import { tickStep } from "./plan.mts";
-import { mkdtempSync, rmSync } from "node:fs";
+import { ledgerPath, readLedger, recordCriterion, recordTick, untickRecorded, untickRun, writeLedger } from "./ledger.mts";
+import { tickCriterion, tickStep } from "./plan.mts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -21,7 +21,7 @@ const BODY = `## Steps
 `;
 
 test("the ledger records each tick on the issue it belongs to, in the order they landed", () => {
-  const empty = { issue: 116, ticks: [] };
+  const empty = { issue: 116, ticks: [], criteria: [] };
   const one = recordTick(empty, 2, "2026-11-13T10:00:00.000Z");
   const two = recordTick(one, 3, "2026-11-13T10:05:00.000Z");
 
@@ -36,7 +36,7 @@ test("a ledger survives a write and a read", () => {
   const dir = mkdtempSync(join(tmpdir(), "sandcastle-ledger-"));
   try {
     const file = ledgerPath(dir);
-    const ledger = recordTick({ issue: 116, ticks: [] }, 2, "2026-11-13T10:00:00.000Z");
+    const ledger = recordTick({ issue: 116, ticks: [], criteria: [] }, 2, "2026-11-13T10:00:00.000Z");
     writeLedger(file, ledger);
 
     assert.deepEqual(readLedger(file), ledger);
@@ -51,7 +51,7 @@ test("a run that ticked nothing has no ledger to read", () => {
 
 test("a drop takes back exactly the ticks the run recorded, byte for byte", () => {
   const afterTicks = tickStep(tickStep(BODY, 2), 3);
-  const ledger = recordTick(recordTick({ issue: 116, ticks: [] }, 2, "a"), 3, "b");
+  const ledger = recordTick(recordTick({ issue: 116, ticks: [], criteria: [] }, 2, "a"), 3, "b");
 
   assert.equal(untickRecorded(afterTicks, ledger), BODY);
 });
@@ -63,7 +63,7 @@ test("a drop rewrites the issue through the tracker and names the steps it took 
     read: () => ({ title: "an issue", body: afterTicks }),
     writeBody: (_issue: number, body: string) => void written.push(body),
   };
-  const ledger = recordTick(recordTick({ issue: 116, ticks: [] }, 2, "a"), 3, "b");
+  const ledger = recordTick(recordTick({ issue: 116, ticks: [], criteria: [] }, 2, "a"), 3, "b");
 
   assert.deepEqual(untickRun(ledger, tracker), [2, 3]);
   assert.deepEqual(written, [BODY], "the issue is put back to the body the run started from");
@@ -76,6 +76,42 @@ test("a run that ticked nothing writes nothing on a drop", () => {
     writeBody: () => void (wrote = true),
   };
 
-  assert.deepEqual(untickRun({ issue: 116, ticks: [] }, tracker), []);
+  assert.deepEqual(untickRun({ issue: 116, ticks: [], criteria: [] }, tracker), []);
   assert.equal(wrote, false);
+});
+
+/** A run's issue as the tracker holds it: two steps, and criteria the whole-branch review judges. */
+const CRITERIA_BODY = `## Steps
+
+- [x] **Step one:** landed.
+
+## Acceptance criteria
+
+- [ ] No core file imports a native adapter.
+- [x] The legend line is unchanged.
+
+## Front ends
+
+- **Native:** in scope.
+`;
+
+test("a criterion ticked by the whole-branch review is recorded and taken back on a drop", () => {
+  const body = CRITERIA_BODY;
+  const ticked = tickCriterion(body, 1)!;
+  const ledger = recordCriterion({ issue: 116, ticks: [], criteria: [] }, 1, "2026-11-13T11:00:00.000Z");
+
+  assert.deepEqual(ledger.criteria, [{ position: 1, at: "2026-11-13T11:00:00.000Z" }]);
+  assert.equal(ledger.ticks.length, 0, "a criterion is not a step");
+  assert.equal(untickRecorded(ticked, ledger), body, "the drop puts the criterion back");
+});
+
+test("a ledger written before criteria were recorded still reads", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sandcastle-ledger-"));
+  try {
+    const file = ledgerPath(dir);
+    writeFileSync(file, JSON.stringify({ issue: 116, ticks: [{ position: 2, at: "a" }] }));
+    assert.deepEqual(readLedger(file), { issue: 116, ticks: [{ position: 2, at: "a" }], criteria: [] });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

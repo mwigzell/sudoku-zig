@@ -37,6 +37,8 @@ Your job is to answer one question with evidence: **does this branch meet the is
 
 # Write the verdict
 
+The host ticks the criteria you prove — the ones marked `proven` with evidence — and leaves the issue open. You never tick anything yourself, and you never touch the issue.
+
 Write **`.sandcastle/final-verdict.json`** in the repository root, and nothing else:
 
 ```json
@@ -53,4 +55,4 @@ Write **`.sandcastle/final-verdict.json`** in the repository root, and nothing e
 }
 ```
 
-`criteria` lists **every** acceptance criterion of the issue, in the issue's order. `standards` is `clean` or the violation you found. An unproven criterion needs empty `evidence`; do not pad it.
+`criteria` lists **every** acceptance criterion of the issue, in the issue's order, worded as the issue words it: the host matches your matrix against the issue body, and a criterion it cannot match stops the run. `standards` is `clean` or the violation you found. An unproven criterion needs empty `evidence`; do not pad it.

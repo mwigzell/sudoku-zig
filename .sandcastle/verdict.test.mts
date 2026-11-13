@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { decide, decideFinal, readFinalVerdict, readVerdict, type FinalVerdict } from "./verdict.mts";
+import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria, type FinalVerdict } from "./verdict.mts";
 
 /** A step verdict a reviewer may write when the step held up. */
 const PASSING = {
@@ -138,4 +138,50 @@ test("a final verdict that cannot be read is a problem, not a pass", () => {
     readFinalVerdict(JSON.stringify({ ...FINAL_PASSING, criteria: [{ criterion: "x", status: "maybe", evidence: "y" }] })),
     { problem: "the verdict's criteria[0].status is not proven or unproven" },
   );
+});
+
+test("a passing verdict names criteria the issue has, one for one", () => {
+  const criteria = [
+    { position: 1, text: "the legend line reaches the terminal", ticked: false },
+    { position: 2, text: "no core file imports a native adapter", ticked: false },
+  ];
+  const verdict = FINAL_PASSING as FinalVerdict;
+
+  assert.deepEqual(tickedCriteria(verdict, criteria), { positions: [1, 2] });
+});
+
+test("a criterion the issue does not word that way is a problem, not a tick", () => {
+  const criteria = [{ position: 1, text: "the legend line reaches the terminal", ticked: false }];
+  const read = tickedCriteria(FINAL_PASSING as FinalVerdict, criteria);
+
+  assert.ok("problem" in read, JSON.stringify(read));
+  assert.match(read.problem, /names a criterion the issue does not have: no core file imports a native adapter/);
+});
+
+test("a criterion the reviewer left out of its matrix is a problem: none of them may be skipped", () => {
+  const criteria = [
+    { position: 1, text: "the legend line reaches the terminal", ticked: false },
+    { position: 2, text: "no core file imports a native adapter", ticked: false },
+    { position: 3, text: "an extra criterion nobody judged", ticked: false },
+  ];
+  const read = tickedCriteria(FINAL_PASSING as FinalVerdict, criteria);
+
+  assert.ok("problem" in read);
+  assert.match(read.problem, /left unjudged: an extra criterion nobody judged/);
+});
+
+test("only criteria the reviewer proved are ticked", () => {
+  const criteria = [
+    { position: 1, text: "the legend line reaches the terminal", ticked: false },
+    { position: 2, text: "no core file imports a native adapter", ticked: true },
+  ];
+  const verdict = {
+    ...FINAL_PASSING,
+    criteria: [
+      FINAL_PASSING.criteria[0],
+      { criterion: "no core file imports a native adapter", status: "unproven", evidence: "" },
+    ],
+  } as FinalVerdict;
+
+  assert.deepEqual(tickedCriteria(verdict, criteria), { positions: [1] }, "a proven criterion already ticked is not rewritten");
 });
