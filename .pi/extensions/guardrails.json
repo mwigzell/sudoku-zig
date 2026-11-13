@@ -69,10 +69,6 @@
       {
         "kind": "file",
         "path": "/rate_limit"
-      },
-      {
-        "kind": "directory",
-        "path": "/## Acceptance criteria"
       }
     ]
   },
