@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/@aliou/pi-guardrails@0.17.0/schema.json",
+  "$schema": "https://unpkg.com/@aliou/pi-guardrails@0.19.0/schema.json",
   "pathAccess": {
     "allowedPaths": [
       {
@@ -69,6 +69,10 @@
       {
         "kind": "file",
         "path": "/rate_limit"
+      },
+      {
+        "kind": "directory",
+        "path": "/## Acceptance criteria"
       }
     ]
   },
