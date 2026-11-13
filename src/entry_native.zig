@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) shell.Error!void {
     const host_dir: startup_config.DataDir = if (computed_dir) |dir|
         .{ .resolved = dir }
     else |err|
-        .{ .unavailable = @errorName(err) };
+        startup_config.DataDir.noDataDir(@errorName(err));
 
     const cfg = startup_config.resolveStartupConfig(gpa, init.io, host_dir, overrides) catch unreachable;
     startup_config.applyLoggerFromStartup(cfg);
