@@ -8,9 +8,10 @@
   "scripts": {
     "sandcastle": "npx tsx .sandcastle/main.mts",
     "sandcastle:plan": "npx tsx .sandcastle/main.mts --plan",
-    "sandcastle:test": "node --test .sandcastle/events.test.mts .sandcastle/plan.test.mts .sandcastle/ledger.test.mts .sandcastle/run_record.test.mts .sandcastle/accept.test.mts .sandcastle/verdict.test.mts .sandcastle/loop.test.mts .sandcastle/report.test.mts",
+    "sandcastle:test": "node --test .sandcastle/status.test.mts .sandcastle/events.test.mts .sandcastle/plan.test.mts .sandcastle/ledger.test.mts .sandcastle/run_record.test.mts .sandcastle/accept.test.mts .sandcastle/verdict.test.mts .sandcastle/loop.test.mts .sandcastle/report.test.mts",
     "sandcastle:verdict": "scripts/sandcastle-verdict.sh",
     "sandcastle:logs": "scripts/sandcastle-logs.sh",
+    "sandcastle:status": "npx tsx .sandcastle/status.mts",
     "sandcastle:accept": "scripts/sandcastle-accept.sh",
     "sandcastle:drop": "scripts/sandcastle-drop.sh"
   }

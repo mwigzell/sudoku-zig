@@ -112,6 +112,17 @@ nothing and says so, rather than guessing a number and closing someone else's is
 
 `logs/`, `worktrees/`, `.env` and a stray `verdict.json` are gitignored: a run's evidence is local.
 
+## Watching a run
+
+`npm run sandcastle:status` says where the newest run stands, read from that run's directory alone
+(no git, no GitHub): its issue and branch, its phase, which step it is on, how much it has ticked, how
+long it has been going, and the last thing it logged. The phase is `live` while the last event is recent,
+`stalled` when the run has gone quiet for 90s without finishing, `finished` when it logged its own end or
+a stop.
+
+Every run keeps two copies of the same log, one line per transition: `logs/<stamp>/events.jsonl` for
+programs (`status` reads it) and `logs/<stamp>/run.log` for a person.
+
 ## Reading a stopped run
 
 A stopped run leaves its branch and worktree with the verdicts it produced, and says why in `[stop] …`.

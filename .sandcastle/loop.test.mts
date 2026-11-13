@@ -143,10 +143,11 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
     const events = readEvents(dirs.runsDir);
     assert.deepEqual(
       [...new Set(events.map((entry) => entry.kind))],
-      ["run", "step", "agent-start", "agent-end", "verdict", "tick", "criterion"],
+      ["run", "step", "agent-start", "agent-end", "verdict", "tick", "criterion", "end"],
       "every transition the loop makes is one line, and no kind is missing",
     );
     assert.equal(events[0]?.kind, "run", "the log opens with the run");
+    assert.equal(events.at(-1)?.kind, "end", "and closes with its own end, so finished is never a guess");
     assert.equal(
       events.filter((entry) => entry.kind === "agent-start").length,
       5,

@@ -261,6 +261,6 @@ async function finalReview(
     logEvent("criterion", `ticked acceptance criteria ${ticked.positions.join(", ")} on #${plan.issue}`);
   }
 
-  logEvent("run", "every acceptance criterion is proven; the issue is left open for accept or drop");
+  logEvent("end", "every acceptance criterion is proven; the issue is left open for accept or drop");
   return 0;
 }

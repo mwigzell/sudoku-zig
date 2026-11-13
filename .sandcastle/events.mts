@@ -17,6 +17,7 @@ export type EventKind =
   | "verdict"
   | "tick"
   | "criterion"
+  | "end"
   | "stop";
 
 /** One line of the run's log: when it happened, what kind it was, and what it said. */
