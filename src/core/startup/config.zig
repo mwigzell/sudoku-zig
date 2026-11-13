@@ -282,3 +282,38 @@ test "the host's data dir is used, and the working directory when the host had n
     try std.testing.expectEqualStrings("/home/player/.local/share/sudoku", dataDirOrWorkingDir(resolved));
     try std.testing.expectEqualStrings(".", dataDirOrWorkingDir(missing));
 }
+
+test "with no data directory, the settings come from the working directory and nothing is written back" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    const cwd = std.Io.Dir.cwd();
+
+    // The fall-back directory of this test *is* the working directory, so the file it reads sits
+    // next to the sources for the length of the call; one already there is not this test's to touch.
+    const existing: ?std.Io.File.Stat = cwd.statFile(io, config_store.file_name, .{}) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
+    if (existing != null) return error.TestWorkingDirAlreadyHasConfigFile;
+
+    const on_disk = "{\"config\":{\"difficulty\":\"easy\",\"theme\":\"light\"}}";
+    try cwd.writeFile(io, .{ .sub_path = config_store.file_name, .data = on_disk });
+    defer cwd.deleteFile(io, config_store.file_name) catch |err| {
+        std.debug.print("could not remove the working directory's {s}: {s}\n", .{ config_store.file_name, @errorName(err) });
+    };
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    const cfg = try resolveStartupConfig(gpa, io, .{ .unavailable = "EnvironmentVariableMissing" }, .{});
+    // Read from the working directory, not from the code defaults.
+    try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+
+    // Nothing written back: the file still holds exactly the bytes this test put there.
+    const after = try std.Io.Dir.readFileAlloc(cwd, io, config_store.file_name, gpa, std.Io.Limit.unlimited);
+    defer gpa.free(after);
+    try std.testing.expectEqualStrings(on_disk, after);
+}

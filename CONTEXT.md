@@ -272,6 +272,7 @@ Front-end layers are adapters. They do I/O, lifecycle, and presentation; shared 
 
 Rule: every supported front-end entry must remain transport-thin and behavior-consistent by consuming shared contracts, not redefining them.
 Policy centralization is mandatory: in this shared-core multi-front-end architecture, front ends transport/render only; they do not fork rule decisions (persistence/autosave semantics, startup policy, or log filtering policy).
+Dependency direction: no file-scope import under `src/core/` reaches `src/native/` — core is compiled by every front end, the native adapters by the desktop entry alone. A test that needs a native helper imports it inside its own `test { … }` block (`src/test/layering.zig` enforces the rule).
 Text ownership follows the behaviour: if core implements it, core writes the words and adapters pass their technical reason to core for the log. A platform writes its own text only for something core does not handle (e.g. the web boot dialog when wasm fails to load). Either way, dialog and status text is full sentences. Generation is core behaviour on every platform: progress lines are core's `formatProgressEvent` text, native and web alike, and the web generating dialog's messages and method label come from core through `getGenText`.
 
 ### Policy authority map (core vs platform call sites)

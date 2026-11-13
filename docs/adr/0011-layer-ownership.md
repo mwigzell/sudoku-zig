@@ -52,6 +52,7 @@ Rules:
 7. **Front ends stay dumb** — entry/UI layers orchestrate input/output and lifecycle only. They do not own business rules, persistence policy, or feature semantics that belong in shared seams (`engine`, shared codecs, shared host interfaces). If a capability appears to require front-end-specific logic, first extract a shared seam instead of re-implementing behavior per front end.
 8. **Policy centralization is mandatory** — for a shared-core multi-front-end game, policy cannot be duplicated in adapters. JS/native/android front ends may annotate and transport intent/events, but rule decisions (including persistence/autosave semantics and log filtering policy) live in shared core/host seams.
 9. **Semantic parity over call-shape parity** — enforce shared behavior contracts, not identical frontend function signatures. Different front ends may require different control flow/forms (`Facade` vtable in native, JSON/action orchestration in web/android). What must match is policy outcome, state transitions, and status semantics — not method shape.
+10. **Dependency direction** — a file-scope import under `src/core/` may not reach `src/native/`; core is compiled by every front end, the adapters by the desktop entry alone. A test that needs a native helper imports it inside its own `test { … }` block. `src/test/layering.zig` reads every `src/core/**/*.zig` and fails naming the file and line of an offending import.
 
 ### Amendment — semantic parity guardrails
 
