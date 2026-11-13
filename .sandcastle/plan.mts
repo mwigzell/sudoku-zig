@@ -160,6 +160,8 @@ export function makePlan(
   options: { stamp: number; targetBranch: string },
 ): Plan {
   const { steps, refusal } = readSteps(body);
+  // A resumed run pays only for the steps still unticked; the done ones are history.
+  const remaining = steps.filter((step) => !step.ticked).length;
   return {
     issue,
     title,
@@ -167,8 +169,8 @@ export function makePlan(
     next: nextStep(steps),
     branch: runBranch(options.stamp),
     targetBranch: options.targetBranch,
-    maxSteps: maxSteps(steps.length),
-    agentRuns: agentRuns(steps.length),
+    maxSteps: maxSteps(remaining),
+    agentRuns: agentRuns(remaining),
     refusal,
   };
 }
@@ -201,6 +203,8 @@ export function formatPlan(plan: Plan): string[] {
   }
 
   const done = plan.steps.filter((step) => step.ticked).length;
+  const remaining = plan.steps.length - done;
+  const left = `${remaining} ${remaining === 1 ? "step" : "steps"} left`;
   const next = plan.next === null ? "none left" : `${plan.next.position}. ${shorten(plan.next.title)}`;
 
   return [
@@ -208,7 +212,7 @@ export function formatPlan(plan: Plan): string[] {
     `steps:     ${plan.steps.length} (${done} done, next ${plan.next === null ? "none" : plan.next.position})`,
     `next:      ${next}`,
     `branch:    ${plan.branch} (cut from ${plan.targetBranch})`,
-    `MAX_STEPS: ${plan.maxSteps} (${plan.steps.length} steps + ${FINAL_REVIEW_RUNS} final review, one iteration each), up to ${plan.agentRuns} agent runs`,
+    `MAX_STEPS: ${plan.maxSteps} (${left} + ${FINAL_REVIEW_RUNS} final review, one iteration each), up to ${plan.agentRuns} agent runs`,
     `shape:     implementer → reviewer per step, then one whole-branch review (AC matrix + standards lens)`,
     `no agent is invoked by this plan`,
   ];

@@ -98,7 +98,7 @@ test("the plan names the branch, the bound and the next step, and says no agent 
   assert.match(text, /steps:\s+3 \(1 done, next 2\)/);
   assert.match(text, /next:\s+2\. \*\*Step two:\*\* to do\./);
   assert.match(text, /branch:\s+sandcastle\/sequential-reviewer\/42 \(cut from develop\)/);
-  assert.match(text, /MAX_STEPS: 4 \(3 steps \+ 1 final review, one iteration each\), up to 7 agent runs/);
+  assert.match(text, /MAX_STEPS: 3 \(2 steps left \+ 1 final review, one iteration each\), up to 5 agent runs/);
   assert.match(text, /no agent is invoked/);
 });
 
@@ -124,6 +124,33 @@ test("a plan for an issue whose steps are all ticked says none are left", () => 
   const text = formatPlan(planFor(body)).join("\n");
   assert.match(text, /steps:\s+1 \(1 done, next none\)/);
   assert.match(text, /next:\s+none left/);
+});
+
+/** A resumed run pays only for the steps the issue body has not ticked; done steps are history. */
+test("a resumed plan bounds the unticked steps only, not the whole step list", () => {
+  const body = `## Steps
+
+- [x] **Step one:** landed.
+- [x] **Step two:** landed.
+- [ ] **Step three:** to do.
+- [ ] **Step four:** to do.
+`;
+  const plan = planFor(body);
+
+  assert.equal(plan.maxSteps, 3, "two steps left plus the final review");
+  assert.equal(plan.agentRuns, 5, "two implementer and two reviewer runs, plus the final review");
+  assert.match(formatPlan(plan).join("\n"), /MAX_STEPS: 3 \(2 steps left \+ 1 final review.+\)/);
+});
+
+test("a plan with nothing left to do bounds the final review alone", () => {
+  const body = `## Steps
+
+- [x] **Step one:** done.
+`;
+  const plan = planFor(body);
+
+  assert.equal(plan.maxSteps, 1);
+  assert.equal(plan.agentRuns, 1);
 });
 
 test("ticking a step marks only that step, leaving the rest of the body byte for byte", () => {
