@@ -9,6 +9,44 @@ const std = @import("std");
 const CORE_DIR = "src/core";
 const NATIVE_DIR = "src/native";
 
+/// How far up from the working directory the gate looks for the repository it is reading.
+/// A test binary can be run from anywhere inside the tree; past this depth it is not our repo.
+const MAX_PARENT_HOPS = 8;
+
+/// How the gate opens the directory it searches from: it only ever reads and lists.
+fn search_options() std.Io.Dir.OpenOptions {
+    return .{ .iterate = true };
+}
+
+/// The repository root as a path relative to `dir`, found by walking up until `CORE_DIR` is there:
+/// `""` when `dir` is the root itself, `"../"` one level down, and so on.
+/// `dir`: the directory to search from. `max_hops`: how many parents to try before giving up.
+/// Returns `null` when no ancestor holds `CORE_DIR`, so the caller fails loudly instead of
+/// passing a gate that walked nothing.
+fn repoRootUnder(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, max_hops: usize) !?[]u8 {
+    var prefix: std.ArrayList(u8) = .empty;
+    defer prefix.deinit(gpa);
+
+    // Every probe is written against the starting directory, so the answer is a path the caller
+    // can use from where it stands: `""` for the root itself, `"../"` one level down.
+    var hops: usize = 0;
+    while (hops <= max_hops) : (hops += 1) {
+        const core_path = try std.fmt.allocPrint(gpa, "{s}{s}", .{ prefix.items, CORE_DIR });
+        defer gpa.free(core_path);
+
+        if (dir.openDir(io, core_path, search_options())) |found| {
+            var opened = found;
+            opened.close(io);
+            return try gpa.dupe(u8, prefix.items);
+        } else |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        }
+        try prefix.appendSlice(gpa, "../");
+    }
+    return null;
+}
+
 /// A file-scope import that reaches the native adapters.
 const Found = struct {
     /// 1-based line the `@import` sits on.
@@ -93,6 +131,34 @@ fn findNativeImport(gpa: std.mem.Allocator, source: [:0]const u8, base_dir: []co
     }
 }
 
+test "the repo root is found by walking up from wherever the binary runs" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "src/core");
+    try tmp.dir.createDirPath(io, "nested/deeper");
+
+    // Starting three levels down, the walk finds the root two hops up.
+    const from_deeper = try tmp.dir.openDir(io, "nested/deeper", .{});
+    defer from_deeper.close(io);
+    const found = (try repoRootUnder(gpa, io, from_deeper, MAX_PARENT_HOPS)).?;
+    defer gpa.free(found);
+    try std.testing.expectEqualStrings("../../", found);
+}
+
+test "a tree with no src/core in reach has no repo root" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "only/this");
+    const from_dir = try tmp.dir.openDir(io, "only/this", .{});
+    defer from_dir.close(io);
+
+    try std.testing.expect(try repoRootUnder(gpa, io, from_dir, 0) == null);
+}
+
 test "a file-scope core import into the native adapters is a violation" {
     const source =
         \\const std = @import("std");
@@ -122,7 +188,13 @@ test "no file-scope import under src/core reaches the native adapters" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    var core_dir = try std.Io.Dir.cwd().openDir(io, CORE_DIR, .{ .iterate = true });
+    // The gate is run from wherever the test binary sits, so the tree is located rather than assumed.
+    const root = (try repoRootUnder(gpa, std.testing.io, std.Io.Dir.cwd(), MAX_PARENT_HOPS)) orelse return error.TestRepoRootNotFound;
+    defer gpa.free(root);
+    const core_path = try std.fmt.allocPrint(gpa, "{s}{s}", .{ root, CORE_DIR });
+    defer gpa.free(core_path);
+
+    var core_dir = try std.Io.Dir.cwd().openDir(io, core_path, search_options());
     defer core_dir.close(io);
     var walker = try core_dir.walk(gpa);
     defer walker.deinit();
