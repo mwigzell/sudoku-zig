@@ -79,7 +79,7 @@ pub fn build(b: *std.Build) void {
 
     // The sandcastle harness decides which step a run performs and when it must stop, so
     // a broken harness has to fail the gate rather than the next run.
-    const sandcastle_test = b.addSystemCommand(&.{ "node", "--test", ".sandcastle/plan.test.mts", ".sandcastle/verdict.test.mts", ".sandcastle/loop.test.mts" });
+    const sandcastle_test = b.addSystemCommand(&.{ "node", "--test", ".sandcastle/plan.test.mts", ".sandcastle/ledger.test.mts", ".sandcastle/verdict.test.mts", ".sandcastle/loop.test.mts", ".sandcastle/report.test.mts" });
     const sandcastle_test_step = b.step("sandcastle-test", "Run the sandcastle harness tests (node)");
     sandcastle_test_step.dependOn(&sandcastle_test.step);
 
