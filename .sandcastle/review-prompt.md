@@ -10,11 +10,11 @@ Your job is to **falsify this step**, not to polish it and not to judge the whol
 
 ## Branch under review
 
-`{{BRANCH}}` against `{{TARGET_BRANCH}}`, with the steps before this one already committed. You are reviewing the branch as it stands: this step's commit, on top of the earlier steps' commits.
+`{{SOURCE_BRANCH}}` against `{{BASE_BRANCH}}`, with the steps before this one already committed. You are reviewing the branch as it stands: this step's commit, on top of the earlier steps' commits.
 
 ## Commits on the branch
 
-!`git log {{TARGET_BRANCH}}..{{BRANCH}} --oneline`
+!`git log {{BASE_BRANCH}}..{{SOURCE_BRANCH}} --oneline`
 
 ## This step's change
 

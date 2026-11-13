@@ -111,13 +111,15 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     }
 
     const stage = `step ${step.position}/${steps.length}`;
+    // Sandcastle reserves SOURCE_BRANCH (the run branch, which the prompt reads directly) and
+    // TARGET_BRANCH (the host's current branch, which the harness must not depend on). The run's
+    // own base travels under its own name, so the review diff range is the branch it was cut from.
     const promptArgs = {
       ISSUE: plan.issue,
       STEP: step.position,
       STEPS_TOTAL: steps.length,
       STEP_TITLE: step.title,
-      BRANCH: sandbox.branch,
-      TARGET_BRANCH: plan.targetBranch,
+      BASE_BRANCH: plan.targetBranch,
     };
 
     console.log(`[${stage}] implementer…`);

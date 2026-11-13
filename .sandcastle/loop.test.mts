@@ -52,12 +52,14 @@ function fakeTracker(body: string, options: { ignoreWrites?: boolean } = {}) {
  */
 function fakeSandbox(worktree: string, verdicts: Array<ReturnType<typeof passingVerdict> | null>) {
   const queued = [...verdicts];
-  const runs: { name?: string; promptFile?: string }[] = [];
+  /** What one `run()` call was given; the loop's own prompt arguments are what the tests check. */
+  type RunOptions = { name?: string; promptFile?: string; promptArgs: Record<string, string | number | boolean> };
+  const runs: RunOptions[] = [];
   const sandbox = {
     branch: "sandcastle/sequential-reviewer/1",
     worktreePath: worktree,
     runs,
-    run: async (options: { name?: string; promptFile?: string }) => {
+    run: async (options: RunOptions) => {
       runs.push(options);
       if (options.promptFile?.includes("implement") === true) {
         return { commits: [{ sha: "abc123" }], iterations: [], stdout: "" };
@@ -192,6 +194,31 @@ test("a tick that does not take on the issue stops the run instead of repeating 
 
     assert.equal(code, 1, "a step whose tick does not land is not retried");
     assert.equal(sandbox.runs.length, 2, "the loop stops after the step it could not tick");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("the loop never passes sandcastle's reserved prompt arguments", async () => {
+  const dirs = fixture();
+  try {
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)]);
+    await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker: fakeTracker(TWO_STEPS),
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    // Sandcastle fills these itself and refuses a run that overrides them, so a step that
+    // names one takes the whole run down before an agent ever starts.
+    assert.equal(sandbox.runs.length, 4, "both roles ran for both steps");
+    for (const passed of sandbox.runs) {
+      assert.equal("SOURCE_BRANCH" in passed.promptArgs, false, "SOURCE_BRANCH is sandcastle's to fill");
+      assert.equal("TARGET_BRANCH" in passed.promptArgs, false, "TARGET_BRANCH is sandcastle's to fill");
+      assert.equal(passed.promptArgs.BASE_BRANCH, "develop", "the review diffs against the run's own base");
+    }
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

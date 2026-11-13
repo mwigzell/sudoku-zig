@@ -57,6 +57,14 @@ function checkCleanTree(): void {
   }
 }
 
+/** The run branch is cut from the target branch, and the accept step merges into the current one. */
+function checkOnTargetBranch(): void {
+  const current = git(["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (current !== plan.targetBranch) {
+    throw new Error(`a run is cut from and accepted into ${plan.targetBranch}, but HEAD is on ${current}`);
+  }
+}
+
 /** bwrap hides the host's gh login, so the agent's first gh call needs a token in .env. */
 function checkGitHubToken(): void {
   const envPath = new URL(".env", import.meta.url);
@@ -116,6 +124,7 @@ if (plan.refusal !== null) {
 checkNoLeftoverWorktrees();
 checkNoUnsettledBranches();
 checkCleanTree();
+checkOnTargetBranch();
 checkGitHubToken();
 
 // ---------------------------------------------------------------------------
