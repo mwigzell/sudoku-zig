@@ -118,7 +118,8 @@ nothing and says so, rather than guessing a number and closing someone else's is
 (no git, no GitHub): its issue and branch, its phase, which step it is on, how much it has ticked, how
 long it has been going, and the last thing it logged. The phase is `live` while the last event is recent,
 `stalled` when the run has gone quiet for 90s without finishing, `finished` when it logged its own end or
-a stop.
+a stop. An agent session can think for minutes without logging anything, so the loop beats for it: a
+`heartbeat` line every 30s for as long as a wait is outstanding, which is what keeps a working run `live`.
 
 `npm run sandcastle:watch` follows the newest run instead of asking once: each event as it lands, then
 the phase, and it exits when the run ends (Ctrl-C stops watching, not the run).

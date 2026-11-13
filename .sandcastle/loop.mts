@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
 import { ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, type EventKind } from "./events.mts";
+import { withHeartbeat } from "./heartbeat.mts";
 import { writeRunRecord } from "./run_record.mts";
 import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
 import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
@@ -112,6 +113,11 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     return 1;
   };
 
+  // An agent can think for minutes without logging; the wait beats, so `status` can still tell a
+  // working run from a dead one.
+  const waiting = <T,>(what: string, work: Promise<T>): Promise<T> =>
+    withHeartbeat(what, work, (line) => event("heartbeat", line));
+
   // Every tick this run writes is recorded here, so a drop can take exactly those back.
   const ledgerFile = ledgerPath(runsDir);
   // The aim is recorded before any agent runs: a run that stops at its first step still settles.
@@ -148,13 +154,13 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
 
     event("step", `${stage}: ${step.title}`);
     event("agent-start", `${stage} implementer`);
-    const implement = await sandbox.run({
+    const implement = await waiting(`${stage} implementer`, sandbox.run({
       name: `implementer-${stage.replace(" ", "-").replace("/", "of")}`,
       maxIterations: 1,
       agent,
       promptFile: IMPLEMENT_PROMPT,
       promptArgs,
-    });
+    }));
     event("agent-end", `${stage} implementer`);
     if (implement.commits.length === 0) return stop(`the implementer committed nothing for ${stage}`);
     if (implement.commits.length > 1) {
@@ -162,13 +168,13 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     }
 
     event("agent-start", `${stage} reviewer`);
-    const review = await sandbox.run({
+    const review = await waiting(`${stage} reviewer`, sandbox.run({
       name: `reviewer-${stage.replace(" ", "-").replace("/", "of")}`,
       maxIterations: 1,
       agent,
       promptFile: REVIEW_PROMPT,
       promptArgs,
-    });
+    }));
     event("agent-end", `${stage} reviewer`);
     if (review.commits.length > 0) return stop(`the reviewer committed to ${plan.branch}; a review may not write`);
 
@@ -217,13 +223,17 @@ async function finalReview(
   const { plan, sandbox, tracker, agent, runsDir, ledgerFile } = options;
 
   logEvent("agent-start", "final reviewer: the issue's acceptance criteria");
-  const review = await sandbox.run({
-    name: "final-review",
-    maxIterations: 1,
-    agent,
-    promptFile: FINAL_REVIEW_PROMPT,
-    promptArgs: { ISSUE: plan.issue, BASE_BRANCH: plan.targetBranch },
-  });
+  const review = await withHeartbeat(
+    "final reviewer",
+    sandbox.run({
+      name: "final-review",
+      maxIterations: 1,
+      agent,
+      promptFile: FINAL_REVIEW_PROMPT,
+      promptArgs: { ISSUE: plan.issue, BASE_BRANCH: plan.targetBranch },
+    }),
+    (line) => logEvent("heartbeat", line),
+  );
   logEvent("agent-end", "final reviewer");
   if (review.commits.length > 0) return stop(`the whole-branch reviewer committed to ${plan.branch}; a review may not write`);
 
