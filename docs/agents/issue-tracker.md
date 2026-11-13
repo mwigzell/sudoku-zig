@@ -29,6 +29,25 @@ The product is one core with three front ends: **native** (terminal), **web** an
 
 Triage adds the section before an issue moves to `ready-for-agent`, and an **Agent Brief** carries it as a `**Front ends:**` field after `**Summary:**`.
 
+## Steps a run can take
+
+An issue that a sandcastle run steps through writes its steps in a `## Steps` section as **checkboxes**, one per iteration:
+
+```markdown
+## Steps
+
+- [ ] **The file:** `config.json`, read and written generically.
+- [ ] **Config leaves the engine:** platforms hold Config beside the engine.
+```
+
+- One `- [ ]` item is one step: one implementer session, one reviewer session, one commit on the run branch.
+- The host ticks a step by changing `- [ ]` to `- [x]`, and touches nothing else in the body. The agents never write to the issue, never label it and never close it.
+- A numbered list (`1. …`), `### Step N:` headings, or prose in that section cannot be ticked without rewriting the author's words, so `npm run sandcastle:plan -- --issue N` refuses the issue with the reason and no run starts.
+- Acceptance criteria stay checkboxes under their own heading. They are judged once, against the whole branch, at the end of the run — never per step.
+- Write the step's text as the work to be done now: the implementer performs it as written and stops there. A step that needs a later step to make sense is two steps.
+
+Triage fixes the step shape while it is already editing the body.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a **GitHub issue** (`gh issue create`).

@@ -24,5 +24,6 @@ An issue is not ready until someone has walked it as a player, on each front end
 2. **States:** list every state the board and its settings can be in, including combinations (a mode on with a setting off, no game yet, a given selected).
 3. **Each pair:** for every state, say what the player sees and what each control does. Any pair the issue does not answer is an open question for the maintainer.
 4. **Saved data:** check each change to saved data against ADR-0018: an older app must still open the file.
+5. **Steps:** when a run will step the issue, `## Steps` must be `- [ ]` items — one step per run iteration — or the planner refuses it. The shape and what a step must say are in "Steps a run can take" in `docs/agents/issue-tracker.md`.
 
 Record the answers in the issue (Decisions, acceptance criteria), not in a comment that can be missed.
