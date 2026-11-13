@@ -1,0 +1,249 @@
+// Test-only gate: no file-scope `@import` under `src/core/` may reach the platform adapters.
+//
+// Core is one portable implementation every front end compiles; `src/native/` is the desktop
+// adapter (entry, terminal renderer, shell). A test that needs a native helper imports it inside
+// its own `test { … }` block, where nothing reaches production code.
+const std = @import("std");
+
+/// Directory the gate reads, and the one no import in it may reach into (both repo-relative).
+const CORE_DIR = "src/core";
+const NATIVE_DIR = "src/native";
+
+/// How far up from the working directory the gate looks for the repository it is reading.
+/// A test binary can be run from anywhere inside the tree; past this depth it is not our repo.
+const MAX_PARENT_HOPS = 8;
+
+/// How the gate opens the directory it searches from: it only ever reads and lists.
+fn search_options() std.Io.Dir.OpenOptions {
+    return .{ .iterate = true };
+}
+
+/// The repository root as a path relative to `dir`, found by walking up until `CORE_DIR` is there:
+/// `""` when `dir` is the root itself, `"../"` one level down, and so on.
+/// `dir`: the directory to search from. `max_hops`: how many parents to try before giving up.
+/// Returns `null` when no ancestor holds `CORE_DIR`, so the caller fails loudly instead of
+/// passing a gate that walked nothing.
+fn repoRootUnder(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, max_hops: usize) !?[]u8 {
+    var prefix: std.ArrayList(u8) = .empty;
+    defer prefix.deinit(gpa);
+
+    // Every probe is written against the starting directory, so the answer is a path the caller
+    // can use from where it stands: `""` for the root itself, `"../"` one level down.
+    var hops: usize = 0;
+    while (hops <= max_hops) : (hops += 1) {
+        const core_path = try std.fmt.allocPrint(gpa, "{s}{s}", .{ prefix.items, CORE_DIR });
+        defer gpa.free(core_path);
+
+        if (dir.openDir(io, core_path, search_options())) |found| {
+            var opened = found;
+            opened.close(io);
+            return try gpa.dupe(u8, prefix.items);
+        } else |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        }
+        try prefix.appendSlice(gpa, "../");
+    }
+    return null;
+}
+
+/// A file-scope import the gate refuses.
+const Found = struct {
+    /// 1-based line the `@import` sits on.
+    line: usize,
+    /// The import's path text as written, without its quotes; the argument as written when the
+    /// gate could not read a literal path.
+    import_path: []const u8,
+    /// True when the argument is not one string literal, so no path could be resolved. Zig rejects
+    /// a computed `@import` operand outright, so this arm is belt and braces: the gate refuses what
+    /// it cannot read rather than skipping it, and stays honest if its tokenizer ever loosens.
+    computed: bool = false,
+};
+
+/// Fold `import_path` against `base_dir` into a normalised repo-relative path, `.` and `..` resolved.
+fn resolveImportPath(gpa: std.mem.Allocator, base_dir: []const u8, import_path: []const u8) ![]u8 {
+    const joined = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ base_dir, import_path });
+    defer gpa.free(joined);
+
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(gpa);
+    var it = std.mem.tokenizeScalar(u8, joined, '/');
+    while (it.next()) |part| {
+        if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
+        if (std.mem.eql(u8, part, "..")) {
+            // A `..` that climbs out of the repo root is kept: it cannot name a core module.
+            if (parts.items.len > 0 and !std.mem.eql(u8, parts.items[parts.items.len - 1], "..")) _ = parts.pop();
+            continue;
+        }
+        try parts.append(gpa, part);
+    }
+    return std.mem.join(gpa, "/", parts.items);
+}
+
+/// True when a repo-relative path sits inside the native adapters (`src/native/…`, not `src/native_x`).
+fn reachesNative(resolved: []const u8) bool {
+    if (!std.mem.startsWith(u8, resolved, NATIVE_DIR)) return false;
+    return resolved.len == NATIVE_DIR.len or resolved[NATIVE_DIR.len] == '/';
+}
+
+/// The first file-scope `@import` in `source` that reaches the native adapters, or null.
+/// `base_dir` is the repo-relative directory the file sits in, so an import's target can be resolved.
+///
+/// Tokenizing rather than matching lines is what keeps the two exemptions honest: a comment is
+/// never a token, and a `test { … }` block is tracked by brace depth so its imports are skipped.
+fn findNativeImport(gpa: std.mem.Allocator, source: [:0]const u8, base_dir: []const u8) !?Found {
+    var tokenizer: std.zig.Tokenizer = .init(source);
+    var depth: usize = 0; // `{` nesting: a file-scope declaration sits at 0
+    var test_at: ?usize = null; // brace depth of the `test { … }` block we are inside
+    var test_body_follows = false; // saw `test` at file scope; the next `{` opens its block
+
+    while (true) {
+        const token = tokenizer.next();
+        const text = source[token.loc.start..token.loc.end];
+        switch (token.tag) {
+            .eof => return null,
+            .l_brace => {
+                depth += 1;
+                if (test_body_follows) {
+                    test_at = depth;
+                    test_body_follows = false;
+                }
+            },
+            .r_brace => {
+                if (test_at) |block_depth| {
+                    if (depth == block_depth) test_at = null;
+                }
+                depth -= 1;
+            },
+            .keyword_test => if (depth == 0) {
+                test_body_follows = true;
+            },
+            .builtin => {
+                if (test_at != null or !std.mem.eql(u8, text, "@import")) continue;
+                if (tokenizer.next().tag != .l_paren) continue;
+                const argument = tokenizer.next();
+                const line = std.mem.count(u8, source[0..token.loc.start], "\n") + 1;
+                // `@import` takes one string literal, which the compiler enforces as well; refusing
+                // anything else keeps the gate from skipping a path it could not read.
+                if (argument.tag != .string_literal) {
+                    if (argument.tag == .eof) return null;
+                    return .{ .line = line, .import_path = source[argument.loc.start..argument.loc.end], .computed = true };
+                }
+                const quoted = source[argument.loc.start..argument.loc.end];
+                const import_path = quoted[1 .. quoted.len - 1];
+                // A literal followed by anything but `)` is one piece of a built path, not a path.
+                if (tokenizer.next().tag != .r_paren) {
+                    return .{ .line = line, .import_path = import_path, .computed = true };
+                }
+                const resolved = try resolveImportPath(gpa, base_dir, import_path);
+                defer gpa.free(resolved);
+                if (!reachesNative(resolved)) continue;
+                return .{ .line = line, .import_path = import_path };
+            },
+            else => {},
+        }
+    }
+}
+
+test "the repo root is found by walking up from wherever the binary runs" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "src/core");
+    try tmp.dir.createDirPath(io, "nested/deeper");
+
+    // Starting three levels down, the walk finds the root two hops up.
+    const from_deeper = try tmp.dir.openDir(io, "nested/deeper", .{});
+    defer from_deeper.close(io);
+    const found = (try repoRootUnder(gpa, io, from_deeper, MAX_PARENT_HOPS)).?;
+    defer gpa.free(found);
+    try std.testing.expectEqualStrings("../../", found);
+}
+
+test "a tree with no src/core in reach has no repo root" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "only/this");
+    const from_dir = try tmp.dir.openDir(io, "only/this", .{});
+    defer from_dir.close(io);
+
+    try std.testing.expect(try repoRootUnder(gpa, io, from_dir, 0) == null);
+}
+
+test "a file-scope import the gate cannot read is a violation, not a pass" {
+    // A built path is not something the gate can resolve — and the compiler refuses that operand
+    // anyway. The gate refuses it too rather than skipping it, so neither half can pass it unseen.
+    const source =
+        \\const path = @import("../nat" ++ "ive/shell/path.zig");
+    ;
+    const found = (try findNativeImport(std.testing.allocator, source, "src/core")).?;
+    try std.testing.expectEqual(@as(usize, 1), found.line);
+    try std.testing.expect(found.computed);
+}
+
+test "a file-scope core import into the native adapters is a violation" {
+    const source =
+        \\const std = @import("std");
+        \\const path = @import("../native/shell/path.zig");
+        \\const config = @import("config.zig");
+    ;
+    const found = (try findNativeImport(std.testing.allocator, source, "src/core")).?;
+    try std.testing.expectEqual(@as(usize, 2), found.line);
+    try std.testing.expectEqualStrings("../native/shell/path.zig", found.import_path);
+}
+
+test "an import inside a test block or a comment is not a file-scope import" {
+    const source =
+        \\// const path = @import("../native/shell/path.zig");
+        \\const std = @import("std");
+        \\const help = @import("../../native_tools/help.zig");
+        \\
+        \\test "a native helper stays inside the test" {
+        \\    const disambiguate = @import("../native/ascii/disambiguate.zig");
+        \\    _ = disambiguate;
+        \\}
+    ;
+    try std.testing.expect(try findNativeImport(std.testing.allocator, source, "src/core") == null);
+}
+
+test "no file-scope import under src/core reaches the native adapters" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    // The gate is run from wherever the test binary sits, so the tree is located rather than assumed.
+    const root = (try repoRootUnder(gpa, std.testing.io, std.Io.Dir.cwd(), MAX_PARENT_HOPS)) orelse return error.TestRepoRootNotFound;
+    defer gpa.free(root);
+    const core_path = try std.fmt.allocPrint(gpa, "{s}{s}", .{ root, CORE_DIR });
+    defer gpa.free(core_path);
+
+    var core_dir = try std.Io.Dir.cwd().openDir(io, core_path, search_options());
+    defer core_dir.close(io);
+    var walker = try core_dir.walk(gpa);
+    defer walker.deinit();
+
+    var files: usize = 0;
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, ".zig")) continue;
+        files += 1;
+
+        const source = try entry.dir.readFileAllocOptions(io, entry.basename, gpa, .unlimited, .of(u8), 0);
+        defer gpa.free(source);
+        const base_dir = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ CORE_DIR, std.fs.path.dirname(entry.path) orelse "." });
+        defer gpa.free(base_dir);
+
+        const found = (try findNativeImport(gpa, source, base_dir)) orelse continue;
+        const file = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ CORE_DIR, entry.path });
+        defer gpa.free(file);
+        if (found.computed) {
+            std.debug.print("core imports a path this gate cannot read: {s}:{d} @import({s})\n", .{ file, found.line, found.import_path });
+            return error.TestComputedImportUnderCore;
+        }
+        std.debug.print("core imports a platform adapter: {s}:{d} @import(\"{s}\")\n", .{ file, found.line, found.import_path });
+        return error.TestNativeImportUnderCore;
+    }
+    // A gate that walked nothing would pass silently; core always has sources.
+    try std.testing.expect(files > 0);
+}

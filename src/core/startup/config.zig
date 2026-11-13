@@ -6,14 +6,43 @@ const logger = @import("../logger.zig");
 const config_store = @import("../config_store.zig");
 const save_defaults = @import("../save_defaults.zig");
 
+const log = logger.Logger(.startup);
+
 /// Directory settings and save files live in when the platform could not resolve a data directory.
 const WORKING_DIR = ".";
 
-/// The directory settings and save files live in: the host's data directory, or the working
-/// directory when the host had none (settings are then read from there and never written back).
-/// `data_dir`: the platform data directory, null when the host could not compute one.
-pub fn dataDirOrWorkingDir(data_dir: ?[]const u8) []const u8 {
-    return data_dir orelse WORKING_DIR;
+/// The platform's data directory as the host entry resolved it: the path, or why there is none.
+/// The absence travels with the platform's reason so the fall-back and its one log line stay in core.
+pub const DataDir = union(enum) {
+    /// The platform resolved a directory; settings and save files live there.
+    resolved: []const u8,
+    /// The platform could not resolve one; settings fall back to `settings_dir`.
+    unavailable: Unavailable,
+
+    /// A host that has no data directory: the platform's reason, and where settings live instead.
+    pub const Unavailable = struct {
+        /// The platform's error name (`@errorName`), for the fall-back's one log line.
+        reason: []const u8,
+        /// Directory settings are read from instead; core puts them in the working directory,
+        /// and a test points this at its own directory so nothing is written beside the sources.
+        settings_dir: []const u8,
+    };
+
+    /// The platform had no data directory: settings fall back to the working directory.
+    /// `reason`: the platform's error name, so the log says what went wrong on that host.
+    pub fn noDataDir(reason: []const u8) DataDir {
+        return .{ .unavailable = .{ .reason = reason, .settings_dir = WORKING_DIR } };
+    }
+};
+
+/// The directory settings and save files live in: the host's data directory, or the fall-back
+/// directory when the host had none (settings are read from there and never written back).
+/// `host_dir`: the path the entry resolved, or the platform's reason and fall-back for having none.
+pub fn dataDirOrWorkingDir(host_dir: DataDir) []const u8 {
+    return switch (host_dir) {
+        .resolved => |dir| dir,
+        .unavailable => |none| none.settings_dir,
+    };
 }
 
 /// Command-line flags the host parsed, as values: `null` means the player did not give that flag.
@@ -92,17 +121,22 @@ fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
 }
 
 /// Load player prefs from disk, apply the host's command-line overrides, persist player prefs only.
-/// `data_dir`: platform data directory the host resolved, null when it could not resolve one.
+/// `host_dir`: the platform data directory the host resolved, or its reason for having none.
 /// `overrides`: flags the host parsed from argv; absent flags keep the values read from disk.
 pub fn resolveStartupConfig(
     gpa: std.mem.Allocator,
     io: std.Io,
-    data_dir: ?[]const u8,
+    host_dir: DataDir,
     overrides: CliOverrides,
 ) config_store.Error!config.Config {
-    const dir = data_dir orelse {
-        // No durable settings location: read the working directory and write nothing back.
-        return overrides.applyTo(try config_store.loadOrDefault(gpa, io, WORKING_DIR));
+    const dir = switch (host_dir) {
+        .resolved => |dir| dir,
+        .unavailable => |none| {
+            // No durable settings location: read the fall-back directory, write nothing back, and
+            // name the platform's reason once — this fall-back is startup's only log line.
+            log.warn("data dir unavailable, reading settings and saving files in the working directory: {s}", .{none.reason});
+            return overrides.applyTo(try config_store.loadOrDefault(gpa, io, none.settings_dir));
+        },
     };
     config_store.ensureConfigDir(io, dir);
 
@@ -128,7 +162,7 @@ test "startup applies the given overrides on top of the saved settings and persi
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    const cfg = try resolveStartupConfig(std.testing.allocator, io, data_path, .{
+    const cfg = try resolveStartupConfig(std.testing.allocator, io, .{ .resolved = data_path }, .{
         .difficulty = .hard,
         .renderer = .ascii,
         .log_level = .warn,
@@ -162,7 +196,7 @@ test "startup without overrides keeps every saved setting, not code defaults" {
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    const cfg = try resolveStartupConfig(std.testing.allocator, io, data_path, .{});
+    const cfg = try resolveStartupConfig(std.testing.allocator, io, .{ .resolved = data_path }, .{});
     try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
     try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
     try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
@@ -236,4 +270,60 @@ test "host startup JSON's config reads back into the engine's fields (web host a
     defer engine.deinit();
     try expectStartupConfigOnEngine(&engine, startup);
     try std.testing.expect(!engine.show_marks);
+}
+
+test "startup with no data directory names the platform's reason and applies the overrides" {
+    var buf: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&buf);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+    logger.min_level = .warn;
+    defer logger.min_level = .info;
+
+    const host_dir = DataDir.noDataDir("EnvironmentVariableMissing");
+    const cfg = try resolveStartupConfig(std.testing.allocator, std.testing.io, host_dir, .{ .difficulty = .hard });
+
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqualStrings(
+        "warn [startup] data dir unavailable, reading settings and saving files in the working directory: EnvironmentVariableMissing\n",
+        sink.buffered(),
+    );
+}
+
+test "the host's data dir is used, and the working directory when the host had none" {
+    const resolved = DataDir{ .resolved = "/home/player/.local/share/sudoku" };
+    const missing = DataDir.noDataDir("EnvironmentVariableMissing");
+
+    try std.testing.expectEqualStrings("/home/player/.local/share/sudoku", dataDirOrWorkingDir(resolved));
+    try std.testing.expectEqualStrings(".", dataDirOrWorkingDir(missing));
+}
+
+test "with no data directory, the settings come from the fall-back directory and nothing is written back" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // The fall-back directory is a value, so the test reads from its own directory and never
+    // touches the repository the test binary runs in.
+    const dir = try std.fmt.allocPrint(gpa, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer gpa.free(dir);
+
+    // Both fields differ from the code defaults, so reading the file is the only way to get them.
+    const on_disk = "{\"config\":{\"difficulty\":\"hard\",\"theme\":\"light\"}}";
+    try tmp.dir.writeFile(io, .{ .sub_path = config_store.file_name, .data = on_disk });
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    const cfg = try resolveStartupConfig(gpa, io, .{ .unavailable = .{ .reason = "EnvironmentVariableMissing", .settings_dir = dir } }, .{});
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+
+    // Nothing written back: the file still holds exactly the bytes this test put there.
+    const after = try tmp.dir.readFileAlloc(io, config_store.file_name, gpa, std.Io.Limit.unlimited);
+    defer gpa.free(after);
+    try std.testing.expectEqualStrings(on_disk, after);
 }

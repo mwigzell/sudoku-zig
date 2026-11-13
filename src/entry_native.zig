@@ -33,6 +33,8 @@ fn selectEntryArm(cfg: config.Config) EntryArm {
 
 test {
     _ = .{ shell, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, config_store, cli };
+    // Layering gate: no file-scope import under `src/core/` may reach the native adapters.
+    _ = @import("test/layering.zig");
 }
 
 /// Resolve startup config and dispatch to web or terminal desktop entry.
@@ -42,20 +44,21 @@ pub fn main(init: std.process.Init) shell.Error!void {
     var arg_it = std.process.Args.iterate(init.minimal.args);
     const overrides = cli.parseOverrides(&arg_it);
     const gpa = std.heap.page_allocator;
-    // The platform convention is this entry's to resolve; core only ever receives the path.
-    const data_dir = shell_path.computeDataDir(gpa) catch |err| blk: {
-        log.warn("data dir unavailable, reading settings and saving files in the working directory: {s}", .{@errorName(err)});
-        break :blk null;
-    };
-    defer if (data_dir) |dir| gpa.free(dir);
+    // The platform convention is this entry's to resolve; core receives the path, or why there is none.
+    const computed_dir = shell_path.computeDataDir(gpa);
+    defer if (computed_dir) |dir| gpa.free(dir) else |_| {};
+    const host_dir: startup_config.DataDir = if (computed_dir) |dir|
+        .{ .resolved = dir }
+    else |err|
+        startup_config.DataDir.noDataDir(@errorName(err));
 
-    const cfg = startup_config.resolveStartupConfig(gpa, init.io, data_dir, overrides) catch unreachable;
+    const cfg = startup_config.resolveStartupConfig(gpa, init.io, host_dir, overrides) catch unreachable;
     startup_config.applyLoggerFromStartup(cfg);
 
     const arm = selectEntryArm(cfg);
     log.info("entry arm: {s}", .{armLabel(arm)});
 
-    const run_dir = startup_config.dataDirOrWorkingDir(data_dir);
+    const run_dir = startup_config.dataDirOrWorkingDir(host_dir);
     if (arm == .web) {
         desktop_web.run(init.io, cfg, run_dir);
         return;
