@@ -16,6 +16,7 @@ The code is `.sandcastle/` (Node/TypeScript, run through `tsx`), the three human
 | `npm run sandcastle:verdict` | Read the finished run: one block per step verdict, then the whole-branch matrix, then the diffstat |
 | `npm run sandcastle:accept` | Merge the run branch into the **current** branch, remove its worktree, delete the branch |
 | `npm run sandcastle:drop` | Take back the ticks the run wrote, remove its worktree, delete its commits |
+| `npm run sandcastle:logs` | Show the newest agent transcript — the live view of a run. `-f` follows it, `-n <lines>` shows more, `--list` lists every transcript |
 | `npm run sandcastle:test` | The harness's own `node --test` suites (also wired into `zig build verify`) |
 
 Only one run exists at a time: a second `sandcastle/*` branch blocks both a new run and accept/drop.
@@ -98,7 +99,7 @@ the report.
 | `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |
 | `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `final-verdict.json`, `ticks.json` |
-| `.sandcastle/logs/sandcastle-<branch>-<role>-step-<n>of<m>.log` | The agents' transcripts |
+| `.sandcastle/logs/sandcastle-<branch>-<role>-step-<n>of<m>.log` | The agents' transcripts, one per session; `npm run sandcastle:logs` reads the newest |
 | `.sandcastle/.env` | `GH_TOKEN` for the sandboxed agents (untracked) |
 
 `logs/`, `worktrees/`, `.env` and a stray `verdict.json` are gitignored: a run's evidence is local.
