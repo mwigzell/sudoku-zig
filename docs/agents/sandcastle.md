@@ -89,7 +89,10 @@ is being left as it is, and the drop continues.
 - **verdict** is read-only: it never merges, never deletes, and never touches the issue.
 
 Ticking acceptance criteria is the whole-branch reviewer's call, carried out by the host on its evidence —
-the same split as a step. Closing the issue is not built yet: `accept` currently merges and cleans up only.
+the same split as a step. Accepting a run then closes the issue it was aimed at, because the run already
+proved its criteria: the number comes from the run's own record (`logs/<stamp>/run.json`, written before any
+agent starts), falling back to the ledger for a run older than that record. A run that leaves neither closes
+nothing and says so, rather than guessing a number and closing someone else's issue.
 
 ## Files
 

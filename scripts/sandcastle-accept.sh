@@ -45,4 +45,11 @@ if [ -n "$worktree" ]; then
 fi
 git branch -d "$BRANCH"
 
-echo "Accepted $BRANCH into $CURRENT."
+# Accepting ends the issue: the run already proved its criteria, and this is the human's yes.
+# Closing is the host's write, so it goes through the same path as a tick. A run with no record of
+# the issue it aimed at closes nothing and says so, rather than guessing a number.
+if npx tsx .sandcastle/accept.mts --stamp "${BRANCH##*/}" --branch "$BRANCH" --into "$CURRENT"; then
+  echo "Accepted $BRANCH into $CURRENT."
+else
+  echo "Accepted $BRANCH into $CURRENT, but the issue was not closed: close it by hand." >&2
+fi
