@@ -10,6 +10,7 @@ import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
 import { ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
+import { readReport, readRules, validateReport } from "./standards.mts";
 import { writeRunRecord } from "./run_record.mts";
 import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
 import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
@@ -19,6 +20,7 @@ const VERDICT_FILE = ".sandcastle/verdict.json";
 
 /** Where the whole-branch reviewer writes its verdict; the host copies it out from there. */
 const FINAL_VERDICT_FILE = ".sandcastle/final-verdict.json";
+const STANDARDS_VERDICT_FILE = ".sandcastle/verdict-standards.json";
 
 /** Prompts are harness files, resolved against the repo root the harness runs from. */
 const IMPLEMENT_PROMPT = "./.sandcastle/implement-prompt.md";
@@ -245,6 +247,29 @@ async function finalReview(
 
   const read = readFinalVerdict(readFileSync(kept, "utf8"));
   if ("problem" in read) return stop(read.problem);
+
+  // The standards lens is a second file with its own verdict: the reviewer answers every rule the
+  // branch's own AGENTS.md carries, and a rule it skipped, invented or left unevidenced stops the run.
+  const standardsPath = join(sandbox.worktreePath, STANDARDS_VERDICT_FILE);
+  if (!existsSync(standardsPath)) return stop(`the whole-branch reviewer wrote no ${STANDARDS_VERDICT_FILE}`);
+  const standardsKept = join(runsDir, "verdict-standards.json");
+  copyFileSync(standardsPath, standardsKept);
+
+  const standardsRead = readReport(readFileSync(standardsKept, "utf8"));
+  if ("problem" in standardsRead) return stop(standardsRead.problem);
+
+  const rules = readRules(readFileSync(join(sandbox.worktreePath, "AGENTS.md"), "utf8"));
+  const checked = validateReport(standardsRead.report, rules);
+  if ("problem" in checked) return stop(`standards: ${checked.problem}`);
+
+  // A violation is a stop for accept or drop, exactly as a failing step is (AGENTS.md AC 13).
+  for (const entry of standardsRead.report.rules) {
+    logEvent("verdict", `standards ${entry.verdict}: ${entry.rule} — ${entry.evidence}`);
+  }
+  const violations = standardsRead.report.rules.filter((entry) => entry.verdict === "VIOLATION");
+  if (violations.length > 0) {
+    return stop(`standards: ${violations.map((entry) => `${entry.rule} (${entry.evidence})`).join("; ")}`);
+  }
 
   const decision = decideFinal(read.verdict);
   for (const entry of read.verdict.criteria) {

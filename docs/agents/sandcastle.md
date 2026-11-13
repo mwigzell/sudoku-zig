@@ -69,6 +69,12 @@ is matched against the issue body by its text: one the issue does not word that 
 leaves out, is a stop — the reviewer may neither invent a criterion nor skip the one it could not prove.
 The proven ones are then ticked by the host, exactly as a step is.
 
+The final pass also answers the **standards lens** in `logs/<stamp>/verdict-standards.json`: one entry per
+numbered rule in the branch's own `AGENTS.md` "## Coding standards", each `PASS` with `file:line` or a
+`VIOLATION` naming its site. The harness reads that same list from that file rather than keeping its own,
+so a rule added to `AGENTS.md` is required by the next run with no change here. A rule unjudged, invented,
+or unevidenced stops the run, and so does any `VIOLATION` — the standards lens is not advisory.
+
 A malformed verdict file is always a problem, never an empty pass.
 
 ## The tick ledger

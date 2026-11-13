@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { readEvents } from "./events.mts";
 import { ledgerPath, readLedger } from "./ledger.mts";
 import { runSteps, type StepSandbox } from "./loop.mts";
+
+type SandboxAlias = StepSandbox;
 import { makePlan } from "./plan.mts";
 
 const TWO_STEPS = `## Steps
@@ -34,10 +36,24 @@ const passingVerdict = (step: number) => ({
   drift: false,
 });
 
+/** The standards the branch's own AGENTS.md carries: two rules, so the report must answer both. */
+const BRANCH_AGENTS = `## Coding standards
+
+1. **Document public surfaces.** Every public function needs a header comment.
+2. **Nothing is silent**: every caught error is logged.
+`;
+
+/** A standards report that answers the branch's rules, so the run may pass. */
+const passingStandards = () => ({
+  rules: [
+    { rule: "Document public surfaces.", verdict: "PASS", evidence: "src/sudoku.zig:12" },
+    { rule: "Nothing is silent", verdict: "PASS", evidence: "src/host/host.zig:40" },
+  ],
+});
+
 /** A whole-branch verdict in which the issue's one criterion is proven, so the run may pass. */
 const passingFinal = () => ({
   criteria: [{ criterion: "Something at issue level.", status: "proven", evidence: "a test asserts it" }],
-  standards: "clean",
   concerns: [],
 });
 
@@ -63,6 +79,7 @@ function fakeSandbox(
   worktree: string,
   verdicts: Array<ReturnType<typeof passingVerdict> | null>,
   final: object | null = passingFinal(),
+  standards: object | null = passingStandards(),
 ) {
   const queued = [...verdicts];
   /** What one `run()` call was given; the loop's own prompt arguments are what the tests check. */
@@ -82,6 +99,9 @@ function fakeSandbox(
         const final_file = join(worktree, ".sandcastle", "final-verdict.json");
         if (final === null) rmSync(final_file, { force: true });
         else writeFileSync(final_file, JSON.stringify(final));
+        const standards_file = join(worktree, ".sandcastle", "verdict-standards.json");
+        if (standards === null) rmSync(standards_file, { force: true });
+        else writeFileSync(standards_file, JSON.stringify(standards));
         return { commits: [], iterations: [], stdout: "" };
       }
       const verdict = queued.shift();
@@ -99,6 +119,7 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "sandcastle-loop-"));
   const worktree = join(root, "worktree");
   mkdirSync(join(worktree, ".sandcastle"), { recursive: true });
+  writeFileSync(join(worktree, "AGENTS.md"), BRANCH_AGENTS);
   return { root, worktree, runsDir: join(root, "runs") };
 }
 
@@ -167,7 +188,6 @@ test("a branch whose criteria the whole-branch review cannot prove stops the run
         { criterion: "Something at issue level.", status: "unproven", evidence: "" },
         { criterion: "Another criterion.", status: "proven", evidence: "a test asserts it" },
       ],
-      standards: "clean",
       concerns: ["the second criterion rests on a test that runs only on the web path"],
     };
     const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], unproven);
@@ -316,6 +336,76 @@ test("the loop never passes sandcastle's reserved prompt arguments", async () =>
       assert.equal("TARGET_BRANCH" in passed.promptArgs, false, "TARGET_BRANCH is sandcastle's to fill");
       assert.equal(passed.promptArgs.BASE_BRANCH, "develop", "the review diffs against the run's own base");
     }
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a standards report that leaves a rule unjudged stops the run", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(TWO_STEPS);
+    const partial = { rules: [passingStandards().rules[0]!] };
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], passingFinal(), partial);
+
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as SandboxAlias,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 1, "a report against yesterday's standards list is not acceptable");
+    assert.equal(tracker.writes.length, 2, "the two steps that passed stay ticked; no criterion is");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a standards violation stops the branch for accept or drop, exactly as a failing step does", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(TWO_STEPS);
+    const violated = {
+      rules: [
+        passingStandards().rules[0]!,
+        { rule: "Nothing is silent", verdict: "VIOLATION", evidence: "src/native/serve.zig:88 catches and says nothing" },
+      ],
+    };
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], passingFinal(), violated);
+
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as SandboxAlias,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 1);
+    assert.equal(tracker.writes.length, 2, "the issue is left with its two steps ticked and no criterion ticked");
+    assert.ok(existsSync(join(dirs.runsDir, "verdict-standards.json")), "the report is kept beside the matrix");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a whole-branch review that writes no standards report stops the run", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(TWO_STEPS);
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], passingFinal(), null);
+
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as SandboxAlias,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 1, "the standards lens is mandatory, not optional");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

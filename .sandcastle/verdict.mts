@@ -126,8 +126,6 @@ export interface CriterionVerdict {
 export interface FinalVerdict {
   /** Every acceptance criterion of the issue, in the issue's order. */
   criteria: CriterionVerdict[];
-  /** The mechanical standards result over the whole branch, or the violation found. */
-  standards: string;
   /** Anything a human should read before accepting the run. */
   concerns: string[];
 }
@@ -156,7 +154,6 @@ export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { pro
       return { problem: `the verdict's criteria[${at}].status is not proven or unproven` };
     }
   }
-  if (typeof record.standards !== "string") return { problem: "the verdict's standards is not a string" };
   if (!holds(record.concerns, "strings")) return { problem: "the verdict's concerns is not a list of strings" };
   return { verdict: record as unknown as FinalVerdict };
 }
@@ -164,13 +161,11 @@ export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { pro
 /**
  * Decide whether a run has reached its criteria.
  *
- * A run passes only when every criterion is proven with evidence the reviewer read and the
- * standards gate is clean. Any criterion unproven, or proven on nothing, stops the run with
- * the criteria named, so a human reads the matrix instead of a run claiming to be done.
+ * A run passes only when every criterion is proven with evidence the reviewer read. Any criterion
+ * unproven, or proven on nothing, stops the run with the criteria named, so a human reads the matrix
+ * instead of a run claiming to be done. The standards lens is judged separately, from its own report.
  */
 export function decideFinal(verdict: FinalVerdict): FinalDecision {
-  if (verdict.standards !== "clean") return { kind: "stop", reason: `standards: ${verdict.standards}` };
-
   const unproven = verdict.criteria.filter((entry) => entry.status !== "proven");
   if (unproven.length > 0) {
     return { kind: "stop", reason: `unproven: ${unproven.map((entry) => entry.criterion).join("; ")}` };

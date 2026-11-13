@@ -40,12 +40,7 @@ test("a red verify stops the run and quotes the exit code", () => {
   assert.deepEqual(stopOf(changed("verify_exit", 1)), { kind: "stop", reason: "zig build verify exited 1" });
 });
 
-test("a standards violation stops the run", () => {
-  assert.deepEqual(stopOf(changed("standards", "public symbol without a doc comment")), {
-    kind: "stop",
-    reason: "standards: public symbol without a doc comment",
-  });
-});
+
 
 test("a named acceptance criterion at risk stops the run", () => {
   assert.deepEqual(stopOf(changed("ac_at_risk", ["AC 3", "AC 6"])), {
@@ -132,8 +127,8 @@ test("a criteria list with no evidence is a problem, never an empty pass", () =>
 
 test("a final verdict that cannot be read is a problem, not a pass", () => {
   assert.deepEqual(readFinalVerdict("{ not json"), { problem: "the verdict file is not valid JSON" });
-  const incomplete = readFinalVerdict(JSON.stringify({ criteria: [] }));
-  assert.ok("problem" in incomplete, "a verdict missing its standards result is not a pass");
+  const incomplete = readFinalVerdict(JSON.stringify({ concerns: [] }));
+  assert.ok("problem" in incomplete, "a verdict missing its criteria is not a pass");
   assert.deepEqual(
     readFinalVerdict(JSON.stringify({ ...FINAL_PASSING, criteria: [{ criterion: "x", status: "maybe", evidence: "y" }] })),
     { problem: "the verdict's criteria[0].status is not proven or unproven" },

@@ -59,6 +59,35 @@ function key(title: string): string {
 }
 
 /**
+ * Read `verdict-standards.json`, checked field by field so a malformed report is never a pass.
+ *
+ * The report is the reviewer's whole answer to the standards lens; the reviewer does not also get
+ * to say "clean" somewhere else, or the two could disagree.
+ */
+export function readReport(raw: string): { report: StandardsReport } | { problem: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { problem: "the standards report is not valid JSON" };
+  }
+  if (typeof parsed !== "object" || parsed === null) return { problem: "the standards report is not a JSON object" };
+
+  const record = parsed as Record<string, unknown>;
+  if (!Array.isArray(record.rules)) return { problem: "the standards report has no rules field" };
+  for (const [at, entry] of record.rules.entries()) {
+    const rule = entry as Record<string, unknown>;
+    if (typeof rule.rule !== "string" || typeof rule.evidence !== "string") {
+      return { problem: `the standards report's rules[${at}] has no rule and evidence text` };
+    }
+    if (rule.verdict !== "PASS" && rule.verdict !== "VIOLATION") {
+      return { problem: `the standards report's rules[${at}].verdict is not PASS or VIOLATION` };
+    }
+  }
+  return { report: record as unknown as StandardsReport };
+}
+
+/**
  * Check a standards report against the rules the run was asked about.
  *
  * The reviewer may neither skip a rule nor answer one that does not exist, and an answer carries

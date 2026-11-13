@@ -31,7 +31,7 @@ Your job is to answer one question with evidence: **does this branch meet the is
 
 3. **Run the gate over the whole branch.** `zig build verify`, and keep its exit code. A branch that is green only in parts is not green.
 
-4. **Read the branch against the standards.** Name any violation you would flag in review, or say `clean`. Check the whole diff, not the last commit: duplication, undocumented public surface, silent catches, policy that leaked into an adapter, comments that cite issues.
+4. **Answer every coding standard**, rule by rule. The list is `AGENTS.md` "## Coding standards" on this branch: read it, and answer **each numbered rule** — none skipped, none invented, and each answer carries `file:line` evidence or names the violation with its site. "Code smell", a hunch or a rule paraphrased out of existence is not an answer. Check the whole diff, not the last commit.
 
 5. **Say what a human should know.** `concerns` carries what you would tell the person accepting this run: risks, follow-ups, anything that reads as drift from the issue. Do not invent work items.
 
@@ -50,9 +50,24 @@ Write **`.sandcastle/final-verdict.json`** in the repository root, and nothing e
       "evidence": "the test or command you read or ran, and what it showed"
     }
   ],
-  "standards": "clean",
   "concerns": ["what a human should read before accepting this run"]
 }
 ```
 
-`criteria` lists **every** acceptance criterion of the issue, in the issue's order, worded as the issue words it: the host matches your matrix against the issue body, and a criterion it cannot match stops the run. `standards` is `clean` or the violation you found. An unproven criterion needs empty `evidence`; do not pad it.
+`criteria` lists **every** acceptance criterion of the issue, in the issue's order, worded as the issue words it: the host matches your matrix against the issue body, and a criterion it cannot match stops the run. An unproven criterion needs empty `evidence`; do not pad it.
+
+Write **`.sandcastle/verdict-standards.json`** too, and nothing else:
+
+```json
+{
+  "rules": [
+    {
+      "rule": "the rule's bold title, worded as AGENTS.md words it",
+      "verdict": "PASS",
+      "evidence": "src/host/host.zig:40 — what you read or ran, and what it showed"
+    }
+  ]
+}
+```
+
+`rules` answers **every** numbered rule in the branch's `AGENTS.md` "## Coding standards", one entry each: the host reads the same list from that file and stops the run if a rule is unjudged, invented, or unevidenced. `verdict` is `PASS` or `VIOLATION`; a `VIOLATION` stops the run for accept or drop exactly as a failing step does, so it must name the site.
