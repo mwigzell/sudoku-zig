@@ -3,7 +3,7 @@ const std = @import("std");
 const config = @import("config.zig");
 const config_table = @import("config_table.zig");
 const logger = @import("logger.zig");
-const path = @import("../native/shell/path.zig");
+const path = @import("path.zig");
 
 const log = logger.Logger(.sudoku);
 

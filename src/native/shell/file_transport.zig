@@ -4,6 +4,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const mypath = @import("path.zig");
+const save_path = @import("../../core/path.zig");
 const logger = @import("../../core/logger.zig");
 const log = logger.Logger(.sudoku);
 const TEST_DATA_DIR = "/tmp/sudoku-zig-test-data";
@@ -149,7 +150,7 @@ pub const NativeTransport = struct {
     }
 
     fn rememberDataDirFromPath(ctx: *Context, resolved_path: []const u8) TransportError!void {
-        const parent = mypath.parentDir(gpa, resolved_path) catch return TransportError.OutOfMemory;
+        const parent = save_path.parentDir(gpa, resolved_path) catch return TransportError.OutOfMemory;
         if (ctx.data_dir) |old| {
             if (std.mem.eql(u8, old, parent)) {
                 gpa.free(parent);
@@ -194,7 +195,7 @@ pub const NativeTransport = struct {
             gpa.dupe(u8, name) catch return TransportError.OutOfMemory
         else blk: {
             const data_dir = ensureDataDir(ctx) catch |err| return err;
-            break :blk mypath.resolveSavePath(gpa, data_dir, name) catch return TransportError.OutOfMemory;
+            break :blk save_path.resolveSavePath(gpa, data_dir, name) catch return TransportError.OutOfMemory;
         };
         rememberDataDirFromPath(ctx, resolved) catch {
             gpa.free(resolved);

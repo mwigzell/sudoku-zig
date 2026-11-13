@@ -6,7 +6,7 @@ const config = @import("../../core/config.zig");
 const config_store = @import("../../core/config_store.zig");
 const flow_mod = @import("../../core/flow/mod.zig");
 const file_transport = @import("file_transport.zig");
-const path_mod = @import("path.zig");
+const path_mod = @import("../../core/path.zig");
 const save_defaults = @import("../../core/save_defaults.zig");
 const logger = @import("../../core/logger.zig");
 
