@@ -1,3 +1,6 @@
 .env
 logs/
 worktrees/
+# The reviewer's report is read by the host and copied into the run's log directory; it is
+# never part of the branch, so it must not make the worktree dirty.
+verdict.json

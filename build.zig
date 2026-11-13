@@ -77,6 +77,12 @@ pub fn build(b: *std.Build) void {
     const shell_fit_step = b.step("shell-fit", "Run the measured-layout check (headless Chromium)");
     shell_fit_step.dependOn(&shell_fit.step);
 
+    // The sandcastle harness decides which step a run performs and when it must stop, so
+    // a broken harness has to fail the gate rather than the next run.
+    const sandcastle_test = b.addSystemCommand(&.{ "node", "--test", ".sandcastle/plan.test.mts", ".sandcastle/verdict.test.mts", ".sandcastle/loop.test.mts" });
+    const sandcastle_test_step = b.step("sandcastle-test", "Run the sandcastle harness tests (node)");
+    sandcastle_test_step.dependOn(&sandcastle_test.step);
+
     // --- Tests ---
     // entry_native.zig transitively imports the domain modules; addTest discovers every co-located `test {}`
     // block via Zig's import-graph discovery.
@@ -187,6 +193,7 @@ pub fn build(b: *std.Build) void {
     verify_run_step.dependOn(&glue.step);
     verify_run_step.dependOn(&glue_parity.step);
     verify_run_step.dependOn(&shell_fit.step);
+    verify_run_step.dependOn(&sandcastle_test.step);
     verify_run_step.dependOn(&kcov_sum.step);
 
     const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });
