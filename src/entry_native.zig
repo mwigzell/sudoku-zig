@@ -7,6 +7,7 @@ const desktop_web = @import("native/desktop_web.zig");
 const desktop_terminal = @import("native/desktop_terminal.zig");
 const startup_config = @import("core/startup/config.zig");
 const shell_path = @import("native/shell/path.zig");
+const cli = @import("native/cli.zig");
 // Wasm JSON contract tests — not reachable from the native play path (see entry_wasm.zig).
 const wasm_wire = @import("wasm/wire.zig");
 const wasm_boundary = @import("wasm/boundary.zig");
@@ -31,7 +32,7 @@ fn selectEntryArm(cfg: config.Config) EntryArm {
 }
 
 test {
-    _ = .{ shell, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, config_store };
+    _ = .{ shell, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, config_store, cli };
 }
 
 /// Resolve startup config and dispatch to web or terminal desktop entry.
@@ -39,25 +40,28 @@ pub fn main(init: std.process.Init) shell.Error!void {
     const log = logger.Logger(.sudoku);
     log.start("starting desktop: {s}", .{about.summaryLine(build_info.debug_build)});
     var arg_it = std.process.Args.iterate(init.minimal.args);
+    const overrides = cli.parseOverrides(&arg_it);
     const gpa = std.heap.page_allocator;
-    const cfg = startup_config.resolveStartupConfig(gpa, init.io, &arg_it) catch unreachable;
+    // The platform convention is this entry's to resolve; core only ever receives the path.
+    const data_dir = shell_path.computeDataDir(gpa) catch |err| blk: {
+        log.warn("data dir unavailable, reading settings and saving files in the working directory: {s}", .{@errorName(err)});
+        break :blk null;
+    };
+    defer if (data_dir) |dir| gpa.free(dir);
+
+    const cfg = startup_config.resolveStartupConfig(gpa, init.io, data_dir, overrides) catch unreachable;
     startup_config.applyLoggerFromStartup(cfg);
 
     const arm = selectEntryArm(cfg);
     log.info("entry arm: {s}", .{armLabel(arm)});
 
-    const data_dir = shell_path.computeDataDir(gpa) catch |err| blk: {
-        log.warn("data dir unavailable, using the working directory: {s}", .{@errorName(err)});
-        break :blk ".";
-    };
-    defer if (!std.mem.eql(u8, data_dir, ".")) gpa.free(data_dir);
-
+    const run_dir = startup_config.dataDirOrWorkingDir(data_dir);
     if (arm == .web) {
-        desktop_web.run(init.io, cfg, data_dir);
+        desktop_web.run(init.io, cfg, run_dir);
         return;
     }
 
-    try desktop_terminal.run(init.io, gpa, cfg, data_dir);
+    try desktop_terminal.run(init.io, gpa, cfg, run_dir);
 }
 
 test "selectEntryArm routes web renderer to desktop web entry" {

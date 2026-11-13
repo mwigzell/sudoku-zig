@@ -1,13 +1,10 @@
+// argv parsing for the native entries: turns the player's flags into the values core's startup lane applies.
 const std = @import("std");
 const config = @import("../core/config.zig");
 const logger = @import("../core/logger.zig");
 const config_table = @import("../core/config_table.zig");
 const version = @import("../core/version.zig");
-
-pub const ParseError = error{
-    HelpRequested,
-    UnknownFlag,
-};
+const startup = @import("../core/startup/config.zig");
 
 const log = logger.Logger(.cli);
 
@@ -21,11 +18,15 @@ const usage_fmt =
     \\  -d, --difficulty <level> Puzzle difficulty (easy, medium, hard)
     \\  -v, --log-level <level>  Minimum log severity (debug, info, warn, err, fatal)
 ;
-/// Iterate argv and return a Config with `base` overridden by flags.
-pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Config) ParseError!config.Config {
+
+/// Read argv into the flags the player gave, as values for core's startup lane.
+/// `-h`/`--help` and `-V`/`--version` print and exit; a bad flag logs the usage text and exits.
+/// `iterator`: argv including the process name, which is skipped.
+/// Returns: the flags given; every field is null when the player gave none.
+pub fn parseOverrides(iterator: *std.process.Args.Iterator) startup.CliOverrides {
     _ = iterator.next(); // skip process name
 
-    var cfg = base;
+    var overrides: startup.CliOverrides = .{};
 
     while (iterator.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -38,21 +39,21 @@ pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Confi
             const kind = iterator.next() orelse {
                 failFlag("--renderer requires a value.", .{});
             };
-            cfg.renderers.preferred = parseRenderer(kind) orelse {
+            overrides.renderer = parseRenderer(kind) orelse {
                 failFlag("invalid renderer kind '{s}'.", .{kind});
             };
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--difficulty")) {
             const diff = iterator.next() orelse {
                 failFlag("--difficulty requires a value.", .{});
             };
-            cfg.difficulty = config_table.parseChoice(config.Difficulty, "difficulty", diff) catch |err| {
+            overrides.difficulty = config_table.parseChoice(config.Difficulty, "difficulty", diff) catch |err| {
                 failFlag("invalid difficulty '{s}' ({s}).", .{ diff, @errorName(err) });
             };
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--log-level")) {
             const lvl = iterator.next() orelse {
                 failFlag("--log-level requires a value.", .{});
             };
-            cfg.log_level = config_table.parseChoice(logger.Severity, "log_level", lvl) catch |err| {
+            overrides.log_level = config_table.parseChoice(logger.Severity, "log_level", lvl) catch |err| {
                 failFlag("invalid log level '{s}' ({s}).", .{ lvl, @errorName(err) });
             };
         } else if (std.mem.startsWith(u8, arg, "-")) {
@@ -60,12 +61,7 @@ pub fn parseCLIWithBase(iterator: *std.process.Args.Iterator, base: config.Confi
         }
     }
 
-    return cfg;
-}
-
-/// Iterate argv and return a Config with code defaults overridden by flags.
-pub fn parseCLI(iterator: *std.process.Args.Iterator) ParseError!config.Config {
-    return parseCLIWithBase(iterator, config.Config.default());
+    return overrides;
 }
 
 /// Exit status for a bad command-line flag.
@@ -89,78 +85,72 @@ fn initIt(comptime argv: anytype) std.process.Args.Iterator {
     return std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
 }
 
-test "-d medium sets medium difficulty and preserves default renderer" {
+test "-d medium sets medium difficulty and names no renderer" {
     const argv: [3][*:0]const u8 = .{ "sudoku", "-d", "medium" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ansi, cfg.renderers.preferred);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(config.Difficulty.medium, overrides.difficulty.?);
+    try std.testing.expectEqual(null, overrides.renderer);
 }
 
 test "-d hard sets hard difficulty" {
     const argv: [3][*:0]const u8 = .{ "sudoku", "-d", "hard" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(config.Difficulty.hard, overrides.difficulty.?);
 }
 
-test "no -d leaves difficulty at default easy" {
+test "bare argv overrides nothing" {
     const argv: [1][*:0]const u8 = .{"sudoku"};
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(null, overrides.difficulty);
+    try std.testing.expectEqual(null, overrides.renderer);
+    try std.testing.expectEqual(null, overrides.log_level);
 }
 
-test "-d medium and -r ascii both overlay defaults" {
+test "-d medium and -r ascii both set their field" {
     const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "medium", "-r", "ascii" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ascii, cfg.renderers.preferred);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(config.Difficulty.medium, overrides.difficulty.?);
+    try std.testing.expectEqual(config.RendererKind.ascii, overrides.renderer.?);
 }
 
 test "--difficulty long form sets easy" {
     const argv: [3][*:0]const u8 = .{ "sudoku", "--difficulty", "easy" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(config.Difficulty.easy, overrides.difficulty.?);
 }
 
 test "-v debug sets debug log level" {
     const argv: [3][*:0]const u8 = .{ "sudoku", "-v", "debug" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(logger.Severity.debug, overrides.log_level.?);
 }
 
-test "-v warn preserves difficulty and renderer defaults" {
+test "-v warn sets the log level and leaves difficulty and renderer unset" {
     const argv: [3][*:0]const u8 = .{ "sudoku", "-v", "warn" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
-    try std.testing.expectEqual(config.Difficulty.easy, cfg.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ansi, cfg.renderers.preferred);
-}
-
-test "no -v leaves log level at default info" {
-    const argv: [1][*:0]const u8 = .{"sudoku"};
-    var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(logger.Severity.info, cfg.log_level);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(logger.Severity.warn, overrides.log_level.?);
+    try std.testing.expectEqual(null, overrides.difficulty);
+    try std.testing.expectEqual(null, overrides.renderer);
 }
 
 test "--log-level long form sets err" {
     const argv: [3][*:0]const u8 = .{ "sudoku", "--log-level", "err" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(logger.Severity.err, cfg.log_level);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(logger.Severity.err, overrides.log_level.?);
 }
 
-test "-d medium and -v debug both overlay defaults" {
+test "-d medium and -v debug both set their field" {
     const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "medium", "-v", "debug" };
     var it = initIt(argv);
-    const cfg = parseCLI(&it) catch unreachable;
-    try std.testing.expectEqual(config.Difficulty.medium, cfg.difficulty);
-    try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
-    try std.testing.expectEqual(config.RendererKind.ansi, cfg.renderers.preferred);
+    const overrides = parseOverrides(&it);
+    try std.testing.expectEqual(config.Difficulty.medium, overrides.difficulty.?);
+    try std.testing.expectEqual(logger.Severity.debug, overrides.log_level.?);
 }

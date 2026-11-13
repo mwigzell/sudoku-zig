@@ -30,10 +30,14 @@ Mutations in session: **`Command` / `exec`** (`set_theme`, `toggle_region`, `tog
 
 ### Startup merge (native and web host)
 
+The host entry supplies both inputs as values: it resolves the platform data directory (`computeDataDir`)
+and parses argv (`native/cli.zig` → core's `startup.CliOverrides`). `resolveStartupConfig` reads neither
+the environment nor the command line itself, so no file under `src/core/` imports a platform adapter.
+
 One pipeline (**`resolveStartupConfig`** / **`startup/config.zig`**):
 
-1. Load **`settings.json`** from the platform data directory (or defaults if missing/invalid).
-2. Apply **CLI** overrides.
+1. Load **`config.json`** from the host-supplied data directory (or defaults if missing/invalid).
+2. Apply the host-supplied **CLI** overrides, each only when the player named that flag.
 3. **Save** player prefs back to disk (CLI `-d`/`-v`/view flags stick; renderer is not written).
 4. Pass that struct into the runtime — native **`Sudoku.init(cfg, …)`**; web **`web_host.runWithHostConfig(cfg, …)`** (via **`desktop_web`**) → page **`bootstrapHostConfig`** (legacy wasm **`bootstrap(u32,u32)`** removed).
 

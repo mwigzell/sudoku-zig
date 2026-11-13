@@ -1,14 +1,43 @@
-// Startup config contract: host-resolved Config (disk + CLI) is what native
+// Startup config contract: host-resolved Config (disk + host-parsed CLI overrides) is what native
 // Sudoku and wasm GameEngine must use — not JS literals or a second default path.
 const std = @import("std");
 const config = @import("../config.zig");
 const logger = @import("../logger.zig");
-const cli = @import("../../native/cli.zig");
 const config_store = @import("../config_store.zig");
-const path = @import("../../native/shell/path.zig");
 const save_defaults = @import("../save_defaults.zig");
 
-const log = logger.Logger(.startup);
+/// Directory settings and save files live in when the platform could not resolve a data directory.
+const WORKING_DIR = ".";
+
+/// The directory settings and save files live in: the host's data directory, or the working
+/// directory when the host had none (settings are then read from there and never written back).
+/// `data_dir`: the platform data directory, null when the host could not compute one.
+pub fn dataDirOrWorkingDir(data_dir: ?[]const u8) []const u8 {
+    return data_dir orelse WORKING_DIR;
+}
+
+/// Command-line flags the host parsed, as values: `null` means the player did not give that flag.
+/// Each field is applied on top of the settings read from disk; nothing here replaces a saved value
+/// the player did not name on this run.
+pub const CliOverrides = struct {
+    /// `-d` / `--difficulty`: puzzle difficulty for new games.
+    difficulty: ?config.Difficulty = null,
+    /// `-r` / `--renderer`: this run's renderer, never written to the settings file.
+    renderer: ?config.RendererKind = null,
+    /// `-v` / `--log-level`: runtime minimum log severity.
+    log_level: ?logger.Severity = null,
+
+    /// Lay the overrides over `base`; a flag the player did not give keeps `base`'s value.
+    /// `base`: the settings loaded from disk (or code defaults when there is no file).
+    /// Returns: the Config this run plays with.
+    pub fn applyTo(self: CliOverrides, base: config.Config) config.Config {
+        var cfg = base;
+        if (self.difficulty) |difficulty| cfg.difficulty = difficulty;
+        if (self.renderer) |renderer| cfg.renderers.preferred = renderer;
+        if (self.log_level) |log_level| cfg.log_level = log_level;
+        return cfg;
+    }
+};
 
 /// Sync global logger severity from resolved startup config.
 pub fn applyLoggerFromStartup(startup: config.Config) void {
@@ -62,28 +91,27 @@ fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
     try std.testing.expectEqual(startup.show_marks, engine.show_marks);
 }
 
-/// Load player prefs from disk, apply CLI on full `Config`, persist player prefs only.
+/// Load player prefs from disk, apply the host's command-line overrides, persist player prefs only.
+/// `data_dir`: platform data directory the host resolved, null when it could not resolve one.
+/// `overrides`: flags the host parsed from argv; absent flags keep the values read from disk.
 pub fn resolveStartupConfig(
     gpa: std.mem.Allocator,
     io: std.Io,
-    cli_it: *std.process.Args.Iterator,
+    data_dir: ?[]const u8,
+    overrides: CliOverrides,
 ) config_store.Error!config.Config {
-    const data_dir = path.computeDataDir(gpa) catch |err| {
-        log.warn("data dir unavailable, reading settings from the working directory: {s}", .{@errorName(err)});
-        return config_store.loadOrDefault(gpa, io, ".");
+    const dir = data_dir orelse {
+        // No durable settings location: read the working directory and write nothing back.
+        return overrides.applyTo(try config_store.loadOrDefault(gpa, io, WORKING_DIR));
     };
-    defer gpa.free(data_dir);
-    config_store.ensureConfigDir(io, data_dir);
+    config_store.ensureConfigDir(io, dir);
 
-    var cfg = try config_store.loadOrDefault(gpa, io, data_dir);
-    cfg = cli.parseCLIWithBase(cli_it, cfg) catch |err| switch (err) {
-        cli.ParseError.HelpRequested, cli.ParseError.UnknownFlag => unreachable,
-    };
-    try config_store.save(gpa, io, data_dir, cfg);
+    const cfg = overrides.applyTo(try config_store.loadOrDefault(gpa, io, dir));
+    try config_store.save(gpa, io, dir, cfg);
     return cfg;
 }
 
-test "CLI overrides persist on top of saved settings" {
+test "startup applies the given overrides on top of the saved settings and persists them" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -100,16 +128,45 @@ test "CLI overrides persist on top of saved settings" {
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    const argv: [3][*:0]const u8 = .{ "sudoku", "-d", "hard" };
-    var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
+    const cfg = try resolveStartupConfig(std.testing.allocator, io, data_path, .{
+        .difficulty = .hard,
+        .renderer = .ascii,
+        .log_level = .warn,
+    });
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqual(config.RendererKind.ascii, cfg.renderers.preferred);
+    try std.testing.expectEqual(logger.Severity.warn, cfg.log_level);
+    // Fields the command line did not touch keep what the file said.
+    try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
+    try std.testing.expectEqual(false, cfg.show_region);
 
-    var cfg = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
-    cfg = try cli.parseCLIWithBase(&it, cfg);
-    try config_store.save(std.testing.allocator, io, data_path, cfg);
-
+    // Player prefs are written back; the renderer is this run's only and stays out of the file.
     const restored = try config_store.loadOrDefault(std.testing.allocator, io, data_path);
     try std.testing.expectEqual(config.Difficulty.hard, restored.difficulty);
-    try std.testing.expectEqual(config.RendererKind.ansi, restored.renderers.preferred);
+    try std.testing.expectEqual(logger.Severity.warn, restored.log_level);
+    try std.testing.expectEqual(config.ViewTheme.dark, restored.theme);
+}
+
+test "startup without overrides keeps every saved setting, not code defaults" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var saved = config.Config.default();
+    saved.difficulty = .hard;
+    saved.log_level = .debug;
+    saved.theme = .light;
+    saved.show_region = true;
+    try config_store.saveInDir(std.testing.allocator, io, tmp.dir, saved);
+
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const cfg = try resolveStartupConfig(std.testing.allocator, io, data_path, .{});
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqual(logger.Severity.debug, cfg.log_level);
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+    try std.testing.expectEqual(true, cfg.show_region);
 }
 
 test "host startup JSON reflects Config loaded from config.json on disk" {
@@ -149,18 +206,15 @@ test "host startup JSON points at the current file when the host has one" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"startup_save_path\":\"/current-file\"") != null);
 }
 
-test "CLI-resolved startup config gives the engine its fields and sets logger min_level" {
+test "startup config supplies the engine's fields and its log level reaches the logger" {
     const startup_engine = @import("engine.zig");
-    const argv: [5][*:0]const u8 = .{ "sudoku", "-d", "hard", "-v", "warn" };
-    var it = std.process.Args.Iterator.init(std.process.Args{ .vector = argv[0..] });
-    _ = it.next();
-    const startup = try cli.parseCLI(&it);
+    const startup = (CliOverrides{ .difficulty = .hard, .log_level = .warn }).applyTo(config.Config.default());
 
     var engine = try startup_engine.initEngineFromStartup(startup);
     defer engine.deinit();
 
     try expectStartupConfigOnEngine(&engine, startup);
-    try std.testing.expectEqual(startup.log_level, logger.min_level);
+    try std.testing.expectEqual(logger.Severity.warn, logger.min_level);
 }
 
 test "host startup JSON's config reads back into the engine's fields (web host analogue)" {
