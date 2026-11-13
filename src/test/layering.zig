@@ -47,12 +47,17 @@ fn repoRootUnder(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, max_hops: 
     return null;
 }
 
-/// A file-scope import that reaches the native adapters.
+/// A file-scope import the gate refuses.
 const Found = struct {
     /// 1-based line the `@import` sits on.
     line: usize,
-    /// The import's path text as written, without its quotes.
+    /// The import's path text as written, without its quotes; the argument as written when the
+    /// gate could not read a literal path.
     import_path: []const u8,
+    /// True when the argument is not one string literal, so no path could be resolved. Zig rejects
+    /// a computed `@import` operand outright, so this arm is belt and braces: the gate refuses what
+    /// it cannot read rather than skipping it, and stays honest if its tokenizer ever loosens.
+    computed: bool = false,
 };
 
 /// Fold `import_path` against `base_dir` into a normalised repo-relative path, `.` and `..` resolved.
@@ -115,16 +120,25 @@ fn findNativeImport(gpa: std.mem.Allocator, source: [:0]const u8, base_dir: []co
             },
             .builtin => {
                 if (test_at != null or !std.mem.eql(u8, text, "@import")) continue;
-                // `@import` takes one string literal; anything else is not a path this gate reads.
                 if (tokenizer.next().tag != .l_paren) continue;
                 const argument = tokenizer.next();
-                if (argument.tag != .string_literal) continue;
+                const line = std.mem.count(u8, source[0..token.loc.start], "\n") + 1;
+                // `@import` takes one string literal, which the compiler enforces as well; refusing
+                // anything else keeps the gate from skipping a path it could not read.
+                if (argument.tag != .string_literal) {
+                    if (argument.tag == .eof) return null;
+                    return .{ .line = line, .import_path = source[argument.loc.start..argument.loc.end], .computed = true };
+                }
                 const quoted = source[argument.loc.start..argument.loc.end];
                 const import_path = quoted[1 .. quoted.len - 1];
+                // A literal followed by anything but `)` is one piece of a built path, not a path.
+                if (tokenizer.next().tag != .r_paren) {
+                    return .{ .line = line, .import_path = import_path, .computed = true };
+                }
                 const resolved = try resolveImportPath(gpa, base_dir, import_path);
                 defer gpa.free(resolved);
                 if (!reachesNative(resolved)) continue;
-                return .{ .line = std.mem.count(u8, source[0..token.loc.start], "\n") + 1, .import_path = import_path };
+                return .{ .line = line, .import_path = import_path };
             },
             else => {},
         }
@@ -157,6 +171,17 @@ test "a tree with no src/core in reach has no repo root" {
     defer from_dir.close(io);
 
     try std.testing.expect(try repoRootUnder(gpa, io, from_dir, 0) == null);
+}
+
+test "a file-scope import the gate cannot read is a violation, not a pass" {
+    // A built path is not something the gate can resolve — and the compiler refuses that operand
+    // anyway. The gate refuses it too rather than skipping it, so neither half can pass it unseen.
+    const source =
+        \\const path = @import("../nat" ++ "ive/shell/path.zig");
+    ;
+    const found = (try findNativeImport(std.testing.allocator, source, "src/core")).?;
+    try std.testing.expectEqual(@as(usize, 1), found.line);
+    try std.testing.expect(found.computed);
 }
 
 test "a file-scope core import into the native adapters is a violation" {
@@ -212,6 +237,10 @@ test "no file-scope import under src/core reaches the native adapters" {
         const found = (try findNativeImport(gpa, source, base_dir)) orelse continue;
         const file = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ CORE_DIR, entry.path });
         defer gpa.free(file);
+        if (found.computed) {
+            std.debug.print("core imports a path this gate cannot read: {s}:{d} @import({s})\n", .{ file, found.line, found.import_path });
+            return error.TestComputedImportUnderCore;
+        }
         std.debug.print("core imports a platform adapter: {s}:{d} @import(\"{s}\")\n", .{ file, found.line, found.import_path });
         return error.TestNativeImportUnderCore;
     }
