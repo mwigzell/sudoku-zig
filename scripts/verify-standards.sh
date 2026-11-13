@@ -55,10 +55,21 @@ if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Changed source is the application (src/, build.zig) and the agent harness (.sandcastle/),
+# which is tooling this repo maintains and holds to the same comment rules.
+#
+# Untracked files are listed too: a file has to be scanned before it is committed, not after,
+# which is the only moment the rules can still change what gets committed.
+SOURCE_PATH='^src/.*\.(zig|js|mjs|html|java)$|^build\.zig$|^\.sandcastle/.*\.mts$'
 CHANGED=()
 while IFS= read -r line; do
   CHANGED+=("$line")
-done < <(git diff --name-only --diff-filter=ACMR "$BASE" | grep -E '^src/.*\.(zig|js|mjs|html|java)$|^build\.zig$' || true)
+done < <(
+  {
+    git diff --name-only --diff-filter=ACMR "$BASE"
+    git ls-files --others --exclude-standard
+  } | grep -E "$SOURCE_PATH" | sort -u || true
+)
 
 banner
 printf '%b base %s — %d changed file(s)\n' "${C_DIM}" "${BASE:0:12}" "${#CHANGED[@]}"
@@ -86,7 +97,12 @@ DIFF_DIR="$(mktemp -d)"
 trap 'rm -rf "$DIFF_DIR"' EXIT
 for f in "${CHANGED[@]}"; do
   key="$DIFF_DIR/${f//\//__}"
-  git diff -U0 "$BASE" -- "$f" > "$key.diff"
+  if git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then
+    git diff -U0 "$BASE" -- "$f" > "$key.diff"
+  else
+    # An untracked file is new in full; --no-index gives it the same hunk shape a tracked diff has.
+    git diff -U0 --no-index -- /dev/null "$f" > "$key.diff" || true
+  fi
   sed -n 's/^+//p' "$key.diff" | grep -v '^+++' > "$key.added" || true
 done
 
@@ -153,7 +169,7 @@ has_doc_comment_above() {
 ISSUE_PAT='(\(#[0-9]+\)|#[0-9]{2,}|Issue [0-9]+|issue [0-9]+|spec: issue-[0-9]+|[Ss]tep [0-9]+|[Cc]hunk [0-9]+)'
 
 for f in "${CHANGED[@]}"; do
-  [[ "$f" =~ \.(zig|js|mjs|html)$ ]] || continue
+  [[ "$f" =~ \.(zig|js|mjs|html|mts)$ ]] || continue
   check_added_pattern "$f" "$ISSUE_PAT" "issue/session reference in code comment"
 done
 
