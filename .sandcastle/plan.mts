@@ -115,10 +115,26 @@ export function nextStep(steps: Step[]): Step | null {
  * Write a step's done mark into an issue body.
  *
  * Only the one step line changes, from `- [ ]` to `- [x]`; every other byte is left as the
- * author wrote it, so a drop can flip the same line back. Returns `null` when the position
- * is not a checkbox step, which means there is nothing the host may tick.
+ * author wrote it, so `untickStep` can flip the same line back. Returns `null` when the
+ * position is not a checkbox step, which means there is nothing the host may tick.
  */
 export function tickStep(body: string, position: number): string | null {
+  return flipStepMark(body, position, "[ ]", "[x]");
+}
+
+/**
+ * Take a step's done mark back out of an issue body.
+ *
+ * The symmetric half of `tickStep`: only the one step line changes, from `- [x]` to `- [ ]`,
+ * so a drop rewrites exactly the bytes the run wrote. Returns `null` when the position is not
+ * a checkbox step.
+ */
+export function untickStep(body: string, position: number): string | null {
+  return flipStepMark(body, position, "[x]", "[ ]");
+}
+
+/** Replace one checkbox step's mark; `null` when the position is not a checkbox step. */
+function flipStepMark(body: string, position: number, from: string, to: string): string | null {
   const lines = body.split("\n");
   const start = lines.findIndex((line) => STEP_HEADING.test(line));
   if (start === -1) return null;
@@ -131,7 +147,7 @@ export function tickStep(body: string, position: number): string | null {
     if (!CHECKBOX_ITEM.test(line)) continue;
     seen++;
     if (seen !== position) continue;
-    lines[index] = line.replace("[ ]", "[x]");
+    lines[index] = line.replace(from, to);
     return lines.join("\n");
   }
   return null;

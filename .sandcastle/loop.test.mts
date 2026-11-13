@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ledgerPath, readLedger } from "./ledger.mts";
 import { runSteps, type StepSandbox } from "./loop.mts";
 import { makePlan } from "./plan.mts";
 
@@ -104,6 +105,12 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
     assert.doesNotMatch(tracker.body, /- \[x\] Something at issue level/, "an acceptance criterion is not a step");
     assert.ok(existsSync(join(dirs.runsDir, "step-1-verdict.json")), "the first verdict is kept");
     assert.ok(existsSync(join(dirs.runsDir, "step-2-verdict.json")), "the second verdict is kept");
+    const ledger = readLedger(ledgerPath(dirs.runsDir));
+    assert.deepEqual(
+      ledger?.ticks.map((tick) => tick.position),
+      [1, 2],
+      "the ticks the host wrote are recorded in the order they landed, so a drop can take them back",
+    );
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

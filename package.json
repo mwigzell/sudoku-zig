@@ -8,7 +8,7 @@
   "scripts": {
     "sandcastle": "npx tsx .sandcastle/main.mts",
     "sandcastle:plan": "npx tsx .sandcastle/main.mts --plan",
-    "sandcastle:test": "node --test .sandcastle/plan.test.mts .sandcastle/verdict.test.mts .sandcastle/loop.test.mts .sandcastle/report.test.mts",
+    "sandcastle:test": "node --test .sandcastle/plan.test.mts .sandcastle/ledger.test.mts .sandcastle/verdict.test.mts .sandcastle/loop.test.mts .sandcastle/report.test.mts",
     "sandcastle:verdict": "scripts/sandcastle-verdict.sh",
     "sandcastle:accept": "scripts/sandcastle-accept.sh",
     "sandcastle:drop": "scripts/sandcastle-drop.sh"

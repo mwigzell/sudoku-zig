@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
+import { ledgerPath, readLedger, recordTick, writeLedger } from "./ledger.mts";
 import { nextStep, readSteps, tickStep, type Plan } from "./plan.mts";
 import { decide, readVerdict } from "./verdict.mts";
 
@@ -98,6 +99,9 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     return 1;
   };
 
+  // Every tick this run writes is recorded here, so a drop can take exactly those back.
+  const ledgerFile = ledgerPath(runsDir);
+
   for (let iteration = 1; iteration <= plan.maxSteps; iteration++) {
     const issue = tracker.read(plan.issue);
     const { steps, refusal } = readSteps(issue.body);
@@ -163,6 +167,11 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     tracker.writeBody(plan.issue, ticked);
     const after = nextStep(readSteps(tracker.read(plan.issue).body).steps);
     if (after !== null && after.position === step.position) return stop("the step tick did not take on the issue");
+
+    // Only ticks that landed are recorded, so the record is exactly what a drop has to take back.
+    const ledger = readLedger(ledgerFile) ?? { issue: plan.issue, ticks: [] };
+    writeLedger(ledgerFile, recordTick(ledger, decision.step, new Date().toISOString()));
+    console.log(`[${stage}] ticked`);
     console.log(`[${stage}] ticked`);
   }
 

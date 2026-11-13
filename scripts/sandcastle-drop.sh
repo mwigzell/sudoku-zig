@@ -32,6 +32,10 @@ case "$reply" in
   *) echo "Nothing done." ; exit 1 ;;
 esac
 
+# Take the run's ticks back off the issue before the branch goes: the record of what it
+# wrote lives in the run's log directory, named after the stamp the branch ends with.
+npx tsx .sandcastle/drop.mts --stamp "${BRANCH##*/}"
+
 git worktree list --porcelain | awk -v b="refs/heads/$BRANCH" '
   /^worktree / { wt = substr($0, 10) }
   $0 == "branch " b { print wt }
