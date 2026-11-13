@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Print the reviewer's verdict for the one finished sandcastle run, so it can be
-# read before the work is merged or dropped. Changes nothing.
+# Print one readable block per step of the one finished sandcastle run, then what the
+# branch changed. Changes nothing: merging is `sandcastle:accept`, discarding is
+# `sandcastle:drop`. The reviewer's full transcript stays under the run's log directory.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,24 +27,31 @@ fi
 BRANCH="${branches[0]}"
 # Run branches are sandcastle/<template>/<timestamp>; the logs carry the same stamp.
 STAMP="$(basename "$BRANCH")"
+RUN_LOGS=".sandcastle/logs/$STAMP"
 
 echo "Run:      $BRANCH"
 echo "Base:     $CURRENT"
 echo "Commits:  $(git rev-list --count "$CURRENT..$BRANCH")"
 echo
 
-reviewer_log="$(ls -1t .sandcastle/logs/*"$STAMP"*reviewer*.log 2>/dev/null | head -1 || true)"
-if [ -n "$reviewer_log" ]; then
-  echo "Reviewer log: $reviewer_log"
-  echo "-------------------------------------------------------------------"
-  cat "$reviewer_log"
-  echo "-------------------------------------------------------------------"
+shopt -s nullglob
+verdicts=("$RUN_LOGS"/step-*-verdict.json)
+shopt -u nullglob
+
+if [ "${#verdicts[@]}" -eq 0 ]; then
+  echo "No step verdicts under $RUN_LOGS."
 else
-  echo "No reviewer log for $STAMP. Logs present:"
-  ls -1 .sandcastle/logs 2>/dev/null | sed 's/^/  /' || echo "  (none)"
-  echo "-------------------------------------------------------------------"
+  for verdict in "${verdicts[@]}"; do
+    step="$(basename "$verdict")"
+    step="${step#step-}"
+    node .sandcastle/report.mts "${step%%-*}" "$verdict"
+    echo
+  done
 fi
 
+echo "What the branch changes ($CURRENT...$BRANCH):"
+git --no-pager diff --stat "$CURRENT...$BRANCH" | sed 's/^/  /'
 echo
-echo "Diff against $CURRENT:"
-git --no-pager diff --stat "$CURRENT...$BRANCH"
+echo "Reviewer transcripts: $RUN_LOGS/"
+echo "Accept it:  npm run sandcastle:accept"
+echo "Drop it:    npm run sandcastle:drop"
