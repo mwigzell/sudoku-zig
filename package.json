@@ -10,6 +10,7 @@
     "sandcastle:plan": "npx tsx .sandcastle/main.mts --plan",
     "sandcastle:test": "node --test .sandcastle/plan.test.mts .sandcastle/verdict.test.mts .sandcastle/loop.test.mts",
     "sandcastle:verdict": "scripts/sandcastle-verdict.sh",
+    "sandcastle:accept": "scripts/sandcastle-accept.sh",
     "sandcastle:drop": "scripts/sandcastle-drop.sh"
   }
 }
