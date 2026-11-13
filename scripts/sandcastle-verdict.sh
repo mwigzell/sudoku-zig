@@ -49,6 +49,14 @@ else
   done
 fi
 
+if [ -f "$RUN_LOGS/final-verdict.json" ]; then
+  node .sandcastle/report.mts --final "$RUN_LOGS/final-verdict.json"
+  echo
+else
+  echo "The whole-branch review did not run: no final-verdict.json under $RUN_LOGS."
+  echo
+fi
+
 echo "What the branch changes ($CURRENT...$BRANCH):"
 git --no-pager diff --stat "$CURRENT...$BRANCH" | sed 's/^/  /'
 echo

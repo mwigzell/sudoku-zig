@@ -33,6 +33,13 @@ const passingVerdict = (step: number) => ({
   drift: false,
 });
 
+/** A whole-branch verdict in which the issue's one criterion is proven, so the run may pass. */
+const passingFinal = () => ({
+  criteria: [{ criterion: "Something at issue level", status: "proven", evidence: "a test asserts it" }],
+  standards: "clean",
+  concerns: [],
+});
+
 /** An in-memory tracker: the loop's own writes are observable, and nothing leaves the test. */
 function fakeTracker(body: string, options: { ignoreWrites?: boolean } = {}) {
   const tracker = {
@@ -51,7 +58,11 @@ function fakeTracker(body: string, options: { ignoreWrites?: boolean } = {}) {
  * A sandbox that answers each role: the implementer commits, the reviewer writes the next
  * queued verdict (or nothing, when the queue holds `null`).
  */
-function fakeSandbox(worktree: string, verdicts: Array<ReturnType<typeof passingVerdict> | null>) {
+function fakeSandbox(
+  worktree: string,
+  verdicts: Array<ReturnType<typeof passingVerdict> | null>,
+  final: object | null = passingFinal(),
+) {
   const queued = [...verdicts];
   /** What one `run()` call was given; the loop's own prompt arguments are what the tests check. */
   type RunOptions = { name?: string; promptFile?: string; promptArgs: Record<string, string | number | boolean> };
@@ -64,6 +75,13 @@ function fakeSandbox(worktree: string, verdicts: Array<ReturnType<typeof passing
       runs.push(options);
       if (options.promptFile?.includes("implement") === true) {
         return { commits: [{ sha: "abc123" }], iterations: [], stdout: "" };
+      }
+      // The whole-branch review is the run's last agent: it writes its own file, naming no step.
+      if (options.promptFile?.includes("final") === true) {
+        const final_file = join(worktree, ".sandcastle", "final-verdict.json");
+        if (final === null) rmSync(final_file, { force: true });
+        else writeFileSync(final_file, JSON.stringify(final));
+        return { commits: [], iterations: [], stdout: "" };
       }
       const verdict = queued.shift();
       const file = join(worktree, ".sandcastle", "verdict.json");
@@ -98,8 +116,10 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
       runsDir: dirs.runsDir,
     });
 
-    assert.equal(code, 0, "a run whose steps all stand exits green");
-    assert.equal(sandbox.runs.length, 4, "two steps, two runs each: implementer then reviewer");
+    assert.equal(code, 0, "a run whose steps all stand exits green once the whole branch passes");
+    assert.equal(sandbox.runs.length, 5, "two steps, two runs each, then the whole-branch review");
+    assert.match(String(sandbox.runs[4]?.promptFile), /final-review-prompt/, "the last agent reads the whole branch");
+    assert.ok(existsSync(join(dirs.runsDir, "final-verdict.json")), "the whole-branch verdict is kept");
     assert.match(tracker.body, /- \[x\] \*\*Step one:\*\*/, "step one was ticked on the issue");
     assert.match(tracker.body, /- \[x\] \*\*Step two:\*\*/, "step two was ticked on the issue");
     assert.doesNotMatch(tracker.body, /- \[x\] Something at issue level/, "an acceptance criterion is not a step");
@@ -111,6 +131,54 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
       [1, 2],
       "the ticks the host wrote are recorded in the order they landed, so a drop can take them back",
     );
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a branch whose criteria the whole-branch review cannot prove stops the run", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(TWO_STEPS);
+    const unproven = {
+      criteria: [
+        { criterion: "Something at issue level", status: "unproven", evidence: "" },
+        { criterion: "Another criterion", status: "proven", evidence: "a test asserts it" },
+      ],
+      standards: "clean",
+      concerns: ["the second criterion rests on a test that runs only on the web path"],
+    };
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], unproven);
+
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 1, "an unproven criterion leaves the run for a human");
+    assert.ok(existsSync(join(dirs.runsDir, "final-verdict.json")), "the matrix is kept for the reader");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a whole-branch review that writes no verdict stops the run", async () => {
+  const dirs = fixture();
+  try {
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], null);
+
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker: fakeTracker(TWO_STEPS),
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 1, "a missing verdict is never a pass");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }
@@ -220,7 +288,7 @@ test("the loop never passes sandcastle's reserved prompt arguments", async () =>
 
     // Sandcastle fills these itself and refuses a run that overrides them, so a step that
     // names one takes the whole run down before an agent ever starts.
-    assert.equal(sandbox.runs.length, 4, "both roles ran for both steps");
+    assert.equal(sandbox.runs.length, 5, "both roles ran for both steps, then the whole-branch review");
     for (const passed of sandbox.runs) {
       assert.equal("SOURCE_BRANCH" in passed.promptArgs, false, "SOURCE_BRANCH is sandcastle's to fill");
       assert.equal("TARGET_BRANCH" in passed.promptArgs, false, "TARGET_BRANCH is sandcastle's to fill");

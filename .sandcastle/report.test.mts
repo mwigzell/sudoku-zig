@@ -2,7 +2,7 @@
 // evidence field behind a line that looks like proof.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatReport, wrap } from "./report.mts";
+import { formatFinalReport, formatReport, wrap } from "./report.mts";
 
 /** The step under test. Spelled out here so an assertion never reads like a citation. */
 const STEP = 3;
@@ -60,4 +60,28 @@ test("a long field wraps under the label and keeps every word", () => {
 test("a single word longer than the width is not split", () => {
   const word = "x".repeat(150);
   assert.deepEqual(wrap(word), [word]);
+});
+
+/** A whole-branch verdict with one proven criterion and one nobody could prove. */
+const FINAL = {
+  criteria: [
+    { criterion: "the legend line reaches the terminal", status: "proven", evidence: "the shell e2e test asserts the footer" },
+    { criterion: "no core file imports a native adapter", status: "unproven", evidence: "" },
+  ],
+  standards: "clean",
+  concerns: ["the second criterion needs a human read"],
+};
+
+test("the whole-branch report leads with the decision and shows every criterion", () => {
+  const lines = formatFinalReport(JSON.stringify(FINAL));
+  const text = lines.join("\n");
+
+  assert.match(lines[0] ?? "", /^whole branch: STOP — unproven: no core file imports a native adapter$/u);
+  assert.match(text, /^ {2}proven +the legend line reaches the terminal$/mu);
+  assert.match(text, /^ {2}UNPROVEN +no core file imports a native adapter$/mu);
+  assert.match(text, /concern: {7}the second criterion needs a human read/u);
+});
+
+test("a whole-branch verdict that cannot be read says so instead of showing a pass", () => {
+  assert.match(formatFinalReport("{ not json")[0] ?? "", /^whole branch: STOP — the verdict file is not valid JSON$/u);
 });

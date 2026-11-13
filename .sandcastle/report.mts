@@ -1,7 +1,7 @@
 // report.mts — turn the reviewer's verdict files into something a person can read in a
 // terminal. The raw transcript stays on disk for the cases that need it.
 import { readFile } from "node:fs/promises";
-import { readVerdict, decide, type StepVerdict } from "./verdict.mts";
+import { decide, decideFinal, readFinalVerdict, readVerdict, type FinalVerdict, type StepVerdict } from "./verdict.mts";
 
 /** Width a field's text is wrapped to, so a long verdict reads down the page, not off it. */
 const WRAP_WIDTH = 96;
@@ -52,8 +52,33 @@ export function formatReport(step: number, raw: string): string[] {
   return formatVerdict(read.verdict);
 }
 
+/** The whole-branch report: the decision first, then the matrix a person reads it by. */
+function formatFinalVerdict(verdict: FinalVerdict): string[] {
+  const decision = decideFinal(verdict);
+  const lines = [`whole branch: ${decision.kind === "pass" ? "PASS" : `STOP — ${decision.reason}`}`];
+
+  // Every criterion is listed, proven or not: a matrix with the failures left out is not a matrix.
+  for (const entry of verdict.criteria) {
+    const mark = entry.status === "proven" ? "proven  " : "UNPROVEN";
+    lines.push(...field(`${mark} `, entry.criterion));
+    if (entry.evidence.trim().length > 0) lines.push(...field("  evidence:      ", entry.evidence));
+  }
+  lines.push(...field("standards:     ", verdict.standards));
+  for (const concern of verdict.concerns) lines.push(...field("concern:       ", concern));
+  return lines;
+}
+
+/** The whole-branch report body for a verdict file's contents. */
+export function formatFinalReport(raw: string): string[] {
+  const read = readFinalVerdict(raw);
+  if ("problem" in read) return [`whole branch: STOP — ${read.problem}`];
+  return formatFinalVerdict(read.verdict);
+}
+
 if (import.meta.main) {
   const [stepArg, path] = process.argv.slice(2);
   const raw = await readFile(path, "utf8");
-  process.stdout.write(`${formatReport(Number(stepArg), raw).join("\n")}\n`);
+  // `--final` prints the whole-branch matrix; a number prints that step's verdict.
+  const lines = stepArg === "--final" ? formatFinalReport(raw) : formatReport(Number(stepArg), raw);
+  process.stdout.write(`${lines.join("\n")}\n`);
 }

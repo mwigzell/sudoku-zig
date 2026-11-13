@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { decide, readVerdict } from "./verdict.mts";
+import { decide, decideFinal, readFinalVerdict, readVerdict, type FinalVerdict } from "./verdict.mts";
 
 /** A step verdict a reviewer may write when the step held up. */
 const PASSING = {
@@ -86,5 +86,56 @@ test("a verdict that cannot be read is a problem, not a pass", () => {
   assert.deepEqual(
     readVerdict(JSON.stringify(changed("verify_exit", "0"))),
     { problem: "the verdict's verify_exit is not a number" },
+  );
+});
+
+/** A whole-branch verdict in which every acceptance criterion is proven. */
+const FINAL_PASSING = {
+  criteria: [
+    { criterion: "the legend line reaches the terminal", status: "proven", evidence: "shell e2e test asserts the footer text" },
+    { criterion: "no core file imports a native adapter", status: "proven", evidence: "src/test/layering.zig walks src/core" },
+  ],
+  standards: "clean",
+  concerns: [],
+};
+
+test("a final pass proves every acceptance criterion and is the only way out of the run", () => {
+  const read = readFinalVerdict(JSON.stringify(FINAL_PASSING));
+  assert.ok("verdict" in read, JSON.stringify(read));
+  assert.deepEqual(decideFinal(read.verdict), { kind: "pass" });
+});
+
+test("a criterion nobody proved stops the run, and the stop names it", () => {
+  const verdict = {
+    ...FINAL_PASSING,
+    criteria: [
+      ...FINAL_PASSING.criteria,
+      { criterion: "the invariant holds for every core file", status: "unproven", evidence: "" },
+    ],
+  };
+  const decision = decideFinal(verdict as FinalVerdict);
+
+  assert.equal(decision.kind, "stop");
+  assert.match(decision.reason, /unproven: the invariant holds for every core file/);
+});
+
+test("a criteria list with no evidence is a problem, never an empty pass", () => {
+  const evidence_free = {
+    ...FINAL_PASSING,
+    criteria: [{ criterion: "something", status: "proven", evidence: "" }],
+  };
+  const decision = decideFinal(evidence_free as FinalVerdict);
+
+  assert.equal(decision.kind, "stop");
+  assert.match(decision.reason, /no evidence: something/);
+});
+
+test("a final verdict that cannot be read is a problem, not a pass", () => {
+  assert.deepEqual(readFinalVerdict("{ not json"), { problem: "the verdict file is not valid JSON" });
+  const incomplete = readFinalVerdict(JSON.stringify({ criteria: [] }));
+  assert.ok("problem" in incomplete, "a verdict missing its standards result is not a pass");
+  assert.deepEqual(
+    readFinalVerdict(JSON.stringify({ ...FINAL_PASSING, criteria: [{ criterion: "x", status: "maybe", evidence: "y" }] })),
+    { problem: "the verdict's criteria[0].status is not proven or unproven" },
   );
 });

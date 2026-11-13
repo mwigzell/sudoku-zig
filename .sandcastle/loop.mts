@@ -9,14 +9,18 @@ import { execFileSync } from "node:child_process";
 import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
 import { ledgerPath, readLedger, recordTick, writeLedger } from "./ledger.mts";
 import { nextStep, readSteps, tickStep, type Plan } from "./plan.mts";
-import { decide, readVerdict } from "./verdict.mts";
+import { decide, decideFinal, readFinalVerdict, readVerdict } from "./verdict.mts";
 
 /** Where the reviewer writes its verdict inside the worktree; the host copies it out from there. */
 const VERDICT_FILE = ".sandcastle/verdict.json";
 
+/** Where the whole-branch reviewer writes its verdict; the host copies it out from there. */
+const FINAL_VERDICT_FILE = ".sandcastle/final-verdict.json";
+
 /** Prompts are harness files, resolved against the repo root the harness runs from. */
 const IMPLEMENT_PROMPT = "./.sandcastle/implement-prompt.md";
 const REVIEW_PROMPT = "./.sandcastle/review-prompt.md";
+const FINAL_REVIEW_PROMPT = "./.sandcastle/final-review-prompt.md";
 
 /** One implementer and one reviewer run per step. */
 export const STAGES_PER_STEP = 2;
@@ -109,9 +113,9 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
 
     const step = nextStep(steps);
     if (step === null) {
-      // The steps are done; the whole-branch review that follows them is its own cycle.
-      console.log(`[steps] every step is ticked; the final whole-branch review is not implemented yet`);
-      return 0;
+      // Every step is ticked, so this iteration is the whole-branch review: the run's last agent,
+      // and the only place the issue's acceptance criteria are judged. It reports; it never ticks.
+      return await finalReview({ plan, sandbox, agent, runsDir }, stop);
     }
 
     const stage = `step ${step.position}/${steps.length}`;
@@ -176,4 +180,47 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
   }
 
   return stop(`the loop reached MAX_STEPS (${plan.maxSteps}) with steps still unticked`);
+}
+
+/**
+ * The whole-branch review: one agent reads everything the branch changed and judges the issue's
+ * acceptance criteria, which the per-step reviewers deliberately left alone.
+ *
+ * The verdict is copied out of the worktree and decided like a step verdict is: a run passes only
+ * when every criterion is proven with evidence. Returns the process exit code.
+ */
+async function finalReview(
+  options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "agent" | "runsDir">>,
+  stop: (reason: string) => number,
+): Promise<number> {
+  const { plan, sandbox, agent, runsDir } = options;
+
+  console.log(`[final] whole-branch review against the issue's acceptance criteria…`);
+  const review = await sandbox.run({
+    name: "final-review",
+    maxIterations: 1,
+    agent,
+    promptFile: FINAL_REVIEW_PROMPT,
+    promptArgs: { ISSUE: plan.issue, BASE_BRANCH: plan.targetBranch },
+  });
+  if (review.commits.length > 0) return stop(`the whole-branch reviewer committed to ${plan.branch}; a review may not write`);
+
+  const verdictPath = join(sandbox.worktreePath, FINAL_VERDICT_FILE);
+  if (!existsSync(verdictPath)) return stop(`the whole-branch reviewer wrote no ${FINAL_VERDICT_FILE}`);
+
+  const kept = join(runsDir, "final-verdict.json");
+  copyFileSync(verdictPath, kept);
+
+  const read = readFinalVerdict(readFileSync(kept, "utf8"));
+  if ("problem" in read) return stop(read.problem);
+
+  const decision = decideFinal(read.verdict);
+  for (const entry of read.verdict.criteria) {
+    console.log(`[final] ${entry.status === "proven" ? "proven" : "UNPROVEN"}  ${entry.criterion}`);
+  }
+  for (const concern of read.verdict.concerns) console.log(`[final] concern: ${concern}`);
+
+  if (decision.kind === "stop") return stop(decision.reason);
+  console.log(`[final] every acceptance criterion is proven; the run is ready to accept`);
+  return 0;
 }

@@ -103,3 +103,84 @@ export function decide(verdict: StepVerdict, expectedStep: number): Decision {
   }
   return { kind: "tick", step: verdict.step };
 }
+
+// ---------------------------------------------------------------------------
+// The whole-branch pass
+//
+// Steps are judged one at a time; the acceptance criteria are judged once, after the last
+// step, by a reviewer that reads the whole branch. It reports the matrix and never ticks a
+// criterion: the host ticks steps, and only a human says an issue is done.
+// ---------------------------------------------------------------------------
+
+/** One acceptance criterion as the whole-branch reviewer found it, with the evidence it read. */
+export interface CriterionVerdict {
+  /** The criterion, as the issue words it. */
+  criterion: string;
+  /** `proven` only when the reviewer found evidence on the branch; otherwise `unproven`. */
+  status: "proven" | "unproven";
+  /** What the reviewer read to decide: a test name, a command and its output. */
+  evidence: string;
+}
+
+/** What the whole-branch reviewer reports once every step has landed. */
+export interface FinalVerdict {
+  /** Every acceptance criterion of the issue, in the issue's order. */
+  criteria: CriterionVerdict[];
+  /** The mechanical standards result over the whole branch, or the violation found. */
+  standards: string;
+  /** Anything a human should read before accepting the run. */
+  concerns: string[];
+}
+
+/** What the host does with the whole-branch verdict. */
+export type FinalDecision = { kind: "pass" } | { kind: "stop"; reason: string };
+
+/** Read a whole-branch verdict, checked field by field so a malformed file is never a pass. */
+export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { problem: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { problem: "the verdict file is not valid JSON" };
+  }
+  if (typeof parsed !== "object" || parsed === null) return { problem: "the verdict file is not a JSON object" };
+
+  const record = parsed as Record<string, unknown>;
+  if (!Array.isArray(record.criteria)) return { problem: "the verdict has no criteria field" };
+  for (const [at, criterion] of record.criteria.entries()) {
+    const entry = criterion as Record<string, unknown>;
+    if (typeof entry.criterion !== "string" || typeof entry.evidence !== "string") {
+      return { problem: `the verdict's criteria[${at}] has no criterion and evidence text` };
+    }
+    if (entry.status !== "proven" && entry.status !== "unproven") {
+      return { problem: `the verdict's criteria[${at}].status is not proven or unproven` };
+    }
+  }
+  if (typeof record.standards !== "string") return { problem: "the verdict's standards is not a string" };
+  if (!holds(record.concerns, "strings")) return { problem: "the verdict's concerns is not a list of strings" };
+  return { verdict: record as unknown as FinalVerdict };
+}
+
+/**
+ * Decide whether a run has reached its criteria.
+ *
+ * A run passes only when every criterion is proven with evidence the reviewer read and the
+ * standards gate is clean. Any criterion unproven, or proven on nothing, stops the run with
+ * the criteria named, so a human reads the matrix instead of a run claiming to be done.
+ */
+export function decideFinal(verdict: FinalVerdict): FinalDecision {
+  if (verdict.standards !== "clean") return { kind: "stop", reason: `standards: ${verdict.standards}` };
+
+  const unproven = verdict.criteria.filter((entry) => entry.status !== "proven");
+  if (unproven.length > 0) {
+    return { kind: "stop", reason: `unproven: ${unproven.map((entry) => entry.criterion).join("; ")}` };
+  }
+
+  // A criterion marked proven on an empty evidence line asserts nothing, so it counts as unproven.
+  const unevidenced = verdict.criteria.filter((entry) => entry.evidence.trim().length === 0);
+  if (unevidenced.length > 0) {
+    return { kind: "stop", reason: `no evidence: ${unevidenced.map((entry) => entry.criterion).join("; ")}` };
+  }
+
+  return { kind: "pass" };
+}
