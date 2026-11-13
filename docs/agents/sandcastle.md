@@ -120,6 +120,9 @@ long it has been going, and the last thing it logged. The phase is `live` while 
 `stalled` when the run has gone quiet for 90s without finishing, `finished` when it logged its own end or
 a stop.
 
+`npm run sandcastle:watch` follows the newest run instead of asking once: each event as it lands, then
+the phase, and it exits when the run ends (Ctrl-C stops watching, not the run).
+
 Every run keeps two copies of the same log, one line per transition: `logs/<stamp>/events.jsonl` for
 programs (`status` reads it) and `logs/<stamp>/run.log` for a person.
 
