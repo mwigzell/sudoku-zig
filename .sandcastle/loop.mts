@@ -10,6 +10,7 @@ import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
 import { ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
+import { countShotgun, rgSearch } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
 import { writeRunRecord } from "./run_record.mts";
 import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
@@ -266,6 +267,15 @@ async function finalReview(
   for (const entry of standardsRead.report.rules) {
     logEvent("verdict", `standards ${entry.verdict}: ${entry.rule} — ${entry.evidence}`);
   }
+  // The shotgun figure is the one number in the lens the host counts itself, so a reviewer cannot
+  // pad it: it names the symbols, the host counts the files that carry them on this branch.
+  const counts = countShotgun(standardsRead.report.shotgun, rgSearch(sandbox.worktreePath));
+  if ("problem" in counts) return stop(counts.problem);
+  writeFileSync(join(runsDir, "shotgun.json"), `${JSON.stringify(counts.counts, null, 2)}\n`);
+  for (const count of counts.counts) {
+    logEvent("verdict", `shotgun ${count.symbol}: ${count.files} file(s), ${count.verdict}`);
+  }
+
   const violations = standardsRead.report.rules.filter((entry) => entry.verdict === "VIOLATION");
   if (violations.length > 0) {
     return stop(`standards: ${violations.map((entry) => `${entry.rule} (${entry.evidence})`).join("; ")}`);

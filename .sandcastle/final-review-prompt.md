@@ -66,8 +66,11 @@ Write **`.sandcastle/verdict-standards.json`** too, and nothing else:
       "verdict": "PASS",
       "evidence": "src/host/host.zig:40 — what you read or ran, and what it showed"
     }
-  ]
+  ],
+  "shotgun": [{ "symbol": "the value carried through the layers", "files": 3 }]
 }
 ```
+
+`shotgun` names the symbols this branch carries through several files — one more argument, field, command tag or JSON key threaded layer by layer — and the host recounts the files itself, so the `files` figure you write is replaced by its own. An empty list is an honest answer when the diff carries no such symbol; naming one the branch does not have stops the run.
 
 `rules` answers **every** numbered rule in the branch's `AGENTS.md` "## Coding standards", one entry each: the host reads the same list from that file and stops the run if a rule is unjudged, invented, or unevidenced. `verdict` is `PASS` or `VIOLATION`; a `VIOLATION` stops the run for accept or drop exactly as a failing step does, so it must name the site.

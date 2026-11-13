@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readEvents } from "./events.mts";
@@ -49,6 +49,7 @@ const passingStandards = () => ({
     { rule: "Document public surfaces.", verdict: "PASS", evidence: "src/sudoku.zig:12" },
     { rule: "Nothing is silent", verdict: "PASS", evidence: "src/host/host.zig:40" },
   ],
+  shotgun: [] as Array<{ symbol: string; files: number }>,
 });
 
 /** A whole-branch verdict in which the issue's one criterion is proven, so the run may pass. */
@@ -345,7 +346,7 @@ test("a standards report that leaves a rule unjudged stops the run", async () =>
   const dirs = fixture();
   try {
     const tracker = fakeTracker(TWO_STEPS);
-    const partial = { rules: [passingStandards().rules[0]!] };
+    const partial = { rules: [passingStandards().rules[0]!], shotgun: [] };
     const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], passingFinal(), partial);
 
     const code = await runSteps({
@@ -372,6 +373,7 @@ test("a standards violation stops the branch for accept or drop, exactly as a fa
         passingStandards().rules[0]!,
         { rule: "Nothing is silent", verdict: "VIOLATION", evidence: "src/native/serve.zig:88 catches and says nothing" },
       ],
+      shotgun: [],
     };
     const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], passingFinal(), violated);
 
@@ -406,6 +408,35 @@ test("a whole-branch review that writes no standards report stops the run", asyn
     });
 
     assert.equal(code, 1, "the standards lens is mandatory, not optional");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("the shotgun count in the report is the host's, taken from the branch", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(TWO_STEPS);
+    mkdirSync(join(dirs.worktree, "src"), { recursive: true });
+    writeFileSync(join(dirs.worktree, "src", "one.zig"), "fn carried() void {}\n");
+    writeFileSync(join(dirs.worktree, "src", "two.zig"), "fn carried() void {}\n");
+    const claimed = {
+      ...passingStandards(),
+      shotgun: [{ symbol: "carried", files: 99 }],
+    };
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], passingFinal(), claimed);
+
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as SandboxAlias,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 0);
+    const counts = JSON.parse(readFileSync(join(dirs.runsDir, "shotgun.json"), "utf8")) as Array<{ files: number }>;
+    assert.equal(counts[0]?.files, 2, "the two files that name the symbol, not the number the reviewer wrote");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

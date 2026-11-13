@@ -4,6 +4,8 @@
 // so a rule added there is required by the next run with no change here. Hardcoding the list would
 // turn "every rule answered" into a check that passes by being out of date.
 
+import type { ShotgunClaim } from "./shotgun.mts";
+
 /** One coding standard, as `AGENTS.md` numbers it. */
 export type Rule = {
   /** The number the standard carries in `AGENTS.md`; stable across runs, and what a report refers to. */
@@ -23,7 +25,10 @@ export type RuleVerdict = {
 
 /** A run's answers to the standards lens. */
 export type StandardsReport = {
+  /** One answer per rule in the branch's `AGENTS.md`, no rule skipped and none invented. */
   rules: RuleVerdict[];
+  /** The symbols the diff carries through several files; the host counts the files, not the reviewer. */
+  shotgun: ShotgunClaim[];
 };
 
 const HEADING = /^##\s+Coding standards\s*$/iu;
@@ -75,6 +80,11 @@ export function readReport(raw: string): { report: StandardsReport } | { problem
 
   const record = parsed as Record<string, unknown>;
   if (!Array.isArray(record.rules)) return { problem: "the standards report has no rules field" };
+  if (!Array.isArray(record.shotgun)) return { problem: "the standards report has no shotgun field" };
+  for (const [at, entry] of record.shotgun.entries()) {
+    const claim = entry as Record<string, unknown>;
+    if (typeof claim.symbol !== "string") return { problem: `the standards report's shotgun[${at}] names no symbol` };
+  }
   for (const [at, entry] of record.rules.entries()) {
     const rule = entry as Record<string, unknown>;
     if (typeof rule.rule !== "string" || typeof rule.evidence !== "string") {

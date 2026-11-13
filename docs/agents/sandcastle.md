@@ -75,6 +75,11 @@ numbered rule in the branch's own `AGENTS.md` "## Coding standards", each `PASS`
 so a rule added to `AGENTS.md` is required by the next run with no change here. A rule unjudged, invented,
 or unevidenced stops the run, and so does any `VIOLATION` — the standards lens is not advisory.
 
+The one figure in that report the host does not take on trust is the shotgun count: the reviewer names
+the symbols the branch carries through several files, and the host counts the files that name them
+(`rg -l`), keeping its own numbers in `logs/<stamp>/shotgun.json`. A symbol the branch does not have
+stops the run; a count of three or more files is reported as `plumbing`, fewer as `carried`.
+
 A malformed verdict file is always a problem, never an empty pass.
 
 ## The tick ledger
