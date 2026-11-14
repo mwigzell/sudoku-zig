@@ -165,6 +165,48 @@ has_doc_comment_above() {
   return 1
 }
 
+# Added, non-test lines that open a catch block, as `line` — a block body spans lines, so the
+# silent-catch check reads the body to its closing brace instead of matching one line.
+added_catch_block_starts() {
+  local file=$1
+  added_lines_outside_tests "$file" \
+    | grep -E 'catch[[:space:]]*(\|[A-Za-z_][A-Za-z0-9_]*\|[[:space:]]*)?\{' \
+    | grep -vE 'catch[[:space:]]*unreachable' \
+    | cut -d: -f1 || true
+}
+
+# The body of the catch block opening at `start`, comments and braces removed, stopping at its
+# matching close. An empty result means the catch holds no statement at all.
+catch_block_body() {
+  local file=$1 start=$2
+  awk -v start="$start" '
+    function strip(t) { sub(/\/\/.*$/, "", t); return t }
+    NR < start { next }
+    NR == start {
+      t = strip($0)
+      # The opener is the first `{` after `catch`, not the first on the line: an argument such as
+      # `.{}` would otherwise be read as the body.
+      at = index(t, "catch")
+      rest2 = (at > 0) ? substr(t, at) : t
+      i = index(rest2, "{")
+      t = (i > 0) ? substr(rest2, i + 1) : ""
+      depth = 1
+    }
+    NR > start { t = strip($0) }
+    {
+      n = length(t); out = ""
+      for (k = 1; k <= n; k++) {
+        c = substr(t, k, 1)
+        if (c == "{") { depth++ }
+        else if (c == "}") { depth--; if (depth == 0) break }
+        if (depth > 0) { out = out c }
+      }
+      print out
+      if (depth == 0) { exit }
+    }
+  ' "$file" || true
+}
+
 # --- 1. Code comments: no issue/session citations (AGENTS.md) ---
 ISSUE_PAT='(\(#[0-9]+\)|#[0-9]{2,}|Issue [0-9]+|issue [0-9]+|spec: issue-[0-9]+|[Ss]tep [0-9]+|[Cc]hunk [0-9]+)'
 
@@ -370,7 +412,9 @@ done < <(git ls-files 'src/core/**/*.js' 'src/core/**/*.mjs' 'src/core/**/*.html
 # --- 16. Nothing is silent: every caught error in app code is logged with its system message ---
 # A catch that cannot name the error, or that swaps it for a value without a log line, loses it.
 # `catch unreachable` (an assertion) and `catch return Error.X` (propagation) are not flagged.
-SILENT_CATCH_ZIG='catch[[:space:]]*\{[[:space:]]*\}|catch[[:space:]]*\|_\||catch[[:space:]]+(null|false|true|[0-9]+|"[^"]*"|\.\{\}|\.[A-Za-z_]+|continue|break|return([[:space:]]+(null|false|true|\.[A-Za-z_{][^;]*))?)[[:space:]]*[;,)]'
+# A multi-line block body is read to its closing brace: `catch { // … }` holds no statement, which
+# matching one line cannot see.
+SILENT_CATCH_ZIG='catch[[:space:]]*\|_\||catch[[:space:]]+(null|false|true|[0-9]+|"[^"]*"|\.\{\}|\.[A-Za-z_]+|continue|break|return([[:space:]]+(null|false|true|\.[A-Za-z_{][^;]*))?)[[:space:]]*[;,)]'
 SILENT_CATCH_JS='catch[[:space:]]*\{|catch[[:space:]]*\([[:space:]]*_[A-Za-z0-9_]*[[:space:]]*\)|\.catch\([[:space:]]*\([[:space:]]*\)[[:space:]]*=>|catch[[:space:]]*\([^)]*\)[[:space:]]*\{[[:space:]]*\}'
 SILENT_CATCH_JAVA='catch[[:space:]]*\([^)]*[[:space:]](ignored|_)\)|catch[[:space:]]*\([^)]*\)[[:space:]]*\{[[:space:]]*\}'
 
@@ -386,6 +430,17 @@ for f in "${CHANGED[@]}"; do
   if [[ -n "$hits" ]]; then
     note_violation "silent catch in ${f} (log the error with its system message; an expected one at info as \"expected: …\")" \
       "$(echo "$hits" | head -3 | sed 's/^/+ /')"
+  fi
+  if [[ "$f" == *.zig ]]; then
+    while IFS= read -r start; do
+      [[ -n "$start" ]] || continue
+      body="$(catch_block_body "$f" "$start")"
+      clean="$(printf '%s' "$body" | tr -d '{ };' | tr -d '[:space:]')"
+      if [[ -z "$clean" ]]; then
+        note_violation "silent catch in ${f} (the body holds no statement; log the error with its system message)" \
+          "+ line ${start}"
+      fi
+    done < <(added_catch_block_starts "$f")
   fi
 done
 
