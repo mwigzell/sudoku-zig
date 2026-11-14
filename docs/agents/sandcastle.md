@@ -117,11 +117,24 @@ nothing and says so, rather than guessing a number and closing someone else's is
 | `.sandcastle/report.mts` | Turning verdict files into the readable report |
 | `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |
-| `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `ticks.json` |
+| `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `verdict-standards.json`, `shotgun.json`, `ticks.json`, `run.json`, `events.jsonl`, `run.log` |
 | `.sandcastle/logs/sandcastle-<branch>-<role>-step-<n>of<m>.log` | The agents' transcripts, one per session; `npm run sandcastle:logs` reads the newest |
 | `.sandcastle/.env` | `GH_TOKEN` for the sandboxed agents (untracked) |
 
 `logs/`, `worktrees/`, `.env` and a stray `verdict.json` are gitignored: a run's evidence is local.
+
+## The two shapes a run can take
+
+**A single multi-step issue**: the steps are the issue's own work. Each step's reviewer judges the step
+and nothing else; when the last step passes, the whole-branch review judges the issue's acceptance
+criteria in `logs/<stamp>/verdict-acs.json` (`PASS` with evidence, or `FAIL`), and the host ticks the
+`PASS` ones and leaves the issue open.
+
+**A parent whose steps are sub-issues**: a step's checkbox names a child issue (`- [ ] #125 …`), so the
+child is the step. That child's reviewer judges the **child's** criteria and the host ticks them on the
+child; the parent's step is ticked once the child's criteria pass. The whole-branch review still runs at
+the end, judging only the parent's own end-to-end criteria — often none — so a shape-B run never skips it.
+Every tick records the issue it landed on, so a drop takes a child's marks back from the child.
 
 ## Watching a run
 

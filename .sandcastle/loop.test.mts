@@ -497,11 +497,58 @@ test("a sub-issue step is judged by its own reviewer, and its criteria are ticke
     const review = sandbox.runs.find((run) => run.promptFile?.includes("review") === true);
     assert.equal(review?.promptArgs.CHILD_ISSUE, CHILD, "the reviewer is told which sub-issue it is judging");
     assert.match(String(review?.promptArgs.CHILD_OUTPUT), /verdict-acs\.json/u, "and which file to write");
+    assert.equal(
+      sandbox.runs.some((run) => run.name === "final-review"),
+      true,
+      "the whole-branch review is not skipped because the steps were sub-issues",
+    );
     assert.match(tracker.bodies.get(CHILD) ?? "", /- \[x\] The child's own criterion\./u, "the child's criterion is ticked on the child");
     assert.match(tracker.bodies.get(parent.issue) ?? "", new RegExp(`- \\[x\\] #${CHILD} the child's work`, "u"), "and the parent's step is ticked");
 
     const ledger = readLedger(ledgerPath(dirs.runsDir));
     assert.deepEqual(ledger?.criteria, [{ position: 1, at: ledger?.criteria[0]?.at, issue: CHILD }], "the ledger names the child, so a drop knows where to look");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a parent with criteria of its own still has them judged, once, by the whole-branch review", async () => {
+  const dirs = fixture();
+  try {
+    const parentBody = `${PARENT_BODY}\n## Acceptance criteria\n\n- [ ] The parent's own end-to-end criterion.\n`;
+    const parent = planFor(parentBody);
+    const tracker = fakeIssues({ [parent.issue]: parentBody, [CHILD]: CHILD_BODY });
+    const sandbox = fakeSandbox(
+      dirs.worktree,
+      [passingVerdict(1)],
+      {
+        criteria: [{ criterion: "The parent's own end-to-end criterion.", status: "PASS", evidence: "an e2e test crosses both children" }],
+        concerns: [],
+      },
+      passingStandards(),
+      {
+        criteria: [{ criterion: "The child's own criterion.", status: "PASS", evidence: "the child's step test asserts it" }],
+        concerns: [],
+      },
+    );
+
+    const code = await runSteps({
+      plan: parent,
+      sandbox: sandbox as unknown as SandboxAlias,
+      tracker: tracker as never,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 0);
+    assert.match(tracker.bodies.get(parent.issue) ?? "", /- \[x\] The parent's own end-to-end criterion\./u);
+    assert.match(tracker.bodies.get(CHILD) ?? "", /- \[x\] The child's own criterion\./u);
+    const ledger = readLedger(ledgerPath(dirs.runsDir));
+    assert.deepEqual(
+      ledger?.criteria.map((tick) => tick.issue).sort(),
+      [parent.issue, CHILD].sort(),
+      "one criterion belongs to the child, one to the parent",
+    );
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }
