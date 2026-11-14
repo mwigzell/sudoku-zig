@@ -95,3 +95,10 @@ test("reading a run's status needs nothing but its directory", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the next step is the one after the steps the run has ticked", () => {
+  const twoTicked = { ...status(RUNNING), ledger: { issue: ISSUE, ticks: [{ position: 1, at: at(30) }, { position: 2, at: at(60) }], criteria: [] } };
+
+  assert.match(formatStatus(twoTicked, START + 90_000).join("\n"), new RegExp(`next:\\s+step ${STEP_OF} of ${STEP_OF}`, "u"));
+  assert.match(formatStatus(status(FINISHED), START + 90_000).join("\n"), /next:\s+nothing, the run has ended/u);
+});

@@ -64,6 +64,15 @@ export function iteration(events: RunEvent[]): { at: number; of: number } {
   return { at: 0, of: 0 };
 }
 
+/** Where the run goes next: the step after those it ticked, the final review, or nothing. */
+export function nextUp(status: RunStatus, now: number): string {
+  if (phase(status, now) === "finished") return "nothing, the run has ended";
+  const { of } = iteration(status.events);
+  if (of === 0) return "the first step";
+  const ticked = status.ledger?.ticks.length ?? 0;
+  return ticked < of ? `step ${ticked + 1} of ${of}` : "the whole-branch review";
+}
+
 /** The status as lines for the terminal: what the run is, how far it got, what it last said. */
 export function formatStatus(status: RunStatus, now: number): string[] {
   const { at, of } = iteration(status.events);
@@ -80,6 +89,7 @@ export function formatStatus(status: RunStatus, now: number): string[] {
     `branch:   ${status.record?.branch ?? "(not recorded)"}`,
     `phase:    ${phase(status, now)}`,
     `step:     ${of === 0 ? "none started" : `${at} of ${of}`}`,
+    `next:     ${nextUp(status, now)}`,
     `ticks:    ${ticks} step(s), ${criteria} criterion(s)`,
   ];
   if (elapsed !== undefined) lines.push(`elapsed:  ${elapsed}s`);
