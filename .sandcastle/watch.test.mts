@@ -2,7 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { newLines } from "./watch.mts";
+import { newLines, newTextLines } from "./watch.mts";
 import type { RunEvent } from "./events.mts";
 
 const EVENTS: RunEvent[] = [
@@ -27,4 +27,13 @@ test("a later read prints only what was added, so an event is never shown twice"
 
 test("a read with nothing new prints nothing and holds its place", () => {
   assert.deepEqual(newLines(EVENTS, 3), { lines: [], seen: 3 });
+});
+
+test("the agent's own transcript is followed by offset, so each line is printed once", () => {
+  const text = "first line\nsecond line\nthird";
+  const first = newTextLines(text, 0);
+
+  assert.deepEqual(first.lines, ["first line", "second line"], "a half-written last line waits for its newline");
+  assert.deepEqual(newTextLines(text, first.offset).lines, []);
+  assert.deepEqual(newTextLines(`${text} line\n`, first.offset).lines, ["third line"]);
 });
