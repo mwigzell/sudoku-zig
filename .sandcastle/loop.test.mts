@@ -81,6 +81,7 @@ function fakeSandbox(
   verdicts: Array<ReturnType<typeof passingVerdict> | null>,
   final: object | null = passingFinal(),
   standards: object | null = passingStandards(),
+  childMatrix: object | null = null,
 ) {
   const queued = [...verdicts];
   /** What one `run()` call was given; the loop's own prompt arguments are what the tests check. */
@@ -105,6 +106,9 @@ function fakeSandbox(
         else writeFileSync(standards_file, JSON.stringify(standards));
         return { commits: [], iterations: [], stdout: "" };
       }
+      // A child-issue step's reviewer also adjudicates the child's own criteria, in the same file
+      // shape the whole-branch review uses for the parent's.
+      if (childMatrix !== null) writeFileSync(join(worktree, ".sandcastle", "verdict-acs.json"), JSON.stringify(childMatrix));
       const verdict = queued.shift();
       const file = join(worktree, ".sandcastle", "verdict.json");
       if (verdict !== null && verdict !== undefined) writeFileSync(file, JSON.stringify(verdict));
@@ -437,6 +441,64 @@ test("the shotgun count in the report is the host's, taken from the branch", asy
     assert.equal(code, 0);
     const counts = JSON.parse(readFileSync(join(dirs.runsDir, "shotgun.json"), "utf8")) as Array<{ files: number }>;
     assert.equal(counts[0]?.files, 2, "the two files that name the symbol, not the number the reviewer wrote");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+/** The parent issue of a shape-B run: its one step is a sub-issue, and it has no criteria of its own. */
+const CHILD = 125;
+
+const PARENT_BODY = `## Steps
+
+- [ ] #${CHILD} the child's work
+`;
+
+/** A child issue: its own criteria are the ones its reviewer judges, and the host ticks there. */
+const CHILD_BODY = `## Acceptance criteria
+
+- [ ] The child's own criterion.
+`;
+
+/** Trackers by issue number, so a test can see which body a write landed on. */
+function fakeIssues(initial: Record<number, string>) {
+  const bodies = new Map(Object.entries(initial).map(([issue, body]) => [Number(issue), body]));
+  const writes: Array<{ issue: number; body: string }> = [];
+  return {
+    bodies,
+    writes,
+    read: (issue: number) => ({ title: "fixture", body: bodies.get(issue) ?? "" }),
+    writeBody: (issue: number, body: string) => {
+      writes.push({ issue, body });
+      bodies.set(issue, body);
+    },
+  };
+}
+
+test("a sub-issue step is judged by its own reviewer, and its criteria are ticked on the child", async () => {
+  const dirs = fixture();
+  try {
+    const parent = planFor(PARENT_BODY);
+    const tracker = fakeIssues({ [parent.issue]: PARENT_BODY, [CHILD]: CHILD_BODY });
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1)], { criteria: [], concerns: [] }, passingStandards(), {
+      criteria: [{ criterion: "The child's own criterion.", status: "PASS", evidence: "a test in the child's step asserts it" }],
+      concerns: [],
+    });
+
+    const code = await runSteps({
+      plan: parent,
+      sandbox: sandbox as unknown as SandboxAlias,
+      tracker: tracker as never,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 0, `a child whose criteria pass leaves the run green: ${sandbox.runs.map((run) => run.name).join(",")}`);
+    assert.match(tracker.bodies.get(CHILD) ?? "", /- \[x\] The child's own criterion\./u, "the child's criterion is ticked on the child");
+    assert.match(tracker.bodies.get(parent.issue) ?? "", new RegExp(`- \\[x\\] #${CHILD} the child's work`, "u"), "and the parent's step is ticked");
+
+    const ledger = readLedger(ledgerPath(dirs.runsDir));
+    assert.deepEqual(ledger?.criteria, [{ position: 1, at: ledger?.criteria[0]?.at, issue: CHILD }], "the ledger names the child, so a drop knows where to look");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

@@ -193,6 +193,37 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     event("verdict", `${stage}: ${decision.kind === "tick" ? "PASS" : `STOP — ${decision.reason}`}`);
     if (decision.kind === "stop") return stop(decision.reason);
 
+    // A sub-issue step is a whole issue: its own reviewer judged that child's criteria, and the host
+    // ticks them on the child. A child with any criterion still failing is not a finished step.
+    if (step.child !== null) {
+      const childIssue = step.child;
+      const childMatrixPath = join(sandbox.worktreePath, ACS_VERDICT_FILE);
+      if (!existsSync(childMatrixPath)) {
+        return stop(`step ${step.position} is sub-issue #${childIssue}, but ${ACS_VERDICT_FILE} was not written for it`);
+      }
+      const childRead = readFinalVerdict(readFileSync(childMatrixPath, "utf8"));
+      if ("problem" in childRead) return stop(`#${childIssue}: ${childRead.problem}`);
+
+      const childDecision = decideFinal(childRead.verdict);
+      if (childDecision.kind === "stop") return stop(`#${childIssue}: ${childDecision.reason}`);
+
+      const childBody = tracker.read(childIssue).body;
+      const positions = tickedCriteria(childRead.verdict, readCriteria(childBody));
+      if ("problem" in positions) return stop(`#${childIssue}: ${positions.problem}`);
+
+      if (positions.positions.length > 0) {
+        let marked = childBody;
+        for (const position of positions.positions) marked = tickCriterion(marked, position) ?? marked;
+        tracker.writeBody(childIssue, marked);
+
+        const at = new Date().toISOString();
+        let recorded = readLedger(ledgerFile) ?? { issue: plan.issue, ticks: [], criteria: [] };
+        for (const position of positions.positions) recorded = recordCriterion(recorded, position, at, childIssue);
+        writeLedger(ledgerFile, recorded);
+        event("criterion", `ticked criteria ${positions.positions.join(", ")} on sub-issue #${childIssue}`);
+      }
+    }
+
     // The tick is the host's write: the worker never edits the tracker, so a drop can undo
     // exactly the marks this run made.
     const ticked = tickStep(issue.body, decision.step);
@@ -212,8 +243,9 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
 }
 
 /**
- * The whole-branch review: one agent reads everything the branch changed and judges the issue's
- * acceptance criteria, which the per-step reviewers deliberately left alone.
+ * The whole-branch review: one agent reads everything the branch changed and judges the issue's own
+ * acceptance criteria, which the per-step reviewers deliberately left alone. A parent whose steps are
+ * sub-issues has none of its own to judge here; their reviewers judged theirs as each step passed.
  *
  * The matrix (`verdict-acs.json`) is copied out of the worktree and decided like a step verdict is: a
  * run passes only when every criterion is `PASS` with evidence. Returns the process exit code.
