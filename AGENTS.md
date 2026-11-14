@@ -227,7 +227,7 @@ zig test src/entry_native.zig -lc
 - **Never filter from `src/entry_native.zig`** (`-Dtest-filter`, `--test-filter`): a file's tests are only found when a running test calls into it, so a filter can match nothing and still exit 0. `-Dtest-filter` is for single `android-test` methods.
 - **One Zig test on its own:** a temporary root in `src/` that imports the test's file (a root inside a subfolder cannot import `../`), e.g. `src/_one_test.zig` with `test { _ = @import("core/engine/pencil.zig"); }`, then `zig test src/_one_test.zig -lc --test-filter "<name>"`; check the name in the output, then delete the root.
 ## zig version
-zig -version
+zig version
 
 ## Claims about the code
 
