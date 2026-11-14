@@ -12,7 +12,7 @@ import { runSteps, type StepSandbox } from "./loop.mts";
 import { readRunRecord } from "./run_record.mts";
 
 type SandboxAlias = StepSandbox;
-import { makePlan } from "./plan.mts";
+import { READY_LABEL, makePlan } from "./plan.mts";
 
 const TWO_STEPS = `## Steps
 
@@ -131,7 +131,8 @@ function fixture() {
   return { root, worktree, runsDir: join(root, "runs") };
 }
 
-const planFor = (body: string) => makePlan(1, "fixture", body, { stamp: 1, targetBranch: "develop" });
+const planFor = (body: string) =>
+  makePlan(1, "fixture", body, { stamp: 1, targetBranch: "develop", labels: [READY_LABEL] });
 
 test("each step gets an implementer and a reviewer run, and the host ticks it", async () => {
   const dirs = fixture();

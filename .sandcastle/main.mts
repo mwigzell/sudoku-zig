@@ -91,9 +91,10 @@ function argumentValue(flag: string, argv: string[]): string | undefined {
 }
 
 /** The issue as the tracker holds it: the plan reads it once, and the loop re-reads it as the host ticks steps. */
-function readIssue(number: number): { title: string; body: string } {
-  const raw = execFileSync("gh", ["issue", "view", String(number), "--json", "title,body"], { encoding: "utf8" });
-  return JSON.parse(raw) as { title: string; body: string };
+function readIssue(number: number): { title: string; body: string; labels: string[] } {
+  const raw = execFileSync("gh", ["issue", "view", String(number), "--json", "title,body,labels"], { encoding: "utf8" });
+  const parsed = JSON.parse(raw) as { title: string; body: string; labels: { name: string }[] };
+  return { title: parsed.title, body: parsed.body, labels: parsed.labels.map((label) => label.name) };
 }
 
 const argv = process.argv.slice(2);
@@ -105,7 +106,7 @@ if (!Number.isInteger(issue) || issue <= 0) {
 
 const viewed = readIssue(issue);
 const stamp = Date.now();
-const plan = makePlan(issue, viewed.title, viewed.body, { stamp, targetBranch: TARGET_BRANCH });
+const plan = makePlan(issue, viewed.title, viewed.body, { stamp, targetBranch: TARGET_BRANCH, labels: viewed.labels });
 
 if (argv.includes("--plan")) {
   for (const line of formatPlan(plan)) console.log(line);

@@ -23,12 +23,13 @@ Only one run exists at a time: a second `sandcastle/*` branch blocks both a new 
 
 ## What a run does
 
-1. **Aim.** `--issue N` is read once and parsed into a plan. A refused plan (no `## Steps`, or steps
-   written as a numbered list or headings instead of `- [ ]` checkboxes) prints the reason and exits 1
-   without touching the repo.
-2. **Preflight**, all fatal: the working tree is clean, HEAD is on `develop`, no earlier run's branch or
-   worktree remains, and `.sandcastle/.env` holds a `GH_TOKEN` (bwrap hides the host's `gh` login, so the
-   agents need one of their own).
+1. **Aim.** `--issue N` is read once into a plan, with its labels. A refused plan (an issue without
+   `ready-for-agent`, no `## Steps`, or steps written as a numbered list or headings instead of
+   `- [ ]` checkboxes) prints the reason and exits 1 without touching the repo.
+2. **Preflight**, all fatal: the issue carries `ready-for-agent` (a label check, not a picker: an
+   issue on `needs-info`, `ready-for-human` or `wontfix` is refused by the plan, before preflight),
+   the working tree is clean, HEAD is on `develop`, no earlier run's branch or worktree remains,
+   and `.sandcastle/.env` holds a `GH_TOKEN` (bwrap hides the host's `gh` login).
 3. **One sandbox for the whole run**, created once: bwrap, the `pi` agent on `ollama/sandcastle-worker`,
    the host's `~/.pi/agent` mounted, `npm install` before the first agent, `node_modules` copied in. Every
    step commits to the one run branch, cut from `develop`.
@@ -163,7 +164,9 @@ the run's own base as `BASE_BRANCH` so a review range never depends on the host'
 
 ## Limits worth knowing
 
-- **No issue picking.** `--issue N` is required; the harness never chooses from labels.
+- **No issue picking.** `--issue N` is required; the harness never chooses from labels. It does read
+  one: an issue without `ready-for-agent` is refused, because the label is triage's word that the work
+  is specified.
 - **No retry.** A step that stops the run is a human's to re-scope; the run does not re-attempt it.
 - **Ticks outlive a drop before the ledger existed.** A pre-ledger run's ticks cannot be reverted, and the
   drop says so.

@@ -21,10 +21,14 @@ export interface Step {
   child: number | null;
 }
 
+/** The triage label an issue must carry before a run may step it; the other roles mean not yet. */
+export const READY_LABEL = "ready-for-agent";
+
 /** Why an issue cannot be run as a stepped run. */
 export type Refusal =
   | { kind: "no-steps-section" }
-  | { kind: "not-checkboxes"; shape: string };
+  | { kind: "not-checkboxes"; shape: string }
+  | { kind: "not-ready"; labels: string[] };
 
 /** Everything the host needs about a run before it starts one. */
 export interface Plan {
@@ -234,21 +238,35 @@ export function runBranch(stamp: number): string {
   return `sandcastle/sequential-reviewer/${stamp}`;
 }
 
+/**
+ * Why an issue may not be run yet, or `null` when it carries the readiness label.
+ *
+ * `--issue N` names the work; the label says whether triage has cleared it. A run refuses an
+ * issue wearing another role (`needs-triage`, `needs-info`, `ready-for-human`, `wontfix`),
+ * naming the labels it does carry, rather than stepping work nobody has finished specifying.
+ */
+export function readinessRefusal(labels: string[]): Refusal | null {
+  if (labels.includes(READY_LABEL)) return null;
+  return { kind: "not-ready", labels };
+}
+
 /** How the run would be aimed at one issue, resolved from the issue and the run's stamp. */
 export function makePlan(
   issue: number,
   title: string,
   body: string,
-  options: { stamp: number; targetBranch: string },
+  options: { stamp: number; targetBranch: string; labels: string[] },
 ): Plan {
-  const { steps, refusal } = readSteps(body);
+  const { steps, refusal: stepsRefusal } = readSteps(body);
+  // Readiness comes first: an issue triage has not cleared is not a run's work, whatever its steps.
+  const refusal = readinessRefusal(options.labels) ?? stepsRefusal;
   // A resumed run pays only for the steps still unticked; the done ones are history.
   const remaining = steps.filter((step) => !step.ticked).length;
   return {
     issue,
     title,
-    steps,
-    next: nextStep(steps),
+    steps: refusal === null ? steps : [],
+    next: refusal === null ? nextStep(steps) : null,
     branch: runBranch(options.stamp),
     targetBranch: options.targetBranch,
     maxSteps: maxSteps(remaining),
@@ -266,6 +284,10 @@ function shorten(text: string): string {
 
 /** Why the run will not start, in words that name what to change. */
 function refusalText(refusal: Refusal): string {
+  if (refusal.kind === "not-ready") {
+    const carried = refusal.labels.length === 0 ? "no labels at all" : refusal.labels.join(", ");
+    return `the issue does not carry \`${READY_LABEL}\` (it has: ${carried}), so triage has not cleared it for a run`;
+  }
   if (refusal.kind === "no-steps-section") {
     return "the issue body has no `## Steps` section, so there is nothing to step";
   }
@@ -281,7 +303,7 @@ export function formatPlan(plan: Plan): string[] {
 
   // A refused issue has no run shape to print; the reason is the whole plan.
   if (plan.refusal !== null) {
-    return [`${issue}`, `steps:     none — ${refusalText(plan.refusal)}`, `no agent is invoked by this plan`];
+    return [`${issue}`, `refused:   ${refusalText(plan.refusal)}`, `no agent is invoked by this plan`];
   }
 
   const done = plan.steps.filter((step) => step.ticked).length;

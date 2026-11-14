@@ -3,6 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  READY_LABEL,
   agentRuns,
   formatPlan,
   makePlan,
@@ -11,6 +12,7 @@ import {
   parseSteps,
   readCriteria,
   readSteps,
+  readinessRefusal,
   runBranch,
   tickCriterion,
   tickStep,
@@ -65,7 +67,9 @@ const CHECKBOXES = `## Steps
 /** The issue the fixtures are aimed at; the plan prints it back, so the number is test data, not a citation. */
 const ISSUE = 118;
 
-const planFor = (body: string) => makePlan(ISSUE, "One vehicle for Config", body, { stamp: 42, targetBranch: "develop" });
+/** Every fixture is an issue triage has cleared: the label is the readiness contract, not test data. */
+const planFor = (body: string, labels: string[] = [READY_LABEL]) =>
+  makePlan(ISSUE, "One vehicle for Config", body, { stamp: 42, targetBranch: "develop", labels });
 
 test("checkbox steps are read in order, and an acceptance criterion below them is not a step", () => {
   const steps = parseSteps(CHECKBOXES);
@@ -118,14 +122,39 @@ test("the plan names the branch, the bound and the next step, and says no agent 
 test("a refused issue prints the reason and no branch", () => {
   const text = formatPlan(planFor(NUMBERED)).join("\n");
 
-  assert.match(text, /steps:\s+none — the `## Steps` section writes its steps as a numbered list/);
+  assert.match(text, /refused:\s+the `## Steps` section writes its steps as a numbered list/);
   assert.match(text, /the host ticks only `- \[ \]` checkboxes/);
   assert.doesNotMatch(text, /branch:/, "an issue that cannot be stepped has no branch to name");
 });
 
 test("an issue with no ## Steps section prints that nothing can be stepped", () => {
   const text = formatPlan(planFor("## Problem\n\nNothing.\n")).join("\n");
-  assert.match(text, /steps:\s+none — the issue body has no `## Steps` section/);
+  assert.match(text, /refused:\s+the issue body has no `## Steps` section/);
+  assert.doesNotMatch(text, /branch:/);
+});
+
+/** The label, not the step shape, says whether an issue is a run's work: triage owns readiness. */
+test("an issue without ready-for-agent is refused, naming the labels it does carry", () => {
+  const labels = ["bug", "needs-info"];
+  const plan = planFor(CHECKBOXES, labels);
+
+  assert.deepEqual(plan.refusal, { kind: "not-ready", labels });
+  assert.deepEqual(plan.steps, [], "a refused issue gives the loop nothing to step");
+  assert.equal(plan.next, null);
+});
+
+test("the labels an issue carries are only a refusal while ready-for-agent is missing", () => {
+  assert.equal(readinessRefusal([READY_LABEL]), null);
+  assert.equal(readinessRefusal([READY_LABEL, "bug"]), null, "other labels ride along");
+  assert.deepEqual(readinessRefusal([]), { kind: "not-ready", labels: [] }, "no labels means not triaged");
+  assert.deepEqual(readinessRefusal(["ready-for-human"]), { kind: "not-ready", labels: ["ready-for-human"] });
+});
+
+test("a refused issue prints the readiness reason, the labels it has, and no branch", () => {
+  const text = formatPlan(planFor(CHECKBOXES, ["bug", "needs-info"])).join("\n");
+
+  assert.match(text, /refused:\s+the issue does not carry `ready-for-agent` \(it has: bug, needs-info\)/);
+  assert.match(text, /no agent is invoked/);
   assert.doesNotMatch(text, /branch:/);
 });
 
