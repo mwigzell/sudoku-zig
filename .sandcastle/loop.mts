@@ -153,6 +153,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       STEPS_TOTAL: steps.length,
       STEP_TITLE: step.title,
       BASE_BRANCH: plan.targetBranch,
+      ...childArgs(step.child),
     };
 
     event("step", `${stage}: ${step.title}`);
@@ -240,6 +241,28 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
   }
 
   return stop(`the loop reached MAX_STEPS (${plan.maxSteps}) with steps still unticked`);
+}
+
+
+/** What each reviewer prompt says about a child issue: nothing, for an ordinary step. */
+const CHILD_SECTION = `1. **Judge the sub-issue this step stands for.** \`!\`gh issue view {{CHILD_ISSUE}} --json title,body\`\` names its acceptance criteria. Unlike the parent's, these are yours: judge every one on this branch, and mark it \`PASS\` with evidence or \`FAIL\` with none.
+
+`;
+
+const CHILD_OUTPUT = `This step is sub-issue \`{{CHILD_ISSUE}}\`, so also write \`.sandcastle/verdict-acs.json\` and nothing else:
+
+\`\`\`json
+{
+  "criteria": [{ "criterion": "the criterion as the issue words it", "status": "PASS", "evidence": "what you read or ran" }],
+  "concerns": []
+}
+\`\`\`
+
+The host ticks the criteria you mark \`PASS\` on that sub-issue, and stops the run if any is \`FAIL\`. Word each criterion as the issue words it: the host matches your matrix against the child's body.`;
+
+/** The prompt arguments that only a sub-issue step carries, so an ordinary step is unchanged. */
+function childArgs(child: number | null): Record<string, string | number> {
+  return child === null ? { CHILD_SECTION: "", CHILD_OUTPUT: "" } : { CHILD_ISSUE: child, CHILD_SECTION, CHILD_OUTPUT };
 }
 
 /**

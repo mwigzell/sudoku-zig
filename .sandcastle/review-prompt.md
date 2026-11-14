@@ -29,7 +29,7 @@ Your job is to **falsify this step**, not to polish it and not to judge the whol
 
 # Review process
 
-1. **Read the issue and the step.** `!`gh issue view {{ISSUE}} --json title,body --jq '"\(.title)\n\n\(.body)"'``. The step's text is the specification for this iteration; the issue's acceptance criteria are adjudicated once, at the end of the run.
+1. **Read the issue and the step.** `!`gh issue view {{ISSUE}} --json title,body --jq '"\(.title)\n\n\(.body)"'``. The step's text is the specification for this iteration. The parent issue's own acceptance criteria are adjudicated once, at the end of the run — unless the step below names a sub-issue, in which case that child's criteria are yours to judge now.
 
 2. **Check that exactly one step was done.** The diff must belong to step `{{STEP}}`. If it also performs a later step, or an earlier one that was not ticked, that is off track.
 
@@ -41,6 +41,7 @@ Your job is to **falsify this step**, not to polish it and not to judge the whol
 
 6. **Check against the docs, not taste.** Flag: policy implemented in a platform adapter, duplicated user-facing text, a silent catch, an undocumented public symbol, a new seam with no ADR.
 
+{{CHILD_SECTION}}
 7. **Watch for doc laundering.** If the diff edits `CONTEXT.md` or an ADR, treat that as a claim to check: does the doc now describe the code, or was it rewritten to excuse a deviation from a decision?
 
 # Output — write the verdict file
@@ -64,7 +65,9 @@ Write `.sandcastle/verdict.json` in the repository root with exactly these field
 - `standards`: the word `clean`, or the violation you found as one sentence.
 - `on_track`: false when the step's test does not encode what the step asked for.
 - `red_on_revert`: never empty. If you could not make the test fail, say so — the host stops the run on an empty field, which is the honest outcome.
-- `ac_at_risk` and `drift`: name problems, never mark an acceptance criterion satisfied. Do not add an acceptance-criteria status field; there is none.
+- `ac_at_risk` and `drift`: name problems, never mark an acceptance criterion satisfied. Do not add an acceptance-criteria status field; there is none in this file.
+
+{{CHILD_OUTPUT}}
 
 Rules for the file:
 

@@ -494,6 +494,9 @@ test("a sub-issue step is judged by its own reviewer, and its criteria are ticke
     });
 
     assert.equal(code, 0, `a child whose criteria pass leaves the run green: ${sandbox.runs.map((run) => run.name).join(",")}`);
+    const review = sandbox.runs.find((run) => run.promptFile?.includes("review") === true);
+    assert.equal(review?.promptArgs.CHILD_ISSUE, CHILD, "the reviewer is told which sub-issue it is judging");
+    assert.match(String(review?.promptArgs.CHILD_OUTPUT), /verdict-acs\.json/u, "and which file to write");
     assert.match(tracker.bodies.get(CHILD) ?? "", /- \[x\] The child's own criterion\./u, "the child's criterion is ticked on the child");
     assert.match(tracker.bodies.get(parent.issue) ?? "", new RegExp(`- \\[x\\] #${CHILD} the child's work`, "u"), "and the parent's step is ticked");
 
