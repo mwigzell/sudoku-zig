@@ -27,7 +27,7 @@ Your job is to answer one question with evidence: **does this branch meet the is
 
 1. **Read the issue.** `!`gh issue view {{ISSUE}} --json title,body --jq '"\(.title)\n\n\(.body)"'``. Its acceptance criteria are the only thing you are deciding; the steps are how the branch got here, not the specification.
 
-2. **Judge each criterion on the branch, not on the steps.** For every criterion, find the code or the test that makes it true *now*, and run what you need to run. A criterion is `proven` only when you can name what you read or ran; a commit message, a step title or a summary is not evidence. If you cannot prove it, it is `unproven` with empty evidence — that is an honest answer, and the run stops for a human.
+2. **Judge each criterion on the branch, not on the steps.** For every criterion, find the code or the test that makes it true *now*, and run what you need to run. A criterion is `PASS` only when you can name what you read or ran; a commit message, a step title or a summary is not evidence. If you cannot prove it, it is `FAIL` with empty evidence — that is an honest answer, and the run stops for a human.
 
 3. **Run the gate over the whole branch.** `zig build verify`, and keep its exit code. A branch that is green only in parts is not green.
 
@@ -37,16 +37,16 @@ Your job is to answer one question with evidence: **does this branch meet the is
 
 # Write the verdict
 
-The host ticks the criteria you prove — the ones marked `proven` with evidence — and leaves the issue open. You never tick anything yourself, and you never touch the issue.
+The host ticks the criteria you pass — the ones marked `PASS` with evidence — and leaves the issue open. You never tick anything yourself, and you never touch the issue.
 
-Write **`.sandcastle/final-verdict.json`** in the repository root, and nothing else:
+Write **`.sandcastle/verdict-acs.json`** in the repository root, and nothing else:
 
 ```json
 {
   "criteria": [
     {
       "criterion": "the criterion as the issue words it",
-      "status": "proven",
+      "status": "PASS",
       "evidence": "the test or command you read or ran, and what it showed"
     }
   ],
@@ -54,7 +54,7 @@ Write **`.sandcastle/final-verdict.json`** in the repository root, and nothing e
 }
 ```
 
-`criteria` lists **every** acceptance criterion of the issue, in the issue's order, worded as the issue words it: the host matches your matrix against the issue body, and a criterion it cannot match stops the run. An unproven criterion needs empty `evidence`; do not pad it.
+`criteria` lists **every** acceptance criterion of the issue, in the issue's order, worded as the issue words it: the host matches your matrix against the issue body, and a criterion it cannot match stops the run. `status` is `PASS` or `FAIL`, and `PASS` needs the evidence you read or ran. A criterion you cannot prove is `FAIL` with empty `evidence`; do not pad it.
 
 Write **`.sandcastle/verdict-standards.json`** too, and nothing else:
 

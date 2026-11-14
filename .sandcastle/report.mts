@@ -57,9 +57,9 @@ function formatFinalVerdict(verdict: FinalVerdict): string[] {
   const decision = decideFinal(verdict);
   const lines = [`whole branch: ${decision.kind === "pass" ? "PASS" : `STOP — ${decision.reason}`}`];
 
-  // Every criterion is listed, proven or not: a matrix with the failures left out is not a matrix.
+  // Every criterion is listed, passing or not: a matrix with the failures left out is not a matrix.
   for (const entry of verdict.criteria) {
-    const mark = entry.status === "proven" ? "proven  " : "UNPROVEN";
+    const mark = entry.status === "PASS" ? "PASS  " : "FAIL  ";
     lines.push(...field(`${mark} `, entry.criterion));
     if (entry.evidence.trim().length > 0) lines.push(...field("  evidence:      ", entry.evidence));
   }

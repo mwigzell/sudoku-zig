@@ -20,7 +20,7 @@ import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } fr
 const VERDICT_FILE = ".sandcastle/verdict.json";
 
 /** Where the whole-branch reviewer writes its verdict; the host copies it out from there. */
-const FINAL_VERDICT_FILE = ".sandcastle/final-verdict.json";
+const ACS_VERDICT_FILE = ".sandcastle/verdict-acs.json";
 const STANDARDS_VERDICT_FILE = ".sandcastle/verdict-standards.json";
 
 /** Prompts are harness files, resolved against the repo root the harness runs from. */
@@ -215,8 +215,8 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
  * The whole-branch review: one agent reads everything the branch changed and judges the issue's
  * acceptance criteria, which the per-step reviewers deliberately left alone.
  *
- * The verdict is copied out of the worktree and decided like a step verdict is: a run passes only
- * when every criterion is proven with evidence. Returns the process exit code.
+ * The matrix (`verdict-acs.json`) is copied out of the worktree and decided like a step verdict is: a
+ * run passes only when every criterion is `PASS` with evidence. Returns the process exit code.
  */
 async function finalReview(
   options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "tracker" | "agent" | "runsDir">> & { ledgerFile: string },
@@ -240,10 +240,10 @@ async function finalReview(
   logEvent("agent-end", "final reviewer");
   if (review.commits.length > 0) return stop(`the whole-branch reviewer committed to ${plan.branch}; a review may not write`);
 
-  const verdictPath = join(sandbox.worktreePath, FINAL_VERDICT_FILE);
-  if (!existsSync(verdictPath)) return stop(`the whole-branch reviewer wrote no ${FINAL_VERDICT_FILE}`);
+  const verdictPath = join(sandbox.worktreePath, ACS_VERDICT_FILE);
+  if (!existsSync(verdictPath)) return stop(`the whole-branch reviewer wrote no ${ACS_VERDICT_FILE}`);
 
-  const kept = join(runsDir, "final-verdict.json");
+  const kept = join(runsDir, "verdict-acs.json");
   copyFileSync(verdictPath, kept);
 
   const read = readFinalVerdict(readFileSync(kept, "utf8"));
@@ -283,7 +283,7 @@ async function finalReview(
 
   const decision = decideFinal(read.verdict);
   for (const entry of read.verdict.criteria) {
-    logEvent("verdict", `${entry.status === "proven" ? "proven" : "UNPROVEN"}: ${entry.criterion}`);
+    logEvent("verdict", `${entry.status}: ${entry.criterion}`);
   }
   for (const concern of read.verdict.concerns) logEvent("verdict", `concern: ${concern}`);
 
@@ -306,6 +306,6 @@ async function finalReview(
     logEvent("criterion", `ticked acceptance criteria ${ticked.positions.join(", ")} on #${plan.issue}`);
   }
 
-  logEvent("end", "every acceptance criterion is proven; the issue is left open for accept or drop");
+  logEvent("end", "every acceptance criterion passed; the issue is left open for accept or drop");
   return 0;
 }

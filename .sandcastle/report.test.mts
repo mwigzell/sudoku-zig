@@ -65,8 +65,8 @@ test("a single word longer than the width is not split", () => {
 /** A whole-branch verdict with one proven criterion and one nobody could prove. */
 const FINAL = {
   criteria: [
-    { criterion: "the legend line reaches the terminal", status: "proven", evidence: "the shell e2e test asserts the footer" },
-    { criterion: "no core file imports a native adapter", status: "unproven", evidence: "" },
+    { criterion: "the legend line reaches the terminal", status: "PASS", evidence: "the shell e2e test asserts the footer" },
+    { criterion: "no core file imports a native adapter", status: "FAIL", evidence: "" },
   ],
   standards: "clean",
   concerns: ["the second criterion needs a human read"],
@@ -77,8 +77,8 @@ test("the whole-branch report leads with the decision and shows every criterion"
   const text = lines.join("\n");
 
   assert.match(lines[0] ?? "", /^whole branch: STOP — unproven: no core file imports a native adapter$/u);
-  assert.match(text, /^ {2}proven +the legend line reaches the terminal$/mu);
-  assert.match(text, /^ {2}UNPROVEN +no core file imports a native adapter$/mu);
+  assert.match(text, /^ {2}PASS +the legend line reaches the terminal$/mu);
+  assert.match(text, /^ {2}FAIL +no core file imports a native adapter$/mu);
   assert.match(text, /concern: {7}the second criterion needs a human read/u);
 });
 

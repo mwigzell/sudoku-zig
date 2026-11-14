@@ -116,8 +116,8 @@ export function decide(verdict: StepVerdict, expectedStep: number): Decision {
 export interface CriterionVerdict {
   /** The criterion, as the issue words it. */
   criterion: string;
-  /** `proven` only when the reviewer found evidence on the branch; otherwise `unproven`. */
-  status: "proven" | "unproven";
+  /** `PASS` only when the reviewer found evidence on the branch; otherwise `FAIL`. */
+  status: "PASS" | "FAIL";
   /** What the reviewer read to decide: a test name, a command and its output. */
   evidence: string;
 }
@@ -150,8 +150,8 @@ export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { pro
     if (typeof entry.criterion !== "string" || typeof entry.evidence !== "string") {
       return { problem: `the verdict's criteria[${at}] has no criterion and evidence text` };
     }
-    if (entry.status !== "proven" && entry.status !== "unproven") {
-      return { problem: `the verdict's criteria[${at}].status is not proven or unproven` };
+    if (entry.status !== "PASS" && entry.status !== "FAIL") {
+      return { problem: `the verdict's criteria[${at}].status is not PASS or FAIL` };
     }
   }
   if (!holds(record.concerns, "strings")) return { problem: "the verdict's concerns is not a list of strings" };
@@ -161,17 +161,17 @@ export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { pro
 /**
  * Decide whether a run has reached its criteria.
  *
- * A run passes only when every criterion is proven with evidence the reviewer read. Any criterion
- * unproven, or proven on nothing, stops the run with the criteria named, so a human reads the matrix
- * instead of a run claiming to be done. The standards lens is judged separately, from its own report.
+ * A run passes only when every criterion is marked `PASS` with evidence the reviewer read. Any
+ * criterion `FAIL`, or `PASS` on nothing, stops the run with the criteria named, so a human reads the
+ * matrix instead of a run claiming to be done. The standards lens is judged separately, from its own report.
  */
 export function decideFinal(verdict: FinalVerdict): FinalDecision {
-  const unproven = verdict.criteria.filter((entry) => entry.status !== "proven");
-  if (unproven.length > 0) {
-    return { kind: "stop", reason: `unproven: ${unproven.map((entry) => entry.criterion).join("; ")}` };
+  const failed = verdict.criteria.filter((entry) => entry.status !== "PASS");
+  if (failed.length > 0) {
+    return { kind: "stop", reason: `unproven: ${failed.map((entry) => entry.criterion).join("; ")}` };
   }
 
-  // A criterion marked proven on an empty evidence line asserts nothing, so it counts as unproven.
+  // A criterion marked PASS on an empty evidence line asserts nothing, so it does not count as proof.
   const unevidenced = verdict.criteria.filter((entry) => entry.evidence.trim().length === 0);
   if (unevidenced.length > 0) {
     return { kind: "stop", reason: `no evidence: ${unevidenced.map((entry) => entry.criterion).join("; ")}` };
@@ -210,7 +210,7 @@ export function tickedCriteria(
   }
 
   const positions = verdict.criteria
-    .filter((entry) => entry.status === "proven" && entry.evidence.trim().length > 0)
+    .filter((entry) => entry.status === "PASS" && entry.evidence.trim().length > 0)
     .map((entry) => byText.get(entry.criterion)!.position)
     .filter((position) => !criteria.find((entry) => entry.position === position)?.ticked);
 

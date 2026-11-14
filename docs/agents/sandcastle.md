@@ -39,7 +39,7 @@ Only one run exists at a time: a second `sandcastle/*` branch blocks both a new 
 5. **The host reads the verdict** and decides (see below). On a pass it ticks that step on the issue and
    records the tick. Nothing else is ever written to the issue, and acceptance criteria are never touched.
 6. **After the last tick, the whole-branch review** runs: one more session reads the entire diff and judges
-   the issue's acceptance criteria, writing `.sandcastle/final-verdict.json`. The host then ticks every
+   the issue's acceptance criteria, writing `.sandcastle/verdict-acs.json`. The host then ticks every
    criterion that session proved — matched one for one against the issue body, so a criterion it invented
    or skipped stops the run — and leaves the issue open. The run exits 0 only if every criterion is proven
    with evidence.
@@ -117,7 +117,7 @@ nothing and says so, rather than guessing a number and closing someone else's is
 | `.sandcastle/report.mts` | Turning verdict files into the readable report |
 | `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |
-| `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `final-verdict.json`, `ticks.json` |
+| `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `ticks.json` |
 | `.sandcastle/logs/sandcastle-<branch>-<role>-step-<n>of<m>.log` | The agents' transcripts, one per session; `npm run sandcastle:logs` reads the newest |
 | `.sandcastle/.env` | `GH_TOKEN` for the sandboxed agents (untracked) |
 

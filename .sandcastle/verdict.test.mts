@@ -87,8 +87,8 @@ test("a verdict that cannot be read is a problem, not a pass", () => {
 /** A whole-branch verdict in which every acceptance criterion is proven. */
 const FINAL_PASSING = {
   criteria: [
-    { criterion: "the legend line reaches the terminal", status: "proven", evidence: "shell e2e test asserts the footer text" },
-    { criterion: "no core file imports a native adapter", status: "proven", evidence: "src/test/layering.zig walks src/core" },
+    { criterion: "the legend line reaches the terminal", status: "PASS", evidence: "shell e2e test asserts the footer text" },
+    { criterion: "no core file imports a native adapter", status: "PASS", evidence: "src/test/layering.zig walks src/core" },
   ],
   standards: "clean",
   concerns: [],
@@ -105,7 +105,7 @@ test("a criterion nobody proved stops the run, and the stop names it", () => {
     ...FINAL_PASSING,
     criteria: [
       ...FINAL_PASSING.criteria,
-      { criterion: "the invariant holds for every core file", status: "unproven", evidence: "" },
+      { criterion: "the invariant holds for every core file", status: "FAIL", evidence: "" },
     ],
   };
   const decision = decideFinal(verdict as FinalVerdict);
@@ -117,7 +117,7 @@ test("a criterion nobody proved stops the run, and the stop names it", () => {
 test("a criteria list with no evidence is a problem, never an empty pass", () => {
   const evidence_free = {
     ...FINAL_PASSING,
-    criteria: [{ criterion: "something", status: "proven", evidence: "" }],
+    criteria: [{ criterion: "something", status: "PASS", evidence: "" }],
   };
   const decision = decideFinal(evidence_free as FinalVerdict);
 
@@ -131,7 +131,7 @@ test("a final verdict that cannot be read is a problem, not a pass", () => {
   assert.ok("problem" in incomplete, "a verdict missing its criteria is not a pass");
   assert.deepEqual(
     readFinalVerdict(JSON.stringify({ ...FINAL_PASSING, criteria: [{ criterion: "x", status: "maybe", evidence: "y" }] })),
-    { problem: "the verdict's criteria[0].status is not proven or unproven" },
+    { problem: "the verdict's criteria[0].status is not PASS or FAIL" },
   );
 });
 
@@ -174,7 +174,7 @@ test("only criteria the reviewer proved are ticked", () => {
     ...FINAL_PASSING,
     criteria: [
       FINAL_PASSING.criteria[0],
-      { criterion: "no core file imports a native adapter", status: "unproven", evidence: "" },
+      { criterion: "no core file imports a native adapter", status: "FAIL", evidence: "" },
     ],
   } as FinalVerdict;
 

@@ -52,9 +52,9 @@ const passingStandards = () => ({
   shotgun: [] as Array<{ symbol: string; files: number }>,
 });
 
-/** A whole-branch verdict in which the issue's one criterion is proven, so the run may pass. */
+/** A whole-branch matrix in which the issue's one criterion passes, so the run may pass. */
 const passingFinal = () => ({
-  criteria: [{ criterion: "Something at issue level.", status: "proven", evidence: "a test asserts it" }],
+  criteria: [{ criterion: "Something at issue level.", status: "PASS", evidence: "a test asserts it" }],
   concerns: [],
 });
 
@@ -97,7 +97,7 @@ function fakeSandbox(
       }
       // The whole-branch review is the run's last agent: it writes its own file, naming no step.
       if (options.promptFile?.includes("final") === true) {
-        const final_file = join(worktree, ".sandcastle", "final-verdict.json");
+        const final_file = join(worktree, ".sandcastle", "verdict-acs.json");
         if (final === null) rmSync(final_file, { force: true });
         else writeFileSync(final_file, JSON.stringify(final));
         const standards_file = join(worktree, ".sandcastle", "verdict-standards.json");
@@ -142,11 +142,11 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
     assert.equal(code, 0, "a run whose steps all stand exits green once the whole branch passes");
     assert.equal(sandbox.runs.length, 5, "two steps, two runs each, then the whole-branch review");
     assert.match(String(sandbox.runs[4]?.promptFile), /final-review-prompt/, "the last agent reads the whole branch");
-    assert.ok(existsSync(join(dirs.runsDir, "final-verdict.json")), "the whole-branch verdict is kept");
+    assert.ok(existsSync(join(dirs.runsDir, "verdict-acs.json")), "the whole-branch verdict is kept");
     assert.match(tracker.body, /- \[x\] \*\*Step one:\*\*/, "step one was ticked on the issue");
     assert.match(tracker.body, /- \[x\] \*\*Step two:\*\*/, "step two was ticked on the issue");
     // A step's PASS ticks the step only; the criterion waits for the whole-branch review, which ticks it.
-    assert.match(tracker.body, /- \[x\] Something at issue level\./, "the proven criterion is ticked by the final pass");
+    assert.match(tracker.body, /- \[x\] Something at issue level\./, "the passing criterion is ticked by the final pass");
     assert.ok(existsSync(join(dirs.runsDir, "step-1-verdict.json")), "the first verdict is kept");
     assert.ok(existsSync(join(dirs.runsDir, "step-2-verdict.json")), "the second verdict is kept");
     const ledger = readLedger(ledgerPath(dirs.runsDir));
@@ -186,8 +186,8 @@ test("a branch whose criteria the whole-branch review cannot prove stops the run
     const tracker = fakeTracker(TWO_STEPS);
     const unproven = {
       criteria: [
-        { criterion: "Something at issue level.", status: "unproven", evidence: "" },
-        { criterion: "Another criterion.", status: "proven", evidence: "a test asserts it" },
+        { criterion: "Something at issue level.", status: "FAIL", evidence: "" },
+        { criterion: "Another criterion.", status: "PASS", evidence: "a test asserts it" },
       ],
       concerns: ["the second criterion rests on a test that runs only on the web path"],
     };
@@ -202,7 +202,7 @@ test("a branch whose criteria the whole-branch review cannot prove stops the run
     });
 
     assert.equal(code, 1, "an unproven criterion leaves the run for a human");
-    assert.ok(existsSync(join(dirs.runsDir, "final-verdict.json")), "the matrix is kept for the reader");
+    assert.ok(existsSync(join(dirs.runsDir, "verdict-acs.json")), "the matrix is kept for the reader");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

@@ -49,11 +49,11 @@ else
   done
 fi
 
-if [ -f "$RUN_LOGS/final-verdict.json" ]; then
-  node .sandcastle/report.mts --final "$RUN_LOGS/final-verdict.json"
+if [ -f "$RUN_LOGS/verdict-acs.json" ]; then
+  node .sandcastle/report.mts --final "$RUN_LOGS/verdict-acs.json"
   echo
 else
-  echo "The whole-branch review did not run: no final-verdict.json under $RUN_LOGS."
+  echo "The whole-branch review did not run: no verdict-acs.json under $RUN_LOGS."
   echo
 fi
 
