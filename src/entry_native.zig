@@ -52,7 +52,7 @@ pub fn main(init: std.process.Init) shell.Error!void {
     else |err|
         startup_config.DataDir.noDataDir(@errorName(err));
 
-    const cfg = startup_config.resolveStartupConfig(gpa, init.io, host_dir, overrides) catch unreachable;
+    const cfg = try startup_config.resolveStartupConfig(gpa, init.io, host_dir, overrides);
     startup_config.applyLoggerFromStartup(cfg);
 
     const arm = selectEntryArm(cfg);
@@ -77,4 +77,17 @@ test "selectEntryArm routes non-web renderers to terminal entry" {
     var cfg = config.Config.default();
     cfg.renderers.preferred = .ansi;
     try std.testing.expectEqual(EntryArm.terminal, selectEntryArm(cfg));
+}
+
+test "the startup seam fails only with errors this entry's main already carries" {
+    const seam_set = @typeInfo(@typeInfo(@TypeOf(startup_config.resolveStartupConfig)).@"fn".return_type.?).error_union.error_set;
+    const seam_names = @typeInfo(seam_set).error_set.error_names.?;
+    const main_names = @typeInfo(shell.Error).error_set.error_names.?;
+    try std.testing.expect(seam_names.len > 0);
+    for (seam_names) |name| {
+        const carried = for (main_names) |main_name| {
+            if (std.mem.eql(u8, name, main_name)) break true;
+        } else false;
+        try std.testing.expect(carried);
+    }
 }

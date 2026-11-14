@@ -28,7 +28,7 @@ The rule is decided once, in core, and every front end only renders its outcome.
 - One behaviour for a bad file on every arm: it is refused, with its reason in the log, instead of being replaced by defaults.
 - A first start never stops: only a file that exists and cannot be used refuses.
 - The failure channel of `Error` is now used, so the callers that already handled it are reached: the `-r web` host's pointer write refuses instead of repairing a corrupt file, and the Android host keeps defaulting while logging one warn line (its own arm is a separate slice).
-- The desktop entry's `catch unreachable` on this seam was already reachable through `save` before this decision and must become a `try`; that defect is its own change, not this rule's.
+- The desktop entry's `catch unreachable` on this seam was already reachable through `save` before this decision and must become a `try`; that defect is its own change, not this rule's. It is now a `try`: the seam declares `error{System}`, which `main` already carries, so a refused startup exits 1 with core's line on stderr instead of trapping.
 - `config.json` keeps its shape and `current_file` its meaning, so an older app still reads it.
 - Front ends gain no text: core owns the log lines, and any player-facing sentence for a refused startup is core's to write when a front end needs one.
 
