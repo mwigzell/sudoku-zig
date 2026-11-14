@@ -27,7 +27,7 @@ if (ledger === null) {
   process.exit(0);
 }
 
-const positions = untickRun(ledger, ghTracker());
+const positions = untickRun(ledger, () => ghTracker());
 console.log(
   positions.length === 0
     ? `[drop] the run ticked no step on #${ledger.issue}`
