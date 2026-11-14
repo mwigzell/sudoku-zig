@@ -14,6 +14,11 @@ export interface Step {
   title: string;
   /** Whether the issue body already marks this step done. */
   ticked: boolean;
+  /**
+   * The sub-issue this step stands for, when the step's checkbox names one by issue number.
+   * `null` means the step is the issue's own work, which is the single multi-step shape.
+   */
+  child: number | null;
 }
 
 /** Why an issue cannot be run as a stepped run. */
@@ -49,6 +54,9 @@ const STEP_HEADING = /^##\s+steps\s*$/i;
 const CRITERIA_HEADING = /^##\s+acceptance criteria\s*$/i;
 /** The next level-2 heading closes the section, so acceptance criteria are never read as steps. */
 const NEXT_SECTION = /^##\s+\S/;
+/** A step whose text names a sub-issue: that child is the step, and carries its own criteria. */
+const CHILD_REFERENCE = /(?:^|\s)#(\d+)\b/;
+
 /** Shapes an issue may write its steps in that the host cannot tick. */
 const STEP_SUBHEADING = /^###\s+step\b/i;
 const NUMBERED_ITEM = /^\d+[.)]\s+/;
@@ -92,7 +100,14 @@ export function readSteps(body: string): { steps: Step[]; refusal: Refusal | nul
   for (const line of section) {
     const checkbox = CHECKBOX_ITEM.exec(line);
     if (checkbox) {
-      steps.push({ position: steps.length + 1, title: checkbox[2].trim(), ticked: checkbox[1] !== " " });
+      const title = checkbox[2].trim();
+      const child = CHILD_REFERENCE.exec(title);
+      steps.push({
+        position: steps.length + 1,
+        title,
+        ticked: checkbox[1] !== " ",
+        child: child === null ? null : Number(child[1]),
+      });
     }
   }
   if (steps.length > 0) return { steps, refusal: null };

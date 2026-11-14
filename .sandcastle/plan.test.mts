@@ -10,6 +10,7 @@ import {
   nextStep,
   parseSteps,
   readCriteria,
+  readSteps,
   runBranch,
   tickCriterion,
   tickStep,
@@ -217,4 +218,35 @@ test("a criterion is ticked and unticked by position, leaving every other byte a
   assert.equal(untickCriterion(ticked, 1), CRITERIA_BODY, "unticking puts the bytes back");
   assert.equal(untickCriterion(ticked, 1)?.length, CRITERIA_BODY.length);
   assert.equal(tickCriterion(CRITERIA_BODY, 9), null, "a position that is not a criterion has no tick");
+});
+
+/** A parent whose steps are sub-issues: the checkbox names the child, so the child is the step. */
+const CHILD_A = 125;
+const CHILD_B = 124;
+const PARENT_BODY = `## Steps
+
+- [ ] #${CHILD_A} fill pencil marks
+- [ ] #${CHILD_B} check pencil marks
+
+## Acceptance criteria
+
+- [ ] The parent's own end-to-end criterion.
+`;
+
+test("a step that names a child issue is that child, not a task the parent describes", () => {
+  const { steps } = readSteps(PARENT_BODY);
+
+  assert.deepEqual(
+    steps.map((step) => step.child),
+    [CHILD_A, CHILD_B],
+    "each checkbox names the sub-issue it stands for",
+  );
+  assert.equal(steps[0]?.title, `#${CHILD_A} fill pencil marks`, "the author's words are kept as written");
+});
+
+test("a step that names no issue is the issue's own work, so the run is a single multi-step issue", () => {
+  assert.deepEqual(
+    readSteps(CHECKBOXES).steps.map((step) => step.child),
+    [null, null, null],
+  );
 });
