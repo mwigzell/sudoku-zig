@@ -228,5 +228,21 @@ zig test src/entry_native.zig -lc
 - **One Zig test on its own:** a temporary root in `src/` that imports the test's file (a root inside a subfolder cannot import `../`), e.g. `src/_one_test.zig` with `test { _ = @import("core/engine/pencil.zig"); }`, then `zig test src/_one_test.zig -lc --test-filter "<name>"`; check the name in the output, then delete the root.
 ## zig version
 zig -version
+
+## Claims about the code
+
+Every claim about current behaviour is established by a command, not recalled. This sits outside
+"Coding standards" because no diff can prove it; it governs what you say, not what you commit.
+
+- **Quote the evidence.** Saying what the code, tool or command does means running the probe in the same
+  turn and letting its output be the claim. No probe, say *unverified* and name the probe that would settle it.
+- **Skip the probe only when the output is already in this session.** Re-running what you just read is waste;
+  asserting what you never read is the failure this rule exists for — including claiming a rule is being
+  followed.
+- **Corrections and rules are claims too.** Reading a handoff or a rule back to the owner as though it were
+  working is the same unverified assertion one layer up.
+- **Durable rules live in this file.** A rule kept only in a `/tmp` handoff is read once and cleared on
+  reboot; if it must bind a future session, write it here.
+
 # ANSWERING
 When reporting information to me be extremely concise and sacrifice grammar for the sake of concision.
