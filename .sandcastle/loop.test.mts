@@ -3,12 +3,13 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readEvents } from "./events.mts";
 import { ledgerPath, readLedger } from "./ledger.mts";
 import { runSteps, type StepSandbox } from "./loop.mts";
+import { readRunRecord } from "./run_record.mts";
 
 type SandboxAlias = StepSandbox;
 import { makePlan } from "./plan.mts";
@@ -82,6 +83,7 @@ function fakeSandbox(
   final: object | null = passingFinal(),
   standards: object | null = passingStandards(),
   childMatrix: object | null = null,
+  implementCommits = 1,
 ) {
   const queued = [...verdicts];
   /** What one `run()` call was given; the loop's own prompt arguments are what the tests check. */
@@ -94,7 +96,8 @@ function fakeSandbox(
     run: async (options: RunOptions) => {
       runs.push(options);
       if (options.promptFile?.includes("implement") === true) {
-        return { commits: [{ sha: "abc123" }], iterations: [], stdout: "" };
+        const commits = Array.from({ length: implementCommits }, (_unused, index) => ({ sha: `abc${index + 1}` }));
+        return { commits, iterations: [], stdout: "" };
       }
       // The whole-branch review is the run's last agent: it writes its own file, naming no step.
       if (options.promptFile?.includes("final") === true) {
@@ -179,6 +182,58 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
       5,
       "an agent start per role per step, plus the whole-branch review",
     );
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a run keeps one branch, one commit per step, and pushes nothing", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(TWO_STEPS);
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)]);
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 0, "both steps stand, so the run finishes green");
+    const implementers = sandbox.runs.filter((run) => run.promptFile?.includes("implement") === true);
+    assert.deepEqual(
+      implementers.map((run) => run.promptArgs.STEP),
+      [1, 2],
+      "one implementer per step, so the branch holds one commit per step",
+    );
+    const record = readRunRecord(dirs.runsDir);
+    assert.equal(record?.branch, sandbox.branch, "every step commits to the run's one branch");
+    assert.equal(record?.targetBranch, "develop", "and the record names the branch it was cut from");
+    // Nothing in the harness may push: the run leaves its branch for a human to accept or drop.
+    for (const file of readdirSync(dirname(new URL(import.meta.url).pathname)).filter((name) => name.endsWith(".mts"))) {
+      assert.doesNotMatch(readFileSync(join(dirname(new URL(import.meta.url).pathname), file), "utf8"), /git\s+push/u, `${file} must not push`);
+    }
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a step that commits twice is a stop, not two commits on the branch", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(TWO_STEPS);
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)], passingFinal(), passingStandards(), null, 2);
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 1, "the run stops rather than letting a step land twice");
+    assert.doesNotMatch(tracker.body, /- \[x\] \*\*Step one:\*\*/, "the step is not ticked when its commit count is wrong");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }
