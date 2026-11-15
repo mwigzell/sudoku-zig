@@ -62,7 +62,7 @@ test("a title that continues past the bold is answered by the words AGENTS.md gi
     "3. **No magic numbers.** Name the constant.\n8. **Clean** code style.",
   );
   const rules = readRules(markdown);
-  assert.deepEqual(rules[3], { position: 8, title: "Clean code style" });
+  assert.deepEqual(rules[3], { position: 8, title: "Clean code style", aliases: ["Clean"] });
 
   const checked = validateReport(
     {
@@ -76,4 +76,18 @@ test("a title that continues past the bold is answered by the words AGENTS.md gi
     rules,
   );
   assert.ok(!("problem" in checked), "the reviewer's wording is the standard's own");
+
+  // The bold alone is the same standard: a reviewer may name it either way.
+  const short = validateReport(
+    {
+      rules: [
+        { rule: "Document public surfaces.", verdict: "PASS", evidence: "src/sudoku.zig:12" },
+        { rule: "DRY", verdict: "PASS", evidence: "src/host/host.zig:40" },
+        { rule: "No magic numbers.", verdict: "PASS", evidence: "src/board/board.zig:7" },
+        { rule: "Clean", verdict: "PASS", evidence: "src/board/cell.zig:9" },
+      ],
+    },
+    rules,
+  );
+  assert.ok(!("problem" in short), "the bold wording names the same rule");
 });

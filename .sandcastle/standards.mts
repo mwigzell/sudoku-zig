@@ -10,8 +10,10 @@ import type { ShotgunClaim } from "./shotgun.mts";
 export type Rule = {
   /** The number the standard carries in `AGENTS.md`; stable across runs, and what a report refers to. */
   position: number;
-  /** The standard's bold title, which is how a report names it. */
+  /** The standard's title, which is how a report names it. */
   title: string;
+  /** The bold-only wording, when the title continues past it; a report may use either. */
+  aliases?: string[];
 };
 
 /** What a reviewer said about one standard. */
@@ -55,7 +57,7 @@ export function readRules(markdown: string): Rule[] {
   for (const line of lines.slice(start + 1)) {
     if (ANY_HEADING.test(line)) break;
     const match = RULE.exec(line);
-    if (match) rules.push({ position: Number(match[1]), title: ruleTitle(match[2]!.trim(), match[3] ?? "") });
+    if (match) rules.push({ position: Number(match[1]), ...ruleTitle(match[2]!.trim(), match[3] ?? "") });
   }
   if (rules.length === 0) throw new Error('the "## Coding standards" section in AGENTS.md has no numbered rules');
 
@@ -69,15 +71,23 @@ export function readRules(markdown: string): Rule[] {
  * yourself.` and `**Document public surfaces.** Every function…` stop at the bold, so a report
  * may use either wording without inventing a rule.
  */
-function ruleTitle(bold: string, rest: string): string {
-  if (/[.:;,!?]$/u.test(bold)) return bold;
+function ruleTitle(bold: string, rest: string): { title: string; aliases?: string[] } {
+  if (/[.:;,!?]$/u.test(bold)) return { title: bold };
   const continuation = TITLE_CONTINUATION.exec(rest.trim());
-  return continuation ? `${bold} ${continuation[0].trim()}` : bold;
+  if (!continuation) return { title: bold };
+  // A report may name the standard by its bold text alone; both readings are the same rule.
+  return { title: `${bold} ${continuation[0].trim()}`, aliases: [bold] };
 }
 
 /** Normalise a title for matching, so punctuation or a stray double space cannot split a match. */
 function key(title: string): string {
   return title.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+/** Whether a report's wording names this rule, by its title or an alias. */
+function names(rule: Rule, text: string): boolean {
+  const wanted = key(text);
+  return key(rule.title) === wanted || (rule.aliases ?? []).some((alias) => key(alias) === wanted);
 }
 
 /**
@@ -122,12 +132,11 @@ export function readReport(raw: string): { report: StandardsReport } | { problem
  * Returns `{ ok: true }`, or `{ problem }` naming the first defect so the run can stop on it.
  */
 export function validateReport(report: StandardsReport, rules: Rule[]): { ok: true } | { problem: string } {
-  const answered = new Map(report.rules.map((entry) => [key(entry.rule), entry]));
 
-  const missing = rules.filter((rule) => !answered.has(key(rule.title)));
+  const missing = rules.filter((rule) => !report.rules.some((entry) => names(rule, entry.rule)));
   if (missing.length > 0) return { problem: `left unjudged: ${missing.map((rule) => rule.title).join("; ")}` };
 
-  const invented = report.rules.filter((entry) => !rules.some((rule) => key(rule.title) === key(entry.rule)));
+  const invented = report.rules.filter((entry) => !rules.some((rule) => names(rule, entry.rule)));
   if (invented.length > 0) {
     return { problem: `answers a standard AGENTS.md does not have: ${invented.map((entry) => entry.rule).join("; ")}` };
   }
