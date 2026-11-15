@@ -26,6 +26,7 @@ The product is one core with three front ends: **native** (terminal), **web** an
 - Name what core owns for the change when front ends are involved: front ends draw core's state and text and send the player's input to core; they decide nothing.
 - Tooling issues (build, coverage, standards) say which front ends' code they cover.
 - An issue is closed only when **every in-scope front end** meets the acceptance criteria. Done on one front end is not done.
+- Android-only behaviour names its device scenario: the `src/android/test/FileBridgeTest.java` method the issue's steps add or update, so the change keeps a test after the hand-run is over. `zig build verify` never runs that suite, so an issue that leaves it out leaves the behaviour held by nothing.
 
 Triage adds the section before an issue moves to `ready-for-agent`, and an **Agent Brief** carries it as a `**Front ends:**` field after `**Summary:**`.
 

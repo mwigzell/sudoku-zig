@@ -48,6 +48,10 @@ Only one run exists at a time: a second `sandcastle/*` branch blocks both a new 
 The iteration bound is the **unticked** steps plus that final review; agent runs are two per step plus one.
 A resumed issue therefore costs only what is left.
 
+## The device lane is outside the gate
+
+`zig build verify` runs no Android test: the suite in `src/android/test/FileBridgeTest.java` needs a connected device, and the harness preflight checks none. A run therefore holds Android-only behaviour by the scenario the step adds (`AGENTS.md` rule 11, `implement-prompt.md` step 6) and by `zig build android-test -Dtest-filter=<method>` when a device happens to be up — never by `verify`. With no device the implementer says so; the owner runs the suite before a push, and the acceptance gate says which scenarios it ran.
+
 ## What a verdict must say
 
 A step verdict (`verdict.mts`), every field evidence the reviewer produced itself:

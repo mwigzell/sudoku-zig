@@ -139,6 +139,7 @@ The `Facade` vtable (`src/core/renderer/facade.zig`, ADR-0009) is the **terminal
    - **HARD RULE (MANDATORY):** Durable status lifecycle (`set|preserve|clear`) is decided in core seams only; adapters render/pass through only.
    - **HARD RULE (MANDATORY):** Startup restore must use the core restore lane (persisted status continuity), not generic open-with-label behavior.
 10. **Web modules import each other by namespace.** In `src/wasm/`, `import * as statusBar from "./status_bar.js"`, so a call site reads `statusBar.applyEventStatus(...)`. The namespace is the file name in camelCase; when that clashes with a local name, add `Mod` (`sessionMod`, as Zig uses `storage_mod`).
+11. **Android-only behaviour ships its device test.** A change to the Android-only surface (`src/android/jni_host.zig`, `src/entry_android.zig`, the bootstrap Java, the WebView bridge) adds or updates a scenario in `src/android/test/FileBridgeTest.java` in the same commit, and the commit says what was run. `zig build verify` cannot reach that suite — it needs a connected device, which the gate does not have — so a hand-run on a device is evidence, not the artifact: the scenario is what keeps the behaviour. A scenario that cannot exist says why, in the issue.
 
 ### Test / SUT colocated (Ziglings 105 style)
 - Test blocks are colocated with the code being tested.
