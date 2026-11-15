@@ -574,10 +574,14 @@ public final class FileBridgeTest {
 
     @Test
     public void picksThatTakeOverAMinuteSaveAndOpenThePickedFile() throws IOException {
-        // The save folder is the app's own; a clean device has none, so the copy below would have nowhere to land.
-        sh("mkdir -p " + SAVE_DIR + "\n");
         launchApp();
         startEasyGame();
+        // The app writes its own default file first: that is what creates its folder, so both files this test
+        // picks between are the app's own and nothing here writes to the device's storage by hand.
+        fillAnEmptyCell();
+        awaitDefaultEntry();
+        assertEquals(DEFAULT_NAME, awaitFileLabel(DEFAULT_NAME));
+
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-save-as"), UI_WAIT_MS).click();
         need(By.res(PICKER_SAVE), UI_WAIT_MS);
@@ -587,8 +591,8 @@ public final class FileBridgeTest {
         final String chosenName = chosenPath.substring(chosenPath.lastIndexOf('/') + 1);
         assertEquals("a slow Save As binds the file", chosenName, awaitBoundName());
         assertNotEquals("a slow Save As writes the game", EMPTY_FILE_HASH, fileHash(chosenPath));
+        assertEquals("the label follows the bound file", chosenName, awaitFileLabel(chosenName));
 
-        sh("cp '" + chosenPath + "' " + DEFAULT_PATH + "\n");
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-open"), UI_WAIT_MS).click();
         final UiObject2 listed = needPickerItem(DEFAULT_NAME);
@@ -734,11 +738,27 @@ public final class FileBridgeTest {
         tappedCells.clear();
     }
 
-    /** In DocumentsUI's create picker (whichever folder it opens in), type `name` and save. */
-    private void saveInCreatePicker(String name) {
+    /**
+     * In DocumentsUI's create picker (whichever folder it opens in), type `name` and save. The name field is
+     * focused when the dialog opens, so a raised IME can sit over the Save button and swallow the click.
+     */
+    private void saveInCreatePicker(String name) throws IOException {
         need(By.res(PICKER_SAVE), UI_WAIT_MS);
         need(By.res(PICKER_NAME_FIELD).clazz("android.widget.EditText"), UI_WAIT_MS).setText(name);
+        hideIme();
         need(By.res(PICKER_SAVE), UI_WAIT_MS).click();
+    }
+
+    /**
+     * Take a raised IME down before the picker is touched. BACK closes the IME first and only reaches the dialog
+     * when none is up, so this is a no-op on a device whose keyboard never shows.
+     */
+    private void hideIme() throws IOException {
+        if (sh("dumpsys input_method | grep -m1 'mInputShown=true'\n").isEmpty()) return;
+        device.pressBack();
+        device.waitForIdle();
+        assertTrue("the IME came down before Save",
+            sh("dumpsys input_method | grep -m1 'mInputShown=true'\n").isEmpty());
     }
 
     @Test
