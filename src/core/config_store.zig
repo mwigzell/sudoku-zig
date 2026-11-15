@@ -584,11 +584,23 @@ test "setCurrentFile refuses a config file it cannot read instead of rewriting i
 
     try makeConfigUnreadable(io, tmp.dir);
 
+    var logged: [1024]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
     try std.testing.expectError(Error.System, setCurrentFile(std.testing.allocator, io, data_path, "/games/new.sud"));
 
     // Refused, not repaired: the path still holds the directory this test put there.
     const after = try tmp.dir.statFile(io, file_name, .{});
     try std.testing.expectEqual(std.Io.File.Kind.directory, after.kind);
+
+    // The refusal is the READ's. A lenient read would fall back to the defaults and fail later at
+    // the write instead, which logs a second line — the directory alone cannot tell the two apart,
+    // because neither reading can write over it.
+    const logged_text = sink.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, logged_text, "unreadable, config not read") != null);
+    try std.testing.expect(std.mem.indexOf(u8, logged_text, "config write") == null);
 }
 
 test "save repairs a config file whose pointer it cannot parse" {
