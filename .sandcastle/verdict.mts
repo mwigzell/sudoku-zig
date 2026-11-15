@@ -128,6 +128,8 @@ export interface FinalVerdict {
   criteria: CriterionVerdict[];
   /** Anything a human should read before accepting the run. */
   concerns: string[];
+  /** The standards verdict as the reviewer worded it, when it reports one here; the lens has its own file. */
+  standards?: string;
 }
 
 /** What the host does with the whole-branch verdict. */

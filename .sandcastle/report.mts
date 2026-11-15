@@ -63,7 +63,7 @@ function formatFinalVerdict(verdict: FinalVerdict): string[] {
     lines.push(...field(`${mark} `, entry.criterion));
     if (entry.evidence.trim().length > 0) lines.push(...field("  evidence:      ", entry.evidence));
   }
-  lines.push(...field("standards:     ", verdict.standards));
+  if (verdict.standards !== undefined) lines.push(...field("standards:     ", verdict.standards));
   for (const concern of verdict.concerns) lines.push(...field("concern:       ", concern));
   return lines;
 }

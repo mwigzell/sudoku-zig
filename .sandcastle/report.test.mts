@@ -82,6 +82,14 @@ test("the whole-branch report leads with the decision and shows every criterion"
   assert.match(text, /concern: {7}the second criterion needs a human read/u);
 });
 
+test("a verdict with no standards text reports its criteria instead of crashing", () => {
+  const withoutStandards = { criteria: FINAL.criteria, concerns: FINAL.concerns };
+  const text = formatFinalReport(JSON.stringify(withoutStandards)).join("\n");
+
+  assert.match(text, /^ {2}PASS +the legend line reaches the terminal$/mu);
+  assert.doesNotMatch(text, /standards:/u);
+});
+
 test("a whole-branch verdict that cannot be read says so instead of showing a pass", () => {
   assert.match(formatFinalReport("{ not json")[0] ?? "", /^whole branch: STOP — the verdict file is not valid JSON$/u);
 });
