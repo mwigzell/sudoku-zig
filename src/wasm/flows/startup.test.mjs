@@ -85,12 +85,13 @@ async function savedGameBytes(line) {
  * Run the startup flow on a real game with recording handlers.
  * `answers` feeds each `ask`; `generated` answers each `generate_game`.
  */
-async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [], forgetRefused = null } = {}) {
+async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [], forgetRefused = null, forgetDropped = false } = {}) {
   const game = await loadGame(config);
   const calls = [];
   const fetchFn = async (url, init = {}) => {
     calls.push({ url, init });
     if (url === CLIENT_CURRENT_FILE && init.method === "DELETE") {
+      if (forgetDropped) throw new Error("current-file forget failed: dropped connection");
       if (forgetRefused !== null) return { ok: false, status: 500, text: async () => forgetRefused };
       return { ok: true, status: 204 };
     }
@@ -308,4 +309,21 @@ for (const key of ["config", "default_save_filename", "startup_save_path"]) {
   assert.equal(healthy.outcome.kind, "done");
   assert.equal(healthy.statusEl.textContent, WELCOME_STATUS, "an accepted forget leaves core's status alone");
   assert.deepEqual(healthy.errors, []);
+}
+
+// A forget that fails without core's sentence — a bare 500 or a dropped connection — is not a refusal the
+// host worded, so the flow carries on as it did before the refusal path existed: acked, nothing shown.
+for (const [what, options] of [
+  ["a bare 500", { forgetRefused: "" }],
+  ["a dropped connection", { forgetDropped: true }],
+]) {
+  const run = await runStartupScenario({
+    config: { auto_restore: true },
+    currentFile: { name: "game.sud", bytes: null },
+    answers: [true],
+    ...options,
+  });
+  assert.equal(run.outcome.kind, "done", `a forget the host did not word still finishes (${what})`);
+  assert.equal(run.statusEl.textContent, WELCOME_STATUS, `nothing is put in the status line for ${what}`);
+  assert.deepEqual(run.errors, [], `no failure is reported for ${what}`);
 }
