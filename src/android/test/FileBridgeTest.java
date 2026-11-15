@@ -549,9 +549,11 @@ public final class FileBridgeTest {
 
     @Test
     public void withNoBoundFileSaveAsStartsInTheDefaultFolderNotWhereThePickerWasLast() throws IOException {
-        sh("mkdir -p " + SAVE_DIR + " && echo earlier > " + DEFAULT_PATH + "\n");
         launchApp();
         startEasyGame();
+        // The app writes its default file: that is what puts an entry in the default folder for the picker to show.
+        fillAnEmptyCell();
+        awaitDefaultEntry();
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-save-as"), UI_WAIT_MS).click();
         needPickerItem(DEFAULT_NAME);
