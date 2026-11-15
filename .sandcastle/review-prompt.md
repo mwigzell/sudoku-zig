@@ -55,7 +55,7 @@ Write `.sandcastle/verdict.json` in the repository root with exactly these field
   "verify_exit": 0,
   "standards": "clean",
   "on_track": true,
-  "concerns": ["anything the next step's agent must know"],
+  "concerns": ["a broken path, a test that cannot fail, or a false claim"],
   "red_on_revert": "what you ran to revert the change and what the test then printed",
   "ac_at_risk": [],
   "drift": false
@@ -64,7 +64,7 @@ Write `.sandcastle/verdict.json` in the repository root with exactly these field
 
 - `standards`: the word `clean`, or the violation you found as one sentence.
 - `on_track`: false when the step's test does not encode what the step asked for.
-- `red_on_revert`: never empty. If you could not make the test fail, say so — the host stops the run on an empty field, which is the honest outcome.
+- `concerns`: only what a later step, or the accepting human, must act on — one of three things: a **broken path** (code that now panics, refuses wrongly, or logs one event twice), a **test that cannot fail** or fails for the wrong reason (a fixture that is trivially satisfied, a test a revert leaves green), or a **false claim** in the issue, an ADR or `CONTEXT.md` at this commit. Everything else stays unwritten: intermediate states a later step fixes by existing, coverage percentages, wording a later step rewrites, "cheap to add later", and anything you would describe as a note rather than a defect. An unwritten concern costs nothing; a written one is read as work.
 - `ac_at_risk`: criteria **this step breaks or makes unachievable** — a step that cannot leave the branch heading for them. A criterion a later step implements, or a branch-wide criterion judged at the end, is **not** at risk: leave it out. The field is a stop, so a criterion that is simply not written yet stops the run for nothing.
 - `drift`: name problems, never mark an acceptance criterion satisfied. Do not add an acceptance-criteria status field; there is none in this file.
 
