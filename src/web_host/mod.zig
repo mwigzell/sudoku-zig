@@ -9,6 +9,7 @@ const config_store = @import("../core/config_store.zig");
 const file_transport = @import("../native/shell/file_transport.zig");
 const file_path = @import("../core/path.zig");
 const forget_mod = @import("../core/flow/forget.zig");
+const save_mod = @import("../core/flow/save.zig");
 const save_defaults = @import("../core/save_defaults.zig");
 const router_mod = @import("router.zig");
 const embed = @import("embed.zig");
@@ -322,21 +323,30 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Poin
 /// reason instead of reading core's sentence back out of the body.
 const REFUSAL_HEADER = "X-Sudoku-Refusal";
 
+/// Which `/current-file` arm is answering: a refused forget touched nothing, while a refused save
+/// has already put the game file on disk, so each asks core for its own step's words.
+const PointerStep = enum { save, forget };
+
 /// Answer a pointer write to the page: `204` when it landed, core's sentence in the body and the
 /// refusal kind in the header when a settings store refused it, and the connection closed on a
 /// host fault. Both arms of `/current-file` answer through here, so a refusal is mapped once.
-fn answerPointerWrite(w: *std.Io.Writer, result: PointerWrite!void) ServeError!void {
+fn answerPointerWrite(w: *std.Io.Writer, step: PointerStep, result: PointerWrite!void) ServeError!void {
     result catch |err| switch (err) {
-        error.SettingsRefused => return answerRefusal(w, .settings_unreadable),
-        error.SettingsWriteFailed => return answerRefusal(w, .settings_unwritable),
+        error.SettingsRefused => return answerRefusal(w, step, .settings_unreadable),
+        error.SettingsWriteFailed => return answerRefusal(w, step, .settings_unwritable),
         error.System => return ServeError.System,
     };
     try writeFull(w, "204 No Content", "application/octet-stream", "");
 }
 
-/// A refusal's answer: core's sentence for the player and the kind the page hands back to core.
-fn answerRefusal(w: *std.Io.Writer, reason: forget_mod.Refusal) ServeError!void {
-    return writeFullWithHeader(w, "500 Internal Server Error", "text/plain", REFUSAL_HEADER, @tagName(reason), reason.sentence());
+/// A refusal's answer: core's sentence for the step that was refused, and the kind the page hands
+/// back to core so it words the outcome itself.
+fn answerRefusal(w: *std.Io.Writer, step: PointerStep, reason: forget_mod.Refusal) ServeError!void {
+    const words = switch (step) {
+        .save => save_mod.writtenNotCurrentMsg(reason),
+        .forget => reason.sentence(),
+    };
+    return writeFullWithHeader(w, "500 Internal Server Error", "text/plain", REFUSAL_HEADER, @tagName(reason), words);
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -544,11 +554,11 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     }
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         const body = requestBody(request) orelse return ServeError.System;
-        try answerPointerWrite(&w.interface, applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER)));
+        try answerPointerWrite(&w.interface, .save, applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER)));
         return;
     }
     if (std.mem.eql(u8, method, "DELETE") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
-        try answerPointerWrite(&w.interface, applyCurrentFileForget(io, session, headerFlag(request, DELETE_FILE_HEADER)));
+        try answerPointerWrite(&w.interface, .forget, applyCurrentFileForget(io, session, headerFlag(request, DELETE_FILE_HEADER)));
         return;
     }
     if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, CURRENT_FILE_EXISTS_PATH)) {
@@ -1050,32 +1060,42 @@ test "current-file POST writes startup snapshot and updates current_file pointer
 }
 
 /// The bytes a pointer write's page reads, produced by the one answer helper both arms end at.
-fn pointerWriteAnswer(result: PointerWrite!void) ![]u8 {
+fn pointerWriteAnswer(step: PointerStep, result: PointerWrite!void) ![]u8 {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     errdefer aw.deinit();
-    try answerPointerWrite(&aw.writer, result);
+    try answerPointerWrite(&aw.writer, step, result);
     return aw.toOwnedSlice();
 }
 
 test "one answer serves both pointer writes: core's words for a refusal, one 204 for a success" {
-    const refused = try pointerWriteAnswer(error.SettingsRefused);
+    const refused = try pointerWriteAnswer(.forget, error.SettingsRefused);
     defer std.testing.allocator.free(refused);
     try std.testing.expect(std.mem.endsWith(u8, refused, startup_config.SETTINGS_REFUSED_MSG));
     try std.testing.expect(std.mem.indexOf(u8, refused, "X-Sudoku-Refusal: settings_unreadable\r\n") != null);
 
-    const write_failed = try pointerWriteAnswer(error.SettingsWriteFailed);
+    const write_failed = try pointerWriteAnswer(.forget, error.SettingsWriteFailed);
     defer std.testing.allocator.free(write_failed);
     try std.testing.expect(std.mem.endsWith(u8, write_failed, startup_config.SETTINGS_WRITE_FAILED_MSG));
     try std.testing.expect(std.mem.indexOf(u8, write_failed, "X-Sudoku-Refusal: settings_unwritable\r\n") != null);
     // The read refusal's sentence would send the player to repair a file that is sound.
     try std.testing.expect(std.mem.indexOf(u8, write_failed, startup_config.SETTINGS_REFUSED_MSG) == null);
 
-    const saved = try pointerWriteAnswer({});
+    // The save arm answers with the sentence that says the game file was written, same causes.
+    const written = try pointerWriteAnswer(.save, error.SettingsRefused);
+    defer std.testing.allocator.free(written);
+    try std.testing.expect(std.mem.endsWith(u8, written, save_mod.WRITTEN_SETTINGS_REFUSED_MSG));
+    try std.testing.expect(std.mem.indexOf(u8, written, "X-Sudoku-Refusal: settings_unreadable\r\n") != null);
+    const written_failed = try pointerWriteAnswer(.save, error.SettingsWriteFailed);
+    defer std.testing.allocator.free(written_failed);
+    try std.testing.expect(std.mem.endsWith(u8, written_failed, save_mod.WRITTEN_SETTINGS_WRITE_FAILED_MSG));
+    try std.testing.expect(std.mem.indexOf(u8, written_failed, "X-Sudoku-Refusal: settings_unwritable\r\n") != null);
+
+    const saved = try pointerWriteAnswer(.save, {});
     defer std.testing.allocator.free(saved);
     try std.testing.expect(std.mem.startsWith(u8, saved, "HTTP/1.1 204 No Content"));
 
     // A host fault has no sentence for the player: the connection is closed, not answered.
-    try std.testing.expectError(ServeError.System, pointerWriteAnswer(error.System));
+    try std.testing.expectError(ServeError.System, pointerWriteAnswer(.save, error.System));
 }
 
 /// A data directory under the test's temp dir, with `config.json` taken by a directory so no read
@@ -1089,7 +1109,7 @@ fn scenarioDataPathWithUnreadableSettings(tmp: *std.testing.TmpDir, io: std.Io) 
     return data_path;
 }
 
-test "current-file POST on an unreadable settings file answers with core's sentence" {
+test "current-file POST on an unreadable settings file answers with core's written sentence" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1104,7 +1124,13 @@ test "current-file POST on an unreadable settings file answers with core's sente
 
     // The page gets an answer with words in it, not a closed connection with no explanation.
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
-    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_REFUSED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, reply, save_mod.WRITTEN_SETTINGS_REFUSED_MSG));
+    // The bytes landed before the pointer write was refused, so the save is on disk as written.
+    const saved = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, save_defaults.DEFAULT_SAVE_FILE });
+    defer std.testing.allocator.free(saved);
+    const written = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, saved, std.testing.allocator, std.Io.Limit.unlimited) catch return error.TestFailed;
+    defer std.testing.allocator.free(written);
+    try std.testing.expectEqualSlices(u8, "SUD0 v1 refused", written);
 }
 
 /// A data directory under the test's temp dir holding a sound `config.json` that carries no write
@@ -1146,7 +1172,7 @@ fn settingsFileAcceptsWrites(io: std.Io, data_path: []const u8) !bool {
     return true;
 }
 
-test "current-file POST on a settings file the store cannot write answers with core's write sentence" {
+test "current-file POST on a settings file the store cannot write answers with core's written sentence" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -1168,9 +1194,15 @@ test "current-file POST on a settings file the store cannot write answers with c
     const reply = try pointerRequestReply(io, &session, "POST", "SUD0 v1 refused", "", &reply_buf);
 
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
-    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_WRITE_FAILED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, reply, save_mod.WRITTEN_SETTINGS_WRITE_FAILED_MSG));
     // The read refusal's sentence would send the player to repair a file that is sound.
     try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.SETTINGS_REFUSED_MSG) == null);
+    // The write that was refused is the pointer; the bytes it follows are on disk.
+    const saved = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ save_path, save_defaults.DEFAULT_SAVE_FILE });
+    defer std.testing.allocator.free(saved);
+    const written = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, saved, std.testing.allocator, std.Io.Limit.unlimited) catch return error.TestFailed;
+    defer std.testing.allocator.free(written);
+    try std.testing.expectEqualSlices(u8, "SUD0 v1 refused", written);
 }
 
 test "current-file DELETE on a settings file the store cannot write answers with core's write sentence" {

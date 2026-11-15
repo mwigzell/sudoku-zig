@@ -3,8 +3,10 @@
 // FileSession. Save, Save As and autosave all use it.
 const std = @import("std");
 const file_policy = @import("../file_policy.zig");
+const startup_config = @import("../startup/config.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
+const forget_mod = @import("forget.zig");
 const logger = @import("../logger.zig");
 
 const log = logger.Logger(.flow);
@@ -18,6 +20,27 @@ const MAX_NAME_LEN = file_session_mod.MAX_NAME_LEN;
 pub const NAME_TOO_LONG_MSG = "The file name is too long to save.";
 /// Shown when the platform could not write the game; its reason goes to the log.
 pub const SAVE_FAILED_MSG = "The game could not be saved.";
+
+/// The lead-in of a save whose pointer write was refused: the bytes landed, which the player must
+/// know first, and the session kept the file it had, so the words never call the save current.
+const WRITTEN_NOT_CURRENT_LEAD = "The game file was written, but the game did not make it the current file. ";
+
+/// Core's sentence for a save whose pointer write the settings read refused: the game file is on
+/// disk, and the repair is the one an unreadable settings file needs.
+pub const WRITTEN_SETTINGS_REFUSED_MSG = WRITTEN_NOT_CURRENT_LEAD ++ startup_config.SETTINGS_REFUSED_MSG;
+
+/// Core's sentence for a save whose pointer write the store could not write: the game file is on
+/// disk, and the repair is the space or the permission the settings write needs.
+pub const WRITTEN_SETTINGS_WRITE_FAILED_MSG = WRITTEN_NOT_CURRENT_LEAD ++ startup_config.SETTINGS_WRITE_FAILED_MSG;
+
+/// Core's sentence for a save the settings store refused to record, one per cause so the repair
+/// the player reads is the one that applies.
+pub fn writtenNotCurrentMsg(reason: forget_mod.Refusal) []const u8 {
+    return switch (reason) {
+        .settings_unreadable => WRITTEN_SETTINGS_REFUSED_MSG,
+        .settings_unwritable => WRITTEN_SETTINGS_WRITE_FAILED_MSG,
+    };
+}
 
 pub const SaveFlow = struct {
     session: *FileSession,
@@ -106,6 +129,7 @@ pub const SaveFlow = struct {
                 };
                 return switch (wrote) {
                     .ok => |written| self.succeeded(written),
+                    .written_not_current => |reason| self.writtenNotCurrent(reason),
                     .exists => self.replaceOrAsk(),
                     .cancelled => self.finish(.done),
                     .taken => |taken| self.askTaken(taken),
@@ -137,6 +161,7 @@ pub const SaveFlow = struct {
                 };
                 return switch (wrote) {
                     .ok => |written| self.succeeded(written),
+                    .written_not_current => |reason| self.writtenNotCurrent(reason),
                     .exists => self.replaceOrAsk(),
                     .cancelled, .taken => self.repeatTakenAsk(),
                     .failed => |reason| self.writeFailed(reason),
@@ -227,6 +252,13 @@ pub const SaveFlow = struct {
         return self.fail(SAVE_FAILED_MSG);
     }
 
+    /// The bytes landed but the settings store refused to name them the current file: the session
+    /// keeps the file it had, and core's sentence says the game file was written and what to
+    /// repair, so no front end words this itself. The store's own line carries the reason.
+    fn writtenNotCurrent(self: *SaveFlow, reason: forget_mod.Refusal) Step {
+        return self.finish(.{ .show_status = writtenNotCurrentMsg(reason) });
+    }
+
     fn fail(self: *SaveFlow, msg: []const u8) Step {
         return self.finish(step_mod.promptError(msg));
     }
@@ -238,6 +270,31 @@ pub const SaveFlow = struct {
 };
 
 const testing = std.testing;
+
+test "a save whose pointer write was refused says the game file was written, with that cause's repair" {
+    const sentence = @import("../../test/sentence.zig");
+    try sentence.expectSentence(WRITTEN_SETTINGS_REFUSED_MSG);
+    try testing.expect(std.mem.indexOf(u8, WRITTEN_SETTINGS_REFUSED_MSG, "The game file was written") != null);
+    // The cause's own repair travels with the news that the bytes landed.
+    try testing.expect(std.mem.indexOf(u8, WRITTEN_SETTINGS_REFUSED_MSG, "Repair or delete") != null);
+    try sentence.expectSentence(WRITTEN_SETTINGS_WRITE_FAILED_MSG);
+    try testing.expect(std.mem.indexOf(u8, WRITTEN_SETTINGS_WRITE_FAILED_MSG, "The game file was written") != null);
+    try testing.expect(std.mem.indexOf(u8, WRITTEN_SETTINGS_WRITE_FAILED_MSG, "disk has space") != null);
+    try testing.expect(std.mem.indexOf(u8, WRITTEN_SETTINGS_WRITE_FAILED_MSG, "Repair or delete") == null);
+    try testing.expectEqualStrings(WRITTEN_SETTINGS_REFUSED_MSG, writtenNotCurrentMsg(.settings_unreadable));
+    try testing.expectEqualStrings(WRITTEN_SETTINGS_WRITE_FAILED_MSG, writtenNotCurrentMsg(.settings_unwritable));
+}
+
+test "a refused pointer write keeps the session's file and shows the sentence that says the bytes landed" {
+    var session = FileSession{};
+    session.setCurrentFile("kept.sud");
+    var flow = SaveFlow.init(&session, .save, "written.sud");
+    _ = flow.next(.start);
+    const end = flow.next(.{ .wrote = .{ .written_not_current = .settings_unwritable } });
+    try testing.expectEqualStrings(WRITTEN_SETTINGS_WRITE_FAILED_MSG, end.show_status);
+    // The pointer write was refused, so the save never became the session's file.
+    try testing.expectEqualStrings("kept.sud", session.currentFile().?);
+}
 
 test "save to a new file writes without replacing and reports where it saved" {
     var session = FileSession{};

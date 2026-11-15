@@ -96,23 +96,32 @@ pub const Storage = struct {
         return copyInto(scratch, path);
     }
 
-    /// Remember `path` as the file the next launch restores; null forgets it.
-    pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) void {
-        const sp = self.config_persist orelse return;
+    /// Remember `path` as the file the next launch restores; null forgets it. Answers the refusal
+    /// when the settings store would not take the pointer, so the caller shows core's words.
+    pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) ?forget_mod.Refusal {
+        const sp = self.config_persist orelse return null;
         config_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err| {
-            log.err("could not remember the current file: {s}", .{@errorName(err)});
+            // The store words a refused read or write on its own line; anything else is silent.
+            switch (err) {
+                config_store.Error.System, config_store.Error.WriteFailed => {},
+                else => log.err("could not remember the current file: {s}", .{@errorName(err)}),
+            }
+            return forget_mod.refusalFor(err);
         };
+        return null;
     }
 
     /// Carry out a `save`, `save_as` or `autosave` step: the terminal has no picker, so all three
     /// write the named file. Without `replace` a file already there is left alone and answers `exists`.
-    /// The written file becomes the current file.
+    /// The written file becomes the current file; a pointer write the store refuses answers
+    /// `written_not_current`, since the bytes are on disk either way.
     pub fn saveGame(self: *const @This(), engine: *game_engine.GameEngine, target: flow_mod.step.GameWrite, scratch: []u8) flow_mod.Wrote {
         if (!target.replace and self.exists(target.name)) return .exists;
         const save_buf = engine.toSaveFormat(std.heap.page_allocator) catch |err| return .{ .failed = @errorName(err) };
         defer std.heap.page_allocator.free(save_buf);
         const wrote = self.writeNamed(target.name, save_buf, scratch);
-        if (wrote == .ok) self.persistCurrentFile(wrote.ok);
+        if (wrote != .ok) return wrote;
+        if (self.persistCurrentFile(wrote.ok)) |reason| return .{ .written_not_current = reason };
         return wrote;
     }
 
@@ -328,7 +337,7 @@ test "saveGame makes the target the current file; exportPuzzle leaves it alone" 
 
     const line = try root.path("puzzle.txt");
     defer std.testing.allocator.free(line);
-    store.persistCurrentFile(game);
+    _ = store.persistCurrentFile(game);
     try std.testing.expectEqualStrings(line, store.exportPuzzle(&engine, line, &scratch).ok);
     const bytes = try store.transport.readAll(store.transport.context, line);
     defer store.transport.free(store.transport.context, bytes);
@@ -356,6 +365,40 @@ test "saveGame: a file already there answers exists unless replacing is allowed"
     try std.testing.expectEqualStrings(game, store.saveGame(&engine, .{ .name = game, .replace = true }, &scratch).ok);
 }
 
+test "saveGame: a refused pointer write reports its cause and leaves the game file written" {
+    var root = try TestRoot.init();
+    defer root.deinit();
+    // A config.json taken by a directory: no read of it succeeds, for root or an ordinary user.
+    const settings_dir = try root.path("settings");
+    defer std.testing.allocator.free(settings_dir);
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, settings_dir);
+    const config_as_dir = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ settings_dir, config_store.file_name });
+    defer std.testing.allocator.free(config_as_dir);
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, config_as_dir);
+    const store: Storage = .{
+        .transport = file_transport.NativeTransport.make(std.testing.io),
+        .config_persist = .{ .io = std.testing.io, .data_dir = settings_dir, .visible_save_dir = root.dir },
+    };
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
+    const game = try root.path("game.sud");
+    defer std.testing.allocator.free(game);
+
+    const wrote = store.saveGame(&engine, .{ .name = game, .replace = false }, &scratch);
+    switch (wrote) {
+        .written_not_current => |reason| try std.testing.expectEqual(forget_mod.Refusal.settings_unreadable, reason),
+        else => return error.TestFailed,
+    }
+    // The pointer write was refused after the bytes landed, so the save is there and reloads.
+    const saved = try store.transport.readAll(store.transport.context, game);
+    defer store.transport.free(store.transport.context, saved);
+    var reloaded = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer reloaded.deinit();
+    try reloaded.fromSaveFormat(saved);
+    try std.testing.expectEqualSlices(u8, &engine.toPuzzle(), &reloaded.toPuzzle());
+}
+
 test "a failed write reports why and keeps the current file" {
     var root = try TestRoot.init();
     defer root.deinit();
@@ -365,7 +408,7 @@ test "a failed write reports why and keeps the current file" {
     var scratch: [flow_mod.file_session.MAX_NAME_LEN]u8 = undefined;
     const kept = try root.path("kept.sud");
     defer std.testing.allocator.free(kept);
-    store.persistCurrentFile(kept);
+    _ = store.persistCurrentFile(kept);
     const unwritable = try root.path("no-such-folder/game.sud");
     defer std.testing.allocator.free(unwritable);
 
@@ -385,7 +428,7 @@ test "forgetCurrentFile: deletes the file only when asked, and forgets it either
 
     for ([_]bool{ false, true }) |delete| {
         try store.transport.write(store.transport.context, file, "x");
-        store.persistCurrentFile(file);
+        _ = store.persistCurrentFile(file);
         try std.testing.expect(store.forgetCurrentFile(.{ .path = file, .delete = delete }) == .forgotten);
         try std.testing.expectEqual(!delete, store.exists(file));
         try std.testing.expect((try root.currentFile()) == null);

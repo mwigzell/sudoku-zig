@@ -195,6 +195,9 @@ pub const Outcome = union(enum) {
 pub const Wrote = union(enum) {
     /// Name of the target actually written (the platform may rename it).
     ok: []const u8,
+    /// The bytes landed, but the settings store refused to make them the current file. The cause
+    /// is the refusal whose sentence core shows; the session keeps the file it had.
+    written_not_current: forget_mod.Refusal,
     /// Nothing written: the fixed file is already there and the step did not allow replacing it.
     exists,
     /// The user backed out of a platform picker.

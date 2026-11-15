@@ -63,7 +63,8 @@ pub const ExportFlow = struct {
                         .ok => |written| self.exported(written),
                         .cancelled => self.finish(.done),
                         .failed => |reason| self.failedWith(EXPORT_FAILED_MSG, reason),
-                        .exists, .taken => self.fail(step_mod.UNEXPECTED_INPUT_MSG),
+                        // An export writes no pointer, so a save-only answer is an input no export sent.
+                        .exists, .taken, .written_not_current => self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                     },
                     else => return self.fail(step_mod.UNEXPECTED_INPUT_MSG),
                 },
