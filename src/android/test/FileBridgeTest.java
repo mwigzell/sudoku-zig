@@ -574,6 +574,8 @@ public final class FileBridgeTest {
 
     @Test
     public void picksThatTakeOverAMinuteSaveAndOpenThePickedFile() throws IOException {
+        // The save folder is the app's own; a clean device has none, so the copy below would have nowhere to land.
+        sh("mkdir -p " + SAVE_DIR + "\n");
         launchApp();
         startEasyGame();
         need(By.text("File"), UI_WAIT_MS).click();
