@@ -38,12 +38,18 @@ export async function restore(path, fetchFn = globalThis.fetch) {
   return { ok: true, bytes: new Uint8Array(await res.arrayBuffer()) };
 }
 
-/** Stop the host restoring its current file at startup; `deleteFile` removes the file too. */
+/**
+ * Stop the host restoring its current file at startup; `deleteFile` removes the file too.
+ * A refused forget answers with the host's own sentence in the body, returned as `hostSaid`; the
+ * technical status stays in `error`, which is what core's log takes.
+ * @returns {Promise<import("./types").PointerWriteResult>}
+ */
 export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
   const headers = {};
   if (deleteFile === true) headers[DELETE_FILE_HEADER] = "true";
   const res = await fetchFn(CURRENT_FILE_PATH, { method: "DELETE", headers });
-  if (!res.ok) throw new Error(`current-file forget failed: ${res.status}`);
+  if (!res.ok) return { ok: false, error: `current-file forget failed: ${res.status}`, hostSaid: await refusalText(res) };
+  return { ok: true };
 }
 
 /**

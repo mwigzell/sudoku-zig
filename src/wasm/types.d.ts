@@ -196,8 +196,8 @@ export type PickResult =
 /** Platform result of a `persist_config` or `copy_puzzle` step. */
 export type PersistResult = { ok: true } | { ok: false; error?: string };
 
-/** Platform result of a `/current-file` write; `hostSaid` is the host's own refusal sentence, in the
- * body of a refused write, so the page can show what the host said instead of wording it. */
+/** Platform result of a `/current-file` pointer write or forget; `hostSaid` is the host's own refusal
+ * sentence, in the body of a refused request, so the page can show what the host said instead of wording it. */
 export type PointerWriteResult = { ok: true } | { ok: false; error: string; hostSaid?: string };
 
 /** Platform result of a `generate_game` step. */
@@ -220,7 +220,7 @@ export type FlowHandlers = {
   importPuzzle: (path: string | null) => PickResult | Promise<PickResult>;
   showGame: (step: Extract<FlowStep, { step: "show_game" }>) => void | Promise<void>;
   generateGame: (difficulty: string) => GenerateResult | Promise<GenerateResult>;
-  forgetCurrentFile: (forget: { path: string; delete: boolean }) => void | Promise<void>;
+  forgetCurrentFile: (forget: { path: string; delete: boolean }) => PointerWriteResult | void | Promise<PointerWriteResult | void>;
   persistConfig: (config: Config) => PersistResult | Promise<PersistResult>;
   showStatus: (text: string) => void;
 };

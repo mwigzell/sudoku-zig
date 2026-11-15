@@ -276,7 +276,10 @@ async function stepThrough(game, first, handlers) {
       }
       case STEP_FORGET_CURRENT_FILE: {
         const forget = { path: step.path, delete: step.delete === true };
-        await settle(() => handlers.forgetCurrentFile(forget));
+        const forgot = await settle(() => handlers.forgetCurrentFile(forget));
+        // Core has no failed answer for a forget, so a platform that could not do it ends the flow
+        // with core's own failure step rather than acking a forget that never happened.
+        if (forgot?.ok === false) return failFlow(game, handlers, forgot.error ?? NO_REASON);
         step = game.flowNext({ input: INPUT_ACK });
         break;
       }

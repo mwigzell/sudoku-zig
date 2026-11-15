@@ -71,6 +71,8 @@ const SOLVED_LINE = "48392165796734582125187649354813297672956413813679824537268
 const OPEN_LINE = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
 const WELCOME_STATUS = coreText.IDLE_STARTUP_STATUS;
 const HOST_CURRENT_FILE = "/current-file";
+/** The pointer route the page itself calls; `HOST_CURRENT_FILE` is core's path for the restore read. */
+const CLIENT_CURRENT_FILE = "./current-file";
 
 /** Bytes of a saved game holding `line`. */
 async function savedGameBytes(line) {
@@ -83,12 +85,15 @@ async function savedGameBytes(line) {
  * Run the startup flow on a real game with recording handlers.
  * `answers` feeds each `ask`; `generated` answers each `generate_game`.
  */
-async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [] } = {}) {
+async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [], forgetRefused = null } = {}) {
   const game = await loadGame(config);
   const calls = [];
   const fetchFn = async (url, init = {}) => {
     calls.push({ url, init });
-    if (url === HOST_CURRENT_FILE && init.method === "DELETE") return { ok: true, status: 204 };
+    if (url === CLIENT_CURRENT_FILE && init.method === "DELETE") {
+      if (forgetRefused !== null) return { ok: false, status: 500, text: async () => forgetRefused };
+      return { ok: true, status: 204 };
+    }
     if (url === HOST_CURRENT_FILE) {
       if (!currentFile?.bytes) return { ok: false, status: 404 };
       return { ok: true, arrayBuffer: async () => currentFile.bytes.slice().buffer };
@@ -99,6 +104,7 @@ async function runStartupScenario({ config = {}, currentFile = null, answers = [
   const asked = [];
   const errors = [];
   const generateCalls = [];
+  const statusEl = { textContent: "", className: "" };
   const boot = {
     state: game.getState(),
     legend: game.getLegend(),
@@ -120,14 +126,14 @@ async function runStartupScenario({ config = {}, currentFile = null, answers = [
     dismiss() {},
   };
   const steps = {
-    ...webSteps.webSteps(game, session, { fetchFn, promptDialog }),
+    ...webSteps.webSteps(game, session, { fetchFn, promptDialog, statusEl }),
     generateGame: async (difficulty) => {
       generateCalls.push(difficulty);
       return generated.shift() ?? { ok: false, error: "no generation scripted" };
     },
   };
   const outcome = await startupMod.runStartupFlow(game, boot, steps, (step) => shown.push({ text: step.text, file: step.file }));
-  return { game, session, outcome, calls, shown, asked, errors, generateCalls, fetchFn };
+  return { game, session, outcome, calls, shown, asked, errors, generateCalls, fetchFn, statusEl };
 }
 
 {
@@ -277,4 +283,29 @@ for (const key of ["config", "default_save_filename", "startup_save_path"]) {
   const hostCfg = { config: PLAYER_CONFIG, default_save_filename: "sudoku_save.sud", startup_save_path: null };
   delete hostCfg[key];
   assert.throws(() => startupMod.assertHostStartupConfig(hostCfg), new RegExp(`missing ${key}`));
+}
+
+// A forget the host refuses: the status line shows what the host said (the host fills its body with core's
+// sentence), and the failure reaches core instead of an ack claiming the forget happened.
+{
+  const hostSaid = "refusal line from the host";
+  const refused = await runStartupScenario({
+    config: { auto_restore: true },
+    currentFile: { name: "game.sud", bytes: null },
+    answers: [true],
+    forgetRefused: hostSaid,
+  });
+  assert.equal(refused.shown.at(-1).text, WELCOME_STATUS, "the idle board is drawn before the forget");
+  assert.equal(refused.statusEl.textContent, hostSaid, "the status line shows what the host said");
+  assert.deepEqual(refused.errors, [coreText.UNEXPECTED_INPUT_MSG], "core ends the flow with its own failure sentence");
+
+  // A forget the host accepts adds nothing: core's own status stands and no failure is reported.
+  const healthy = await runStartupScenario({
+    config: { auto_restore: true },
+    currentFile: { name: "game.sud", bytes: null },
+    answers: [true],
+  });
+  assert.equal(healthy.outcome.kind, "done");
+  assert.equal(healthy.statusEl.textContent, WELCOME_STATUS, "an accepted forget leaves core's status alone");
+  assert.deepEqual(healthy.errors, []);
 }
