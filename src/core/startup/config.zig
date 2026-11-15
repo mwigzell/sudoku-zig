@@ -136,11 +136,21 @@ pub const ANDROID_SETTINGS_REFUSED_MSG =
 pub const WEB_SETTINGS_REFUSED_MSG =
     "The game could not read its settings file. Repair or delete it, then try again.";
 
-/// A settings read or write the store refused: it logged the reason and returned `System`, so the
-/// seam passes that on as its one error. Any other member `save` still produces is an allocation
-/// failure with no line behind it, so it is logged here instead — once, never twice.
+/// The sentence the loopback host puts in the body when the settings file could not be written. The
+/// read succeeded, so the file itself is sound and repairing it would change nothing: the space or
+/// the permission the write needs is what the player has to look at.
+pub const WEB_SETTINGS_WRITE_FAILED_MSG =
+    "The game could not save its settings file. Check that the folder can be written and the disk has space, then try again.";
+
+/// A settings read or write the store refused: it logged the reason and returned `System` or
+/// `WriteFailed`, so the seam passes that on as its one error. Any other member `save` still
+/// produces is an allocation failure with no line behind it, so it is logged here instead — once,
+/// never twice.
 fn refused(err: config_store.Error) Error {
-    if (err != Error.System) log.err("startup settings could not be resolved: {s}", .{@errorName(err)});
+    switch (err) {
+        Error.System, config_store.Error.WriteFailed => {},
+        else => log.err("startup settings could not be resolved: {s}", .{@errorName(err)}),
+    }
     return Error.System;
 }
 
@@ -358,8 +368,9 @@ test "the seam adds no line to a store refusal that already logged, and one when
     logger.test_sink = &sink;
     defer logger.test_sink = null;
 
-    // `System` arrives with the store's reason already on the log, so a second line would say it twice.
+    // Both arrive with the store's reason already on the log, so a second line would say it twice.
     try std.testing.expectEqual(Error.System, refused(config_store.Error.System));
+    try std.testing.expectEqual(Error.System, refused(config_store.Error.WriteFailed));
     try std.testing.expectEqualStrings("", sink.buffered());
 
     // An allocation failure has no line behind it, so the seam supplies the one line.
@@ -375,10 +386,15 @@ test "the Android refusal sentence reads as a sentence and names the way out" {
     try std.testing.expect(std.mem.indexOf(u8, ANDROID_SETTINGS_REFUSED_MSG, "Android Settings app") != null);
 }
 
-test "the web refusal sentence reads as a sentence and names the way out" {
+test "the web refusal sentences read as sentences and name the way out" {
     const sentence = @import("../../test/sentence.zig");
     try sentence.expectSentence(WEB_SETTINGS_REFUSED_MSG);
     // The settings file is on the player's own disk, so the sentence has to offer the repair or
     // deletion that clears it.
     try std.testing.expect(std.mem.indexOf(u8, WEB_SETTINGS_REFUSED_MSG, "Repair or delete") != null);
+    // A write the store refused leaves the file sound, so its sentence must not send the player to
+    // repair one; the space or the folder permission is what it has to name instead.
+    try sentence.expectSentence(WEB_SETTINGS_WRITE_FAILED_MSG);
+    try std.testing.expect(std.mem.indexOf(u8, WEB_SETTINGS_WRITE_FAILED_MSG, "Repair or delete") == null);
+    try std.testing.expect(std.mem.indexOf(u8, WEB_SETTINGS_WRITE_FAILED_MSG, "disk has space") != null);
 }

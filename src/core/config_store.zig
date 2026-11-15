@@ -14,7 +14,9 @@ pub const file_name = "config.json";
 const CONFIG_KEY = "config";
 const CURRENT_FILE_KEY = "current_file";
 
-/// Errors from load/save/path resolution; a file that cannot be read is refused, not replaced by the defaults.
+/// Errors from load/save/path resolution. A file the store will not use answers `System` and a write
+/// the system refused answers `WriteFailed`, each with its own log line naming the reason, so a
+/// caller never reports one as the other.
 pub const Error = error{
     OutOfMemory,
     InvalidJson,
@@ -51,10 +53,11 @@ fn noteUnusable(comptime line: []const u8, err: anyerror, unusable: Unusable) er
     return error.System;
 }
 
-/// Config write failure: the system reason is logged here, the caller gets `Error.System`.
+/// Config write failure: the system reason is logged here, the caller gets `Error.WriteFailed` so a
+/// settings file that cannot be written is never reported as a file that cannot be read.
 fn writeFailed(file: []const u8, err: anyerror) Error {
     log.err("config write {s} failed: {s}", .{ file, @errorName(err) });
-    return Error.System;
+    return Error.WriteFailed;
 }
 
 /// Best-effort `createDirPath` for config storage; logs and continues on failure.

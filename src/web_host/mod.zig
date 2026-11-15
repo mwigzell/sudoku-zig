@@ -234,14 +234,25 @@ fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]co
     return true;
 }
 
-/// What a current-file write reports to the page: the settings file the write must preserve was
-/// refused (the store logged the reason), or the host hit a fault on the way. The two are kept
-/// apart so only a refusal is answered in core's words instead of closing the connection.
-const PointerWrite = error{ SettingsRefused, System };
+/// What a current-file write reports to the page: a settings file the store refused to read, one it
+/// refused to write (the file is sound; the disk or the permission is not), or the host hit a fault
+/// on the way. They are kept apart so only a refusal is answered, and answered in core's words for
+/// what actually failed, instead of closing the connection.
+const PointerWrite = error{ SettingsRefused, SettingsWriteFailed, System };
+
+/// The refusal a pointer write reports for a store error: a write the system refused gets its own
+/// kind, so the page is told which way out applies; every other store error is a file the store
+/// will not use.
+fn pointerRefusal(err: config_store.Error) PointerWrite {
+    return switch (err) {
+        config_store.Error.WriteFailed => PointerWrite.SettingsWriteFailed,
+        else => PointerWrite.SettingsRefused,
+    };
+}
 
 /// Write `body` to the file a save lands on, then record it as the current file. A settings file
-/// the store refuses to read makes the pointer update impossible, so the page is told core's
-/// sentence rather than left with a save it cannot explain.
+/// the store refuses to read or to write makes the pointer update impossible, so the page is told
+/// core's sentence rather than left with a save it cannot explain.
 fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8, restore_copy: bool) PointerWrite!void {
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
 
@@ -252,7 +263,7 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
     const transport = file_transport.NativeTransport.make(io);
     transport.write(transport.context, target.path, body) catch return error.System;
 
-    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch return PointerWrite.SettingsRefused;
+    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch |err| return pointerRefusal(err);
 
     if (session.current_file) |old| session.gpa.free(old);
     session.current_file = session.gpa.dupe(u8, target.path) catch return error.System;
@@ -270,7 +281,7 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Poin
         else => return error.System,
     };
     if (session.data_dir.len != 0 and !std.mem.eql(u8, session.data_dir, ".")) {
-        config_store.setCurrentFile(session.gpa, io, session.data_dir, null) catch return PointerWrite.SettingsRefused;
+        config_store.setCurrentFile(session.gpa, io, session.data_dir, null) catch |err| return pointerRefusal(err);
     }
     log.info("current-file forget: path={s} deleted={any}", .{ current, delete_file });
     session.gpa.free(current);
@@ -278,10 +289,10 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Poin
     session.has_current_file = false;
 }
 
-/// Answer a pointer write the settings store refused with core's sentence in the body: the page gets
-/// the words telling the player what to fix instead of a request that silently did nothing.
-fn answerPointerRefusal(w: *std.Io.Writer) ServeError!void {
-    try writeFull(w, "500 Internal Server Error", "text/plain", startup_config.WEB_SETTINGS_REFUSED_MSG);
+/// Answer a pointer write the settings store refused with core's sentence for what failed in the body:
+/// the page gets the words telling the player what to fix instead of a request that did nothing.
+fn answerPointerRefusal(w: *std.Io.Writer, sentence: []const u8) ServeError!void {
+    try writeFull(w, "500 Internal Server Error", "text/plain", sentence);
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -490,7 +501,8 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         const body = requestBody(request) orelse return ServeError.System;
         applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER)) catch |err| switch (err) {
-            error.SettingsRefused => return answerPointerRefusal(&w.interface),
+            error.SettingsRefused => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_REFUSED_MSG),
+            error.SettingsWriteFailed => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG),
             error.System => return ServeError.System,
         };
         try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
@@ -498,7 +510,8 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     }
     if (std.mem.eql(u8, method, "DELETE") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         applyCurrentFileForget(io, session, headerFlag(request, DELETE_FILE_HEADER)) catch |err| switch (err) {
-            error.SettingsRefused => return answerPointerRefusal(&w.interface),
+            error.SettingsRefused => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_REFUSED_MSG),
+            error.SettingsWriteFailed => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG),
             error.System => return ServeError.System,
         };
         try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
@@ -1014,6 +1027,100 @@ test "current-file POST on an unreadable settings file answers with core's sente
     // The page gets an answer with words in it, not a closed connection with no explanation.
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
     try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG));
+}
+
+/// A data directory under the test's temp dir holding a sound `config.json` that carries no write
+/// permission: the read succeeds where the write is refused, the shape a full disk or a permission
+/// failure leaves behind. Root writes into such a file anyway, so the scenario says it could not set
+/// itself up rather than assert a refusal it never earned.
+fn scenarioDataPathWithReadOnlySettings(tmp: *std.testing.TmpDir, io: std.Io) ![]const u8 {
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    errdefer std.testing.allocator.free(data_path);
+    try config_store.save(std.testing.allocator, io, data_path, config.Config.default());
+    const config_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, config_store.file_name });
+    defer std.testing.allocator.free(config_path);
+    try std.Io.Dir.cwd().setFilePermissions(io, config_path, .fromMode(0o444), .{});
+    return data_path;
+}
+
+/// Puts write permission back on the settings file the scenario above took it off, so the temp tree
+/// can be removed after the test.
+fn restoreSettingsWritePermission(io: std.Io, data_path: []const u8) void {
+    const config_path = std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, config_store.file_name }) catch |err| {
+        log.err("could not name the scenario settings file in {s}: {s}", .{ data_path, @errorName(err) });
+        return;
+    };
+    defer std.testing.allocator.free(config_path);
+    std.Io.Dir.cwd().setFilePermissions(io, config_path, .fromMode(0o644), .{}) catch |err| {
+        log.err("could not restore write permission on the scenario settings file {s}: {s}", .{ config_path, @errorName(err) });
+    };
+}
+
+/// Whether the settings file accepts a write, so a scenario that needs it refused knows it can. The
+/// probe opens the file for writing without truncating it, leaving its bytes as they were.
+fn settingsFileAcceptsWrites(io: std.Io, data_path: []const u8) !bool {
+    const config_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, config_store.file_name });
+    defer std.testing.allocator.free(config_path);
+    std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = config_path, .data = "", .flags = .{ .truncate = false } }) catch |err| {
+        log.info("expected: the scenario settings file {s} refuses a write ({s})", .{ config_path, @errorName(err) });
+        return false;
+    };
+    return true;
+}
+
+test "current-file POST on a settings file the store cannot write answers with core's write sentence" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try scenarioDataPathWithReadOnlySettings(&tmp, io);
+    defer std.testing.allocator.free(data_path);
+    defer restoreSettingsWritePermission(io, data_path);
+
+    // Root writes into a read-only file anyway, so this scenario has nothing to show.
+    if (try settingsFileAcceptsWrites(io, data_path)) return error.SkipZigTest;
+
+    // The save itself lands in a writable folder; only the settings write is refused.
+    const save_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/saves", .{tmp.sub_path});
+    defer std.testing.allocator.free(save_path);
+
+    var session = testSession(data_path, save_path);
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "POST", "SUD0 v1 refused", "", &reply_buf);
+
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG));
+    // The read refusal's sentence would send the player to repair a file that is sound.
+    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
+}
+
+test "current-file DELETE on a settings file the store cannot write answers with core's write sentence" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try scenarioDataPathWithReadOnlySettings(&tmp, io);
+    defer std.testing.allocator.free(data_path);
+    defer restoreSettingsWritePermission(io, data_path);
+
+    // Root writes into a read-only file anyway, so this scenario has nothing to show.
+    if (try settingsFileAcceptsWrites(io, data_path)) return error.SkipZigTest;
+
+    // Clearing the pointer needs a current file, so the session already points at a save.
+    const saved_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/saved.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(saved_path);
+    var session = testSession(data_path, data_path);
+    session.current_file = try std.heap.page_allocator.dupe(u8, saved_path);
+    session.has_current_file = true;
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "DELETE", "", "", &reply_buf);
+
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG));
+    // The read refusal's sentence would send the player to repair a file that is sound.
+    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
 }
 
 test "current-file POST on a writable settings file saves, records the pointer and answers 204" {
