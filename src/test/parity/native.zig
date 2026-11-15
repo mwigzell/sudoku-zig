@@ -334,6 +334,8 @@ const Recorder = struct {
             .read => |r| .{ .read = @tagName(r) },
             .generated => |g| .{ .generated = @tagName(g) },
             .persisted, .copied => |o| .{ .outcome = @tagName(o) },
+            // A forget's outcome is a step answer; the transcript compares the step that follows it.
+            .forgot => null,
         };
     }
 };

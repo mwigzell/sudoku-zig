@@ -66,11 +66,17 @@ import { hostFetch } from "./test_support.mjs";
   assert.deepEqual(refused, { ok: false, error: "current-file persist failed: 500", hostSaid: "" });
 }
 
-// A refused forget keeps the host's own words from the body, as a refused write does; a forget the host
-// accepts reports success and sends the delete header when asked.
+// A refused forget names which settings repair applies in the host's header, so core words the status;
+// a body alone (or a bare 500) carries no reason and core only logs it.
 {
-  const refused = await hostApi.forgetCurrentFile(true, async () => ({ ok: false, status: 500, text: async () => "  refusal line from the host\n" }));
-  assert.deepEqual(refused, { ok: false, error: "current-file forget failed: 500", hostSaid: "refusal line from the host" });
+  const headers = { get: (name) => (name === "X-Sudoku-Refusal" ? "settings_unwritable" : null) };
+  const refused = await hostApi.forgetCurrentFile(true, async () => ({ ok: false, status: 500, headers }));
+  assert.deepEqual(refused, { ok: false, error: "current-file forget failed: 500", reason: "settings_unwritable" });
+}
+
+{
+  const refused = await hostApi.forgetCurrentFile(true, async () => ({ ok: false, status: 500 }));
+  assert.deepEqual(refused, { ok: false, error: "current-file forget failed: 500", reason: null }, "a refusal with no reason names none");
 }
 
 {

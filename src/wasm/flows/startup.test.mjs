@@ -85,14 +85,17 @@ async function savedGameBytes(line) {
  * Run the startup flow on a real game with recording handlers.
  * `answers` feeds each `ask`; `generated` answers each `generate_game`.
  */
-async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [], forgetRefused = null, forgetDropped = false } = {}) {
+async function runStartupScenario({ config = {}, currentFile = null, answers = [], generated = [], forgetRefused = null, forgetReason = null, forgetDropped = false } = {}) {
   const game = await loadGame(config);
   const calls = [];
   const fetchFn = async (url, init = {}) => {
     calls.push({ url, init });
     if (url === CLIENT_CURRENT_FILE && init.method === "DELETE") {
       if (forgetDropped) throw new Error("current-file forget failed: dropped connection");
-      if (forgetRefused !== null) return { ok: false, status: 500, text: async () => forgetRefused };
+      if (forgetRefused !== null) {
+        const refusalHeaders = { get: (name) => (name === "X-Sudoku-Refusal" ? forgetReason : null) };
+        return { ok: false, status: 500, text: async () => forgetRefused, headers: refusalHeaders };
+      }
       return { ok: true, status: 204 };
     }
     if (url === HOST_CURRENT_FILE) {
@@ -286,19 +289,21 @@ for (const key of ["config", "default_save_filename", "startup_save_path"]) {
   assert.throws(() => startupMod.assertHostStartupConfig(hostCfg), new RegExp(`missing ${key}`));
 }
 
-// A forget the host refuses: the status line shows what the host said (the host fills its body with core's
-// sentence), and the failure reaches core instead of an ack claiming the forget happened.
+// A forget the host refuses: core owns the outcome, so its sentence lands in the status line and the
+// startup flow ends; the page neither decides the flow's fate nor words the refusal.
 {
-  const hostSaid = "refusal line from the host";
   const refused = await runStartupScenario({
     config: { auto_restore: true },
     currentFile: { name: "game.sud", bytes: null },
     answers: [true],
-    forgetRefused: hostSaid,
+    forgetRefused: coreText.SETTINGS_REFUSED_MSG,
+    forgetReason: "settings_unreadable",
   });
+  assert.equal(refused.outcome.kind, "show_status", "core ends the flow on its sentence");
+  assert.equal(refused.outcome.text, coreText.SETTINGS_REFUSED_MSG, "the flow ends with core's sentence");
   assert.equal(refused.shown.at(-1).text, WELCOME_STATUS, "the idle board is drawn before the forget");
-  assert.equal(refused.statusEl.textContent, hostSaid, "the status line shows what the host said");
-  assert.deepEqual(refused.errors, [coreText.UNEXPECTED_INPUT_MSG], "core ends the flow with its own failure sentence");
+  assert.equal(refused.statusEl.textContent, coreText.SETTINGS_REFUSED_MSG, "the status line shows core's sentence");
+  assert.deepEqual(refused.errors, [], "core ends the flow with its sentence, not an error prompt");
 
   // A forget the host accepts adds nothing: core's own status stands and no failure is reported.
   const healthy = await runStartupScenario({
@@ -311,8 +316,8 @@ for (const key of ["config", "default_save_filename", "startup_save_path"]) {
   assert.deepEqual(healthy.errors, []);
 }
 
-// A forget that fails without core's sentence — a bare 500 or a dropped connection — is not a refusal the
-// host worded, so the flow carries on as it did before the refusal path existed: acked, nothing shown.
+// A forget that fails without a refusal kind — a bare 500 or a dropped connection — is not a refusal the
+// host worded, so the flow carries on as before: acked, nothing shown.
 for (const [what, options] of [
   ["a bare 500", { forgetRefused: "" }],
   ["a dropped connection", { forgetDropped: true }],

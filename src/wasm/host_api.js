@@ -12,6 +12,10 @@ const CURRENT_FILE_EXISTS_PATH = "./current-file-exists";
 const FILENAME_HEADER = "X-Sudoku-Filename";
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
+/** Response header naming which refusal stopped a pointer write, so core words it for the player. */
+const REFUSAL_HEADER = "X-Sudoku-Refusal";
+/** Refusal kinds core words for a forget; any other value is a failure core only logs. */
+const FORGET_REASONS = new Set(["settings_unreadable", "settings_unwritable"]);
 
 /** The host's startup config: the Config, default save name and the current file to restore. */
 export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
@@ -40,16 +44,26 @@ export async function restore(path, fetchFn = globalThis.fetch) {
 
 /**
  * Stop the host restoring its current file at startup; `deleteFile` removes the file too.
- * A refused forget answers with the host's own sentence in the body, returned as `hostSaid`; the
- * technical status stays in `error`, which is what core's log takes.
+ * A refusal names which settings repair applies in `reason` (the host's header), so core words the
+ * status; the technical status stays in `error`, which is what core's log takes.
  * @returns {Promise<import("./types").PointerWriteResult>}
  */
 export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
   const headers = {};
   if (deleteFile === true) headers[DELETE_FILE_HEADER] = "true";
   const res = await fetchFn(CURRENT_FILE_PATH, { method: "DELETE", headers });
-  if (!res.ok) return { ok: false, error: `current-file forget failed: ${res.status}`, hostSaid: await refusalText(res) };
+  if (!res.ok) return { ok: false, error: `current-file forget failed: ${res.status}`, reason: refusalReason(res) };
   return { ok: true };
+}
+
+/**
+ * Which refusal the host named in this response, when it named one core knows.
+ * @param {{ headers?: { get?: (name: string) => string | null } }} res
+ * @returns {"settings_unreadable" | "settings_unwritable" | null}
+ */
+function refusalReason(res) {
+  const raw = typeof res.headers?.get === "function" ? res.headers.get(REFUSAL_HEADER) : null;
+  return FORGET_REASONS.has(raw) ? raw : null;
 }
 
 /**

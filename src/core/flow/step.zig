@@ -6,6 +6,7 @@ const config = @import("../config.zig");
 const legend_mod = @import("../renderer/legend.zig");
 const game_engine = @import("../engine/game_engine.zig");
 const frame_mod = @import("../frame.zig");
+const forget_mod = @import("forget.zig");
 
 /// What a prompt is about; front ends mark it with its icon.
 pub const MessageType = enum { information, warning, @"error" };
@@ -99,7 +100,7 @@ pub const Step = union(enum) {
     show_game: ShowGame,
     /// Generate a puzzle at this difficulty and report it.
     generate_game: puzzle_gen.Difficulty,
-    /// Stop restoring this current file at startup; answered with `ack`.
+    /// Stop restoring this current file at startup; answered with `forgot`.
     forget_current_file: ForgetCurrentFile,
     /// Store this Config in `config.json`.
     persist_config: config.Config,
@@ -164,6 +165,18 @@ pub const ForgetCurrentFile = struct {
     delete: bool,
 };
 
+/// What a `forget_current_file` step did. The adapter reports the outcome core's seam produced;
+/// core owns the order of the writes and the sentence a refusal shows.
+pub const Forgot = union(enum) {
+    /// The pointer is clear; the file was deleted when the step asked for it, or left on disk
+    /// when the delete could not run (logged once, the step still succeeds).
+    forgotten,
+    /// The settings store refused to clear the pointer, so nothing was touched.
+    refused: forget_mod.Refusal,
+    /// The platform could not carry the forget out and named no refusal; core logs the reason.
+    failed: []const u8,
+};
+
 /// Outcome of a `generate` step.
 pub const Generated = union(enum) {
     line: []const u8,
@@ -205,6 +218,8 @@ pub const Input = union(enum) {
     wrote: Wrote,
     read: Read,
     generated: Generated,
+    /// The current file stopped being the one startup restores, or why it still is.
+    forgot: Forgot,
     persisted: Outcome,
     copied: Outcome,
     /// The adapter finished a step that has no result.

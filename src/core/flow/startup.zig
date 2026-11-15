@@ -7,6 +7,8 @@ const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const config = @import("../config.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
+const forget_mod = @import("forget.zig");
+const startup_config = @import("../startup/config.zig");
 const logger = @import("../logger.zig");
 
 const log = logger.Logger(.startup);
@@ -182,9 +184,18 @@ pub const StartupFlow = struct {
                 self.phase = .forgetting;
                 return .{ .forget_current_file = .{ .path = self.path.get(), .delete = yes } };
             },
-            .forgetting => {
-                if (input != .ack) return self.fail(UNEXPECTED_INPUT_MSG);
-                return self.finish(.done);
+            .forgetting => return switch (input) {
+                .forgot => |forgot| switch (forgot) {
+                    .forgotten => self.finish(.done),
+                    // A refused clear touched nothing; the player repairs or deletes the settings file
+                    // and relaunches, so the flow ends on core's sentence instead of carrying on.
+                    .refused => |reason| self.finish(.{ .show_status = reason.sentence() }),
+                    .failed => |reason| blk: {
+                        log.err("forget of {s} failed: {s}", .{ self.name.get(), reason });
+                        break :blk self.finish(.done);
+                    },
+                },
+                else => return self.fail(UNEXPECTED_INPUT_MSG),
             },
             .showing_idle_then_error => {
                 if (input != .ack) return self.fail(UNEXPECTED_INPUT_MSG);
@@ -350,9 +361,39 @@ test "startup restore failure shows idle, asks to delete, then forgets the file"
         const forget = f.next(.{ .pressed = if (delete) step_mod.QUESTION_OK else step_mod.QUESTION_CANCEL });
         try std.testing.expectEqualStrings("/data/game.sud", forget.forget_current_file.path);
         try std.testing.expectEqual(delete, forget.forget_current_file.delete);
-        try std.testing.expectEqual(Step.done, f.next(.ack));
+        try std.testing.expectEqual(Step.done, f.next(.{ .forgot = .forgotten }));
         try std.testing.expect(h.session.currentFile() == null);
     }
+}
+
+test "a refused forget ends startup on core's sentence for that refusal" {
+    inline for (.{
+        .{ forget_mod.Refusal.settings_unreadable, startup_config.SETTINGS_REFUSED_MSG },
+        .{ forget_mod.Refusal.settings_unwritable, startup_config.SETTINGS_WRITE_FAILED_MSG },
+    }) |case| {
+        var h = try Harness.init();
+        defer h.deinit();
+        var f = h.flow(restore_opts, test_file);
+        _ = f.next(.start);
+        _ = f.next(.{ .read = .{ .failed = "readAll: FileNotFound" } });
+        _ = f.next(.ack);
+        const forget = f.next(.{ .pressed = step_mod.QUESTION_OK });
+        try std.testing.expect(forget == .forget_current_file);
+        const ended = f.next(.{ .forgot = .{ .refused = case[0] } });
+        try std.testing.expectEqualStrings(case[1], ended.show_status);
+        try std.testing.expect(step_mod.isTerminal(ended));
+    }
+}
+
+test "a forget the platform could not carry out ends startup quietly" {
+    var h = try Harness.init();
+    defer h.deinit();
+    var f = h.flow(restore_opts, test_file);
+    _ = f.next(.start);
+    _ = f.next(.{ .read = .{ .failed = "readAll: FileNotFound" } });
+    _ = f.next(.ack);
+    _ = f.next(.{ .pressed = step_mod.QUESTION_OK });
+    try std.testing.expectEqual(Step.done, f.next(.{ .forgot = .{ .failed = "connection dropped" } }));
 }
 
 test "startup restore of unreadable bytes is a restore failure" {

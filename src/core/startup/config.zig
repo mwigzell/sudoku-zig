@@ -130,16 +130,16 @@ pub const Error = error{System};
 pub const ANDROID_SETTINGS_REFUSED_MSG =
     "The game could not read its settings. Clear this app's data in the Android Settings app, then open the game again.";
 
-/// The sentence the loopback host puts in the body of a refused page action. The settings file is
-/// on the player's own disk, so repairing or deleting it is the way out; a host whose settings are
-/// usable answers the action itself and shows nothing.
-pub const WEB_SETTINGS_REFUSED_MSG =
+/// The sentence core shows when the settings file could not be read: the body of a refused page
+/// action, and the status line a refused forget ends on. The file is on the player's own disk, so
+/// repairing or deleting it is the way out.
+pub const SETTINGS_REFUSED_MSG =
     "The game could not read its settings file. Repair or delete it, then try again.";
 
-/// The sentence the loopback host puts in the body when the settings file could not be written. The
-/// read succeeded, so the file itself is sound and repairing it would change nothing: the space or
-/// the permission the write needs is what the player has to look at.
-pub const WEB_SETTINGS_WRITE_FAILED_MSG =
+/// The sentence core shows when the settings file could not be written. The read succeeded, so the
+/// file itself is sound and repairing it would change nothing: the space or the permission the
+/// write needs is what the player has to look at.
+pub const SETTINGS_WRITE_FAILED_MSG =
     "The game could not save its settings file. Check that the folder can be written and the disk has space, then try again.";
 
 /// A settings read or write the store refused: it logged the reason and returned `System` or
@@ -386,15 +386,15 @@ test "the Android refusal sentence reads as a sentence and names the way out" {
     try std.testing.expect(std.mem.indexOf(u8, ANDROID_SETTINGS_REFUSED_MSG, "Android Settings app") != null);
 }
 
-test "the web refusal sentences read as sentences and name the way out" {
+test "the settings refusal sentences read as sentences and name the way out" {
     const sentence = @import("../../test/sentence.zig");
-    try sentence.expectSentence(WEB_SETTINGS_REFUSED_MSG);
+    try sentence.expectSentence(SETTINGS_REFUSED_MSG);
     // The settings file is on the player's own disk, so the sentence has to offer the repair or
     // deletion that clears it.
-    try std.testing.expect(std.mem.indexOf(u8, WEB_SETTINGS_REFUSED_MSG, "Repair or delete") != null);
+    try std.testing.expect(std.mem.indexOf(u8, SETTINGS_REFUSED_MSG, "Repair or delete") != null);
     // A write the store refused leaves the file sound, so its sentence must not send the player to
     // repair one; the space or the folder permission is what it has to name instead.
-    try sentence.expectSentence(WEB_SETTINGS_WRITE_FAILED_MSG);
-    try std.testing.expect(std.mem.indexOf(u8, WEB_SETTINGS_WRITE_FAILED_MSG, "Repair or delete") == null);
-    try std.testing.expect(std.mem.indexOf(u8, WEB_SETTINGS_WRITE_FAILED_MSG, "disk has space") != null);
+    try sentence.expectSentence(SETTINGS_WRITE_FAILED_MSG);
+    try std.testing.expect(std.mem.indexOf(u8, SETTINGS_WRITE_FAILED_MSG, "Repair or delete") == null);
+    try std.testing.expect(std.mem.indexOf(u8, SETTINGS_WRITE_FAILED_MSG, "disk has space") != null);
 }

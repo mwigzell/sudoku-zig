@@ -8,6 +8,7 @@ const startup_config = @import("../core/startup/config.zig");
 const config_store = @import("../core/config_store.zig");
 const file_transport = @import("../native/shell/file_transport.zig");
 const file_path = @import("../core/path.zig");
+const forget_mod = @import("../core/flow/forget.zig");
 const save_defaults = @import("../core/save_defaults.zig");
 const router_mod = @import("router.zig");
 const embed = @import("embed.zig");
@@ -250,6 +251,14 @@ fn pointerRefusal(err: config_store.Error) PointerWrite {
     };
 }
 
+/// The pointer-write error a core refusal means, so both `/current-file` arms answer from one place.
+fn refusalError(reason: forget_mod.Refusal) PointerWrite {
+    return switch (reason) {
+        .settings_unreadable => PointerWrite.SettingsRefused,
+        .settings_unwritable => PointerWrite.SettingsWriteFailed,
+    };
+}
+
 /// Write `body` to the file a save lands on, then record it as the current file. A settings file
 /// the store refuses to read or to write makes the pointer update impossible, so the page is told
 /// core's sentence rather than left with a save it cannot explain.
@@ -271,34 +280,63 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
     log.info("current-file write: bytes={d} target={s} restore_copy={any}", .{ body.len, target.path, target.restore_copy });
 }
 
-/// Stop restoring the current file at startup; with `delete_file`, remove it from disk too. Clearing
-/// the pointer is a settings write, so a settings file the store refuses is reported apart from a
-/// host fault and answered in core's words.
+/// The host's delete for core's forget: the file the current pointer names, removed with the host's io.
+const CurrentFileDelete = struct {
+    io: std.Io,
+
+    fn deleter(self: *@This()) forget_mod.Deleter {
+        return forget_mod.Deleter.make(self, remove);
+    }
+
+    fn remove(context: *anyopaque, path: []const u8) anyerror!void {
+        const self: *@This() = @ptrCast(@alignCast(context));
+        std.Io.Dir.cwd().deleteFile(self.io, path) catch |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        };
+    }
+};
+
+/// Stop restoring the current file at startup; with `delete_file`, remove it from disk too. The
+/// order of the two writes is core's (pointer first), so a refused clear leaves the save untouched
+/// and the page is told the same cause the startup flow words. A delete that fails after the clear
+/// is logged by core and still answers success: the requested state was reached.
 fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) PointerWrite!void {
     const current = session.current_file orelse return;
-    if (delete_file) std.Io.Dir.cwd().deleteFile(io, current) catch |err| switch (err) {
-        error.FileNotFound => {},
-        else => return error.System,
-    };
-    if (session.data_dir.len != 0 and !std.mem.eql(u8, session.data_dir, ".")) {
-        config_store.setCurrentFile(session.gpa, io, session.data_dir, null) catch |err| return pointerRefusal(err);
+    const settings: ?forget_mod.Settings = if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, "."))
+        null
+    else
+        .{ .gpa = session.gpa, .io = io, .data_dir = session.data_dir };
+    var delete = CurrentFileDelete{ .io = io };
+    switch (forget_mod.forget(settings, current, delete_file, delete.deleter())) {
+        .refused => |reason| return refusalError(reason),
+        .forgotten => {},
     }
-    log.info("current-file forget: path={s} deleted={any}", .{ current, delete_file });
+    log.info("current-file forget: path={s} delete_requested={any}", .{ current, delete_file });
     session.gpa.free(current);
     session.current_file = null;
     session.has_current_file = false;
 }
 
-/// Answer a pointer write to the page: `204` when it landed, core's sentence for the refusal kind
-/// that stopped it in the body, and the connection closed on a host fault. Both arms of
-/// `/current-file` answer through here, so a refusal kind is mapped in one place.
+/// Header naming which refusal stopped a pointer write, so the page answers core with the same
+/// reason instead of reading core's sentence back out of the body.
+const REFUSAL_HEADER = "X-Sudoku-Refusal";
+
+/// Answer a pointer write to the page: `204` when it landed, core's sentence in the body and the
+/// refusal kind in the header when a settings store refused it, and the connection closed on a
+/// host fault. Both arms of `/current-file` answer through here, so a refusal is mapped once.
 fn answerPointerWrite(w: *std.Io.Writer, result: PointerWrite!void) ServeError!void {
     result catch |err| switch (err) {
-        error.SettingsRefused => return writeFull(w, "500 Internal Server Error", "text/plain", startup_config.WEB_SETTINGS_REFUSED_MSG),
-        error.SettingsWriteFailed => return writeFull(w, "500 Internal Server Error", "text/plain", startup_config.WEB_SETTINGS_WRITE_FAILED_MSG),
+        error.SettingsRefused => return answerRefusal(w, .settings_unreadable),
+        error.SettingsWriteFailed => return answerRefusal(w, .settings_unwritable),
         error.System => return ServeError.System,
     };
     try writeFull(w, "204 No Content", "application/octet-stream", "");
+}
+
+/// A refusal's answer: core's sentence for the player and the kind the page hands back to core.
+fn answerRefusal(w: *std.Io.Writer, reason: forget_mod.Refusal) ServeError!void {
+    return writeFullWithHeader(w, "500 Internal Server Error", "text/plain", REFUSAL_HEADER, @tagName(reason), reason.sentence());
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -566,12 +604,27 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
 }
 
 fn writeFull(w: *std.Io.Writer, status: []const u8, content_type: []const u8, body: []const u8) ServeError!void {
+    return writeFullWithHeader(w, status, content_type, "", "", body);
+}
+
+/// `writeFull` plus one header line; an empty `header_name` writes none.
+/// `header_name`/`header_value`: the extra response header, e.g. which refusal this answer reports.
+fn writeFullWithHeader(
+    w: *std.Io.Writer,
+    status: []const u8,
+    content_type: []const u8,
+    header_name: []const u8,
+    header_value: []const u8,
+    body: []const u8,
+) ServeError!void {
     std.Io.Writer.print(
         w,
         // Local loopback host must always reflect live policy/state and fresh JS.
-        "HTTP/1.1 {s}\r\nContent-Type: {s}\r\nCache-Control: no-store\r\nPragma: no-cache\r\nExpires: 0\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {s}\r\nContent-Type: {s}\r\nCache-Control: no-store\r\nPragma: no-cache\r\nExpires: 0\r\nContent-Length: {d}\r\nConnection: close\r\n",
         .{ status, content_type, body.len },
     ) catch return ServeError.System;
+    if (header_name.len != 0) std.Io.Writer.print(w, "{s}: {s}\r\n", .{ header_name, header_value }) catch return ServeError.System;
+    std.Io.Writer.writeAll(w, "\r\n") catch return ServeError.System;
     std.Io.Writer.writeAll(w, body) catch return ServeError.System;
     std.Io.Writer.flush(w) catch return ServeError.System;
 }
@@ -1007,13 +1060,15 @@ fn pointerWriteAnswer(result: PointerWrite!void) ![]u8 {
 test "one answer serves both pointer writes: core's words for a refusal, one 204 for a success" {
     const refused = try pointerWriteAnswer(error.SettingsRefused);
     defer std.testing.allocator.free(refused);
-    try std.testing.expect(std.mem.endsWith(u8, refused, startup_config.WEB_SETTINGS_REFUSED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, refused, startup_config.SETTINGS_REFUSED_MSG));
+    try std.testing.expect(std.mem.indexOf(u8, refused, "X-Sudoku-Refusal: settings_unreadable\r\n") != null);
 
     const write_failed = try pointerWriteAnswer(error.SettingsWriteFailed);
     defer std.testing.allocator.free(write_failed);
-    try std.testing.expect(std.mem.endsWith(u8, write_failed, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, write_failed, startup_config.SETTINGS_WRITE_FAILED_MSG));
+    try std.testing.expect(std.mem.indexOf(u8, write_failed, "X-Sudoku-Refusal: settings_unwritable\r\n") != null);
     // The read refusal's sentence would send the player to repair a file that is sound.
-    try std.testing.expect(std.mem.indexOf(u8, write_failed, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
+    try std.testing.expect(std.mem.indexOf(u8, write_failed, startup_config.SETTINGS_REFUSED_MSG) == null);
 
     const saved = try pointerWriteAnswer({});
     defer std.testing.allocator.free(saved);
@@ -1049,7 +1104,7 @@ test "current-file POST on an unreadable settings file answers with core's sente
 
     // The page gets an answer with words in it, not a closed connection with no explanation.
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
-    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_REFUSED_MSG));
 }
 
 /// A data directory under the test's temp dir holding a sound `config.json` that carries no write
@@ -1113,9 +1168,9 @@ test "current-file POST on a settings file the store cannot write answers with c
     const reply = try pointerRequestReply(io, &session, "POST", "SUD0 v1 refused", "", &reply_buf);
 
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
-    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_WRITE_FAILED_MSG));
     // The read refusal's sentence would send the player to repair a file that is sound.
-    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
+    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.SETTINGS_REFUSED_MSG) == null);
 }
 
 test "current-file DELETE on a settings file the store cannot write answers with core's write sentence" {
@@ -1141,9 +1196,9 @@ test "current-file DELETE on a settings file the store cannot write answers with
     const reply = try pointerRequestReply(io, &session, "DELETE", "", "", &reply_buf);
 
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
-    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_WRITE_FAILED_MSG));
     // The read refusal's sentence would send the player to repair a file that is sound.
-    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
+    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.SETTINGS_REFUSED_MSG) == null);
 }
 
 test "current-file POST on a writable settings file saves, records the pointer and answers 204" {
@@ -1161,7 +1216,7 @@ test "current-file POST on a writable settings file saves, records the pointer a
     const reply = try pointerRequestReply(io, &session, "POST", body, "", &reply_buf);
 
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 204"));
-    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
+    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.SETTINGS_REFUSED_MSG) == null);
 
     const pointer = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
     defer if (pointer) |p| std.testing.allocator.free(p);
@@ -1191,7 +1246,7 @@ test "current-file DELETE on an unreadable settings file answers with core's sen
 
     // The page gets an answer with words in it, not a closed connection with no explanation.
     try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
-    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_REFUSED_MSG));
 }
 
 fn forgetScenario(delete_file: bool) !void {
@@ -1230,6 +1285,146 @@ test "current-file DELETE forgets the pointer and deletes the file when asked" {
 
 test "current-file DELETE without the delete flag forgets the pointer and keeps the file" {
     try forgetScenario(false);
+}
+
+/// Writes `bytes` to `path` and makes `session` name it as the current file; the caller owns the
+/// session's path and frees it with the page allocator.
+fn pointSessionAtSave(session: *Session, io: std.Io, path: []const u8, bytes: []const u8) !void {
+    try std.Io.Dir.cwd().createDirPath(io, std.fs.path.dirname(path) orelse ".");
+    try std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = path, .data = bytes });
+    session.current_file = try std.heap.page_allocator.dupe(u8, path);
+    session.has_current_file = true;
+}
+
+test "a refused forget with the delete flag leaves the save on disk and the session naming it" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try scenarioDataPathWithUnreadableSettings(&tmp, io);
+    defer std.testing.allocator.free(data_path);
+    const save_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/saves/game.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(save_path);
+
+    var session = testSession(data_path, data_path);
+    try pointSessionAtSave(&session, io, save_path, "SUD0 v1 refused forget");
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "DELETE", "", "X-Sudoku-Delete-File: true\r\n", &reply_buf);
+
+    // The clear is the write that can be refused, so it goes first: the player's save is untouched.
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_REFUSED_MSG));
+    _ = try std.Io.Dir.cwd().statFile(io, save_path, .{});
+    try std.testing.expectEqualStrings(save_path, session.current_file.?);
+    try std.testing.expect(session.has_current_file);
+}
+
+test "a refused forget without the delete flag changes nothing" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try scenarioDataPathWithUnreadableSettings(&tmp, io);
+    defer std.testing.allocator.free(data_path);
+    const save_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/saves/game.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(save_path);
+
+    var session = testSession(data_path, data_path);
+    try pointSessionAtSave(&session, io, save_path, "SUD0 v1 kept");
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "DELETE", "", "", &reply_buf);
+
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_REFUSED_MSG));
+    _ = try std.Io.Dir.cwd().statFile(io, save_path, .{});
+    try std.testing.expectEqualStrings(save_path, session.current_file.?);
+}
+
+test "a refused forget leaves the pointer in the settings file naming the save" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const save_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/saves/game.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(save_path);
+
+    var session = testSession(data_path, data_path);
+    try pointSessionAtSave(&session, io, save_path, "SUD0 v1 pointed");
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    // A settings file that reads and refuses writes: the pointer is readable, the clear is not.
+    try config_store.save(std.testing.allocator, io, data_path, config.Config.default());
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, save_path);
+    const config_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, config_store.file_name });
+    defer std.testing.allocator.free(config_path);
+    try std.Io.Dir.cwd().setFilePermissions(io, config_path, .fromMode(0o444), .{});
+    defer restoreSettingsWritePermission(io, data_path);
+    if (try settingsFileAcceptsWrites(io, data_path)) return error.SkipZigTest;
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "DELETE", "", "X-Sudoku-Delete-File: true\r\n", &reply_buf);
+
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.SETTINGS_WRITE_FAILED_MSG));
+    _ = try std.Io.Dir.cwd().statFile(io, save_path, .{});
+    const pointer = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (pointer) |p| std.testing.allocator.free(p);
+    try std.testing.expectEqualStrings(save_path, pointer orelse return error.TestFailed);
+}
+
+test "a delete that fails after the clear answers 204 and logs the file it could not delete" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const save_dir = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/readonly", .{tmp.sub_path});
+    defer std.testing.allocator.free(save_dir);
+    const save_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/game.sud", .{save_dir});
+    defer std.testing.allocator.free(save_path);
+    const probe_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/probe.sud", .{save_dir});
+    defer std.testing.allocator.free(probe_path);
+
+    var session = testSession(data_path, data_path);
+    try pointSessionAtSave(&session, io, save_path, "SUD0 v1 undeletable");
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+    try std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = probe_path, .data = "probe" });
+    try config_store.save(std.testing.allocator, io, data_path, config.Config.default());
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, save_path);
+    try std.Io.Dir.cwd().setFilePermissions(io, save_dir, .fromMode(0o555), .{});
+    defer std.Io.Dir.cwd().setFilePermissions(io, save_dir, .fromMode(0o755), .{}) catch {};
+
+    // Root deletes inside a read-only folder anyway, so this scenario has nothing to show.
+    const probe_deleted = if (std.Io.Dir.cwd().deleteFile(io, probe_path)) |_| true else |_| false;
+    if (probe_deleted) return error.SkipZigTest;
+
+    var logged: [512]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+    logger.min_level = .warn;
+    defer logger.min_level = .info;
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "DELETE", "", "X-Sudoku-Delete-File: true\r\n", &reply_buf);
+
+    // The pointer is clear, so the requested state is reached even though the file stayed.
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 204"));
+    try std.testing.expect(session.current_file == null);
+    try std.testing.expect(!session.has_current_file);
+    const pointer = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (pointer) |p| std.testing.allocator.free(p);
+    try std.testing.expect(pointer == null);
+    _ = try std.Io.Dir.cwd().statFile(io, save_path, .{});
+
+    // One line, naming what was not deleted and why; the request itself stays a success.
+    const said = sink.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, said, "could not delete") != null);
+    try std.testing.expect(std.mem.indexOf(u8, said, save_path) != null);
+    try std.testing.expect(std.mem.indexOf(u8, said, "AccessDenied") != null);
 }
 
 test "current-file POST with no current file writes the visible save folder and makes it the current file" {

@@ -196,9 +196,15 @@ export type PickResult =
 /** Platform result of a `persist_config` or `copy_puzzle` step. */
 export type PersistResult = { ok: true } | { ok: false; error?: string };
 
-/** Platform result of a `/current-file` pointer write or forget; `hostSaid` is the host's own refusal
- * sentence, in the body of a refused request, so the page can show what the host said instead of wording it. */
-export type PointerWriteResult = { ok: true } | { ok: false; error: string; hostSaid?: string };
+/** Which settings repair applies when a pointer write is refused; core words the sentence for it. */
+export type SettingsRefusal = "settings_unreadable" | "settings_unwritable";
+
+/** Platform result of a `/current-file` pointer write or forget. `hostSaid` is the host's own refusal
+ * sentence, in the body of a refused write, so the page can show what the host said instead of wording it;
+ * `reason` is the refusal kind a forget carries back to core. */
+export type PointerWriteResult =
+  | { ok: true }
+  | { ok: false; error: string; hostSaid?: string; reason?: SettingsRefusal | null };
 
 /** Platform result of a `generate_game` step. */
 export type GenerateResult = { ok: true; line: string } | { ok: false; cancelled?: boolean; error?: string };

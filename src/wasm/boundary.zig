@@ -20,6 +20,7 @@ const startup_policy = @import("../core/startup/policy.zig");
 const flow_command = @import("../core/flow/command.zig");
 const flow_config = @import("../core/flow/config.zig");
 const flow_export = @import("../core/flow/export.zig");
+const flow_forget = @import("../core/flow/forget.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
 
@@ -297,6 +298,9 @@ const JsonFlowInput = struct {
     cancelled: ?bool = null,
     taken: ?bool = null,
     line: ?[]const u8 = null,
+    /// Which refusal stopped a forget (`settings_unreadable`, `settings_unwritable`); absent when
+    /// the platform could not say, and core then only logs its reason.
+    reason: ?[]const u8 = null,
     @"error": ?[]const u8 = null,
 };
 
@@ -333,6 +337,12 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .{ .failed = v.@"error" orelse return error.MissingField } },
         .persisted => .{ .persisted = try parseOutcome(v) },
         .copied => .{ .copied = try parseOutcome(v) },
+        .forgot => .{ .forgot = if (v.ok == true)
+            .forgotten
+        else if (v.reason) |reason|
+            .{ .refused = std.meta.stringToEnum(flow_forget.Refusal, reason) orelse return error.UnknownInput }
+        else
+            .{ .failed = v.@"error" orelse return error.MissingField } },
         .ack => .ack,
     };
 }
@@ -502,6 +512,8 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "SAVE_WHILE_AUTO_SAVE_MSG", .text = file_policy.SAVE_WHILE_AUTO_SAVE_MSG },
         .{ .key = "SAVE_FAILED_MSG", .text = flow.save.SAVE_FAILED_MSG },
         .{ .key = "RESTORE_FAILED_FMT", .text = flow.startup.RESTORE_FAILED_FMT },
+        .{ .key = "SETTINGS_REFUSED_MSG", .text = flow_forget.Refusal.settings_unreadable.sentence() },
+        .{ .key = "SETTINGS_WRITE_FAILED_MSG", .text = flow_forget.Refusal.settings_unwritable.sentence() },
         .{ .key = "UNEXPECTED_INPUT_MSG", .text = flow.step.UNEXPECTED_INPUT_MSG },
         .{ .key = "GENERATE_FAILED_MSG", .text = flow.step.GENERATE_FAILED_MSG },
         .{ .key = "IMPORT_FAILED_MSG", .text = flow_command.IMPORT_FAILED_MSG },

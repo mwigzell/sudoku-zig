@@ -11,6 +11,7 @@ const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 const command = @import("../../core/command.zig");
 const startup_policy = @import("../../core/startup/policy.zig");
 const startup_engine = @import("../../core/startup/engine.zig");
+const startup_config = @import("../../core/startup/config.zig");
 const file_policy = @import("../../core/file_policy.zig");
 const flow_mod = @import("../../core/flow/mod.zig");
 const legend = @import("../../core/renderer/legend.zig");
@@ -102,10 +103,7 @@ pub const Sudoku = struct {
                     break :blk .ack;
                 },
                 .generate_game => |difficulty| .{ .generated = .{ .line = self.generate(difficulty) } },
-                .forget_current_file => |forget| blk: {
-                    self.storage.forgetCurrentFile(forget);
-                    break :blk .ack;
-                },
+                .forget_current_file => |forget| .{ .forgot = self.storage.forgetCurrentFile(forget) },
                 .persist_config => |cfg| .{ .persisted = self.storage.persistConfig(cfg) },
                 .copy_puzzle => .{ .copied = self.printPuzzle() },
                 // Only the web flushes, when its page closes; a terminal game is written after every command.
@@ -218,7 +216,11 @@ pub const Sudoku = struct {
         else
             null;
         self.flow = .{ .startup = flow_mod.StartupFlow.init(&self.engine, &self.file_session, &self.cfg, current) };
-        _ = try self.runFlow();
+        switch (try self.runFlow()) {
+            // A refused forget ends startup on core's sentence, the same line the web host answers with.
+            .show_status => |text| try self.showGameWithStatus(text),
+            else => {},
+        }
     }
 
     /// Release the engine and native transport session state.
@@ -1360,6 +1362,55 @@ test "startup: restore failure shows the idle board, deletes the file on Delete 
 
 test "startup: restore failure keeps the file on Keep but still forgets it" {
     try restoreFailureScenario(false);
+}
+
+test "startup: a refused forget leaves the save, shows core's sentence and ends" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_rel);
+    const tmp_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_rel, std.testing.allocator);
+    defer std.testing.allocator.free(tmp_abs_z);
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs_z});
+    defer std.testing.allocator.free(data_path);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
+    const broken_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/broken.sud", .{data_path});
+    defer std.testing.allocator.free(broken_path);
+    const transport = file_transport.NativeTransport.make(io);
+    try transport.write(transport.context, broken_path, "not a save");
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, broken_path);
+
+    // Settings that read and refuse writes: the pointer cannot be cleared, which is the whole point.
+    const config_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, config_store.file_name });
+    defer std.testing.allocator.free(config_path);
+    try std.Io.Dir.cwd().setFilePermissions(io, config_path, .fromMode(0o444), .{});
+    defer std.Io.Dir.cwd().setFilePermissions(io, config_path, .fromMode(0o644), .{}) catch {};
+    const probe = std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = config_path, .data = "", .flags = .{ .truncate = false } });
+    if (probe) |_| return error.SkipZigTest else |_| {}
+
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_restore = true;
+    cfg.auto_new = true;
+    var facade_impl = DeterministicFacade{
+        .steps = &[_]command.ParseCommandResult{},
+        .replace_answers = &[_]bool{true},
+    };
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport, &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
+    defer app.deinit();
+
+    try app.runStartupFlow(broken_path);
+
+    // The clear was refused before the file was touched, so Delete left it in place.
+    _ = try std.Io.Dir.cwd().statFile(io, broken_path, .{});
+    try std.testing.expectEqualStrings(startup_config.SETTINGS_WRITE_FAILED_MSG, facade_impl.last_render_msg.?);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+    const pointer = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (pointer) |p| std.testing.allocator.free(p);
+    try std.testing.expectEqualStrings(broken_path, pointer orelse return error.TestFailed);
 }
 
 test "autosave: first autosave with no current file writes the visible save folder and makes it the current file" {

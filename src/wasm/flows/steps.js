@@ -122,11 +122,8 @@ export function sharedSteps(ctx) {
       });
     },
     generateGame: (difficulty) => generate.generateWithModal(game, generatingModal, { difficulty, genWorker }),
-    forgetCurrentFile: async (forget) => {
-      const forgot = await hostApi.forgetCurrentFile(forget.delete, fetchFn);
-      if (!forgot.ok) showRefusal(ctx, forgot);
-      return forgot;
-    },
+    // A refused forget is reported to core, which words the status line; the page adds nothing.
+    forgetCurrentFile: (forget) => hostApi.forgetCurrentFile(forget.delete, fetchFn),
     persistConfig: (config) => hostApi.persistConfig(config, fetchFn),
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);

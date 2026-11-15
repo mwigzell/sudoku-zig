@@ -9,6 +9,7 @@ const file_transport = @import("file_transport.zig");
 const path_mod = @import("../../core/path.zig");
 const save_defaults = @import("../../core/save_defaults.zig");
 const logger = @import("../../core/logger.zig");
+const forget_mod = @import("../../core/flow/forget.zig");
 
 const log = logger.Logger(.storage);
 
@@ -162,20 +163,18 @@ pub const Storage = struct {
         return .{ .ok = copyInto(scratch, resolved) };
     }
 
-    /// Carry out a `forget_current_file` step: stop restoring it, and delete it when asked.
-    pub fn forgetCurrentFile(self: *const @This(), forget: flow_mod.step.ForgetCurrentFile) void {
-        const sp = self.config_persist orelse return;
-        if (forget.delete) delete: {
-            const resolved = self.transport.resolve(self.transport.context, forget.path) catch |err| {
-                log.warn("could not resolve {s} to delete it: {s}", .{ forget.path, @errorName(err) });
-                break :delete;
-            };
-            defer self.transport.free(self.transport.context, resolved);
-            std.Io.Dir.deleteFileAbsolute(sp.io, resolved) catch |err| {
-                log.warn("could not delete {s}: {s}", .{ resolved, @errorName(err) });
-            };
-        }
-        self.persistCurrentFile(null);
+    /// Carry out a `forget_current_file` step: core orders the two writes (clear the pointer, then
+    /// delete), so a refused clear leaves the save on disk and the shell reports the reason.
+    pub fn forgetCurrentFile(self: *const @This(), forget: flow_mod.step.ForgetCurrentFile) flow_mod.step.Forgot {
+        const settings: ?forget_mod.Settings = if (self.config_persist) |sp|
+            .{ .gpa = std.heap.page_allocator, .io = sp.io, .data_dir = sp.data_dir }
+        else
+            null;
+        var delete = CurrentFileDelete{ .storage = self };
+        return switch (forget_mod.forget(settings, forget.path, forget.delete, delete.deleter())) {
+            .forgotten => .forgotten,
+            .refused => |reason| .{ .refused = reason },
+        };
     }
 
     const NamedRead = union(enum) {
@@ -193,6 +192,30 @@ pub const Storage = struct {
             return .{ .failed = failedAt(scratch, READ_STAGE, err) };
         };
         return .{ .ok = .{ .resolved = resolved, .bytes = bytes } };
+    }
+};
+
+/// The terminal's delete for core's forget: resolve the name against this arm's store, then remove
+/// the file; a file already gone is what the forget asked for.
+const CurrentFileDelete = struct {
+    storage: *const Storage,
+
+    fn deleter(self: *@This()) forget_mod.Deleter {
+        return forget_mod.Deleter.make(self, remove);
+    }
+
+    fn remove(context: *anyopaque, path: []const u8) anyerror!void {
+        const self: *@This() = @ptrCast(@alignCast(context));
+        const store = self.storage;
+        // A run with nowhere to keep settings has no io handle to delete with, and its pointer was
+        // never written; the step's file is left where it is, as it was before.
+        const sp = store.config_persist orelse return;
+        const resolved = try store.transport.resolve(store.transport.context, path);
+        defer store.transport.free(store.transport.context, resolved);
+        std.Io.Dir.deleteFileAbsolute(sp.io, resolved) catch |err| switch (err) {
+            error.FileNotFound => {},
+            else => return err,
+        };
     }
 };
 
@@ -363,10 +386,37 @@ test "forgetCurrentFile: deletes the file only when asked, and forgets it either
     for ([_]bool{ false, true }) |delete| {
         try store.transport.write(store.transport.context, file, "x");
         store.persistCurrentFile(file);
-        store.forgetCurrentFile(.{ .path = file, .delete = delete });
+        try std.testing.expect(store.forgetCurrentFile(.{ .path = file, .delete = delete }) == .forgotten);
         try std.testing.expectEqual(!delete, store.exists(file));
         try std.testing.expect((try root.currentFile()) == null);
     }
+}
+
+test "forgetCurrentFile: a refused clear leaves the save on disk and answers the refusal" {
+    var root = try TestRoot.init();
+    defer root.deinit();
+    const settings_dir = try root.path("settings");
+    defer std.testing.allocator.free(settings_dir);
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, settings_dir);
+    // A config.json taken by a directory: no read of it succeeds, for root or an ordinary user.
+    const config_as_dir = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ settings_dir, config_store.file_name });
+    defer std.testing.allocator.free(config_as_dir);
+    try std.Io.Dir.cwd().createDirPath(std.testing.io, config_as_dir);
+
+    const store: Storage = .{
+        .transport = file_transport.NativeTransport.make(std.testing.io),
+        .config_persist = .{ .io = std.testing.io, .data_dir = settings_dir, .visible_save_dir = root.dir },
+    };
+    const file = try root.path("restore.sud");
+    defer std.testing.allocator.free(file);
+    try store.transport.write(store.transport.context, file, "x");
+
+    const outcome = store.forgetCurrentFile(.{ .path = file, .delete = true });
+    switch (outcome) {
+        .refused => |reason| try std.testing.expectEqual(forget_mod.Refusal.settings_unreadable, reason),
+        else => return error.TestFailed,
+    }
+    try std.testing.expect(store.exists(file));
 }
 
 test "open and importPuzzle: no typed path fails with the command's message; a missing file names the failing stage" {
