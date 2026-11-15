@@ -20,6 +20,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatPlan, makePlan } from "./plan.mts";
 import { ghTracker, runSteps } from "./loop.mts";
+import { decideResume, type UnsettledRun } from "./resume.mts";
+import { readRunRecord } from "./run_record.mts";
 
 // ---------------------------------------------------------------------------
 // Preflight
@@ -41,12 +43,20 @@ function checkNoLeftoverWorktrees(): void {
   }
 }
 
-/** Commits on a sandcastle/* branch are work from an earlier run that was never accepted. */
-function checkNoUnsettledBranches(): void {
-  const branches = git(["branch", "--list", "sandcastle/*", "--format=%(refname:short)"]);
-  if (branches.length > 0) {
-    throw new Error(`unaccepted runs remain: ${branches.split("\n").join(", ")}`);
-  }
+/**
+ * Every unaccepted run the repository holds: one `sandcastle/*` branch each, with the aim its run
+ * directory recorded. A branch whose stamp carries no record reads as a run of unknown aim.
+ */
+function unsettledRuns(): UnsettledRun[] {
+  return git(["branch", "--list", "sandcastle/*", "--format=%(refname:short)"])
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((branch) => branch.length > 0)
+    .map((branch) => {
+      const stamp = Number(branch.slice(branch.lastIndexOf("/") + 1));
+      const record = Number.isInteger(stamp) && stamp > 0 ? readRunRecord(join(".sandcastle", "logs", String(stamp))) : null;
+      return { stamp, branch, issue: record === null ? null : record.issue };
+    });
 }
 
 /** The implementer commits into a worktree cut from HEAD, so uncommitted work would not travel with it. */
@@ -105,15 +115,29 @@ if (!Number.isInteger(issue) || issue <= 0) {
 }
 
 const viewed = readIssue(issue);
-const stamp = Date.now();
-const plan = makePlan(issue, viewed.title, viewed.body, { stamp, targetBranch: TARGET_BRANCH, labels: viewed.labels });
 
 if (argv.includes("--plan")) {
-  for (const line of formatPlan(plan)) console.log(line);
+  // A plan reads no repository state: it costs no agent, and a stopped run in the way is the run's
+  // business, so the shape it prints may differ from a run's only in the stamp it would carry.
+  const shape = makePlan(issue, viewed.title, viewed.body, { stamp: Date.now(), targetBranch: TARGET_BRANCH, labels: viewed.labels });
+  for (const line of formatPlan(shape)) console.log(line);
   // A refused issue cannot be run, so the plan's exit code says so; a reader that scripts
   // the harness sees the refusal instead of a plan it would otherwise act on.
-  process.exit(plan.refusal === null ? 0 : 1);
+  process.exit(shape.refusal === null ? 0 : 1);
 }
+
+// An aim at an issue whose run stopped continues that run: its branch, its ticks and its logs are
+// the work it already earned, and only the unticked steps are left. An unaccepted run aimed
+// elsewhere is settled first, by accept or drop.
+const decision = decideResume(unsettledRuns(), issue);
+if (decision.kind === "stop") {
+  console.error(`[stop] ${decision.reason}`);
+  process.exit(1);
+}
+const stamp = decision.kind === "resume" ? decision.stamp : Date.now();
+if (decision.kind === "resume") console.log(`[resume] continuing ${decision.branch}: the steps it ticked are history`);
+
+const plan = makePlan(issue, viewed.title, viewed.body, { stamp, targetBranch: TARGET_BRANCH, labels: viewed.labels });
 
 if (plan.refusal !== null) {
   for (const line of formatPlan(plan)) console.error(line);
@@ -123,7 +147,6 @@ if (plan.refusal !== null) {
 // Preflight belongs to a run that will leave a worktree and a branch behind, so a plan
 // read above pays for none of it.
 checkNoLeftoverWorktrees();
-checkNoUnsettledBranches();
 checkCleanTree();
 checkOnTargetBranch();
 checkGitHubToken();

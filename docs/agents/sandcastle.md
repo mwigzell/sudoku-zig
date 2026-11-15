@@ -19,7 +19,13 @@ The code is `.sandcastle/` (Node/TypeScript, run through `tsx`), the three human
 | `npm run sandcastle:logs` | Show the newest agent transcript — the live view of a run. `-f` follows it, `-n <lines>` shows more, `--list` lists every transcript |
 | `npm run sandcastle:test` | The harness's own `node --test` suites (also wired into `zig build verify`) |
 
-Only one run exists at a time: a second `sandcastle/*` branch blocks both a new run and accept/drop.
+One unaccepted run exists at a time. Aiming at the **same** issue again **continues** that run: same branch, same run directory, ticks and commits kept, and only the unticked steps left to do — a stopped run is resumable, not lost. Aiming at a **different** issue stops until the standing run is accepted or dropped (`decideResume`, `.sandcastle/resume.mts`).
+
+## Continuing a stopped run
+
+`npm run sandcastle -- --issue <the same number>` picks the stopped run back up. Nothing is re-ticked and nothing is re-done: the branch already carries the earlier steps' commits, the issue carries their ticks, and `plan.mts` bounds the run by the **unticked** steps plus the whole-branch review. The run keeps its stamp, so its verdicts and transcripts stay in one directory.
+
+A run aimed at another issue, or one that left no `run.json` record of its aim, is a stop: settle it with accept or drop rather than letting a second run build on it.
 
 ## What a run does
 

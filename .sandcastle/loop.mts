@@ -12,7 +12,7 @@ import { appendEvent, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
 import { countShotgun, rgSearch } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
-import { writeRunRecord } from "./run_record.mts";
+import { readRunRecord, writeRunRecord } from "./run_record.mts";
 import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
 import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
 
@@ -124,11 +124,13 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
   // Every tick this run writes is recorded here, so a drop can take exactly those back.
   const ledgerFile = ledgerPath(runsDir);
   // The aim is recorded before any agent runs: a run that stops at its first step still settles.
+  // A continued run keeps the moment it first started, so its directory still reads as one age.
+  const earlier = readRunRecord(runsDir);
   writeRunRecord(runsDir, {
     issue: plan.issue,
     branch: plan.branch,
     targetBranch: plan.targetBranch,
-    startedAt: new Date().toISOString(),
+    startedAt: earlier?.startedAt || new Date().toISOString(),
   });
 
   for (let iteration = 1; iteration <= plan.maxSteps; iteration++) {
