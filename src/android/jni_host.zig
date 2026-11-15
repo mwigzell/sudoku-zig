@@ -33,6 +33,9 @@ const BootRecord = struct {
 /// The running boot's record: the host thread writes it, the JNI surface reads it. One boot runs at
 /// a time, so one record is the whole of it.
 var boot: BootRecord = .{};
+/// What Java reads when a boot stopped on a settings refusal, so it can report at once instead of
+/// waiting out its own readiness timeout.
+const BOOT_REFUSED: i32 = -1;
 
 const HostState = struct {
     thread: ?std.Thread = null,
@@ -140,12 +143,13 @@ pub fn startHost(env: ?*anyopaque, data_dir_jstring: ?*anyopaque) void {
     };
 }
 
-/// JNI surface: the port the boot is serving on, or -1 while it serves nothing — including after a
-/// refusal.
-pub fn readyPort() i32 {
-    const port = boot.ready_port.load(.acquire);
-    if (port == 0) return -1;
-    return port;
+/// JNI surface: where the boot stands, as one value Java polls — `0` while it is still starting,
+/// `-1` when a settings refusal stopped it before it served anything, and the port once it serves.
+/// The refusal used to reach Java only when its port poll timed out, so the sentence arrived after
+/// the full timeout; a state it can read means the failure is reported when it happens.
+pub fn bootState() i32 {
+    if (boot.startup_failed.load(.acquire)) return BOOT_REFUSED;
+    return boot.ready_port.load(.acquire);
 }
 
 /// Stops the accept loop and joins the worker.
@@ -270,7 +274,7 @@ test "a settings file the store refuses records the failure and serves nothing" 
 
     try std.testing.expect(boot_finished.load(.acquire));
     try std.testing.expect(boot.startup_failed.load(.acquire));
-    try std.testing.expectEqual(@as(i32, -1), readyPort());
+    try std.testing.expectEqual(@as(i32, -1), bootState());
     // The store writes the refusal once; the host does not re-word it.
     try std.testing.expectEqual(@as(usize, 1), warnLines(sink.buffered()));
     try std.testing.expect(std.mem.indexOf(u8, sink.buffered(), "using defaults") == null);
@@ -289,9 +293,14 @@ test "a settings file the store can read starts the host as today and records no
 
     try std.testing.expect(boot_finished.load(.acquire));
     try std.testing.expect(!boot.startup_failed.load(.acquire));
-    try std.testing.expect(readyPort() > 0);
+    try std.testing.expect(bootState() > 0);
     // A boot that served has no refusal sentence for Java to show.
     try std.testing.expectEqualStrings("", startupFailureText());
+}
+
+test "a boot that has neither served nor failed reads as still starting" {
+    boot.reset();
+    try std.testing.expectEqual(@as(i32, 0), bootState());
 }
 
 test "the host takes its settings from the file through the startup seam" {

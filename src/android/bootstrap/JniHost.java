@@ -21,9 +21,13 @@ public final class JniHost {
             startHostNative(dataDir);
             int elapsedMs = 0;
             while (elapsedMs < READY_TIMEOUT_MS) {
-                int port = readyPort();
-                if (port > 0) {
-                    callback.onReady("http://127.0.0.1:" + port + "/");
+                int state = bootState();
+                if (state > 0) {
+                    callback.onReady("http://127.0.0.1:" + state + "/");
+                    return;
+                }
+                if (state < 0) {
+                    callback.onError(startupFailureMessage());
                     return;
                 }
                 try {
@@ -49,7 +53,8 @@ public final class JniHost {
 
     private static native void startHostNative(String dataDir);
 
-    private static native int readyPort();
+    /** Where the boot stands: 0 while starting, -1 when it refused its settings, otherwise the port. */
+    private static native int bootState();
     private static native String startupFailureMessageNative();
 
     public static native void stopHost();

@@ -73,7 +73,7 @@ scripts/android-run-bundle.sh
 ## Runtime wiring (Step 5)
 
 - `MainActivity.onCreate` starts the JNI host on a background thread.
-- Bootstrap waits for native `readyPort()` and then loads `http://127.0.0.1:<port>/` in WebView on the UI thread.
+- Bootstrap polls native `bootState()` — `0` while starting, `-1` when the boot refused its settings (core's sentence is shown at once), otherwise the port it serves — and loads that port in WebView on the UI thread.
 - `MainActivity.onDestroy` calls `stopHost()` to shut down the loopback server cleanly.
 
 ## Verify on host

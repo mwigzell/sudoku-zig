@@ -10,11 +10,12 @@ export fn Java_com_wigzell_sudoku_1zig_JniHost_startHostNative(
     _ = class;
 }
 
-export fn Java_com_wigzell_sudoku_1zig_JniHost_readyPort(
+/// Where the boot stands, as one value: `0` starting, `-1` refused, otherwise the serving port.
+export fn Java_com_wigzell_sudoku_1zig_JniHost_bootState(
     _: *anyopaque,
     _: *anyopaque,
 ) callconv(.c) i32 {
-    return jni_host.readyPort();
+    return jni_host.bootState();
 }
 
 export fn Java_com_wigzell_sudoku_1zig_JniHost_stopHost(
