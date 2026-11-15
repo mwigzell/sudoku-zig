@@ -130,6 +130,12 @@ pub const Error = error{System};
 pub const ANDROID_SETTINGS_REFUSED_MSG =
     "The game could not read its settings. Clear this app's data in the Android Settings app, then open the game again.";
 
+/// The sentence the loopback host puts in the body of a refused page action. The settings file is
+/// on the player's own disk, so repairing or deleting it is the way out; a host whose settings are
+/// usable answers the action itself and shows nothing.
+pub const WEB_SETTINGS_REFUSED_MSG =
+    "The game could not read its settings file. Repair or delete it, then try again.";
+
 /// A settings read or write the store refused: it logged the reason and returned `System`, so the
 /// seam passes that on as its one error. Any other member `save` still produces is an allocation
 /// failure with no line behind it, so it is logged here instead — once, never twice.
@@ -367,4 +373,12 @@ test "the Android refusal sentence reads as a sentence and names the way out" {
     // Clearing this app's data is the way out of a settings file that cannot be read, so the
     // sentence has to name the place the player does that.
     try std.testing.expect(std.mem.indexOf(u8, ANDROID_SETTINGS_REFUSED_MSG, "Android Settings app") != null);
+}
+
+test "the web refusal sentence reads as a sentence and names the way out" {
+    const sentence = @import("../../test/sentence.zig");
+    try sentence.expectSentence(WEB_SETTINGS_REFUSED_MSG);
+    // The settings file is on the player's own disk, so the sentence has to offer the repair or
+    // deletion that clears it.
+    try std.testing.expect(std.mem.indexOf(u8, WEB_SETTINGS_REFUSED_MSG, "Repair or delete") != null);
 }

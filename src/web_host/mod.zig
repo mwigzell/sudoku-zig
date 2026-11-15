@@ -234,20 +234,28 @@ fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]co
     return true;
 }
 
-fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8, restore_copy: bool) ServeError!void {
+/// What a current-file write reports to the page: the settings file the write must preserve was
+/// refused (the store logged the reason), or the host hit a fault on the way. The two are kept
+/// apart so only a refusal is answered in core's words instead of closing the connection.
+const PointerWrite = error{ SettingsRefused, System };
+
+/// Write `body` to the file a save lands on, then record it as the current file. A settings file
+/// the store refuses to read makes the pointer update impossible, so the page is told core's
+/// sentence rather than left with a save it cannot explain.
+fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_name: ?[]const u8, restore_copy: bool) PointerWrite!void {
     if (session.data_dir.len == 0 or std.mem.eql(u8, session.data_dir, ".")) return;
 
     config_store.ensureConfigDir(io, session.data_dir);
-    const target = currentFileTarget(io, session, save_name, restore_copy) catch return ServeError.System;
+    const target = currentFileTarget(io, session, save_name, restore_copy) catch return error.System;
     defer session.gpa.free(target.path);
 
     const transport = file_transport.NativeTransport.make(io);
-    transport.write(transport.context, target.path, body) catch return ServeError.System;
+    transport.write(transport.context, target.path, body) catch return error.System;
 
-    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch return ServeError.System;
+    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch return PointerWrite.SettingsRefused;
 
     if (session.current_file) |old| session.gpa.free(old);
-    session.current_file = session.gpa.dupe(u8, target.path) catch return ServeError.System;
+    session.current_file = session.gpa.dupe(u8, target.path) catch return error.System;
     session.has_current_file = true;
     log.info("current-file write: bytes={d} target={s} restore_copy={any}", .{ body.len, target.path, target.restore_copy });
 }
@@ -473,7 +481,14 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     }
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         const body = requestBody(request) orelse return ServeError.System;
-        try applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER));
+        applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER)) catch |err| switch (err) {
+            // The page gets words it can show: core owns the sentence telling the player what to fix.
+            error.SettingsRefused => {
+                try writeFull(&w.interface, "500 Internal Server Error", "text/plain", startup_config.WEB_SETTINGS_REFUSED_MSG);
+                return;
+            },
+            error.System => return ServeError.System,
+        };
         try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
         return;
     }
@@ -965,6 +980,60 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     try std.testing.expectEqualSlices(u8, body, bytes);
 }
 
+/// A data directory under the test's temp dir, with `config.json` taken by a directory so no read
+/// can succeed on it — the fixture fails for root and an ordinary user alike.
+fn scenarioDataPathWithUnreadableSettings(tmp: *std.testing.TmpDir, io: std.Io) ![]const u8 {
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    errdefer std.testing.allocator.free(data_path);
+    const config_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, config_store.file_name });
+    defer std.testing.allocator.free(config_path);
+    try std.Io.Dir.cwd().createDirPath(io, config_path);
+    return data_path;
+}
+
+test "current-file POST on an unreadable settings file answers with core's sentence" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try scenarioDataPathWithUnreadableSettings(&tmp, io);
+    defer std.testing.allocator.free(data_path);
+
+    var session = testSession(data_path, data_path);
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerWriteReply(io, &session, "SUD0 v1 refused", &reply_buf);
+
+    // The page gets an answer with words in it, not a closed connection with no explanation.
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG));
+}
+
+test "current-file POST on a writable settings file saves, records the pointer and answers 204" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var session = testSession(data_path, data_path);
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    const body = "SUD0 v1 saved";
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerWriteReply(io, &session, body, &reply_buf);
+
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 204"));
+    try std.testing.expect(std.mem.indexOf(u8, reply, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
+
+    const pointer = try config_store.loadCurrentFile(std.testing.allocator, io, data_path);
+    defer if (pointer) |p| std.testing.allocator.free(p);
+    try std.testing.expectEqualStrings(session.current_file.?, pointer.?);
+    const written = try std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, pointer.?, std.testing.allocator, std.Io.Limit.unlimited);
+    defer std.testing.allocator.free(written);
+    try std.testing.expectEqualStrings(body, written);
+}
+
 fn forgetScenario(delete_file: bool) !void {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -1238,6 +1307,35 @@ fn serveOneRequest(io: std.Io, server: *net.Server, session: *Session, router: *
     try w.interface.flush();
     try serveAndClose(io, session, router, try server.accept(io));
     try expectStreamEnds(io, client);
+}
+
+/// Serves one `POST /current-file` carrying `body` the way the accept loop does, and returns the
+/// page's reply — status line, headers and body — so a test can read what the browser receives.
+/// `session` supplies the data directory whose settings file the write must be able to preserve.
+fn pointerWriteReply(io: std.Io, session: *Session, body: []const u8, reply_buf: []u8) ![]const u8 {
+    var server = try bindLoopback(io, 0);
+    defer server.deinit(io);
+    var request_buf: [256]u8 = undefined;
+    const request = try std.fmt.bufPrint(&request_buf, "POST {s} HTTP/1.1\r\nContent-Length: {d}\r\n\r\n{s}", .{ CURRENT_FILE_PATH, body.len, body });
+
+    const client = try server.socket.address.connect(io, .{ .mode = .stream });
+    defer client.close(io);
+    var w_buf: [256]u8 = undefined;
+    var w = client.writer(io, &w_buf);
+    try w.interface.writeAll(request);
+    try w.interface.flush();
+
+    var router = Router.init();
+    try serveAndClose(io, session, &router, try server.accept(io));
+
+    var used: usize = 0;
+    while (used < reply_buf.len) {
+        var data: [1][]u8 = .{reply_buf[used..]};
+        const result = try client.readWithControl(io, &data, &.{});
+        if (result.data_len == 0) break;
+        used += result.data_len;
+    }
+    return reply_buf[0..used];
 }
 
 /// How long a test waits for the host to stop after `requestShutdown`.
