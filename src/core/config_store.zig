@@ -311,11 +311,12 @@ fn expectSavedFieldsEqual(a: config.Config, b: config.Config) !void {
     }
 }
 
-/// Owner may write the file but not read it: the read a caller makes fails, the write that follows succeeds.
-const WRITE_ONLY: std.Io.File.Permissions = @fromBackingInt(@intCast(0o222));
-
-/// Readable again, so a test reads back what a refused or repaired write left behind.
-const OWNER_READ_WRITE: std.Io.File.Permissions = @fromBackingInt(@intCast(0o644));
+/// A `config.json` no read can succeed on: a directory stands where the file would be, so the read
+/// fails with the platform's own error for root and an ordinary user alike. Taking read permission
+/// away proves nothing when the suite runs as root, which reads such a file anyway.
+fn makeConfigUnreadable(io: std.Io, dir: std.Io.Dir) !void {
+    try dir.createDir(io, file_name, .default_dir);
+}
 
 /// The error name a read of `file_name` in `dir` produces, so a test names the reason without
 /// hard-coding a platform's error. A readable file means the test set itself up wrong.
@@ -456,10 +457,9 @@ test "a config file it cannot read is refused, with one line carrying the reason
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "{\"config\":{}}" });
-    try tmp.dir.setFilePermissions(io, file_name, WRITE_ONLY, .{});
+    try makeConfigUnreadable(io, tmp.dir);
 
-    // The reason is the platform's, so the test reads the same unreadable file itself to name it.
+    // The reason is the platform's, so the test reads the same unreadable path itself to name it.
     const reason = try readFailureReason(tmp.dir, io);
 
     var logged: [256]u8 = undefined;
@@ -531,38 +531,13 @@ test "setCurrentFile refuses a config file it cannot read instead of rewriting i
     const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
     defer std.testing.allocator.free(data_path);
 
-    const on_disk = "{\"config\":{\"theme\":\"light\"},\"current_file\":\"/games/old.sud\"}";
-    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = on_disk });
-    try tmp.dir.setFilePermissions(io, file_name, WRITE_ONLY, .{});
+    try makeConfigUnreadable(io, tmp.dir);
 
     try std.testing.expectError(Error.System, setCurrentFile(std.testing.allocator, io, data_path, "/games/new.sud"));
 
-    // Refused, not repaired: the bytes are the ones this test put there, pointer included.
-    try tmp.dir.setFilePermissions(io, file_name, OWNER_READ_WRITE, .{});
-    const after = try tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited);
-    defer std.testing.allocator.free(after);
-    try std.testing.expectEqualStrings(on_disk, after);
-}
-
-test "save repairs a config file whose pointer it cannot read" {
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
-    defer std.testing.allocator.free(data_path);
-
-    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "{\"config\":{\"theme\":\"light\"},\"current_file\":\"/games/old.sud\"}" });
-    try tmp.dir.setFilePermissions(io, file_name, WRITE_ONLY, .{});
-
-    // An unreadable file here is no reason to refuse: the Config is already in hand, so save writes it.
-    try save(std.testing.allocator, io, data_path, nonDefaultConfig());
-
-    try tmp.dir.setFilePermissions(io, file_name, OWNER_READ_WRITE, .{});
-    const after = try tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited);
-    defer std.testing.allocator.free(after);
-    try expectSavedFieldsEqual(nonDefaultConfig(), try loadBytes(std.testing.allocator, after));
-    // The pointer it could not read is gone, so the file is usable again rather than left as it was.
-    try std.testing.expect(std.mem.indexOf(u8, after, "\"current_file\":null") != null);
+    // Refused, not repaired: the path still holds the directory this test put there.
+    const after = try tmp.dir.statFile(io, file_name, .{});
+    try std.testing.expectEqual(std.Io.File.Kind.directory, after.kind);
 }
 
 test "save repairs a config file whose pointer it cannot parse" {
