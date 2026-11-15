@@ -73,11 +73,14 @@ function failedInput(input, result) {
 
 /**
  * Normalize a handler's write outcome to the wasm `wrote` input.
+ * A write whose bytes landed but whose pointer write the store refused answers `written_not_current`
+ * with the refusal kind, so core words it.
  * @param {import("../types").WriteResult} result
  * @param {string | null} name the target core named, reported when the platform names none
  */
 function wroteInput(result, name) {
   if (result?.ok === true) return { input: INPUT_WROTE, ok: true, name: result.name ?? name };
+  if (result?.writtenNotCurrent) return { input: INPUT_WROTE, ok: false, written_not_current: true, reason: result.writtenNotCurrent };
   if (result?.exists === true) return { input: INPUT_WROTE, ok: false, exists: true };
   if (result?.cancelled === true) return { input: INPUT_WROTE, ok: false, cancelled: true };
   if (result?.taken) return { input: INPUT_WROTE, ok: false, taken: true, name: result.taken.name };

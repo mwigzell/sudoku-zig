@@ -145,11 +145,18 @@ pub const Sudoku = struct {
     }
 
     /// Carry out a `show_game` step: draw what core reports.
-    /// A loaded game's file is also remembered for the next launch.
+    /// A loaded game's file is also remembered for the next launch; a store that refuses that
+    /// pointer write is shown core's sentence, since the next launch will not reopen the game.
     fn showStep(self: *@This(), game: flow_mod.step.ShowGame) Error!void {
-        if (game.loaded) {
-            if (game.file) |file| _ = self.storage.persistCurrentFile(file);
-        }
+        const not_remembered: ?[]const u8 = blk: {
+            if (!game.loaded) break :blk null;
+            const file = game.file orelse break :blk null;
+            const reason = self.storage.persistCurrentFile(file) orelse break :blk null;
+            break :blk flow_mod.command.loadedNotRememberedMsg(reason);
+        };
+        // The sentence takes the status slot: what the player loses at the next launch matters more
+        // than the load's own words.
+        if (not_remembered) |text| return self.showGameWithStatus(text);
         try self.renderer.render(game.frame);
         try self.renderer.showLegend(game.legend);
     }
@@ -1451,6 +1458,54 @@ test "save: a refused pointer write shows core's sentence and leaves the game fi
     // file was written and the save is on disk.
     try std.testing.expectEqualStrings(flow_mod.save.WRITTEN_SETTINGS_REFUSED_MSG, facade_impl.last_render_msg.?);
     _ = try std.Io.Dir.cwd().statFile(io, game, .{});
+}
+
+test "open: a refused pointer write draws the loaded game and shows core's sentence" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(tmp_rel);
+    const tmp_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, tmp_rel, std.testing.allocator);
+    defer std.testing.allocator.free(tmp_abs_z);
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs_z});
+    defer std.testing.allocator.free(data_path);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
+    // A config.json taken by a directory: no read of it succeeds, for root or an ordinary user.
+    const config_as_dir = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}", .{ data_path, config_store.file_name });
+    defer std.testing.allocator.free(config_as_dir);
+    try std.Io.Dir.cwd().createDirPath(io, config_as_dir);
+
+    const puzzle = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+    const save_dir = try std.fmt.allocPrint(std.testing.allocator, "{s}/saves", .{tmp_abs_z});
+    defer std.testing.allocator.free(save_dir);
+    try std.Io.Dir.cwd().createDirPath(io, save_dir);
+    const game = try std.fmt.allocPrint(std.testing.allocator, "{s}/game.sud", .{save_dir});
+    defer std.testing.allocator.free(game);
+    var source = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), test_defaults.testConfigDefaults());
+    defer source.deinit();
+    _ = source.newFromOneLinePuzzle(puzzle);
+    const saved = try source.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(saved);
+    try std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = game, .data = saved });
+
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_restore = false;
+    cfg.auto_new = false;
+    cfg.auto_save = false;
+    const steps = [_]command.ParseCommandResult{.{ .valid = .{ .open = .{ .path = game } } }};
+    var facade_impl = DeterministicFacade{ .steps = &steps };
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), file_transport.NativeTransport.make(io), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = save_dir });
+    defer app.deinit();
+    try app.showGame();
+    try std.testing.expect(!try app.turn());
+
+    // The game is on screen, and core says the next launch will not reopen it.
+    try std.testing.expectEqualStrings(puzzle, &app.engine.toPuzzle());
+    try std.testing.expectEqualStrings(flow_mod.command.LOADED_SETTINGS_REFUSED_MSG, facade_impl.last_render_msg.?);
 }
 
 test "autosave: first autosave with no current file writes the visible save folder and makes it the current file" {

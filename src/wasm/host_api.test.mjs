@@ -51,19 +51,27 @@ import { hostFetch } from "./test_support.mjs";
 }
 
 // A refused write hands the page the host's own words from the body, trimmed; the status stays the reason.
+// A refusal the host named also carries the kind core words, on the same answer.
 {
+  const headers = { get: (name) => (name === "X-Sudoku-Refusal" ? "settings_unreadable" : null) };
   const refused = await hostApi.persistCurrentFileBytes(
     new Uint8Array([5]),
-    async () => ({ ok: false, status: 500, text: async () => "  refusal line from the host\n" }),
+    async () => ({ ok: false, status: 500, headers, text: async () => "  refusal line from the host\n" }),
     "refused.sud",
   );
-  assert.deepEqual(refused, { ok: false, error: "current-file persist failed: 500", hostSaid: "refusal line from the host" });
+  assert.deepEqual(refused, {
+    ok: false,
+    error: "current-file persist failed: 500",
+    hostSaid: "refusal line from the host",
+    reason: "settings_unreadable",
+  });
 }
 
-// A refusal with no body (a host fault, or a fake answering bare) adds no words for the player.
+// A refusal with no body or no named kind (a host fault, or a fake answering bare) adds no words and
+// carries no reason, so the page keeps its old answer.
 {
   const refused = await hostApi.persistCurrentFileBytes(new Uint8Array([6]), async () => ({ ok: false, status: 500 }), "refused.sud");
-  assert.deepEqual(refused, { ok: false, error: "current-file persist failed: 500", hostSaid: "" });
+  assert.deepEqual(refused, { ok: false, error: "current-file persist failed: 500", hostSaid: "", reason: null });
 }
 
 // A refused forget names which settings repair applies in the host's header, so core words the status;

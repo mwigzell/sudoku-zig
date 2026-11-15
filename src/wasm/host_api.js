@@ -14,8 +14,8 @@ const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
 /** Response header naming which refusal stopped a pointer write, so core words it for the player. */
 const REFUSAL_HEADER = "X-Sudoku-Refusal";
-/** Refusal kinds core words for a forget; any other value is a failure core only logs. */
-const FORGET_REASONS = new Set(["settings_unreadable", "settings_unwritable"]);
+/** Refusal kinds core words; any other value is a failure core only logs. */
+const REFUSAL_REASONS = new Set(["settings_unreadable", "settings_unwritable"]);
 
 /** The host's startup config: the Config, default save name and the current file to restore. */
 export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
@@ -63,7 +63,7 @@ export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) 
  */
 function refusalReason(res) {
   const raw = typeof res.headers?.get === "function" ? res.headers.get(REFUSAL_HEADER) : null;
-  return FORGET_REASONS.has(raw) ? raw : null;
+  return REFUSAL_REASONS.has(raw) ? raw : null;
 }
 
 /**
@@ -93,8 +93,8 @@ async function refusalText(res) {
 
 /**
  * Write SUD0 bytes as the host copy (`/current-file`); `restoreCopy` keeps it out of the visible folder.
- * A refused write answers with the host's own sentence in the body, returned as `hostSaid`; the
- * technical status stays in `error`, which is what core's log takes.
+ * A refused write names which settings repair applies in `reason` (the host's header) and keeps the
+ * host's own sentence in `hostSaid`; the technical status stays in `error`, which is what core's log takes.
  * @returns {Promise<import("./types").PointerWriteResult>}
  */
 export async function persistCurrentFileBytes(
@@ -111,7 +111,7 @@ export async function persistCurrentFileBytes(
     headers,
     body: bytes,
   });
-  if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}`, hostSaid: await refusalText(res) };
+  if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}`, hostSaid: await refusalText(res), reason: refusalReason(res) };
   return { ok: true };
 }
 

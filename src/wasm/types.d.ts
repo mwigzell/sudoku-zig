@@ -182,10 +182,18 @@ export type FlowStep =
   | { ok: false; error: string; step?: undefined };
 
 /** Platform result of a write step; `exists` means a fixed file is there and was left alone,
- * `taken` that this install may not write the file. */
+ * `taken` that this install may not write the file, `writtenNotCurrent` that the bytes landed but
+ * the settings store refused to name them the current file (core words that outcome). */
 export type WriteResult =
   | { ok: true; name?: string }
-  | { ok: false; exists?: boolean; cancelled?: boolean; taken?: { name: string }; error?: string };
+  | {
+      ok: false;
+      exists?: boolean;
+      cancelled?: boolean;
+      taken?: { name: string };
+      writtenNotCurrent?: SettingsRefusal;
+      error?: string;
+    };
 
 /** Platform result of a reading step (`restore`, `open`, `import_puzzle`, `paste_puzzle`); a browser
  * pick also carries the file's handle so a saved game can be bound. */
@@ -201,7 +209,7 @@ export type SettingsRefusal = "settings_unreadable" | "settings_unwritable";
 
 /** Platform result of a `/current-file` pointer write or forget. `hostSaid` is the host's own refusal
  * sentence, in the body of a refused write, so the page can show what the host said instead of wording it;
- * `reason` is the refusal kind a forget carries back to core. */
+ * `reason` is the refusal kind the host named, handed back to core for either arm. */
 export type PointerWriteResult =
   | { ok: true }
   | { ok: false; error: string; hostSaid?: string; reason?: SettingsRefusal | null };

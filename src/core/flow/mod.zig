@@ -20,6 +20,7 @@ pub const StartupFlow = startup_mod.StartupFlow;
 pub const CommandFlow = command_mod.CommandFlow;
 pub const startup = startup_mod;
 pub const save = save_mod;
+pub const command = command_mod;
 
 pub const Flow = union(enum) {
     autosave: AutosaveFlow,

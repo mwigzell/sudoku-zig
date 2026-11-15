@@ -241,18 +241,8 @@ fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]co
 /// on the way. They are kept apart so only a refusal is answered, and answered in core's words for
 /// what actually failed, instead of closing the connection.
 const PointerWrite = error{ SettingsRefused, SettingsWriteFailed, System };
-
-/// The refusal a pointer write reports for a store error: a write the system refused gets its own
-/// kind, so the page is told which way out applies; every other store error is a file the store
-/// will not use.
-fn pointerRefusal(err: config_store.Error) PointerWrite {
-    return switch (err) {
-        config_store.Error.WriteFailed => PointerWrite.SettingsWriteFailed,
-        else => PointerWrite.SettingsRefused,
-    };
-}
-
-/// The pointer-write error a core refusal means, so both `/current-file` arms answer from one place.
+/// The pointer-write error a core refusal means: both `/current-file` arms map a store error through
+/// core's `refusalFor`, so the kind is decided once.
 fn refusalError(reason: forget_mod.Refusal) PointerWrite {
     return switch (reason) {
         .settings_unreadable => PointerWrite.SettingsRefused,
@@ -273,7 +263,7 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
     const transport = file_transport.NativeTransport.make(io);
     transport.write(transport.context, target.path, body) catch return error.System;
 
-    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch |err| return pointerRefusal(err);
+    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch |err| return refusalError(forget_mod.refusalFor(err));
 
     if (session.current_file) |old| session.gpa.free(old);
     session.current_file = session.gpa.dupe(u8, target.path) catch return error.System;
