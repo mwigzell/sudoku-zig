@@ -30,6 +30,16 @@ The product is one core with three front ends: **native** (terminal), **web** an
 
 Triage adds the section before an issue moves to `ready-for-agent`, and an **Agent Brief** carries it as a `**Front ends:**` field after `**Summary:**`.
 
+## The mandate: fix the issue
+
+Every issue means **fix the issue**, to its acceptance criteria, on every front end it names as in scope. Three rules keep that from becoming a moving target:
+
+- **The Front ends section is the fence.** Work outside it does not happen. A defect that is real but only manifests on a front end the issue marks out of scope is named once — in the run's verdict or the reply — and left alone. Chasing it is scope the issue did not ask for.
+- **Prefer steps in one issue over sibling tickets.** Splitting is for work one run cannot carry, not for tidiness: a split re-opens the goalpost, because each new issue re-derives what "done" means. Sibling tickets spun out of a parent (a messaging change becoming one issue per front end) are how a fixed issue turns into four open ones.
+- **Stopping is not splitting.** A run that stops resumes the same issue. Nothing about an unfinished run justifies a new ticket.
+
+What this does not license: an issue whose criteria cannot all be met without widening it says so and stops; widening the issue is the maintainer's edit, never the run's.
+
 ## Steps a run can take
 
 An issue that a sandcastle run steps through writes its steps in a `## Steps` section as **checkboxes**, one per iteration:
