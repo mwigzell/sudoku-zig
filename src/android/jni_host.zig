@@ -177,6 +177,19 @@ pub fn defaultFolderName(env: ?*anyopaque) ?*anyopaque {
     return sudoku_new_jstring_utf(env_raw, save_defaults.DEFAULT_FOLDER_NAME);
 }
 
+/// Core's sentence for a boot a refused settings read stopped, or nothing when startup did not
+/// fail: Java keeps its own copy for a page that never loaded. Returned as a sentinel-ended slice
+/// so the JNI surface can hand it to Java without a copy.
+pub fn startupFailureText() [:0]const u8 {
+    return if (boot.startup_failed.load(.acquire)) startup_config.ANDROID_SETTINGS_REFUSED_MSG else "";
+}
+
+/// JNI surface: the sentence above, for the boot-failure page and toast Java draws.
+pub fn startupFailureMessage(env: ?*anyopaque) ?*anyopaque {
+    const env_raw = env orelse return null;
+    return sudoku_new_jstring_utf(env_raw, startupFailureText());
+}
+
 /// How long a test waits for a boot to reach serving or to end.
 const BOOT_WAIT_MS: u32 = 4000;
 /// One poll interval while a test waits on a boot.
@@ -277,6 +290,8 @@ test "a settings file the store can read starts the host as today and records no
     try std.testing.expect(boot_finished.load(.acquire));
     try std.testing.expect(!boot.startup_failed.load(.acquire));
     try std.testing.expect(readyPort() > 0);
+    // A boot that served has no refusal sentence for Java to show.
+    try std.testing.expectEqualStrings("", startupFailureText());
 }
 
 test "the host takes its settings from the file through the startup seam" {
@@ -306,4 +321,24 @@ test "the host takes its settings from the file through the startup seam" {
 
 test {
     _ = .{ web_host, config };
+}
+
+test "the boot exposes core's refusal sentence, and nothing when it did not fail" {
+    const io = std.testing.io;
+
+    // No boot has refused, so Java keeps its own copy for a page that never loaded.
+    boot.reset();
+    try std.testing.expectEqualStrings("", startupFailureText());
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_dir = try testDataDir(&tmp.sub_path);
+    defer std.testing.allocator.free(data_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = config_store.file_name, .data = CORRUPT_CONFIG });
+
+    const host = try startBootForTest(io, data_dir);
+    finishBoot(io, host);
+
+    try std.testing.expect(boot.startup_failed.load(.acquire));
+    try std.testing.expectEqualStrings(startup_config.ANDROID_SETTINGS_REFUSED_MSG, startupFailureText());
 }

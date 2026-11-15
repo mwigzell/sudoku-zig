@@ -41,9 +41,16 @@ public final class JniHost {
         bootThread.start();
     }
 
+    /** Core's sentence for a boot that refused its settings; empty when startup did not fail. */
+    public static String startupFailureMessage() {
+        final String value = startupFailureMessageNative();
+        return value == null ? "" : value;
+    }
+
     private static native void startHostNative(String dataDir);
 
     private static native int readyPort();
+    private static native String startupFailureMessageNative();
 
     public static native void stopHost();
 

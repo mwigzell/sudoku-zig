@@ -37,3 +37,11 @@ export fn Java_com_wigzell_sudoku_1zig_JniHost_defaultFolderNameNative(
 ) callconv(.c) ?*anyopaque {
     return jni_host.defaultFolderName(env);
 }
+
+/// Entry export for `jni_host.startupFailureMessage`: core's sentence for a refused boot.
+export fn Java_com_wigzell_sudoku_1zig_JniHost_startupFailureMessageNative(
+    env: *anyopaque,
+    _: *anyopaque,
+) callconv(.c) ?*anyopaque {
+    return jni_host.startupFailureMessage(env);
+}

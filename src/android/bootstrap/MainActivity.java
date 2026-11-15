@@ -108,10 +108,6 @@ public final class MainActivity extends Activity {
     private static final String BOOT_FAILED_MSG = "The game could not start. If it keeps failing, update Android System WebView from the Play Store.";
     /** Console prefix for a client-log line the host never got (`client_log.js` `CLIENT_LOG_UNSENT_PREFIX`). */
     private static final String CLIENT_LOG_UNSENT_PREFIX = "client-log unsent";
-    private static final String BOOT_ERROR_HTML =
-        "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
-        "<body style=\"margin:0;padding:16px;font-family:sans-serif;background:#16181d;color:#e6e6e6;\">" +
-        "<p>" + BOOT_FAILED_MSG + "</p></body></html>";
 
     private FrameLayout root;
     private WebView webView;
@@ -276,16 +272,21 @@ public final class MainActivity extends Activity {
     private void showBootError(String reason) {
         if (bootErrorShown) return;
         bootErrorShown = true;
+        // Core words a refused settings read, which no WebView advice can fix; the page and the toast
+        // show that sentence, and this activity's own copy only for a failure core did not word.
+        final String coreText = JniHost.startupFailureMessage();
+        final String shown = coreText.isEmpty() ? BOOT_FAILED_MSG : coreText;
         Log.e(LOG_IDENTITY, "boot failed: " + reason);
-        Toast.makeText(this, BOOT_FAILED_MSG, Toast.LENGTH_LONG).show();
-        webView.loadDataWithBaseURL(
-            null,
-            BOOT_ERROR_HTML,
-            "text/html",
-            "utf-8",
-            null
-        );
+        Toast.makeText(this, shown, Toast.LENGTH_LONG).show();
+        webView.loadDataWithBaseURL(null, bootErrorHtml(shown), "text/html", "utf-8", null);
         dismissLaunchSplash();
+    }
+
+    /** The boot-failure page, carrying the sentence the player reads. */
+    private static String bootErrorHtml(String text) {
+        return "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>" +
+            "<body style=\"margin:0;padding:16px;font-family:sans-serif;background:#16181d;color:#e6e6e6;\">" +
+            "<p>" + text + "</p></body></html>";
     }
 
     @Override

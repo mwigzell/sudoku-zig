@@ -124,6 +124,12 @@ fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
 /// own line, so the entry passes this on to `main` without a second line of its own.
 pub const Error = error{System};
 
+/// The sentence an Android boot shows when its settings read was refused. Clearing this app's data
+/// in the Android Settings app is the way out of a settings file that cannot be read, so no other
+/// advice can fix it. A host that did not refuse its settings shows nothing.
+pub const ANDROID_SETTINGS_REFUSED_MSG =
+    "The game could not read its settings. Clear this app's data in the Android Settings app, then open the game again.";
+
 /// A settings read or write the store refused: it logged the reason and returned `System`, so the
 /// seam passes that on as its one error. Any other member `save` still produces is an allocation
 /// failure with no line behind it, so it is logged here instead — once, never twice.
@@ -353,4 +359,12 @@ test "the seam adds no line to a store refusal that already logged, and one when
     // An allocation failure has no line behind it, so the seam supplies the one line.
     try std.testing.expectEqual(Error.System, refused(config_store.Error.OutOfMemory));
     try std.testing.expectEqualStrings("err [startup] startup settings could not be resolved: OutOfMemory\n", sink.buffered());
+}
+
+test "the Android refusal sentence reads as a sentence and names the way out" {
+    const sentence = @import("../../test/sentence.zig");
+    try sentence.expectSentence(ANDROID_SETTINGS_REFUSED_MSG);
+    // Clearing this app's data is the way out of a settings file that cannot be read, so the
+    // sentence has to name the place the player does that.
+    try std.testing.expect(std.mem.indexOf(u8, ANDROID_SETTINGS_REFUSED_MSG, "Android Settings app") != null);
 }
