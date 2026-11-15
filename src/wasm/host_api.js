@@ -14,8 +14,6 @@ const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
 /** Response header naming which refusal stopped a pointer write, so core words it for the player. */
 const REFUSAL_HEADER = "X-Sudoku-Refusal";
-/** Refusal kinds core words; any other value is a failure core only logs. */
-const REFUSAL_REASONS = new Set(["settings_unreadable", "settings_unwritable"]);
 
 /** The host's startup config: the Config, default save name and the current file to restore. */
 export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
@@ -57,13 +55,14 @@ export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) 
 }
 
 /**
- * Which refusal the host named in this response, when it named one core knows.
+ * The refusal kind this response named, exactly as the host sent it; null when it named none.
+ * Which kinds exist is core's knowledge (`boundary.zig`), so no list of them lives here.
  * @param {{ headers?: { get?: (name: string) => string | null } }} res
- * @returns {"settings_unreadable" | "settings_unwritable" | null}
+ * @returns {string | null}
  */
 function refusalReason(res) {
   const raw = typeof res.headers?.get === "function" ? res.headers.get(REFUSAL_HEADER) : null;
-  return REFUSAL_REASONS.has(raw) ? raw : null;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
 }
 
 /**

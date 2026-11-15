@@ -300,6 +300,18 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   assert.equal(handlers.log[3][2], false);
 }
 
+// The page does not judge the host's refusal kind: it hands the value on and core's boundary rejects one
+// it does not know, ending the flow on core's unexpected-answer prompt.
+{
+  const game = await loadGame({ auto_restore: true });
+  const handlers = {
+    ...startupRecorder({ read: new Error("network down"), yes: true }),
+    forgetCurrentFile: () => ({ ok: false, reason: "store_said_no", error: "current-file forget failed: 500" }),
+  };
+  await stepRunner.runFlow(game, { flow: stepRunner.FLOW_STARTUP, path: "/current-file", name: "game.sud" }, handlers);
+  assert.deepEqual(handlers.log.at(-1), ["error", coreText.UNEXPECTED_INPUT_MSG], "core is the one that rejects an unknown kind");
+}
+
 // generate_game reports the line, cancellation, or failure to core.
 {
   const line = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";

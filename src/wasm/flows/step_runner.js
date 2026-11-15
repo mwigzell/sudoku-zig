@@ -98,13 +98,13 @@ function generatedInput(result) {
 }
 
 /**
- * Answer a forget step: a refusal carries the kind core words, any other failure its reason for the log.
+ * Answer a forget step: the host's refusal kind travels untouched, since core's boundary knows which
+ * kinds exist; any other failure carries its reason for the log.
  * @param {{ ok?: boolean, reason?: string, error?: string }} result
  */
 function forgotInput(result) {
   if (result?.ok === true) return { input: INPUT_FORGOT, ok: true };
-  const known = result?.reason === "settings_unreadable" || result?.reason === "settings_unwritable";
-  if (known) return { input: INPUT_FORGOT, ok: false, reason: result.reason };
+  if (typeof result?.reason === "string" && result.reason.length > 0) return { input: INPUT_FORGOT, ok: false, reason: result.reason };
   return failedInput(INPUT_FORGOT, result);
 }
 /**

@@ -98,3 +98,13 @@ import { hostFetch } from "./test_support.mjs";
   assert.equal(calls[0].init.method, "DELETE");
   assert.equal(calls[0].init.headers["X-Sudoku-Delete-File"], "true");
 }
+
+// The header's value reaches the caller exactly as the host sent it: the page keeps no list of kinds,
+// so judging one is core's job, not this module's.
+{
+  const headers = { get: (name) => (name === "X-Sudoku-Refusal" ? "store_said_no" : null) };
+  const refused = await hostApi.forgetCurrentFile(true, async () => ({ ok: false, status: 500, headers }));
+  assert.equal(refused.reason, "store_said_no", "an unheard kind still reaches core verbatim");
+  const refusedWrite = await hostApi.persistCurrentFileBytes(new Uint8Array([6]), async () => ({ ok: false, status: 500, headers }), "refused.sud");
+  assert.equal(refusedWrite.reason, "store_said_no", "the write arm carries it the same way");
+}

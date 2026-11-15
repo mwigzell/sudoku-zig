@@ -1038,6 +1038,11 @@ test "flow input parses every step result" {
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"read\",\"ok\":false,\"cancelled\":true}")).read == .cancelled);
     try std.testing.expectEqualStrings("no", (try parseFlowInput(a, "{\"input\":\"read\",\"ok\":false,\"error\":\"no\"}")).read.failed);
     try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"read\",\"ok\":true}"));
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":true}")).forgot == .forgotten);
+    const refused_clear = (try parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":false,\"reason\":\"settings_unreadable\"}")).forgot.refused;
+    try std.testing.expectEqual(flow_forget.Refusal.settings_unreadable, refused_clear);
+    try std.testing.expectError(error.UnknownInput, parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":false,\"reason\":\"store_said_no\"}"));
+    try std.testing.expectEqualStrings("dropped", (try parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":false,\"error\":\"dropped\"}")).forgot.failed);
 }
 
 test "step JSON carries the tag and its payload" {
