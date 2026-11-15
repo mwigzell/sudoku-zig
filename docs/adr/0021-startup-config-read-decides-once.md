@@ -31,6 +31,7 @@ The rule is decided once, in core, and every front end only renders its outcome.
 - The desktop entry's `catch unreachable` on this seam was already reachable through `save` before this decision and must become a `try`; that defect is its own change, not this rule's.
 - `config.json` keeps its shape and `current_file` its meaning, so an older app still reads it.
 - Front ends gain no text: core owns the log lines, and any player-facing sentence for a refused startup is core's to write when a front end needs one.
+- A refused startup exits 1 by returning the seam's error, so a Debug build also prints the runtime's `error: System` and a return trace after core's line; a release build prints the line alone. That is accepted: the trace is diagnostics for us, never seen by a player, and silencing it would mean `main` swallowing an error, which is the defect this ADR exists to undo.
 
 ## References
 
