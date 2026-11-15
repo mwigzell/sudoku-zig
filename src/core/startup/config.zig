@@ -339,3 +339,18 @@ test "with no data directory, the settings come from the fall-back directory and
     defer gpa.free(after);
     try std.testing.expectEqualStrings(on_disk, after);
 }
+
+test "the seam adds no line to a store refusal that already logged, and one when it did not" {
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    // `System` arrives with the store's reason already on the log, so a second line would say it twice.
+    try std.testing.expectEqual(Error.System, refused(config_store.Error.System));
+    try std.testing.expectEqualStrings("", sink.buffered());
+
+    // An allocation failure has no line behind it, so the seam supplies the one line.
+    try std.testing.expectEqual(Error.System, refused(config_store.Error.OutOfMemory));
+    try std.testing.expectEqualStrings("err [startup] startup settings could not be resolved: OutOfMemory\n", sink.buffered());
+}

@@ -328,10 +328,10 @@ fn makeConfigUnreadable(io: std.Io, dir: std.Io.Dir) !void {
     try dir.createDir(io, file_name, .default_dir);
 }
 
-/// The error name a read of `file_name` in `dir` produces, so a test names the reason without
+/// The error name a read of `sub_path` in `dir` produces, so a test names the reason without
 /// hard-coding a platform's error. A readable file means the test set itself up wrong.
-fn readFailureReason(dir: std.Io.Dir, io: std.Io) ![]const u8 {
-    const bytes = dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited) catch |err| return @errorName(err);
+fn readFailureReason(dir: std.Io.Dir, io: std.Io, sub_path: []const u8) ![]const u8 {
+    const bytes = dir.readFileAlloc(io, sub_path, std.testing.allocator, std.Io.Limit.unlimited) catch |err| return @errorName(err);
     std.testing.allocator.free(bytes);
     return error.TestUnexpectedResult;
 }
@@ -426,6 +426,17 @@ test "unparsable bytes are refused, with one line carrying the reason" {
     try expectOneLineCarrying(sink.buffered(), try jsonFailureReason(bytes));
 }
 
+test "a config file whose top level is not an object is refused, with one line carrying the reason" {
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    // Valid JSON, but an array: the file's shape is `{config, current_file}`, so this is no file at all.
+    try std.testing.expectError(Error.System, loadBytes(std.testing.allocator, "[{\"config\":{}}]"));
+    try expectOneLineCarrying(sink.buffered(), @errorName(Error.InvalidJson));
+}
+
 test "a value the config table rejects is refused, with one line carrying the reason" {
     var logged: [256]u8 = undefined;
     var sink: std.Io.Writer = .fixed(&logged);
@@ -470,7 +481,7 @@ test "a config file it cannot read is refused, with one line carrying the reason
     try makeConfigUnreadable(io, tmp.dir);
 
     // The reason is the platform's, so the test reads the same unreadable path itself to name it.
-    const reason = try readFailureReason(tmp.dir, io);
+    const reason = try readFailureReason(tmp.dir, io, file_name);
 
     var logged: [256]u8 = undefined;
     var sink: std.Io.Writer = .fixed(&logged);
@@ -481,6 +492,36 @@ test "a config file it cannot read is refused, with one line carrying the reason
     var want: [256]u8 = undefined;
     try std.testing.expectEqualStrings(
         try std.fmt.bufPrint(&want, "warn [sudoku] config file config.json unreadable, config not read: {s}\n", .{reason}),
+        sink.buffered(),
+    );
+}
+
+test "loadOrDefault's refusal names the full resolved path, not the bare file name" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const rel_path = try std.fmt.allocPrint(gpa, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer gpa.free(rel_path);
+    // An absolute data directory, the way a host resolves one: the refusal's path is the joined
+    // `config.json` under it, a different string from `loadOrDefaultInDir`'s bare file name.
+    const data_path = try std.Io.Dir.cwd().realPathFileAlloc(io, rel_path, gpa);
+    defer gpa.free(data_path);
+    const file_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ data_path, file_name });
+    defer gpa.free(file_path);
+
+    try makeConfigUnreadable(io, tmp.dir);
+    const reason = try readFailureReason(std.Io.Dir.cwd(), io, file_path);
+
+    var logged: [1024]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, loadOrDefault(gpa, io, data_path));
+    var want: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&want, "warn [sudoku] config file {s} unreadable, config not read: {s}\n", .{ file_path, reason }),
         sink.buffered(),
     );
 }
