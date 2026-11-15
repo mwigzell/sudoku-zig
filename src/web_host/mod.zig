@@ -289,10 +289,16 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Poin
     session.has_current_file = false;
 }
 
-/// Answer a pointer write the settings store refused with core's sentence for what failed in the body:
-/// the page gets the words telling the player what to fix instead of a request that did nothing.
-fn answerPointerRefusal(w: *std.Io.Writer, sentence: []const u8) ServeError!void {
-    try writeFull(w, "500 Internal Server Error", "text/plain", sentence);
+/// Answer a pointer write to the page: `204` when it landed, core's sentence for the refusal kind
+/// that stopped it in the body, and the connection closed on a host fault. Both arms of
+/// `/current-file` answer through here, so a refusal kind is mapped in one place.
+fn answerPointerWrite(w: *std.Io.Writer, result: PointerWrite!void) ServeError!void {
+    result catch |err| switch (err) {
+        error.SettingsRefused => return writeFull(w, "500 Internal Server Error", "text/plain", startup_config.WEB_SETTINGS_REFUSED_MSG),
+        error.SettingsWriteFailed => return writeFull(w, "500 Internal Server Error", "text/plain", startup_config.WEB_SETTINGS_WRITE_FAILED_MSG),
+        error.System => return ServeError.System,
+    };
+    try writeFull(w, "204 No Content", "application/octet-stream", "");
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -500,21 +506,11 @@ fn serveClient(io: std.Io, session: *Session, rt_router: *Router, client: net.St
     }
     if (std.mem.eql(u8, method, "POST") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
         const body = requestBody(request) orelse return ServeError.System;
-        applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER)) catch |err| switch (err) {
-            error.SettingsRefused => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_REFUSED_MSG),
-            error.SettingsWriteFailed => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG),
-            error.System => return ServeError.System,
-        };
-        try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
+        try answerPointerWrite(&w.interface, applyCurrentFilePost(io, session, body, headerValue(request, FILENAME_HEADER), headerFlag(request, RESTORE_COPY_HEADER)));
         return;
     }
     if (std.mem.eql(u8, method, "DELETE") and std.mem.eql(u8, req_path, CURRENT_FILE_PATH)) {
-        applyCurrentFileForget(io, session, headerFlag(request, DELETE_FILE_HEADER)) catch |err| switch (err) {
-            error.SettingsRefused => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_REFUSED_MSG),
-            error.SettingsWriteFailed => return answerPointerRefusal(&w.interface, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG),
-            error.System => return ServeError.System,
-        };
-        try writeFull(&w.interface, "204 No Content", "application/octet-stream", "");
+        try answerPointerWrite(&w.interface, applyCurrentFileForget(io, session, headerFlag(request, DELETE_FILE_HEADER)));
         return;
     }
     if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, req_path, CURRENT_FILE_EXISTS_PATH)) {
@@ -998,6 +994,33 @@ test "current-file POST writes startup snapshot and updates current_file pointer
     ) catch return error.TestFailed;
     defer std.testing.allocator.free(bytes);
     try std.testing.expectEqualSlices(u8, body, bytes);
+}
+
+/// The bytes a pointer write's page reads, produced by the one answer helper both arms end at.
+fn pointerWriteAnswer(result: PointerWrite!void) ![]u8 {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    errdefer aw.deinit();
+    try answerPointerWrite(&aw.writer, result);
+    return aw.toOwnedSlice();
+}
+
+test "one answer serves both pointer writes: core's words for a refusal, one 204 for a success" {
+    const refused = try pointerWriteAnswer(error.SettingsRefused);
+    defer std.testing.allocator.free(refused);
+    try std.testing.expect(std.mem.endsWith(u8, refused, startup_config.WEB_SETTINGS_REFUSED_MSG));
+
+    const write_failed = try pointerWriteAnswer(error.SettingsWriteFailed);
+    defer std.testing.allocator.free(write_failed);
+    try std.testing.expect(std.mem.endsWith(u8, write_failed, startup_config.WEB_SETTINGS_WRITE_FAILED_MSG));
+    // The read refusal's sentence would send the player to repair a file that is sound.
+    try std.testing.expect(std.mem.indexOf(u8, write_failed, startup_config.WEB_SETTINGS_REFUSED_MSG) == null);
+
+    const saved = try pointerWriteAnswer({});
+    defer std.testing.allocator.free(saved);
+    try std.testing.expect(std.mem.startsWith(u8, saved, "HTTP/1.1 204 No Content"));
+
+    // A host fault has no sentence for the player: the connection is closed, not answered.
+    try std.testing.expectError(ServeError.System, pointerWriteAnswer(error.System));
 }
 
 /// A data directory under the test's temp dir, with `config.json` taken by a directory so no read
