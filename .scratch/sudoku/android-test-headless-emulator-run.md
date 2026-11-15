@@ -4,11 +4,42 @@
 
 ## Outcome
 
-Full suite: **OK (23 tests)**, 500.8 s, including #132's
+Full suite **OK (23 tests)** on a headless emulator, 493.8–510.0 s per run, including #132's
 `aRefusedSettingsFileIsReportedWhenTheBootFailsNotAfterTheReadinessTimeout`.
 
-One test, `picksThatTakeOverAMinuteSaveAndOpenThePickedFile`, is **not self-contained** and failed whenever the
-device had no save folder. Fixed in the test, verified on a clean device.
+One test, `picksThatTakeOverAMinuteSaveAndOpenThePickedFile`, was not self-contained. It is now reworked so the
+app writes both files it picks between; see "The defect" and "The rework" below.
+
+## The rework
+
+The original test hand-wrote its own state: `sh("cp … /sdcard/Download/Sudoku/sudoku.sud")` put a file in the app's
+folder so the Open picker would list it. That is a fake login — device state the app never produced, and a
+precondition (`mkdir -p` the folder) the test had to manufacture too.
+
+Now everything the test picks between is written by the app: `fillAnEmptyCell()` lets autosave create the folder
+and the default file, a slow Save As binds `bridge-test.sud`, and the slow Open loads the default file back. The
+label assertion can therefore fail — the binding really has to change.
+
+`saveInCreatePicker` also takes a raised IME down before clicking Save (`hideIme`), because DocumentsUI focuses
+the name field when the dialog opens and a keyboard over the Save button swallows the click. It is a no-op on a
+device whose keyboard never shows.
+
+## Run tally after the rework
+
+| run | result |
+|---|---|
+| 1 | 1 failure — `autoRestoreReopensTheBoundFileAndTheNextMoveWritesIt` |
+| 2–6 | OK (23 tests), IME off once and IME forced on four times |
+
+The single failure happened in the same window as the emulator dying mid-run (below), so it is attributed to
+that and left closed unless it recurs.
+
+## The emulator does crash
+
+After roughly an hour and several suite runs the headless SwiftShader emulator died with
+`bad color buffer handle` / `DisplaySurfaceGlContextHelper context was preempted by others` /
+`Failed to restore previous context`, taking a suite run with it. Restart the emulator between suite runs
+(`scripts/android-emulator-stop.sh` then `start.sh`) rather than reusing one for hours.
 
 ## The defect
 
