@@ -254,7 +254,7 @@ Native terminal substrate — builds `IoSession`, selects AsciiRenderer facade a
 _Avoid_: folding `serve` / loopback into `Host`; "session" (that's the terminal substrate under it)
 
 **web_host** (`src/web_host/`):
-Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, `POST /config.json`, `POST /current-file`. Desktop `-r web` and Android WebView both use this layer; desktop browser open stays in **`native/desktop_web.zig`** (`open_browser`), not inside `web_host`. A pointer write the settings store refuses answers 500 with core's `WEB_SETTINGS_REFUSED_MSG` in the body; the store's log line keeps the technical reason.
+Loopback static server for the **web app shell** — routes, embedded page/JS/wasm, `host-config.json`, `POST /config.json`, `POST /current-file`. Desktop `-r web` and Android WebView both use this layer; desktop browser open stays in **`native/desktop_web.zig`** (`open_browser`), not inside `web_host`. A pointer write the settings store refuses answers 500 with core's `WEB_SETTINGS_REFUSED_MSG` in the body; the store's log line keeps the technical reason. The page copies that sentence into the status line it already uses for core's text and words nothing of its own; a healthy settings file leaves the status line to core's own text.
 _Avoid_: duplicating menubar/DOM in native or Java; calling it `native/host`
 
 ### Platform thinness contract (all front-end entries)

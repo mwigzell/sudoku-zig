@@ -69,7 +69,12 @@ export async function writeGame(ctx, writeUserFile, name, { restoreCopy, fetchFn
     if (typeof saved.name === "string" && saved.name.length > 0) written = saved.name;
   }
   const hosted = await hostApi.persistCurrentFileBytes(serialized.bytes, fetchFn, written, { restoreCopy });
-  if (!hosted.ok) return hosted;
+  if (!hosted.ok) {
+    // A refused write answers in words for the player (core's, passed through by the host): show them
+    // in the status line; the technical reason still travels to core for its log.
+    if (hosted.hostSaid && ctx.statusEl) statusBar.showStatusText(ctx.statusEl, hosted.hostSaid);
+    return { ok: false, error: hosted.error };
+  }
   ctx.session.boundFilename = written;
   sessionMod.syncCurrentFileLabels(ctx.session);
   return { ok: true, name: written };
