@@ -44,6 +44,17 @@ test("a report naming nothing counts nothing, and says so without failing", () =
   assert.deepEqual(countShotgun([], searchOver({})), { counts: [] });
 });
 
+test("a symbol the reviewer explained in a trailing note is searched as the symbol itself", () => {
+  const counts = countShotgun(
+    [{ symbol: "refusal (the sentence carried to the status line)", files: 1 }],
+    searchOver({ refusal: ["src/a.js", "src/b.js", "src/c.js"] }),
+  );
+
+  assert.deepEqual(counts, {
+    counts: [{ symbol: "refusal (the sentence carried to the status line)", files: 3, verdict: "plumbing" }],
+  });
+});
+
 test("a search that finds nothing is no files, not an error", () => {
   assert.deepEqual(rgSearch("src")("a symbol this repository does not contain"), []);
 });

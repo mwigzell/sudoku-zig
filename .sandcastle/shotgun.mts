@@ -36,6 +36,19 @@ export function rgSearch(root: string): SymbolSearch {
   };
 }
 
+const TRAILING_PARENTHETICAL = /\s*\([^()]*\)$/u;
+
+/**
+ * The text the host searches for: the symbol with a trailing parenthetical note dropped.
+ *
+ * Reviewers explain a symbol inside the same string (`refusal (the sentence carried to the status
+ * line)`). Searching that whole text finds no file and would stop the run over a readable note, so the
+ * note is dropped for the search while the report keeps the reviewer's wording.
+ */
+export function searchable(symbol: string): string {
+  return symbol.replace(TRAILING_PARENTHETICAL, "").trim();
+}
+
 /**
  * Recount every symbol a report names.
  *
@@ -53,7 +66,7 @@ export function countShotgun(
     const symbol = claim.symbol.trim();
     if (symbol.length === 0) return { problem: "the standards report names an empty shotgun symbol" };
 
-    const found = search(symbol);
+    const found = search(searchable(symbol));
     if (found.length === 0) return { problem: `the standards report names a shotgun symbol the branch does not have: ${symbol}` };
 
     counts.push({
