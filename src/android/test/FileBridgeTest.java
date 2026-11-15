@@ -76,6 +76,15 @@ public final class FileBridgeTest {
     private static final String LIGHT_THEME_CONFIG =
         "{\"config\":{\"difficulty\":\"easy\",\"log_level\":\"info\",\"theme\":\"light\",\"show_region\":false,"
             + "\"warn_solvability\":false,\"auto_restore\":false,\"auto_new\":false,\"auto_save\":false}}";
+
+    /** Settings bytes that cannot parse: the store refuses them, so the boot stops before it serves. */
+    private static final String CORRUPT_CONFIG = "{\"config\":{";
+    /** Core's settings-refusal sentence (`ANDROID_SETTINGS_REFUSED_MSG` in core's startup config). */
+    private static final String SETTINGS_REFUSED_MSG =
+        "The game could not read its settings. Clear this app's data in the Android Settings app, then open the game again.";
+    /** The app's readiness timeout is 8 s, so a refusal reported later than this came from that timeout. */
+    private static final long BOOT_REFUSAL_WAIT_MS = 7_000;
+
     /** Launch frames are sampled for this long; the splash shows for a minimum time, then gives way to the game. */
     private static final long LAUNCH_WATCH_MS = 6_000;
     private static final int DARK_RGB_SUM = 120;
@@ -753,6 +762,25 @@ public final class FileBridgeTest {
             inked = inkedMarkSlots(cellRect);
         }
         assertEquals("marks drawn in the nine slots of " + cellRect, DIGIT_COUNT, inked);
+    }
+
+    /** A boot that refuses its settings says so when it fails, not when the app's readiness poll gives up. */
+    @Test
+    public void aRefusedSettingsFileIsReportedWhenTheBootFailsNotAfterTheReadinessTimeout() throws IOException {
+        writeConfig(CORRUPT_CONFIG);
+        try {
+            final long started = SystemClock.uptimeMillis();
+            sh("am start -n " + APP + "/.MainActivity\n");
+
+            need(By.textContains(SETTINGS_REFUSED_MSG), UI_WAIT_MS);
+            final long elapsed = SystemClock.uptimeMillis() - started;
+            assertTrue("the refusal took " + elapsed + " ms, the pace of the readiness timeout",
+                elapsed < BOOT_REFUSAL_WAIT_MS);
+            awaitLog(Pattern.compile("config file does not parse"));
+        } finally {
+            // The app cannot start on this file; a missing one plays on the defaults.
+            sh("run-as " + APP + " rm -f files/config.json\n");
+        }
     }
 
     /** How many of the cell's nine mark slots have ink in their middle, against the slot's own corner as background. */
