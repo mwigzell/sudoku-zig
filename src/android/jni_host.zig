@@ -3,6 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const web_host = @import("../web_host/mod.zig");
 const config = @import("../core/config.zig");
+/// `file_name` only: tests name the settings file. Production reads it through the startup seam.
 const config_store = @import("../core/config_store.zig");
 const startup_config = @import("../core/startup/config.zig");
 const save_defaults = @import("../core/save_defaults.zig");
@@ -16,12 +17,28 @@ extern fn sudoku_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque) ?[*:0]co
 extern fn sudoku_release_jstring_utf_chars(env: ?*anyopaque, jstr: ?*anyopaque, chars: ?[*:0]const u8) void;
 extern fn sudoku_new_jstring_utf(env: ?*anyopaque, chars: ?[*:0]const u8) ?*anyopaque;
 
+/// What Java polls once a boot starts: the port it serves on, and whether a refused settings read
+/// stopped it before it served anything.
+const BootRecord = struct {
+    ready_port: std.atomic.Value(u16) = std.atomic.Value(u16).init(0),
+    startup_failed: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+    /// Back to "not serving, no failure" for a fresh boot.
+    fn reset(self: *BootRecord) void {
+        self.ready_port.store(0, .release);
+        self.startup_failed.store(false, .release);
+    }
+};
+
+/// The running boot's record: the host thread writes it, the JNI surface reads it. One boot runs at
+/// a time, so one record is the whole of it.
+var boot: BootRecord = .{};
+
 const HostState = struct {
     thread: ?std.Thread = null,
     threaded: ?*std.Io.Threaded = null,
     data_dir: []const u8 = ".",
     owned_data_dir: ?[]u8 = null,
-    ready_port: std.atomic.Value(u16) = std.atomic.Value(u16).init(0),
 };
 
 var host_state: HostState = .{};
@@ -38,21 +55,38 @@ fn extractReadyPort(url: []const u8) ?u16 {
 
 fn recordReady(_: std.Io, url: []const u8) void {
     const port = extractReadyPort(url) orelse return;
-    host_state.ready_port.store(port, .release);
+    boot.ready_port.store(port, .release);
+}
+
+/// The settings this boot serves with, read through the startup seam the desktop entry uses.
+/// `null` means the seam refused: nothing is served, because a file that exists and cannot be
+/// used is not a first start. A missing file is a first start and still plays on the defaults.
+fn resolveHostConfig(io: std.Io, data_dir: []const u8) ?config.Config {
+    return startup_config.resolveStartupConfig(std.heap.page_allocator, io, .{ .resolved = data_dir }, .{}) catch |err| switch (err) {
+        // The seam's one error is the settings refusal its store already logged; defaulting here
+        // would make an unusable file look like a first start and serve it.
+        error.System => null,
+    };
+}
+
+/// One boot: read settings through the startup seam, then serve loopback until shutdown. A refusal
+/// starts no server and records the failure for Java; the seam's store has already written the
+/// failure's one log line, so the host adds none of its own.
+fn bootHost(io: std.Io, data_dir: []const u8) void {
+    log.start("starting android host: {s}", .{about.summaryLine(build_info.debug_build)});
+    const cfg = resolveHostConfig(io, data_dir) orelse {
+        boot.startup_failed.store(true, .release);
+        return;
+    };
+    startup_config.applyLoggerFromStartup(cfg);
+    web_host.runWithHostConfig(io, web_host.bindLoopback, cfg, data_dir, data_dir, recordReady) catch |err| {
+        log.fatal("web server failed to start: {s}", .{@errorName(err)});
+    };
 }
 
 fn hostThreadMain(state: *HostState) void {
     const threaded = state.threaded orelse return;
-    const io = threaded.io();
-    log.start("starting android host: {s}", .{about.summaryLine(build_info.debug_build)});
-    const cfg = config_store.loadOrDefault(std.heap.page_allocator, io, state.data_dir) catch |err| blk: {
-        log.warn("settings load failed, using defaults: {s}", .{@errorName(err)});
-        break :blk config.Config.default();
-    };
-    startup_config.applyLoggerFromStartup(cfg);
-    web_host.runWithHostConfig(io, web_host.bindLoopback, cfg, state.data_dir, state.data_dir, recordReady) catch |err| {
-        log.fatal("web server failed to start: {s}", .{@errorName(err)});
-    };
+    bootHost(threaded.io(), state.data_dir);
 }
 
 fn setDataDirDefault() void {
@@ -99,15 +133,17 @@ pub fn startHost(env: ?*anyopaque, data_dir_jstring: ?*anyopaque) void {
     } else {
         setDataDirDefault();
     }
-    host_state.ready_port.store(0, .release);
+    boot.reset();
     host_state.thread = std.Thread.spawn(.{}, hostThreadMain, .{&host_state}) catch |err| {
         log.fatal("host thread failed to start: {s}", .{@errorName(err)});
         return;
     };
 }
 
+/// JNI surface: the port the boot is serving on, or -1 while it serves nothing — including after a
+/// refusal.
 pub fn readyPort() i32 {
-    const port = host_state.ready_port.load(.acquire);
+    const port = boot.ready_port.load(.acquire);
     if (port == 0) return -1;
     return port;
 }
@@ -124,7 +160,8 @@ pub fn stopHost() void {
         std.heap.page_allocator.destroy(threaded);
         host_state.threaded = null;
     }
-    host_state.ready_port.store(0, .release);
+    // The port goes with the host; a recorded refusal stays until the next boot replaces it.
+    boot.ready_port.store(0, .release);
     setDataDirDefault();
 }
 
@@ -138,6 +175,133 @@ pub fn logIdentity(env: ?*anyopaque) ?*anyopaque {
 pub fn defaultFolderName(env: ?*anyopaque) ?*anyopaque {
     const env_raw = env orelse return null;
     return sudoku_new_jstring_utf(env_raw, save_defaults.DEFAULT_FOLDER_NAME);
+}
+
+/// How long a test waits for a boot to reach serving or to end.
+const BOOT_WAIT_MS: u32 = 4000;
+/// One poll interval while a test waits on a boot.
+const BOOT_POLL_MS: u32 = 10;
+
+/// Set once a test's boot thread has returned, so a test can report rather than hang.
+var boot_finished = std.atomic.Value(bool).init(false);
+
+/// Sleeps one poll interval; a test has no reason to be cancelled mid-wait.
+fn bootPollSleep(io: std.Io) void {
+    io.sleep(.fromMilliseconds(BOOT_POLL_MS), .awake) catch |err| log.info("expected: poll sleep cut short ({s})", .{@errorName(err)});
+}
+
+/// Runs one boot on its own thread, the way `startHost` does, and records that it ended.
+fn bootOnThread(io: std.Io, data_dir: []const u8) void {
+    bootHost(io, data_dir);
+    boot_finished.store(true, .release);
+}
+
+/// Starts a boot over `data_dir` with a clean record, as `startHost` does.
+fn startBootForTest(io: std.Io, data_dir: []const u8) !std.Thread {
+    boot.reset();
+    boot_finished.store(false, .release);
+    return std.Thread.spawn(.{}, bootOnThread, .{ io, data_dir });
+}
+
+/// Waits for the boot to serve or to end, then lets it go: a boot that served is asked to stop, so
+/// this cannot wait on a host the test expects to have refused.
+fn finishBoot(io: std.Io, host: std.Thread) void {
+    var waited: u32 = 0;
+    while (waited < BOOT_WAIT_MS and !boot_finished.load(.acquire) and boot.ready_port.load(.acquire) == 0) : (waited += BOOT_POLL_MS) bootPollSleep(io);
+    if (!boot_finished.load(.acquire)) {
+        web_host.requestShutdown(io);
+        waited = 0;
+        while (waited < BOOT_WAIT_MS and !boot_finished.load(.acquire)) : (waited += BOOT_POLL_MS) bootPollSleep(io);
+    }
+    // A boot left inside `accept` is not joined, so a failed expectation reports instead of hanging.
+    if (boot_finished.load(.acquire)) host.join();
+}
+
+/// A data directory in the test's own temp tree, which nothing else reads or writes.
+fn testDataDir(tmp_sub_path: []const u8) ![]u8 {
+    return std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp_sub_path});
+}
+
+/// A settings file no read can use: bytes that do not parse, so the store refuses them.
+const CORRUPT_CONFIG = "{\"config\":{";
+
+/// A settings file whose two choices are both off the code defaults, so reading it is the only way
+/// they reach the host.
+const GOOD_CONFIG = "{\"config\":{\"difficulty\":\"hard\",\"theme\":\"light\"}}";
+
+/// The lines of `text` emitted at warn severity.
+fn warnLines(text: []const u8) usize {
+    var lines: usize = 0;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line| {
+        if (std.mem.startsWith(u8, line, "warn")) lines += 1;
+    }
+    return lines;
+}
+
+test "a settings file the store refuses records the failure and serves nothing" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_dir = try testDataDir(&tmp.sub_path);
+    defer std.testing.allocator.free(data_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = config_store.file_name, .data = CORRUPT_CONFIG });
+
+    var logged: [1024]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    const host = try startBootForTest(io, data_dir);
+    finishBoot(io, host);
+
+    try std.testing.expect(boot_finished.load(.acquire));
+    try std.testing.expect(boot.startup_failed.load(.acquire));
+    try std.testing.expectEqual(@as(i32, -1), readyPort());
+    // The store writes the refusal once; the host does not re-word it.
+    try std.testing.expectEqual(@as(usize, 1), warnLines(sink.buffered()));
+    try std.testing.expect(std.mem.indexOf(u8, sink.buffered(), "using defaults") == null);
+}
+
+test "a settings file the store can read starts the host as today and records no failure" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_dir = try testDataDir(&tmp.sub_path);
+    defer std.testing.allocator.free(data_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = config_store.file_name, .data = GOOD_CONFIG });
+
+    const host = try startBootForTest(io, data_dir);
+    finishBoot(io, host);
+
+    try std.testing.expect(boot_finished.load(.acquire));
+    try std.testing.expect(!boot.startup_failed.load(.acquire));
+    try std.testing.expect(readyPort() > 0);
+}
+
+test "the host takes its settings from the file through the startup seam" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_dir = try testDataDir(&tmp.sub_path);
+    defer std.testing.allocator.free(data_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = config_store.file_name, .data = GOOD_CONFIG });
+
+    const cfg = resolveHostConfig(io, data_dir) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+
+    // A first start has no file and plays on the defaults rather than refusing.
+    var empty = std.testing.tmpDir(.{});
+    defer empty.cleanup();
+    const empty_dir = try testDataDir(&empty.sub_path);
+    defer std.testing.allocator.free(empty_dir);
+    const defaults = resolveHostConfig(io, empty_dir) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(config.Config.default().difficulty, defaults.difficulty);
+    try std.testing.expectEqual(config.Config.default().theme, defaults.theme);
+
+    try tmp.dir.writeFile(io, .{ .sub_path = config_store.file_name, .data = CORRUPT_CONFIG });
+    try std.testing.expect(resolveHostConfig(io, data_dir) == null);
 }
 
 test {
