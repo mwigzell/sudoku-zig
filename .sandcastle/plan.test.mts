@@ -241,6 +241,22 @@ test("an issue with no acceptance criteria heading has none to tick", () => {
   assert.deepEqual(readCriteria("## Steps\n\n- [ ] **Step one:** to do.\n"), []);
 });
 
+test("a criterion that wraps is one criterion, as the issue words it", () => {
+  const body = [
+    "## Acceptance criteria",
+    "",
+    "- [ ] A refused forget leaves the player's save file on disk and the pointer naming it, on",
+    "      native and on the shared host.",
+    "- [ ] The next criterion.",
+  ].join("\n");
+
+  assert.deepEqual(readCriteria(body).map((entry) => entry.text), [
+    "A refused forget leaves the player's save file on disk and the pointer naming it, on native and on the shared host.",
+    "The next criterion.",
+  ]);
+  assert.equal(readCriteria(body).length, 2, "the continuation is not a criterion of its own");
+});
+
 test("a criterion is ticked and unticked by position, leaving every other byte alone", () => {
   const ticked = tickCriterion(CRITERIA_BODY, 1);
   assert.equal(ticked, CRITERIA_BODY.replace("- [ ] No core file", "- [x] No core file"));

@@ -158,10 +158,18 @@ export function readCriteria(body: string): Criterion[] {
   if (section === null) return [];
 
   const criteria: Criterion[] = [];
-  for (const line of section) {
-    const checkbox = CHECKBOX_ITEM.exec(line);
+  for (let at = 0; at < section.length; at += 1) {
+    const checkbox = CHECKBOX_ITEM.exec(section[at]!);
     if (checkbox === null) continue;
-    criteria.push({ position: criteria.length + 1, text: checkbox[2].trim(), ticked: checkbox[1] !== " " });
+    // A criterion wraps like prose; its indented continuation lines are the same sentence.
+    const parts = [checkbox[2].trim()];
+    while (at + 1 < section.length) {
+      const next = section[at + 1]!;
+      if (next.trim().length === 0 || CHECKBOX_ITEM.test(next) || !/^\s+\S/u.test(next)) break;
+      parts.push(next.trim());
+      at += 1;
+    }
+    criteria.push({ position: criteria.length + 1, text: parts.join(" "), ticked: checkbox[1] !== " " });
   }
   return criteria;
 }
