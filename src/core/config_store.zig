@@ -14,7 +14,7 @@ pub const file_name = "config.json";
 const CONFIG_KEY = "config";
 const CURRENT_FILE_KEY = "current_file";
 
-/// Errors from load/save/path resolution (an invalid file maps to defaults on load).
+/// Errors from load/save/path resolution; a file that cannot be read is refused, not replaced by the defaults.
 pub const Error = error{
     OutOfMemory,
     InvalidJson,
@@ -36,9 +36,11 @@ fn noteReadFailure(what: []const u8, file: []const u8, err: anyerror) void {
     }
 }
 
-/// A config file that does not parse falls back to defaults; the reason is logged.
-fn noteParseFailure(err: anyerror) void {
-    log.warn("config file does not parse, using defaults: {s}", .{@errorName(err)});
+/// Config read failure: the system reason is logged here, the caller gets `error.System`.
+/// `line`: what was wrong with the file, so its one line names this defect and not another.
+fn readFailed(comptime line: []const u8, err: anyerror) error{System} {
+    log.warn(line ++ ": {s}", .{@errorName(err)});
+    return error.System;
 }
 
 /// Config write failure: the system reason is logged here, the caller gets `Error.System`.
@@ -118,68 +120,87 @@ fn writeFileJson(gpa: std.mem.Allocator, cfg: config.Config, current_file: ?[]co
     return aw.toOwnedSlice() catch return Error.OutOfMemory;
 }
 
-/// Owned absolute or data-dir-relative path to `config.json`.
+/// Owned absolute or data-dir-relative path to `config.json`; a path this cannot build is refused.
 fn configPath(gpa: std.mem.Allocator, data_dir: []const u8) Error![]u8 {
-    return path.resolveSavePath(gpa, data_dir, file_name) catch return Error.OutOfMemory;
+    return path.resolveSavePath(gpa, data_dir, file_name) catch |err| {
+        log.err("config file path in {s} could not be resolved: {s}", .{ data_dir, @errorName(err) });
+        return Error.System;
+    };
 }
 
-/// The file's top-level object, or null (logged) when the file does not parse into one.
-fn parseFile(gpa: std.mem.Allocator, bytes: []const u8) ?std.json.Parsed(std.json.Value) {
+/// The file's top-level object; bytes that do not parse into one are logged and refused.
+/// Returns: `error.System` only — the reason is on the log line `readFailed` wrote.
+fn parseFile(gpa: std.mem.Allocator, bytes: []const u8) error{System}!std.json.Parsed(std.json.Value) {
     const parsed = std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) catch |err| {
-        noteParseFailure(err);
-        return null;
+        return readFailed("config file does not parse", err);
     };
     if (parsed.value != .object) {
         parsed.deinit();
-        noteParseFailure(Error.InvalidJson);
-        return null;
+        return readFailed("config file is not a JSON object", Error.InvalidJson);
     }
     return parsed;
 }
 
-fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) config.Config {
-    const parsed = parseFile(gpa, bytes) orelse return config.Config.default();
+/// The Config the file's bytes hold; bytes that cannot be used are refused instead of becoming
+/// the defaults, so a bad file never looks like a first start.
+fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
+    const parsed = try parseFile(gpa, bytes);
     defer parsed.deinit();
     var cfg = config.Config.default();
     const stored = parsed.value.object.get(CONFIG_KEY) orelse return cfg;
-    if (stored != .object) {
-        noteParseFailure(Error.InvalidJson);
-        return cfg;
-    }
+    if (stored != .object) return readFailed("config member is not a JSON object", Error.InvalidJson);
     applyObject(&cfg, stored.object) catch |err| {
-        noteParseFailure(err);
-        return config.Config.default();
+        return readFailed("config holds a value the config table rejects", err);
     };
     return cfg;
 }
 
+/// The file's `current_file` pointer, or null when the file or the member is unusable.
+/// Lenient by design: the caller holds the Config already and repairs such a file on its next write,
+/// so a file this cannot parse is null here rather than a refusal. `parseFile` logged the reason.
 fn loadCurrentFileBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!?[]u8 {
-    const parsed = parseFile(gpa, bytes) orelse return null;
+    // `System` is the only way `parseFile` fails, and here it means "no pointer", not "refuse".
+    const parsed = parseFile(gpa, bytes) catch |err| switch (err) {
+        error.System => return null,
+    };
     defer parsed.deinit();
     const stored = parsed.value.object.get(CURRENT_FILE_KEY) orelse return null;
     if (stored != .string) return null;
     return gpa.dupe(u8, stored.string) catch return Error.OutOfMemory;
 }
 
-/// Read `file_name` from `dir`; missing or invalid file → `Config.default()`.
-pub fn loadOrDefaultInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir) Error!config.Config {
-    const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch |err| {
-        noteReadFailure(CONFIG_PART, file_name, err);
-        return config.Config.default();
+/// Read the config file's bytes for a caller that must have a Config.
+/// `null` when there is no file yet — a first start is normal; every other failure is logged and
+/// refused, because a file that exists and cannot be read is not a first start.
+fn readConfigBytes(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    dir: std.Io.Dir,
+    sub_path: []const u8,
+    file_label: []const u8,
+) Error!?[]u8 {
+    return dir.readFileAlloc(io, sub_path, gpa, std.Io.Limit.unlimited) catch |err| {
+        noteReadFailure(CONFIG_PART, file_label, err);
+        if (err == error.FileNotFound) return null;
+        return Error.System;
     };
+}
+
+/// Read `file_name` from `dir`: a missing file plays on `Config.default()`; one that exists and
+/// cannot be read is refused after its one log line.
+pub fn loadOrDefaultInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir) Error!config.Config {
+    const bytes = (try readConfigBytes(gpa, io, dir, file_name, file_name)) orelse return config.Config.default();
     defer gpa.free(bytes);
     return loadBytes(gpa, bytes);
 }
 
-/// Read the Config from `data_dir` on disk; missing or invalid → `Config.default()`.
+/// Read the Config from `data_dir` on disk: a missing file plays on `Config.default()`; one that
+/// exists and cannot be read is refused after its one log line.
 pub fn loadOrDefault(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) Error!config.Config {
     const file_path = try configPath(gpa, data_dir);
     defer gpa.free(file_path);
 
-    const bytes = std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, file_path, gpa, std.Io.Limit.unlimited) catch |err| {
-        noteReadFailure(CONFIG_PART, file_path, err);
-        return config.Config.default();
-    };
+    const bytes = (try readConfigBytes(gpa, io, std.Io.Dir.cwd(), file_path, file_path)) orelse return config.Config.default();
     defer gpa.free(bytes);
     return loadBytes(gpa, bytes);
 }
@@ -197,7 +218,8 @@ pub fn loadCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8)
     return loadCurrentFileBytes(gpa, bytes);
 }
 
-/// Updates only the current-file pointer, keeping the stored Config.
+/// Updates only the current-file pointer, keeping the stored Config; a stored Config the read refuses
+/// is refused too, not replaced by defaults.
 pub fn setCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, current_file: ?[]const u8) Error!void {
     const cfg = try loadOrDefault(gpa, io, data_dir);
 
@@ -219,6 +241,8 @@ pub fn setCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, 
 }
 
 /// Persist the Config into `dir`, keeping the stored current-file pointer.
+/// The pointer's read is lenient: the Config is already in hand, so a file this cannot read is
+/// repaired by the write below instead of refusing the save.
 pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: config.Config) Error!void {
     const bytes = dir.readFileAlloc(io, file_name, gpa, std.Io.Limit.unlimited) catch |err| blk: {
         noteReadFailure(CURRENT_FILE_PART, file_name, err);
@@ -234,6 +258,7 @@ pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: confi
 }
 
 /// Persist the Config under `data_dir`, keeping the stored current-file pointer.
+/// Lenient like `saveInDir`: an unreadable file is repaired by this write, not refused.
 pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: config.Config) Error!void {
     const file_path = try configPath(gpa, data_dir);
     defer gpa.free(file_path);
@@ -286,6 +311,44 @@ fn expectSavedFieldsEqual(a: config.Config, b: config.Config) !void {
     }
 }
 
+/// Owner may write the file but not read it: the read a caller makes fails, the write that follows succeeds.
+const WRITE_ONLY: std.Io.File.Permissions = @fromBackingInt(@intCast(0o222));
+
+/// Readable again, so a test reads back what a refused or repaired write left behind.
+const OWNER_READ_WRITE: std.Io.File.Permissions = @fromBackingInt(@intCast(0o644));
+
+/// The error name a read of `file_name` in `dir` produces, so a test names the reason without
+/// hard-coding a platform's error. A readable file means the test set itself up wrong.
+fn readFailureReason(dir: std.Io.Dir, io: std.Io) ![]const u8 {
+    const bytes = dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited) catch |err| return @errorName(err);
+    std.testing.allocator.free(bytes);
+    return error.TestUnexpectedResult;
+}
+
+/// Emitted log lines in `text`, so a test counts them without pinning wording it does not own.
+fn loggedLines(text: []const u8) usize {
+    var lines: usize = 0;
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line| {
+        if (line.len != 0) lines += 1;
+    }
+    return lines;
+}
+
+/// The rule a refused read must satisfy: exactly one line, and it carries the reason.
+fn expectOneLineCarrying(text: []const u8, reason: []const u8) !void {
+    try std.testing.expectEqual(@as(usize, 1), loggedLines(text));
+    try std.testing.expect(std.mem.indexOf(u8, text, reason) != null);
+}
+
+/// The error name `bytes` produce when parsed, so a test names the reason without hard-coding it.
+/// Bytes that do parse mean the test set itself up wrong.
+fn jsonFailureReason(bytes: []const u8) ![]const u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, std.testing.allocator, bytes, .{}) catch |err| return @errorName(err);
+    parsed.deinit();
+    return error.TestUnexpectedResult;
+}
+
 test "the file is {config, current_file}; every saved field round-trips; renderers are never written" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
@@ -321,7 +384,7 @@ test "a field this app does not know is ignored; the known fields and the curren
         \\"auto_restore":true,"auto_new":true,"auto_save":true,"show_marks":false,"test_probe":true,"from_a_newer_app":{"x":[1,2]}},
         \\"also_newer":1,"current_file":"/games/a.sud"}
     ;
-    try expectSavedFieldsEqual(nonDefaultConfig(), loadBytes(std.testing.allocator, newer));
+    try expectSavedFieldsEqual(nonDefaultConfig(), try loadBytes(std.testing.allocator, newer));
 
     const current = (try loadCurrentFileBytes(std.testing.allocator, newer)) orelse return error.TestFailed;
     defer std.testing.allocator.free(current);
@@ -332,7 +395,7 @@ test "a missing field keeps its default" {
     const older =
         \\{"config":{"theme":"dark","show_region":true},"current_file":null}
     ;
-    const cfg = loadBytes(std.testing.allocator, older);
+    const cfg = try loadBytes(std.testing.allocator, older);
     const defaults = config.Config.default();
     try std.testing.expectEqual(defaults.show_marks, cfg.show_marks);
     try std.testing.expectEqual(defaults.auto_save, cfg.auto_save);
@@ -340,18 +403,201 @@ test "a missing field keeps its default" {
     try std.testing.expect(cfg.show_region);
 }
 
-test "a bad value, a non-object config or unparsable bytes load the defaults" {
-    const defaults = config.Config.default();
-    try expectSavedFieldsEqual(defaults, loadBytes(std.testing.allocator, "{\"config\":{\"theme\":\"plaid\"}}"));
-    try expectSavedFieldsEqual(defaults, loadBytes(std.testing.allocator, "{\"config\":[1]}"));
-    try expectSavedFieldsEqual(defaults, loadBytes(std.testing.allocator, "{\"config\":"));
+test "unparsable bytes are refused, with one line carrying the reason" {
+    const bytes = "{\"config\":{";
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, loadBytes(std.testing.allocator, bytes));
+    try expectOneLineCarrying(sink.buffered(), try jsonFailureReason(bytes));
 }
 
-test "missing config file yields Config.default()" {
+test "a value the config table rejects is refused, with one line carrying the reason" {
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, loadBytes(std.testing.allocator, "{\"config\":{\"theme\":\"plaid\"}}"));
+    try expectOneLineCarrying(sink.buffered(), @errorName(Error.UnsupportedValue));
+}
+
+test "a config member that is not an object is refused, with one line carrying the reason" {
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, loadBytes(std.testing.allocator, "{\"config\":[1]}"));
+    try expectOneLineCarrying(sink.buffered(), @errorName(Error.InvalidJson));
+}
+
+test "a missing config file plays on the defaults and logs one info line" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
     const cfg = try loadOrDefaultInDir(std.testing.allocator, std.testing.io, tmp.dir);
     try expectSavedFieldsEqual(config.Config.default(), cfg);
+    try std.testing.expectEqualStrings(
+        "info [sudoku] expected: no config file at config.json yet, config not read (FileNotFound)\n",
+        sink.buffered(),
+    );
+}
+
+test "a config file it cannot read is refused, with one line carrying the reason" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "{\"config\":{}}" });
+    try tmp.dir.setFilePermissions(io, file_name, WRITE_ONLY, .{});
+
+    // The reason is the platform's, so the test reads the same unreadable file itself to name it.
+    const reason = try readFailureReason(tmp.dir, io);
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, loadOrDefaultInDir(std.testing.allocator, io, tmp.dir));
+    var want: [256]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&want, "warn [sudoku] config file config.json unreadable, config not read: {s}\n", .{reason}),
+        sink.buffered(),
+    );
+}
+
+test "a config file it can read wins over the defaults, and the read says nothing" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "{\"config\":{\"difficulty\":\"hard\",\"theme\":\"light\"}}" });
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    const cfg = try loadOrDefaultInDir(std.testing.allocator, io, tmp.dir);
+    // Both differ from the code defaults, so the file is the only source of these two values.
+    try std.testing.expectEqual(config.Difficulty.hard, cfg.difficulty);
+    try std.testing.expectEqual(config.ViewTheme.light, cfg.theme);
+    try std.testing.expectEqualStrings("", sink.buffered());
+}
+
+test "a config file that does not parse is refused, with one line carrying the reason" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const bytes = "{\"config\":{\"theme\":\"light\"},";
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = bytes });
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, loadOrDefaultInDir(std.testing.allocator, io, tmp.dir));
+    try expectOneLineCarrying(sink.buffered(), try jsonFailureReason(bytes));
+}
+
+test "a config file holding a value the table rejects is refused, with one line carrying the reason" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "{\"config\":{\"theme\":\"plaid\"}}" });
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, loadOrDefaultInDir(std.testing.allocator, io, tmp.dir));
+    try expectOneLineCarrying(sink.buffered(), @errorName(Error.UnsupportedValue));
+}
+
+test "setCurrentFile refuses a config file it cannot read instead of rewriting it" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const on_disk = "{\"config\":{\"theme\":\"light\"},\"current_file\":\"/games/old.sud\"}";
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = on_disk });
+    try tmp.dir.setFilePermissions(io, file_name, WRITE_ONLY, .{});
+
+    try std.testing.expectError(Error.System, setCurrentFile(std.testing.allocator, io, data_path, "/games/new.sud"));
+
+    // Refused, not repaired: the bytes are the ones this test put there, pointer included.
+    try tmp.dir.setFilePermissions(io, file_name, OWNER_READ_WRITE, .{});
+    const after = try tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited);
+    defer std.testing.allocator.free(after);
+    try std.testing.expectEqualStrings(on_disk, after);
+}
+
+test "save repairs a config file whose pointer it cannot read" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "{\"config\":{\"theme\":\"light\"},\"current_file\":\"/games/old.sud\"}" });
+    try tmp.dir.setFilePermissions(io, file_name, WRITE_ONLY, .{});
+
+    // An unreadable file here is no reason to refuse: the Config is already in hand, so save writes it.
+    try save(std.testing.allocator, io, data_path, nonDefaultConfig());
+
+    try tmp.dir.setFilePermissions(io, file_name, OWNER_READ_WRITE, .{});
+    const after = try tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited);
+    defer std.testing.allocator.free(after);
+    try expectSavedFieldsEqual(nonDefaultConfig(), try loadBytes(std.testing.allocator, after));
+    // The pointer it could not read is gone, so the file is usable again rather than left as it was.
+    try std.testing.expect(std.mem.indexOf(u8, after, "\"current_file\":null") != null);
+}
+
+test "save repairs a config file whose pointer it cannot parse" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "{\"config\":{\"theme\":\"light\"},\"current_file\":\"/games/old.sud\"" });
+
+    // A file that does not parse is one more file the pointer's reader cannot use: the Config is
+    // already in hand, so save repairs it rather than refusing.
+    try save(std.testing.allocator, io, data_path, nonDefaultConfig());
+
+    const after = try tmp.dir.readFileAlloc(io, file_name, std.testing.allocator, std.Io.Limit.unlimited);
+    defer std.testing.allocator.free(after);
+    try expectSavedFieldsEqual(nonDefaultConfig(), try loadBytes(std.testing.allocator, after));
+    // The pointer it could not read is gone, so the file is usable again rather than left as it was.
+    try std.testing.expect(std.mem.indexOf(u8, after, "\"current_file\":null") != null);
+}
+
+test "an unresolvable config path is refused, with one line carrying the reason" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try std.testing.expectError(Error.System, configPath(failing.allocator(), ".zig-cache/tmp"));
+    try std.testing.expectEqualStrings(
+        "err [sudoku] config file path in .zig-cache/tmp could not be resolved: OutOfMemory\n",
+        sink.buffered(),
+    );
 }
 
 test "applyConfigJson patches only the fields it carries; a bad value changes nothing" {

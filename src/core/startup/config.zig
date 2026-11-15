@@ -120,6 +120,18 @@ fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
     try std.testing.expectEqual(startup.show_marks, engine.show_marks);
 }
 
+/// Startup's only failure: the settings read or write was refused. The store logs the reason on its
+/// own line, so the entry passes this on to `main` without a second line of its own.
+pub const Error = error{System};
+
+/// A settings read or write the store refused: it logged the reason and returned `System`, so the
+/// seam passes that on as its one error. Any other member `save` still produces is an allocation
+/// failure with no line behind it, so it is logged here instead — once, never twice.
+fn refused(err: config_store.Error) Error {
+    if (err != Error.System) log.err("startup settings could not be resolved: {s}", .{@errorName(err)});
+    return Error.System;
+}
+
 /// Load player prefs from disk, apply the host's command-line overrides, persist player prefs only.
 /// `host_dir`: the platform data directory the host resolved, or its reason for having none.
 /// `overrides`: flags the host parsed from argv; absent flags keep the values read from disk.
@@ -128,20 +140,20 @@ pub fn resolveStartupConfig(
     io: std.Io,
     host_dir: DataDir,
     overrides: CliOverrides,
-) config_store.Error!config.Config {
+) Error!config.Config {
     const dir = switch (host_dir) {
         .resolved => |dir| dir,
         .unavailable => |none| {
             // No durable settings location: read the fall-back directory, write nothing back, and
             // name the platform's reason once — this fall-back is startup's only log line.
             log.warn("data dir unavailable, reading settings and saving files in the working directory: {s}", .{none.reason});
-            return overrides.applyTo(try config_store.loadOrDefault(gpa, io, none.settings_dir));
+            return overrides.applyTo(config_store.loadOrDefault(gpa, io, none.settings_dir) catch |err| return refused(err));
         },
     };
     config_store.ensureConfigDir(io, dir);
 
-    const cfg = overrides.applyTo(try config_store.loadOrDefault(gpa, io, dir));
-    try config_store.save(gpa, io, dir, cfg);
+    const cfg = overrides.applyTo(config_store.loadOrDefault(gpa, io, dir) catch |err| return refused(err));
+    config_store.save(gpa, io, dir, cfg) catch |err| return refused(err);
     return cfg;
 }
 

@@ -310,7 +310,7 @@ Fn-pointer vtable for file read/write/resolve. **Owned by native `Storage`** (he
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
 **Config** (`config.zig`):
-The player's configuration: difficulty, log level, theme, show region, show pencil marks, warn solvability, auto restore, auto new, auto save, plus a `renderers` section (CLI per run, native only, never saved). Stored in `config.json` as `{"config": …, "current_file": …}`. Startup: defaults → `config.json` → CLI overrides → save. Held beside the engine, like `FileSession`; changed only by `set_config`. Not puzzle cells or undo history; not in `Legend`, `State`, or SUD0.
+The player's configuration: difficulty, log level, theme, show region, show pencil marks, warn solvability, auto restore, auto new, auto save, plus a `renderers` section (CLI per run, native only, never saved). Stored in `config.json` as `{"config": …, "current_file": …}`. Startup: `config.json` → CLI overrides → save, on `Config.default()` only when there is no file yet (one info line); a file that exists but cannot be read, does not parse, or holds a value the config table rejects is refused with `Error.System` and one log line naming the reason (`config_store`), never replaced by the defaults. Held beside the engine, like `FileSession`; changed only by `set_config`. Not puzzle cells or undo history; not in `Legend`, `State`, or SUD0.
 _Avoid_: "settings" or "prefs" for Config or its fields; folding Config into Legend or save files; JS boot defaults that override host-resolved config
 
 **Settings**:
