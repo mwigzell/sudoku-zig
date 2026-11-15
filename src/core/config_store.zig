@@ -36,10 +36,18 @@ fn noteReadFailure(what: []const u8, file: []const u8, err: anyerror) void {
     }
 }
 
-/// Config read failure: the system reason is logged here, the caller gets `error.System`.
-/// `line`: what was wrong with the file, so its one line names this defect and not another.
-fn readFailed(comptime line: []const u8, err: anyerror) error{System} {
-    log.warn(line ++ ": {s}", .{@errorName(err)});
+/// What a file no read can use means to the call that asked: a Config read refuses it, a save
+/// replaces it, and a pointer-only read leaves it alone.
+const Unusable = enum { refuse, repair, ignore };
+
+/// A file that cannot be used: `line` names the defect, `unusable` says what happens next, and
+/// the caller gets `error.System` carrying this line as its reason.
+fn noteUnusable(comptime line: []const u8, err: anyerror, unusable: Unusable) error{System} {
+    switch (unusable) {
+        .refuse => log.warn(line ++ ": {s}", .{@errorName(err)}),
+        .repair => log.warn(line ++ ", repairing: {s}", .{@errorName(err)}),
+        .ignore => log.warn(line ++ ", current file not read: {s}", .{@errorName(err)}),
+    }
     return error.System;
 }
 
@@ -128,15 +136,16 @@ fn configPath(gpa: std.mem.Allocator, data_dir: []const u8) Error![]u8 {
     };
 }
 
-/// The file's top-level object; bytes that do not parse into one are logged and refused.
-/// Returns: `error.System` only — the reason is on the log line `readFailed` wrote.
-fn parseFile(gpa: std.mem.Allocator, bytes: []const u8) error{System}!std.json.Parsed(std.json.Value) {
+/// The file's top-level object; bytes that do not parse into one are logged and become
+/// `error.System`. `unusable` decides how that one line reads in this caller's lane.
+/// Returns: `error.System` only — the reason is on the log line `noteUnusable` wrote.
+fn parseFile(gpa: std.mem.Allocator, bytes: []const u8, unusable: Unusable) error{System}!std.json.Parsed(std.json.Value) {
     const parsed = std.json.parseFromSlice(std.json.Value, gpa, bytes, .{}) catch |err| {
-        return readFailed("config file does not parse", err);
+        return noteUnusable("config file does not parse", err, unusable);
     };
     if (parsed.value != .object) {
         parsed.deinit();
-        return readFailed("config file is not a JSON object", Error.InvalidJson);
+        return noteUnusable("config file is not a JSON object", Error.InvalidJson, unusable);
     }
     return parsed;
 }
@@ -144,23 +153,24 @@ fn parseFile(gpa: std.mem.Allocator, bytes: []const u8) error{System}!std.json.P
 /// The Config the file's bytes hold; bytes that cannot be used are refused instead of becoming
 /// the defaults, so a bad file never looks like a first start.
 fn loadBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!config.Config {
-    const parsed = try parseFile(gpa, bytes);
+    const parsed = try parseFile(gpa, bytes, .refuse);
     defer parsed.deinit();
     var cfg = config.Config.default();
     const stored = parsed.value.object.get(CONFIG_KEY) orelse return cfg;
-    if (stored != .object) return readFailed("config member is not a JSON object", Error.InvalidJson);
+    if (stored != .object) return noteUnusable("config member is not a JSON object", Error.InvalidJson, .refuse);
     applyObject(&cfg, stored.object) catch |err| {
-        return readFailed("config holds a value the config table rejects", err);
+        return noteUnusable("config holds a value the config table rejects", err, .refuse);
     };
     return cfg;
 }
 
 /// The file's `current_file` pointer, or null when the file or the member is unusable.
 /// Lenient by design: the caller holds the Config already and repairs such a file on its next write,
-/// so a file this cannot parse is null here rather than a refusal. `parseFile` logged the reason.
-fn loadCurrentFileBytes(gpa: std.mem.Allocator, bytes: []const u8) Error!?[]u8 {
+/// so a file this cannot parse is null here rather than a refusal. `unusable` words the one line
+/// for this lane: a save repairs the file, a pointer-only read leaves it.
+fn loadCurrentFileBytes(gpa: std.mem.Allocator, bytes: []const u8, unusable: Unusable) Error!?[]u8 {
     // `System` is the only way `parseFile` fails, and here it means "no pointer", not "refuse".
-    const parsed = parseFile(gpa, bytes) catch |err| switch (err) {
+    const parsed = parseFile(gpa, bytes, unusable) catch |err| switch (err) {
         error.System => return null,
     };
     defer parsed.deinit();
@@ -215,7 +225,7 @@ pub fn loadCurrentFile(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8)
         return null;
     };
     defer gpa.free(bytes);
-    return loadCurrentFileBytes(gpa, bytes);
+    return loadCurrentFileBytes(gpa, bytes, .ignore);
 }
 
 /// Updates only the current-file pointer, keeping the stored Config; a stored Config the read refuses
@@ -249,7 +259,7 @@ pub fn saveInDir(gpa: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, cfg: confi
         break :blk null;
     };
     defer if (bytes) |b| gpa.free(b);
-    const current_file = if (bytes) |b| try loadCurrentFileBytes(gpa, b) else null;
+    const current_file = if (bytes) |b| try loadCurrentFileBytes(gpa, b, .repair) else null;
     defer if (current_file) |p| gpa.free(p);
 
     const text = try writeFileJson(gpa, cfg, current_file);
@@ -272,7 +282,7 @@ pub fn save(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8, cfg: confi
         break :blk null;
     };
     defer if (existing) |b| gpa.free(b);
-    const current_file = if (existing) |b| try loadCurrentFileBytes(gpa, b) else null;
+    const current_file = if (existing) |b| try loadCurrentFileBytes(gpa, b, .repair) else null;
     defer if (current_file) |p| gpa.free(p);
 
     const text = try writeFileJson(gpa, cfg, current_file);
@@ -387,7 +397,7 @@ test "a field this app does not know is ignored; the known fields and the curren
     ;
     try expectSavedFieldsEqual(nonDefaultConfig(), try loadBytes(std.testing.allocator, newer));
 
-    const current = (try loadCurrentFileBytes(std.testing.allocator, newer)) orelse return error.TestFailed;
+    const current = (try loadCurrentFileBytes(std.testing.allocator, newer, .ignore)) orelse return error.TestFailed;
     defer std.testing.allocator.free(current);
     try std.testing.expectEqualStrings("/games/a.sud", current);
 }
@@ -558,6 +568,31 @@ test "save repairs a config file whose pointer it cannot parse" {
     try expectSavedFieldsEqual(nonDefaultConfig(), try loadBytes(std.testing.allocator, after));
     // The pointer it could not read is gone, so the file is usable again rather than left as it was.
     try std.testing.expect(std.mem.indexOf(u8, after, "\"current_file\":null") != null);
+}
+
+test "save's repair of a file it cannot parse logs that it is repairing, not refusing" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    const bytes = "{\"config\":{\"theme\":\"light\"},\"current_file\":\"/games/old.sud\"";
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = bytes });
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try save(std.testing.allocator, io, data_path, nonDefaultConfig());
+
+    // The store is rewriting this file, so its one line says repair rather than refusal.
+    var want: [256]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&want, "warn [sudoku] config file does not parse, repairing: {s}\n", .{try jsonFailureReason(bytes)}),
+        sink.buffered(),
+    );
 }
 
 test "an unresolvable config path is refused, with one line carrying the reason" {
