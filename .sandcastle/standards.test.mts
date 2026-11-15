@@ -55,3 +55,25 @@ test("a report against a standards section that has gone is a stop, not an empty
 
   assert.throws(() => readRules(withoutSection), /no "## Coding standards" section/u);
 });
+
+test("a title that continues past the bold is answered by the words AGENTS.md gives it", () => {
+  const markdown = STANDARDS.replace(
+    "3. **No magic numbers.** Name the constant.",
+    "3. **No magic numbers.** Name the constant.\n8. **Clean** code style.",
+  );
+  const rules = readRules(markdown);
+  assert.deepEqual(rules[3], { position: 8, title: "Clean code style" });
+
+  const checked = validateReport(
+    {
+      rules: [
+        { rule: "Document public surfaces.", verdict: "PASS", evidence: "src/sudoku.zig:12" },
+        { rule: "DRY", verdict: "PASS", evidence: "src/host/host.zig:40" },
+        { rule: "No magic numbers.", verdict: "PASS", evidence: "src/board/board.zig:7" },
+        { rule: "Clean code style", verdict: "PASS", evidence: "src/board/cell.zig:9" },
+      ],
+    },
+    rules,
+  );
+  assert.ok(!("problem" in checked), "the reviewer's wording is the standard's own");
+});

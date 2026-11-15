@@ -33,8 +33,11 @@ export type StandardsReport = {
 
 const HEADING = /^##\s+Coding standards\s*$/iu;
 const ANY_HEADING = /^##\s+\S/u;
-// A rule is a numbered item at the left margin whose text opens with a bold title.
-const RULE = /^(\d+)\.\s+\*\*(.+?)\*\*/u;
+// A rule is a numbered item at the left margin whose text opens with a bold title. The bold may be
+// only the first words (`**Clean** code style.`), so the title is what follows it too.
+const RULE = /^(\d+)\.\s+\*\*(.+?)\*\*(.*)$/u;
+// Plain words after the bold belong to the title; a separator or a capital starts the description.
+const TITLE_CONTINUATION = /^[a-z][^.:;,!?—–(]*/u;
 
 /**
  * The coding standards in `AGENTS.md`, in order.
@@ -52,10 +55,24 @@ export function readRules(markdown: string): Rule[] {
   for (const line of lines.slice(start + 1)) {
     if (ANY_HEADING.test(line)) break;
     const match = RULE.exec(line);
-    if (match) rules.push({ position: Number(match[1]), title: match[2]!.trim() });
+    if (match) rules.push({ position: Number(match[1]), title: ruleTitle(match[2]!.trim(), match[3] ?? "") });
   }
   if (rules.length === 0) throw new Error('the "## Coding standards" section in AGENTS.md has no numbered rules');
+
   return rules;
+}
+
+/**
+ * A rule's title: its bold text, plus the plain words that continue it.
+ *
+ * `**Clean** code style.` names the standard "Clean code style", while `**DRY** — Don't repeat
+ * yourself.` and `**Document public surfaces.** Every function…` stop at the bold, so a report
+ * may use either wording without inventing a rule.
+ */
+function ruleTitle(bold: string, rest: string): string {
+  if (/[.:;,!?]$/u.test(bold)) return bold;
+  const continuation = TITLE_CONTINUATION.exec(rest.trim());
+  return continuation ? `${bold} ${continuation[0].trim()}` : bold;
 }
 
 /** Normalise a title for matching, so punctuation or a stray double space cannot split a match. */
