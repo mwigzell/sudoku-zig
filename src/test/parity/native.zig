@@ -110,6 +110,8 @@ const Expect = struct {
     errors: ?usize = null,
     solved_after_startup: ?bool = null,
     written: ?[]const []const u8 = null,
+    /// What the scenario's forget step answered: `forgotten`, `refused:<reason>`, or `failed`.
+    forget: ?[]const u8 = null,
     settings: ?Settings = null,
     legend: ?Legend = null,
     probes: []const Probe = &.{},
@@ -175,6 +177,8 @@ const Answer = struct {
     read: ?[]const u8 = null,
     generated: ?[]const u8 = null,
     outcome: ?[]const u8 = null,
+    /// What a forget did: `forgotten`, `refused:<reason>`, or `failed`.
+    forgot: ?[]const u8 = null,
     name: ?[]const u8 = null,
 };
 
@@ -334,8 +338,12 @@ const Recorder = struct {
             .read => |r| .{ .read = @tagName(r) },
             .generated => |g| .{ .generated = @tagName(g) },
             .persisted, .copied => |o| .{ .outcome = @tagName(o) },
-            // A forget's outcome is a step answer; the transcript compares the step that follows it.
-            .forgot => null,
+            // What a forget did, so a front end that forgets differently fails parity here.
+            .forgot => |forgot| .{ .forgot = switch (forgot) {
+                .forgotten => "forgotten",
+                .refused => |reason| try std.fmt.allocPrint(self.arena, "refused:{s}", .{@tagName(reason)}),
+                .failed => "failed",
+            } },
         };
     }
 };
@@ -564,6 +572,19 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         try std.testing.expectEqual(want.len, written.len);
         for (want, written) |w, got| try std.testing.expectEqualStrings(w, got);
     }
+    // The forget's answer is the scenario's expectation too, so a front end that records the step
+    // but not what it did fails here and not only in the transcript comparison.
+    if (expect.forget) |want| {
+        const kind = @tagName(@as(std.meta.Tag(flow_mod.Step), .forget_current_file));
+        var answered: usize = 0;
+        for (events) |e| {
+            if (!std.mem.eql(u8, e.step, kind)) continue;
+            answered += 1;
+            const answer = e.answer orelse return error.ForgetAnswerNotRecorded;
+            try std.testing.expectEqualStrings(want, answer.forgot orelse return error.ForgetAnswerNotRecorded);
+        }
+        try std.testing.expectEqual(@as(usize, 1), answered);
+    }
     if (expect.settings) |want| {
         const saved = try config_store.loadOrDefault(std.testing.allocator, io, data_dir);
         if (want.auto_save) |on| try std.testing.expectEqual(on, saved.auto_save);
@@ -654,4 +675,17 @@ test "parity scenarios: native shell meets every shared scenario and writes its 
         try transcripts.append(arena, transcript);
     }
     try writeTranscripts(io, arena, transcripts.items);
+}
+
+test "parity record: a forget's answer is what the step did, not the step it was asked" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    var recorder = Recorder{ .arena = arena_state.allocator() };
+
+    const forgotten = try recorder.describeAnswer(.{ .forgot = .forgotten });
+    try std.testing.expectEqualStrings("forgotten", forgotten.?.forgot.?);
+    const refused = try recorder.describeAnswer(.{ .forgot = .{ .refused = .settings_unwritable } });
+    try std.testing.expectEqualStrings("refused:settings_unwritable", refused.?.forgot.?);
+    const failed = try recorder.describeAnswer(.{ .forgot = .{ .failed = "connection dropped" } });
+    try std.testing.expectEqualStrings("failed", failed.?.forgot.?);
 }

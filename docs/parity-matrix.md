@@ -39,6 +39,7 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `errors` | Prompts with one button. |
 | `solved_after_startup` | Board solved once the startup flow finished. |
 | `written` | Player files written, in order, by bare name. |
+| `forget` | What the one forget step answered: `forgotten`, `refused:<reason>`, or `failed`. |
 | `settings` | Stored settings fields after the steps. |
 | `legend` | Whether Undo / Redo are offered after the steps. |
 | `probes` | Cell value and given flag after the steps. |
@@ -97,6 +98,7 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `startup_new_game` | With Auto New on and nothing to restore, startup generates a new game at the configured difficulty. | native, web, android | — |
 | `startup_generation_failed` | When startup's generation fails, core shows its error and the empty board. | web, android | native: Terminal generation always produces a puzzle and has no cancel. |
 | `startup_restore_failed_delete` | A current file that is no saved game: startup shows the empty board, asks, and deletes it on Delete. | native, web, android | — |
+| `startup_restore_failed_delete_settings_refused` | A current file that is no saved game, with a settings folder the store cannot use: Delete is refused before the save is touched, so startup ends on core's sentence. | native, web, android | — |
 | `startup_restore_failed_keep` | A current file that is no saved game: startup asks, and Keep forgets it without deleting. | native, web, android | — |
 | `startup_restore_missing` | A current file that is gone: startup reports the failed restore and asks whether to delete it. | native, web, android | — |
 | `new_generated` | New generates a game at the chosen difficulty and replaces the board. | native, web, android | — |

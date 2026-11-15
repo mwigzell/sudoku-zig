@@ -56,9 +56,14 @@ const CONFIG_BODY = "./config.json";
 const FILENAME_HEADER = "X-Sudoku-Filename";
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
+/** Response header naming which refusal stopped a pointer write, as the served host answers it. */
+const REFUSAL_HEADER = "X-Sudoku-Refusal";
 
 /** Native Paste takes its line with the command, so core issues no `paste_puzzle` step there. */
 const NOT_ON_NATIVE_STEPS = new Set([stepRunner.STEP_PASTE_PUZZLE]);
+
+/** Response headers naming the refusal kind, the way the host's one answer does. */
+const refusalHeaders = (reason) => ({ get: (name) => (name === REFUSAL_HEADER ? reason : null) });
 
 const baseName = (path) => (typeof path === "string" ? path.split("/").pop() : path);
 
@@ -126,6 +131,10 @@ function describeAnswer(input) {
     case "persisted":
     case "copied":
       return { outcome: input.ok ? "ok" : "failed" };
+    case "forgot":
+      // What the forget did, so a front end that forgets differently fails parity here.
+      if (input.ok) return { forgot: "forgotten" };
+      return { forgot: input.reason ? `refused:${input.reason}` : "failed" };
     default:
       return null;
   }
@@ -245,6 +254,10 @@ async function makeWorld(scenario) {
       return world.writeFile(name, bytes).ok ? { ok: true, status: 204 } : { ok: false, status: 500 };
     }
     if (url === CURRENT_FILE && init.method === "DELETE") {
+      // The served host refuses a pointer write its settings store will not take, before the file
+      // is touched, and names the cause so core words the outcome. A folder the store cannot use at
+      // all is the cause native's own staged settings failure produces.
+      if (world.settingsFail) return { ok: false, status: 500, headers: refusalHeaders("settings_unreadable") };
       if (headers[DELETE_FILE_HEADER] === "true") world.files.delete(world.current);
       world.current = null;
       return { ok: true, status: 204 };
@@ -645,6 +658,10 @@ function checkExpect(expect, events, world, run) {
   if (expect.questions !== undefined) assert.equal(prompts.filter((p) => p.buttons.length > 1).length, expect.questions, "questions asked");
   if (expect.errors !== undefined) assert.equal(prompts.filter((p) => p.buttons.length === 1).length, expect.errors, "errors shown");
   if (expect.written) assert.deepEqual(world.written, expect.written, "files written");
+  if (expect.forget !== undefined) {
+    const answers = events.filter((e) => e.step === stepRunner.STEP_FORGET_CURRENT_FILE).map((e) => e.answer?.forgot ?? null);
+    assert.deepEqual(answers, [expect.forget], "what the forget answered");
+  }
   for (const [key, want] of Object.entries(expect.settings ?? {})) assert.equal(world.settings?.[key], want, `stored ${key}`);
   const legend = run.game.getLegend();
   if (expect.legend?.undo !== undefined) assert.equal(legend.undo, expect.legend.undo, "legend undo");
