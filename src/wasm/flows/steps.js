@@ -50,6 +50,16 @@ export function keepaliveFetch(fetchFn) {
 }
 
 /**
+ * Show the host's own refusal sentence in the status line, when it wrote one: the words are core's,
+ * passed through the host, so the page adds none of its own.
+ * @param {StepContext} ctx
+ * @param {{ hostSaid?: string }} refused
+ */
+function showRefusal(ctx, refused) {
+  if (refused.hostSaid && ctx.statusEl) statusBar.showStatusText(ctx.statusEl, refused.hostSaid);
+}
+
+/**
  * Fetch the saved game, let `writeUserFile` (when given) write the player's file, then keep the
  * host copy; the written file becomes the session's file. Without `writeUserFile` the host copy
  * is the player's file.
@@ -69,7 +79,12 @@ export async function writeGame(ctx, writeUserFile, name, { restoreCopy, fetchFn
     if (typeof saved.name === "string" && saved.name.length > 0) written = saved.name;
   }
   const hosted = await hostApi.persistCurrentFileBytes(serialized.bytes, fetchFn, written, { restoreCopy });
-  if (!hosted.ok) return hosted;
+  if (!hosted.ok) {
+    // A refused write answers in words for the player (core's, passed through by the host): show them
+    // in the status line; the technical reason still travels to core for its log.
+    showRefusal(ctx, hosted);
+    return { ok: false, error: hosted.error };
+  }
   ctx.session.boundFilename = written;
   sessionMod.syncCurrentFileLabels(ctx.session);
   return { ok: true, name: written };
@@ -107,7 +122,11 @@ export function sharedSteps(ctx) {
       });
     },
     generateGame: (difficulty) => generate.generateWithModal(game, generatingModal, { difficulty, genWorker }),
-    forgetCurrentFile: (forget) => hostApi.forgetCurrentFile(forget.delete, fetchFn),
+    forgetCurrentFile: async (forget) => {
+      const forgot = await hostApi.forgetCurrentFile(forget.delete, fetchFn);
+      if (!forgot.ok) showRefusal(ctx, forgot);
+      return forgot;
+    },
     persistConfig: (config) => hostApi.persistConfig(config, fetchFn),
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);

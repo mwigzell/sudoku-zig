@@ -38,12 +38,18 @@ export async function restore(path, fetchFn = globalThis.fetch) {
   return { ok: true, bytes: new Uint8Array(await res.arrayBuffer()) };
 }
 
-/** Stop the host restoring its current file at startup; `deleteFile` removes the file too. */
+/**
+ * Stop the host restoring its current file at startup; `deleteFile` removes the file too.
+ * A refused forget answers with the host's own sentence in the body, returned as `hostSaid`; the
+ * technical status stays in `error`, which is what core's log takes.
+ * @returns {Promise<import("./types").PointerWriteResult>}
+ */
 export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
   const headers = {};
   if (deleteFile === true) headers[DELETE_FILE_HEADER] = "true";
   const res = await fetchFn(CURRENT_FILE_PATH, { method: "DELETE", headers });
-  if (!res.ok) throw new Error(`current-file forget failed: ${res.status}`);
+  if (!res.ok) return { ok: false, error: `current-file forget failed: ${res.status}`, hostSaid: await refusalText(res) };
+  return { ok: true };
 }
 
 /**
@@ -61,7 +67,22 @@ export async function persistConfig(config, fetchFn) {
   return { ok: true };
 }
 
-/** Write SUD0 bytes as the host copy (`/current-file`); `restoreCopy` keeps it out of the visible folder. */
+/**
+ * The host's own words in a refusal body, trimmed; empty when it wrote none (or the fake has no body).
+ * @param {{ text?: () => Promise<string> }} res
+ * @returns {Promise<string>}
+ */
+async function refusalText(res) {
+  if (typeof res.text !== "function") return "";
+  return (await res.text()).trim();
+}
+
+/**
+ * Write SUD0 bytes as the host copy (`/current-file`); `restoreCopy` keeps it out of the visible folder.
+ * A refused write answers with the host's own sentence in the body, returned as `hostSaid`; the
+ * technical status stays in `error`, which is what core's log takes.
+ * @returns {Promise<import("./types").PointerWriteResult>}
+ */
 export async function persistCurrentFileBytes(
   bytes,
   fetchFn = globalThis.fetch,
@@ -76,7 +97,7 @@ export async function persistCurrentFileBytes(
     headers,
     body: bytes,
   });
-  if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}` };
+  if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}`, hostSaid: await refusalText(res) };
   return { ok: true };
 }
 

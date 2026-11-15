@@ -49,3 +49,38 @@ import { hostFetch } from "./test_support.mjs";
     /current-file check failed: 500/,
   );
 }
+
+// A refused write hands the page the host's own words from the body, trimmed; the status stays the reason.
+{
+  const refused = await hostApi.persistCurrentFileBytes(
+    new Uint8Array([5]),
+    async () => ({ ok: false, status: 500, text: async () => "  refusal line from the host\n" }),
+    "refused.sud",
+  );
+  assert.deepEqual(refused, { ok: false, error: "current-file persist failed: 500", hostSaid: "refusal line from the host" });
+}
+
+// A refusal with no body (a host fault, or a fake answering bare) adds no words for the player.
+{
+  const refused = await hostApi.persistCurrentFileBytes(new Uint8Array([6]), async () => ({ ok: false, status: 500 }), "refused.sud");
+  assert.deepEqual(refused, { ok: false, error: "current-file persist failed: 500", hostSaid: "" });
+}
+
+// A refused forget keeps the host's own words from the body, as a refused write does; a forget the host
+// accepts reports success and sends the delete header when asked.
+{
+  const refused = await hostApi.forgetCurrentFile(true, async () => ({ ok: false, status: 500, text: async () => "  refusal line from the host\n" }));
+  assert.deepEqual(refused, { ok: false, error: "current-file forget failed: 500", hostSaid: "refusal line from the host" });
+}
+
+{
+  const calls = [];
+  const forgot = await hostApi.forgetCurrentFile(true, async (url, init) => {
+    calls.push({ url, init });
+    return { ok: true, status: 204 };
+  });
+  assert.deepEqual(forgot, { ok: true });
+  assert.equal(calls[0].url, "./current-file");
+  assert.equal(calls[0].init.method, "DELETE");
+  assert.equal(calls[0].init.headers["X-Sudoku-Delete-File"], "true");
+}

@@ -276,7 +276,12 @@ async function stepThrough(game, first, handlers) {
       }
       case STEP_FORGET_CURRENT_FILE: {
         const forget = { path: step.path, delete: step.delete === true };
-        await settle(() => handlers.forgetCurrentFile(forget));
+        const forgot = await settle(() => handlers.forgetCurrentFile(forget));
+        // Core has no failed answer for a forget, so a forget the host refused *in words* ends the flow
+        // with core's own failure step rather than acking one that never happened. A failure with no
+        // sentence (a bare 500, a dropped connection) is not a refusal the player can act on, so it
+        // keeps the earlier behaviour: the ack goes through and the status line stays core's.
+        if (forgot?.ok === false && forgot.hostSaid) return failFlow(game, handlers, forgot.error ?? NO_REASON);
         step = game.flowNext({ input: INPUT_ACK });
         break;
       }

@@ -468,4 +468,54 @@ function easyDialog() {
   assert.equal(statusEl.textContent, fillText(coreText.SAVED_TO_FMT, "bound.sud"));
 }
 
+// A save the host refuses shows what the host said: the refusal body's sentence in the page's status
+// line. The host fills that body with core's words; the page copies them and words nothing itself.
+{
+  const game = await loadGame();
+  openAs(game, "refused.sud");
+  const fileHandle = { name: "refused.sud", async createWritable() { return { async write() {}, async close() {} }; } };
+  const session = { legend: { save: true }, state: { cells: [] }, fileHandle, boundFilename: "refused.sud" };
+  const hostSaid = "refusal line from the host";
+  const fetchFn = async (url) => {
+    if (url === "./current-file") return { ok: false, status: 500, text: async () => hostSaid };
+    return { ok: true, status: 204, json: async () => ({}) };
+  };
+  const prompts = promptDialogStub();
+  const statusEl = makeStatus();
+  const controls = { save: makeBtn() };
+  wireFile(controls, game, session, {
+    statusEl,
+    fetchFn,
+    promptDialog: prompts,
+    pick: async () => assert.fail("no picker for a bound file"),
+    download: () => assert.fail("no download for a bound file"),
+  });
+  await controls.save.click();
+  assert.equal(statusEl.textContent, hostSaid, "the status line shows what the host said");
+  assert.deepEqual(prompts.shown.map((step) => step.text), [coreText.SAVE_FAILED_MSG], "core still words the dialog");
+}
+
+// A save the host accepts adds nothing to the status line: core's saved text, and the body a 2xx
+// answer carries is not the page's to show.
+{
+  const game = await loadGame();
+  openAs(game, "accepted.sud");
+  const fileHandle = { name: "accepted.sud", async createWritable() { return { async write() {}, async close() {} }; } };
+  const session = { legend: { save: true }, state: { cells: [] }, fileHandle, boundFilename: "accepted.sud" };
+  const fetchFn = async () => ({ ok: true, status: 204, text: async () => "refusal line from the host" });
+  const prompts = promptDialogStub();
+  const statusEl = makeStatus();
+  const controls = { save: makeBtn() };
+  wireFile(controls, game, session, {
+    statusEl,
+    fetchFn,
+    promptDialog: prompts,
+    pick: async () => assert.fail("no picker for a bound file"),
+    download: () => assert.fail("no download for a bound file"),
+  });
+  await controls.save.click();
+  assert.equal(statusEl.textContent, fillText(coreText.SAVED_TO_FMT, "accepted.sud"), "a successful save shows core's saved text alone");
+  assert.deepEqual(prompts.shown, [], "a successful save asks nothing");
+}
+
 console.log("file_menu.test.mjs OK");
