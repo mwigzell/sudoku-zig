@@ -316,8 +316,9 @@ for (const key of ["config", "default_save_filename", "startup_save_path"]) {
   assert.deepEqual(healthy.errors, []);
 }
 
-// A forget that fails without a refusal kind — a bare 500 or a dropped connection — is not a refusal the
-// host worded, so the flow carries on as before: acked, nothing shown.
+// A forget that fails without a refusal kind — a bare 500 or a dropped connection — is not a settings
+// refusal, so no repair sentence is true of it: core ends the flow on its generic failure, not on a
+// repair the player cannot carry out.
 for (const [what, options] of [
   ["a bare 500", { forgetRefused: "" }],
   ["a dropped connection", { forgetDropped: true }],
@@ -328,7 +329,10 @@ for (const [what, options] of [
     answers: [true],
     ...options,
   });
-  assert.equal(run.outcome.kind, "done", `a forget the host did not word still finishes (${what})`);
-  assert.equal(run.statusEl.textContent, WELCOME_STATUS, `nothing is put in the status line for ${what}`);
+  assert.equal(run.outcome.kind, "show_status", `core ends the flow on its own sentence (${what})`);
+  assert.equal(run.outcome.text, coreText.FORGET_FAILED_MSG, `core words the failure (${what})`);
+  assert.equal(run.statusEl.textContent, coreText.FORGET_FAILED_MSG, `the status line shows the failure (${what})`);
   assert.deepEqual(run.errors, [], `no failure is reported for ${what}`);
+  assert.notEqual(run.outcome.text, coreText.SETTINGS_REFUSED_MSG, `no repair sentence for ${what}`);
+  assert.notEqual(run.outcome.text, coreText.SETTINGS_WRITE_FAILED_MSG, `no repair sentence for ${what}`);
 }

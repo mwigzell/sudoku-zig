@@ -522,6 +522,7 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "SETTINGS_WRITE_FAILED_MSG", .text = flow_forget.Refusal.settings_unwritable.sentence() },
         .{ .key = "WRITTEN_SETTINGS_REFUSED_MSG", .text = flow.save.WRITTEN_SETTINGS_REFUSED_MSG },
         .{ .key = "WRITTEN_SETTINGS_WRITE_FAILED_MSG", .text = flow.save.WRITTEN_SETTINGS_WRITE_FAILED_MSG },
+        .{ .key = "FORGET_FAILED_MSG", .text = flow_forget.FAILED_MSG },
         .{ .key = "UNEXPECTED_INPUT_MSG", .text = flow.step.UNEXPECTED_INPUT_MSG },
         .{ .key = "GENERATE_FAILED_MSG", .text = flow.step.GENERATE_FAILED_MSG },
         .{ .key = "IMPORT_FAILED_MSG", .text = flow_command.IMPORT_FAILED_MSG },

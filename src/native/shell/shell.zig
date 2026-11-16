@@ -19,6 +19,10 @@ const legend = @import("../../core/renderer/legend.zig");
 const host_mod = @import("../host.zig");
 const gen_progress = @import("gen_progress.zig");
 const storage_mod = @import("storage.zig");
+const logger = @import("../../core/logger.zig");
+
+const log = logger.Logger(.shell);
+
 pub const Error = error{ System, UnsupportedRenderer, NoFallbackConfigured };
 
 const PASTE_NO_PUZZLE_MSG: []const u8 = "paste: no puzzle specified";
@@ -151,8 +155,16 @@ pub const Sudoku = struct {
         const not_remembered: ?[]const u8 = blk: {
             if (!game.loaded) break :blk null;
             const file = game.file orelse break :blk null;
-            const reason = self.storage.persistCurrentFile(file) orelse break :blk null;
-            break :blk flow_mod.command.loadedNotRememberedMsg(reason);
+            break :blk switch (self.storage.persistCurrentFile(file)) {
+                .ok => null,
+                .refused => |reason| flow_mod.command.loadedNotRememberedMsg(reason),
+                // Not a settings repair: the game still shows, and the store's error name is recorded
+                // here because no sentence would be true of it.
+                .failed => |reason| logged: {
+                    log.err("could not remember {s}: {s}", .{ file, reason });
+                    break :logged null;
+                },
+            };
         };
         // The sentence takes the status slot: what the player loses at the next launch matters more
         // than the load's own words.

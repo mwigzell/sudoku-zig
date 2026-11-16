@@ -8,6 +8,10 @@ const logger = @import("../logger.zig");
 
 const log = logger.Logger(.flow);
 
+/// Shown when a forget failed for a reason that is not a settings refusal: no repair sentence is
+/// true of it, so the player gets the generic failure and the error name goes to the log.
+pub const FAILED_MSG = "The file could not be forgotten.";
+
 /// Why the settings store would not clear the pointer. The player's repair differs, so core keeps
 /// the two apart and every front end shows the matching sentence.
 pub const Refusal = enum {
@@ -33,6 +37,9 @@ pub const Outcome = union(enum) {
     forgotten,
     /// The settings store refused to clear the pointer.
     refused: Refusal,
+    /// The store failed for a reason that is not a settings refusal, so no repair sentence is true of
+    /// it: the name rides to the caller, which logs it and shows the player the generic failure.
+    failed: []const u8,
 };
 
 /// Where the current-file pointer lives; a run with no durable settings passes null.
@@ -64,12 +71,14 @@ pub const Deleter = struct {
     }
 };
 
-/// The refusal a store error means: a write the system refused is its own kind, so the player is
-/// told which repair applies; every other store error is a file the store will not use.
-pub fn refusalFor(err: config_store.Error) Refusal {
+/// The refusal a store error means, when it is one this app knows how to repair: a write the system
+/// refused is its own kind, and a file the store will not use is the read refusal. Any other error is
+/// nobody's refusal — the caller reports it as a failure carrying its name, and logs nothing here.
+pub fn refusalFor(err: config_store.Error) ?Refusal {
     return switch (err) {
+        config_store.Error.System => .settings_unreadable,
         config_store.Error.WriteFailed => .settings_unwritable,
-        else => .settings_unreadable,
+        else => null,
     };
 }
 
@@ -79,7 +88,7 @@ pub fn refusalFor(err: config_store.Error) Refusal {
 pub fn forget(settings: ?Settings, path: []const u8, delete: bool, deleter: Deleter) Outcome {
     if (settings) |store| {
         config_store.setCurrentFile(store.gpa, store.io, store.data_dir, null) catch |err| {
-            return .{ .refused = refusalFor(err) };
+            return if (refusalFor(err)) |reason| .{ .refused = reason } else .{ .failed = @errorName(err) };
         };
     }
     if (delete) deleter.remove(path) catch |err| {
@@ -236,8 +245,33 @@ test "each refusal maps to its own sentence, and each names its repair" {
     try std.testing.expect(std.mem.indexOf(u8, Refusal.settings_unwritable.sentence(), "disk has space") != null);
 }
 
-test "a store error maps to the refusal whose repair applies" {
-    try std.testing.expectEqual(Refusal.settings_unwritable, refusalFor(config_store.Error.WriteFailed));
-    try std.testing.expectEqual(Refusal.settings_unreadable, refusalFor(config_store.Error.System));
-    try std.testing.expectEqual(Refusal.settings_unreadable, refusalFor(config_store.Error.OutOfMemory));
+test "a store error maps to the refusal whose repair applies, and only those two map" {
+    try std.testing.expectEqual(Refusal.settings_unwritable, refusalFor(config_store.Error.WriteFailed).?);
+    try std.testing.expectEqual(Refusal.settings_unreadable, refusalFor(config_store.Error.System).?);
+    // Nobody's repair: an error this app cannot explain is not called a settings refusal.
+    try std.testing.expect(refusalFor(config_store.Error.OutOfMemory) == null);
+    try std.testing.expect(refusalFor(config_store.Error.InvalidJson) == null);
+    try std.testing.expect(refusalFor(config_store.Error.UnsupportedValue) == null);
+}
+
+test "a store error that is no refusal answers failed with its name, and touches no file" {
+    var store = try TestStore.init();
+    defer store.deinit();
+    // The allocator fails inside the settings write's own path work, so the store reports an error
+    // that is neither unreadable settings nor an unwritable settings file.
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 2 });
+    var recorder = RecordingDeleter{};
+
+    const settings = Settings{ .gpa = failing.allocator(), .io = std.testing.io, .data_dir = store.dir };
+    const outcome = forget(settings, "/games/game.sud", true, recorder.deleter());
+
+    try std.testing.expectEqualStrings("OutOfMemory", outcome.failed);
+    try std.testing.expectEqual(@as(usize, 0), recorder.calls);
+}
+
+test "the generic forget failure is a sentence, and it names no repair" {
+    const sentence_mod = @import("../../test/sentence.zig");
+    try sentence_mod.expectSentence(FAILED_MSG);
+    try std.testing.expect(std.mem.indexOf(u8, FAILED_MSG, "Repair") == null);
+    try std.testing.expect(std.mem.indexOf(u8, FAILED_MSG, "disk has space") == null);
 }

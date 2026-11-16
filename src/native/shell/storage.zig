@@ -27,6 +27,23 @@ pub const ConfigPersist = struct {
     visible_save_dir: []const u8,
 };
 
+/// What a settings-store pointer write did. A refusal is a cause the player can repair; a failure
+/// is any other store error, and the name is all that can be said about it.
+pub const PointerWrite = union(enum) {
+    /// The pointer is stored as asked.
+    ok,
+    /// The store refused the pointer write, for a cause core words.
+    refused: forget_mod.Refusal,
+    /// The store failed for a reason that is not a settings refusal, carrying its error name.
+    failed: []const u8,
+};
+
+/// What a store error means to a pointer write: a refusal core words, or a failure carrying the
+/// error's name. Pure — the one line for a failure is the caller's, so nothing is logged twice.
+fn pointerWriteFor(err: config_store.Error) PointerWrite {
+    return if (forget_mod.refusalFor(err)) |reason| .{ .refused = reason } else .{ .failed = @errorName(err) };
+}
+
 /// A file read through the transport; free both buffers with the transport.
 pub const ReadResult = struct {
     /// The path the transport resolved the name to.
@@ -96,33 +113,32 @@ pub const Storage = struct {
         return copyInto(scratch, path);
     }
 
-    /// Remember `path` as the file the next launch restores; null forgets it. Answers the refusal
-    /// when the settings store would not take the pointer, so the caller shows core's words.
-    pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) ?forget_mod.Refusal {
-        const sp = self.config_persist orelse return null;
-        config_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err| {
-            // The store words a refused read or write on its own line; anything else is silent.
-            switch (err) {
-                config_store.Error.System, config_store.Error.WriteFailed => {},
-                else => log.err("could not remember the current file: {s}", .{@errorName(err)}),
-            }
-            return forget_mod.refusalFor(err);
-        };
-        return null;
+    /// Remember `path` as the file the next launch restores; null forgets it. A refusal says which
+    /// settings repair applies, so the caller shows core's words; any other store error carries its
+    /// name, because no repair sentence is true of it.
+    pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) PointerWrite {
+        const sp = self.config_persist orelse return .ok;
+        config_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err|
+            return pointerWriteFor(err);
+        return .ok;
     }
 
     /// Carry out a `save`, `save_as` or `autosave` step: the terminal has no picker, so all three
     /// write the named file. Without `replace` a file already there is left alone and answers `exists`.
     /// The written file becomes the current file; a pointer write the store refuses answers
-    /// `written_not_current`, since the bytes are on disk either way.
+    /// `written_not_current`, since the bytes are on disk either way, and one that failed for another
+    /// reason answers `failed` with the store's error name.
     pub fn saveGame(self: *const @This(), engine: *game_engine.GameEngine, target: flow_mod.step.GameWrite, scratch: []u8) flow_mod.Wrote {
         if (!target.replace and self.exists(target.name)) return .exists;
         const save_buf = engine.toSaveFormat(std.heap.page_allocator) catch |err| return .{ .failed = @errorName(err) };
         defer std.heap.page_allocator.free(save_buf);
         const wrote = self.writeNamed(target.name, save_buf, scratch);
         if (wrote != .ok) return wrote;
-        if (self.persistCurrentFile(wrote.ok)) |reason| return .{ .written_not_current = reason };
-        return wrote;
+        return switch (self.persistCurrentFile(wrote.ok)) {
+            .ok => wrote,
+            .refused => |reason| .{ .written_not_current = reason },
+            .failed => |reason| .{ .failed = reason },
+        };
     }
 
     /// Carry out an `export_puzzle` step; the current file is unchanged.
@@ -183,6 +199,7 @@ pub const Storage = struct {
         return switch (forget_mod.forget(settings, forget.path, forget.delete, delete.deleter())) {
             .forgotten => .forgotten,
             .refused => |reason| .{ .refused = reason },
+            .failed => |reason| .{ .failed = reason },
         };
     }
 
@@ -460,6 +477,20 @@ test "forgetCurrentFile: a refused clear leaves the save on disk and answers the
         else => return error.TestFailed,
     }
     try std.testing.expect(store.exists(file));
+}
+
+test "a store error maps to a refusal only for the two causes core knows" {
+    switch (pointerWriteFor(config_store.Error.System)) {
+        .refused => |reason| try std.testing.expectEqual(forget_mod.Refusal.settings_unreadable, reason),
+        else => return error.TestFailed,
+    }
+    switch (pointerWriteFor(config_store.Error.WriteFailed)) {
+        .refused => |reason| try std.testing.expectEqual(forget_mod.Refusal.settings_unwritable, reason),
+        else => return error.TestFailed,
+    }
+    // Nothing about an unexplained store error is repairable, so it carries its name instead.
+    const failed = pointerWriteFor(config_store.Error.OutOfMemory);
+    try std.testing.expectEqualStrings("OutOfMemory", failed.failed);
 }
 
 test "open and importPuzzle: no typed path fails with the command's message; a missing file names the failing stage" {

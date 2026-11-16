@@ -191,8 +191,10 @@ pub const StartupFlow = struct {
                     // and relaunches, so the flow ends on core's sentence instead of carrying on.
                     .refused => |reason| self.finish(.{ .show_status = reason.sentence() }),
                     .failed => |reason| blk: {
-                        log.err("forget of {s} failed: {s}", .{ self.name.get(), reason });
-                        break :blk self.finish(.done);
+                        // The one log site for a forget that failed: every cause arrives here, a core
+                        // store error and an adapter-reported one alike.
+                        log.err("forget of {s} failed: {s}", .{ self.path.get(), reason });
+                        break :blk self.finish(.{ .show_status = forget_mod.FAILED_MSG });
                     },
                 },
                 else => return self.fail(UNEXPECTED_INPUT_MSG),
@@ -385,15 +387,35 @@ test "a refused forget ends startup on core's sentence for that refusal" {
     }
 }
 
-test "a forget the platform could not carry out ends startup quietly" {
-    var h = try Harness.init();
-    defer h.deinit();
-    var f = h.flow(restore_opts, test_file);
-    _ = f.next(.start);
-    _ = f.next(.{ .read = .{ .failed = "readAll: FileNotFound" } });
-    _ = f.next(.ack);
-    _ = f.next(.{ .pressed = step_mod.QUESTION_OK });
-    try std.testing.expectEqual(Step.done, f.next(.{ .forgot = .{ .failed = "connection dropped" } }));
+test "a forget that failed for another reason shows core's generic failure, with one log line" {
+    // A core-mapped store error and an adapter-reported one arrive the same way; neither is a
+    // settings refusal, so the player gets the generic sentence and the log carries the reason.
+    inline for (.{ "OutOfMemory", "current-file forget failed: 500" }) |reason| {
+        var h = try Harness.init();
+        defer h.deinit();
+
+        var logged: [256]u8 = undefined;
+        var sink: std.Io.Writer = .fixed(&logged);
+        logger.test_sink = &sink;
+        defer logger.test_sink = null;
+        logger.min_level = .err;
+        defer logger.min_level = .info;
+
+        var f = h.flow(restore_opts, test_file);
+        _ = f.next(.start);
+        _ = f.next(.{ .read = .{ .failed = "readAll: FileNotFound" } });
+        _ = f.next(.ack);
+        _ = f.next(.{ .pressed = step_mod.QUESTION_OK });
+        const ended = f.next(.{ .forgot = .{ .failed = reason } });
+
+        try std.testing.expectEqualStrings(forget_mod.FAILED_MSG, ended.show_status);
+        try std.testing.expect(step_mod.isTerminal(ended));
+        const said = sink.buffered();
+        // One line for the forget itself; the restore failure above has its own.
+        try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, said, "forget of "));
+        try std.testing.expect(std.mem.indexOf(u8, said, "/data/game.sud") != null);
+        try std.testing.expect(std.mem.indexOf(u8, said, reason) != null);
+    }
 }
 
 test "startup restore of unreadable bytes is a restore failure" {

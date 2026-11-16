@@ -237,10 +237,10 @@ fn currentFileTargetExists(io: std.Io, session: *const Session, save_name: ?[]co
 }
 
 /// What a current-file write reports to the page: a settings file the store refused to read, one it
-/// refused to write (the file is sound; the disk or the permission is not), or the host hit a fault
-/// on the way. They are kept apart so only a refusal is answered, and answered in core's words for
-/// what actually failed, instead of closing the connection.
-const PointerWrite = error{ SettingsRefused, SettingsWriteFailed, System };
+/// refused to write (the file is sound; the disk or the permission is not), a store failure that is
+/// neither, or the host hit a fault on the way. They are kept apart so only a refusal is answered in
+/// core's repair words, instead of closing the connection.
+const PointerWrite = error{ SettingsRefused, SettingsWriteFailed, StoreFailed, System };
 /// The pointer-write error a core refusal means: both `/current-file` arms map a store error through
 /// core's `refusalFor`, so the kind is decided once.
 fn refusalError(reason: forget_mod.Refusal) PointerWrite {
@@ -248,6 +248,19 @@ fn refusalError(reason: forget_mod.Refusal) PointerWrite {
         .settings_unreadable => PointerWrite.SettingsRefused,
         .settings_unwritable => PointerWrite.SettingsWriteFailed,
     };
+}
+
+/// A pointer write that failed for a reason this app cannot repair: the reason is logged here, once
+/// for both arms, because no store line carried it and the body can only say the generic failure.
+fn pointerFailure(reason: []const u8) PointerWrite {
+    log.err("current-file pointer write failed: {s}", .{reason});
+    return PointerWrite.StoreFailed;
+}
+
+/// A store error as the page's answer: its refusal when core knows that cause, else the store's own
+/// error name on the log and core's generic failure.
+fn pointerError(err: config_store.Error) PointerWrite {
+    return if (forget_mod.refusalFor(err)) |reason| refusalError(reason) else pointerFailure(@errorName(err));
 }
 
 /// Write `body` to the file a save lands on, then record it as the current file. A settings file
@@ -263,7 +276,7 @@ fn applyCurrentFilePost(io: std.Io, session: *Session, body: []const u8, save_na
     const transport = file_transport.NativeTransport.make(io);
     transport.write(transport.context, target.path, body) catch return error.System;
 
-    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch |err| return refusalError(forget_mod.refusalFor(err));
+    config_store.setCurrentFile(session.gpa, io, session.data_dir, target.path) catch |err| return pointerError(err);
 
     if (session.current_file) |old| session.gpa.free(old);
     session.current_file = session.gpa.dupe(u8, target.path) catch return error.System;
@@ -301,6 +314,7 @@ fn applyCurrentFileForget(io: std.Io, session: *Session, delete_file: bool) Poin
     var delete = CurrentFileDelete{ .io = io };
     switch (forget_mod.forget(settings, current, delete_file, delete.deleter())) {
         .refused => |reason| return refusalError(reason),
+        .failed => |reason| return pointerFailure(reason),
         .forgotten => {},
     }
     log.info("current-file forget: path={s} delete_requested={any}", .{ current, delete_file });
@@ -318,12 +332,14 @@ const REFUSAL_HEADER = "X-Sudoku-Refusal";
 const PointerStep = enum { save, forget };
 
 /// Answer a pointer write to the page: `204` when it landed, core's sentence in the body and the
-/// refusal kind in the header when a settings store refused it, and the connection closed on a
-/// host fault. Both arms of `/current-file` answer through here, so a refusal is mapped once.
+/// refusal kind in the header when a settings store refused it, core's generic failure when the
+/// store failed for any other reason, and the connection closed on a host fault. Both arms of
+/// `/current-file` answer through here, so a refusal is mapped once.
 fn answerPointerWrite(w: *std.Io.Writer, step: PointerStep, result: PointerWrite!void) ServeError!void {
     result catch |err| switch (err) {
         error.SettingsRefused => return answerRefusal(w, step, .settings_unreadable),
         error.SettingsWriteFailed => return answerRefusal(w, step, .settings_unwritable),
+        error.StoreFailed => return answerFailure(w, step),
         error.System => return ServeError.System,
     };
     try writeFull(w, "204 No Content", "application/octet-stream", "");
@@ -337,6 +353,16 @@ fn answerRefusal(w: *std.Io.Writer, step: PointerStep, reason: forget_mod.Refusa
         .forget => reason.sentence(),
     };
     return writeFullWithHeader(w, "500 Internal Server Error", "text/plain", REFUSAL_HEADER, @tagName(reason), words);
+}
+
+/// A failure's answer: core's generic sentence for the step, and no refusal header, so the page
+/// answers core with a failure rather than a settings repair that does not apply.
+fn answerFailure(w: *std.Io.Writer, step: PointerStep) ServeError!void {
+    const words = switch (step) {
+        .save => save_mod.SAVE_FAILED_MSG,
+        .forget => forget_mod.FAILED_MSG,
+    };
+    return writeFull(w, "500 Internal Server Error", "text/plain", words);
 }
 
 var shutdown_requested = std.atomic.Value(bool).init(false);
@@ -1086,6 +1112,38 @@ test "one answer serves both pointer writes: core's words for a refusal, one 204
 
     // A host fault has no sentence for the player: the connection is closed, not answered.
     try std.testing.expectError(ServeError.System, pointerWriteAnswer(.save, error.System));
+}
+
+test "a store error that is no refusal is logged once and answered with core's generic failure" {
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+    logger.min_level = .err;
+    defer logger.min_level = .info;
+
+    // The two causes core knows keep their refusal, and the store words them on its own line.
+    try std.testing.expectEqual(PointerWrite.SettingsRefused, pointerError(config_store.Error.System));
+    try std.testing.expectEqual(PointerWrite.SettingsWriteFailed, pointerError(config_store.Error.WriteFailed));
+    try std.testing.expectEqual(@as(usize, 0), sink.buffered().len);
+
+    // Any other store error is nobody's repair: it is logged here once, with the system message.
+    try std.testing.expectEqual(PointerWrite.StoreFailed, pointerError(config_store.Error.OutOfMemory));
+    try std.testing.expectEqualStrings("err [web_host] current-file pointer write failed: OutOfMemory\n", sink.buffered());
+
+    // A failure is answered with core's generic sentence and no refusal header, so the page hands
+    // core a failure instead of a settings repair that does not apply.
+    const save_reply = try pointerWriteAnswer(.save, error.StoreFailed);
+    defer std.testing.allocator.free(save_reply);
+    try std.testing.expect(std.mem.startsWith(u8, save_reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, save_reply, save_mod.SAVE_FAILED_MSG));
+    try std.testing.expect(std.mem.indexOf(u8, save_reply, REFUSAL_HEADER) == null);
+
+    const forget_reply = try pointerWriteAnswer(.forget, error.StoreFailed);
+    defer std.testing.allocator.free(forget_reply);
+    try std.testing.expect(std.mem.startsWith(u8, forget_reply, "HTTP/1.1 500"));
+    try std.testing.expect(std.mem.endsWith(u8, forget_reply, forget_mod.FAILED_MSG));
+    try std.testing.expect(std.mem.indexOf(u8, forget_reply, REFUSAL_HEADER) == null);
 }
 
 /// A data directory under the test's temp dir, with `config.json` taken by a directory so no read
