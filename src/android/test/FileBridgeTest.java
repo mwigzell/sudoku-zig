@@ -79,9 +79,12 @@ public final class FileBridgeTest {
 
     /** Settings bytes that cannot parse: the store refuses them, so the boot stops before it serves. */
     private static final String CORRUPT_CONFIG = "{\"config\":{";
-    /** Core's settings-refusal sentence (`ANDROID_SETTINGS_REFUSED_MSG` in core's startup config). */
-    private static final String SETTINGS_REFUSED_MSG =
-        "The game could not read its settings. Clear this app's data in the Android Settings app, then open the game again.";
+    /**
+     * The advice core's refusal sentence names, which the WebView fallback does not. The exact sentence
+     * is pinned by core's own sentence test; Android has no bridge to that constant, so this test pins
+     * the rendering path by its distinguishing advice instead of re-spelling the whole copy.
+     */
+    private static final String SETTINGS_REFUSAL_ADVICE = "Android Settings app";
     /** The app's readiness timeout is 8 s, so a refusal reported later than this came from that timeout. */
     private static final long BOOT_REFUSAL_WAIT_MS = 7_000;
 
@@ -796,7 +799,7 @@ public final class FileBridgeTest {
             final long started = SystemClock.uptimeMillis();
             sh("am start -n " + APP + "/.MainActivity\n");
 
-            need(By.textContains(SETTINGS_REFUSED_MSG), UI_WAIT_MS);
+            need(By.textContains(SETTINGS_REFUSAL_ADVICE), UI_WAIT_MS);
             final long elapsed = SystemClock.uptimeMillis() - started;
             assertTrue("the refusal took " + elapsed + " ms, the pace of the readiness timeout",
                 elapsed < BOOT_REFUSAL_WAIT_MS);

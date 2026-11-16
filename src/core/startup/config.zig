@@ -120,7 +120,7 @@ fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
     try std.testing.expectEqual(startup.show_marks, engine.show_marks);
 }
 
-/// Startup's only failure: the settings read or write was refused. The store logs the reason on its
+/// Startup's only failure: the settings read was refused. The store logs the reason on its
 /// own line, so the entry passes this on to `main` without a second line of its own.
 pub const Error = error{System};
 
@@ -142,13 +142,12 @@ pub const SETTINGS_REFUSED_MSG =
 pub const SETTINGS_WRITE_FAILED_MSG =
     "The game could not save its settings file. Check that the folder can be written and the disk has space, then try again.";
 
-/// A settings read or write the store refused: it logged the reason and returned `System` or
-/// `WriteFailed`, so the seam passes that on as its one error. Any other member `save` still
-/// produces is an allocation failure with no line behind it, so it is logged here instead — once,
-/// never twice.
+/// A settings read the store refused: it logged the reason and returned `System`, so the seam
+/// passes that on as its one error. Any other member `loadOrDefault` still produces is an
+/// allocation failure with no line behind it, so it is logged here instead — once, never twice.
 fn refused(err: config_store.Error) Error {
     switch (err) {
-        Error.System, config_store.Error.WriteFailed => {},
+        Error.System => {},
         else => log.err("startup settings could not be resolved: {s}", .{@errorName(err)}),
     }
     return Error.System;
@@ -175,7 +174,13 @@ pub fn resolveStartupConfig(
     config_store.ensureConfigDir(io, dir);
 
     const cfg = overrides.applyTo(config_store.loadOrDefault(gpa, io, dir) catch |err| return refused(err));
-    config_store.save(gpa, io, dir, cfg) catch |err| return refused(err);
+    // Persisting the merged prefs cannot stop the boot: the read already produced a config the run
+    // can use, and `writeFailed` has logged the system's reason. The write's own sentence, and the
+    // repair it names, belong to a player action that asked for a write — not to a startup refusal.
+    config_store.save(gpa, io, dir, cfg) catch |err| switch (err) {
+        config_store.Error.WriteFailed => {},
+        else => log.err("startup settings could not be saved: {s}", .{@errorName(err)}),
+    };
     return cfg;
 }
 
@@ -368,9 +373,8 @@ test "the seam adds no line to a store refusal that already logged, and one when
     logger.test_sink = &sink;
     defer logger.test_sink = null;
 
-    // Both arrive with the store's reason already on the log, so a second line would say it twice.
+    // The read's refusal arrives with the store's reason already on the log, so a second line would say it twice.
     try std.testing.expectEqual(Error.System, refused(config_store.Error.System));
-    try std.testing.expectEqual(Error.System, refused(config_store.Error.WriteFailed));
     try std.testing.expectEqualStrings("", sink.buffered());
 
     // An allocation failure has no line behind it, so the seam supplies the one line.

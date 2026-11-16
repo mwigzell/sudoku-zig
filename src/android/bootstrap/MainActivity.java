@@ -276,7 +276,9 @@ public final class MainActivity extends Activity {
         // show that sentence, and this activity's own copy only for a failure core did not word.
         final String coreText = JniHost.startupFailureMessage();
         final String shown = coreText.isEmpty() ? BOOT_FAILED_MSG : coreText;
-        Log.e(LOG_IDENTITY, "boot failed: " + reason);
+        // Core already logged the refusal's reason on its own line; repeating its sentence here would
+        // carry the same event twice, so this line names only what the activity observed.
+        Log.e(LOG_IDENTITY, coreText.isEmpty() ? "boot failed: " + reason : "boot failed: the settings read was refused");
         Toast.makeText(this, shown, Toast.LENGTH_LONG).show();
         webView.loadDataWithBaseURL(null, bootErrorHtml(shown), "text/html", "utf-8", null);
         dismissLaunchSplash();
