@@ -63,6 +63,8 @@ function showRefusal(ctx, refused) {
  * Fetch the saved game, let `writeUserFile` (when given) write the player's file, then keep the
  * host copy; the written file becomes the session's file. Without `writeUserFile` the host copy
  * is the player's file.
+ * A pointer write the settings store refused answers core with the refusal kind it names, since the
+ * bytes landed and core words that outcome; any other failure passes the host's words through.
  * @param {StepContext} ctx
  * @param {((bytes: Uint8Array) => Promise<WriteResult>) | null} writeUserFile
  * @param {string} name the file core named, kept when the platform names none
@@ -80,8 +82,9 @@ export async function writeGame(ctx, writeUserFile, name, { restoreCopy, fetchFn
   }
   const hosted = await hostApi.persistCurrentFileBytes(serialized.bytes, fetchFn, written, { restoreCopy });
   if (!hosted.ok) {
-    // A refused write answers in words for the player (core's, passed through by the host): show them
-    // in the status line; the technical reason still travels to core for its log.
+    // A refuse the host named is core's to word: the answer carries the kind and no text of the
+    // page's own. Any other failure shows the host's words, and the reason still travels to core.
+    if (hosted.reason) return { ok: false, writtenNotCurrent: hosted.reason, error: hosted.error };
     showRefusal(ctx, hosted);
     return { ok: false, error: hosted.error };
   }
@@ -122,11 +125,8 @@ export function sharedSteps(ctx) {
       });
     },
     generateGame: (difficulty) => generate.generateWithModal(game, generatingModal, { difficulty, genWorker }),
-    forgetCurrentFile: async (forget) => {
-      const forgot = await hostApi.forgetCurrentFile(forget.delete, fetchFn);
-      if (!forgot.ok) showRefusal(ctx, forgot);
-      return forgot;
-    },
+    // A refused forget is reported to core, which words the status line; the page adds nothing.
+    forgetCurrentFile: (forget) => hostApi.forgetCurrentFile(forget.delete, fetchFn),
     persistConfig: (config) => hostApi.persistConfig(config, fetchFn),
     showStatus: (text) => {
       sessionMod.syncCurrentFileLabels(session);

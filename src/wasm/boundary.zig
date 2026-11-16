@@ -20,6 +20,7 @@ const startup_policy = @import("../core/startup/policy.zig");
 const flow_command = @import("../core/flow/command.zig");
 const flow_config = @import("../core/flow/config.zig");
 const flow_export = @import("../core/flow/export.zig");
+const flow_forget = @import("../core/flow/forget.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
 
@@ -296,7 +297,14 @@ const JsonFlowInput = struct {
     ok: ?bool = null,
     cancelled: ?bool = null,
     taken: ?bool = null,
+    /// Set when the bytes landed but the store refused to name them the current file; `reason` then
+    /// says which repair applies.
+    written_not_current: ?bool = null,
     line: ?[]const u8 = null,
+    /// Which refusal the step's outcome names (`settings_unreadable`, `settings_unwritable`): a
+    /// forget's stopped clear, or a save's refused pointer write. Absent when the platform could not
+    /// say, and core then only logs its reason.
+    reason: ?[]const u8 = null,
     @"error": ?[]const u8 = null,
 };
 
@@ -316,6 +324,8 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .cancelled
         else if (v.taken == true)
             .{ .taken = .{ .name = v.name orelse return error.MissingField } }
+        else if (v.written_not_current == true)
+            .{ .written_not_current = std.meta.stringToEnum(flow_forget.Refusal, v.reason orelse return error.MissingField) orelse return error.UnknownInput }
         else
             .{ .failed = v.@"error" orelse return error.MissingField } },
         // A successful read carries bytes, so it arrives through `flowRead`, not as JSON.
@@ -333,6 +343,12 @@ pub fn parseFlowInput(arena: std.mem.Allocator, json_text: []const u8) !flow.Inp
             .{ .failed = v.@"error" orelse return error.MissingField } },
         .persisted => .{ .persisted = try parseOutcome(v) },
         .copied => .{ .copied = try parseOutcome(v) },
+        .forgot => .{ .forgot = if (v.ok == true)
+            .forgotten
+        else if (v.reason) |reason|
+            .{ .refused = std.meta.stringToEnum(flow_forget.Refusal, reason) orelse return error.UnknownInput }
+        else
+            .{ .failed = v.@"error" orelse return error.MissingField } },
         .ack => .ack,
     };
 }
@@ -502,6 +518,11 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "SAVE_WHILE_AUTO_SAVE_MSG", .text = file_policy.SAVE_WHILE_AUTO_SAVE_MSG },
         .{ .key = "SAVE_FAILED_MSG", .text = flow.save.SAVE_FAILED_MSG },
         .{ .key = "RESTORE_FAILED_FMT", .text = flow.startup.RESTORE_FAILED_FMT },
+        .{ .key = "SETTINGS_REFUSED_MSG", .text = flow_forget.Refusal.settings_unreadable.sentence() },
+        .{ .key = "SETTINGS_WRITE_FAILED_MSG", .text = flow_forget.Refusal.settings_unwritable.sentence() },
+        .{ .key = "WRITTEN_SETTINGS_REFUSED_MSG", .text = flow.save.WRITTEN_SETTINGS_REFUSED_MSG },
+        .{ .key = "WRITTEN_SETTINGS_WRITE_FAILED_MSG", .text = flow.save.WRITTEN_SETTINGS_WRITE_FAILED_MSG },
+        .{ .key = "FORGET_FAILED_MSG", .text = flow_forget.FAILED_MSG },
         .{ .key = "UNEXPECTED_INPUT_MSG", .text = flow.step.UNEXPECTED_INPUT_MSG },
         .{ .key = "GENERATE_FAILED_MSG", .text = flow.step.GENERATE_FAILED_MSG },
         .{ .key = "IMPORT_FAILED_MSG", .text = flow_command.IMPORT_FAILED_MSG },
@@ -998,6 +1019,10 @@ test "flow input parses every step result" {
     try std.testing.expectEqual(@as(usize, 2), (try parseFlowInput(a, "{\"input\":\"pressed\",\"index\":2}")).pressed);
     try std.testing.expectEqualStrings("d.sud", (try parseFlowInput(a, "{\"input\":\"default_target\",\"name\":\"d.sud\"}")).default_target);
     try std.testing.expectEqualStrings("w.sud", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":true,\"name\":\"w.sud\"}")).wrote.ok);
+    const not_current = (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"written_not_current\":true,\"reason\":\"settings_unwritable\"}")).wrote.written_not_current;
+    try std.testing.expectEqual(flow_forget.Refusal.settings_unwritable, not_current);
+    try std.testing.expectError(error.UnknownInput, parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"written_not_current\":true,\"reason\":\"no_such_cause\"}"));
+    try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"written_not_current\":true}"));
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"cancelled\":true}")).wrote == .cancelled);
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"exists\":true}")).wrote == .exists);
     try std.testing.expectEqualStrings("boom", (try parseFlowInput(a, "{\"input\":\"wrote\",\"ok\":false,\"error\":\"boom\"}")).wrote.failed);
@@ -1014,6 +1039,11 @@ test "flow input parses every step result" {
     try std.testing.expect((try parseFlowInput(a, "{\"input\":\"read\",\"ok\":false,\"cancelled\":true}")).read == .cancelled);
     try std.testing.expectEqualStrings("no", (try parseFlowInput(a, "{\"input\":\"read\",\"ok\":false,\"error\":\"no\"}")).read.failed);
     try std.testing.expectError(error.MissingField, parseFlowInput(a, "{\"input\":\"read\",\"ok\":true}"));
+    try std.testing.expect((try parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":true}")).forgot == .forgotten);
+    const refused_clear = (try parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":false,\"reason\":\"settings_unreadable\"}")).forgot.refused;
+    try std.testing.expectEqual(flow_forget.Refusal.settings_unreadable, refused_clear);
+    try std.testing.expectError(error.UnknownInput, parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":false,\"reason\":\"store_said_no\"}"));
+    try std.testing.expectEqualStrings("dropped", (try parseFlowInput(a, "{\"input\":\"forgot\",\"ok\":false,\"error\":\"dropped\"}")).forgot.failed);
 }
 
 test "step JSON carries the tag and its payload" {

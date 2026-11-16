@@ -182,10 +182,18 @@ export type FlowStep =
   | { ok: false; error: string; step?: undefined };
 
 /** Platform result of a write step; `exists` means a fixed file is there and was left alone,
- * `taken` that this install may not write the file. */
+ * `taken` that this install may not write the file, `writtenNotCurrent` that the bytes landed but
+ * the settings store refused to name them the current file (core words that outcome). */
 export type WriteResult =
   | { ok: true; name?: string }
-  | { ok: false; exists?: boolean; cancelled?: boolean; taken?: { name: string }; error?: string };
+  | {
+      ok: false;
+      exists?: boolean;
+      cancelled?: boolean;
+      taken?: { name: string };
+      writtenNotCurrent?: RefusalKind;
+      error?: string;
+    };
 
 /** Platform result of a reading step (`restore`, `open`, `import_puzzle`, `paste_puzzle`); a browser
  * pick also carries the file's handle so a saved game can be bound. */
@@ -196,9 +204,16 @@ export type PickResult =
 /** Platform result of a `persist_config` or `copy_puzzle` step. */
 export type PersistResult = { ok: true } | { ok: false; error?: string };
 
-/** Platform result of a `/current-file` pointer write or forget; `hostSaid` is the host's own refusal
- * sentence, in the body of a refused request, so the page can show what the host said instead of wording it. */
-export type PointerWriteResult = { ok: true } | { ok: false; error: string; hostSaid?: string };
+/** The refusal kind the host named, carried to core verbatim: judging which kinds exist is core's job
+ * (the wasm boundary), so the page holds the value as an opaque string. */
+export type RefusalKind = string;
+
+/** Platform result of a `/current-file` pointer write or forget. `hostSaid` is the host's own refusal
+ * sentence, in the body of a refused write, so the page can show what the host said instead of wording it;
+ * `reason` is the refusal kind the host named, handed back to core for either arm. */
+export type PointerWriteResult =
+  | { ok: true }
+  | { ok: false; error: string; hostSaid?: string; reason?: RefusalKind | null };
 
 /** Platform result of a `generate_game` step. */
 export type GenerateResult = { ok: true; line: string } | { ok: false; cancelled?: boolean; error?: string };

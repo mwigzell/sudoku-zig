@@ -152,6 +152,63 @@ async function boundAutosaveSetup(writes, failure = null) {
   assert.equal(session.fileHandle, null, "the failing handle is dropped");
 }
 
+/** A status element that counts writes, so a test can tell one sentence from two. */
+function countingStatus() {
+  let text = "";
+  const el = { className: "", writes: 0 };
+  Object.defineProperty(el, "textContent", {
+    get: () => text,
+    set: (value) => {
+      text = value;
+      el.writes += 1;
+    },
+  });
+  return el;
+}
+
+/** A host whose pointer write is refused; `reason` null answers 500 with the body alone. */
+function refusingHost(reason, body) {
+  return async (url) => {
+    if (url === "./current-file-exists") return { ok: true, status: 200, json: async () => ({ exists: false }) };
+    const headers = reason ? { get: (name) => (name === "X-Sudoku-Refusal" ? reason : null) } : undefined;
+    return { ok: false, status: 500, headers, text: async () => body };
+  };
+}
+
+{
+  // A refused host pointer write follows bytes that landed: the page hands core the kind, and core's
+  // written-not-current sentence is the only status the player sees.
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([3]) }) }, { autoSave: true, newGame: true });
+  const status = countingStatus();
+  const prompts = promptDialogStub();
+  const session = { config: { auto_save: true }, default_save_filename: "sudoku.sud", boundFilename: null };
+  const outcome = await moveWithAutosave(game, session, {
+    fetchFn: refusingHost("settings_unwritable", coreText.WRITTEN_SETTINGS_WRITE_FAILED_MSG),
+    statusEl: status,
+    promptDialog: prompts,
+  });
+
+  assert.deepEqual(outcome, { kind: "show_status", text: coreText.WRITTEN_SETTINGS_WRITE_FAILED_MSG });
+  assert.equal(status.writes, 1, "one status sentence, written once");
+  assert.equal(status.textContent, coreText.WRITTEN_SETTINGS_WRITE_FAILED_MSG);
+  assert.equal(prompts.shown.length, 0, "no failure sentence follows it");
+}
+
+{
+  // A refusal the host named no kind for keeps the old answer: the host's body in the status line
+  // and core's failure prompt, since nothing tells the page the bytes landed.
+  const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([3]) }) }, { autoSave: true, newGame: true });
+  const status = countingStatus();
+  const prompts = promptDialogStub();
+  const hostSaid = "The host wrote this and named no refusal.";
+  const session = { config: { auto_save: true }, default_save_filename: "sudoku.sud", boundFilename: null };
+  const outcome = await moveWithAutosave(game, session, { fetchFn: refusingHost(null, hostSaid), statusEl: status, promptDialog: prompts });
+
+  assert.equal(status.textContent, hostSaid, "the host's own words are still shown");
+  assert.equal(prompts.lastText, coreText.SAVE_FAILED_MSG);
+  assert.equal(outcome.kind, "done");
+}
+
 {
   // An opened game continues its file: the first autosave writes without a replace question.
   const game = await withCoreFlow({ toSaveFormat: () => ({ ok: true, bytes: new Uint8Array([9]) }) }, { autoSave: true, opened: "autosave.sud" });

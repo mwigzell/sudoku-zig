@@ -1,6 +1,6 @@
-// File byte transport behind a vtable seam: write bytes to a named path,
-// read a named path into a caller-freed buffer, and resolve a bare name
-// against the arm's own file store. Native std.Io byte ops for session handlers.
+// File byte transport behind a vtable seam: write bytes to a named path, read a named path into a
+// caller-freed buffer, delete a named path, and resolve a bare name against the arm's own file
+// store. Native std.Io byte ops for session handlers.
 const std = @import("std");
 const builtin = @import("builtin");
 const mypath = @import("path.zig");
@@ -15,6 +15,8 @@ pub const FileTransport = struct {
     context: *anyopaque,
     write: *const fn (ctx: *anyopaque, path: []const u8, bytes: []const u8) TransportError!void,
     readAll: *const fn (ctx: *anyopaque, path: []const u8) TransportError![]u8,
+    // Remove the file at path; a file that is already gone is success, not an error.
+    delete: *const fn (ctx: *anyopaque, path: []const u8) TransportError!void,
     // Resolve a bare name against this arm's file store; returns an owned name.
     resolve: *const fn (ctx: *anyopaque, name: []const u8) TransportError![]u8,
     // Free a buffer returned by this arm's readAll or resolve; each arm frees with its own allocator.
@@ -117,6 +119,7 @@ pub const NativeTransport = struct {
             .context = &context,
             .write = write,
             .readAll = readAll,
+            .delete = delete,
             .resolve = resolve,
             .free = free,
         };
@@ -174,6 +177,18 @@ pub const NativeTransport = struct {
         log.info("SAVE wrote {d} bytes -> {s}", .{ bytes.len, path });
     }
 
+    // A missing file is success: a forget that ran twice still reached the state it asked for.
+    fn delete(c: *anyopaque, path: []const u8) TransportError!void {
+        const ctx = asContext(c);
+        std.Io.Dir.deleteFileAbsolute(ctx.io, path) catch |err| switch (err) {
+            // A file an earlier forget already removed is what this one asked for: one line, then
+            // success. The forget itself adds no second line for the same event.
+            error.FileNotFound => log.info("expected: {s} is already gone ({s})", .{ path, @errorName(err) }),
+            error.AccessDenied, error.PermissionDenied, error.ReadOnlyFileSystem => return TransportError.AccessDenied,
+            else => return TransportError.System,
+        };
+    }
+
     fn readAll(c: *anyopaque, path: []const u8) TransportError![]u8 {
         const ctx = asContext(c);
         var file = std.Io.Dir.openFileAbsolute(ctx.io, path, .{}) catch return TransportError.FileNotFound;
@@ -204,3 +219,41 @@ pub const NativeTransport = struct {
         return resolved;
     }
 };
+
+test "FileTransport native: delete removes a file and tolerates one already gone" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
+    const transport = NativeTransport.make(std.testing.io);
+    const path = "/tmp/sudoku_file_transport_delete_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, path) catch {};
+    transport.write(transport.context, path, "bytes") catch |err| return err;
+
+    try transport.delete(transport.context, path);
+    try std.testing.expectError(TransportError.FileNotFound, transport.readAll(transport.context, path));
+    // A file that is already gone is what a forget asked for, so the second delete is not an error.
+    try transport.delete(transport.context, path);
+}
+
+test "FileTransport native: a delete of a file already gone says so once and answers success" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
+    const transport = NativeTransport.make(std.testing.io);
+    const path = "/tmp/sudoku_file_transport_already_gone_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, path) catch {};
+    std.Io.Dir.deleteFileAbsolute(std.testing.io, path) catch {};
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try transport.delete(transport.context, path);
+
+    // One line, the idiom the read probe uses: the file was already gone, which is what was asked for.
+    try std.testing.expectEqualStrings(
+        "info [sudoku] expected: /tmp/sudoku_file_transport_already_gone_test.sud is already gone (FileNotFound)\n",
+        sink.buffered(),
+    );
+}

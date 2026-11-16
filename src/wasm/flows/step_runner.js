@@ -40,6 +40,7 @@ const INPUT_READ = "read";
 const INPUT_GENERATED = "generated";
 const INPUT_PERSISTED = "persisted";
 const INPUT_COPIED = "copied";
+const INPUT_FORGOT = "forgot";
 const INPUT_ACK = "ack";
 
 /** Game write steps and the handler that carries each out. */
@@ -72,11 +73,14 @@ function failedInput(input, result) {
 
 /**
  * Normalize a handler's write outcome to the wasm `wrote` input.
+ * A write whose bytes landed but whose pointer write the store refused answers `written_not_current`
+ * with the refusal kind, so core words it.
  * @param {import("../types").WriteResult} result
  * @param {string | null} name the target core named, reported when the platform names none
  */
 function wroteInput(result, name) {
   if (result?.ok === true) return { input: INPUT_WROTE, ok: true, name: result.name ?? name };
+  if (result?.writtenNotCurrent) return { input: INPUT_WROTE, ok: false, written_not_current: true, reason: result.writtenNotCurrent };
   if (result?.exists === true) return { input: INPUT_WROTE, ok: false, exists: true };
   if (result?.cancelled === true) return { input: INPUT_WROTE, ok: false, cancelled: true };
   if (result?.taken) return { input: INPUT_WROTE, ok: false, taken: true, name: result.taken.name };
@@ -93,6 +97,16 @@ function generatedInput(result) {
   return failedInput(INPUT_GENERATED, result);
 }
 
+/**
+ * Answer a forget step: the host's refusal kind travels untouched, since core's boundary knows which
+ * kinds exist; any other failure carries its reason for the log.
+ * @param {{ ok?: boolean, reason?: string, error?: string }} result
+ */
+function forgotInput(result) {
+  if (result?.ok === true) return { input: INPUT_FORGOT, ok: true };
+  if (typeof result?.reason === "string" && result.reason.length > 0) return { input: INPUT_FORGOT, ok: false, reason: result.reason };
+  return failedInput(INPUT_FORGOT, result);
+}
 /**
  * Normalize a handler's config write outcome to the wasm `persisted` input.
  * @param {{ ok?: boolean, error?: string }} result
@@ -276,13 +290,8 @@ async function stepThrough(game, first, handlers) {
       }
       case STEP_FORGET_CURRENT_FILE: {
         const forget = { path: step.path, delete: step.delete === true };
-        const forgot = await settle(() => handlers.forgetCurrentFile(forget));
-        // Core has no failed answer for a forget, so a forget the host refused *in words* ends the flow
-        // with core's own failure step rather than acking one that never happened. A failure with no
-        // sentence (a bare 500, a dropped connection) is not a refusal the player can act on, so it
-        // keeps the earlier behaviour: the ack goes through and the status line stays core's.
-        if (forgot?.ok === false && forgot.hostSaid) return failFlow(game, handlers, forgot.error ?? NO_REASON);
-        step = game.flowNext({ input: INPUT_ACK });
+        // Core owns the outcome: a refusal ends the flow on core's sentence, any other failure is logged.
+        step = game.flowNext(forgotInput(await settle(() => handlers.forgetCurrentFile(forget))));
         break;
       }
       case STEP_PERSIST_CONFIG: {

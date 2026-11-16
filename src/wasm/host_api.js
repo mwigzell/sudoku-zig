@@ -12,6 +12,10 @@ const CURRENT_FILE_EXISTS_PATH = "./current-file-exists";
 const FILENAME_HEADER = "X-Sudoku-Filename";
 const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
+/** Response header naming which refusal stopped a pointer write, so core words it for the player. */
+const REFUSAL_HEADER = "X-Sudoku-Refusal";
+/** Response header naming the system message behind a pointer write that failed for no repairable cause. */
+const FAILURE_HEADER = "X-Sudoku-Failure";
 
 /** The host's startup config: the Config, default save name and the current file to restore. */
 export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
@@ -40,16 +44,41 @@ export async function restore(path, fetchFn = globalThis.fetch) {
 
 /**
  * Stop the host restoring its current file at startup; `deleteFile` removes the file too.
- * A refused forget answers with the host's own sentence in the body, returned as `hostSaid`; the
- * technical status stays in `error`, which is what core's log takes.
+ * A refusal names which settings repair applies in `reason` (the host's header), so core words the
+ * status; any other failure keeps the host's system message in `error`, which is what core's log
+ * takes.
  * @returns {Promise<import("./types").PointerWriteResult>}
  */
 export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
   const headers = {};
   if (deleteFile === true) headers[DELETE_FILE_HEADER] = "true";
   const res = await fetchFn(CURRENT_FILE_PATH, { method: "DELETE", headers });
-  if (!res.ok) return { ok: false, error: `current-file forget failed: ${res.status}`, hostSaid: await refusalText(res) };
+  if (!res.ok) return { ok: false, error: pointerErrorText(res, `current-file forget failed: ${res.status}`), reason: refusalReason(res) };
   return { ok: true };
+}
+
+/**
+ * The refusal kind this response named, exactly as the host sent it; null when it named none.
+ * Which kinds exist is core's knowledge (`boundary.zig`), so no list of them lives here.
+ * @param {{ headers?: { get?: (name: string) => string | null } }} res
+ * @returns {string | null}
+ */
+function refusalReason(res) {
+  const raw = typeof res.headers?.get === "function" ? res.headers.get(REFUSAL_HEADER) : null;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+/**
+ * The status a failed pointer write answers with, plus the system message the host named for it
+ * (e.g. `500 (OutOfMemory)`). The message is the reason core's flow logs, so an unexplained store
+ * failure records its cause instead of only the status code.
+ * @param {{ headers?: { get?: (name: string) => string | null } }} res
+ * @param {string} status
+ * @returns {string}
+ */
+function pointerErrorText(res, status) {
+  const raw = typeof res.headers?.get === "function" ? res.headers.get(FAILURE_HEADER) : null;
+  return typeof raw === "string" && raw.length > 0 ? `${status} (${raw})` : status;
 }
 
 /**
@@ -79,8 +108,8 @@ async function refusalText(res) {
 
 /**
  * Write SUD0 bytes as the host copy (`/current-file`); `restoreCopy` keeps it out of the visible folder.
- * A refused write answers with the host's own sentence in the body, returned as `hostSaid`; the
- * technical status stays in `error`, which is what core's log takes.
+ * A refused write names which settings repair applies in `reason` (the host's header) and keeps the
+ * host's own sentence in `hostSaid`; the technical status stays in `error`, which is what core's log takes.
  * @returns {Promise<import("./types").PointerWriteResult>}
  */
 export async function persistCurrentFileBytes(
@@ -97,7 +126,7 @@ export async function persistCurrentFileBytes(
     headers,
     body: bytes,
   });
-  if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}`, hostSaid: await refusalText(res) };
+  if (!res.ok) return { ok: false, error: pointerErrorText(res, `current-file persist failed: ${res.status}`), hostSaid: await refusalText(res), reason: refusalReason(res) };
   return { ok: true };
 }
 

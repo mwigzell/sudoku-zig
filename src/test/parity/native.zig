@@ -45,7 +45,11 @@ const SavedFile = struct {
 const World = struct {
     fail_writes: []const []const u8 = &.{},
     fail_reads: []const []const u8 = &.{},
+    /// A settings folder no read can use (a file taken by a directory, or a path no file lives at).
     settings_fail: bool = false,
+    /// A settings file that reads and refuses writes: the pointer write fails on the file itself,
+    /// the cause a full disk or a folder this user may not write leaves behind.
+    settings_unwritable: bool = false,
     // Only web and Android stage these; a scenario using one names native in `not_on`.
     taken: []const []const u8 = &.{},
     generate: ?[]const u8 = null,
@@ -110,6 +114,8 @@ const Expect = struct {
     errors: ?usize = null,
     solved_after_startup: ?bool = null,
     written: ?[]const []const u8 = null,
+    /// What the scenario's forget step answered: `forgotten`, `refused:<reason>`, or `failed`.
+    forget: ?[]const u8 = null,
     settings: ?Settings = null,
     legend: ?Legend = null,
     probes: []const Probe = &.{},
@@ -175,6 +181,8 @@ const Answer = struct {
     read: ?[]const u8 = null,
     generated: ?[]const u8 = null,
     outcome: ?[]const u8 = null,
+    /// What a forget did: `forgotten`, `refused:<reason>`, or `failed`.
+    forgot: ?[]const u8 = null,
     name: ?[]const u8 = null,
 };
 
@@ -334,6 +342,12 @@ const Recorder = struct {
             .read => |r| .{ .read = @tagName(r) },
             .generated => |g| .{ .generated = @tagName(g) },
             .persisted, .copied => |o| .{ .outcome = @tagName(o) },
+            // What a forget did, so a front end that forgets differently fails parity here.
+            .forgot => |forgot| .{ .forgot = switch (forgot) {
+                .forgotten => "forgotten",
+                .refused => |reason| try std.fmt.allocPrint(self.arena, "refused:{s}", .{@tagName(reason)}),
+                .failed => "failed",
+            } },
         };
     }
 };
@@ -496,6 +510,18 @@ fn finalState(arena: std.mem.Allocator, app: *shell.Sudoku, recorder: *Recorder)
     };
 }
 
+/// A settings file that reads but refuses writes, staged where the run keeps its settings.
+fn stageUnwritableSettings(gpa: std.mem.Allocator, io: std.Io, data_dir: []const u8) !void {
+    try config_store.save(gpa, io, data_dir, config.Config.default());
+    const config_path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ data_dir, config_store.file_name });
+    defer gpa.free(config_path);
+    try std.Io.Dir.cwd().setFilePermissions(io, config_path, .fromMode(0o444), .{});
+    // Root writes into a read-only file anyway, so a scenario that needs the refusal says it could
+    // not stage itself rather than assert one it never earned.
+    const probe = std.Io.Dir.writeFile(std.Io.Dir.cwd(), io, .{ .sub_path = config_path, .data = "", .flags = .{ .truncate = false } });
+    if (probe) |_| return error.CannotStageUnwritableSettings else |_| {}
+}
+
 fn runScenario(arena: std.mem.Allocator, io: std.Io, data_dir: []const u8, scenario: Scenario) !Transcript {
     const gpa = std.testing.allocator;
     const cfg = try scenarioConfig(scenario.config);
@@ -506,6 +532,7 @@ fn runScenario(arena: std.mem.Allocator, io: std.Io, data_dir: []const u8, scena
     transport.fail_reads = scenario.world.fail_reads;
     var out = std.Io.Writer.Allocating.init(gpa);
     defer out.deinit();
+    if (scenario.world.settings_unwritable) try stageUnwritableSettings(gpa, io, data_dir);
     const settings_dir = if (scenario.world.settings_fail) UNWRITABLE_DATA_DIR else data_dir;
     const rig = Rig{ .io = io, .data_dir = settings_dir, .recorder = &recorder, .transport = &transport, .out = &out.writer };
 
@@ -561,6 +588,19 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
     if (expect.written) |want| {
         try std.testing.expectEqual(want.len, written.len);
         for (want, written) |w, got| try std.testing.expectEqualStrings(w, got);
+    }
+    // The forget's answer is the scenario's expectation too, so a front end that records the step
+    // but not what it did fails here and not only in the transcript comparison.
+    if (expect.forget) |want| {
+        const kind = @tagName(@as(std.meta.Tag(flow_mod.Step), .forget_current_file));
+        var answered: usize = 0;
+        for (events) |e| {
+            if (!std.mem.eql(u8, e.step, kind)) continue;
+            answered += 1;
+            const answer = e.answer orelse return error.ForgetAnswerNotRecorded;
+            try std.testing.expectEqualStrings(want, answer.forgot orelse return error.ForgetAnswerNotRecorded);
+        }
+        try std.testing.expectEqual(@as(usize, 1), answered);
     }
     if (expect.settings) |want| {
         const saved = try config_store.loadOrDefault(std.testing.allocator, io, data_dir);
@@ -645,11 +685,31 @@ test "parity scenarios: native shell meets every shared scenario and writes its 
         defer gpa.free(rel);
         const data_dir = try std.Io.Dir.cwd().realPathFileAlloc(io, rel, gpa);
         defer gpa.free(data_dir);
-        const transcript = runScenario(arena, io, data_dir, scenario) catch |err| {
-            std.debug.print("parity scenario failed on native: {s}\n", .{scenario.name});
-            return err;
+        const transcript = runScenario(arena, io, data_dir, scenario) catch |err| switch (err) {
+            // A run this user can write into cannot stage the refusal the scenario is about.
+            error.CannotStageUnwritableSettings => {
+                std.debug.print("parity: this user writes a read-only settings file; {s} not staged\n", .{scenario.name});
+                return error.SkipZigTest;
+            },
+            else => {
+                std.debug.print("parity scenario failed on native: {s}\n", .{scenario.name});
+                return err;
+            },
         };
         try transcripts.append(arena, transcript);
     }
     try writeTranscripts(io, arena, transcripts.items);
+}
+
+test "parity record: a forget's answer is what the step did, not the step it was asked" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    var recorder = Recorder{ .arena = arena_state.allocator() };
+
+    const forgotten = try recorder.describeAnswer(.{ .forgot = .forgotten });
+    try std.testing.expectEqualStrings("forgotten", forgotten.?.forgot.?);
+    const refused = try recorder.describeAnswer(.{ .forgot = .{ .refused = .settings_unwritable } });
+    try std.testing.expectEqualStrings("refused:settings_unwritable", refused.?.forgot.?);
+    const failed = try recorder.describeAnswer(.{ .forgot = .{ .failed = "connection dropped" } });
+    try std.testing.expectEqualStrings("failed", failed.?.forgot.?);
 }

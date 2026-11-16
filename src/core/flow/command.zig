@@ -12,6 +12,8 @@ const config_flow = @import("config.zig");
 const autosave_mod = @import("autosave.zig");
 const save_mod = @import("save.zig");
 const export_mod = @import("export.zig");
+const forget_mod = @import("forget.zig");
+const startup_config = @import("../startup/config.zig");
 const logger = @import("../logger.zig");
 
 const log = logger.Logger(.flow);
@@ -32,6 +34,27 @@ pub const IMPORT_FAILED_MSG = "The puzzle could not be imported.";
 pub const PASTE_FAILED_MSG = "There is no puzzle on the clipboard to paste.";
 /// Status a load that shows no game ends with: the last status no longer describes the board.
 pub const LOAD_ENDED_STATUS = "";
+
+/// The lead-in of a load whose pointer write the settings store refused: the game is on screen,
+/// so what the player learns first is that the next launch will not reopen it.
+const LOADED_NOT_REMEMBERED_LEAD = "The game was loaded, but the next launch will not reopen it. ";
+
+/// Core's sentence for a load the settings read refused to remember: the game is loaded, and the
+/// repair is the one an unreadable settings file needs.
+pub const LOADED_SETTINGS_REFUSED_MSG = LOADED_NOT_REMEMBERED_LEAD ++ startup_config.SETTINGS_REFUSED_MSG;
+
+/// Core's sentence for a load the store could not write the pointer for: the game is loaded, and
+/// the repair is the space or the permission its settings write needs.
+pub const LOADED_SETTINGS_WRITE_FAILED_MSG = LOADED_NOT_REMEMBERED_LEAD ++ startup_config.SETTINGS_WRITE_FAILED_MSG;
+
+/// Core's sentence for a loaded game the settings store would not record as the current file, one
+/// per cause so the repair the player reads is the one that applies.
+pub fn loadedNotRememberedMsg(reason: forget_mod.Refusal) []const u8 {
+    return switch (reason) {
+        .settings_unreadable => LOADED_SETTINGS_REFUSED_MSG,
+        .settings_unwritable => LOADED_SETTINGS_WRITE_FAILED_MSG,
+    };
+}
 
 pub const CommandFlow = struct {
     engine: *game_engine.GameEngine,
@@ -466,4 +489,18 @@ test "every message a command can show in a dialog reads as a sentence" {
         export_mod.COPY_FAILED_MSG,
         config_flow.PERSIST_FAILED_MSG,
     }) |msg| try sentence.expectSentence(msg);
+}
+
+test "a load that cannot be remembered says the game is loaded and names its repair" {
+    const sentence = @import("../../test/sentence.zig");
+    try sentence.expectSentence(LOADED_SETTINGS_REFUSED_MSG);
+    try testing.expect(std.mem.indexOf(u8, LOADED_SETTINGS_REFUSED_MSG, "The game was loaded") != null);
+    try testing.expect(std.mem.indexOf(u8, LOADED_SETTINGS_REFUSED_MSG, "the next launch will not reopen it") != null);
+    // The cause's own repair travels with the news that the game was loaded.
+    try testing.expect(std.mem.indexOf(u8, LOADED_SETTINGS_REFUSED_MSG, "Repair or delete") != null);
+    try sentence.expectSentence(LOADED_SETTINGS_WRITE_FAILED_MSG);
+    try testing.expect(std.mem.indexOf(u8, LOADED_SETTINGS_WRITE_FAILED_MSG, "disk has space") != null);
+    try testing.expect(std.mem.indexOf(u8, LOADED_SETTINGS_WRITE_FAILED_MSG, "Repair or delete") == null);
+    try testing.expectEqualStrings(LOADED_SETTINGS_REFUSED_MSG, loadedNotRememberedMsg(.settings_unreadable));
+    try testing.expectEqualStrings(LOADED_SETTINGS_WRITE_FAILED_MSG, loadedNotRememberedMsg(.settings_unwritable));
 }

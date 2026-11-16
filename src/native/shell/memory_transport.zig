@@ -63,6 +63,7 @@ pub const MemoryTransport = struct {
             .context = @ptrCast(@alignCast(self)),
             .write = write,
             .readAll = readAll,
+            .delete = delete,
             .resolve = resolve,
             .free = free,
         };
@@ -70,6 +71,14 @@ pub const MemoryTransport = struct {
 
     fn asSelf(ctx: *anyopaque) *@This() {
         return @ptrCast(@alignCast(ctx));
+    }
+
+    // Removing a path that is not there is success: the forget asked for it to be gone.
+    fn delete(ctx: *anyopaque, path: []const u8) file_transport.TransportError!void {
+        const self = asSelf(ctx);
+        const found = self.files.fetchRemove(path) orelse return;
+        self.gpa.free(found.key);
+        self.gpa.free(found.value);
     }
 
     fn listed(names: []const []const u8, path: []const u8) bool {
@@ -108,3 +117,15 @@ pub const MemoryTransport = struct {
         self.gpa.free(buf);
     }
 };
+
+test "MemoryTransport: delete removes a file and tolerates one already gone" {
+    var store = MemoryTransport.init(std.testing.allocator);
+    defer store.deinit();
+    const transport = store.asTransport();
+    try store.put("/virtual/delete_me.sud", "x");
+
+    try transport.delete(transport.context, "/virtual/delete_me.sud");
+    try std.testing.expectError(file_transport.TransportError.FileNotFound, transport.readAll(transport.context, "/virtual/delete_me.sud"));
+    // A file that is already gone is what a forget asked for, so the second delete is not an error.
+    try transport.delete(transport.context, "/virtual/delete_me.sud");
+}
