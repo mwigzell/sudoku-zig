@@ -20,12 +20,14 @@ export type EventKind =
   | "end"
   | "stop";
 
-/** One line of the run's log: when it happened, what kind it was, and what it said. */
+/** One line of the run's log: when it happened, what kind it was, what it said, and its step. */
 export type RunEvent = {
   /** ISO 8601 timestamp, so two logs can be read side by side. */
   at: string;
   kind: EventKind;
   message: string;
+  /** The iteration a step event belongs to; absent on other events and on logs written before it. */
+  step?: { at: number; of: number };
 };
 
 /** `events.jsonl`, the machine-readable half of the run's log. */

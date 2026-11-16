@@ -7,24 +7,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-CURRENT="$(git rev-parse --abbrev-ref HEAD)"
+. scripts/lib/sandcastle-run.sh
 
-branches=()
-while IFS= read -r b; do
-  [ -n "$b" ] && branches+=("$b")
-done < <(git branch --list 'sandcastle/*' --format='%(refname:short)')
-
-if [ "${#branches[@]}" -eq 0 ]; then
+sandcastle_branches
+if [ "${#BRANCHES[@]}" -eq 0 ]; then
   echo "No sandcastle run to review." >&2
   exit 1
 fi
-if [ "${#branches[@]}" -gt 1 ]; then
-  echo "More than one sandcastle branch; settle these first:" >&2
-  printf '  %s\n' "${branches[@]}" >&2
-  exit 1
-fi
+sandcastle_one_branch
 
-BRANCH="${branches[0]}"
+BRANCH="${BRANCHES[0]}"
 # Run branches are sandcastle/<template>/<timestamp>; the logs carry the same stamp.
 STAMP="$(basename "$BRANCH")"
 RUN_LOGS=".sandcastle/logs/$STAMP"
@@ -44,13 +36,13 @@ else
   for verdict in "${verdicts[@]}"; do
     step="$(basename "$verdict")"
     step="${step#step-}"
-    node .sandcastle/report.mts "${step%%-*}" "$verdict"
+    npx tsx .sandcastle/report.mts "${step%%-*}" "$verdict"
     echo
   done
 fi
 
 if [ -f "$RUN_LOGS/verdict-acs.json" ]; then
-  node .sandcastle/report.mts --final "$RUN_LOGS/verdict-acs.json"
+  npx tsx .sandcastle/report.mts --final "$RUN_LOGS/verdict-acs.json"
   echo
 else
   echo "The whole-branch review did not run: no verdict-acs.json under $RUN_LOGS."

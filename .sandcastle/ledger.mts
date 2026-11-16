@@ -26,6 +26,11 @@ export function ledgerPath(runsDir: string): string {
   return join(runsDir, "ticks.json");
 }
 
+/** The record a run starts from, before its first tick: empty, and aimed at `issue`. */
+export function emptyLedger(issue: number): Ledger {
+  return { issue, ticks: [], criteria: [] };
+}
+
 /** The ledger with one more step tick on it; the ledger handed in is left alone. */
 export function recordTick(ledger: Ledger, position: number, at: string, issue: number = ledger.issue): Ledger {
   return { issue: ledger.issue, ticks: [...ledger.ticks, { position, at, issue }], criteria: ledger.criteria };
@@ -68,22 +73,37 @@ export function untickRecorded(body: string, ticks: readonly Tick[], criteria: r
 /** Something that can produce a tracker for any issue: the run's own, or a child's. */
 export type TrackerSource = (issue: number) => Tracker;
 
+/** What a drop took back from one issue, with step ticks and criterion ticks kept apart. */
+export type Unticked = {
+  /** The issue the marks were taken from: the run's own, or a sub-issue's. */
+  issue: number;
+  /** The step checkboxes put back, in the order they were recorded. */
+  steps: number[];
+  /** The acceptance-criterion checkboxes put back. */
+  criteria: number[];
+};
+
 /**
  * Take back every tick a run recorded, per issue.
  *
  * Reads each issue as the tracker holds it now, so the marks are undone on top of whatever else
- * changed since, and returns the positions it unticked. An empty record writes nothing: a run that
- * ticked nothing has nothing to take back.
+ * changed since, and returns what it took back — steps and criteria told apart — so the drop can
+ * report the operation it performed. An empty record writes nothing: a run that ticked nothing has
+ * nothing to take back.
  */
-export function untickRun(ledger: Ledger, trackerFor: TrackerSource): number[] {
+export function untickRun(ledger: Ledger, trackerFor: TrackerSource): Unticked[] {
   if (ledger.ticks.length === 0 && ledger.criteria.length === 0) return [];
 
   const issues = [...new Set([...ledger.ticks, ...ledger.criteria].map((tick) => tick.issue))];
-  for (const issue of issues) {
+  return issues.map((issue) => {
     const ticks = ledger.ticks.filter((tick) => tick.issue === issue);
     const criteria = ledger.criteria.filter((tick) => tick.issue === issue);
     const tracker = trackerFor(issue);
     tracker.writeBody(issue, untickRecorded(tracker.read(issue).body, ticks, criteria));
-  }
-  return [...ledger.ticks, ...ledger.criteria].map((tick) => tick.position);
+    return {
+      issue,
+      steps: ticks.map((tick) => tick.position),
+      criteria: criteria.map((tick) => tick.position),
+    };
+  });
 }

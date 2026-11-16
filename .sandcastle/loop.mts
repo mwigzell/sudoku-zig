@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
-import { ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
+import { emptyLedger, ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
 import { countShotgun, rgSearch } from "./shotgun.mts";
@@ -108,9 +108,10 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
   mkdirSync(runsDir, { recursive: true });
 
   // One call per transition: what a person sees on stdout is also what the run's log keeps.
-  const event = (kind: EventKind, message: string): void => {
+  // A step event also carries its iteration as data, so a reader need not parse the message.
+  const event = (kind: EventKind, message: string, step?: { at: number; of: number }): void => {
     const at = new Date().toISOString();
-    appendEvent(runsDir, { at, kind, message });
+    appendEvent(runsDir, step === undefined ? { at, kind, message } : { at, kind, message, step });
     console.log(`[${kind}] ${message}`);
   };
 
@@ -163,7 +164,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       ...childArgs(step.child),
     };
 
-    event("step", `${stage}: ${step.title}`);
+    event("step", `${stage}: ${step.title}`, { at: step.position, of: steps.length });
     event("agent-start", `${stage} implementer`);
     const implement = await waiting(`${stage} implementer`, sandbox.run({
       name: `implementer-${stage.replace(" ", "-").replace("/", "of")}`,
@@ -230,7 +231,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
         tracker.writeBody(childIssue, marked);
 
         const at = new Date().toISOString();
-        let recorded = readLedger(ledgerFile) ?? { issue: plan.issue, ticks: [], criteria: [] };
+        let recorded = readLedger(ledgerFile) ?? emptyLedger(plan.issue);
         for (const position of positions.positions) recorded = recordCriterion(recorded, position, at, childIssue);
         writeLedger(ledgerFile, recorded);
         event("criterion", `ticked criteria ${positions.positions.join(", ")} on sub-issue #${childIssue}`);
@@ -246,7 +247,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if (after !== null && after.position === step.position) return stop("the step tick did not take on the issue");
 
     // Only ticks that landed are recorded, so the record is exactly what a drop has to take back.
-    const ledger = readLedger(ledgerFile) ?? { issue: plan.issue, ticks: [] };
+    const ledger = readLedger(ledgerFile) ?? emptyLedger(plan.issue);
     writeLedger(ledgerFile, recordTick(ledger, decision.step, new Date().toISOString()));
     event("tick", `${stage}: step ${decision.step} ticked on #${plan.issue}`);
     console.log(`[${stage}] ticked`);
@@ -334,7 +335,7 @@ async function finalReview(
   const checked = validateReport(standardsRead.report, rules);
   if ("problem" in checked) return stop(`standards: ${checked.problem}`);
 
-  // A violation is a stop for accept or drop, exactly as a failing step is (AGENTS.md AC 13).
+  // A violation is a stop for accept or drop, exactly as a failing step is.
   for (const entry of standardsRead.report.rules) {
     logEvent("verdict", `standards ${entry.verdict}: ${entry.rule} — ${entry.evidence}`);
   }
@@ -369,7 +370,7 @@ async function finalReview(
     for (const position of ticked.positions) body = tickCriterion(body, position) ?? body;
     tracker.writeBody(plan.issue, body);
 
-    const ledger = readLedger(ledgerFile) ?? { issue: plan.issue, ticks: [], criteria: [] };
+    const ledger = readLedger(ledgerFile) ?? emptyLedger(plan.issue);
     let recorded = ledger;
     const at = new Date().toISOString();
     for (const position of ticked.positions) recorded = recordCriterion(recorded, position, at);

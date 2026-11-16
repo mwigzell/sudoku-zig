@@ -50,14 +50,14 @@ test("a run that ticked nothing has no ledger to read", () => {
 });
 
 test("a drop takes back exactly the ticks the run recorded, byte for byte", () => {
-  const afterTicks = tickStep(tickStep(BODY, 2), 3);
+  const afterTicks = tickStep(tickStep(BODY, 2)!, 3)!;
   const ledger = recordTick(recordTick({ issue: 116, ticks: [], criteria: [] }, 2, "a"), 3, "b");
 
   assert.equal(untickRecorded(afterTicks, ledger.ticks, ledger.criteria), BODY);
 });
 
 test("a drop rewrites the issue through the tracker and names the steps it took back", () => {
-  const afterTicks = tickStep(tickStep(BODY, 2), 3);
+  const afterTicks = tickStep(tickStep(BODY, 2)!, 3)!;
   const written: string[] = [];
   const tracker = {
     read: () => ({ title: "an issue", body: afterTicks }),
@@ -65,7 +65,7 @@ test("a drop rewrites the issue through the tracker and names the steps it took 
   };
   const ledger = recordTick(recordTick({ issue: 116, ticks: [], criteria: [] }, 2, "a"), 3, "b");
 
-  assert.deepEqual(untickRun(ledger, () => tracker), [2, 3]);
+  assert.deepEqual(untickRun(ledger, () => tracker), [{ issue: 116, steps: [2, 3], criteria: [] }]);
   assert.deepEqual(written, [BODY], "the issue is put back to the body the run started from");
 });
 
@@ -142,7 +142,7 @@ test("a drop takes a child's criterion back from the child, not from the parent"
 
   const unticked = untickRun(ledger, (issue) => ({ [PARENT]: parent, [CHILD]: child })[issue]!);
 
-  assert.deepEqual(unticked, [1]);
+  assert.deepEqual(unticked, [{ issue: CHILD, steps: [], criteria: [1] }]);
   assert.match(child.body, /- \[ \] The child's own criterion\./u, "the child's criterion is unticked");
   assert.equal(parent.writes.length, 0, "the parent's body was never touched");
 });
@@ -158,10 +158,17 @@ const CHILD_BODY = `## Acceptance criteria
 `;
 
 /** A tracker over one body, so a test can see which issue a write landed on. */
-function fakeTracker(body: string) {
-  const tracker = {
+type FakeTracker = {
+  body: string;
+  writes: string[];
+  read: () => { title: string; body: string };
+  writeBody: (issue: number, next: string) => void;
+};
+
+function fakeTracker(body: string): FakeTracker {
+  const tracker: FakeTracker = {
     body,
-    writes: [] as string[],
+    writes: [],
     read: () => ({ title: "fixture", body: tracker.body }),
     writeBody: (_issue: number, next: string) => {
       tracker.writes.push(next);

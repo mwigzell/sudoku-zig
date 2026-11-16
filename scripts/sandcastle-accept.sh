@@ -7,30 +7,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-CURRENT="$(git rev-parse --abbrev-ref HEAD)"
+. scripts/lib/sandcastle-run.sh
 
-branches=()
-while IFS= read -r b; do
-  [ -n "$b" ] && branches+=("$b")
-done < <(git branch --list 'sandcastle/*' --format='%(refname:short)')
-
-if [ "${#branches[@]}" -eq 0 ]; then
+sandcastle_branches
+if [ "${#BRANCHES[@]}" -eq 0 ]; then
   echo "No sandcastle run to accept." >&2
   exit 1
 fi
-if [ "${#branches[@]}" -gt 1 ]; then
-  echo "More than one sandcastle branch; settle these first:" >&2
-  printf '  %s\n' "${branches[@]}" >&2
-  exit 1
-fi
+sandcastle_one_branch
 
-BRANCH="${branches[0]}"
+BRANCH="${BRANCHES[0]}"
 
 # The worktree may hold the only copy of a later fix, so refuse rather than lose it.
-worktree="$(git worktree list --porcelain | awk -v b="refs/heads/$BRANCH" '
-  /^worktree / { wt = substr($0, 10) }
-  $0 == "branch " b { print wt }
-')"
+worktree="$(sandcastle_worktree "$BRANCH")"
 if [ -n "$worktree" ] && [ -n "$(git -C "$worktree" status --porcelain)" ]; then
   echo "The run's worktree has uncommitted changes: $worktree" >&2
   git -C "$worktree" status --short >&2
@@ -47,9 +36,10 @@ git branch -d "$BRANCH"
 
 # Accepting ends the issue: the run already proved its criteria, and this is the human's yes.
 # Closing is the host's write, so it goes through the same path as a tick. A run with no record of
-# the issue it aimed at closes nothing and says so, rather than guessing a number.
-if npx tsx .sandcastle/accept.mts --stamp "${BRANCH##*/}" --branch "$BRANCH" --into "$CURRENT"; then
-  echo "Accepted $BRANCH into $CURRENT."
-else
+# the issue it aimed at closes nothing, and an unclosed issue is a failed accept rather than a
+# success with a footnote.
+if ! npx tsx .sandcastle/accept.mts --stamp "${BRANCH##*/}" --branch "$BRANCH" --into "$CURRENT"; then
   echo "Accepted $BRANCH into $CURRENT, but the issue was not closed: close it by hand." >&2
+  exit 1
 fi
+echo "Accepted $BRANCH into $CURRENT."

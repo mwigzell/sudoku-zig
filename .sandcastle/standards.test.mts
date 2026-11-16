@@ -1,5 +1,6 @@
 // standards.test.mts — the standards a run must answer for are read from AGENTS.md, not from the harness.
 
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readRules, validateReport } from "./standards.mts";
@@ -42,6 +43,7 @@ test("a standard added to AGENTS.md is required by the next run, with no change 
         { rule: "DRY", verdict: "PASS", evidence: "src/host/host.zig:40" },
         { rule: "No magic numbers.", verdict: "PASS", evidence: "src/board/board.zig:7" },
       ],
+      shotgun: [],
     },
     rules,
   );
@@ -72,6 +74,7 @@ test("a title that continues past the bold is answered by the words AGENTS.md gi
         { rule: "No magic numbers.", verdict: "PASS", evidence: "src/board/board.zig:7" },
         { rule: "Clean code style", verdict: "PASS", evidence: "src/board/cell.zig:9" },
       ],
+      shotgun: [],
     },
     rules,
   );
@@ -86,8 +89,23 @@ test("a title that continues past the bold is answered by the words AGENTS.md gi
         { rule: "No magic numbers.", verdict: "PASS", evidence: "src/board/board.zig:7" },
         { rule: "Clean", verdict: "PASS", evidence: "src/board/cell.zig:9" },
       ],
+      shotgun: [],
     },
     rules,
   );
   assert.ok(!("problem" in short), "the bold wording names the same rule");
+});
+
+/** The repo's own standards file is the one every run answers for; reading it is the run's first proof. */
+test("the repo's own AGENTS.md parses into the rules a run must answer for", () => {
+  const rules = readRules(readFileSync("AGENTS.md", "utf8"));
+
+  // The heading must be found (readRules throws otherwise); the continuation rule must turn
+  // `**Clean** code style` into one title. If either regresses, a run silently answers fewer rules.
+  assert.deepEqual(rules.find((rule) => rule.position === 8), {
+    position: 8,
+    title: "Clean code style",
+    aliases: ["Clean"],
+  });
+  assert.ok(rules.length > 8, "the real file has more rules than the one rule this test names");
 });

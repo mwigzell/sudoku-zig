@@ -3,12 +3,15 @@
   "private": true,
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.14.0",
-    "tsx": "^4.23.15"
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   },
   "scripts": {
     "sandcastle": "npx tsx .sandcastle/main.mts",
     "sandcastle:plan": "npx tsx .sandcastle/main.mts --plan",
-    "sandcastle:test": "node --test .sandcastle/shotgun.test.mts .sandcastle/standards.test.mts .sandcastle/heartbeat.test.mts .sandcastle/status.test.mts .sandcastle/watch.test.mts .sandcastle/events.test.mts .sandcastle/plan.test.mts .sandcastle/ledger.test.mts .sandcastle/run_record.test.mts .sandcastle/accept.test.mts .sandcastle/verdict.test.mts .sandcastle/loop.test.mts .sandcastle/report.test.mts .sandcastle/resume.test.mts",
+    "sandcastle:test": "node --test .sandcastle/shotgun.test.mts .sandcastle/standards.test.mts .sandcastle/heartbeat.test.mts .sandcastle/status.test.mts .sandcastle/watch.test.mts .sandcastle/events.test.mts .sandcastle/plan.test.mts .sandcastle/ledger.test.mts .sandcastle/run_record.test.mts .sandcastle/accept.test.mts .sandcastle/drop.test.mts .sandcastle/verdict.test.mts .sandcastle/loop.test.mts .sandcastle/report.test.mts .sandcastle/resume.test.mts",
+    "typecheck": "tsc --noEmit",
     "sandcastle:verdict": "scripts/sandcastle-verdict.sh",
     "sandcastle:logs": "scripts/sandcastle-logs.sh",
     "sandcastle:status": "npx tsx .sandcastle/status.mts",

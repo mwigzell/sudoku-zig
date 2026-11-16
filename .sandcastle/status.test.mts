@@ -2,7 +2,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendEvent } from "./events.mts";
@@ -30,7 +30,7 @@ const status = (events: RunEvent[]) => ({
   stamp: "1",
   record: { issue: ISSUE, branch: "sandcastle/x/1", targetBranch: "develop", startedAt: at(0) },
   events,
-  ledger: { issue: ISSUE, ticks: [{ position: 1, at: at(30) }], criteria: [{ position: 1, at: at(500) }] },
+  ledger: { issue: ISSUE, ticks: [{ position: 1, at: at(30), issue: ISSUE }], criteria: [{ position: 1, at: at(500), issue: ISSUE }] },
 });
 
 test("a run whose last event is recent is live, and one that went quiet is stalled", () => {
@@ -46,7 +46,18 @@ test("a run that logged its end or a stop is finished, however old it is", () =>
   assert.equal(phase(status([]), START), "not started");
 });
 
-test("the iteration comes from the last step line the loop logged", () => {
+test("the iteration is read from the step event's own data", () => {
+  const events: RunEvent[] = [
+    { at: at(0), kind: "run", message: "on the step loop" },
+    { at: at(5), kind: "step", message: "the second piece", step: { at: 2, of: 3 } },
+    { at: at(6), kind: "agent-start", message: "the second piece implementer" },
+  ];
+
+  assert.deepEqual(iteration(events), { at: 2, of: 3 });
+});
+
+
+test("a log written before step events carried the field still names its iteration", () => {
   assert.deepEqual(iteration(RUNNING), { at: 2, of: 3 });
   assert.deepEqual(iteration([]), { at: 0, of: 0 });
 });
@@ -73,8 +84,17 @@ test("a run that never recorded its aim still reports what it does know", () => 
 });
 
 test("the newest run directory is picked by stamp, not by modification time", () => {
-  const dir = newestRunDir(".sandcastle/logs");
-  assert.equal(dir === null || /\d+$/u.test(dir), true);
+  const root = mkdtempSync(join(tmpdir(), "sandcastle-runs-"));
+  try {
+    mkdirSync(join(root, "100"));
+    // Created later, so its mtime is newer: the stamp, not the mtime, decides.
+    mkdirSync(join(root, "90"));
+    mkdirSync(join(root, "not-a-stamp"));
+
+    assert.equal(newestRunDir(root), join(root, "100"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("reading a run's status needs nothing but its directory", () => {
@@ -83,7 +103,7 @@ test("reading a run's status needs nothing but its directory", () => {
     const runsDir = join(root, "7");
     writeRunRecord(runsDir, { issue: ISSUE, branch: "sandcastle/x/7", targetBranch: "develop", startedAt: at(0) });
     appendEvent(runsDir, { at: at(1), kind: "run", message: "on the step loop" });
-    writeLedger(ledgerPath(runsDir), { issue: ISSUE, ticks: [{ position: 1, at: at(2) }], criteria: [] });
+    writeLedger(ledgerPath(runsDir), { issue: ISSUE, ticks: [{ position: 1, at: at(2), issue: ISSUE }], criteria: [] });
 
     const read = readStatus(runsDir);
 
@@ -97,7 +117,7 @@ test("reading a run's status needs nothing but its directory", () => {
 });
 
 test("the next step is the one after the steps the run has ticked", () => {
-  const twoTicked = { ...status(RUNNING), ledger: { issue: ISSUE, ticks: [{ position: 1, at: at(30) }, { position: 2, at: at(60) }], criteria: [] } };
+  const twoTicked = { ...status(RUNNING), ledger: { issue: ISSUE, ticks: [{ position: 1, at: at(30), issue: ISSUE }, { position: 2, at: at(60), issue: ISSUE }], criteria: [] } };
 
   assert.match(formatStatus(twoTicked, START + 90_000).join("\n"), new RegExp(`next:\\s+step ${STEP_OF} of ${STEP_OF}`, "u"));
   assert.match(formatStatus(status(FINISHED), START + 90_000).join("\n"), /next:\s+nothing, the run has ended/u);

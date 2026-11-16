@@ -47,7 +47,7 @@ function formatVerdict(verdict: StepVerdict): string[] {
 /** The report body for one verdict file's contents. `step` is the step it is expected to judge. */
 export function formatReport(step: number, raw: string): string[] {
   const read = readVerdict(raw);
-  if (read.verdict === undefined) return [`step ${step}: STOP — ${read.problem}`];
+  if ("problem" in read) return [`step ${step}: STOP — ${read.problem}`];
   if (read.verdict.step !== step) return [`step ${step}: STOP — the verdict names step ${read.verdict.step}`];
   return formatVerdict(read.verdict);
 }

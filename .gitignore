@@ -6,5 +6,5 @@ kcov-out/
 third_party/bundletool/
 src/wasm/artifacts/artifact.wasm
 
-# Sandcastle trial toolchain (chore/sandcastle)
+# Node dependencies of the sandcastle harness and its tests
 node_modules/

@@ -55,9 +55,15 @@ export function phase(status: RunStatus, now: number): "live" | "stalled" | "fin
   return now - Date.parse(last.at) > STALLED_AFTER_MS ? "stalled" : "live";
 }
 
-/** The iteration the run is on, read from the last step line its loop logged. */
+/**
+ * The iteration the run is on, read from the step event's own `{ at, of }`.
+ *
+ * A log written before step events carried the field is still readable: its message opens with
+ * `step <at>/<of>`, which is where the loop put the same two numbers.
+ */
 export function iteration(events: RunEvent[]): { at: number; of: number } {
   for (const event of [...events].reverse()) {
+    if (event.step !== undefined) return event.step;
     const match = /^step (\d+)\/(\d+)/u.exec(event.message);
     if (match) return { at: Number(match[1]), of: Number(match[2]) };
   }

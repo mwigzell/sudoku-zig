@@ -79,9 +79,14 @@ pub fn build(b: *std.Build) void {
 
     // The sandcastle harness decides which step a run performs and when it must stop, so
     // a broken harness has to fail the gate rather than the next run.
-    const sandcastle_test = b.addSystemCommand(&.{ "node", "--test", ".sandcastle/events.test.mts", ".sandcastle/shotgun.test.mts", ".sandcastle/standards.test.mts", ".sandcastle/heartbeat.test.mts", ".sandcastle/status.test.mts", ".sandcastle/watch.test.mts", ".sandcastle/plan.test.mts", ".sandcastle/ledger.test.mts", ".sandcastle/run_record.test.mts", ".sandcastle/accept.test.mts", ".sandcastle/verdict.test.mts", ".sandcastle/loop.test.mts", ".sandcastle/report.test.mts", ".sandcastle/resume.test.mts" });
+    const sandcastle_test = b.addSystemCommand(&.{ "node", "--test", ".sandcastle/events.test.mts", ".sandcastle/shotgun.test.mts", ".sandcastle/standards.test.mts", ".sandcastle/heartbeat.test.mts", ".sandcastle/status.test.mts", ".sandcastle/watch.test.mts", ".sandcastle/plan.test.mts", ".sandcastle/ledger.test.mts", ".sandcastle/run_record.test.mts", ".sandcastle/accept.test.mts", ".sandcastle/drop.test.mts", ".sandcastle/verdict.test.mts", ".sandcastle/loop.test.mts", ".sandcastle/report.test.mts", ".sandcastle/resume.test.mts" });
     const sandcastle_test_step = b.step("sandcastle-test", "Run the sandcastle harness tests (node)");
     sandcastle_test_step.dependOn(&sandcastle_test.step);
+
+    // Nothing typechecks .mts at run time, so the gate asks tsc; a typed harness is proof of its shape.
+    const typecheck = b.addSystemCommand(&.{ "npm", "run", "typecheck" });
+    const typecheck_step = b.step("typecheck", "Typecheck the sandcastle harness (tsc --noEmit)");
+    typecheck_step.dependOn(&typecheck.step);
 
     // --- Tests ---
     // entry_native.zig transitively imports the domain modules; addTest discovers every co-located `test {}`
@@ -194,6 +199,7 @@ pub fn build(b: *std.Build) void {
     verify_run_step.dependOn(&glue_parity.step);
     verify_run_step.dependOn(&shell_fit.step);
     verify_run_step.dependOn(&sandcastle_test.step);
+    verify_run_step.dependOn(&typecheck.step);
     verify_run_step.dependOn(&kcov_sum.step);
 
     const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });

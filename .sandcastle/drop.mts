@@ -4,32 +4,47 @@
 // leaves the issue as it found it. The git half stays in the script.
 
 import { join } from "node:path";
-import { ledgerPath, readLedger, untickRun } from "./ledger.mts";
+import { ledgerPath, readLedger, untickRun, type Ledger, type Unticked } from "./ledger.mts";
 import { ghTracker } from "./loop.mts";
 
 /** A run's directory is named after its stamp, which the branch name ends with. */
 const runsDir = (stamp: string): string => join(".sandcastle", "logs", stamp);
 
-const at = process.argv.indexOf("--stamp");
-const stamp = at === -1 ? "" : (process.argv[at + 1] ?? "");
-if (!/^\d+$/u.test(stamp)) {
-  console.error("usage: npx tsx .sandcastle/drop.mts --stamp <run stamp>");
-  process.exit(1);
+/**
+ * The lines a drop prints: what it took back, grouped by the issue it took it from.
+ *
+ * Step ticks and criterion ticks are named separately, because they are different marks on
+ * different sections of an issue and a drop report that confused them would be wrong about
+ * the operation it just performed.
+ */
+export function dropReport(ledger: Ledger, unticked: readonly Unticked[]): string[] {
+  if (unticked.length === 0) return [`[drop] the run ticked nothing on #${ledger.issue}`];
+
+  return unticked.map((entry) => {
+    const marks: string[] = [];
+    if (entry.steps.length > 0) marks.push(`steps ${entry.steps.join(", ")}`);
+    if (entry.criteria.length > 0) marks.push(`criteria ${entry.criteria.join(", ")}`);
+    return `[drop] took back on #${entry.issue}: ${marks.join("; ")}`;
+  });
 }
 
-const file = ledgerPath(runsDir(stamp));
-const ledger = readLedger(file);
+if (import.meta.main) {
+  const at = process.argv.indexOf("--stamp");
+  const stamp = at === -1 ? "" : (process.argv[at + 1] ?? "");
+  if (!/^\d+$/u.test(stamp)) {
+    console.error("usage: npx tsx .sandcastle/drop.mts --stamp <run stamp>");
+    process.exit(1);
+  }
 
-// A run from before the record existed leaves no way to know what it ticked; say so and let
-// the drop continue rather than trapping the branch in the repo.
-if (ledger === null) {
-  console.log(`[drop] no tick record in ${file}; the issue's steps are left as they are`);
-  process.exit(0);
+  const file = ledgerPath(runsDir(stamp));
+  const ledger = readLedger(file);
+
+  // A run from before the record existed leaves no way to know what it ticked; say so and let
+  // the drop continue rather than trapping the branch in the repo.
+  if (ledger === null) {
+    console.log(`[drop] no tick record in ${file}; the issue's steps are left as they are`);
+    process.exit(0);
+  }
+
+  for (const line of dropReport(ledger, untickRun(ledger, () => ghTracker()))) console.log(line);
 }
-
-const positions = untickRun(ledger, () => ghTracker());
-console.log(
-  positions.length === 0
-    ? `[drop] the run ticked no step on #${ledger.issue}`
-    : `[drop] took back the ticks on #${ledger.issue}: steps ${positions.join(", ")}`,
-);

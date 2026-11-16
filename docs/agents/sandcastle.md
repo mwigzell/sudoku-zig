@@ -34,7 +34,8 @@ A run aimed at another issue, or one that left no `run.json` record of its aim, 
    `- [ ]` checkboxes) prints the reason and exits 1 without touching the repo.
 2. **Preflight**, all fatal: the issue carries `ready-for-agent` (a label check, not a picker: an
    issue on `needs-info`, `ready-for-human` or `wontfix` is refused by the plan, before preflight),
-   the working tree is clean, no earlier run's branch or worktree remains,
+   the working tree is clean, no earlier run's worktree remains (an earlier run's branch is resumed
+   when it aimed at the same issue and refused when it aimed at another),
    and `.sandcastle/.env` holds a `GH_TOKEN` (bwrap hides the host's `gh` login).
 3. **One sandbox for the whole run**, created once: bwrap, the `pi` agent on `ollama/sandcastle-worker`,
    the host's `~/.pi/agent` mounted, `npm install` before the first agent, `node_modules` copied in. Every

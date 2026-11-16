@@ -6,42 +6,44 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-branches=()
-while IFS= read -r b; do
-  [ -n "$b" ] && branches+=("$b")
-done < <(git branch --list 'sandcastle/*' --format='%(refname:short)')
+. scripts/lib/sandcastle-run.sh
 
-if [ "${#branches[@]}" -eq 0 ]; then
+sandcastle_branches
+if [ "${#BRANCHES[@]}" -eq 0 ]; then
   echo "No sandcastle run to drop." >&2
   exit 1
 fi
-if [ "${#branches[@]}" -gt 1 ]; then
-  echo "More than one sandcastle branch; settle these first:" >&2
-  printf '  %s\n' "${branches[@]}" >&2
-  exit 1
-fi
+sandcastle_one_branch
 
-BRANCH="${branches[0]}"
+BRANCH="${BRANCHES[0]}"
 
 echo "Run:     $BRANCH"
 echo "Commits: $(git rev-list --count "HEAD..$BRANCH") (discarded)"
 echo
-read -r -p "Remove $BRANCH, its worktree and its commits, with no merge? [y/N] " reply
+if ! read -r -p "Remove $BRANCH, its worktree and its commits, with no merge? [y/N] " reply; then
+  echo "Nothing done."
+  exit 1
+fi
 case "$reply" in
   [yY]) ;;
   *) echo "Nothing done." ; exit 1 ;;
 esac
 
+# The worktree may hold the only copy of a later fix, so refuse rather than lose it.
+worktree="$(sandcastle_worktree "$BRANCH")"
+if [ -n "$worktree" ] && [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+  echo "The run's worktree has uncommitted changes: $worktree" >&2
+  git -C "$worktree" status --short >&2
+  exit 1
+fi
+
 # Take the run's ticks back off the issue before the branch goes: the record of what it
 # wrote lives in the run's log directory, named after the stamp the branch ends with.
 npx tsx .sandcastle/drop.mts --stamp "${BRANCH##*/}"
 
-git worktree list --porcelain | awk -v b="refs/heads/$BRANCH" '
-  /^worktree / { wt = substr($0, 10) }
-  $0 == "branch " b { print wt }
-' | while IFS= read -r wt; do
-  [ -n "$wt" ] && git worktree remove --force "$wt"
-done
+if [ -n "$worktree" ]; then
+  git worktree remove --force "$worktree"
+fi
 git branch -D "$BRANCH"
 
 echo "Dropped $BRANCH."
