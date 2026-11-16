@@ -181,7 +181,9 @@ pub const NativeTransport = struct {
     fn delete(c: *anyopaque, path: []const u8) TransportError!void {
         const ctx = asContext(c);
         std.Io.Dir.deleteFileAbsolute(ctx.io, path) catch |err| switch (err) {
-            error.FileNotFound => {},
+            // A file an earlier forget already removed is what this one asked for: one line, then
+            // success. The forget itself adds no second line for the same event.
+            error.FileNotFound => log.info("expected: {s} is already gone ({s})", .{ path, @errorName(err) }),
             error.AccessDenied, error.PermissionDenied, error.ReadOnlyFileSystem => return TransportError.AccessDenied,
             else => return TransportError.System,
         };
@@ -231,4 +233,27 @@ test "FileTransport native: delete removes a file and tolerates one already gone
     try std.testing.expectError(TransportError.FileNotFound, transport.readAll(transport.context, path));
     // A file that is already gone is what a forget asked for, so the second delete is not an error.
     try transport.delete(transport.context, path);
+}
+
+test "FileTransport native: a delete of a file already gone says so once and answers success" {
+    NativeTransport.resetSession();
+    defer NativeTransport.deinitSession();
+
+    const transport = NativeTransport.make(std.testing.io);
+    const path = "/tmp/sudoku_file_transport_already_gone_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(std.testing.io, path) catch {};
+    std.Io.Dir.deleteFileAbsolute(std.testing.io, path) catch {};
+
+    var logged: [256]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    try transport.delete(transport.context, path);
+
+    // One line, the idiom the read probe uses: the file was already gone, which is what was asked for.
+    try std.testing.expectEqualStrings(
+        "info [sudoku] expected: /tmp/sudoku_file_transport_already_gone_test.sud is already gone (FileNotFound)\n",
+        sink.buffered(),
+    );
 }

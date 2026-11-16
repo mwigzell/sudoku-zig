@@ -295,7 +295,9 @@ const CurrentFileDelete = struct {
     fn remove(context: *anyopaque, path: []const u8) anyerror!void {
         const self: *@This() = @ptrCast(@alignCast(context));
         std.Io.Dir.cwd().deleteFile(self.io, path) catch |err| switch (err) {
-            error.FileNotFound => {},
+            // A file an earlier forget already removed is what this one asked for: one line, then
+            // success. Core's forget adds no second line for the same event.
+            error.FileNotFound => log.info("expected: {s} is already gone ({s})", .{ path, @errorName(err) }),
             else => return err,
         };
     }
@@ -1505,6 +1507,69 @@ test "a delete that fails after the clear answers 204 and logs the file it could
     try std.testing.expect(std.mem.indexOf(u8, said, "could not delete") != null);
     try std.testing.expect(std.mem.indexOf(u8, said, save_path) != null);
     try std.testing.expect(std.mem.indexOf(u8, said, "AccessDenied") != null);
+}
+
+test "a forget whose save is already gone answers 204 and logs it as expected once" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const gone_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/saves/gone.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(gone_path);
+
+    // The settings clear lands; the file the pointer names is not on disk, which is the state the
+    // forget asked for and not a fault.
+    var session = testSession(data_path, data_path);
+    try config_store.save(std.testing.allocator, io, data_path, config.Config.default());
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, gone_path);
+    session.current_file = try std.heap.page_allocator.dupe(u8, gone_path);
+    session.has_current_file = true;
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+
+    var logged: [512]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "DELETE", "", "X-Sudoku-Delete-File: true\r\n", &reply_buf);
+
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 204"));
+    try std.testing.expect(session.current_file == null);
+    const said = sink.buffered();
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, said, "is already gone"));
+    try std.testing.expect(std.mem.indexOf(u8, said, "expected") != null);
+    try std.testing.expect(std.mem.indexOf(u8, said, gone_path) != null);
+    try std.testing.expect(std.mem.indexOf(u8, said, "FileNotFound") != null);
+}
+
+test "a forget whose save is still there logs no already-gone line" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/data", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+    const save_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/saves/game.sud", .{tmp.sub_path});
+    defer std.testing.allocator.free(save_path);
+
+    var session = testSession(data_path, data_path);
+    try pointSessionAtSave(&session, io, save_path, "SUD0 v1 deleted for real");
+    defer if (session.current_file) |p| std.heap.page_allocator.free(p);
+    try config_store.save(std.testing.allocator, io, data_path, config.Config.default());
+    try config_store.setCurrentFile(std.testing.allocator, io, data_path, save_path);
+
+    var logged: [512]u8 = undefined;
+    var sink: std.Io.Writer = .fixed(&logged);
+    logger.test_sink = &sink;
+    defer logger.test_sink = null;
+
+    var reply_buf: [512]u8 = undefined;
+    const reply = try pointerRequestReply(io, &session, "DELETE", "", "X-Sudoku-Delete-File: true\r\n", &reply_buf);
+
+    try std.testing.expect(std.mem.startsWith(u8, reply, "HTTP/1.1 204"));
+    // A file that was there and went: the expected line is for the arm that has nothing to delete.
+    try std.testing.expect(std.mem.indexOf(u8, sink.buffered(), "is already gone") == null);
 }
 
 test "current-file POST with no current file writes the visible save folder and makes it the current file" {
