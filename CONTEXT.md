@@ -306,7 +306,7 @@ Minimal Java/DEX + JNI (`jni_host.zig`) — package **`com.wigzell.sudoku_zig`**
 _Avoid_: `android/shell` JS, Gradle app layer (default path), EGL UI in the same entry
 
 **FileTransport** (`native/shell/file_transport.zig`, native arm):
-Fn-pointer vtable for file read/write/resolve. **Owned by native `Storage`** (held by `Sudoku`) — not by `GameEngine`. The wasm path passes opaque bytes instead (`toSaveFormat` out, `flowRead` in); no wasm transport arm.
+Fn-pointer vtable for file read/write/delete/resolve. **Owned by native `Storage`** (held by `Sudoku`) — not by `GameEngine`. The wasm path passes opaque bytes instead (`toSaveFormat` out, `flowRead` in); no wasm transport arm. The delete goes through this arm, so a run with no settings location (`ConfigPersist` null) still deletes the file a forget asks for; a file already gone is success.
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
 **Config** (`config.zig`):

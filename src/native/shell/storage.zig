@@ -233,15 +233,11 @@ const CurrentFileDelete = struct {
     fn remove(context: *anyopaque, path: []const u8) anyerror!void {
         const self: *@This() = @ptrCast(@alignCast(context));
         const store = self.storage;
-        // A run with nowhere to keep settings has no io handle to delete with, and its pointer was
-        // never written; the step's file is left where it is, as it was before.
-        const sp = store.config_persist orelse return;
+        // The delete goes through the transport, so a run with no settings location still removes
+        // the file: the pointer it could not clear never existed, and the step asked for the file.
         const resolved = try store.transport.resolve(store.transport.context, path);
         defer store.transport.free(store.transport.context, resolved);
-        std.Io.Dir.deleteFileAbsolute(sp.io, resolved) catch |err| switch (err) {
-            error.FileNotFound => {},
-            else => return err,
-        };
+        try store.transport.delete(store.transport.context, resolved);
     }
 };
 
@@ -449,6 +445,20 @@ test "forgetCurrentFile: deletes the file only when asked, and forgets it either
         try std.testing.expect(store.forgetCurrentFile(.{ .path = file, .delete = delete }) == .forgotten);
         try std.testing.expectEqual(!delete, store.exists(file));
         try std.testing.expect((try root.currentFile()) == null);
+    }
+}
+
+test "forgetCurrentFile: without a settings location the delete still happens when asked" {
+    var root = try TestRoot.init();
+    defer root.deinit();
+    const store: Storage = .{ .transport = file_transport.NativeTransport.make(std.testing.io) };
+    const file = try root.path("restore.sud");
+    defer std.testing.allocator.free(file);
+
+    for ([_]bool{ false, true }) |delete| {
+        try store.transport.write(store.transport.context, file, "x");
+        try std.testing.expect(store.forgetCurrentFile(.{ .path = file, .delete = delete }) == .forgotten);
+        try std.testing.expectEqual(!delete, store.exists(file));
     }
 }
 
