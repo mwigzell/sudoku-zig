@@ -108,3 +108,17 @@ import { hostFetch } from "./test_support.mjs";
   const refusedWrite = await hostApi.persistCurrentFileBytes(new Uint8Array([6]), async () => ({ ok: false, status: 500, headers }), "refused.sud");
   assert.equal(refusedWrite.reason, "store_said_no", "the write arm carries it the same way");
 }
+
+// A store failure the host cannot explain names its system message in a header, so the reason the
+// page hands core is the cause itself, not only the status code.
+{
+  const headers = { get: (name) => (name === "X-Sudoku-Failure" ? "OutOfMemory" : null) };
+  const failed = await hostApi.forgetCurrentFile(true, async () => ({ ok: false, status: 500, headers }));
+  assert.deepEqual(failed, { ok: false, error: "current-file forget failed: 500 (OutOfMemory)", reason: null });
+  const failedWrite = await hostApi.persistCurrentFileBytes(
+    new Uint8Array([7]),
+    async () => ({ ok: false, status: 500, headers }),
+    "unexplained.sud",
+  );
+  assert.equal(failedWrite.error, "current-file persist failed: 500 (OutOfMemory)", "the write arm carries it the same way");
+}

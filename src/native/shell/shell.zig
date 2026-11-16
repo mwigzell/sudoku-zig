@@ -1431,6 +1431,49 @@ test "startup: a refused forget leaves the save, shows core's sentence and ends"
     defer if (pointer) |p| std.testing.allocator.free(p);
     try std.testing.expectEqualStrings(broken_path, pointer orelse return error.TestFailed);
 }
+
+test "startup: a forget the adapter could not complete shows core's generic failure and keeps the save" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const forget_mod = @import("../../core/flow/forget.zig");
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_rel = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_rel);
+    const tmp_abs_z = try std.Io.Dir.cwd().realPathFileAlloc(io, data_rel, std.testing.allocator);
+    defer std.testing.allocator.free(tmp_abs_z);
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/data", .{tmp_abs_z});
+    defer std.testing.allocator.free(data_path);
+    try std.Io.Dir.cwd().createDirPath(io, data_path);
+    const broken_path = try std.fmt.allocPrint(std.testing.allocator, "{s}/broken.sud", .{data_path});
+    defer std.testing.allocator.free(broken_path);
+    const transport = file_transport.NativeTransport.make(io);
+    try transport.write(transport.context, broken_path, "not a save");
+
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_restore = true;
+    cfg.auto_new = true;
+    var facade_impl = DeterministicFacade{
+        .steps = &[_]command.ParseCommandResult{},
+        .replace_answers = &[_]bool{true},
+    };
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport, &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = data_path });
+    defer app.deinit();
+    // A store that fails inside its own path work: neither an unreadable nor an unwritable
+    // settings file, so no repair sentence is true of it.
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 2 });
+    app.storage.gpa = failing.allocator();
+
+    try app.runStartupFlow(broken_path);
+
+    // The clear failed before the delete, so the file Delete asked for is still on disk.
+    _ = try std.Io.Dir.cwd().statFile(io, broken_path, .{});
+    try std.testing.expectEqualStrings(forget_mod.FAILED_MSG, facade_impl.last_render_msg.?);
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
 test "save: a refused pointer write shows core's sentence and leaves the game file written" {
     const test_defaults = @import("../../test/config_defaults.zig");
     const io = std.testing.io;

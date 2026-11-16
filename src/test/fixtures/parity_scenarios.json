@@ -732,6 +732,15 @@
       "expect": {"questions": 1, "forget": "refused:settings_unreadable"}
     },
     {
+      "name": "startup_restore_failed_delete_settings_unwritable",
+      "summary": "A current file that is no saved game, with a settings file that reads and refuses writes: Delete is refused before the save is touched, so startup ends on that cause's sentence.",
+      "config": {"auto_restore": true},
+      "current_file": {"name": "startup.sud", "corrupt": true},
+      "world": {"settings_unwritable": true},
+      "answers": [true],
+      "expect": {"questions": 1, "forget": "refused:settings_unwritable"}
+    },
+    {
       "name": "startup_restore_failed_keep",
       "summary": "A current file that is no saved game: startup asks, and Keep forgets it without deleting.",
       "config": {"auto_restore": true},

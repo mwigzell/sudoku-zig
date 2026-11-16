@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import * as stepRunner from "./step_runner.js";
 import * as clientLog from "../client_log.js";
+import * as hostApi from "../host_api.js";
 import { loadCoreFlow, loadGame, openAs, PUZZLE_LINE, startNewGame, coreText, fillText } from "../test_support.mjs";
 
 /**
@@ -454,6 +455,28 @@ const WELCOME = coreText.IDLE_STARTUP_STATUS;
   const rejected = await stepRunner.runCommand(game, { action: "paste" }, { pastePuzzle: () => ({ ok: true, bytes: padded }), ...prompts });
   assert.deepEqual(rejected, { kind: stepRunner.STEP_SHOW_STATUS, text: coreText.LOAD_ENDED_STATUS });
   assert.deepEqual(prompts.texts, [coreText.PUZZLE_LENGTH_MSG]);
+}
+
+// A failure the host could not repair arrives with its system message in a header, and that message
+// is what core's one log line carries: the page hands on the host's reason, not only the status.
+{
+  const game = await loadGame({ auto_restore: true });
+  const lines = [];
+  game.setLogListener((level, scope, text) => lines.push({ level, scope, text }));
+  const headers = { get: (name) => (name === "X-Sudoku-Failure" ? "OutOfMemory" : null) };
+  const handlers = {
+    ...startupRecorder({ read: new Error("network down"), yes: true }),
+    forgetCurrentFile: (forget) => hostApi.forgetCurrentFile(forget.delete, async () => ({ ok: false, status: 500, headers })),
+  };
+  try {
+    await stepRunner.runFlow(game, { flow: stepRunner.FLOW_STARTUP, path: "/current-file", name: "game.sud" }, handlers);
+  } finally {
+    game.setLogListener(null);
+  }
+  const hits = lines.filter((line) => line.text.includes("OutOfMemory"));
+  assert.equal(hits.length, 1, `one core line names the host's reason, got ${JSON.stringify(lines)}`);
+  assert.ok(hits[0].text.includes("500"), "the status rides with the reason");
+  assert.ok(["warn", "err"].includes(hits[0].level), `logged as a failure, got ${hits[0].level}`);
 }
 
 console.log("step_runner.test.mjs OK");

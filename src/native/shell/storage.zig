@@ -55,6 +55,9 @@ pub const Storage = struct {
     transport: file_transport.FileTransport,
     /// Null when the run has nowhere to keep settings; settings and pointer writes are then skipped.
     config_persist: ?ConfigPersist = null,
+    /// Allocator the settings store's own buffers come from: the process allocator unless a caller
+    /// supplies its own.
+    gpa: std.mem.Allocator = std.heap.page_allocator,
 
     /// The current-file pointer saved by the last run, owned by `gpa`; null when there is none.
     pub fn loadCurrentFile(self: *const @This(), gpa: std.mem.Allocator) ?[]u8 {
@@ -68,7 +71,7 @@ pub const Storage = struct {
     /// Carry out the write half of a `persist_config` step.
     pub fn persistConfig(self: *const @This(), cfg: config.Config) flow_mod.step.Outcome {
         const sp = self.config_persist orelse return .ok;
-        config_store.save(std.heap.page_allocator, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
+        config_store.save(self.gpa, sp.io, sp.data_dir, cfg) catch |err| return .{ .failed = @errorName(err) };
         return .ok;
     }
 
@@ -118,7 +121,7 @@ pub const Storage = struct {
     /// name, because no repair sentence is true of it.
     pub fn persistCurrentFile(self: *const @This(), path: ?[]const u8) PointerWrite {
         const sp = self.config_persist orelse return .ok;
-        config_store.setCurrentFile(std.heap.page_allocator, sp.io, sp.data_dir, path) catch |err|
+        config_store.setCurrentFile(self.gpa, sp.io, sp.data_dir, path) catch |err|
             return pointerWriteFor(err);
         return .ok;
     }
@@ -192,7 +195,7 @@ pub const Storage = struct {
     /// delete), so a refused clear leaves the save on disk and the shell reports the reason.
     pub fn forgetCurrentFile(self: *const @This(), forget: flow_mod.step.ForgetCurrentFile) flow_mod.step.Forgot {
         const settings: ?forget_mod.Settings = if (self.config_persist) |sp|
-            .{ .gpa = std.heap.page_allocator, .io = sp.io, .data_dir = sp.data_dir }
+            .{ .gpa = self.gpa, .io = sp.io, .data_dir = sp.data_dir }
         else
             null;
         var delete = CurrentFileDelete{ .storage = self };

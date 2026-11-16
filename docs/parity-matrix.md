@@ -99,6 +99,7 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `startup_generation_failed` | When startup's generation fails, core shows its error and the empty board. | web, android | native: Terminal generation always produces a puzzle and has no cancel. |
 | `startup_restore_failed_delete` | A current file that is no saved game: startup shows the empty board, asks, and deletes it on Delete. | native, web, android | — |
 | `startup_restore_failed_delete_settings_refused` | A current file that is no saved game, with a settings folder the store cannot use: Delete is refused before the save is touched, so startup ends on core's sentence. | native, web, android | — |
+| `startup_restore_failed_delete_settings_unwritable` | A current file that is no saved game, with a settings file that reads and refuses writes: Delete is refused before the save is touched, so startup ends on that cause's sentence. | native, web, android | — |
 | `startup_restore_failed_keep` | A current file that is no saved game: startup asks, and Keep forgets it without deleting. | native, web, android | — |
 | `startup_restore_missing` | A current file that is gone: startup reports the failed restore and asks whether to delete it. | native, web, android | — |
 | `new_generated` | New generates a game at the chosen difficulty and replaces the board. | native, web, android | — |

@@ -210,6 +210,8 @@ async function makeWorld(scenario) {
     taken: new Set(w.taken ?? []),
     generate: w.generate ?? null,
     settingsFail: w.settings_fail === true,
+    /** Which settings cause this host refuses a pointer write for: a folder it cannot use, or a file it cannot write. */
+    settingsRefusal: w.settings_unwritable === true ? "settings_unwritable" : w.settings_fail === true ? "settings_unreadable" : null,
     settings: null,
     /** The host's current file, restored at startup. */
     current: null,
@@ -255,9 +257,8 @@ async function makeWorld(scenario) {
     }
     if (url === CURRENT_FILE && init.method === "DELETE") {
       // The served host refuses a pointer write its settings store will not take, before the file
-      // is touched, and names the cause so core words the outcome. A folder the store cannot use at
-      // all is the cause native's own staged settings failure produces.
-      if (world.settingsFail) return { ok: false, status: 500, headers: refusalHeaders("settings_unreadable") };
+      // is touched, and names the cause so core words the outcome.
+      if (world.settingsRefusal) return { ok: false, status: 500, headers: refusalHeaders(world.settingsRefusal) };
       if (headers[DELETE_FILE_HEADER] === "true") world.files.delete(world.current);
       world.current = null;
       return { ok: true, status: 204 };

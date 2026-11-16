@@ -390,7 +390,7 @@ test "a refused forget ends startup on core's sentence for that refusal" {
 test "a forget that failed for another reason shows core's generic failure, with one log line" {
     // A core-mapped store error and an adapter-reported one arrive the same way; neither is a
     // settings refusal, so the player gets the generic sentence and the log carries the reason.
-    inline for (.{ "OutOfMemory", "current-file forget failed: 500" }) |reason| {
+    inline for (.{ "OutOfMemory", "current-file forget failed: 500 (OutOfMemory)" }) |reason| {
         var h = try Harness.init();
         defer h.deinit();
 

@@ -14,6 +14,8 @@ const RESTORE_COPY_HEADER = "X-Sudoku-Restore-Copy";
 const DELETE_FILE_HEADER = "X-Sudoku-Delete-File";
 /** Response header naming which refusal stopped a pointer write, so core words it for the player. */
 const REFUSAL_HEADER = "X-Sudoku-Refusal";
+/** Response header naming the system message behind a pointer write that failed for no repairable cause. */
+const FAILURE_HEADER = "X-Sudoku-Failure";
 
 /** The host's startup config: the Config, default save name and the current file to restore. */
 export async function fetchHostStartupConfig(fetchFn = globalThis.fetch) {
@@ -43,14 +45,15 @@ export async function restore(path, fetchFn = globalThis.fetch) {
 /**
  * Stop the host restoring its current file at startup; `deleteFile` removes the file too.
  * A refusal names which settings repair applies in `reason` (the host's header), so core words the
- * status; the technical status stays in `error`, which is what core's log takes.
+ * status; any other failure keeps the host's system message in `error`, which is what core's log
+ * takes.
  * @returns {Promise<import("./types").PointerWriteResult>}
  */
 export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) {
   const headers = {};
   if (deleteFile === true) headers[DELETE_FILE_HEADER] = "true";
   const res = await fetchFn(CURRENT_FILE_PATH, { method: "DELETE", headers });
-  if (!res.ok) return { ok: false, error: `current-file forget failed: ${res.status}`, reason: refusalReason(res) };
+  if (!res.ok) return { ok: false, error: pointerErrorText(res, `current-file forget failed: ${res.status}`), reason: refusalReason(res) };
   return { ok: true };
 }
 
@@ -63,6 +66,19 @@ export async function forgetCurrentFile(deleteFile, fetchFn = globalThis.fetch) 
 function refusalReason(res) {
   const raw = typeof res.headers?.get === "function" ? res.headers.get(REFUSAL_HEADER) : null;
   return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+/**
+ * The status a failed pointer write answers with, plus the system message the host named for it
+ * (e.g. `500 (OutOfMemory)`). The message is the reason core's flow logs, so an unexplained store
+ * failure records its cause instead of only the status code.
+ * @param {{ headers?: { get?: (name: string) => string | null } }} res
+ * @param {string} status
+ * @returns {string}
+ */
+function pointerErrorText(res, status) {
+  const raw = typeof res.headers?.get === "function" ? res.headers.get(FAILURE_HEADER) : null;
+  return typeof raw === "string" && raw.length > 0 ? `${status} (${raw})` : status;
 }
 
 /**
@@ -110,7 +126,7 @@ export async function persistCurrentFileBytes(
     headers,
     body: bytes,
   });
-  if (!res.ok) return { ok: false, error: `current-file persist failed: ${res.status}`, hostSaid: await refusalText(res), reason: refusalReason(res) };
+  if (!res.ok) return { ok: false, error: pointerErrorText(res, `current-file persist failed: ${res.status}`), hostSaid: await refusalText(res), reason: refusalReason(res) };
   return { ok: true };
 }
 
