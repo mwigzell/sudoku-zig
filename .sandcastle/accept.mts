@@ -54,7 +54,9 @@ if (import.meta.main) {
   const at = process.argv.indexOf("--stamp");
   const stamp = at === -1 ? "" : (process.argv[at + 1] ?? "");
   const intoAt = process.argv.indexOf("--into");
-  const into = intoAt === -1 ? "develop" : (process.argv[intoAt + 1] ?? "develop");
+  const into = intoAt === -1
+    ? execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim()
+    : (process.argv[intoAt + 1] ?? "");
   const branchAt = process.argv.indexOf("--branch");
   const branch = branchAt === -1 ? `sandcastle/<run>/${stamp}` : (process.argv[branchAt + 1] ?? "");
 

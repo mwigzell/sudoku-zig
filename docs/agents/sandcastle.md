@@ -34,11 +34,11 @@ A run aimed at another issue, or one that left no `run.json` record of its aim, 
    `- [ ]` checkboxes) prints the reason and exits 1 without touching the repo.
 2. **Preflight**, all fatal: the issue carries `ready-for-agent` (a label check, not a picker: an
    issue on `needs-info`, `ready-for-human` or `wontfix` is refused by the plan, before preflight),
-   the working tree is clean, HEAD is on `develop`, no earlier run's branch or worktree remains,
+   the working tree is clean, no earlier run's branch or worktree remains,
    and `.sandcastle/.env` holds a `GH_TOKEN` (bwrap hides the host's `gh` login).
 3. **One sandbox for the whole run**, created once: bwrap, the `pi` agent on `ollama/sandcastle-worker`,
    the host's `~/.pi/agent` mounted, `npm install` before the first agent, `node_modules` copied in. Every
-   step commits to the one run branch, cut from `develop`.
+   step commits to the one run branch, cut from the branch the run was started on.
 4. **Per step, two fresh sessions.** An implementer performs that step only (red test, green, `verify`,
    red-on-revert proof, docs) and commits once; a reviewer in a new session tries to falsify it and writes
    `.sandcastle/verdict.json`. A step with no commit, two commits, or a reviewer that commits at all stops
@@ -103,7 +103,7 @@ is being left as it is, and the drop continues.
 
 ## Accept, drop, verdict
 
-- **accept** merges the run branch into whatever branch you are on — so be on `develop`. It refuses when a
+- **accept** merges the run branch into whatever branch you are on. It refuses when a
   second `sandcastle/*` branch exists or the run's worktree has uncommitted changes, then removes the
   worktree and deletes the branch.
 - **drop** asks once, then reverts the recorded ticks, removes the worktree and deletes the branch. The
@@ -165,9 +165,11 @@ programs (`status` reads it) and `logs/<stamp>/run.log` for a person.
 ## Reading a stopped run
 
 A stopped run leaves its branch and worktree with the verdicts it produced, and says why in `[stop] …`.
-The verdict files say what the reviewer saw; the diff is `git diff develop...<branch>`. The two usual
+The verdict files say what the reviewer saw; the diff is `git diff <base-branch>...<branch>`. The two usual
 causes are a step that did not prove itself (no red-on-revert evidence, a `verify` failure, a criterion at
 risk) and an agent that went off-script (two commits, or a reviewer that wrote).
+
+A run is cut from and accepted into the branch it was started on.
 
 Prompt arguments `SOURCE_BRANCH` and `TARGET_BRANCH` are reserved by sandcastle itself; the harness passes
 the run's own base as `BASE_BRANCH` so a review range never depends on the host's checkout.

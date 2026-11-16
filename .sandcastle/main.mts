@@ -67,14 +67,6 @@ function checkCleanTree(): void {
   }
 }
 
-/** The run branch is cut from the target branch, and the accept step merges into the current one. */
-function checkOnTargetBranch(): void {
-  const current = git(["rev-parse", "--abbrev-ref", "HEAD"]);
-  if (current !== plan.targetBranch) {
-    throw new Error(`a run is cut from and accepted into ${plan.targetBranch}, but HEAD is on ${current}`);
-  }
-}
-
 /** bwrap hides the host's gh login, so the agent's first gh call needs a token in .env. */
 function checkGitHubToken(): void {
   const envPath = new URL(".env", import.meta.url);
@@ -91,8 +83,10 @@ function checkGitHubToken(): void {
 // shape without starting one, so a run can be inspected before it costs an agent.
 // ---------------------------------------------------------------------------
 
-/** The only branch a run is cut from and merged into; `main` is never written by the harness. */
-const TARGET_BRANCH = "develop";
+/** The branch the run is cut from and accepted into: whatever HEAD is on when it starts. */
+function currentBranch(): string {
+  return git(["rev-parse", "--abbrev-ref", "HEAD"]);
+}
 
 /** The value following a flag, or `undefined` when the flag is absent. */
 function argumentValue(flag: string, argv: string[]): string | undefined {
@@ -117,9 +111,9 @@ if (!Number.isInteger(issue) || issue <= 0) {
 const viewed = readIssue(issue);
 
 if (argv.includes("--plan")) {
-  // A plan reads no repository state: it costs no agent, and a stopped run in the way is the run's
-  // business, so the shape it prints may differ from a run's only in the stamp it would carry.
-  const shape = makePlan(issue, viewed.title, viewed.body, { stamp: Date.now(), targetBranch: TARGET_BRANCH, labels: viewed.labels });
+  // A plan costs no agent and leaves no worktree or branch; a stopped run in the way is the run's
+  // business, so the shape it prints may differ from a run's only in the branch head and stamp it would carry.
+  const shape = makePlan(issue, viewed.title, viewed.body, { stamp: Date.now(), targetBranch: currentBranch(), labels: viewed.labels });
   for (const line of formatPlan(shape)) console.log(line);
   // A refused issue cannot be run, so the plan's exit code says so; a reader that scripts
   // the harness sees the refusal instead of a plan it would otherwise act on.
@@ -137,7 +131,13 @@ if (decision.kind === "stop") {
 const stamp = decision.kind === "resume" ? decision.stamp : Date.now();
 if (decision.kind === "resume") console.log(`[resume] continuing ${decision.branch}: the steps it ticked are history`);
 
-const plan = makePlan(issue, viewed.title, viewed.body, { stamp, targetBranch: TARGET_BRANCH, labels: viewed.labels });
+const runsDir = join(".sandcastle", "logs", String(stamp));
+// A resumed run keeps the base it was cut from; a fresh one starts from the branch HEAD is on.
+const targetBranch = decision.kind === "resume"
+  ? (readRunRecord(runsDir)?.targetBranch ?? currentBranch())
+  : currentBranch();
+
+const plan = makePlan(issue, viewed.title, viewed.body, { stamp, targetBranch, labels: viewed.labels });
 
 if (plan.refusal !== null) {
   for (const line of formatPlan(plan)) console.error(line);
@@ -148,7 +148,6 @@ if (plan.refusal !== null) {
 // read above pays for none of it.
 checkNoLeftoverWorktrees();
 checkCleanTree();
-checkOnTargetBranch();
 checkGitHubToken();
 
 // ---------------------------------------------------------------------------
@@ -192,11 +191,9 @@ const workerAgent = () =>
 // write to the issue.
 // ---------------------------------------------------------------------------
 
-const runsDir = join(".sandcastle", "logs", String(stamp));
-
 const sandbox = await sandcastle.createSandbox({
   branch: plan.branch,
-  baseBranch: TARGET_BRANCH,
+  baseBranch: plan.targetBranch,
   sandbox: agentSandbox(),
   hooks,
   copyToWorktree,

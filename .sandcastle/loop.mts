@@ -23,6 +23,11 @@ const VERDICT_FILE = ".sandcastle/verdict.json";
 const ACS_VERDICT_FILE = ".sandcastle/verdict-acs.json";
 const STANDARDS_VERDICT_FILE = ".sandcastle/verdict-standards.json";
 
+/** A verdict left by an earlier attempt is not this run's evidence: clear it before the agent writes. */
+function clearVerdict(path: string): void {
+  rmSync(path, { force: true });
+}
+
 /** Prompts are harness files, resolved against the repo root the harness runs from. */
 const IMPLEMENT_PROMPT = "./.sandcastle/implement-prompt.md";
 const REVIEW_PROMPT = "./.sandcastle/review-prompt.md";
@@ -173,6 +178,12 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       return stop(`the implementer made ${implement.commits.length} commits for ${stage}; a step is one commit`);
     }
 
+    const verdictPath = join(sandbox.worktreePath, VERDICT_FILE);
+    // A resumed run reuses the worktree, and a child step writes the matrix at the same path the
+    // whole-branch review uses: clear both so only this agent's write can answer for this step.
+    clearVerdict(verdictPath);
+    clearVerdict(join(sandbox.worktreePath, ACS_VERDICT_FILE));
+
     event("agent-start", `${stage} reviewer`);
     const review = await waiting(`${stage} reviewer`, sandbox.run({
       name: `reviewer-${stage.replace(" ", "-").replace("/", "of")}`,
@@ -184,7 +195,6 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     event("agent-end", `${stage} reviewer`);
     if (review.commits.length > 0) return stop(`the reviewer committed to ${plan.branch}; a review may not write`);
 
-    const verdictPath = join(sandbox.worktreePath, VERDICT_FILE);
     if (!existsSync(verdictPath)) return stop(`the reviewer wrote no ${VERDICT_FILE} for ${stage}`);
     const keptVerdict = join(runsDir, `step-${step.position}-verdict.json`);
     copyFileSync(verdictPath, keptVerdict);
@@ -282,6 +292,12 @@ async function finalReview(
 ): Promise<number> {
   const { plan, sandbox, tracker, agent, runsDir, ledgerFile } = options;
 
+  const verdictPath = join(sandbox.worktreePath, ACS_VERDICT_FILE);
+  const standardsPath = join(sandbox.worktreePath, STANDARDS_VERDICT_FILE);
+  // A resumed run reuses the worktree, so an earlier attempt's files must not answer for this one.
+  clearVerdict(verdictPath);
+  clearVerdict(standardsPath);
+
   logEvent("agent-start", "final reviewer: the issue's acceptance criteria");
   const review = await withHeartbeat(
     "final reviewer",
@@ -297,7 +313,6 @@ async function finalReview(
   logEvent("agent-end", "final reviewer");
   if (review.commits.length > 0) return stop(`the whole-branch reviewer committed to ${plan.branch}; a review may not write`);
 
-  const verdictPath = join(sandbox.worktreePath, ACS_VERDICT_FILE);
   if (!existsSync(verdictPath)) return stop(`the whole-branch reviewer wrote no ${ACS_VERDICT_FILE}`);
 
   const kept = join(runsDir, "verdict-acs.json");
@@ -308,7 +323,6 @@ async function finalReview(
 
   // The standards lens is a second file with its own verdict: the reviewer answers every rule the
   // branch's own AGENTS.md carries, and a rule it skipped, invented or left unevidenced stops the run.
-  const standardsPath = join(sandbox.worktreePath, STANDARDS_VERDICT_FILE);
   if (!existsSync(standardsPath)) return stop(`the whole-branch reviewer wrote no ${STANDARDS_VERDICT_FILE}`);
   const standardsKept = join(runsDir, "verdict-standards.json");
   copyFileSync(standardsPath, standardsKept);

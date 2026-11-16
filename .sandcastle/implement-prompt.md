@@ -36,7 +36,7 @@ Read the full issue for context:
 - **Never** run `git push`. **Never** close, edit or label an issue. Never add a step tick of your own — the host owns every tracker write. Never merge.
 - **Never** modify `docs/verify-timing.json` or any owner-gated file named in `AGENTS.md`.
 - No issue numbers, step numbers or handoff references in code comments: cite the code, not the paperwork.
-- Stay on your branch. Do not rebase, do not touch `develop` or `main`.
+- Stay on your branch. Do not rebase, do not switch branches, do not merge.
 - If a check fails and you cannot fix it, stop and report the failure output. A truthful red beats a claimed green.
 
 # Done

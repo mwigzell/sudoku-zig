@@ -287,6 +287,40 @@ test("a whole-branch review that writes no verdict stops the run", async () => {
   }
 });
 
+/** A sandbox that commits for the implementer and writes no verdict, leaving files as they are. */
+function silentReviewerSandbox(worktree: string) {
+  return {
+    branch: "sandcastle/sequential-reviewer/1",
+    worktreePath: worktree,
+    run: async (options: { promptFile?: string }) => ({
+      commits: options.promptFile?.includes("implement") === true ? [{ sha: "abc1" }] : [],
+      iterations: [],
+      stdout: "",
+    }),
+  };
+}
+
+test("a verdict left in the worktree is cleared, so a silent reviewer cannot pass on it", async () => {
+  const dirs = fixture();
+  try {
+    // A resumed run reuses the worktree; both files are what an earlier attempt could have left.
+    writeFileSync(join(dirs.worktree, ".sandcastle", "verdict.json"), JSON.stringify(passingVerdict(1)));
+    writeFileSync(join(dirs.worktree, ".sandcastle", "verdict-acs.json"), JSON.stringify(passingFinal()));
+
+    const code = await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: silentReviewerSandbox(dirs.worktree) as unknown as StepSandbox,
+      tracker: fakeTracker(TWO_STEPS),
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+    });
+
+    assert.equal(code, 1, "the stale files are not this step's evidence");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
 test("a step that is not on track stops the run: nothing is ticked and no later step starts", async () => {
   const dirs = fixture();
   try {
