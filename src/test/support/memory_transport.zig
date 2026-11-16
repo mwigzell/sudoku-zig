@@ -1,7 +1,7 @@
 // In-memory file transport for shell tests: files live in a map, so a test controls what is
 // there, which writes and reads fail, and sees every write the shell made.
 const std = @import("std");
-const file_transport = @import("file_transport.zig");
+const file_transport = @import("../../native/shell/file_transport.zig");
 
 /// Bare names resolve under `DIR`, absolute paths stay as given.
 pub const MemoryTransport = struct {

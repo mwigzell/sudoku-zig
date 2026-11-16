@@ -322,7 +322,7 @@ const DeterministicFacade = struct {
     pub fn deinit(_: *@This()) void {}
 };
 
-const MemoryTransport = @import("memory_transport.zig").MemoryTransport;
+const MemoryTransport = @import("../../test/support/memory_transport.zig").MemoryTransport;
 
 test "integrated e2e - full seam: fill command via prefix dispatch" {
     // Arrange: fresh engine via Sudoku.init through real AsciiRenderer

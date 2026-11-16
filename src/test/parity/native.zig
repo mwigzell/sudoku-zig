@@ -16,7 +16,7 @@ const puzzle_gen = @import("../../core/puzzle_gen/mod.zig");
 const game_engine = @import("../../core/engine/game_engine.zig");
 const config_store = @import("../../core/config_store.zig");
 const test_defaults = @import("../config_defaults.zig");
-const MemoryTransport = @import("../../native/shell/memory_transport.zig").MemoryTransport;
+const MemoryTransport = @import("../support/memory_transport.zig").MemoryTransport;
 
 const SCENARIOS_PATH = "src/test/fixtures/parity_scenarios.json";
 const TRANSCRIPTS_DIR = ".zig-cache/parity";
