@@ -1,0 +1,12 @@
+[
+  {
+    "symbol": "written_not_current",
+    "files": 8,
+    "verdict": "plumbing"
+  },
+  {
+    "symbol": "X-Sudoku-Refusal",
+    "files": 8,
+    "verdict": "plumbing"
+  }
+]

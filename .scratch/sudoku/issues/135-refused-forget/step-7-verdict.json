@@ -1,0 +1,11 @@
+{
+  "step": 7,
+  "test_added": "src/native/shell/storage.zig: forgetCurrentFile with `config_persist = null` (Storage literal with only a transport) answers `.forgotten` for both delete=false and delete=true and asserts `exists(file)` is true only when the delete was not asked; src/native/shell/file_transport.zig and memory_transport.zig: transport.delete removes a file (a following readAll answers FileNotFound) and a second delete of the same path is not an error.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Reverted the storage.zig hunk to the pre-step `CurrentFileDelete.remove` (`const sp = store.config_persist orelse return;` + `std.Io.Dir.deleteFileAbsolute(sp.io, ...)`) and ran `zig test src/_one_test.zig -lc` (temp root importing storage/file_transport/memory_transport): `native.shell.storage.test.forgetCurrentFile: without a settings location the delete still happens when asked...expected false, found true` / `FAIL (TestExpectedEqual)` at storage.zig:464 — the file stayed on disk. Separately, removing the transport `delete` members reproduced the commit's claim: `error: no field or member function named 'delete' in 'native.shell.file_transport.FileTransport'` at memory_transport.zig:119 and storage.zig:240. Third check, keeping the field but making both arms' delete a no-op: 4 tests go red, including `FileTransport native: delete removes a file and tolerates one already gone...expected error.FileNotFound, found { 98, 121, 116, 101, 115 }` and the MemoryTransport twin. All three files restored; `git diff df26a8b --stat` empty.",
+  "ac_at_risk": [],
+  "drift": false
+}

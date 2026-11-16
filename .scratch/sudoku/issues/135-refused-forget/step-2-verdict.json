@@ -1,0 +1,13 @@
+{
+  "step": 2,
+  "test_added": "src/native/shell/shell.zig:1415 (with src/native/shell/storage.zig:368, src/web_host/mod.zig:1112 and :1175, src/core/flow/save.zig:274 and :288): a save whose pointer write the settings store refused shows core's `WRITTEN_*_MSG` and leaves the game file written; each cause answers the host's POST with its own sentence and the bytes on disk; the flow keeps the session's previous file instead of naming the refused save current.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "Web: a refused save now says two different things to the player. src/wasm/flows/steps.js:85 shows the host's new sentence ('The game file was written, but…') in the status line, then the same refusal is answered to core as a failed write (step_runner.js wroteInput -> core SaveFlow.writeFailed, src/core/flow/save.zig:250) so src/core/flow/save.zig:252's SAVE_FAILED_MSG dialog ('The game could not be saved.') is shown too — pinned by src/wasm/menus/file_menu.test.mjs:494-495. The second sentence is false once the bytes landed, which is the defect this step exists to remove."
+  ],
+  "red_on_revert": "Reverted the step's production behaviour only (git-backed edits, then `git checkout --` restored): SaveFlow.writtenNotCurrent -> `self.succeeded(self.targetName())` (src/core/flow/save.zig:258), Storage.saveGame -> `if (wrote == .ok) _ = self.persistCurrentFile(wrote.ok);` (src/native/shell/storage.zig:123), answerRefusal -> `const words = reason.sentence();` (src/web_host/mod.zig:345). `zig test src/_revert_probe.zig -lc --test-filter \"refused pointer write\"` -> '3 passed; 0 skipped; 3 failed': core.flow.save 'a refused pointer write keeps the session's file…' failed (found 'The game was saved to written.sud.'), native.shell.storage 'saveGame: a refused pointer write reports its cause…' FAIL (TestFailed), native.shell.shell 'save: a refused pointer write shows core's sentence…' failed (found 'The game was saved to …/game.sud.'). `--test-filter \"current-file POST\"` -> '2 failed': both 'current-file POST … answers with core's written sentence' tests failed on the body assertion. Probe root deleted, tree restored clean.",
+  "ac_at_risk": [],
+  "drift": false
+}

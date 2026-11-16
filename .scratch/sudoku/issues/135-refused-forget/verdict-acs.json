@@ -1,0 +1,97 @@
+{
+  "criteria": [
+    {
+      "criterion": "A refused forget with the delete flag leaves the player's save file on disk and the pointer naming it, on native and on the shared host (web and Android).",
+      "status": "PASS",
+      "evidence": "Ran `zig build verify` (exit 0): native shell test 76/728 'startup: a refused forget leaves the save, shows core's sentence and ends' (statFile broken_path + loadCurrentFile still names it); web_host 616-618/728 'a refused forget with the delete flag leaves the save on disk and the session naming it', 'a refused forget leaves the pointer in the settings file naming the save'; core.flow.forget 'a refused clear never calls the delete and answers the refusal'. Core order: src/core/flow/forget.zig:88-98 (refused clear returns before the deleter is called)."
+    },
+    {
+      "criterion": "A refused forget without the delete flag is unchanged: refused, nothing touched.",
+      "status": "PASS",
+      "evidence": "web_host test 617/728 'a refused forget without the delete flag changes nothing' (500 + core sentence, save still on disk, session still names it). Shared path src/core/flow/forget.zig:88-93 returns on a refused clear before the `if (delete)` arm, so delete=false and delete=true touch nothing on refusal."
+    },
+    {
+      "criterion": "A refused forget shows core's sentence: the 500 body on the host, a status line on the terminal, and the startup flow ends on both.",
+      "status": "PASS",
+      "evidence": "Host: src/web_host/mod.zig:360-366 answerRefusal writes reason.sentence() in the body; tests 611 and 613/728 ('current-file DELETE on a settings file the store cannot write answers with core's write sentence', 'current-file DELETE on an unreadable settings file answers with core's sentence'). Core ends the flow: core.flow.startup test 258/728 'a refused forget ends startup on core's sentence for that refusal' asserts show_status is terminal via step_mod.isTerminal. Terminal draws it: native.shell.shell test 76/728 asserts last_render_msg == startup_config.SETTINGS_WRITE_FAILED_MSG; shell.zig:232-241 routes runStartupFlow's show_status into showGameWithStatus."
+    },
+    {
+      "criterion": "A refused save answers with a sentence that says the game file was written, keeping that cause's repair guidance (settings unreadable vs settings unwritable), and core owns the words. The terminal shows the sentence too, instead of a bare \"saved\".",
+      "status": "PASS",
+      "evidence": "src/core/flow/save.zig:26-42 (WRITTEN_NOT_CURRENT_LEAD, WRITTEN_SETTINGS_REFUSED_MSG, WRITTEN_SETTINGS_WRITE_FAILED_MSG, writtenNotCurrentMsg) with tests asserting both are sentences, both say 'The game file was written', and each carries its own repair. Host: src/web_host/mod.zig:360-366 answers save_mod.writtenNotCurrentMsg; tests 609-610/728 assert the body for each cause and the written bytes on disk. Terminal: native.shell.shell test 78/728 'save: a refused pointer write shows core's sentence and leaves the game file written'; native.shell.storage test 117/728 'saveGame: a refused pointer write reports its cause and leaves the game file written'; core.flow.save test 285/728."
+    },
+    {
+      "criterion": "A healthy save and a healthy forget are unchanged, pinned by tests on all three front ends.",
+      "status": "PASS",
+      "evidence": "`zig build verify` printed '✓ parity: 80 scenario(s) on native, web and Android'; the fixture keeps the healthy save/autosave scenarios (save_names_default_then_continues, save_as_picked, autosave_then_relaunch_restores_moves, ...) and the healthy forgets (startup_restore_failed_delete, startup_restore_failed_keep, startup_restore_missing, each now expect forget 'forgotten'). Host: test 612/728 'current-file POST on a writable settings file saves, records the pointer and answers 204'; native: storage 'forgetCurrentFile: deletes the file only when asked, and forgets it either way'; node src/wasm/flows/parity.test.mjs exit 0."
+    },
+    {
+      "criterion": "A delete that fails after the pointer cleared answers success (`204` on the host) and logs its one line, naming the file and the reason it was not deleted.",
+      "status": "PASS",
+      "evidence": "web_host test 619/728 'a delete that fails after the clear answers 204 and logs the file it could not delete' — asserts 204, pointer clear, file still on disk, and one warn line naming the path and AccessDenied (read-only save folder; run as uid 1000 so the probe did not skip). Core: src/core/flow/forget.zig:94-97 and test 327/728 'a delete that fails after the clear is logged once and still answers forgotten' pins the exact one warn line."
+    },
+    {
+      "criterion": "The order exists once: neither `src/web_host/mod.zig` nor `src/native/shell/storage.zig` decides whether the clear or the delete comes first.",
+      "status": "PASS",
+      "evidence": "src/web_host/mod.zig:313-330 and src/native/shell/storage.zig:196-208 both call forget_mod.forget(...) and only supply a Deleter (web_host CurrentFileDelete:291-307, storage CurrentFileDelete:229-244). `grep -rn setCurrentFile src/native src/web_host` shows only the save lane (storage.zig:124 persistCurrentFile, web_host:281 POST arm) and no adapter ordering the forget; the clear-then-delete sequence exists only in src/core/flow/forget.zig:88-98."
+    },
+    {
+      "criterion": "No page change beyond answering core's forget outcome; the status line renders it as it stands.",
+      "status": "PASS",
+      "evidence": "src/wasm/flows/steps.js:128-129 forgetCurrentFile is now a pass-through to hostApi; src/wasm/flows/step_runner.js:293-297 hands the answer to game.flowNext instead of failFlow (the forget failFlow arm is gone). `git diff --name-only develop...HEAD` contains no src/wasm/status_bar.js and no page.html; node src/wasm/flows/startup.test.mjs exit 0 asserts the status line text equals coreText.SETTINGS_REFUSED_MSG / FORGET_FAILED_MSG, i.e. core's text unchanged by the page."
+    },
+    {
+      "criterion": "No saved-data change: `config.json`'s shape and the `SUD0` format (ADR-0018) are untouched, so an older app still opens every file.",
+      "status": "PASS",
+      "evidence": "`git diff --stat develop...HEAD -- src/core/config_store.zig src/core/engine/save_format.zig` is empty (codec and config.json shape untouched); docs/adr/0018 is not in the branch diff. The only config-side change is the sentence rename in src/core/startup/config.zig:136-146."
+    },
+    {
+      "criterion": "A refused save on the web (and Android) shows one sentence: core's written-not-current words, not those followed by a failure sentence.",
+      "status": "PASS",
+      "evidence": "src/wasm/flows/steps.js:82-88 returns { writtenNotCurrent } for a named refusal and does not call showRefusal; src/wasm/flows/autosave.test.mjs new block asserts outcome.text === coreText.WRITTEN_SETTINGS_WRITE_FAILED_MSG, status.writes === 1 and prompts.shown.length === 0. Ran `node src/wasm/flows/autosave.test.mjs` exit 0; the gate ran it too (glue step)."
+    },
+    {
+      "criterion": "A load (open, import, paste) whose pointer write is refused tells the terminal player, in core's words, that the next launch may not reopen the file.",
+      "status": "PASS",
+      "evidence": "src/native/shell/shell.zig:154-173 showStep keeps the pointer result for any loaded game and renders loadedNotRememberedMsg; core text at src/core/flow/command.zig:40-56. Test 79/728 'open: a refused pointer write draws the loaded game and shows core's sentence' asserts the puzzle is drawn and last_render_msg == LOADED_SETTINGS_REFUSED_MSG; command.zig:168-186 sets show_game.loaded for open/import/paste alike, so the same step covers all three."
+    },
+    {
+      "criterion": "`src/web_host/mod.zig` maps a store error to a refusal kind in one place, not two.",
+      "status": "PASS",
+      "evidence": "src/web_host/mod.zig:254-258 pointerError is the one map, fed by forget_mod.refusalFor; both `/current-file` arms reach it through applyCurrentFilePost (:281) and applyCurrentFileForget (:320) and answer through answerPointerWrite (:349-377). The former second map (pointerRefusal) no longer exists in the file, and test 606/728 asserts both refusal causes and the non-refusal case map from that one function."
+    },
+    {
+      "criterion": "A pointer-write failure is logged once, by core, carrying the system message; the host writes no line of its own for the same event, on either arm.",
+      "status": "PASS",
+      "evidence": "Host maps without logging (src/web_host/mod.zig:256-258 pointerError) and carries the cause in X-Sudoku-Failure (mod.zig:371-377); tests 606-607/728 assert the captured host log is empty on both arms ('a store error that is no refusal answers core's generic failure and the failure header, and no line', 'a store failure answers the failure header and writes no host line of its own, on the forget arm' and '...save arm'). Core logs once: core.flow.startup test 259/728 counts exactly one 'forget of ' line carrying the path and reason; src/wasm/flows/step_runner.test.mjs asserts exactly one core line containing 'OutOfMemory' and '500' (node exit 0); save.zig:250-252 is the one write-failure line."
+    },
+    {
+      "criterion": "The three-front-end parity transcript records what a forget answered, not only the step it was asked, so a front end that forgets differently fails parity.",
+      "status": "PASS",
+      "evidence": "Native recorder src/test/parity/native.zig:333-350 (forgotten / refused:<reason> / failed) and page recorder src/wasm/flows/parity.test.mjs:134-138 with the expectation check at :662-665. .zig-cache/parity/native.json records {'answer': {'forgot': 'forgotten'}} for startup_restore_failed_delete and 'refused:settings_unreadable' / 'refused:settings_unwritable' for the two new scenarios; `zig build verify` printed '✓ parity: 80 scenario(s) on native, web and Android' and `node src/wasm/flows/parity.test.mjs` exit 0."
+    },
+    {
+      "criterion": "The refusal kind is named once: no JavaScript module re-lists `settings_unreadable` / `settings_unwritable`; the wasm boundary is the only validator, and it rejects an unknown kind with a core failure.",
+      "status": "PASS",
+      "evidence": "`grep -rn settings_unreadable src/wasm` (excluding tests) matches only src/wasm/boundary.zig; host_api.js/step_runner.js keep no list. boundary.zig:327/346 parse with std.meta.stringToEnum(flow_forget.Refusal, ...) orelse error.UnknownInput, with tests at :1022-1044; node src/wasm/flows/step_runner.test.mjs exit 0 asserts an unknown kind ('store_said_no') ends the flow on coreText.UNEXPECTED_INPUT_MSG."
+    },
+    {
+      "criterion": "A settings-store error that is neither an unreadable nor an unwritable settings file is not reported as either: the player gets the generic failure, and the log carries the error name.",
+      "status": "PASS",
+      "evidence": "src/core/flow/forget.zig:74-83 refusalFor maps only System/WriteFailed, else .failed = @errorName; tests 330-332/728 pin the map and the 'OutOfMemory' answer. Startup test 259/728 'a forget that failed for another reason shows core's generic failure, with one log line' covers a core-mapped and an adapter-reported reason with FORGET_FAILED_MSG. Host: 606/728 generic SAVE_FAILED_MSG / FORGET_FAILED_MSG plus X-Sudoku-Failure; native shell test 77/728 'a forget the adapter could not complete shows core's generic failure and keeps the save'; node src/wasm/flows/startup.test.mjs exit 0 asserts a bare 500 and a dropped connection end on coreText.FORGET_FAILED_MSG and never on a repair sentence."
+    },
+    {
+      "criterion": "A run with no settings location deletes the file a forget asks to delete, instead of claiming the file was forgotten while leaving it.",
+      "status": "PASS",
+      "evidence": "Transport delete arm added on both arms: src/native/shell/file_transport.zig:18-19 and 181-193, src/native/shell/memory_transport.zig:77-84; storage deletes through the transport (src/native/shell/storage.zig:229-244) with settings null when config_persist is null (:196-205). Tests 105/728 (memory), 111-112/728 (native, incl. one 'expected: ... already gone' info line) and 120/728 'forgetCurrentFile: without a settings location the delete still happens when asked' (delete=true removes, delete=false leaves)."
+    }
+  ],
+  "concerns": [
+    "Parity answer drift for a refused save: the native recorder records `wrote` as the tag name 'written_not_current' (src/test/parity/native.zig:338-341) while the page recorder maps that answer to 'failed' (src/wasm/flows/parity.test.mjs:124-126). No scenario stages a refused save today, so parity passes; adding one would fail on the wrong reason.",
+    "The issue's Steps disagree with the shipped behaviour: step 8 says 'Log the carried reason once, at that single mapping site' in web_host, step 9 (the last commit) reverses it to the X-Sudoku-Failure header with no host line. The code and ADR-0021 follow step 9, which is what the criterion asks for; the older step text now reads as stale.",
+    "Only `open` is pinned by a shell test for the load sentence (native.shell.shell test 79). Import and paste share CommandFlow.load (src/core/flow/command.zig:168-186), so they are covered by construction rather than by a test of their own.",
+    "A save whose pointer write fails for an unexplained store error answers core's generic 'The game could not be saved.' even though the bytes landed (criterion 15 requires the generic failure there). The written-not-current sentences only cover the two refusal causes.",
+    "The two new parity scenarios that stage an unwritable settings file skip themselves on a root gate (src/test/parity/native.zig:688-695 returns error.SkipZigTest from inside the scenario loop, before writeTranscripts). This run was uid 1000, so they staged and ran; a root CI run would skip the whole native parity test and leave the transcript stale.",
+    "Gate: `zig build verify` exit 0 — 726 passed, 2 skipped (the pre-existing macOS open_browser tests), 0 failed; standards clean on 69 changed files; timing gate passed."
+  ]
+}

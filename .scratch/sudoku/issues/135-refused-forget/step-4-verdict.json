@@ -1,0 +1,11 @@
+{
+  "step": 4,
+  "test_added": "src/test/parity/native.zig: `Answer.forgot` + `describeAnswer` maps `.forgot` to `forgotten` / `refused:<tag>` / `failed`, `checkExpect` requires exactly one `forget_current_file` event whose `answer.forgot` equals the fixture's `expect.forget`, and a unit test pins the three mappings; src/wasm/flows/parity.test.mjs: the same `forgot` case plus `assert.deepEqual(answers, [expect.forget])`, with the new fixture scenario `startup_restore_failed_delete_settings_refused` (`world.settings_fail`) faked as the served host answers it (500 + `X-Sudoku-Refusal: settings_unreadable`).",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Two reverts, both red, then `git checkout --` restored. (1) Native: replaced the new `.forgot` arm in `src/test/parity/native.zig` `describeAnswer` with the pre-step `.forgot => null` and ran a temp root (`src/_one_test.zig` importing `test/parity/native.zig`) via `zig test src/_one_test.zig -lc`: `parity scenario failed on native: startup_restore_failed_delete / FAIL (ForgetAnswerNotRecorded)` at native.zig:578, and the recorder test panicked `attempt to use null value` at native.zig:686. (2) Page: deleted the `case \"forgot\"` arm from `src/wasm/flows/parity.test.mjs` and ran `node src/wasm/flows/parity.test.mjs`: exit 1, `parity: 8 front-end differences`, `startup_restore_failed_delete on web/android: what the forget answered  [null] vs ['forgotten']`. Separately flipped the new fixture's expectation from `refused:settings_unreadable` to `forgotten`: native red (`TestExpectedEqual` in checkExpect, native.zig:584) and page red (`'refused:settings_unreadable'` vs `'forgotten'`), so the expectation itself bites and does not merely restate the recorder.",
+  "ac_at_risk": [],
+  "drift": false
+}

@@ -1,0 +1,11 @@
+{
+  "step": 5,
+  "test_added": "src/wasm/host_api.test.mjs: a refusal header value the host named (\"store_said_no\") reaches the caller verbatim on both arms (forgetCurrentFile and persistCurrentFileBytes), proving no JS list filters it; src/wasm/flows/step_runner.test.mjs: a forget answer whose reason is an unknown kind reaches wasm, the boundary rejects it, and the flow ends on core's UNEXPECTED_INPUT_MSG instead of being downgraded to a bare failure; src/wasm/boundary.zig test \"flow input parses every step result\": adds forgot=forgotten, forgot+known reason=refused(settings_unreadable), forgot+unknown reason=error.UnknownInput, forgot+error=failed.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "git checkout cf09c0b^ -- src/wasm/host_api.js src/wasm/flows/step_runner.js, then `node src/wasm/flows/step_runner.test.mjs` printed AssertionError at step_runner.test.mjs:312: actual ['ask','Restore failed','The file game.sud could not be restored. Do you want to delete it?',[...]] vs expected ['error','The command could not finish because the app sent an unexpected answer.']; `node src/wasm/host_api.test.mjs` printed AssertionError: an unheard kind still reaches core verbatim: actual null, expected 'store_said_no'. Restored with `git checkout cf09c0b -- <both files>`; both suites green again (`step_runner.test.mjs OK`). For the test-only boundary case I mutated production instead: replacing `stringToEnum(...) orelse return error.UnknownInput` with `orelse .settings_unwritable` at src/wasm/boundary.zig:349 made `zig test src/_one_test.zig -lc --test-filter \"flow input parses every step result\"` fail with 'expected error.UnknownInput, found .{ .forgot = .{ .refused = .settings_unwritable } }'; file restored and the temporary root deleted.",
+  "ac_at_risk": [],
+  "drift": false
+}

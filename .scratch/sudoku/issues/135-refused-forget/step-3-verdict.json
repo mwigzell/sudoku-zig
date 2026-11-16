@@ -1,0 +1,11 @@
+{
+  "step": 3,
+  "test_added": "src/core/flow/command.zig: LOADED_SETTINGS_REFUSED_MSG / LOADED_SETTINGS_WRITE_FAILED_MSG read as sentences, say the game was loaded and the next launch will not reopen it, and each carries its own cause's repair; loadedNotRememberedMsg maps each Refusal to its sentence. src/native/shell/shell.zig: an open whose config.json is a directory (unreadable for root too) draws the loaded puzzle and renders core's LOADED_SETTINGS_REFUSED_MSG in the status slot. src/wasm/boundary.zig: wrote.written_not_current parses its reason, an unknown cause errors UnknownInput and a missing reason errors MissingField. src/wasm/flows/autosave.test.mjs: a refused POST carrying X-Sudoku-Refusal ends the flow on core's WRITTEN_SETTINGS_WRITE_FAILED_MSG via the real wasm, with the status element written exactly once and no failure prompt; a refusal with no header still shows the host's body plus core's SAVE_FAILED_MSG. src/wasm/host_api.test.mjs: persistCurrentFileBytes returns the header's reason on the refusal and null when no header is named.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "1) src/native/shell/shell.zig showStep reverted to the old 'if (game.loaded) persistCurrentFile' body, then `zig test src/_one_test.zig -lc --test-filter \"open: a refused pointer write draws the loaded game and shows core's sentence\"` -> 'thread panic: attempt to use null value' at shell.zig:1501 (facade_impl.last_render_msg is null: the reverted path never puts a sentence in the status slot). Restored. 2) removed `reason: refusalReason(res)` from host_api.js persistCurrentFileBytes, `if (result?.writtenNotCurrent) ...` from step_runner.js and `if (hosted.reason) ...` from steps.js, then `node src/wasm/flows/autosave.test.mjs` -> AssertionError: actual { kind: 'done' } vs expected { kind: 'show_status', text: core's WRITTEN_SETTINGS_WRITE_FAILED_MSG }. Restored. 3) deleted the written_not_current parse branch in boundary.zig (lines 327-328), then `zig test src/_one_test.zig -lc --test-filter \"flow input parses every step result\"` -> 'FAIL (MissingField)'. Restored; working tree clean afterwards (git status empty, temp root removed).",
+  "ac_at_risk": [],
+  "drift": false
+}

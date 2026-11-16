@@ -1,0 +1,11 @@
+{
+  "step": 8,
+  "test_added": "src/native/shell/file_transport.zig: 'FileTransport native: a delete of a file already gone says so once and answers success' — exact-equality on the whole sink, one info line naming the path and FileNotFound. src/web_host/mod.zig: 'a forget whose save is already gone answers 204 and logs it as expected once' — 204, pointer cleared, exactly one 'is already gone' line carrying the path and FileNotFound; 'a forget whose save is still there logs no already-gone line' — 204 and no such line when the file existed and was deleted.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Reverted both production branches (file_transport.zig:184-186 and web_host/mod.zig:298-300) to `error.FileNotFound => {},`, keeping the new tests, then `zig test src/_one_test.zig -lc --test-filter \"already gone\"` (temp root importing native/shell/file_transport.zig and web_host/mod.zig). Transport test: expected sink line 'info [sudoku] expected: /tmp/sudoku_file_transport_already_gone_test.sud is already gone (FileNotFound)', found empty string — FAIL (TestExpectedEqual) at file_transport.zig:253. Host test: 'expected 1, found 0' — FAIL at mod.zig:1539 (mem.count of \"is already gone\"). 2 passed; 2 failed. Tree then restored with `git checkout -- <both files>`; `git status --porcelain` clean.",
+  "ac_at_risk": [],
+  "drift": false
+}

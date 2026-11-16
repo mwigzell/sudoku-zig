@@ -1,0 +1,63 @@
+{
+  "rules": [
+    {
+      "rule": "Document public surfaces.",
+      "verdict": "PASS",
+      "evidence": "Every added public symbol carries a header comment: src/core/flow/forget.zig:11-13 (FAILED_MSG), :15-31 (Refusal + sentence), :33-43 (Outcome), :45-53 (Settings and each field), :55-72 (Deleter, its field, make, remove), :74-83 (refusalFor), :85-98 (forget); src/core/flow/step.zig:168-179 (Forgot), :195-200 (written_not_current); src/native/shell/storage.zig:30-41 (PointerWrite), :57-60 (gpa), :119-121 (persistCurrentFile); src/core/flow/save.zig:24-42 and src/core/flow/command.zig:38-56. Signpost comments on the non-obvious blocks: src/web_host/mod.zig:300-304, src/native/shell/storage.zig:230-233, src/wasm/flows/steps.js:84-86. Gate check 9 ('public API docs' over added pub fn / pub const type / pub field) passed in `zig build verify` ('✓ PASSED mechanical standards clean (69 file(s))')."
+    },
+    {
+      "rule": "DRY",
+      "verdict": "PASS",
+      "evidence": "The one order and the one store-error map live once in core: src/core/flow/forget.zig:77-83 and :88-98, called by both adapters (src/native/shell/storage.zig:196-205, src/web_host/mod.zig:313-324); the host's two former store-error maps collapsed to one (src/web_host/mod.zig:256-258), and the wasm boundary is the one place a refusal kind is validated (src/wasm/boundary.zig:327, :346). Plumbing raised, not fixed: `written_not_current` and the X-Sudoku-Refusal header are carried through 6 files each (see `shotgun`); the missing vehicle is the refusal kind as one value end to end instead of a boolean tag plus a `reason` string."
+    },
+    {
+      "rule": "SOLID principles:",
+      "verdict": "PASS",
+      "evidence": "S: the forget seam has one reason to change (src/core/flow/forget.zig:1-3, :88-98) while rendering stays in the shell/host. O/I: the delete arrives as a one-method vtable (forget.zig:57-72) and both adapters implement exactly that method (src/native/shell/storage.zig:229-244, src/web_host/mod.zig:291-307). D: core depends on the Deleter abstraction, not on std.Io or a platform type; the adapters inject it (storage.zig:201-204, mod.zig:319-320). No unused interface member was added."
+    },
+    {
+      "rule": "No magic numbers.",
+      "verdict": "PASS",
+      "evidence": "No bare literal reached production code: header names are named constants at src/web_host/mod.zig:334 and :338 and src/wasm/host_api.js:16, :18; the only literals added are test staging values (0o444 / 0o644 in src/native/shell/shell.zig tests and src/test/parity/native.zig:514-521, fail_index 2 / 3 in the allocator tests, 512/1024-byte test buffers), which are fixtures, not policy."
+    },
+    {
+      "rule": "Constructors are pure.",
+      "verdict": "PASS",
+      "evidence": "The new constructors only set fields: src/core/flow/forget.zig:63-66 Deleter.make returns a struct literal; the mapping helpers are pure and log nothing (forget.zig:74-83, src/native/shell/storage.zig:41-45 pointerWriteFor, src/web_host/mod.zig:254-258 pointerError). Logging and side effects stay with the callers (startup.zig:196, shell.zig:164, mod.zig:263-266), which the tests pin (src/web_host/mod.zig:1140-1160 asserts no line from the mapping)."
+    },
+    {
+      "rule": "Nothing is silent",
+      "verdict": "PASS",
+      "evidence": "Every new catch is logged or carries its system message onward: src/core/flow/forget.zig:94-96 (warn, path + @errorName), :90-92 (reason carried, then logged once at src/core/flow/startup.zig:196), src/native/shell/file_transport.zig:186 and src/web_host/mod.zig:303 (`expected: ... (FileNotFound)` at info), src/native/shell/shell.zig:164 (err, file + reason), src/core/flow/save.zig:250-252 (err, target + reason), src/web_host/mod.zig:263-266 (host fault, logged before the connection closes). The deliberate exception is documented: src/web_host/mod.zig:239-242 'Nothing here is logged: the host writes no line of its own for an event core's flow already records once', carried in X-Sudoku-Failure (:371-377) to that one line. Gate check 'silent catches' passed in `zig build verify`."
+    },
+    {
+      "rule": "no God classes",
+      "verdict": "PASS",
+      "evidence": "The host's pointer handling is split into small units rather than one long branch: PointerOutcome / PointerStep / pointerError / hostFault / answerPointerWrite / answerRefusal / answerFailure / applyCurrentFilePost / applyCurrentFileForget (src/web_host/mod.zig:239-377), each under ~25 lines; core's forget is three small functions (src/core/flow/forget.zig:17-98) and the startup `.forgetting` arm stays a four-line switch (src/core/flow/startup.zig:187-199). The 591 added host lines are mostly colocated tests."
+    },
+    {
+      "rule": "Clean",
+      "verdict": "PASS",
+      "evidence": "`zig build verify` exit 0 ran `zig fmt --check` (build.zig:188 verify-run depends on fmt_check) with no failure, and the mechanical standards diff check reported '✓ PASSED mechanical standards clean (69 file(s))'."
+    },
+    {
+      "rule": "Central plumbing is mandatory (hard rule).",
+      "verdict": "PASS",
+      "evidence": "The order and the outcome are core's (src/core/flow/forget.zig:88-98; src/core/flow/save.zig:38-42; src/core/flow/command.zig:52-56), and the sentences are core text reused by every front end (src/core/startup/config.zig:136-146, renamed off WEB_ so the terminal may show them). Adapters only map capabilities: src/web_host/mod.zig:256-258 maps a store error to the header (:360-377) and src/native/shell/storage.zig:119-140 reports the pointer result; neither words status copy (web_host answers body text from save_mod/forget_mod, mod.zig:361-375). The one adapter-owned text is the platform's own fault line (mod.zig:263-266), which is transport, not policy. Startup still uses the core restore lane: src/native/shell/shell.zig:232-241, src/wasm/flows/startup.js unchanged."
+    },
+    {
+      "rule": "Web modules import each other by namespace.",
+      "verdict": "PASS",
+      "evidence": "No new import was added; the changed handlers keep the namespaced style: src/wasm/flows/steps.js:3-8 imports `* as clipboardMod / files / generate / hostApi / sessionMod / statusBar`, and the new call sites read `hostApi.forgetCurrentFile` (:129), `hostApi.persistCurrentFileBytes` (:83), `statusBar.showStatusText` (:133), `sessionMod.syncCurrentFileLabels` (:92, :132). The new helpers in src/wasm/host_api.js (:66-82) are local functions, not cross-module duplicates."
+    },
+    {
+      "rule": "Android-only behaviour ships its device test.",
+      "verdict": "PASS",
+      "evidence": "The branch touches no Android-only surface: `git diff --name-only develop...HEAD | grep -E 'android|entry_android|FileBridge'` is empty (no src/android/jni_host.zig, no src/entry_android.zig, no bootstrap Java, no bridge, no src/wasm/flows/android_steps.js). Android is served by the shared host and shared page steps (src/wasm/flows/parity.test.mjs:485 runs the android step set), which the rule does not require a device scenario for."
+    }
+  ],
+  "shotgun": [
+    { "symbol": "written_not_current", "files": 6 },
+    { "symbol": "X-Sudoku-Refusal", "files": 6 }
+  ]
+}
