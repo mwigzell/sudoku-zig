@@ -1152,7 +1152,7 @@ test "a store error that is no refusal answers core's generic failure and the fa
 
     // Any other store error is nobody's repair: it carries its name to the page and the host says
     // nothing, because core's flow is the one place the reason is recorded.
-    try std.testing.expectEqual(PointerOutcome{ .failed = "OutOfMemory" }, pointerError(config_store.Error.OutOfMemory));
+    try std.testing.expectEqualDeep(PointerOutcome{ .failed = "OutOfMemory" }, pointerError(config_store.Error.OutOfMemory));
     try std.testing.expectEqual(@as(usize, 0), sink.buffered().len);
 
     // A failure is answered with core's generic sentence and no refusal header, so the page hands
