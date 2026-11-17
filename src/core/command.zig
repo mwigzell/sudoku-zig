@@ -32,6 +32,10 @@ pub const CommandTag = enum {
     quit,
     undo,
     redo,
+    /// Pin the current history position as the bookmark.
+    bookmark,
+    /// Undo back to the bookmark in one step.
+    rewind,
     menu,
     save,
     open,
@@ -58,6 +62,8 @@ pub const Command = union(CommandTag) {
     quit: void,
     undo: void,
     redo: void,
+    bookmark: void,
+    rewind: void,
     menu: void,
     save: SaveData,
     open: OpenData,
@@ -105,6 +111,9 @@ pub const Commands = &[_]CommandTableEntry{
     .{ .tag = .redo, .name = "Redo" },
     .{ .tag = .menu, .name = "Menu" },
     .{ .tag = .pencil, .name = "Pencil" },
+    // Both are always dispatchable; the legend line lists Rewind only when it can act.
+    .{ .tag = .bookmark, .name = "Bookmark" },
+    .{ .tag = .rewind, .name = "Rewind" },
 };
 
 /// Session commands reachable from the terminal menu (not main-line legend).
@@ -153,9 +162,9 @@ pub const ExportFileResult = SaveFileResult;
 
 const std = @import("std");
 
-test "CommandTag enum has 22 variants" {
+test "CommandTag enum has 24 variants" {
     const info = @typeInfo(CommandTag).@"enum";
-    try std.testing.expectEqual(@as(usize, 22), info.field_names.len);
+    try std.testing.expectEqual(@as(usize, 24), info.field_names.len);
 }
 
 test "getName returns correct display name for each tag" {
@@ -164,6 +173,8 @@ test "getName returns correct display name for each tag" {
     try std.testing.expectEqualStrings("Quit", getName(.quit));
     try std.testing.expectEqualStrings("Undo", getName(.undo));
     try std.testing.expectEqualStrings("Redo", getName(.redo));
+    try std.testing.expectEqualStrings("Bookmark", getName(.bookmark));
+    try std.testing.expectEqualStrings("Rewind", getName(.rewind));
     try std.testing.expectEqualStrings("Menu", getName(.menu));
     try std.testing.expectEqualStrings("Save", getName(.save));
     try std.testing.expectEqualStrings("Open", getName(.open));
@@ -180,4 +191,16 @@ test "comptime invariant: CommandTag covers terminal line plus session and confi
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
     // Commands + SessionCommands + set_config, settings, Pencil mode and select/deselect cover all CommandTag variants.
     try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 5);
+}
+
+test "comptime invariant: Bookmark and Rewind are main-line terminal commands" {
+    var has_bookmark = false;
+    var has_rewind = false;
+    for (Commands) |entry| switch (entry.tag) {
+        .bookmark => has_bookmark = true,
+        .rewind => has_rewind = true,
+        else => {},
+    };
+    try std.testing.expect(has_bookmark);
+    try std.testing.expect(has_rewind);
 }

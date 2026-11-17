@@ -87,6 +87,8 @@ pub fn nextWriteContext(current: WriteContext, event: WriteContextEvent) WriteCo
 pub fn commandTriggersAutoSave(tag: command.CommandTag) bool {
     return switch (tag) {
         .fill, .clear, .undo, .redo, .hint, .solve_for_me, .open, .import, .paste, .pencil => true,
+        // A bookmark is saved data too, so pinning or rewinding writes what the game now holds.
+        .bookmark, .rewind => true,
         .quit, .menu, .save, .@"export", .copy, .new, .save_as, .set_config => false,
         .settings, .toggle_pencil_mode, .select, .deselect => false,
     };

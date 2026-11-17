@@ -15,6 +15,8 @@ pub const Legend = struct {
     quit: bool,
     undo: bool,
     redo: bool,
+    /// Rewind to Bookmark: on only when a bookmark sits behind the current move.
+    rewind: bool = false,
     menu: bool,
     save: bool,
     open: bool,
@@ -64,6 +66,14 @@ pub const Legend = struct {
             names[count] = command.getName(.redo);
             count += 1;
         }
+        // Bookmark is always offered: pinning the position you are on is always possible.
+        names[count] = command.getName(.bookmark);
+        count += 1;
+        // Rewind joins the line only when a bookmark sits behind the current move.
+        if (self.rewind) {
+            names[count] = command.getName(.rewind);
+            count += 1;
+        }
         if (self.menu) {
             names[count] = command.getName(.menu);
             count += 1;
@@ -75,6 +85,31 @@ pub const Legend = struct {
 // ---------------------------------------------------------------------------
 // Tests (co-located)
 // ---------------------------------------------------------------------------
+
+/// A main-line legend with every command on; `rewind` is the only thing the tests vary.
+fn mainLineLegend(rewind: bool) Legend {
+    return .{
+        .fill = true,
+        .pencil = true,
+        .clear = true,
+        .hint = true,
+        .quit = true,
+        .undo = true,
+        .redo = true,
+        .menu = true,
+        .save = true,
+        .open = true,
+        .new = true,
+        .save_as = true,
+        .rewind = rewind,
+    };
+}
+
+/// Whether the drawn line holds `wanted`.
+fn hasName(names: []const []const u8, wanted: []const u8) bool {
+    for (names) |name| if (std.mem.eql(u8, name, wanted)) return true;
+    return false;
+}
 
 test "getNames: main line offers menu not session commands" {
     var names: [command.Commands.len][]const u8 = undefined;
@@ -92,8 +127,25 @@ test "getNames: main line offers menu not session commands" {
         .new = true,
         .save_as = true,
     }).getNames(&names);
-    try std.testing.expectEqual(@as(usize, 6), count);
+    try std.testing.expectEqual(@as(usize, 7), count);
     try std.testing.expectEqualStrings("Pencil", names[1]);
     try std.testing.expectEqualStrings("Hint", names[3]);
-    try std.testing.expectEqualStrings("Menu", names[5]);
+    try std.testing.expectEqualStrings("Bookmark", names[5]);
+    try std.testing.expectEqualStrings("Menu", names[6]);
+}
+
+test "getNames: Bookmark is always offered, Rewind only when it can act" {
+    var names: [command.Commands.len][]const u8 = undefined;
+    const offered = mainLineLegend(true).getNames(&names);
+    try std.testing.expect(hasName(names[0..offered], "Bookmark"));
+    try std.testing.expect(hasName(names[0..offered], "Rewind"));
+    // Rewind reads next to Undo and Redo, ahead of the Menu entry that stays last.
+    try std.testing.expectEqualStrings("Rewind", names[8]);
+    try std.testing.expectEqualStrings("Menu", names[offered - 1]);
+
+    const plain = mainLineLegend(false).getNames(&names);
+    try std.testing.expectEqual(offered - 1, plain);
+    try std.testing.expect(hasName(names[0..plain], "Bookmark"));
+    try std.testing.expect(!hasName(names[0..plain], "Rewind"));
+    try std.testing.expectEqualStrings("Menu", names[plain - 1]);
 }

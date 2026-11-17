@@ -2,7 +2,9 @@
   "flowless_commands": {
     "menu": "The terminal renderer opens its menu itself; the command never reaches core.",
     "settings": "The terminal renderer opens its Settings screen itself; the command never reaches core.",
-    "quit": "Quit ends the terminal loop before any flow runs."
+    "quit": "Quit ends the terminal loop before any flow runs.",
+    "bookmark": "No scenario reaches it yet: the bookmark scenario and both front-end runners land together, and this note goes then.",
+    "rewind": "No scenario reaches it yet: the bookmark scenario and both front-end runners land together, and this note goes then."
   },
   "steps_not_received": {
     "native": {
