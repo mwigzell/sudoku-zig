@@ -8,7 +8,9 @@
 
 ## Shell working directory
 
-Every bash call already starts in this repo, so a leading `cd /home/mark/Dev/src/sudoku` is noise the owner has to read past. Do not prefix commands with `cd` into the repo. Reach anything outside it by absolute path (`~/...`, `/tmp/...`) in the command itself; ask before touching anything outside the workspace at all.
+Every bash call already starts in this repo, so a leading `cd /home/mark/Dev/src/sudoku` is noise the owner has to read past. Do not prefix commands with `cd` into the repo. Reach anything outside it by absolute path (`~/...`, `/tmp/...`) in the command itself; outside the pre-approved Android workflow below, ask before touching anything outside the workspace.
+
+**Android device work is pre-approved outside the workspace.** The agent may start/stop its own headless emulator and run `zig build android` / `zig build android-test` (including `-Dtest-filter=<method>`) at any time, without the owner present. Use `scripts/android-emulator-start.sh` / `scripts/android-emulator-stop.sh` (the `Agent_API_30` AVD) — never the owner's Android Studio AVD. Everything else outside the workspace still needs a yes.
 
 ## Development Approach — Vertical Slicing First
 
