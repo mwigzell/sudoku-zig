@@ -132,6 +132,8 @@ function makeControls() {
   const labels = menuBar.MENU_BAR_MENUS.flatMap((menu) => menu.items.map((item) => item.label));
   assert.ok(!labels.some((label) => /quit/i.test(label)));
   assert.ok(labels.includes("Deselect Cell"));
+  assert.ok(labels.includes("Set Bookmark"));
+  assert.ok(labels.includes("Rewind to Bookmark"));
 }
 
 // ── wireMenuBar syncs from session legend on init ──
@@ -161,6 +163,8 @@ function makeControls() {
   assert.equal(controls.undo.id, "#edit-undo");
   assert.equal(controls.about.id, "#help-about");
   assert.equal(controls.deselect.id, "#edit-deselect");
+  assert.equal(controls.bookmark.id, "#edit-bookmark");
+  assert.equal(controls.rewind.id, "#edit-rewind");
 }
 
 // ── dropdown panels hidden until menu opened ──

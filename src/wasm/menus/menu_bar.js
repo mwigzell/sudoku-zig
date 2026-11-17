@@ -34,6 +34,9 @@ export const MENU_BAR_MENUS = [
     items: [
       { id: "undo", label: "Undo", legendKey: "undo" },
       { id: "redo", label: "Redo", legendKey: "redo" },
+      // Pinning is always possible; Rewind greys through core's legend flag.
+      { id: "bookmark", label: "Set Bookmark" },
+      { id: "rewind", label: "Rewind to Bookmark", legendKey: "rewind" },
       { id: "copy", label: "Copy", legendKey: LEGEND_WIRE_COPY },
       { id: "paste", label: "Paste", legendKey: LEGEND_WIRE_PASTE },
       { id: "solve", label: "Solve", legendKey: "solve" },
@@ -116,6 +119,8 @@ export function collectMenuBarControls(root) {
     settings: root.querySelector("#file-settings"),
     undo: root.querySelector("#edit-undo"),
     redo: root.querySelector("#edit-redo"),
+    bookmark: root.querySelector("#edit-bookmark"),
+    rewind: root.querySelector("#edit-rewind"),
     copy: root.querySelector("#edit-copy"),
     paste: root.querySelector("#edit-paste"),
     solve: root.querySelector("#edit-solve"),

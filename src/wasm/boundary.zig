@@ -21,6 +21,7 @@ const flow_command = @import("../core/flow/command.zig");
 const flow_config = @import("../core/flow/config.zig");
 const flow_export = @import("../core/flow/export.zig");
 const flow_forget = @import("../core/flow/forget.zig");
+const bookmark_command = @import("../core/engine/bookmark.zig");
 
 const system_error_json = "{\"ok\":false,\"error\":\"system\"}";
 
@@ -166,6 +167,8 @@ pub fn parseAction(json_text: []const u8) !command.Command {
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "deselect")) return .{ .deselect = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "undo")) return .{ .undo = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "redo")) return .{ .redo = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "bookmark")) return .{ .bookmark = {} };
+    if (std.ascii.eqlIgnoreCase(parsed.value.action, "rewind")) return .{ .rewind = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "quit")) return .{ .quit = {} };
     if (std.ascii.eqlIgnoreCase(parsed.value.action, "new")) {
         const difficulty = if (parsed.value.difficulty) |name| try parseDifficulty(name) else null;
@@ -541,6 +544,8 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "PASTED_MSG", .text = game_engine.PASTED_MSG },
         .{ .key = "PUZZLE_LENGTH_MSG", .text = game_engine.PUZZLE_LENGTH_MSG },
         .{ .key = "PUZZLE_CELL_MSG", .text = game_engine.PUZZLE_CELL_MSG },
+        .{ .key = "BOOKMARK_SET_FMT", .text = bookmark_command.BOOKMARK_SET_FMT },
+        .{ .key = "REWOUND_FMT", .text = bookmark_command.REWOUND_FMT },
     });
 }
 
@@ -556,7 +561,7 @@ pub fn writeLegendJson(out: OutBuffer, legend: legend_mod.Legend) !void {
 fn writeLegendTo(w: *std.Io.Writer, legend: legend_mod.Legend) !void {
     try std.Io.Writer.print(
         w,
-        "{{\"fill\":{any},\"clear\":{any},\"hint\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"paste\":{any},\"save_as\":{any},\"solve\":{any}}}",
+        "{{\"fill\":{any},\"clear\":{any},\"hint\":{any},\"quit\":{any},\"undo\":{any},\"redo\":{any},\"rewind\":{any},\"save\":{any},\"open\":{any},\"new\":{any},\"import\":{any},\"export\":{any},\"copy\":{any},\"paste\":{any},\"save_as\":{any},\"solve\":{any}}}",
         .{
             legend.fill,
             legend.clear,
@@ -564,6 +569,7 @@ fn writeLegendTo(w: *std.Io.Writer, legend: legend_mod.Legend) !void {
             legend.quit,
             legend.undo,
             legend.redo,
+            legend.rewind,
             legend.save,
             legend.open,
             legend.new,
@@ -703,6 +709,32 @@ test "parseAction loads carry no path or line; new takes an optional difficulty"
 test "parseAction solve maps to solve_for_me" {
     const cmd = try parseAction("{\"action\":\"solve\"}");
     try std.testing.expect(cmd == .solve_for_me);
+}
+
+test "parseAction bookmark and rewind carry no fields" {
+    try std.testing.expect(try parseAction("{\"action\":\"bookmark\"}") == .bookmark);
+    try std.testing.expect(try parseAction("{\"action\":\"rewind\"}") == .rewind);
+}
+
+test "writeLegendJson carries the rewind flag" {
+    var buf: [512]u8 = undefined;
+    var len: u32 = 0;
+    const out: OutBuffer = .{ .buf = &buf, .len = &len };
+    try writeLegendJson(out, .{
+        .fill = true,
+        .clear = true,
+        .quit = true,
+        .undo = true,
+        .redo = false,
+        .rewind = true,
+        .menu = true,
+        .save = true,
+        .open = true,
+        .new = true,
+        .save_as = true,
+    });
+    const json = out.finishJson();
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"rewind\":true") != null);
 }
 
 test "writeEventJson ok embeds state snapshot" {

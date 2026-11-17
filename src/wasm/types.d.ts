@@ -8,6 +8,8 @@ export type ExecAction =
   | { action: "clear"; row: number; col: number }
   | { action: "undo" }
   | { action: "redo" }
+  | { action: "bookmark" }
+  | { action: "rewind" }
   | { action: "quit" }
   | { action: "solve" }
   | { action: "hint"; row?: number; col?: number }
