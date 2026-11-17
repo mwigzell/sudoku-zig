@@ -2,9 +2,7 @@
   "flowless_commands": {
     "menu": "The terminal renderer opens its menu itself; the command never reaches core.",
     "settings": "The terminal renderer opens its Settings screen itself; the command never reaches core.",
-    "quit": "Quit ends the terminal loop before any flow runs.",
-    "bookmark": "No scenario reaches it yet: the bookmark scenario and both front-end runners land together, and this note goes then.",
-    "rewind": "No scenario reaches it yet: the bookmark scenario and both front-end runners land together, and this note goes then."
+    "quit": "Quit ends the terminal loop before any flow runs."
   },
   "steps_not_received": {
     "native": {
@@ -132,6 +130,32 @@
           {"row": 0, "col": 0, "value": 4, "given": false},
           {"row": 0, "col": 1, "value": 0, "given": false},
           {"row": 8, "col": 8, "value": 2, "given": false}
+        ]
+      }
+    },
+    {
+      "name": "bookmark_rewind_then_undo_below",
+      "summary": "A fill puts the bookmark at move 1, two more fills leave it behind the pointer, and Rewind returns the board to the bookmarked move and reports it; the next Undo steps below the bookmark, which forgets it, so Rewind is no longer offered while Redo still is.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"bookmark": true},
+        {"fill": {"row": 0, "col": 1, "digit": 8}},
+        {"fill": {"row": 8, "col": 8, "digit": 2}},
+        {"rewind": true},
+        {"undo": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "legend": {"undo": false, "redo": true, "rewind": false},
+        "probes": [
+          {"row": 0, "col": 2, "value": 3, "given": true},
+          {"row": 0, "col": 0, "value": 0, "given": false},
+          {"row": 0, "col": 1, "value": 0, "given": false},
+          {"row": 8, "col": 8, "value": 0, "given": false}
         ]
       }
     },

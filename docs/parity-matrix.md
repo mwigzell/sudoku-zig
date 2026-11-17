@@ -25,7 +25,7 @@ Each event is one step core issued, with the fields that matter for it, and the 
 | `forget_current_file` | `delete` |
 | `show_status` | `text` |
 
-The final state is the board's cells and givens, whether Undo and Redo are offered, the session's file, the status bar, the selected cell and the shaded region the board is drawn with, and every setting. Native reads the selection and region from the last frame the terminal drew; web and Android from the snapshot the page draws.
+The final state is the board's cells and givens, whether Undo, Redo and Rewind are offered, the session's file, the status bar, the selected cell and the shaded region the board is drawn with, and every setting. Native reads the selection and region from the last frame the terminal drew; web and Android from the snapshot the page draws.
 
 Two steps differ only in how the terminal takes its input, so they are left out when comparing with native: `paste_puzzle` (the terminal's Paste carries its line) and the `resolve_default_target` before `save_as` (the terminal's Save As carries its file name).
 
@@ -41,7 +41,7 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `written` | Player files written, in order, by bare name. |
 | `forget` | What the one forget step answered: `forgotten`, `refused:<reason>`, or `failed`. |
 | `settings` | Stored settings fields after the steps. |
-| `legend` | Whether Undo / Redo are offered after the steps. |
+| `legend` | Whether Undo, Redo and Rewind are offered after the steps. |
 | `probes` | Cell value and given flag after the steps. |
 | `selected` | The cell drawn as selected after the steps. |
 | `nothing_selected` | No cell is drawn as selected after the steps. |
@@ -62,6 +62,7 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `restore_unsolved_moves` | Restoring an unfinished game brings back the player's moves and their undo history without asking. | native, web, android | — |
 | `autosave_then_relaunch_restores_moves` | Moves autosaved with Auto Save on come back on the next launch: givens stay givens, the player's moves stay moves, an undone move stays undone, and both Undo and Redo are still offered. | native, web, android | — |
 | `history_branch_discards_redo` | A move after Undo discards the undone branch: Redo is no longer offered and the undone move stays gone. | native, web, android | — |
+| `bookmark_rewind_then_undo_below` | A fill puts the bookmark at move 1, two more fills leave it behind the pointer, and Rewind returns the board to the bookmarked move and reports it; the next Undo steps below the bookmark, which forgets it, so Rewind is no longer offered while Redo still is. | native, web, android | — |
 | `paste_valid_resets_history` | Pasting a valid puzzle replaces the board with new givens and clears undo history. | native, web, android | — |
 | `paste_invalid_keeps_board` | Pasting an invalid line shows an error and leaves the board and undo history as they were. | native, web, android | — |
 | `settings_change_does_not_autosave` | With Auto Save on, View and Settings changes persist the settings but never write the game file. | native, web, android | — |
