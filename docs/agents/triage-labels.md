@@ -6,15 +6,17 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 | -------------------------- | -------------------- | ---------------------------------------- |
 | `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
 | `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified and closes in one cycle  |
-| `ready-for-human`          | `ready-for-human`    | Multi-step, or needs human implementation|
+| `ready-for-agent`          | `ready-for-agent`    | Specified with tickable steps; sandcastle can run it |
+| `ready-for-human`          | `ready-for-human`    | Cannot be delegated: an owner decision, or no runnable proof |
 | `wontfix`                  | `wontfix`            | Will not be actioned                     |
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
 Edit the right-hand column to match whatever vocabulary you actually use.
 
-**`ready-for-agent` means AFK-able, not merely well written.** The agent runs one red→green cycle and stops; a human reviews before the next step. So an issue qualifies only when that single cycle closes it. A multi-step issue is `ready-for-human` however complete its spec is — review gates between steps make it human-in-the-loop by construction.
+**`ready-for-agent` means a run can execute it, not that one cycle closes it.** Sandcastle (`npm run sandcastle -- --issue N`) runs the issue's `## Steps` one step per iteration: a fresh implementer, a fresh reviewer, then the host ticks that step, and a person accepts or drops the branch at the end. The human is in the loop per step, which is why a cloud LLM is not a problem; a multi-step issue with tickable steps is exactly the case the harness is for, so it stays `ready-for-agent`.
+
+Use `ready-for-human` only when the work itself cannot be delegated: a decision that is the owner's, a task with no executable step or no proof the branch can carry, or access the run does not have. A step that needs a connected device is still runnable: it adds the scenario, says the hand-run is the owner's before a push, and the scenario is the artifact.
 
 ## Before `ready-for-agent`: walk the player's screen
 
