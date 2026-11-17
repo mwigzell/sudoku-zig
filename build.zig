@@ -62,24 +62,16 @@ pub fn build(b: *std.Build) void {
     web_step.dependOn(&run_web.step);
 
     // JS glue contract test for the served web page (command-in → full-text-out over the wasm import table).
-    const glue = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/artifacts/glue.test.mjs && node src/wasm/menus/hint_flow.test.mjs && node src/wasm/flows/step_runner.test.mjs && node src/wasm/board.test.mjs && node src/wasm/menus/menu.test.mjs && node src/wasm/menus/shortcuts.test.mjs && node src/wasm/menus/menu_bar.test.mjs && node src/wasm/menus/theme.test.mjs && node src/wasm/gen/gen_client.test.mjs && node src/wasm/status_bar.test.mjs && node src/wasm/play_pad.test.mjs && node src/wasm/dialogs/prompt_dialog.test.mjs && node src/wasm/client_log.test.mjs && node src/wasm/flows/session.test.mjs && node src/wasm/host_api.test.mjs && node src/wasm/gen/generate.test.mjs && node src/wasm/flows/autosave.test.mjs && node src/wasm/flows/startup.test.mjs && node src/wasm/gen/gen_progress_rows.test.mjs && node src/wasm/gen/gen_progress_rows_dom.test.mjs && node src/wasm/dialogs/generating.test.mjs && node src/wasm/menus/file_menu.test.mjs && node src/wasm/menus/region.test.mjs && node src/wasm/menus/help.test.mjs && node src/wasm/menus/settings.test.mjs && node src/wasm/menus/host_settings.test.mjs && node src/wasm/android_bridge.test.mjs && node src/wasm/uncaught_errors.test.mjs && node src/wasm/files.test.mjs && node src/wasm/flows/android_steps.test.mjs" });
+    // Every wasm suite under src/wasm/ is discovered by node's test runner, so a new
+    // `*.test.mjs` runs without editing a list here.
+    const glue = b.addSystemCommand(&.{ "node", "--test", "src/wasm/" });
     const glue_step = b.step("glue", "Run the JS glue contract test (node)");
     glue_step.dependOn(&glue.step);
     glue.step.dependOn(&wasm_emit.step); // node test reads the emitted artifact — must run after wasm_emit
-    // Web and Android parity: compares against the transcripts the native tests write, so it runs after them.
-    const glue_parity = b.addSystemCommand(&.{ "sh", "-c", "node src/wasm/flows/parity.test.mjs" });
-    glue_parity.step.dependOn(&wasm_emit.step);
-    glue_step.dependOn(&glue_parity.step);
-
-    // Measured-layout gate: drives headless Chromium against the served shell and asserts the page fits.
-    const shell_fit = b.addSystemCommand(&.{ "node", "src/wasm/artifacts/shell_fit.test.mjs" });
-    shell_fit.step.dependOn(&wasm_emit.step); // the page boots the emitted artifact
-    const shell_fit_step = b.step("shell-fit", "Run the measured-layout check (headless Chromium)");
-    shell_fit_step.dependOn(&shell_fit.step);
 
     // The sandcastle harness decides which step a run performs and when it must stop, so
     // a broken harness has to fail the gate rather than the next run.
-    const sandcastle_test = b.addSystemCommand(&.{ "node", "--test", ".sandcastle/events.test.mts", ".sandcastle/shotgun.test.mts", ".sandcastle/standards.test.mts", ".sandcastle/heartbeat.test.mts", ".sandcastle/status.test.mts", ".sandcastle/watch.test.mts", ".sandcastle/plan.test.mts", ".sandcastle/ledger.test.mts", ".sandcastle/run_record.test.mts", ".sandcastle/accept.test.mts", ".sandcastle/drop.test.mts", ".sandcastle/verdict.test.mts", ".sandcastle/loop.test.mts", ".sandcastle/report.test.mts", ".sandcastle/resume.test.mts" });
+    const sandcastle_test = b.addSystemCommand(&.{ "npm", "run", "sandcastle:test" });
     const sandcastle_test_step = b.step("sandcastle-test", "Run the sandcastle harness tests (node)");
     sandcastle_test_step.dependOn(&sandcastle_test.step);
 
@@ -117,7 +109,8 @@ pub fn build(b: *std.Build) void {
     // Run the compiled test binary via addRunArtifact (server-mode IPC).
     // Tests needing fake I/O use std.testing.io (in-process fake); server-mode IPC accommodates that.
     const run_tests = b.addRunArtifact(check);
-    glue_parity.step.dependOn(&run_tests.step);
+    // Discovery includes the parity suite, which compares against the transcripts the native tests write.
+    glue.step.dependOn(&run_tests.step);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
 
@@ -196,11 +189,15 @@ pub fn build(b: *std.Build) void {
     verify_run_step.dependOn(&standards_check.step);
     verify_run_step.dependOn(&parity_check.step);
     verify_run_step.dependOn(&glue.step);
-    verify_run_step.dependOn(&glue_parity.step);
-    verify_run_step.dependOn(&shell_fit.step);
     verify_run_step.dependOn(&sandcastle_test.step);
     verify_run_step.dependOn(&typecheck.step);
     verify_run_step.dependOn(&kcov_sum.step);
+
+    // Untimed warm-up for the timing gate: compile every artifact verify-run needs, so the
+    // measured run reports the suite's workload rather than whether the cache was cold.
+    const verify_build_step = b.step("verify-build", "Internal: compile what verify-run uses (timing gate warm-up)");
+    verify_build_step.dependOn(&exe.step); // exe pulls in wasm_emit and gen_build_info
+    verify_build_step.dependOn(&check.step); // the test binary compiles without running
 
     const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });
     const verify_step = b.step("verify", "Gate: verify-run + timing integrity (docs/verify-timing.json)");

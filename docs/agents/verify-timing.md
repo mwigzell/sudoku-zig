@@ -1,6 +1,8 @@
 # Verify timing gate
 
-`zig build verify` runs `scripts/verify-gate.sh`, which times `zig build verify-run` with bash's built-in `time` (`TIMEFORMAT='%R'`) and checks `docs/verify-timing.json` with `jq`.
+`zig build verify` runs `scripts/verify-gate.sh`, which first runs `zig build verify-build` untimed to compile every artifact `verify-run` needs, then times `zig build verify-run` with bash's built-in `time` (`TIMEFORMAT='%R'`) and checks `docs/verify-timing.json` with `jq`.
+
+The untimed build is what makes the number mean suite workload: without it, a cold cache (any Zig source edit) reads as a slowdown and the first verify after a change fails while the second passes.
 
 ## Tracking file
 
@@ -25,7 +27,9 @@ Fix the slowdown, or raise `budget_seconds` when the suite legitimately grew (e.
 ## Commands
 
 ```bash
-zig build verify      # gate (timed)
+zig build verify        # gate (timed workload; build warm-up untimed)
+zig build verify-build  # compile only — the untimed warm-up
+zig build verify-run    # work only — no timing check
 zig build verify-run  # work only — no timing check
 ```
 

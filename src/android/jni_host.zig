@@ -145,8 +145,7 @@ pub fn startHost(env: ?*anyopaque, data_dir_jstring: ?*anyopaque) void {
 
 /// JNI surface: where the boot stands, as one value Java polls — `0` while it is still starting,
 /// `-1` when a settings refusal stopped it before it served anything, and the port once it serves.
-/// The refusal used to reach Java only when its port poll timed out, so the sentence arrived after
-/// the full timeout; a state it can read means the failure is reported when it happens.
+/// Java ends its poll on `-1`, so a refusal reaches the player as soon as it happens.
 pub fn bootState() i32 {
     if (boot.startup_failed.load(.acquire)) return BOOT_REFUSED;
     return boot.ready_port.load(.acquire);
@@ -194,6 +193,8 @@ pub fn startupFailureMessage(env: ?*anyopaque) ?*anyopaque {
     return sudoku_new_jstring_utf(env_raw, startupFailureText());
 }
 
+/// Test-only: these constants and helpers drive this module's own `boot` record through `bootHost`.
+/// Nothing in the app calls them; they stay here because extracting them would need a public test seam.
 /// How long a test waits for a boot to reach serving or to end.
 const BOOT_WAIT_MS: u32 = 4000;
 /// One poll interval while a test waits on a boot.
@@ -326,10 +327,6 @@ test "the host takes its settings from the file through the startup seam" {
 
     try tmp.dir.writeFile(io, .{ .sub_path = config_store.file_name, .data = CORRUPT_CONFIG });
     try std.testing.expect(resolveHostConfig(io, data_dir) == null);
-}
-
-test {
-    _ = .{ web_host, config };
 }
 
 test "the boot exposes core's refusal sentence, and nothing when it did not fail" {

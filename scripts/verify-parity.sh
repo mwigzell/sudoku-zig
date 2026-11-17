@@ -10,6 +10,7 @@ cd "$ROOT"
 SCENARIOS="src/test/fixtures/parity_scenarios.json"
 NATIVE_RUNNER="src/test/parity/native.zig"
 WEB_RUNNER="src/wasm/flows/parity.test.mjs"
+WASM_SUITES="src/wasm"
 MATRIX="docs/parity-matrix.md"
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -31,7 +32,9 @@ done
 grep -q "test/fixtures/parity_scenarios.json" "$NATIVE_RUNNER" || violation "$NATIVE_RUNNER does not load $SCENARIOS"
 grep -q "test/fixtures/parity_scenarios.json" "$WEB_RUNNER" || violation "$WEB_RUNNER does not load $SCENARIOS"
 grep -q '^test "parity scenarios: ' "$NATIVE_RUNNER" || violation "$NATIVE_RUNNER has no parity scenarios test"
-grep -q "node $WEB_RUNNER" build.zig || violation "$WEB_RUNNER is not in the glue test list"
+# The glue step discovers every suite under WASM_SUITES, so the runner is named only by that folder.
+[[ "$WEB_RUNNER" == "$WASM_SUITES/"* ]] || violation "$WEB_RUNNER is outside the discovered suites"
+grep -q "\"--test\", \"$WASM_SUITES/\"" build.zig || violation "$WEB_RUNNER is not run by the glue discovery step"
 
 if ! jq -e '.scenarios | length > 0' "$SCENARIOS" >/dev/null; then
   violation "$SCENARIOS has no scenarios"

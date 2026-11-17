@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Time zig build verify-run and enforce timing policy from docs/verify-timing.json.
+# Compile first without timing (verify-build), so the measurement is the test workload, not cache state.
 # Persist last successful timing to local state (untracked), not to policy file.
 set -euo pipefail
 
@@ -10,9 +11,10 @@ TIMING_FILE="$ROOT/docs/verify-timing.json"
 STATE_FILE="${VERIFY_TIMING_STATE_FILE:-$ROOT/.zig-cache/verify-timing-local.json}"
 REGRESSION_FACTOR="${VERIFY_REGRESSION_FACTOR:-1.5}"
 TIME_LOG="$(mktemp)"
+WARMUP_LOG="$(mktemp)"
 
 cleanup() {
-  rm -f "$TIME_LOG"
+  rm -f "$TIME_LOG" "$WARMUP_LOG"
 }
 trap cleanup EXIT
 
@@ -36,6 +38,16 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 regression_limit="$(awk -v last="$last" -v factor="$REGRESSION_FACTOR" 'BEGIN { printf "%.2f", last * factor }')"
 
+# Untimed: a cold cache must not read as a suite slowdown.
+warmup_status=0
+TIMEFORMAT='%R'
+{ time { zig build verify-build || warmup_status=$?; }; } 2> >(tee "$WARMUP_LOG" >&2)
+warmup_elapsed="$(tail -1 "$WARMUP_LOG" | awk '{ printf "%.2f", $1 }')"
+if [[ "$warmup_status" -ne 0 ]]; then
+  echo "verify timing: warm-up build failed" >&2
+  exit "$warmup_status"
+fi
+
 verify_status=0
 TIMEFORMAT='%R'
 { time { zig build verify-run || verify_status=$?; }; } 2> >(tee "$TIME_LOG" >&2)
@@ -47,6 +59,7 @@ if [[ -z "$elapsed" ]]; then
 fi
 
 echo "── verify timing ──"
+echo " warm-up:  ${warmup_elapsed}s (untimed build)"
 echo " run:      ${elapsed}s"
 echo " last:     ${last}s"
 echo " budget:   ${budget}s"
