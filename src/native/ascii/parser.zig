@@ -37,6 +37,8 @@ pub const CLEAR_USAGE_MSG = "Clear needs a cell, for example: clear A1.";
 pub const HINT_USAGE_MSG = "Hint takes at most one cell, for example: hint A1.";
 pub const CELL_FORMAT_MSG = "A cell is a letter from A to I followed by a number from 1 to 9, for example A1.";
 pub const DIGIT_FORMAT_MSG = "The digit must be a number from 1 to 9.";
+pub const BOOKMARK_USAGE_MSG = "Bookmark takes no words after it, for example: bookmark.";
+pub const REWIND_USAGE_MSG = "Rewind takes no words after it, for example: rewind.";
 const AMBIGUOUS_FMT = "That could mean {s}. Type more of the command to choose one.";
 
 const coordError: ParseCommandResult = .{ .error_msg = CELL_FORMAT_MSG };
@@ -85,6 +87,9 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
     if (std.ascii.eqlIgnoreCase(cmd_name, "quit")) return parseQuit();
     if (std.ascii.eqlIgnoreCase(cmd_name, "undo")) return .{ .valid = Command.undo };
     if (std.ascii.eqlIgnoreCase(cmd_name, "redo")) return .{ .valid = Command.redo };
+    // Both take no argument; a stray word asks for the bare command rather than rewinding anyway.
+    if (std.ascii.eqlIgnoreCase(cmd_name, "bookmark")) return parseNoArgs(it, Command.bookmark, BOOKMARK_USAGE_MSG);
+    if (std.ascii.eqlIgnoreCase(cmd_name, "rewind")) return parseNoArgs(it, Command.rewind, REWIND_USAGE_MSG);
     if (std.ascii.eqlIgnoreCase(cmd_name, "menu")) return .{ .valid = Command.menu };
     if (std.ascii.eqlIgnoreCase(cmd_name, "save"))
         return .{ .valid = Command{ .save = SaveData{ .path = null } } };
@@ -159,6 +164,12 @@ pub fn parseWithCommands(input_line: []const u8, cmd_names: []const []const u8) 
 /// Quit takes no arguments.
 fn parseQuit() ParseCommandResult {
     return .{ .valid = Command.quit };
+}
+
+/// A command that takes no arguments: a word after it asks for the bare command.
+fn parseNoArgs(it: anytype, cmd: Command, usage_msg: []const u8) ParseCommandResult {
+    if (it.next() != null) return .{ .error_msg = usage_msg };
+    return .{ .valid = cmd };
 }
 
 /// Fill requires a chess-style coordinate and a digit 1-9.
@@ -393,9 +404,39 @@ test "parseWithCommands: ambiguous prefix returns error_msg listing matched comm
     try std.testing.expect(std.mem.indexOf(u8, res.error_msg, "Repeat") != null);
 }
 
+test "typed Bookmark and Rewind reach the engine; Redo keeps Red as its prefix" {
+    const marked = parse("B");
+    if (marked != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings("bookmark", @tagName(marked.valid));
+
+    const rewound = parse("Rew");
+    if (rewound != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings("rewind", @tagName(rewound.valid));
+
+    // Rewind's arrival on R does not take Redo's prefix.
+    const redone = parse("Red");
+    if (redone != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings("redo", @tagName(redone.valid));
+}
+
+test "the exact names work in any case" {
+    const bookmark = parse("BOOKMARK");
+    if (bookmark != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings("bookmark", @tagName(bookmark.valid));
+
+    const rewind = parse("rEwInD");
+    if (rewind != .valid) return error.TestFailed;
+    try std.testing.expectEqualStrings("rewind", @tagName(rewind.valid));
+}
+
+test "a word after Bookmark or Rewind asks for the bare command" {
+    try std.testing.expectEqualStrings(BOOKMARK_USAGE_MSG, parse("bookmark A1").error_msg);
+    try std.testing.expectEqualStrings(REWIND_USAGE_MSG, parse("rew 5").error_msg);
+}
+
 test "parser error messages read as sentences, including a formatted ambiguous one" {
     const sentence = @import("../../test/sentence.zig");
-    inline for (.{ EMPTY_INPUT_MSG, UNKNOWN_COMMAND_MSG, FILL_USAGE_MSG, CLEAR_USAGE_MSG, HINT_USAGE_MSG, CELL_FORMAT_MSG, DIGIT_FORMAT_MSG }) |msg|
+    inline for (.{ EMPTY_INPUT_MSG, UNKNOWN_COMMAND_MSG, FILL_USAGE_MSG, CLEAR_USAGE_MSG, HINT_USAGE_MSG, CELL_FORMAT_MSG, DIGIT_FORMAT_MSG, BOOKMARK_USAGE_MSG, REWIND_USAGE_MSG }) |msg|
         try sentence.expectSentence(msg);
     const cmds = [_][]const u8{ getName(.save), getName(.save_as), getName(.quit) };
     const res = parseWithCommands("sav", &cmds);

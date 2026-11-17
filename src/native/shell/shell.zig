@@ -267,6 +267,7 @@ const DeterministicFacade = struct {
     replace_prompts: usize = 0,
     last_render_msg: ?[]const u8 = null,
     last_marks_visible: bool = false,
+    last_legend: ?legend.Legend = null,
     replace_answers: []const bool = &[_]bool{},
     replace_idx: usize = 0,
 
@@ -282,9 +283,10 @@ const DeterministicFacade = struct {
         self.last_render_msg = frame.status;
     }
 
-    /// Records legend refreshes from successful event handling.
-    pub fn showLegend(self: *@This(), _: legend.Legend) !void {
+    /// Records legend refreshes from successful event handling, keeping the last one shown.
+    pub fn showLegend(self: *@This(), shown: legend.Legend) !void {
         self.legend_calls += 1;
+        self.last_legend = shown;
     }
 
     /// Records prompts: a one-button prompt is an acknowledged error, more buttons a question
@@ -1909,6 +1911,96 @@ test "replace confirm: save_as cancel leaves existing target unchanged" {
     const bytes = transport_impl.files.get("/virtual/existing.sud") orelse return error.TestFailed;
     try std.testing.expectEqualSlices(u8, "OLD", bytes);
     try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+}
+
+/// Whether the legend the shell last showed listed `name`.
+fn legendOffers(facade_impl: *const DeterministicFacade, name: []const u8) bool {
+    const shown = facade_impl.last_legend orelse return false;
+    var names: [command.Commands.len][]const u8 = undefined;
+    const count = shown.getNames(&names);
+    for (names[0..count]) |offered| if (std.mem.eql(u8, offered, name)) return true;
+    return false;
+}
+
+test "bookmark, rewind, redo: the shell shows core's move numbers and Rewind only while it can act" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const bookmark_command = @import("../../core/engine/bookmark.zig");
+    // A classic puzzle: A3, A4 and A6 are empty, so each fill is a legal move.
+    const puzzle = "530070000600195000098000060800060003400803001700020006060000280000419005000080079";
+    const steps = [_]command.ParseCommandResult{
+        .{ .valid = .{ .fill = .{ .row = 0, .col = 2, .digit = .four } } }, // move 1
+        .{ .valid = .{ .bookmark = {} } },
+        .{ .valid = .{ .fill = .{ .row = 0, .col = 3, .digit = .six } } }, // move 2
+        .{ .valid = .{ .fill = .{ .row = 0, .col = 5, .digit = .eight } } }, // move 3
+        .{ .valid = .{ .rewind = {} } },
+        .{ .valid = .{ .redo = {} } },
+        .{ .valid = .{ .undo = {} } }, // lands on the bookmark: kept
+        .{ .valid = .{ .undo = {} } }, // below it: forgotten
+        .{ .valid = .{ .redo = {} } },
+        .{ .valid = .{ .quit = {} } },
+    };
+    var facade_impl = DeterministicFacade{ .steps = &steps };
+    var transport_impl = MemoryTransport.init(std.testing.allocator);
+    defer transport_impl.deinit();
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_save = false;
+
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport_impl.asTransport(), &out.writer, null);
+    defer app.deinit();
+    // A known puzzle keeps the moves below about the board, not about what the generator chose.
+    _ = app.engine.newFromOneLinePuzzle(puzzle);
+    try app.showGame();
+
+    // Move 1, no bookmark: Bookmark is always on the line, Rewind is not.
+    try std.testing.expect(!try app.turn());
+    try std.testing.expect(facade_impl.legend_calls > 0);
+    try std.testing.expect(legendOffers(&facade_impl, "Bookmark"));
+    try std.testing.expect(!legendOffers(&facade_impl, "Rewind"));
+
+    // Bookmark names the move it pins.
+    try std.testing.expect(!try app.turn());
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(bookmark_command.BOOKMARK_SET_FMT, .{1}), facade_impl.last_render_msg.?);
+
+    // Two fills leave the bookmark behind the pointer, so Rewind joins the line.
+    try std.testing.expect(!try app.turn());
+    try std.testing.expect(!try app.turn());
+    try std.testing.expectEqual(@as(usize, 3), app.engine.state.history.pointer);
+    try std.testing.expect(legendOffers(&facade_impl, "Rewind"));
+
+    // Rewind returns to the bookmarked move in one step.
+    try std.testing.expect(!try app.turn());
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(bookmark_command.REWOUND_FMT, .{1}), facade_impl.last_render_msg.?);
+    try std.testing.expectEqual(@as(usize, 1), app.engine.state.history.pointer);
+    try std.testing.expectEqual(cell.CellValue.four, app.engine.state.board.getCellValue(0, 2));
+    try std.testing.expectEqual(cell.CellValue.zero, app.engine.state.board.getCellValue(0, 3));
+    try std.testing.expectEqual(cell.CellValue.zero, app.engine.state.board.getCellValue(0, 5));
+    // At the bookmark there is nothing to rewind to, and Redo still has work.
+    try std.testing.expect(!legendOffers(&facade_impl, "Rewind"));
+    try std.testing.expect(app.engine.getLegend(cfg.auto_save).redo);
+
+    // Redo replays one undone move, which leaves Rewind able to act again.
+    try std.testing.expect(!try app.turn());
+    try std.testing.expectEqual(@as(usize, 2), app.engine.state.history.pointer);
+    try std.testing.expectEqual(cell.CellValue.six, app.engine.state.board.getCellValue(0, 3));
+    try std.testing.expectEqual(cell.CellValue.zero, app.engine.state.board.getCellValue(0, 5));
+    try std.testing.expect(legendOffers(&facade_impl, "Rewind"));
+
+    // An undo that lands on the bookmark keeps it; the next undo is below it, so it is forgotten.
+    try std.testing.expect(!try app.turn());
+    try std.testing.expectEqual(@as(?u16, 1), app.engine.state.bookmark);
+    try std.testing.expect(!legendOffers(&facade_impl, "Rewind"));
+    try std.testing.expect(!try app.turn());
+    try std.testing.expectEqual(@as(?u16, null), app.engine.state.bookmark);
+    try std.testing.expect(!legendOffers(&facade_impl, "Rewind"));
+
+    // Redo past where the bookmark sat does not bring it back.
+    try std.testing.expect(!try app.turn());
+    try std.testing.expectEqual(@as(usize, 1), app.engine.state.history.pointer);
+    try std.testing.expectEqual(@as(?u16, null), app.engine.state.bookmark);
+    try std.testing.expect(!legendOffers(&facade_impl, "Rewind"));
+    try std.testing.expectEqual(@as(usize, 0), facade_impl.error_calls);
 }
 
 test {
