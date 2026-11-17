@@ -1709,19 +1709,28 @@ test "a new puzzle drops the bookmark with the history it pointed into" {
 }
 
 test "loading a game takes the bookmark from the file, not from the live game" {
-    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
-    defer engine.deinit();
-    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
-    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 3, .digit = .nine } }));
-    _ = try expectOk(execTest(&engine, .{ .bookmark = {} }));
-
-    // A saved game with no history: a bookmark at move 2 points past the pointer it loads.
-    var fresh = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
-    defer fresh.deinit();
-    const buf = try fresh.toSaveFormat(std.testing.allocator);
+    var saved = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer saved.deinit();
+    _ = try expectOk(execTest(&saved, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
+    _ = try expectOk(execTest(&saved, .{ .bookmark = {} }));
+    _ = try expectOk(execTest(&saved, .{ .fill = .{ .row = 0, .col = 3, .digit = .nine } }));
+    const buf = try saved.toSaveFormat(std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
+    // The live game's own bookmark is at move 0; the file's sits at move 1 and wins.
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    _ = try expectOk(execTest(&engine, .{ .bookmark = {} }));
     try engine.fromSaveFormat(buf);
+    try std.testing.expectEqual(@as(?u16, 1), engine.state.bookmark);
+    try std.testing.expect(engine.getLegend(false).rewind);
+
+    // A file written without the section leaves no bookmark, whatever the live game held.
+    var unbookmarked = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer unbookmarked.deinit();
+    const plain = try unbookmarked.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(plain);
+    try engine.fromSaveFormat(plain);
     try std.testing.expectEqual(@as(?u16, null), engine.state.bookmark);
     try std.testing.expect(!engine.getLegend(false).rewind);
 }

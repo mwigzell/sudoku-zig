@@ -34,6 +34,7 @@ pub const SectionTag = enum(u8) {
     history = 3,
     status = 4,
     marks = 5,
+    bookmark = 6,
     _,
 };
 
@@ -67,7 +68,14 @@ comptime {
 const NIBBLE_BITS: u3 = 4;
 const NIBBLE_MASK: u8 = 0x0F;
 const MAX_CELL_VALUE: u8 = 9;
-const SECTION_COUNT: u16 = 5;
+/// Sections this app writes: board, givens, history, status and marks always; the bookmark only
+/// when the player has pinned one.
+const SECTION_COUNT: u16 = 6;
+
+/// Sections in a save of this state: a game with no bookmark omits that section.
+fn sectionCount(self: *const state_mod.State) u16 {
+    return if (self.bookmark == null) SECTION_COUNT - 1 else SECTION_COUNT;
+}
 
 // ---------------------------------------------------------------------------
 // Byte cursors
@@ -129,13 +137,14 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
         SECTION_PREFIX_SIZE + GIVENS_SIZE +
         SECTION_PREFIX_SIZE + history_len +
         SECTION_PREFIX_SIZE + status.len +
-        SECTION_PREFIX_SIZE + MARKS_SIZE;
+        SECTION_PREFIX_SIZE + MARKS_SIZE +
+        if (self.bookmark == null) 0 else SECTION_PREFIX_SIZE + POINTER_SIZE;
     const buf = try gpa.alloc(u8, total);
     var w = ByteWriter{ .buf = buf };
 
     w.bytes(&SaveFileMagic);
     w.int(u16, SaveFileVersion);
-    w.int(u16, SECTION_COUNT);
+    w.int(u16, sectionCount(self));
 
     w.sectionPrefix(.board, BOARD_SIZE);
     w.bytes(&board.toFlat(self.board));
@@ -152,6 +161,12 @@ pub fn toSaveFormat(self: *const state_mod.State, gpa: std.mem.Allocator) ![]u8 
 
     w.sectionPrefix(.marks, MARKS_SIZE);
     writeMarks(&w, self.board.mark_bits);
+
+    // The bookmark is a file-space history position; the reader renumbers it as it skips entries.
+    if (self.bookmark) |bookmark| {
+        w.sectionPrefix(.bookmark, POINTER_SIZE);
+        w.int(u16, bookmark);
+    }
 
     std.debug.assert(w.pos == total);
     return buf;
@@ -221,6 +236,8 @@ const ReadSections = struct {
     history: ?[]const u8 = null,
     status: []const u8 = &.{},
     marks: [board.DIMENSION_SIZE]board.CellMask = @splat(0),
+    /// The bookmark's position in the file's entry list; renumbered once the entries are read.
+    bookmark: ?u16 = null,
 };
 
 /// Deserialize a SUD0 buffer into a fresh State; the caller owns its history.
@@ -242,7 +259,12 @@ pub fn fromSaveFormat(gpa: std.mem.Allocator, buf: []const u8) Error!state_mod.S
     };
     state.board.mark_bits = found.marks;
     errdefer state.history.deinit();
-    if (found.history) |payload| try readHistory(&state.history, payload);
+    if (found.history) |payload| {
+        state.bookmark = try readHistory(&state.history, payload, found.bookmark);
+    } else if (found.bookmark) |bookmark| {
+        // Without a history section nothing is behind a move, so only move 0 can be placed.
+        state.bookmark = if (bookmark == 0) 0 else null;
+    }
     state.status.reset();
     if (found.status.len > 0) state.status.append(found.status[0..@min(found.status.len, MAX_STATUS_BYTES)]);
     return state;
@@ -267,26 +289,40 @@ fn readSection(r: *ByteReader, found: *ReadSections) Error!void {
             if (payload.len != MARKS_SIZE) return error.InvalidSaveFile;
             found.marks = try readMarks(payload[0..MARKS_SIZE]);
         },
+        .bookmark => {
+            if (payload.len != POINTER_SIZE) return error.InvalidSaveFile;
+            found.bookmark = std.mem.readInt(u16, payload[0..POINTER_SIZE], .little);
+        },
         // Written by a newer app: skip it so the rest of the game still opens.
         _ => {},
     }
 }
 
-/// Rebuild history from its section. Skipped entries don't count toward the undo pointer.
-fn readHistory(history: *mutation_history.MutationHistory, payload: []const u8) Error!void {
+/// Rebuild history from its section and renumber the bookmark, if any, the same way as the undo
+/// pointer: both count the known entries before their file position and ignore skipped ones.
+/// A bookmark past the file's entries or past the undo pointer cannot be placed and is dropped.
+fn readHistory(history: *mutation_history.MutationHistory, payload: []const u8, file_bookmark: ?u16) Error!?u16 {
     var r = ByteReader{ .buf = payload };
     const file_pointer = try r.int(u16);
     var file_index: usize = 0;
     var pointer: usize = 0;
+    var known_before_bookmark: usize = 0;
     while (!r.atEnd()) : (file_index += 1) {
         const tag: EntryTag = @fromBackingInt(@intCast(try r.int(u8)));
         const len = try r.int(u8);
         const entry = try r.take(len);
         const known = try readEntry(history, tag, entry);
-        if (known and file_index < file_pointer) pointer += 1;
+        if (!known) continue;
+        if (file_index < file_pointer) pointer += 1;
+        if (file_bookmark) |bookmark| {
+            if (file_index < bookmark) known_before_bookmark += 1;
+        }
     }
     if (file_pointer > file_index) return error.InvalidSaveFile;
     history.pointer = pointer;
+    const bookmark = file_bookmark orelse return null;
+    if (bookmark > file_index or known_before_bookmark > pointer) return null;
+    return @intCast(known_before_bookmark);
 }
 
 /// Append one entry; false when the tag is unknown and the entry was skipped.
@@ -424,7 +460,7 @@ test "save round-trip keeps a solve entry" {
 test "header is magic, version 1 and the section count" {
     var hist = mutation_history.MutationHistory.init(std.testing.allocator);
     defer hist.deinit();
-    const st = state_mod.State{ .board = try board.fromPuzzle(_puzzle_gen.PuzzleGen.easy()), .history = hist };
+    const st = state_mod.State{ .board = try board.fromPuzzle(_puzzle_gen.PuzzleGen.easy()), .history = hist, .bookmark = 0 };
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
@@ -455,7 +491,7 @@ test "an unknown section is skipped and the rest of the game opens" {
     var list: std.ArrayList(u8) = .empty;
     defer list.deinit(std.testing.allocator);
     try list.appendSlice(std.testing.allocator, buf[0..HEADER_SIZE]);
-    std.mem.writeInt(u16, list.items[6..8], SECTION_COUNT + 1, .little);
+    std.mem.writeInt(u16, list.items[6..8], std.mem.readInt(u16, list.items[6..8], .little) + 1, .little);
     try appendSection(&list, 200, "from a newer app");
     try list.appendSlice(std.testing.allocator, buf[HEADER_SIZE..]);
 
@@ -471,16 +507,23 @@ fn appendEntry(list: *std.ArrayList(u8), tag: EntryTag, payload: []const u8) !vo
     try list.appendSlice(std.testing.allocator, payload);
 }
 
-/// A save of the default puzzle with board, givens and the given history payload.
-fn appendSaveWithHistory(file: *std.ArrayList(u8), history: []const u8) !void {
+/// A save of the default puzzle with board, givens, the given history payload, and the given
+/// file-space bookmark (null writes no bookmark section).
+fn appendSaveWithHistory(file: *std.ArrayList(u8), history: []const u8, bookmark: ?u16) !void {
     const b = try board.fromPuzzle(_puzzle_gen.PuzzleGen.default());
     try file.appendSlice(std.testing.allocator, &SaveFileMagic);
-    try file.appendSlice(std.testing.allocator, &.{ 1, 0, 3, 0 });
+    const sections: u16 = if (bookmark == null) 3 else 4;
+    try file.appendSlice(std.testing.allocator, &.{ 1, 0, @intCast(sections), 0 });
     try appendSection(file, @backingInt(SectionTag.board), &board.toFlat(b));
     var givens: [GIVENS_SIZE]u8 = undefined;
     std.mem.writeInt(u128, &givens, b.given_bits, .little);
     try appendSection(file, @backingInt(SectionTag.givens), &givens);
     try appendSection(file, @backingInt(SectionTag.history), history);
+    if (bookmark) |value| {
+        var payload: [POINTER_SIZE]u8 = undefined;
+        std.mem.writeInt(u16, &payload, value, .little);
+        try appendSection(file, @backingInt(SectionTag.bookmark), &payload);
+    }
 }
 
 test "an unknown history entry is skipped and does not count toward the pointer" {
@@ -493,7 +536,7 @@ test "an unknown history entry is skipped and does not count toward the pointer"
 
     var file: std.ArrayList(u8) = .empty;
     defer file.deinit(std.testing.allocator);
-    try appendSaveWithHistory(&file, history.items);
+    try appendSaveWithHistory(&file, history.items, null);
 
     var loaded = try fromSaveFormat(std.testing.allocator, file.items);
     defer loaded.history.deinit();
@@ -644,7 +687,7 @@ test "an entry longer than this reader knows is read up to what it knows" {
     }
     var file: std.ArrayList(u8) = .empty;
     defer file.deinit(std.testing.allocator);
-    try appendSaveWithHistory(&file, history.items);
+    try appendSaveWithHistory(&file, history.items, null);
 
     var loaded = try fromSaveFormat(std.testing.allocator, file.items);
     defer loaded.history.deinit();
@@ -661,7 +704,7 @@ test "cell and solve entries written before marks read as removing no marks" {
     try appendEntry(&history, .solve, &solve);
     var file: std.ArrayList(u8) = .empty;
     defer file.deinit(std.testing.allocator);
-    try appendSaveWithHistory(&file, history.items);
+    try appendSaveWithHistory(&file, history.items, null);
 
     var loaded = try fromSaveFormat(std.testing.allocator, file.items);
     defer loaded.history.deinit();
@@ -680,4 +723,72 @@ test "an entry shorter than the fields every reader knows is refused" {
     try std.testing.expectError(error.InvalidSaveFile, readEntry(&hist, .mark, &.{packNibbles(0, 2)}));
     const short_solve: [SOLVE_ENTRY_SIZE - 1]u8 = @splat(0);
     try std.testing.expectError(error.InvalidSaveFile, readEntry(&hist, .solve, &short_solve));
+}
+
+test "save round-trip keeps the bookmark" {
+    var hist = mutation_history.MutationHistory.init(std.testing.allocator);
+    defer hist.deinit();
+    var st = try sampleState(&hist);
+    st.bookmark = 1;
+    const buf = try toSaveFormat(&st, std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    var loaded = try fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.history.deinit();
+    try std.testing.expectEqual(@as(?u16, 1), loaded.bookmark);
+}
+
+test "a save with no bookmark writes no bookmark section" {
+    var hist = mutation_history.MutationHistory.init(std.testing.allocator);
+    defer hist.deinit();
+    const st = state_mod.State{ .board = try board.fromPuzzle(_puzzle_gen.PuzzleGen.easy()), .history = hist };
+    const buf = try toSaveFormat(&st, std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    try std.testing.expectEqual(SECTION_COUNT - 1, std.mem.readInt(u16, buf[6..8], .little));
+    var loaded = try fromSaveFormat(std.testing.allocator, buf);
+    defer loaded.history.deinit();
+    try std.testing.expectEqual(@as(?u16, null), loaded.bookmark);
+}
+
+test "a bookmark is renumbered by the known history entries before it" {
+    var history: std.ArrayList(u8) = .empty;
+    defer history.deinit(std.testing.allocator);
+    // file pointer 3 over an unknown entry, a cell edit and a mark toggle
+    try history.appendSlice(std.testing.allocator, &.{ 3, 0 });
+    try history.appendSlice(std.testing.allocator, &.{ 99, 3, 'x', 'y', 'z' });
+    try appendEntry(&history, .cell, &.{ packNibbles(0, 2), packNibbles(0, 7) });
+    try appendEntry(&history, .mark, &.{ packNibbles(1, 1), packNibbles(4, 0) });
+
+    var file: std.ArrayList(u8) = .empty;
+    defer file.deinit(std.testing.allocator);
+    try appendSaveWithHistory(&file, history.items, 3);
+
+    var loaded = try fromSaveFormat(std.testing.allocator, file.items);
+    defer loaded.history.deinit();
+    try std.testing.expectEqual(@as(usize, 2), loaded.history.pointer);
+    try std.testing.expectEqual(@as(?u16, 2), loaded.bookmark);
+}
+
+test "a bookmark at move 0 is kept and one past the file's history is dropped" {
+    var history: std.ArrayList(u8) = .empty;
+    defer history.deinit(std.testing.allocator);
+    // pointer 0 with one entry still ahead of it: redo is available after a rewind.
+    try history.appendSlice(std.testing.allocator, &.{ 0, 0 });
+    try appendEntry(&history, .cell, &.{ packNibbles(0, 2), packNibbles(0, 7) });
+
+    var kept: std.ArrayList(u8) = .empty;
+    defer kept.deinit(std.testing.allocator);
+    try appendSaveWithHistory(&kept, history.items, 0);
+    var loaded = try fromSaveFormat(std.testing.allocator, kept.items);
+    defer loaded.history.deinit();
+    try std.testing.expectEqual(@as(?u16, 0), loaded.bookmark);
+
+    // A bookmark ahead of everything the file holds cannot be placed; the game still opens.
+    var dropped: std.ArrayList(u8) = .empty;
+    defer dropped.deinit(std.testing.allocator);
+    try appendSaveWithHistory(&dropped, history.items, 5);
+    var unplaced = try fromSaveFormat(std.testing.allocator, dropped.items);
+    defer unplaced.history.deinit();
+    try std.testing.expectEqual(@as(?u16, null), unplaced.bookmark);
 }
