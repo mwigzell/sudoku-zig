@@ -96,6 +96,29 @@ test("a title that continues past the bold is answered by the words AGENTS.md gi
   assert.ok(!("problem" in short), "the bold wording names the same rule");
 });
 
+/** Punctuation inside a bold title is decoration: a report may name the rule without it. */
+test("a trailing colon or full stop does not split a report's wording from the rule's", () => {
+  const markdown = STANDARDS.replace(
+    "3. **No magic numbers.** Name the constant.",
+    "3. **SOLID principles:** One reason to change.\n4. **Constructors are pure.** Only set fields.",
+  );
+  const rules = readRules(markdown);
+
+  const checked = validateReport(
+    {
+      rules: [
+        { rule: "Document public surfaces.", verdict: "PASS", evidence: "src/sudoku.zig:12" },
+        { rule: "DRY", verdict: "PASS", evidence: "src/host/host.zig:40" },
+        { rule: "SOLID principles", verdict: "PASS", evidence: "src/core/engine/bookmark.zig:22" },
+        { rule: "Constructors are pure", verdict: "PASS", evidence: "src/board/board.zig:7" },
+      ],
+      shotgun: [],
+    },
+    rules,
+  );
+  assert.ok(!("problem" in checked), "the colon and the full stop are not part of the name");
+});
+
 /** The repo's own standards file is the one every run answers for; reading it is the run's first proof. */
 test("the repo's own AGENTS.md parses into the rules a run must answer for", () => {
   const rules = readRules(readFileSync("AGENTS.md", "utf8"));

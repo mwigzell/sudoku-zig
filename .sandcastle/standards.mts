@@ -81,7 +81,10 @@ function ruleTitle(bold: string, rest: string): { title: string; aliases?: strin
 
 /** Normalise a title for matching, so punctuation or a stray double space cannot split a match. */
 function key(title: string): string {
-  return title.trim().replace(/\s+/gu, " ").toLowerCase();
+  // Trailing punctuation is a heading's decoration, not part of the standard's name: AGENTS.md
+  // writes `**SOLID principles:**` and `**Constructors are pure.**`, a report may write either
+  // without the colon or full stop, and both name the same rule.
+  return title.trim().replace(/[.:;,!?]+$/u, "").replace(/\s+/gu, " ").toLowerCase();
 }
 
 /** Whether a report's wording names this rule, by its title or an alias. */
