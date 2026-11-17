@@ -52,6 +52,8 @@ pub const SaveFlow = struct {
     text_buf: [MAX_NAME_LEN + 128]u8 = undefined,
     phase: Phase = .start,
     refused: bool = false,
+    /// Report the outcome in core's words: a new game's write does, a move's autosave does not.
+    report: bool = false,
     taken_text_len: usize = 0,
 
     const Phase = enum { start, naming, writing, asking, asking_taken, picking, finished };
@@ -67,6 +69,14 @@ pub const SaveFlow = struct {
     /// The final write when the app is closing: the restore copy of `name` only, never asked about.
     pub fn flush(session: *FileSession, name: []const u8) SaveFlow {
         var flow = SaveFlow{ .session = session, .intent = .auto_save, .write_step = .flush };
+        flow.setName(name);
+        return flow;
+    }
+
+    /// The new game's first write: an autosave to `name` (never a picker) that reports where it
+    /// landed, since starting a game is the player's action and not a move's automatic write.
+    pub fn newGame(session: *FileSession, name: []const u8) SaveFlow {
+        var flow = SaveFlow{ .session = session, .intent = .auto_save, .write_step = .autosave, .report = true };
         flow.setName(name);
         return flow;
     }
@@ -224,6 +234,7 @@ pub const SaveFlow = struct {
     }
 
     fn declinedStep(self: *const SaveFlow) Step {
+        if (self.report) return .{ .show_status = file_policy.WRITE_CANCELLED_MSG };
         return switch (self.intent) {
             .save, .save_as => .{ .show_status = file_policy.WRITE_CANCELLED_MSG },
             .auto_save => .done,
@@ -237,14 +248,11 @@ pub const SaveFlow = struct {
             .save_as => .save_as_success,
             .auto_save => .auto_save_success,
         });
-        return switch (self.intent) {
-            .save, .save_as => blk: {
-                const text = std.fmt.bufPrint(&self.text_buf, file_policy.SAVED_TO_FMT, .{written}) catch
-                    break :blk self.finish(.{ .show_status = written });
-                break :blk self.finish(.{ .show_status = text });
-            },
-            .auto_save => self.finish(.done),
-        };
+        // A new game's autosave reports where it landed; a move's autosave stays silent.
+        if (self.intent == .auto_save and !self.report) return self.finish(.done);
+        const text = std.fmt.bufPrint(&self.text_buf, file_policy.SAVED_TO_FMT, .{written}) catch
+            return self.finish(.{ .show_status = written });
+        return self.finish(.{ .show_status = text });
     }
 
     fn writeFailed(self: *SaveFlow, reason: []const u8) Step {
@@ -483,4 +491,20 @@ test "an unexpected input ends the flow with an error" {
     _ = flow.next(.start);
     try testing.expectEqualStrings(step_mod.UNEXPECTED_INPUT_MSG, flow.next(.{ .pressed = step_mod.QUESTION_OK }).prompt_message.text);
     try testing.expect(flow.next(.start) == .done);
+}
+
+test "a new game's autosave reports where it landed, or that it was not saved" {
+    var session = FileSession{};
+    var flow = SaveFlow.newGame(&session, "mine.sud");
+    _ = flow.next(.start);
+    try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{"mine.sud"}), flow.next(.{ .wrote = .{ .ok = "mine.sud" } }).show_status);
+    try testing.expectEqual(file_policy.WriteContext.continuation, session.write_context);
+
+    var declined_session = FileSession{};
+    var declined = SaveFlow.newGame(&declined_session, "mine.sud");
+    _ = declined.next(.start);
+    try testing.expectEqualStrings(file_policy.REPLACE_CONFIRM_TITLE, declined.next(.{ .wrote = .exists }).prompt_message.title);
+    const ended = declined.next(.{ .pressed = step_mod.QUESTION_CANCEL });
+    try testing.expectEqualStrings(file_policy.WRITE_CANCELLED_MSG, ended.show_status);
+    try testing.expectEqual(file_policy.WriteContext.detached, declined_session.write_context);
 }

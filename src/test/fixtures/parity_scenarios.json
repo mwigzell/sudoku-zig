@@ -17,7 +17,7 @@
   "scenarios": [
     {
       "name": "restore_solved_keep",
-      "summary": "Restoring a solved game and keeping it continues the file: the next autosave writes it without asking.",
+      "summary": "With Auto Save on, restoring a solved game and keeping it continues the file: the next autosave writes it without asking.",
       "config": {"auto_restore": true, "auto_new": true, "auto_save": true},
       "current_file": {
         "name": "startup.sud",
@@ -35,16 +35,16 @@
     },
     {
       "name": "restore_solved_new_game",
-      "summary": "Restoring a solved game and starting a new one detaches the file: the next autosave asks before overwriting it.",
+      "summary": "With Auto Save on, restoring a solved game and starting a new one writes the new game to that file before the first move, so the next launch no longer offers the solved game.",
       "config": {"auto_restore": true, "auto_new": true, "auto_save": true, "difficulty": "easy"},
       "current_file": {
         "name": "startup.sud",
         "puzzle_line": "483921657967345821251876493548132976729504138136798245372689514814253769695417382",
         "moves": [{"row": 4, "col": 4, "digit": 6}]
       },
-      "answers": [true, false],
-      "steps": [{"fill_first_empty": true}],
-      "expect": {"questions": 2, "solved_after_startup": false, "written": [], "probes": []}
+      "answers": [true],
+      "steps": [{"relaunch": true}],
+      "expect": {"questions": 1, "solved_after_startup": false, "written": ["startup.sud"], "probes": []}
     },
     {
       "name": "auto_save_toggle_then_autosave",
@@ -702,9 +702,39 @@
     },
     {
       "name": "startup_new_game",
-      "summary": "With Auto New on and nothing to restore, startup generates a new game at the configured difficulty.",
+      "summary": "With Auto New on and Auto Save off, startup generates a new game and writes nothing.",
       "config": {"auto_new": true, "difficulty": "medium"},
       "expect": {"questions": 0, "errors": 0, "written": []}
+    },
+    {
+      "name": "startup_new_game_auto_saves",
+      "summary": "With Auto New and Auto Save on, a fresh install's generated game is written to the default file before the first move.",
+      "config": {"auto_new": true, "auto_save": true, "difficulty": "medium"},
+      "expect": {"questions": 0, "errors": 0, "solved_after_startup": false, "written": ["sudoku.sud"]}
+    },
+    {
+      "name": "startup_new_onto_a_remembered_file_asks",
+      "summary": "With Auto Save on, Auto New without restore onto a file the player named earlier asks once before replacing it, then writes the new game.",
+      "config": {"auto_restore": false, "auto_new": true, "auto_save": true},
+      "current_file": {
+        "name": "mine.sud",
+        "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+      },
+      "answers": [true],
+      "expect": {"questions": 1, "written": ["mine.sud"], "probes": []}
+    },
+    {
+      "name": "startup_new_onto_an_existing_default_file_declined",
+      "summary": "With Auto Save on, declining the replace of the default file leaves it untouched and the new game unbound.",
+      "config": {"auto_new": true, "auto_save": true},
+      "files": [
+        {
+          "name": "sudoku.sud",
+          "puzzle_line": "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+        }
+      ],
+      "answers": [false],
+      "expect": {"questions": 1, "written": [], "probes": []}
     },
     {
       "name": "startup_generation_failed",

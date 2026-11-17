@@ -17,6 +17,18 @@ import * as sessionMod from "./session.js";
 }
 
 {
+  const ready = {
+    state: { cells: [] },
+    legend: {},
+    config: {},
+    default_save_filename: "mine.sud",
+    startup_save_path: "./current-file",
+  };
+  const session = sessionMod.createWebSessionFromStartup(ready);
+  assert.equal(session.boundFilename, "mine.sud");
+}
+
+{
   for (const key of sessionMod.REQUIRED_STARTUP_READY_KEYS) {
     const ready = {
       state: { cells: [] },

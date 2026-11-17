@@ -7,9 +7,9 @@ export const CURRENT_FILE_UNSAVED_LABEL = "unsaved";
 
 export const REQUIRED_STARTUP_READY_KEYS = ["default_save_filename"];
 
-/** The web session before startup has shown a game: the engine's idle board, its Config and core's config table, no bound file.
+/** The web session before startup has shown a game: the engine's idle board, its Config and core's config table, and the remembered file name when the host has one.
  * `fileHandle` is the browser file a save writes again; Android's bound file lives in the bridge.
- * @param {{ state: unknown, legend: Record<string, boolean>, config: import("../types").Config, config_table: import("../types").ConfigTable, default_save_filename: string }} boot
+ * @param {{ state: unknown, legend: Record<string, boolean>, config: import("../types").Config, config_table: import("../types").ConfigTable, default_save_filename: string, startup_save_path?: string | null }} boot
  */
 export function createWebSessionFromStartup(boot) {
   for (const key of REQUIRED_STARTUP_READY_KEYS) {
@@ -23,7 +23,8 @@ export function createWebSessionFromStartup(boot) {
     config: boot.config,
     configTable: boot.config_table,
     default_save_filename: boot.default_save_filename,
-    boundFilename: null,
+    // A remembered file is the current file even when Auto Restore skips reading it.
+    boundFilename: boot.startup_save_path ? boot.default_save_filename : null,
     /** @type {FileSystemFileHandle | null} */
     fileHandle: null,
   };

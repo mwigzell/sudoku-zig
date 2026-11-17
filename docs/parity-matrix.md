@@ -56,8 +56,8 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 
 | Scenario | What it shows | Runs on | Not on |
 |---|---|---|---|
-| `restore_solved_keep` | Restoring a solved game and keeping it continues the file: the next autosave writes it without asking. | native, web, android | — |
-| `restore_solved_new_game` | Restoring a solved game and starting a new one detaches the file: the next autosave asks before overwriting it. | native, web, android | — |
+| `restore_solved_keep` | With Auto Save on, restoring a solved game and keeping it continues the file: the next autosave writes it without asking. | native, web, android | — |
+| `restore_solved_new_game` | With Auto Save on, restoring a solved game and starting a new one writes the new game to that file before the first move, so the next launch no longer offers the solved game. | native, web, android | — |
 | `auto_save_toggle_then_autosave` | Turning Auto Save on persists the setting; the next move writes the default file without asking and makes it the current file. | native, web, android | — |
 | `restore_unsolved_moves` | Restoring an unfinished game brings back the player's moves and their undo history without asking. | native, web, android | — |
 | `autosave_then_relaunch_restores_moves` | Moves autosaved with Auto Save on come back on the next launch: givens stay givens, the player's moves stay moves, an undone move stays undone, and both Undo and Redo are still offered. | native, web, android | — |
@@ -95,7 +95,10 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `new_after_open_asks_before_replacing` | New after Open replaces the board and detaches the opened file: the next autosave asks before overwriting it. | native, web, android | — |
 | `export_names_default_and_reports` | Export writes the puzzle text to the default export file and reports it; the game file is only written by autosave. | native, web, android | — |
 | `startup_idle` | With nothing to restore and Auto New off, startup shows the empty board and its idle status. | native, web, android | — |
-| `startup_new_game` | With Auto New on and nothing to restore, startup generates a new game at the configured difficulty. | native, web, android | — |
+| `startup_new_game` | With Auto New on and Auto Save off, startup generates a new game and writes nothing. | native, web, android | — |
+| `startup_new_game_auto_saves` | With Auto New and Auto Save on, a fresh install's generated game is written to the default file before the first move. | native, web, android | — |
+| `startup_new_onto_a_remembered_file_asks` | With Auto Save on, Auto New without restore onto a file the player named earlier asks once before replacing it, then writes the new game. | native, web, android | — |
+| `startup_new_onto_an_existing_default_file_declined` | With Auto Save on, declining the replace of the existing default file leaves it untouched and the new game unbound. | native, web, android | — |
 | `startup_generation_failed` | When startup's generation fails, core shows its error and the empty board. | web, android | native: Terminal generation always produces a puzzle and has no cancel. |
 | `startup_restore_failed_delete` | A current file that is no saved game: startup shows the empty board, asks, and deletes it on Delete. | native, web, android | — |
 | `startup_restore_failed_delete_settings_refused` | A current file that is no saved game, with a settings folder the store cannot use: Delete is refused before the save is touched, so startup ends on core's sentence. | native, web, android | — |

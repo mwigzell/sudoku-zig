@@ -1256,6 +1256,41 @@ test "startup policy: auto_restore false and auto_new false keeps manual startup
     try std.testing.expect(std.mem.indexOf(u8, output, startup_policy.IDLE_STARTUP_STATUS) != null);
 }
 
+test "startup: an accepted new game is written and shows core's saved-to line before the first turn" {
+    const test_defaults = @import("../../test/config_defaults.zig");
+    const solved_line = "534678912672195348198342567859761423426853791713924856961537284287419635345286179";
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const data_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    defer std.testing.allocator.free(data_path);
+
+    var transport = MemoryTransport.init(std.testing.allocator);
+    defer transport.deinit();
+    var solved = try game_engine.GameEngine.init(solved_line, test_defaults.testConfigDefaults());
+    defer solved.deinit();
+    const bytes = try solved.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(bytes);
+    try transport.put(MemoryTransport.DIR ++ "/startup.sud", bytes);
+
+    var cfg = test_defaults.testConfigDefaults();
+    cfg.auto_restore = true;
+    cfg.auto_new = true;
+    cfg.auto_save = true;
+    var facade_impl = DeterministicFacade{ .steps = &[_]command.ParseCommandResult{}, .replace_answers = &[_]bool{true} };
+    var out = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    var app = try Sudoku.init(cfg, facade_impl.asFacade(), transport.asTransport(), &out.writer, .{ .io = io, .data_dir = data_path, .visible_save_dir = MemoryTransport.DIR });
+    defer app.deinit();
+
+    try app.runStartupFlow("startup.sud");
+
+    // One question (the solved prompt); the write itself is a continuation and does not ask.
+    try std.testing.expectEqual(@as(usize, 1), facade_impl.replace_prompts);
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.SAVED_TO_FMT, .{MemoryTransport.DIR ++ "/startup.sud"}), facade_impl.last_render_msg.?);
+    try std.testing.expect(!app.engine.state.board.isSolved());
+}
+
 test "showGameWithStatus forwards startup status to renderer" {
     const test_defaults = @import("../../test/config_defaults.zig");
     const cfg = test_defaults.testConfigDefaults();

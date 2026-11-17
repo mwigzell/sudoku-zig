@@ -652,6 +652,42 @@ public final class FileBridgeTest {
         awaitLog(RESTORE_COPY_WRITE);
     }
 
+    /**
+     * The solved game is on disk, so the next launch offers New game; accepting it must write the generated
+     * game before the player moves, or the launch after that offers the solved game again.
+     */
+    @Test
+    public void newGameFromTheSolvedPromptIsWrittenBeforeTheNextLaunch() throws IOException {
+        sh("rm -f " + DEFAULT_PATH + "\n");
+        writeAutoSaveConfig(true);
+        launchApp();
+        startEasyGame();
+        sh("logcat -c\n");
+        need(By.text("Edit"), UI_WAIT_MS).click();
+        need(By.res("edit-solve"), UI_WAIT_MS).click();
+        awaitLog(RESTORE_COPY_WRITE);
+
+        sh("am force-stop " + APP + "\n");
+        launchApp();
+        need(By.res(ASK_TEXT), UI_WAIT_MS);
+        sh("logcat -c\n");
+        need(By.res(ASK_OK), UI_WAIT_MS).click();
+        need(By.res("board"), UI_WAIT_MS);
+        continueGeneration();
+        awaitLog(RESTORE_COPY_WRITE);
+
+        sh("am force-stop " + APP + "\n");
+        launchApp();
+        // The restored board must be the generated game, not the solved one: it has empty cells,
+        // and the solved prompt must not come back after the page has had time to show it.
+        firstEmptyCellCenter();
+        final long deadline = SystemClock.uptimeMillis() + UI_WAIT_MS;
+        while (SystemClock.uptimeMillis() < deadline) {
+            assertFalse("the solved game was offered again", device.hasObject(By.res(ASK_TEXT)));
+            SystemClock.sleep(POLL_MS);
+        }
+    }
+
     /** A new game's first autosave over an existing file asks first; answer Replace. */
     private void replaceWhenAsked(String name) {
         final String question = need(By.res(ASK_TEXT), UI_WAIT_MS).getText();
@@ -732,6 +768,12 @@ public final class FileBridgeTest {
         need(By.text("File"), UI_WAIT_MS).click();
         need(By.res("file-new"), UI_WAIT_MS).click();
         need(By.text("Easy").clickable(true), UI_WAIT_MS).click();
+        continueGeneration();
+        tappedCells.clear();
+    }
+
+    /** Wait for the generation modal's Continue and tap it until it closes. */
+    private void continueGeneration() {
         // Before Android 14 the node cache can keep Continue disabled after it is enabled, so tap until the modal closes.
         final BySelector continueButton = By.res("generating-modal-continue");
         final UiObject2 cont = need(continueButton, UI_WAIT_MS);
@@ -740,7 +782,6 @@ public final class FileBridgeTest {
             assertTrue("generating modal did not close within " + GENERATE_WAIT_MS + " ms", SystemClock.uptimeMillis() < deadline);
             cont.click();
         }
-        tappedCells.clear();
     }
 
     /**

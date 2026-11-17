@@ -7,6 +7,7 @@ const puzzle_gen = @import("../puzzle_gen/mod.zig");
 const config = @import("../config.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
+const save_mod = @import("save.zig");
 const forget_mod = @import("forget.zig");
 const startup_config = @import("../startup/config.zig");
 const logger = @import("../logger.zig");
@@ -62,6 +63,8 @@ pub const StartupFlow = struct {
     /// Status of the game just shown, or the question / error text still to come.
     text: Text = .{},
     restored: bool = false,
+    /// The new game's write once its board has been acknowledged, if Auto Save is on.
+    write: save_mod.SaveFlow = undefined,
     phase: Phase = .start,
 
     const Phase = enum {
@@ -71,6 +74,8 @@ pub const StartupFlow = struct {
         asking_solved,
         generating,
         showing_new,
+        resolving_new,
+        saving_new,
         showing_idle,
         showing_idle_then_ask_delete,
         asking_delete,
@@ -87,6 +92,8 @@ pub const StartupFlow = struct {
             flow.path.set(file.path);
             flow.name.set(file.name);
             flow.current.set(file.current);
+            // The remembered file is the lane autosave follows, even when Auto Restore skips the read.
+            flow.session.setCurrentFile(file.current);
         }
         return flow;
     }
@@ -161,15 +168,31 @@ pub const StartupFlow = struct {
                 };
                 return switch (self.engine.newFromOneLinePuzzle(line)) {
                     .error_msg => |msg| self.generateFailed(msg),
-                    .ok => |ok| blk: {
-                        self.session.apply(.startup_new);
-                        break :blk self.showGame(.showing_new, ok.msg);
-                    },
+                    .ok => |ok| self.showGame(.showing_new, ok.msg),
                 };
             },
             .showing_new, .showing_idle => {
                 if (input != .ack) return self.fail(UNEXPECTED_INPUT_MSG);
-                return self.finish(.done);
+                if (self.phase != .showing_new) return self.finish(.done);
+                // A generated game is written when it exists, not when the player first moves.
+                // With Auto Save off the app writes nothing and the load stays detached.
+                if (!self.cfg.auto_save) {
+                    self.session.apply(.startup_new);
+                    return self.finish(.done);
+                }
+                self.phase = .resolving_new;
+                return self.startNewGameWrite();
+            },
+            .resolving_new => {
+                const name = switch (input) {
+                    .default_target => |n| n,
+                    else => return self.fail(UNEXPECTED_INPUT_MSG),
+                };
+                return self.beginNewGameWrite(name);
+            },
+            .saving_new => {
+                const step = self.write.next(input);
+                return if (step_mod.isTerminal(step)) self.finish(step) else step;
             },
             .showing_idle_then_ask_delete => {
                 if (input != .ack) return self.fail(UNEXPECTED_INPUT_MSG);
@@ -210,6 +233,19 @@ pub const StartupFlow = struct {
     fn generate(self: *StartupFlow) Step {
         self.phase = .generating;
         return .{ .generate_game = self.cfg.difficulty };
+    }
+
+    /// The new game's first write: its current file, else the platform's default target.
+    fn startNewGameWrite(self: *StartupFlow) Step {
+        if (self.session.currentFile()) |current| return self.beginNewGameWrite(current);
+        return .resolve_default_target;
+    }
+
+    fn beginNewGameWrite(self: *StartupFlow, name: []const u8) Step {
+        self.write = save_mod.SaveFlow.newGame(self.session, name);
+        self.phase = .saving_new;
+        const step = self.write.next(.start);
+        return if (step_mod.isTerminal(step)) self.finish(step) else step;
     }
 
     fn showGame(self: *StartupFlow, phase: Phase, status: ?[]const u8) Step {
@@ -262,6 +298,7 @@ const open_line = "5300700006001950000980000608000600034008030017000200060600002
 const Options = struct {
     auto_restore: bool,
     auto_new: bool,
+    auto_save: bool = true,
     difficulty: puzzle_gen.Difficulty,
 };
 
@@ -281,6 +318,7 @@ const Harness = struct {
     fn flow(self: *Harness, options: Options, current: ?CurrentFile) StartupFlow {
         self.cfg.auto_restore = options.auto_restore;
         self.cfg.auto_new = options.auto_new;
+        self.cfg.auto_save = options.auto_save;
         self.cfg.difficulty = options.difficulty;
         return StartupFlow.init(&self.engine, &self.session, &self.cfg, current);
     }
@@ -319,7 +357,8 @@ test "startup restore reads the file, shows the game and continues it" {
     try std.testing.expectEqual(@import("../file_policy.zig").WriteContext.continuation, h.session.write_context);
 }
 
-test "startup restore of a solved game asks, and New game generates" {
+test "startup restore of a solved game asks, and New game writes the new game" {
+    const policy = @import("../file_policy.zig");
     var h = try Harness.init();
     defer h.deinit();
     const bytes = try Harness.saveBytes(solved_line);
@@ -332,8 +371,62 @@ test "startup restore of a solved game asks, and New game generates" {
     try std.testing.expectEqual(puzzle_gen.Difficulty.easy, f.next(.{ .pressed = step_mod.QUESTION_OK }).generate_game);
     const shown = f.next(.{ .generated = .{ .line = open_line } });
     try std.testing.expect(shown.show_game.frame.status != null);
-    try std.testing.expectEqual(Step.done, f.next(.ack));
+    // The generated game is written when its board is acknowledged, before any move.
+    const first = f.next(.ack).autosave;
+    try std.testing.expectEqualStrings("/data/game.sud", first.name);
+    try std.testing.expect(!first.replace);
+    const replace = f.next(.{ .wrote = .exists }).autosave;
+    try std.testing.expect(replace.replace);
+    const wrote = f.next(.{ .wrote = .{ .ok = "/data/game.sud" } });
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(policy.SAVED_TO_FMT, .{"/data/game.sud"}), wrote.show_status);
     try std.testing.expect(!h.engine.state.board.isSolved());
+    try std.testing.expectEqual(policy.WriteContext.continuation, h.session.write_context);
+}
+
+test "startup new with auto save off writes nothing and leaves the load detached" {
+    var h = try Harness.init();
+    defer h.deinit();
+    var f = h.flow(.{ .auto_restore = false, .auto_new = true, .auto_save = false, .difficulty = .easy }, test_file);
+    _ = f.next(.start);
+    _ = f.next(.{ .generated = .{ .line = open_line } });
+    try std.testing.expectEqual(Step.done, f.next(.ack));
+    try std.testing.expectEqualStrings("/data/game.sud", h.session.currentFile().?);
+    try std.testing.expectEqual(@import("../file_policy.zig").WriteContext.detached, h.session.write_context);
+}
+
+test "startup restore of a solved game with auto save off writes nothing" {
+    const policy = @import("../file_policy.zig");
+    var h = try Harness.init();
+    defer h.deinit();
+    const bytes = try Harness.saveBytes(solved_line);
+    defer std.testing.allocator.free(bytes);
+    var f = h.flow(.{ .auto_restore = true, .auto_new = true, .auto_save = false, .difficulty = .easy }, test_file);
+    _ = f.next(.start);
+    _ = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } });
+    _ = f.next(.ack);
+    _ = f.next(.{ .pressed = step_mod.QUESTION_OK });
+    _ = f.next(.{ .generated = .{ .line = open_line } });
+    // Auto Save off: startup ends on the generated board with no write and a detached load, so
+    // the solved file on disk still asks on the next launch.
+    try std.testing.expectEqual(Step.done, f.next(.ack));
+    try std.testing.expectEqual(policy.WriteContext.detached, h.session.write_context);
+}
+
+test "a generated game onto a remembered file asks before replacing, and Keep stops following it" {
+    const policy = @import("../file_policy.zig");
+    var h = try Harness.init();
+    defer h.deinit();
+    var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .easy }, test_file);
+    _ = f.next(.start);
+    _ = f.next(.{ .generated = .{ .line = open_line } });
+    const write = f.next(.ack).autosave;
+    try std.testing.expectEqualStrings("/data/game.sud", write.name);
+    try std.testing.expect(!write.replace);
+    try std.testing.expect(f.next(.{ .wrote = .exists }) == .prompt_message);
+    const ended = f.next(.{ .pressed = step_mod.QUESTION_CANCEL });
+    try std.testing.expectEqualStrings(policy.WRITE_CANCELLED_MSG, ended.show_status);
+    try std.testing.expectEqualStrings("/data/game.sud", h.session.currentFile().?);
+    try std.testing.expectEqual(policy.WriteContext.detached, h.session.write_context);
 }
 
 test "startup restore of a solved game keeps it when the player says Keep" {
@@ -427,14 +520,19 @@ test "startup restore of unreadable bytes is a restore failure" {
     try std.testing.expectEqualStrings(RESTORE_FAILED_TITLE, f.next(.ack).prompt_message.title);
 }
 
-test "startup new generates at the saved difficulty and shows the game" {
+test "startup new generates at the saved difficulty, shows the game and writes it" {
     var h = try Harness.init();
     defer h.deinit();
-    var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .hard }, test_file);
+    var f = h.flow(.{ .auto_restore = false, .auto_new = true, .difficulty = .hard }, null);
     try std.testing.expectEqual(puzzle_gen.Difficulty.hard, f.next(.start).generate_game);
     const shown = f.next(.{ .generated = .{ .line = open_line } });
     try std.testing.expect(shown.show_game.file == null);
-    try std.testing.expectEqual(Step.done, f.next(.ack));
+    try std.testing.expect(f.next(.ack) == .resolve_default_target);
+    const write = f.next(.{ .default_target = "sudoku.sud" }).autosave;
+    try std.testing.expectEqualStrings("sudoku.sud", write.name);
+    try std.testing.expect(!write.replace);
+    const wrote = f.next(.{ .wrote = .{ .ok = "sudoku.sud" } });
+    try std.testing.expectEqualStrings(std.fmt.comptimePrint(@import("../file_policy.zig").SAVED_TO_FMT, .{"sudoku.sud"}), wrote.show_status);
 }
 
 test "startup new cancelled shows the idle board" {
