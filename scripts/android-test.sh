@@ -194,7 +194,7 @@ if [[ -n "$TEST_METHODS" ]]; then
   done
   INSTRUMENT_ARGS=(-e class "$CLASS_LIST")
 fi
-echo "running tests on $DEVICES (limit ${RUN_LIMIT_SECONDS}s)"
+echo "running tests on $SERIAL (limit ${RUN_LIMIT_SECONDS}s)"
 "$ADB" shell am instrument -w -r ${INSTRUMENT_ARGS[@]+"${INSTRUMENT_ARGS[@]}"} "$TEST_PACKAGE/$RUNNER" | tr -d '\r' | tee "$OUT/instrument.txt" | awk '
   /^INSTRUMENTATION_STATUS: test=/ { test = substr($0, index($0, "=") + 1) }
   /^INSTRUMENTATION_STATUS_CODE: / {
