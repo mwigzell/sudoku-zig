@@ -23,15 +23,23 @@ export type ShotgunCount = { symbol: string; files: number; verdict: "plumbing" 
 /** Find the source files that name `symbol`. Injected in tests so nothing shells out there. */
 export type SymbolSearch = (symbol: string) => string[];
 
-/** The host's search: every file under `src` that names the symbol. */
-export function rgSearch(root: string): SymbolSearch {
+/**
+ * The host's search: the files of the branch at `root` that name the symbol.
+ *
+ * It asks git, not a filesystem walk, so the count is the branch's tracked files: a reviewer's own
+ * verdict (an untracked artefact in the worktree) names every symbol it reports and would otherwise
+ * count itself, and dot directories such as `.sandcastle/` are tracked source, not hidden noise.
+ */
+export function branchSearch(root: string): SymbolSearch {
   return (symbol) => {
     try {
-      const out = execFileSync("rg", ["-l", "--fixed-strings", "--", symbol, root], { encoding: "utf8" });
+      const out = execFileSync("git", ["grep", "-l", "--fixed-strings", "--", symbol], { cwd: root, encoding: "utf8" });
       return out.split("\n").filter((line) => line.trim().length > 0);
-    } catch {
-      // `rg` exits non-zero when nothing matches, which is a legitimate answer: no files.
-      return [];
+    } catch (err) {
+      // Exit 1 is git's "nothing matched", a legitimate answer. Anything else is a real failure and
+      // must not read as "the reviewer invented this symbol".
+      if ((err as { status?: number }).status === 1) return [];
+      throw err;
     }
   };
 }

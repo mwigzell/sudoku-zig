@@ -9,7 +9,7 @@ import type { ProjectConfig } from "./project_config.mts";
 import { emptyLedger, ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
-import { countShotgun, rgSearch } from "./shotgun.mts";
+import { branchSearch, countShotgun } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
 import { readRunRecord, writeRunRecord } from "./run_record.mts";
 import { gateFor, nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
@@ -341,7 +341,7 @@ async function finalReview(
   }
   // The shotgun figure is the one number in the lens the host counts itself, so a reviewer cannot
   // pad it: it names the symbols, the host counts the files that carry them on this branch.
-  const counts = countShotgun(standardsRead.report.shotgun, rgSearch(sandbox.worktreePath));
+  const counts = countShotgun(standardsRead.report.shotgun, branchSearch(sandbox.worktreePath));
   if ("problem" in counts) return stop(counts.problem);
   writeFileSync(join(runsDir, "shotgun.json"), `${JSON.stringify(counts.counts, null, 2)}\n`);
   for (const count of counts.counts) {

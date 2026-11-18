@@ -3,6 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -138,6 +139,11 @@ function fixture() {
 
 const planFor = (body: string) =>
   makePlan(1, "fixture", body, { stamp: 1, targetBranch: "develop", labels: [PROJECT.tracker.readyLabel], project: PROJECT });
+
+/** Run one git command in a fixture worktree, so the host's branch search has a branch to read. */
+function git(cwd: string, ...args: string[]): void {
+  execFileSync("git", args, { cwd, stdio: "ignore" });
+}
 
 test("each step gets an implementer and a reviewer run, and the host ticks it", async () => {
   const dirs = fixture();
@@ -533,6 +539,9 @@ test("the shotgun count in the report is the host's, taken from the branch", asy
     mkdirSync(join(dirs.worktree, "src"), { recursive: true });
     writeFileSync(join(dirs.worktree, "src", "one.zig"), "fn carried() void {}\n");
     writeFileSync(join(dirs.worktree, "src", "two.zig"), "fn carried() void {}\n");
+    // The host counts the branch's tracked files, so the fixture worktree is a repository.
+    git(dirs.worktree, "init", "-q");
+    git(dirs.worktree, "add", "src");
     const claimed = {
       ...passingStandards(),
       shotgun: [{ symbol: "carried", files: 99 }],

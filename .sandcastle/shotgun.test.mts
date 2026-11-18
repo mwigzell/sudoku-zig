@@ -2,7 +2,11 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { countShotgun, rgSearch, PLUMBING_FILES } from "./shotgun.mts";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { branchSearch, countShotgun, PLUMBING_FILES } from "./shotgun.mts";
 
 /** A search that answers from a fixed map, so these tests never touch the filesystem. */
 const searchOver =
@@ -56,5 +60,35 @@ test("a symbol the reviewer explained in a trailing note is searched as the symb
 });
 
 test("a search that finds nothing is no files, not an error", () => {
-  assert.deepEqual(rgSearch("src")("a symbol this repository does not contain"), []);
+  assert.deepEqual(branchSearch("src")("a symbol this repository does not contain"), []);
 });
+
+test("a symbol under a dot directory is found, since the branch's harness lives in one", () => {
+  const root = repoWith(".sandcastle/gate.mts", "export const EVIDENCE_FILE = 1;\n");
+  try {
+    assert.deepEqual(branchSearch(root)("EVIDENCE_FILE"), [join(".sandcastle", "gate.mts")]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an untracked file naming the symbol does not count, so a report cannot count itself", () => {
+  const root = repoWith("src/one.zig", "fn carried() void {}\n");
+  try {
+    writeFileSync(join(root, "verdict.json"), '{"shotgun":[{"symbol":"carried"}]}\n');
+
+    assert.deepEqual(branchSearch(root)("carried"), [join("src", "one.zig")]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A temporary git worktree holding one tracked file, so the search has a branch to read. */
+function repoWith(path: string, text: string): string {
+  const root = mkdtempSync(join(tmpdir(), "shotgun-branch-"));
+  mkdirSync(join(root, path, ".."), { recursive: true });
+  writeFileSync(join(root, path), text);
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  execFileSync("git", ["add", path], { cwd: root });
+  return root;
+}

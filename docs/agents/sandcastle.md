@@ -130,9 +130,11 @@ so a rule added to `AGENTS.md` is required by the next run with no change here. 
 or unevidenced stops the run, and so does any `VIOLATION` — the standards lens is not advisory.
 
 The one figure in that report the host does not take on trust is the shotgun count: the reviewer names
-the symbols the branch carries through several files, and the host counts the files that name them
-(`rg -l`), keeping its own numbers in `logs/<stamp>/shotgun.json`. A symbol the branch does not have
-stops the run; a count of three or more files is reported as `plumbing`, fewer as `carried`.
+the symbols the branch carries through several files, and the host counts the branch's tracked files
+that name them (`git grep -l`), keeping its own numbers in `logs/<stamp>/shotgun.json`. Tracked files
+only, since an untracked verdict the reviewer just wrote names every symbol it reports and would count
+itself. A symbol the branch does not have stops the run; a count of three or more files is reported as
+`plumbing`, fewer as `carried`.
 
 A malformed verdict file is always a problem, never an empty pass.
 
