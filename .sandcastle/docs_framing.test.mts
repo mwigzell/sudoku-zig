@@ -1,9 +1,9 @@
-// docs_framing.test.mts — the written half of the parity window.
+// docs_framing.test.mts — the written half of a rule the code enforces.
 //
-// The window only works if the people and sessions that declare, triage and run an issue find the
-// rule where they look: `AGENTS.md` for the standing rule, the tracker doc for the triage gate, and
-// the harness manual for the gate a step inside a window runs. This test pins those claims, so the
-// framing cannot fall out of one document while the code keeps its half.
+// A rule only works if the people and sessions that declare, triage and run an issue find it where
+// they look: `AGENTS.md` for the standing rule, the tracker doc for the triage gate, and the harness
+// manual for the gate a step or a closeout runs. This test pins those claims, so the framing cannot
+// fall out of one document while the code keeps its half.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -16,6 +16,8 @@ import { PROJECT } from "./project.mts";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** The tracker's operating doc, which triage and the harness both point at. */
 const TRACKER = "docs/agents/issue-tracker.md";
+/** Triage's vocabulary doc: the readiness walk, and what deliberately does not gate readiness. */
+const TRIAGE = "docs/agents/triage-labels.md";
 
 /** The text of one committed document. */
 function docOf(file: string): string {
@@ -65,5 +67,33 @@ test("the harness manual names the flag, the per-step command and the final-revi
     [/every other step|plain `zig build verify`/u, "every step outside the window runs the plain gate"],
     [/parity_restored/u, "the whole-branch verdict records parity restored"],
     [/host stops/u, "the host, not the reviewer, stops a run whose window was not restored"],
+  ]);
+});
+
+test("AGENTS.md sends the Android scenario rule to the tracker's closeout-derived set", () => {
+  states(PROJECT.standards.file, [
+    [/"Android scenarios"/u, "rule 11 points at the tracker's `## Android scenarios` section"],
+    [/derived at closeout/u, "the required set is derived at closeout, not guessed at triage"],
+    [/no scenario names this change/u, "a changed Android surface with no scenario is the stop"],
+  ]);
+});
+
+test("the tracker derives the required Android set from the branch and stops on a changed surface with none", () => {
+  states(TRACKER, [
+    [/^## Android scenarios$/mu, "the derived set has a section of its own"],
+    [/added or changed/iu, "methods the branch adds or changes are required"],
+    [/pinned smoke/u, "one smoke method is pinned for a branch that changes no test"],
+    [/ProjectConfig\.android\.smoke/u, "the smoke is a project fact, not a per-issue pick"],
+    [/src\/android\/jni_host\.zig/u, "the Android app surface whose change needs a scenario is named"],
+    [/no scenario names this change/u, "a changed Android surface with no scenario does not close"],
+    [/fence/iu, "a fenced example of the section is not read as a declaration"],
+  ]);
+});
+
+test("triage keeps the Android scenarios section optional and a device step runnable", () => {
+  states(TRIAGE, [
+    [/not a `ready-for-agent` condition|never a readiness condition/u, "the section is not a readiness condition"],
+    [/still runnable/u, "a step that needs a device is still runnable"],
+    [/Android scenarios/u, "it points at the tracker's derived set"],
   ]);
 });
