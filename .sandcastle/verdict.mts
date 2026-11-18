@@ -1,6 +1,9 @@
 // verdict.mts — the step verdict a reviewer writes after each step, and the rule that
 // decides whether the loop may start the next one. The verdict carries no acceptance
-// criterion status; criteria are judged once, at the end of the run.
+// criterion status; criteria are judged once, at the end of the run. The gate command
+// comes from the project's `ProjectConfig`, so a stop reason quotes this project's gate.
+
+import type { ProjectConfig } from "./project_config.mts";
 
 /**
  * What a step's reviewer reports. Every field is evidence the reviewer produced itself;
@@ -11,7 +14,7 @@ export interface StepVerdict {
   step: number;
   /** The failing test the step added, as `file: what it asserts`. */
   test_added: string;
-  /** Exit code of `zig build verify` in the reviewer's own run. */
+  /** Exit code of the project's verify command (`ProjectConfig.verify`) in the reviewer's own run. */
   verify_exit: number;
   /** The mechanical standards result, or the violation that was found. */
   standards: string;
@@ -82,16 +85,17 @@ export function readVerdict(raw: string): VerdictRead {
  * Decide what the loop does with a step verdict.
  *
  * A step is done only when it added a test, that test is red when the step's production
- * change is reverted, `verify` is green, and the reviewer is neither off track nor
- * worried that the branch is drifting. Anything else stops the run with the branch left
+ * change is reverted, the project's `verify` is green, and the reviewer is neither off track
+ * nor worried that the branch is drifting. Anything else stops the run with the branch left
  * where it is, so a human reads a red step rather than the loop building on it.
+ * `project` supplies the gate command the stop reason quotes, so the harness names no tool.
  */
-export function decide(verdict: StepVerdict, expectedStep: number): Decision {
+export function decide(verdict: StepVerdict, expectedStep: number, project: ProjectConfig): Decision {
   if (verdict.step !== expectedStep) {
     return { kind: "stop", reason: `the verdict names step ${verdict.step}, not step ${expectedStep}` };
   }
   if (!verdict.on_track) return { kind: "stop", reason: "the step is not on track" };
-  if (verdict.verify_exit !== 0) return { kind: "stop", reason: `zig build verify exited ${verdict.verify_exit}` };
+  if (verdict.verify_exit !== 0) return { kind: "stop", reason: `${project.verify} exited ${verdict.verify_exit}` };
   if (verdict.standards !== "clean") return { kind: "stop", reason: `standards: ${verdict.standards}` };
   if (verdict.ac_at_risk.length > 0) {
     return { kind: "stop", reason: `acceptance criteria at risk: ${verdict.ac_at_risk.join(", ")}` };

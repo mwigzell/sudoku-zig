@@ -12,7 +12,8 @@ import { runSteps, type StepSandbox } from "./loop.mts";
 import { readRunRecord } from "./run_record.mts";
 
 type SandboxAlias = StepSandbox;
-import { READY_LABEL, makePlan } from "./plan.mts";
+import { makePlan } from "./plan.mts";
+import { PROJECT } from "./project.mts";
 
 const TWO_STEPS = `## Steps
 
@@ -37,8 +38,9 @@ const passingVerdict = (step: number) => ({
   drift: false,
 });
 
-/** The standards the branch's own AGENTS.md carries: two rules, so the report must answer both. */
-const BRANCH_AGENTS = `## Coding standards
+/** The standards the branch's own standards file carries: two rules, so the report must answer both. */
+const BRANCH_AGENTS = `## ${PROJECT.standards.section}
+
 
 1. **Document public surfaces.** Every public function needs a header comment.
 2. **Nothing is silent**: every caught error is logged.
@@ -101,19 +103,19 @@ function fakeSandbox(
       }
       // The whole-branch review is the run's last agent: it writes its own file, naming no step.
       if (options.promptFile?.includes("final") === true) {
-        const final_file = join(worktree, ".sandcastle", "verdict-acs.json");
+        const final_file = join(worktree, PROJECT.paths.verdicts.criteria);
         if (final === null) rmSync(final_file, { force: true });
         else writeFileSync(final_file, JSON.stringify(final));
-        const standards_file = join(worktree, ".sandcastle", "verdict-standards.json");
+        const standards_file = join(worktree, PROJECT.paths.verdicts.standards);
         if (standards === null) rmSync(standards_file, { force: true });
         else writeFileSync(standards_file, JSON.stringify(standards));
         return { commits: [], iterations: [], stdout: "" };
       }
       // A child-issue step's reviewer also adjudicates the child's own criteria, in the same file
       // shape the whole-branch review uses for the parent's.
-      if (childMatrix !== null) writeFileSync(join(worktree, ".sandcastle", "verdict-acs.json"), JSON.stringify(childMatrix));
+      if (childMatrix !== null) writeFileSync(join(worktree, PROJECT.paths.verdicts.criteria), JSON.stringify(childMatrix));
       const verdict = queued.shift();
-      const file = join(worktree, ".sandcastle", "verdict.json");
+      const file = join(worktree, PROJECT.paths.verdicts.step);
       if (verdict !== null && verdict !== undefined) writeFileSync(file, JSON.stringify(verdict));
       else rmSync(file, { force: true });
       return { commits: [], iterations: [], stdout: "" };
@@ -126,13 +128,13 @@ function fakeSandbox(
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "sandcastle-loop-"));
   const worktree = join(root, "worktree");
-  mkdirSync(join(worktree, ".sandcastle"), { recursive: true });
-  writeFileSync(join(worktree, "AGENTS.md"), BRANCH_AGENTS);
+  mkdirSync(dirname(join(worktree, PROJECT.paths.verdicts.step)), { recursive: true });
+  writeFileSync(join(worktree, PROJECT.standards.file), BRANCH_AGENTS);
   return { root, worktree, runsDir: join(root, "runs") };
 }
 
 const planFor = (body: string) =>
-  makePlan(1, "fixture", body, { stamp: 1, targetBranch: "develop", labels: [READY_LABEL] });
+  makePlan(1, "fixture", body, { stamp: 1, targetBranch: "develop", labels: [PROJECT.tracker.readyLabel], project: PROJECT });
 
 test("each step gets an implementer and a reviewer run, and the host ticks it", async () => {
   const dirs = fixture();
@@ -145,6 +147,7 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 0, "a run whose steps all stand exits green once the whole branch passes");
@@ -199,6 +202,7 @@ test("a run keeps one branch, one commit per step, and pushes nothing", async ()
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 0, "both steps stand, so the run finishes green");
@@ -231,6 +235,7 @@ test("a step that commits twice is a stop, not two commits on the branch", async
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "the run stops rather than letting a step land twice");
@@ -259,6 +264,7 @@ test("a branch whose criteria the whole-branch review cannot prove stops the run
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "an unproven criterion leaves the run for a human");
@@ -279,6 +285,7 @@ test("a whole-branch review that writes no verdict stops the run", async () => {
       tracker: fakeTracker(TWO_STEPS),
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "a missing verdict is never a pass");
@@ -304,8 +311,8 @@ test("a verdict left in the worktree is cleared, so a silent reviewer cannot pas
   const dirs = fixture();
   try {
     // A resumed run reuses the worktree; both files are what an earlier attempt could have left.
-    writeFileSync(join(dirs.worktree, ".sandcastle", "verdict.json"), JSON.stringify(passingVerdict(1)));
-    writeFileSync(join(dirs.worktree, ".sandcastle", "verdict-acs.json"), JSON.stringify(passingFinal()));
+    writeFileSync(join(dirs.worktree, PROJECT.paths.verdicts.step), JSON.stringify(passingVerdict(1)));
+    writeFileSync(join(dirs.worktree, PROJECT.paths.verdicts.criteria), JSON.stringify(passingFinal()));
 
     const code = await runSteps({
       plan: planFor(TWO_STEPS),
@@ -313,6 +320,7 @@ test("a verdict left in the worktree is cleared, so a silent reviewer cannot pas
       tracker: fakeTracker(TWO_STEPS),
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "the stale files are not this step's evidence");
@@ -332,6 +340,7 @@ test("a step that is not on track stops the run: nothing is ticked and no later 
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "a stopped run exits red");
@@ -361,6 +370,7 @@ test("an implementer that commits nothing is a stop, not an empty pass", async (
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1);
@@ -382,6 +392,7 @@ test("a reviewer that writes no verdict stops the run rather than ticking on tru
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1);
@@ -402,6 +413,7 @@ test("a tick that does not take on the issue stops the run instead of repeating 
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "a step whose tick does not land is not retried");
@@ -421,6 +433,7 @@ test("the loop never passes sandcastle's reserved prompt arguments", async () =>
       tracker: fakeTracker(TWO_STEPS),
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     // Sandcastle fills these itself and refuses a run that overrides them, so a step that
@@ -449,6 +462,7 @@ test("a standards report that leaves a rule unjudged stops the run", async () =>
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "a report against yesterday's standards list is not acceptable");
@@ -477,6 +491,7 @@ test("a standards violation stops the branch for accept or drop, exactly as a fa
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1);
@@ -499,6 +514,7 @@ test("a whole-branch review that writes no standards report stops the run", asyn
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 1, "the standards lens is mandatory, not optional");
@@ -526,6 +542,7 @@ test("the shotgun count in the report is the host's, taken from the branch", asy
       tracker,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 0);
@@ -581,12 +598,13 @@ test("a sub-issue step is judged by its own reviewer, and its criteria are ticke
       tracker: tracker as never,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 0, `a child whose criteria pass leaves the run green: ${sandbox.runs.map((run) => run.name).join(",")}`);
     const review = sandbox.runs.find((run) => run.promptFile?.includes("review") === true);
     assert.equal(review?.promptArgs.CHILD_ISSUE, CHILD, "the reviewer is told which sub-issue it is judging");
-    assert.match(String(review?.promptArgs.CHILD_OUTPUT), /verdict-acs\.json/u, "and which file to write");
+    assert.ok(String(review?.promptArgs.CHILD_OUTPUT).includes(PROJECT.paths.verdicts.criteria), "and which file to write");
     assert.equal(
       sandbox.runs.some((run) => run.name === "final-review"),
       true,
@@ -628,6 +646,7 @@ test("a parent with criteria of its own still has them judged, once, by the whol
       tracker: tracker as never,
       agent: {} as never,
       runsDir: dirs.runsDir,
+      project: PROJECT,
     });
 
     assert.equal(code, 0);

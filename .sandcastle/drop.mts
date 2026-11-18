@@ -5,10 +5,11 @@
 
 import { join } from "node:path";
 import { ledgerPath, readLedger, untickRun, type Ledger, type Unticked } from "./ledger.mts";
-import { ghTracker } from "./loop.mts";
+import { PROJECT } from "./project.mts";
+import { ghTracker } from "./main.mts";
 
 /** A run's directory is named after its stamp, which the branch name ends with. */
-const runsDir = (stamp: string): string => join(".sandcastle", "logs", stamp);
+const runsDir = (stamp: string): string => join(PROJECT.paths.runsDir, stamp);
 
 /**
  * The lines a drop prints: what it took back, grouped by the issue it took it from.

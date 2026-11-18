@@ -1,6 +1,7 @@
 // report.mts — turn the reviewer's verdict files into something a person can read in a
-// terminal. The raw transcript stays on disk for the cases that need it.
-import { readFile } from "node:fs/promises";
+// terminal. The raw transcript stays on disk for the cases that need it. The project's facts
+// (its gate command, for the stop reason) arrive as a `ProjectConfig`.
+import type { ProjectConfig } from "./project_config.mts";
 import { decide, decideFinal, readFinalVerdict, readVerdict, type FinalVerdict, type StepVerdict } from "./verdict.mts";
 
 /** Width a field's text is wrapped to, so a long verdict reads down the page, not off it. */
@@ -30,8 +31,8 @@ function field(label: string, value: string): string[] {
 }
 
 /** One verdict's lines: the decision, then the evidence a person checks it by. */
-function formatVerdict(verdict: StepVerdict): string[] {
-  const decision = decide(verdict, verdict.step);
+function formatVerdict(verdict: StepVerdict, project: ProjectConfig): string[] {
+  const decision = decide(verdict, verdict.step, project);
   const lines = [
     `step ${verdict.step}: ${decision.kind === "tick" ? "PASS" : `STOP — ${decision.reason}`}`,
     ...field("test added:    ", verdict.test_added || "(none)"),
@@ -45,11 +46,11 @@ function formatVerdict(verdict: StepVerdict): string[] {
 }
 
 /** The report body for one verdict file's contents. `step` is the step it is expected to judge. */
-export function formatReport(step: number, raw: string): string[] {
+export function formatReport(step: number, raw: string, project: ProjectConfig): string[] {
   const read = readVerdict(raw);
   if ("problem" in read) return [`step ${step}: STOP — ${read.problem}`];
   if (read.verdict.step !== step) return [`step ${step}: STOP — the verdict names step ${read.verdict.step}`];
-  return formatVerdict(read.verdict);
+  return formatVerdict(read.verdict, project);
 }
 
 /** The whole-branch report: the decision first, then the matrix a person reads it by. */
@@ -75,10 +76,3 @@ export function formatFinalReport(raw: string): string[] {
   return formatFinalVerdict(read.verdict);
 }
 
-if (import.meta.main) {
-  const [stepArg, path] = process.argv.slice(2);
-  const raw = await readFile(path, "utf8");
-  // `--final` prints the whole-branch matrix; a number prints that step's verdict.
-  const lines = stepArg === "--final" ? formatFinalReport(raw) : formatReport(Number(stepArg), raw);
-  process.stdout.write(`${lines.join("\n")}\n`);
-}

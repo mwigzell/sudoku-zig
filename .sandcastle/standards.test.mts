@@ -1,13 +1,15 @@
-// standards.test.mts — the standards a run must answer for are read from AGENTS.md, not from the harness.
+// standards.test.mts — the standards a run must answer for are read from the project's
+// standards file, not from the harness.
 
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { PROJECT } from "./project.mts";
 import { readRules, validateReport } from "./standards.mts";
 
 const STANDARDS = `# Agents
 
-## Coding standards
+## ${PROJECT.standards.section}
 
 1. **Document public surfaces.** Every public function needs a header comment.
    - **HARD RULE (MANDATORY):** No undocumented public symbol is allowed.
@@ -21,20 +23,20 @@ const STANDARDS = `# Agents
 `;
 
 test("the rules are the numbered items under the standards heading, and nothing else", () => {
-  assert.deepEqual(readRules(STANDARDS), [
+  assert.deepEqual(readRules(STANDARDS, PROJECT), [
     { position: 1, title: "Document public surfaces." },
     { position: 2, title: "DRY" },
     { position: 3, title: "No magic numbers." },
   ]);
 });
 
-test("a standard added to AGENTS.md is required by the next run, with no change to the harness", () => {
+test("a standard added to the standards file is required by the next run, with no change to the harness", () => {
   const extended = STANDARDS.replace(
     "3. **No magic numbers.** Name the constant.",
     "3. **No magic numbers.** Name the constant.\n4. **Constructors are pure.** Only set fields.",
   );
-  const rules = readRules(extended);
-  assert.equal(rules.length, 4, "the added rule is a rule the moment AGENTS.md says it is");
+  const rules = readRules(extended, PROJECT);
+  assert.equal(rules.length, 4, "the added rule is a rule the moment the file says it is");
 
   const checked = validateReport(
     {
@@ -46,6 +48,7 @@ test("a standard added to AGENTS.md is required by the next run, with no change 
       shotgun: [],
     },
     rules,
+    PROJECT,
   );
 
   assert.ok("problem" in checked, "a report written against yesterday's list is not acceptable");
@@ -55,15 +58,15 @@ test("a standard added to AGENTS.md is required by the next run, with no change 
 test("a report against a standards section that has gone is a stop, not an empty list", () => {
   const withoutSection = "# Agents\n\n## Something else\n\n1. **Not a rule.**\n";
 
-  assert.throws(() => readRules(withoutSection), /no "## Coding standards" section/u);
+  assert.throws(() => readRules(withoutSection, PROJECT), new RegExp(`no "## ${PROJECT.standards.section}" section`, "u"));
 });
 
-test("a title that continues past the bold is answered by the words AGENTS.md gives it", () => {
+test("a title that continues past the bold is answered by the words the file gives it", () => {
   const markdown = STANDARDS.replace(
     "3. **No magic numbers.** Name the constant.",
     "3. **No magic numbers.** Name the constant.\n8. **Clean** code style.",
   );
-  const rules = readRules(markdown);
+  const rules = readRules(markdown, PROJECT);
   assert.deepEqual(rules[3], { position: 8, title: "Clean code style", aliases: ["Clean"] });
 
   const checked = validateReport(
@@ -77,6 +80,7 @@ test("a title that continues past the bold is answered by the words AGENTS.md gi
       shotgun: [],
     },
     rules,
+    PROJECT,
   );
   assert.ok(!("problem" in checked), "the reviewer's wording is the standard's own");
 
@@ -92,6 +96,7 @@ test("a title that continues past the bold is answered by the words AGENTS.md gi
       shotgun: [],
     },
     rules,
+    PROJECT,
   );
   assert.ok(!("problem" in short), "the bold wording names the same rule");
 });
@@ -102,7 +107,7 @@ test("a trailing colon or full stop does not split a report's wording from the r
     "3. **No magic numbers.** Name the constant.",
     "3. **SOLID principles:** One reason to change.\n4. **Constructors are pure.** Only set fields.",
   );
-  const rules = readRules(markdown);
+  const rules = readRules(markdown, PROJECT);
 
   const checked = validateReport(
     {
@@ -115,13 +120,14 @@ test("a trailing colon or full stop does not split a report's wording from the r
       shotgun: [],
     },
     rules,
+    PROJECT,
   );
   assert.ok(!("problem" in checked), "the colon and the full stop are not part of the name");
 });
 
-/** The repo's own standards file is the one every run answers for; reading it is the run's first proof. */
-test("the repo's own AGENTS.md parses into the rules a run must answer for", () => {
-  const rules = readRules(readFileSync("AGENTS.md", "utf8"));
+/** The project's own standards file is the one every run answers for; reading it is the run's first proof. */
+test("the project's own standards file parses into the rules a run must answer for", () => {
+  const rules = readRules(readFileSync(PROJECT.standards.file, "utf8"), PROJECT);
 
   // The heading must be found (readRules throws otherwise); the continuation rule must turn
   // `**Clean** code style` into one title. If either regresses, a run silently answers fewer rules.

@@ -1,10 +1,13 @@
 // plan.mts — what the host reads before a run: the issue's `## Steps`, which step is
 // next, and the shape of the run (branch, iteration bound). Pure functions only: no
 // git, no network, no sandbox, so the loop's decisions are testable without an agent.
+// Project facts (the readiness label) arrive as a `ProjectConfig`, never as literals.
 //
 // A step is a `- [ ]` checkbox and nothing else. The host ticks a step by editing the
 // issue body, so a checkbox is the only shape it can tick without rewriting the author's
 // words; an issue that numbers its steps or heads them is refused, not reshaped.
+
+import type { ProjectConfig } from "./project_config.mts";
 
 /** One step of an issue's `## Steps` section, in body order. */
 export interface Step {
@@ -21,14 +24,12 @@ export interface Step {
   child: number | null;
 }
 
-/** The triage label an issue must carry before a run may step it; the other roles mean not yet. */
-export const READY_LABEL = "ready-for-agent";
-
 /** Why an issue cannot be run as a stepped run. */
 export type Refusal =
   | { kind: "no-steps-section" }
   | { kind: "not-checkboxes"; shape: string }
-  | { kind: "not-ready"; labels: string[] };
+  /** The issue does not carry the readiness label; `readyLabel` is the one the project's tracker uses. */
+  | { kind: "not-ready"; labels: string[]; readyLabel: string };
 
 /** Everything the host needs about a run before it starts one. */
 export interface Plan {
@@ -252,10 +253,11 @@ export function runBranch(stamp: number): string {
  * `--issue N` names the work; the label says whether triage has cleared it. A run refuses an
  * issue wearing another role (`needs-triage`, `needs-info`, `ready-for-human`, `wontfix`),
  * naming the labels it does carry, rather than stepping work nobody has finished specifying.
+ * `readyLabel` is the label the project's tracker uses for "specified enough to step".
  */
-export function readinessRefusal(labels: string[]): Refusal | null {
-  if (labels.includes(READY_LABEL)) return null;
-  return { kind: "not-ready", labels };
+export function readinessRefusal(labels: string[], readyLabel: string): Refusal | null {
+  if (labels.includes(readyLabel)) return null;
+  return { kind: "not-ready", labels, readyLabel };
 }
 
 /** How the run would be aimed at one issue, resolved from the issue and the run's stamp. */
@@ -263,11 +265,11 @@ export function makePlan(
   issue: number,
   title: string,
   body: string,
-  options: { stamp: number; targetBranch: string; labels: string[] },
+  options: { stamp: number; targetBranch: string; labels: string[]; project: ProjectConfig },
 ): Plan {
   const { steps, refusal: stepsRefusal } = readSteps(body);
   // Readiness comes first: an issue triage has not cleared is not a run's work, whatever its steps.
-  const refusal = readinessRefusal(options.labels) ?? stepsRefusal;
+  const refusal = readinessRefusal(options.labels, options.project.tracker.readyLabel) ?? stepsRefusal;
   // A resumed run pays only for the steps still unticked; the done ones are history.
   const remaining = steps.filter((step) => !step.ticked).length;
   return {
@@ -294,8 +296,9 @@ function shorten(text: string): string {
 function refusalText(refusal: Refusal): string {
   if (refusal.kind === "not-ready") {
     const carried = refusal.labels.length === 0 ? "no labels at all" : refusal.labels.join(", ");
-    return `the issue does not carry \`${READY_LABEL}\` (it has: ${carried}), so triage has not cleared it for a run`;
+    return `the issue does not carry \`${refusal.readyLabel}\` (it has: ${carried}), so triage has not cleared it for a run`;
   }
+
   if (refusal.kind === "no-steps-section") {
     return "the issue body has no `## Steps` section, so there is nothing to step";
   }

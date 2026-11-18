@@ -8,7 +8,8 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { readLedger } from "./ledger.mts";
 import { readRunRecord } from "./run_record.mts";
-import { ghTracker } from "./loop.mts";
+import { ghTracker } from "./main.mts";
+import { PROJECT } from "./project.mts";
 
 /** Something that can close an issue: `gh` through the host's own login. */
 export interface IssueCloser {
@@ -65,7 +66,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const result = closeAcceptedRun(join(".sandcastle", "logs", stamp), branch, into, ghCloser());
+  const result = closeAcceptedRun(join(PROJECT.paths.runsDir, stamp), branch, into, ghCloser());
   if ("problem" in result) {
     console.error(`[accept] ${result.problem}`);
     process.exit(1);

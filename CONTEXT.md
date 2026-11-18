@@ -360,6 +360,10 @@ _Avoid_: embedding game rules or SaveFormat parsing
 
 The words the run harness, the issue bodies and ADR-0022 use. They describe how work is carried out; none of them names app behaviour.
 
+**Project config**:
+The facts a project hands the harness — gate command, standards file and section, tracker readiness label, agent model, paths, docs — as a typed `ProjectConfig`. Generic harness modules take it as a value and never name a repository; the project adapter (`.sandcastle/project.mts`) and the entry (`main.mts`) are the only places that know which project this is.
+_Avoid_: harness settings, env config (it is a value passed in, not ambient state)
+
 **Tracker**:
 The issue tracker — GitHub (`mwigzell/sudoku-zig`) — and the only issue surface. Read and written through `gh` by the run host and the human's accept command; never a local file.
 _Avoid_: a local issue list, a `.scratch` ledger

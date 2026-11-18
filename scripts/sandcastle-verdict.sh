@@ -36,13 +36,13 @@ else
   for verdict in "${verdicts[@]}"; do
     step="$(basename "$verdict")"
     step="${step#step-}"
-    npx tsx .sandcastle/report.mts "${step%%-*}" "$verdict"
+    npx tsx .sandcastle/report_cli.mts "${step%%-*}" "$verdict"
     echo
   done
 fi
 
 if [ -f "$RUN_LOGS/verdict-acs.json" ]; then
-  npx tsx .sandcastle/report.mts --final "$RUN_LOGS/verdict-acs.json"
+  npx tsx .sandcastle/report_cli.mts --final "$RUN_LOGS/verdict-acs.json"
   echo
 else
   echo "The whole-branch review did not run: no verdict-acs.json under $RUN_LOGS."

@@ -117,21 +117,38 @@ proved its criteria: the number comes from the run's own record (`logs/<stamp>/r
 agent starts), falling back to the ledger for a run older than that record. A run that leaves neither closes
 nothing and says so, rather than guessing a number and closing someone else's issue.
 
+## The project seam
+
+The harness is project-neutral. The generic modules — `plan`, `loop`, `verdict`, `standards`, `ledger`,
+`resume`, `events`, `report` — never name this repository: they take a typed `ProjectConfig`
+(`project_config.mts`) as a value, built for this repo by `project.mts`. That adapter holds the facts a run
+needs: the gate command (`zig build verify`), the standards file and its section, the tracker's readiness
+label, the agent model, the prompt and verdict paths, and the docs paths.
+
+`main.mts` owns what only the project can do: the `gh` tracker writes, the bwrap sandbox, `npm install`,
+and the agent. `boundary.test.mts` enforces the split: a generic module that names a repo fact, reads a
+project file by an ambient path, hard-codes `process.cwd()` or spawns a subprocess fails the suite. Adding
+a project fact means filling a `ProjectConfig` field; changing harness policy is an ADR, not a config flag.
+
+## Files
 ## Files
 
 | Path | Role |
 |---|---|
-| `.sandcastle/main.mts` | Entry: plan, preflight, sandbox and agent configuration, the run |
+| `.sandcastle/main.mts` | Entry: plan, preflight, sandbox and agent configuration, the `gh` tracker, the run |
+| `.sandcastle/project.mts` | This repository's facts — gate command, standards file and section, readiness label, agent, paths, docs |
+| `.sandcastle/project_config.mts` | The `ProjectConfig` type the generic modules take as a value |
 | `.sandcastle/plan.mts` | Reading `## Steps`, the tick and untick, the iteration bound, the plan text |
 | `.sandcastle/loop.mts` | The step loop, the tracker write, the whole-branch review |
 | `.sandcastle/verdict.mts` | Verdict shapes, their field-by-field validation, and the pass/stop rules |
 | `.sandcastle/ledger.mts`, `drop.mts` | The tick record, and the tracker half of a drop |
-| `.sandcastle/report.mts` | Turning verdict files into the readable report |
+| `.sandcastle/report.mts`, `report_cli.mts` | Turning verdict files into the readable report, and the command that prints it |
 | `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |
 | `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `verdict-standards.json`, `shotgun.json`, `ticks.json`, `run.json`, `events.jsonl`, `run.log` |
 | `.sandcastle/logs/sandcastle-<branch>-<role>-step-<n>of<m>.log` | The agents' transcripts, one per session; `npm run sandcastle:logs` reads the newest |
 | `.sandcastle/.env` | `GH_TOKEN` for the sandboxed agents (untracked) |
+| `.sandcastle/boundary.test.mts` | The seam's test: a generic module may not name a project fact, read one by an ambient path or spawn a process |
 
 `logs/`, `worktrees/`, `.env` and a stray `verdict.json` are gitignored: a run's evidence is local.
 

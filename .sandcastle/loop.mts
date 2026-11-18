@@ -3,10 +3,9 @@
 // sandboxed agents never touch the tracker and never push.
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
+import type { ProjectConfig } from "./project_config.mts";
 import { emptyLedger, ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
@@ -16,22 +15,10 @@ import { readRunRecord, writeRunRecord } from "./run_record.mts";
 import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
 import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
 
-/** Where the reviewer writes its verdict inside the worktree; the host copies it out from there. */
-const VERDICT_FILE = ".sandcastle/verdict.json";
-
-/** Where the whole-branch reviewer writes its verdict; the host copies it out from there. */
-const ACS_VERDICT_FILE = ".sandcastle/verdict-acs.json";
-const STANDARDS_VERDICT_FILE = ".sandcastle/verdict-standards.json";
-
 /** A verdict left by an earlier attempt is not this run's evidence: clear it before the agent writes. */
 function clearVerdict(path: string): void {
   rmSync(path, { force: true });
 }
-
-/** Prompts are harness files, resolved against the repo root the harness runs from. */
-const IMPLEMENT_PROMPT = "./.sandcastle/implement-prompt.md";
-const REVIEW_PROMPT = "./.sandcastle/review-prompt.md";
-const FINAL_REVIEW_PROMPT = "./.sandcastle/final-review-prompt.md";
 
 /** One implementer and one reviewer run per step. */
 export const STAGES_PER_STEP = 2;
@@ -48,6 +35,8 @@ export interface StepLoopOptions {
   agent: AgentProvider;
   /** Directory this run's verdicts, log and tick record are kept in, so accept and drop still have them. */
   runsDir: string;
+  /** This project's facts: gate command, standards file, prompts, verdict paths and agent. */
+  project: ProjectConfig;
 }
 
 /**
@@ -72,30 +61,6 @@ export interface StepSandbox {
 }
 
 /**
- * The real tracker: `gh` as the host's logged-in user.
- *
- * A body file rather than `--body` keeps the argument list short and the shell out of the
- * write; the temporary file is removed whether or not `gh` succeeds.
- */
-export function ghTracker(): Tracker {
-  return {
-    read: (issue) => {
-      const raw = execFileSync("gh", ["issue", "view", String(issue), "--json", "title,body"], { encoding: "utf8" });
-      return JSON.parse(raw) as { title: string; body: string };
-    },
-    writeBody: (issue, body) => {
-      const file = join(tmpdir(), `sandcastle-issue-${issue}.md`);
-      writeFileSync(file, body);
-      try {
-        execFileSync("gh", ["issue", "edit", String(issue), "--body-file", file], { encoding: "utf8" });
-      } finally {
-        rmSync(file, { force: true });
-      }
-    },
-  };
-}
-
-/**
  * Run the issue's steps, one per iteration, until every step is ticked or a step stops the run.
  *
  * Each iteration starts a fresh agent session, so no step inherits the previous step's
@@ -104,7 +69,7 @@ export function ghTracker(): Tracker {
  * Returns the process exit code: 0 when every step is ticked, 1 when the loop stopped.
  */
 export async function runSteps(options: StepLoopOptions): Promise<number> {
-  const { plan, sandbox, tracker, agent, runsDir } = options;
+  const { plan, sandbox, tracker, agent, runsDir, project } = options;
   mkdirSync(runsDir, { recursive: true });
 
   // One call per transition: what a person sees on stdout is also what the run's log keeps.
@@ -148,7 +113,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if (step === null) {
       // Every step is ticked, so this iteration is the whole-branch review: the run's last agent,
       // and the only place the issue's acceptance criteria are judged. It reports; it never ticks.
-      return await finalReview({ plan, sandbox, tracker, agent, runsDir, ledgerFile }, stop, event);
+      return await finalReview({ plan, sandbox, tracker, agent, runsDir, project, ledgerFile }, stop, event);
     }
 
     const stage = `step ${step.position}/${steps.length}`;
@@ -161,7 +126,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       STEPS_TOTAL: steps.length,
       STEP_TITLE: step.title,
       BASE_BRANCH: plan.targetBranch,
-      ...childArgs(step.child),
+      ...childArgs(step.child, project),
     };
 
     event("step", `${stage}: ${step.title}`, { at: step.position, of: steps.length });
@@ -170,7 +135,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       name: `implementer-${stage.replace(" ", "-").replace("/", "of")}`,
       maxIterations: 1,
       agent,
-      promptFile: IMPLEMENT_PROMPT,
+      promptFile: project.paths.prompts.implement,
       promptArgs,
     }));
     event("agent-end", `${stage} implementer`);
@@ -179,31 +144,31 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       return stop(`the implementer made ${implement.commits.length} commits for ${stage}; a step is one commit`);
     }
 
-    const verdictPath = join(sandbox.worktreePath, VERDICT_FILE);
+    const verdictPath = join(sandbox.worktreePath, project.paths.verdicts.step);
     // A resumed run reuses the worktree, and a child step writes the matrix at the same path the
     // whole-branch review uses: clear both so only this agent's write can answer for this step.
     clearVerdict(verdictPath);
-    clearVerdict(join(sandbox.worktreePath, ACS_VERDICT_FILE));
+    clearVerdict(join(sandbox.worktreePath, project.paths.verdicts.criteria));
 
     event("agent-start", `${stage} reviewer`);
     const review = await waiting(`${stage} reviewer`, sandbox.run({
       name: `reviewer-${stage.replace(" ", "-").replace("/", "of")}`,
       maxIterations: 1,
       agent,
-      promptFile: REVIEW_PROMPT,
+      promptFile: project.paths.prompts.review,
       promptArgs,
     }));
     event("agent-end", `${stage} reviewer`);
     if (review.commits.length > 0) return stop(`the reviewer committed to ${plan.branch}; a review may not write`);
 
-    if (!existsSync(verdictPath)) return stop(`the reviewer wrote no ${VERDICT_FILE} for ${stage}`);
+    if (!existsSync(verdictPath)) return stop(`the reviewer wrote no ${project.paths.verdicts.step} for ${stage}`);
     const keptVerdict = join(runsDir, `step-${step.position}-verdict.json`);
     copyFileSync(verdictPath, keptVerdict);
 
     const read = readVerdict(readFileSync(keptVerdict, "utf8"));
     if ("problem" in read) return stop(read.problem);
 
-    const decision = decide(read.verdict, step.position);
+    const decision = decide(read.verdict, step.position, project);
     event("verdict", `${stage}: ${decision.kind === "tick" ? "PASS" : `STOP — ${decision.reason}`}`);
     if (decision.kind === "stop") return stop(decision.reason);
 
@@ -211,9 +176,9 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     // ticks them on the child. A child with any criterion still failing is not a finished step.
     if (step.child !== null) {
       const childIssue = step.child;
-      const childMatrixPath = join(sandbox.worktreePath, ACS_VERDICT_FILE);
+      const childMatrixPath = join(sandbox.worktreePath, project.paths.verdicts.criteria);
       if (!existsSync(childMatrixPath)) {
-        return stop(`step ${step.position} is sub-issue #${childIssue}, but ${ACS_VERDICT_FILE} was not written for it`);
+        return stop(`step ${step.position} is sub-issue #${childIssue}, but ${project.paths.verdicts.criteria} was not written for it`);
       }
       const childRead = readFinalVerdict(readFileSync(childMatrixPath, "utf8"));
       if ("problem" in childRead) return stop(`#${childIssue}: ${childRead.problem}`);
@@ -262,7 +227,8 @@ const CHILD_SECTION = `1. **Judge the sub-issue this step stands for.** \`!\`gh 
 
 `;
 
-const CHILD_OUTPUT = `This step is sub-issue \`{{CHILD_ISSUE}}\`, so also write \`.sandcastle/verdict-acs.json\` and nothing else:
+const CHILD_OUTPUT_HEAD = `This step is sub-issue \`{{CHILD_ISSUE}}\`, so also write `;
+const CHILD_OUTPUT_TAIL = ` and nothing else:
 
 \`\`\`json
 {
@@ -274,8 +240,10 @@ const CHILD_OUTPUT = `This step is sub-issue \`{{CHILD_ISSUE}}\`, so also write 
 The host ticks the criteria you mark \`PASS\` on that sub-issue, and stops the run if any is \`FAIL\`. Word each criterion as the issue words it: the host matches your matrix against the child's body.`;
 
 /** The prompt arguments that only a sub-issue step carries, so an ordinary step is unchanged. */
-function childArgs(child: number | null): Record<string, string | number> {
-  return child === null ? { CHILD_SECTION: "", CHILD_OUTPUT: "" } : { CHILD_ISSUE: child, CHILD_SECTION, CHILD_OUTPUT };
+function childArgs(child: number | null, project: ProjectConfig): Record<string, string | number> {
+  if (child === null) return { CHILD_SECTION: "", CHILD_OUTPUT: "" };
+  const file = project.paths.verdicts.criteria;
+  return { CHILD_ISSUE: child, CHILD_SECTION, CHILD_OUTPUT: `${CHILD_OUTPUT_HEAD}\`${file}\`${CHILD_OUTPUT_TAIL}` };
 }
 
 /**
@@ -287,14 +255,14 @@ function childArgs(child: number | null): Record<string, string | number> {
  * run passes only when every criterion is `PASS` with evidence. Returns the process exit code.
  */
 async function finalReview(
-  options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "tracker" | "agent" | "runsDir">> & { ledgerFile: string },
+  options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "tracker" | "agent" | "runsDir" | "project">> & { ledgerFile: string },
   stop: (reason: string) => number,
   logEvent: (kind: EventKind, message: string) => void,
 ): Promise<number> {
-  const { plan, sandbox, tracker, agent, runsDir, ledgerFile } = options;
+  const { plan, sandbox, tracker, agent, runsDir, project, ledgerFile } = options;
 
-  const verdictPath = join(sandbox.worktreePath, ACS_VERDICT_FILE);
-  const standardsPath = join(sandbox.worktreePath, STANDARDS_VERDICT_FILE);
+  const verdictPath = join(sandbox.worktreePath, project.paths.verdicts.criteria);
+  const standardsPath = join(sandbox.worktreePath, project.paths.verdicts.standards);
   // A resumed run reuses the worktree, so an earlier attempt's files must not answer for this one.
   clearVerdict(verdictPath);
   clearVerdict(standardsPath);
@@ -306,7 +274,7 @@ async function finalReview(
       name: "final-review",
       maxIterations: 1,
       agent,
-      promptFile: FINAL_REVIEW_PROMPT,
+      promptFile: project.paths.prompts.finalReview,
       promptArgs: { ISSUE: plan.issue, BASE_BRANCH: plan.targetBranch },
     }),
     (line) => logEvent("heartbeat", line),
@@ -314,7 +282,7 @@ async function finalReview(
   logEvent("agent-end", "final reviewer");
   if (review.commits.length > 0) return stop(`the whole-branch reviewer committed to ${plan.branch}; a review may not write`);
 
-  if (!existsSync(verdictPath)) return stop(`the whole-branch reviewer wrote no ${ACS_VERDICT_FILE}`);
+  if (!existsSync(verdictPath)) return stop(`the whole-branch reviewer wrote no ${project.paths.verdicts.criteria}`);
 
   const kept = join(runsDir, "verdict-acs.json");
   copyFileSync(verdictPath, kept);
@@ -323,16 +291,16 @@ async function finalReview(
   if ("problem" in read) return stop(read.problem);
 
   // The standards lens is a second file with its own verdict: the reviewer answers every rule the
-  // branch's own AGENTS.md carries, and a rule it skipped, invented or left unevidenced stops the run.
-  if (!existsSync(standardsPath)) return stop(`the whole-branch reviewer wrote no ${STANDARDS_VERDICT_FILE}`);
+  // branch's own standards file carries, and a rule it skipped, invented or left unevidenced stops the run.
+  if (!existsSync(standardsPath)) return stop(`the whole-branch reviewer wrote no ${project.paths.verdicts.standards}`);
   const standardsKept = join(runsDir, "verdict-standards.json");
   copyFileSync(standardsPath, standardsKept);
 
   const standardsRead = readReport(readFileSync(standardsKept, "utf8"));
   if ("problem" in standardsRead) return stop(standardsRead.problem);
 
-  const rules = readRules(readFileSync(join(sandbox.worktreePath, "AGENTS.md"), "utf8"));
-  const checked = validateReport(standardsRead.report, rules);
+  const rules = readRules(readFileSync(join(sandbox.worktreePath, project.standards.file), "utf8"), project);
+  const checked = validateReport(standardsRead.report, rules, project);
   if ("problem" in checked) return stop(`standards: ${checked.problem}`);
 
   // A violation is a stop for accept or drop, exactly as a failing step is.

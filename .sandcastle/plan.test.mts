@@ -3,7 +3,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  READY_LABEL,
   agentRuns,
   formatPlan,
   makePlan,
@@ -18,6 +17,8 @@ import {
   tickStep,
   untickCriterion,
 } from "./plan.mts";
+import { PROJECT } from "./project.mts";
+const READY_LABEL = PROJECT.tracker.readyLabel;
 
 /** A numbered step list, as several issues write them: not tickable, so refused. */
 const NUMBERED = `## Problem
@@ -69,7 +70,7 @@ const ISSUE = 118;
 
 /** Every fixture is an issue triage has cleared: the label is the readiness contract, not test data. */
 const planFor = (body: string, labels: string[] = [READY_LABEL]) =>
-  makePlan(ISSUE, "One vehicle for Config", body, { stamp: 42, targetBranch: "develop", labels });
+  makePlan(ISSUE, "One vehicle for Config", body, { stamp: 42, targetBranch: "develop", labels, project: PROJECT });
 
 test("checkbox steps are read in order, and an acceptance criterion below them is not a step", () => {
   const steps = parseSteps(CHECKBOXES);
@@ -138,16 +139,25 @@ test("an issue without ready-for-agent is refused, naming the labels it does car
   const labels = ["bug", "needs-info"];
   const plan = planFor(CHECKBOXES, labels);
 
-  assert.deepEqual(plan.refusal, { kind: "not-ready", labels });
+  assert.deepEqual(plan.refusal, { kind: "not-ready", labels, readyLabel: READY_LABEL });
   assert.deepEqual(plan.steps, [], "a refused issue gives the loop nothing to step");
   assert.equal(plan.next, null);
 });
 
 test("the labels an issue carries are only a refusal while ready-for-agent is missing", () => {
-  assert.equal(readinessRefusal([READY_LABEL]), null);
-  assert.equal(readinessRefusal([READY_LABEL, "bug"]), null, "other labels ride along");
-  assert.deepEqual(readinessRefusal([]), { kind: "not-ready", labels: [] }, "no labels means not triaged");
-  assert.deepEqual(readinessRefusal(["ready-for-human"]), { kind: "not-ready", labels: ["ready-for-human"] });
+  assert.equal(readinessRefusal([READY_LABEL], READY_LABEL), null);
+  assert.equal(readinessRefusal([READY_LABEL, "bug"], READY_LABEL), null, "other labels ride along");
+  assert.deepEqual(
+    readinessRefusal([], READY_LABEL),
+    { kind: "not-ready", labels: [], readyLabel: READY_LABEL },
+    "no labels means not triaged",
+  );
+  assert.deepEqual(readinessRefusal(["ready-for-human"], READY_LABEL), {
+    kind: "not-ready",
+    labels: ["ready-for-human"],
+    readyLabel: READY_LABEL,
+  });
+
 });
 
 test("a refused issue prints the readiness reason, the labels it has, and no branch", () => {
