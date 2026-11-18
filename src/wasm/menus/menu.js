@@ -1,4 +1,4 @@
-// menu.js — Edit menu: undo/redo/solve/deselect (web only; native has no cell selection).
+// menu.js — Edit menu: undo/redo/bookmark/rewind/solve/deselect (web only; native has no cell selection).
 
 import * as menuBar from "./menu_bar.js";
 import * as board from "../board.js";
@@ -156,6 +156,17 @@ export function wireEditMenu(
     if (hintBtn) hintBtn.addEventListener("click", () => {
       closeMenus?.();
       run("hint");
+    });
+    // Core owns both bookmark commands; the page only carries the click to it.
+    const bookmarkBtn = root.querySelector("#edit-bookmark");
+    if (bookmarkBtn) bookmarkBtn.addEventListener("click", () => {
+      closeMenus?.();
+      run("bookmark");
+    });
+    const rewindBtn = root.querySelector("#edit-rewind");
+    if (rewindBtn) rewindBtn.addEventListener("click", () => {
+      closeMenus?.();
+      run("rewind");
     });
   }
 

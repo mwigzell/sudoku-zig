@@ -5,7 +5,7 @@ import * as board from "../board.js";
 import * as menu from "./menu.js";
 import * as menuBar from "./menu_bar.js";
 import * as webSteps from "../flows/web_steps.js";
-import { hostFetch, loadGame, postedCurrentFile, promptDialogStub, settleFlow, startNewGame, withCoreFlow, coreText } from "../test_support.mjs";
+import { hostFetch, loadGame, postedCurrentFile, promptDialogStub, settleFlow, startNewGame, withCoreFlow, coreText, fillText } from "../test_support.mjs";
 
 
 function makeBtn() {
@@ -423,6 +423,96 @@ const clipboardWith = (text) => ({ readText: async () => text });
   assert.equal(boardEl.children.length, 81, "board re-rendered after paste");
   assert.equal(session.state.cells[2].value, 3);
   assert.equal(postedCurrentFile(host.calls)?.init?.method, "POST");
+}
+
+// ── Edit menu lists Set Bookmark always, Rewind to Bookmark behind core's flag ──
+{
+  const editMenu = menuBar.MENU_BAR_MENUS.find((entry) => entry.label === "Edit");
+  const ids = editMenu.items.map((item) => item.id);
+  // History controls sit together, in core's legend order: Undo, Redo, Bookmark, Rewind.
+  assert.deepEqual(ids.slice(0, 4), ["undo", "redo", "bookmark", "rewind"]);
+  const bookmarkItem = editMenu.items.find((item) => item.id === "bookmark");
+  const rewindItem = editMenu.items.find((item) => item.id === "rewind");
+  assert.equal(bookmarkItem.label, "Set Bookmark");
+  assert.equal(bookmarkItem.legendKey, undefined, "Bookmark is always enabled");
+  assert.equal(rewindItem.label, "Rewind to Bookmark");
+  assert.equal(rewindItem.legendKey, "rewind");
+
+  const bookmarkBtn = { disabled: false };
+  const rewindBtn = { disabled: false };
+  menuBar.syncMenuBar(
+    { new: true, open: true, save: true, save_as: true, undo: true, redo: true, rewind: false },
+    { bookmark: bookmarkBtn, rewind: rewindBtn },
+  );
+  assert.equal(bookmarkBtn.disabled, false, "Bookmark has no legend flag and stays enabled");
+  assert.equal(rewindBtn.disabled, true, "Rewind greys when core does not offer it");
+  menuBar.syncMenuBar({ rewind: true }, { bookmark: bookmarkBtn, rewind: rewindBtn });
+  assert.equal(rewindBtn.disabled, false);
+}
+
+// ── wireEditMenu Set Bookmark and Rewind to Bookmark run through core ──
+{
+  const bookmarkBtn = makeBtn();
+  bookmarkBtn.id = "edit-bookmark";
+  const rewindBtn = makeBtn();
+  rewindBtn.id = "edit-rewind";
+  let closedMenus = 0;
+  const root = {
+    querySelector(sel) {
+      if (sel === "#edit-bookmark") return bookmarkBtn;
+      if (sel === "#edit-rewind") return rewindBtn;
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+    addEventListener() {},
+  };
+  const { game, session } = await editGame();
+  const status = statusStub("keep");
+  const edit = menu.wireEditMenu(
+    makeBtn(),
+    makeBtn(),
+    makeBtn(),
+    game,
+    makeMockBoard(),
+    { getSelection: () => null, deselect() {}, select() {} },
+    session,
+    makeRenderElement(),
+    root,
+    {
+      // The page's legend sync is what greys the Rewind item from core's flag.
+      syncLegend: () => menuBar.syncMenuBar(session.legend, { bookmark: bookmarkBtn, rewind: rewindBtn }),
+      steps: webSteps.webSteps(game, session, { statusEl: status, promptDialog: promptDialogStub() }),
+      closeMenus: () => {
+        closedMenus += 1;
+      },
+    },
+  );
+
+  bookmarkBtn.click();
+  await settleFlow();
+  assert.equal(status.textContent, fillText(coreText.BOOKMARK_SET_FMT, 0));
+  assert.equal(closedMenus, 1);
+  assert.equal(rewindBtn.disabled, true, "at the bookmark there is nothing to rewind to");
+
+  // A greyed Rewind changes nothing and reports nothing.
+  status.textContent = "keep";
+  rewindBtn.click();
+  await settleFlow();
+  assert.equal(status.textContent, "keep");
+
+  // One core move behind the bookmark turns the item on; the click rewinds in one step.
+  assert.equal(game.exec({ action: "fill", row: 0, col: 2, digit: 4 }).ok, true);
+  session.state = game.getState();
+  session.legend = game.getLegend();
+  edit.sync();
+  assert.equal(rewindBtn.disabled, false);
+  rewindBtn.click();
+  await settleFlow();
+  assert.equal(status.textContent, fillText(coreText.REWOUND_FMT, 0));
+  assert.equal(session.state.cells[2].value, 0);
+  assert.equal(rewindBtn.disabled, true);
 }
 
 console.log("menu.test.mjs OK");

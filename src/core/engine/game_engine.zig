@@ -28,6 +28,7 @@ const redo_command = @import("redo.zig");
 const quit_command = @import("quit.zig");
 const hint_command = @import("hint.zig");
 const pencil_command = @import("pencil.zig");
+const bookmark_command = @import("bookmark.zig");
 const solver = @import("../solver.zig");
 pub const MutationEntry = mutation_history.MutationEntry;
 pub const MutationHistory = mutation_history.MutationHistory;
@@ -122,6 +123,7 @@ pub const GameEngine = struct {
             .quit = true,
             .undo = self.state.history.pointer > 0,
             .redo = self.state.history.pointer < self.state.history.entries.items.len,
+            .rewind = bookmark_command.canRewind(self),
             .menu = true,
             .save = !auto_save,
             .open = true,
@@ -168,6 +170,12 @@ pub const GameEngine = struct {
         self.state.board = loaded.board;
         self.state.history = loaded.history;
         self.state.status = loaded.status;
+        // A bookmark from the file replaces the live one; one that lands past the loaded
+        // history cannot be rewound to, so it is dropped rather than refusing the game.
+        self.state.bookmark = loaded.bookmark;
+        if (self.state.bookmark) |bookmark| {
+            if (bookmark > self.state.history.pointer) self.state.bookmark = null;
+        }
         self.state.board.validate();
         self.selected = null;
     }
@@ -196,6 +204,8 @@ pub const GameEngine = struct {
         const imported = try board.fromPuzzle(line);
         self.state.history.deinit();
         self.state.history = MutationHistory.init(std.heap.page_allocator);
+        // A new history has nothing for a bookmark to point into.
+        self.state.bookmark = null;
         self.state.board = imported;
         self.selected = null;
     }
@@ -389,6 +399,12 @@ pub const GameEngine = struct {
             },
             .redo => {
                 return redo_command.execute(self);
+            },
+            .bookmark => {
+                return bookmark_command.set(self);
+            },
+            .rewind => {
+                return bookmark_command.rewind(self);
             },
             .solve_for_me => {
                 return self.solveForMe();
@@ -1663,4 +1679,58 @@ test "every status message reads as a sentence, including formatted ones" {
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.BLOCKER_FMT, .{ "C2", '5', '3' }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.PLACEMENT_FMT, .{ "C2", '5' }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.NO_SOLUTION_AT_FMT, .{"C2"}));
+}
+
+test "legend rewind is on only when a bookmark sits behind the pointer" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    try std.testing.expect(!engine.getLegend(false).rewind);
+
+    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
+    _ = try expectOk(execTest(&engine, .{ .bookmark = {} }));
+    try std.testing.expect(!engine.getLegend(false).rewind);
+
+    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 3, .digit = .nine } }));
+    try std.testing.expect(engine.getLegend(false).rewind);
+
+    // An undo that lands on the bookmark leaves it set, so Rewind greys again.
+    _ = try expectOk(execTest(&engine, .{ .undo = {} }));
+    try std.testing.expect(!engine.getLegend(false).rewind);
+}
+
+test "a new puzzle drops the bookmark with the history it pointed into" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
+    _ = try expectOk(execTest(&engine, .{ .bookmark = {} }));
+
+    try engine.applyOneLinePuzzle(puzzle_gen.PuzzleGen.hard());
+    try std.testing.expectEqual(@as(?u16, null), engine.state.bookmark);
+}
+
+test "loading a game takes the bookmark from the file, not from the live game" {
+    var saved = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer saved.deinit();
+    _ = try expectOk(execTest(&saved, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
+    _ = try expectOk(execTest(&saved, .{ .bookmark = {} }));
+    _ = try expectOk(execTest(&saved, .{ .fill = .{ .row = 0, .col = 3, .digit = .nine } }));
+    const buf = try saved.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(buf);
+
+    // The live game's own bookmark is at move 0; the file's sits at move 1 and wins.
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    _ = try expectOk(execTest(&engine, .{ .bookmark = {} }));
+    try engine.fromSaveFormat(buf);
+    try std.testing.expectEqual(@as(?u16, 1), engine.state.bookmark);
+    try std.testing.expect(engine.getLegend(false).rewind);
+
+    // A file written without the section leaves no bookmark, whatever the live game held.
+    var unbookmarked = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer unbookmarked.deinit();
+    const plain = try unbookmarked.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(plain);
+    try engine.fromSaveFormat(plain);
+    try std.testing.expectEqual(@as(?u16, null), engine.state.bookmark);
+    try std.testing.expect(!engine.getLegend(false).rewind);
 }

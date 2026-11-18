@@ -75,7 +75,7 @@ Output of `GameEngine.exec()` after a gameplay command — `.ok` carries a `Boar
 _Avoid_: Payload (ambiguous), State dump
 
 **Command**:
-Player action vocabulary (`fill`, `clear`, `undo`, `redo`, `quit`, plus session tags parsed but not executed in `GameEngine.exec`). Native: parsed from a terminal line. Wasm: JSON action payloads (`{"action":"fill","row":…}`). Carries intent, not state.
+Player action vocabulary (`fill`, `clear`, `undo`, `redo`, `bookmark`, `rewind`, `quit`, plus session tags parsed but not executed in `GameEngine.exec`). Native: parsed from a terminal line, where **Bookmark** and **Rewind** are typed words. Wasm: JSON action payloads (`{"action":"fill","row":…}`), with the two bookmark controls on web and Android as Edit → **Set Bookmark** and Edit → **Rewind to Bookmark**. Carries intent, not state.
 _Avoid_: Input action (framework term)
 
 **GameEngine**:
@@ -83,7 +83,7 @@ Portable orchestrator. Gameplay `exec` (fill, clear, undo, redo, quit) mutates `
 _Avoid_: Engine alone (ambiguous — Solver Service also contains "engine" semantics), Controller (MVC framework term)
 
 **Legend**:
-State-aware command availability flags (`fill`, `clear`, `quit`, `undo`, `redo`, session commands). Native renderer formats these for the terminal; wasm exposes them as JSON via `getLegend()`.
+State-aware command availability flags (`fill`, `clear`, `quit`, `undo`, `redo`, `rewind`, session commands). Native renderer formats these for the terminal; wasm exposes them as JSON via `getLegend()`.
 _Avoid_: AvailableCommands (retired name)
 
 ### Validation & Solving
@@ -140,6 +140,16 @@ _Avoid_: having a front end remove marks itself
 `show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil mode or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`); web and Android draw only set marks.
 _Avoid_: front ends deciding visibility from `show_marks` alone
 
+### Undo history
+
+**Bookmark**:
+The one history position the player pins, a move number (`State.bookmark`; null when none). **Set Bookmark** pins the current move, replacing any earlier bookmark, and names it in the status line; **Rewind** returns to it in one step, and Redo still replays the undone moves one at a time. Never ahead of the history pointer: it is set at the pointer, an Undo that steps below it discards it, and Redo leaves it alone. It rides the game file (bookmark section), so reopening that game brings it back; New, Import and Paste have no history to point into and clear it.
+_Avoid_: mark (pencil marks own that word in code and in the player's vocabulary), checkpoint, save point, snapshot
+
+**rewind**:
+The command that undoes back to the bookmark, however many steps that takes, and answers one confirmation naming its move. Offered only when a bookmark sits behind the current move (`Legend.rewind`; the terminal lists `Rewind` in its legend line only then, and web and Android grey Edit → Rewind to Bookmark from that flag). A rewind that is not offered changes nothing and reports nothing — it is no refusal.
+_Avoid_: rollback (implies undoing a transaction); restore (that is reading a file); undo (that is one step)
+
 ### Flows and steps
 
 **Flow**:
@@ -182,7 +192,7 @@ The platform code that carries out steps: native `Storage` and renderer; on web 
 ### What gets written
 
 **Saved game**:
-The full game (board, givens, history, status) in the SUD0 format, written by Save, Save As and autosave. SUD0 is sectioned: a reader skips sections and history entries it does not know, so new data is a new section, not a new version (**ADR-0018**).
+The full game (board, givens, history, status, and the bookmark when one is pinned) in the SUD0 format, written by Save, Save As and autosave. The bookmark rides this file, so reopening the game brings back the same one. SUD0 is sectioned: a reader skips sections and history entries it does not know, so new data is a new section, not a new version (**ADR-0018**).
 _Avoid_: platform function names (`toSaveFormat`, `fromSaveFormat`) when describing behaviour
 
 **Puzzle**:
@@ -322,7 +332,7 @@ Core's read-only list of Config fields, one row each: label, kind (on/off or fix
 _Avoid_: per-front-end field lists or labels
 
 **State**:
-Board (flat 81 incl. given bits) + mutation history. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State`; Config is held beside it and the engine is given the fields it plays by.
+Board (flat 81 incl. given bits) + mutation history + the one bookmark. No I/O. The unit the SUD0 codec and wasm boundary deal in. `GameEngine` wraps `State`; Config is held beside it and the engine is given the fields it plays by.
 _Avoid_: Engine (engine is a runtime object)
 
 ### WASM Wire (`wasm/wire.zig`, `wasm/boundary.zig`, `entry_wasm.zig`)

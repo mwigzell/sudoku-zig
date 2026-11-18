@@ -64,6 +64,8 @@ const Step = struct {
     redo: ?bool = null,
     hint: ?bool = null,
     hint_at: ?CellAt = null,
+    bookmark: ?bool = null,
+    rewind: ?bool = null,
     solve: ?bool = null,
     paste: ?[]const u8 = null,
     open: ?SavedFile = null,
@@ -106,7 +108,7 @@ const ScenarioConfig = struct {
 };
 
 const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null, show_marks: ?bool = null };
-const Legend = struct { undo: ?bool = null, redo: ?bool = null };
+const Legend = struct { undo: ?bool = null, redo: ?bool = null, rewind: ?bool = null };
 
 /// Outcomes every front end that runs the scenario must meet, on top of matching each other.
 const Expect = struct {
@@ -203,6 +205,8 @@ const Final = struct {
     givens: []const u8,
     undo: bool,
     redo: bool,
+    /// Rewind to Bookmark: offered only while a bookmark sits behind the current move.
+    rewind: bool,
     file: ?[]const u8,
     status: ?[]const u8,
     /// The selected cell the board was last drawn with.
@@ -412,6 +416,8 @@ fn stepCommand(step: Step, view: ?board.Board.BoardView, cfg: config.Config) !co
     if (step.fill_first_empty != null) return .{ .fill = if (view) |v| try firstEmptyLegalFill(v) else .{ .row = 0, .col = 0, .digit = .zero } };
     if (step.undo != null) return .{ .undo = {} };
     if (step.redo != null) return .{ .redo = {} };
+    if (step.bookmark != null) return .{ .bookmark = {} };
+    if (step.rewind != null) return .{ .rewind = {} };
     if (step.hint != null) return .{ .hint = .{} };
     if (step.hint_at) |at| return .{ .hint = .{ .row = @intCast(at.row), .col = @intCast(at.col) } };
     if (step.solve != null) return .{ .solve_for_me = {} };
@@ -493,6 +499,7 @@ fn finalState(arena: std.mem.Allocator, app: *shell.Sudoku, recorder: *Recorder)
         .givens = givens,
         .undo = legend.undo,
         .redo = legend.redo,
+        .rewind = legend.rewind,
         .file = if (app.file_session.currentFile()) |f| try arena.dupe(u8, std.fs.path.basename(f)) else null,
         .status = recorder.last_status,
         .selected = recorder.last_selected,
@@ -613,6 +620,7 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         const got = app.engine.getLegend(app.cfg.auto_save);
         if (want.undo) |on| try std.testing.expectEqual(on, got.undo);
         if (want.redo) |on| try std.testing.expectEqual(on, got.redo);
+        if (want.rewind) |on| try std.testing.expectEqual(on, got.rewind);
     }
     const view = app.engine.eventBoard();
     for (expect.probes) |p| {

@@ -8,6 +8,10 @@ pub const State = struct {
     history: mutation_history.MutationHistory,
     /// Durable status message persisted with save state (status bar continuity seam).
     status: event.EventMsg = .{},
+    /// History position the player pinned with Set Bookmark; null when there is none.
+    /// A bookmark is never ahead of `history.pointer`: it is set at the pointer, an undo
+    /// that drops the pointer below it discards it, and Redo leaves it alone.
+    bookmark: ?u16 = null,
 };
 
 // Io-free codec round-trip over State (seam: save_format takes/returns State)

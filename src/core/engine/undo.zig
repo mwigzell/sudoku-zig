@@ -11,6 +11,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         return game_engine.Event{ .error_msg = game_engine.NOTHING_TO_UNDO_MSG };
     }
     engine.state.history.pointer -= 1;
+    discardBookmarkBelowPointer(engine);
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
         .cell => |c| {
@@ -31,6 +32,13 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         },
         .mark => |m| return pencil_command.applyBackward(engine, m),
     }
+}
+
+/// The pointer is the only history value that goes down, so this is the one place a bookmark
+/// can end up ahead of it; a bookmark the player has undone past is forgotten.
+fn discardBookmarkBelowPointer(engine: *game_engine.GameEngine) void {
+    const bookmark = engine.state.bookmark orelse return;
+    if (bookmark > engine.state.history.pointer) engine.state.bookmark = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,4 +115,28 @@ test "command.undo.execute clears stale win status when solve-batch undo unsolve
     try std.testing.expect(event.ok.msg == null);
     try std.testing.expect(engine.durableStatus() == null);
     try std.testing.expect(!engine.state.board.isSolved());
+}
+
+test "an undo that leaves the pointer below the bookmark discards it" {
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
+    const config = @import("../config.zig");
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 3, .digit = .nine } });
+    _ = engine.exec(.{ .bookmark = {} });
+    _ = engine.exec(.{ .fill = .{ .row = 1, .col = 1, .digit = .nine } });
+    try std.testing.expect(engine.getLegend(false).rewind);
+
+    // The pointer lands on the bookmark: it stays, and Rewind greys.
+    _ = execute(&engine);
+    try std.testing.expectEqual(@as(?u16, 2), engine.state.bookmark);
+    try std.testing.expect(!engine.getLegend(false).rewind);
+
+    // One step further is below it, so the bookmark is forgotten.
+    _ = execute(&engine);
+    try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
+    try std.testing.expectEqual(@as(?u16, null), engine.state.bookmark);
+    try std.testing.expect(!engine.getLegend(false).rewind);
 }

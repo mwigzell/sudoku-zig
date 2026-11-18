@@ -535,6 +535,8 @@ async function runStep(run, world, ui, step) {
   };
   if (step.undo) return edit("undo");
   if (step.redo) return edit("redo");
+  if (step.bookmark) return edit("bookmark");
+  if (step.rewind) return edit("rewind");
   if (step.hint) return edit("hint");
   if (step.hint_at) return edit("hint", step.hint_at);
   if (step.solve) return edit("solve");
@@ -635,6 +637,7 @@ function finalState(run, ui) {
     givens: game.getState().cells.map((c) => (c.given ? "1" : "0")).join(""),
     undo: legend.undo,
     redo: legend.redo,
+    rewind: legend.rewind,
     file: baseName(session.boundFilename),
     status: ui.statusEl.textContent || null,
     // The page draws the selection and its region from the session's snapshot.
@@ -667,6 +670,7 @@ function checkExpect(expect, events, world, run) {
   const legend = run.game.getLegend();
   if (expect.legend?.undo !== undefined) assert.equal(legend.undo, expect.legend.undo, "legend undo");
   if (expect.legend?.redo !== undefined) assert.equal(legend.redo, expect.legend.redo, "legend redo");
+  if (expect.legend?.rewind !== undefined) assert.equal(legend.rewind, expect.legend.rewind, "legend rewind");
   const cells = run.game.getState().cells;
   for (const p of expect.probes ?? []) {
     const c = cells[p.row * 9 + p.col];
