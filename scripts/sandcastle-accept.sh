@@ -18,6 +18,11 @@ sandcastle_one_branch
 
 BRANCH="${BRANCHES[0]}"
 
+# The record names the branch's own head and the commit it was cut from, so both are read before
+# the merge moves the current branch forward.
+BASE="$(git rev-parse "$CURRENT")"
+HEAD_SHA="$(git rev-parse "$BRANCH")"
+
 # The worktree may hold the only copy of a later fix, so refuse rather than lose it.
 worktree="$(sandcastle_worktree "$BRANCH")"
 if [ -n "$worktree" ] && [ -n "$(git -C "$worktree" status --porcelain)" ]; then
@@ -38,8 +43,8 @@ git branch -d "$BRANCH"
 # Closing is the host's write, so it goes through the same path as a tick. A run with no record of
 # the issue it aimed at closes nothing, and an unclosed issue is a failed accept rather than a
 # success with a footnote.
-if ! npx tsx .sandcastle/accept.mts --stamp "${BRANCH##*/}" --branch "$BRANCH" --into "$CURRENT"; then
-  echo "Accepted $BRANCH into $CURRENT, but the issue was not closed: close it by hand." >&2
+if ! npx tsx .sandcastle/accept.mts --stamp "${BRANCH##*/}" --branch "$BRANCH" --into "$CURRENT" --base "$BASE" --head "$HEAD_SHA"; then
+  echo "Accepted $BRANCH into $CURRENT, but the run record or the issue close did not finish: see above." >&2
   exit 1
 fi
 echo "Accepted $BRANCH into $CURRENT."

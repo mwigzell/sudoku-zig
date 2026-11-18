@@ -36,6 +36,8 @@ export interface ProjectConfig {
   paths: {
     /** Root of the per-run directories: one subdirectory per run stamp. */
     runsDir: string;
+    /** Where an accepted run's verdicts are copied for the record: one directory per issue. */
+    archive: string;
     /** The file holding the token the sandboxed agents call the tracker with. */
     env: string;
     /** What each role's agent session is told, by role. */

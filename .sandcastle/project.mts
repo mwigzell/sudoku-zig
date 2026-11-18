@@ -32,6 +32,7 @@ export const PROJECT: ProjectConfig = {
   agent: { model: "ollama/sandcastle-worker" },
   paths: {
     runsDir: ".sandcastle/logs",
+    archive: ".scratch/sudoku/issues",
     env: ".sandcastle/.env",
     prompts: {
       implement: ".sandcastle/implement-prompt.md",

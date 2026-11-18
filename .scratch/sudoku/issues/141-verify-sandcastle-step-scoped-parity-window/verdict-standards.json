@@ -1,0 +1,63 @@
+{
+  "rules": [
+    {
+      "rule": "Document public surfaces.",
+      "verdict": "PASS",
+      "evidence": ".sandcastle/project_config.mts:15-46 documents every ProjectConfig field; .sandcastle/plan.mts:36-42 (ParityWindow) and :389-403 (StepGate) document each field; new public functions carry header comments — plan.mts:326-335 readParityWindow, :379-383 windowStateRefusal, :398-404 gateFor, verdict.mts:125-131 parityMismatch, :242-249 parityRestored; project.mts:23 PROJECT is documented, and non-obvious blocks are signposted (loop.mts:120-121, plan.mts:341-344)."
+    },
+    {
+      "rule": "DRY",
+      "verdict": "PASS",
+      "evidence": "The gate choice exists once (plan.mts:405 gateFor, used by loop.mts:122 and tested directly), the off-command is built once (project.mts:26 verifyOff), the standards heading once (standards.mts:51 standardsHeading), and report.mts stays presentation-only with its CLI split to report_cli.mts:1-14 instead of a second copy. No copy-paste logic added: the per-step and final-review prompt arguments both come from PROJECT."
+    },
+    {
+      "rule": "SOLID principles:",
+      "verdict": "PASS",
+      "evidence": "Roles stay separate: plan.mts parses and decides the window (pure), verdict.mts:107 decide / :250 parityRestored hold the stop policy, loop.mts orchestrates (loop.mts:122, :184, :319), report.mts:34 only formats, main.mts only wires. Dependency inversion: the harness depends on the ProjectConfig value (project_config.mts:15) rather than on this repo; each added public surface has a caller (verifyOff in loop.mts, parity.line in verdict.mts:251, parity.sample in loop.mts:301, docs.harness in main.mts:173)."
+    },
+    {
+      "rule": "No magic numbers.",
+      "verdict": "PASS",
+      "evidence": "build.zig:22 PARITY_OFF_ENV names the env var; plan.mts:295-305 names every window regex (PARITY_HEADING, WINDOW_OFF/RANGE/ISSUE/CLOSED, FENCE); project.mts:12 names VERIFY; verdict.mts:66 PARITY_DECLARATION names the accepted parity shapes. The only bare numerals added are test data (plan.test.mts WINDOW issue, docs_framing.test.mts verifyOff(141))."
+    },
+    {
+      "rule": "Constructors are pure.",
+      "verdict": "PASS",
+      "evidence": "plan.mts:336 readParityWindow, :384 windowStateRefusal, :405 gateFor and :414 makePlan only compute and return values — no logging, no tracker call, no mutation; the tracker call that decides whether a window is live stays in the entry (main.mts:37-63 windowStop), and the sandbox side effects stay in main() (main.mts:270-278)."
+    },
+    {
+      "rule": "Nothing is silent",
+      "verdict": "PASS",
+      "evidence": "scripts/verify-parity-off.sh:19-31 writes each refusal to stderr with its reason; src/test/parity/native.zig:689 prints `expected: parity off (#N)` before `SkipZigTest`; src/wasm/flows/parity.test.mjs:835 console.infos the same reason; main.mts:55-56 logs the tracker failure with `(error as Error).message` before deciding the window has no owner. The gate's own log shows the stop reasons (e.g. `[stop] step 2 is outside the parity window …`)."
+    },
+    {
+      "rule": "no God classes",
+      "verdict": "PASS",
+      "evidence": "main.mts was split rather than grown: runDir (:23), windowStop (:37-63), ghTracker (:69), the preflight checks (:95-135) and main() (:167-300); the gate policy sits in gateFor/parityMismatch/parityRestored instead of inside the loop (loop.mts:122, :184, :319); finalReview (loop.mts:277-350) keeps one job and the window parsing is its own function (plan.mts:336-380)."
+    },
+    {
+      "rule": "Clean code style",
+      "verdict": "PASS",
+      "evidence": "`zig build verify` ran `zig fmt --check src build.zig` (build.zig:189) as a dependency and exited 0; the standards script printed `✓ PASSED mechanical standards clean (95 file(s))`. New files keep the one-line seam comment convention (project_config.mts:1-6, project.mts:1-5, report_cli.mts:1-5)."
+    },
+    {
+      "rule": "Central plumbing is mandatory (hard rule).",
+      "verdict": "PASS",
+      "evidence": "The gate command and window policy live in core harness modules, not per adapter: project.mts:12-33 (VERIFY, verifyOff, parity line), plan.mts:405 gateFor decides which steps get the off-command, verdict.mts:132/250 own the stop rules. Front ends receive the value (loop.mts:129-131 VERIFY/PARITY consumed by implement-prompt.md:28 and review-prompt.md:38); no platform invents status text — the refusal sentences live in plan.mts:461 refusalText and the guard script."
+    },
+    {
+      "rule": "Web modules import each other by namespace.",
+      "verdict": "PASS",
+      "evidence": "The only src/wasm file the branch touches is src/wasm/flows/parity.test.mjs, a test: `git diff 9a42b7a..HEAD -- src/wasm/flows/parity.test.mjs | grep -E \"^\\+import\"` returns nothing, so no cross-module import was added or reshaped; the new lazy accessor nativeRun() (parity.test.mjs:32-41) stays inside the test file."
+    },
+    {
+      "rule": "Android-only behaviour ships its device test.",
+      "verdict": "PASS",
+      "evidence": "No Android-only surface changed: `git diff --name-only 9a42b7a..HEAD | grep -i android` returns nothing — the branch touches build.zig, the parity runners, .sandcastle/**, scripts/** and docs only, so no src/android/test/FileBridgeTest.java scenario is owed (the issue's Front ends section also puts the device lane out of scope)."
+    }
+  ],
+  "shotgun": [
+    { "symbol": "parity", "files": 20 },
+    { "symbol": "ProjectConfig", "files": 3 }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "step": 6,
+  "test_added": ".sandcastle/loop.test.mts: 'a declared window the whole-branch review does not prove restored stops the run' drives the step loop with a declared window (WINDOWED, #141) and a final verdict { parity_restored: false, parity_line: <gate shape> }, asserting exit 1, a stop event naming '#141', and no '#141' criterion ticked; plus 'the whole-branch review runs the plain gate even over a window, and proves the window restored' asserts the final-review promptArgs.VERIFY === PROJECT.verify (never PROJECT.verifyOff) and PARITY_LINE === project.parity.sample, and that the run stays exit 0. .sandcastle/verdict.test.mts adds parityRestored unit tests (restored / not restored / missing / non-gate line) and readFinalVerdict type checks.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Two reverts, each restored and re-run green. (1) Removed loop.mts:317-323 (the parityRestored call and its stop) and kept the import: `node --test .sandcastle/loop.test.mts` -> `✖ a declared window the whole-branch review does not prove restored stops the run`, `ℹ pass 21 / fail 1`; every other loop test stayed green. (2) Replaced the body of verdict.mts parityRestored with `if (true) return null;`: `node --test .sandcastle/verdict.test.mts` -> `✖ a whole-branch verdict that reports parity not restored stops the run and names the window`, `✖ a whole-branch verdict that does not cite the gate's parity line stops the run`, `ℹ pass 24 / fail 2`. After restoring both files `git status --short` is empty and `npm run sandcastle:test` reports `ℹ tests 163 / pass 163 / fail 0`.",
+  "ac_at_risk": [],
+  "drift": false
+}

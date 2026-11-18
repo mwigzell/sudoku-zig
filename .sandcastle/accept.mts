@@ -1,8 +1,8 @@
-// accept.mts — the tracker half of accepting a run: close the issue it was aimed at.
+// accept.mts — what accepting a run leaves behind: its record beside the issue, and the issue closed.
 //
-// `scripts/sandcastle-accept.sh` merges the run branch, then calls this. Closing belongs here
-// rather than in the entry: the run already proved the issue's criteria, so accepting it is the
-// end of that issue. The git half stays in the script.
+// `scripts/sandcastle-accept.sh` merges the run branch, then calls this. Filing the record and
+// closing belong here rather than in the entry: the run already proved the issue's criteria, so
+// accepting it is the end of that issue. The git half of the merge stays in the script.
 
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { readLedger } from "./ledger.mts";
 import { readRunRecord } from "./run_record.mts";
 import { ghTracker } from "./main.mts";
 import { PROJECT } from "./project.mts";
+import { archiveRun, type RunCommit } from "./archive.mts";
 
 /** Something that can close an issue: `gh` through the host's own login. */
 export interface IssueCloser {
@@ -22,6 +23,19 @@ export function ghCloser(): IssueCloser {
     close: (issue, comment) => {
       execFileSync("gh", ["issue", "close", String(issue), "--comment", comment], { encoding: "utf8" });
     },
+  };
+}
+
+/** A tracker fact the record needs: the issue's title, so its directory says what the work was. */
+export interface IssueReader {
+  title(issue: number): string;
+}
+
+/** The host's reader: one `gh issue view`, with the login the host already has. */
+export function ghReader(): IssueReader {
+  return {
+    title: (issue) =>
+      execFileSync("gh", ["issue", "view", String(issue), "--json", "title", "--jq", ".title"], { encoding: "utf8" }).trim(),
   };
 }
 
@@ -51,6 +65,47 @@ export function closeAcceptedRun(
   return { closed: issue };
 }
 
+/** The commits `head` adds to `base`, oldest first: what the accepted branch was made of. */
+export function commitsBetween(base: string, head: string): RunCommit[] {
+  const log = execFileSync("git", ["log", "--reverse", "--format=%h%x09%s", `${base}..${head}`], { encoding: "utf8" });
+  return log
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [sha, ...subject] = line.split("\t");
+      return { sha, subject: subject.join("\t") };
+    });
+}
+
+/**
+ * File the finished run's record beside its issue.
+ *
+ * Returns the directory written, or a reason it could not be filed: a run that names no issue
+ * gives the record no home, and guessing one would file it under someone else's work.
+ */
+export function archiveAcceptedRun(
+  runsDir: string,
+  facts: { archiveRoot: string; branch: string; into: string; base: string; head: string; commits: readonly RunCommit[] },
+  reader: IssueReader,
+): { dir: string } | { problem: string } {
+  const issue = issueOfRun(runsDir);
+  if (issue === null) return { problem: `no run record or ledger in ${runsDir}, so the record has no issue to sit beside` };
+  const title = reader.title(issue);
+  return { dir: archiveRun({ runsDir, issue, title, ...facts }) };
+}
+
+/** Stage the record and commit it, unless the branch already carries these exact bytes. */
+function commitArchive(dir: string, stamp: string, issue: number): void {
+  execFileSync("git", ["add", "--", dir]);
+  try {
+    execFileSync("git", ["diff", "--cached", "--quiet"], { stdio: "ignore" });
+    return;
+  } catch {
+    // Staged changes: the record is new or corrected, so it goes in its own commit.
+  }
+  execFileSync("git", ["commit", "-m", `chore(sandcastle): archive run ${stamp} for #${issue}`]);
+}
+
 if (import.meta.main) {
   const at = process.argv.indexOf("--stamp");
   const stamp = at === -1 ? "" : (process.argv[at + 1] ?? "");
@@ -60,16 +115,43 @@ if (import.meta.main) {
     : (process.argv[intoAt + 1] ?? "");
   const branchAt = process.argv.indexOf("--branch");
   const branch = branchAt === -1 ? `sandcastle/<run>/${stamp}` : (process.argv[branchAt + 1] ?? "");
+  const argOf = (name: string): string => {
+    const found = process.argv.indexOf(name);
+    return found === -1 ? "" : (process.argv[found + 1] ?? "");
+  };
+  const base = argOf("--base");
+  const head = argOf("--head");
 
-  if (!/^\d+$/u.test(stamp)) {
-    console.error("usage: npx tsx .sandcastle/accept.mts --stamp <run stamp> --branch <branch> --into <branch>");
+  if (!/^\d+$/u.test(stamp) || base.length === 0 || head.length === 0) {
+    console.error(
+      "usage: npx tsx .sandcastle/accept.mts --stamp <run stamp> --branch <branch> --into <branch> --base <sha> --head <sha>",
+    );
     process.exit(1);
   }
 
-  const result = closeAcceptedRun(join(PROJECT.paths.runsDir, stamp), branch, into, ghCloser());
+  const runsDir = join(PROJECT.paths.runsDir, stamp);
+  let archived = false;
+  // The merge already happened, so a failure here loses the record but not the branch: report it and
+  // still close the issue, then exit non-zero so the accept is not mistaken for a clean one.
+  try {
+    const filed = archiveAcceptedRun(
+      runsDir,
+      { archiveRoot: PROJECT.paths.archive, branch, into, base, head, commits: commitsBetween(base, head) },
+      ghReader(),
+    );
+    if ("problem" in filed) throw new Error(filed.problem);
+    commitArchive(filed.dir, stamp, issueOfRun(runsDir) ?? 0);
+    console.log(`[accept] filed the run record in ${filed.dir}`);
+    archived = true;
+  } catch (error) {
+    console.error(`[accept] the run record was not filed: ${(error as Error).message}`);
+  }
+
+  const result = closeAcceptedRun(runsDir, branch, into, ghCloser());
   if ("problem" in result) {
     console.error(`[accept] ${result.problem}`);
     process.exit(1);
   }
   console.log(`[accept] closed #${result.closed}`);
+  if (!archived) process.exit(1);
 }

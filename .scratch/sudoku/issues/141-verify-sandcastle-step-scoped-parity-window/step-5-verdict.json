@@ -1,0 +1,13 @@
+{
+  "step": 5,
+  "test_added": ".sandcastle/loop.test.mts: \"only the window's steps get the off gate, and the step after the window runs the plain gate\" drives three steps through the real runSteps and asserts each implementer's promptArgs.VERIFY is PROJECT.verifyOff(141) inside the window and PROJECT.verify after it, and each reviewer's PARITY is `off (#141)` / `on`; plus \"a step outside the window that reports parity off stops the run\" and \"a step inside the window that reports parity on stops the run\". .sandcastle/plan.test.mts: gateFor per step, the step after the window, and the no-window case. .sandcastle/verdict.test.mts: parityMismatch both directions, and readVerdict rejecting `maybe` and a missing parity. .sandcastle/boundary.test.mts: the adapter's verifyOff is the same gate with a flag.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "The loop's parity guard is not in the report's decision: report.mts formatVerdict decides only via decide(), so a kept verdict the host stopped on (step outside the window declaring parity off) still prints `step N: PASS` in `npm run sandcastle:verdict`. Evidence: `.sandcastle/report.mts:34-41` vs `.sandcastle/loop.mts:182-188`; `zig build verify` log shows `[verdict] step 2/2: STOP — step 2 is outside the parity window, but its reviewer ran the gate with parity off (#141)`, while `npx tsx .sandcastle/report_cli.mts 2 <that verdict>` prints `step 2: PASS`."
+  ],
+  "red_on_revert": "1) Deleted the parity-guard block at `.sandcastle/loop.mts:182-188` (parityMismatch + stop) -> `node --test .sandcastle/loop.test.mts` failed 2: \"a step outside the window that reports parity off stops the run\" (code was 0, both steps ticked: actual body `- [x] **Step two:**`) and \"a step inside the window that reports parity on stops the run\"; 18 passed. 2) Changed `VERIFY: gate.command` to `VERIFY: project.verify` -> \"only the window's steps get the off gate...\" failed, 19 passed. 3) Emptied gateFor to always return `{ command: project.verify, parity: \"on\" }` -> plan.test + loop.test failed 3 (both gateFor/per-step tests and the inside-window guard), 52 passed. 4) Removed the PARITY_DECLARATION check from readVerdict -> \"a verdict must declare a parity the host can read\" failed, 21 passed. Each production file restored with `git checkout --`; `git status` clean.",
+  "ac_at_risk": [],
+  "drift": false
+}

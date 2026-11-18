@@ -1,0 +1,11 @@
+{
+  "step": 3,
+  "test_added": "scripts/verify-parity.sh:39-44 — the drift check now fails unless each parity runner names SUDOKU_PARITY_OFF and logs 'expected: parity off'. The runners' own skip (src/test/parity/native.zig:688-691, src/wasm/flows/parity.test.mjs:835-836) is proven by a real -Dparity=off gate run, which prints `expected: parity off (#141)` from both.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "native: added `expect.arm_field_not_yet_adopted` to a fixture scenario (one arm's contract change), removed the skip block, ran `SUDOKU_PARITY_OFF=141 zig test src/entry_native.zig -lc --test-filter \"parity scenarios: native shell meets\"` -> `3 passed; 0 skipped; 1 failed` (std.json UnknownField at native.zig:693); skip restored with the same drift -> `3 passed; 1 skipped`, printing `expected: parity off (#141)`. web: replaced the guard with an unconditional `await checkParity()` and moved .zig-cache/parity/native.json aside, ran `SUDOKU_PARITY_OFF=141 node --test src/wasm/flows/parity.test.mjs` -> AssertionError 'native parity transcripts missing: the glue step runs the native tests first'; guard restored with the transcripts still absent -> `expected: parity off (#141)` then `✔ src/wasm/flows/parity.test.mjs`, exit 0. drift check: `git checkout HEAD~1 -- src/test/parity/native.zig src/wasm/flows/parity.test.mjs; bash scripts/verify-parity.sh` -> 4 violations, exit 1; deleting only each log line -> one 'skips without logging' violation per runner. Gate level: with the fixture drift in place, `zig build verify -Dparity=off -Dparity-off-issue=141` exits 0 (window works), while the same drift without the skip fails the native run.",
+  "ac_at_risk": [],
+  "drift": false
+}

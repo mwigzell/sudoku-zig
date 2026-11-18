@@ -1,0 +1,14 @@
+{
+  "step": 4,
+  "test_added": ".sandcastle/plan.test.mts: 12 cases pin the window parse — `off for steps 1–4 (#141)` → parity {issue:141, steps:[1,2,3,4]}, one-step range, no-window ⇒ null, a fenced example ignored, and refusals for backwards, worded, no-range, past-the-last-step and unnamed sections, plus windowStateRefusal(issue, open) and the printed `window:` line. .sandcastle/main.test.mts: 3 cases run `main.mts --plan` against a stubbed gh — open window printed and exit 0, closed window refused with `refused: … #117 … does not report open` and no branch line, no-window issue makes no state query.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "plan.mts:360-369 validates only the range's top end: `off for steps 0–2 (#141)` parses to {issue:141, steps:[0,1,2]} with no refusal, though ADR-0022:39 and docs/agents/sandcastle.md:79 say a step the issue does not have is a refusal; plan.mts:367 also takes the first `#N` anywhere in the section instead of the `(#N)` on the range line, so a prose reference before it becomes the window's owner and is the issue whose open state main checks.",
+    "main.mts:230 (the run path's windowStop) is untested: replacing it with `null` leaves `node --test .sandcastle/*.test.mts` at 148/148 — only the --plan call site can go red, so the guard that stops a real run has no test holding it."
+  ],
+  "red_on_revert": "Made readParityWindow return { parity: null, refusal: null } right after the section lookup (plan.mts:341): `node --test .sandcastle/plan.test.mts` went 26 pass / 8 fail, naming the range, single-step, backwards, worded, no-range, over-count, unnamed and `window:` print cases. Restored, then made the --plan guard `const window = null` (main.mts:190): `node --test .sandcastle/main.test.mts` went 2 pass / 1 fail (\"a plan refuses a window the tracker reports closed\"). Removing the run-path guard at main.mts:230 left all 148 harness tests green.",
+  "ac_at_risk": [],
+  "drift": false
+}

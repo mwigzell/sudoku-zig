@@ -29,6 +29,7 @@ const GENERIC_MODULES = [
   "resume.mts",
   "events.mts",
   "report.mts",
+  "archive.mts",
 ];
 
 /** The text of one harness module, as committed. */
@@ -143,6 +144,7 @@ test("the adapter fills every fact the harness hands in", async () => {
     assert.equal(path.endsWith(".json"), true, `the ${name} verdict is a json file the host can read`);
   }
   assert.match(paths.runsDir, /\S/u);
+  assert.match(paths.archive, /\S/u, "an accepted run's record has a home");
   assert.match(paths.env, /\S/u);
 
   const docs = PROJECT.docs;

@@ -1,0 +1,60 @@
+{
+  "criteria": [
+    {
+      "criterion": "Plain `zig build verify` is unchanged (parity on, same output).",
+      "status": "PASS",
+      "evidence": "Ran `zig build verify` at b649adc: exit 0, log line `✓ parity: 85 scenario(s) on native, web and Android`, and no OFF banner (`grep -c \"parity OFF\"` → 0). build.zig:15-17 defaults `-Dparity` to `.on`; build.zig:207-211 still depends on `scripts/verify-parity.sh` when it is on."
+    },
+    {
+      "criterion": "`-Dparity=off -Dparity-off-issue=N` runs verify without the parity check, prints the OFF banner, and both parity runners skip with `expected: parity off (#N)`.",
+      "status": "PASS",
+      "evidence": "Ran `zig build verify -Dparity=off -Dparity-off-issue=141` (#141 is open): exit 0, printed `── parity OFF (#141) ──` (scripts/verify-parity-off.sh:33), no `✓ parity:` line at all, and both runners logged `expected: parity off (#141)` — src/test/parity/native.zig:689 to the host log and src/wasm/flows/parity.test.mjs:835 to the console."
+    },
+    {
+      "criterion": "The option refuses when the named issue is not open.",
+      "status": "PASS",
+      "evidence": "`gh issue view 140 --json state` → CLOSED; `zig build verify -Dparity=off -Dparity-off-issue=140` exited 1 with `✗ parity: issue #140 is CLOSED, so the window it would open is not live — parity stays on` (scripts/verify-parity-off.sh:27-30). parity_window.test.mts also covers the missing flag, the closed issue and an unresolvable one — all ✔ in the gate log."
+    },
+    {
+      "criterion": "A plan parses a step-scoped `## Parity window` and refuses malformed ranges, unknown steps and closed issues.",
+      "status": "PASS",
+      "evidence": "Read .sandcastle/plan.mts:295-380 (heading, range, issue, closed-marker and fence regexes; `readParityWindow` refuses backwards, worded, missing-range, out-of-range and unnamed sections) and plan.mts:384 `windowStateRefusal`. The gate ran and showed ✔ for plan.test.mts 'a window range that runs backwards is refused', 'a window range written in words is refused', 'a window naming a step the issue does not have is refused', 'a window that names no issue is refused', 'a window on an issue the tracker does not report open is refused', and main.test.mts 'a plan refuses a window the tracker reports closed, and prints no run shape' (exit 1, `refused: … #117`, no `branch:` line)."
+    },
+    {
+      "criterion": "Only the window's steps get the off-command; every later step runs plain verify, and a step outside the window reporting parity off stops the run.",
+      "status": "PASS",
+      "evidence": "loop.mts:122 takes each step's gate from `gateFor(plan.parity, step.position, project)` and passes it as `VERIFY`/`PARITY` (loop.mts:129-131); loop.mts:184 checks `parityMismatch(read.verdict, gate.parity)` before ticking. In the gate log: ✔ 'only the window's steps get the off gate, and the step after the window runs the plain gate' (asserts VERIFY `[verifyOff(141), verifyOff(141), verify]` and PARITY `[off (#141), off (#141), on]`), ✔ 'a step outside the window that reports parity off stops the run' and ✔ 'a step inside the window that reports parity on stops the run', with the recorded stops `step 2 is outside the parity window, but its reviewer ran the gate with parity off (#141)`."
+    },
+    {
+      "criterion": "The whole-branch review always runs plain verify, records `parity_restored`, and the host stops if a declared window is not restored.",
+      "status": "PASS",
+      "evidence": "loop.mts:298-301 hands the final review `VERIFY: project.verify` (never the window's command) and `PARITY_LINE`; loop.mts:319 calls `parityRestored(..., plan.parity?.issue, project)` and stops. In the gate log: ✔ 'the whole-branch review runs the plain gate even over a window, and proves the window restored' (asserts the review's VERIFY is `PROJECT.verify`) and ✔ 'a declared window the whole-branch review does not prove restored stops the run' (exit 1, stop names #141, no criterion ticked). verdict.mts:165-184 carries `parity_restored`/`parity_line`; this review quotes `✓ parity: 85 scenario(s) on native, web and Android`."
+    },
+    {
+      "criterion": "Harness tests cover the parse/refuse paths, the per-step command, and the unrestored-window stop.",
+      "status": "PASS",
+      "evidence": "One `zig build verify` run (exit 0) printed ✔ for the parse/refuse cases in plan.test.mts (backwards, worded, no range, step 9 of 5, unnamed issue, tracker-not-open), the closed/unknown guard cases in parity_window.test.mts, the per-step command in loop.test.mts ('only the window's steps get the off gate…', `gateFor` in plan.test.mts), and the unrestored stop in loop.test.mts ('a declared window the whole-branch review does not prove restored stops the run') and verdict.test.mts ('a whole-branch verdict that reports parity not restored stops the run and names the window')."
+    },
+    {
+      "criterion": "The `ProjectConfig` seam exists: generic modules carry no repo literals, no ambient project reads and no subprocesses, enforced by a boundary test; `main.mts` and the project adapter own `gh`/`bwrap`/`npm`.",
+      "status": "PASS",
+      "evidence": "The gate printed ✔ for all five boundary.test.mts cases: 'no generic module names a fact only this repository knows', 'no generic module reads a project file by an ambient path, hard-codes the cwd or spawns a process', 'no generic module imports the adapter, and the config type is imported as a type', 'the checker itself catches a planted literal, ambient read, subprocess and adapter import', 'the adapter fills every fact the harness hands in'. Read .sandcastle/project_config.mts:15 and project.mts:23 (the adapter); main.mts:69 `ghTracker`, :249 `npm install` hook, :261 `bwrap`, :265 `sandcastle.pi(PROJECT.agent.model)`."
+    },
+    {
+      "criterion": "ADR-0022 records the harness shape, the seam and the parity window, and the implementation matches it.",
+      "status": "PASS",
+      "evidence": "docs/adr/0022-sandcastle-harness-boundaries.md §1 'The harness's shape is fixed, not configurable', §2 'A typed project seam separates the generic harness from this repo' (incl. the boundary test and the extraction triggers), §3 'A parity window is the only sanctioned way to run a cross-arm refactor' with the syntax, the fence/closed rules, the entry's single tracker call and the review's proof. The code matches §3: build.zig:15-22 plus scripts/verify-parity-off.sh, plan.mts:336-407, loop.mts:122/184/298-320."
+    },
+    {
+      "criterion": "`zig build verify` green (including the node and sandcastle suites).",
+      "status": "PASS",
+      "evidence": "`zig build verify` at b649adc exited 0: `npm run typecheck` (tsc --noEmit), `npm run sandcastle:test` (`node --test .sandcastle/*.test.mts`, every case ✔), the glue/parity JS suite (`✔ src/wasm/flows/parity.test.mjs`), `✓ PASSED mechanical standards clean (95 file(s))` and `✓ PASSED timing gate` (run 11.80s, budget 18.0s)."
+    }
+  ],
+  "parity_restored": true,
+  "parity_line": "✓ parity: 85 scenario(s) on native, web and Android",
+  "concerns": [
+    "ADR-0022 §2 says a generic module contains no `parity` literal, but plan.mts/verdict.mts/loop.mts use `parity` as a field and function name and boundary.test.mts deliberately allows the bare word (it refuses only `verify-parity`/`-Dparity`/`SUDOKU_PARITY_OFF`). The test states the exception; §2 does not, so the ADR's literal list reads stricter than the shipped seam.",
+    "plan.mts:367 resolves the window's issue as the first `#N` anywhere in the section, not the `(#N)` on the `off for steps` line: a section whose prose cites another issue above the range would query that issue's tracker state instead (a closed one would refuse the run)."
+  ]
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "symbol": "parity",
+    "files": 20,
+    "verdict": "plumbing"
+  },
+  {
+    "symbol": "ProjectConfig",
+    "files": 3,
+    "verdict": "plumbing"
+  }
+]

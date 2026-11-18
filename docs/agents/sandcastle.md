@@ -14,7 +14,7 @@ The code is `.sandcastle/` (Node/TypeScript, run through `tsx`), the three human
 | `npm run sandcastle -- --issue 116` | Start a run over that issue's steps |
 | `npm run sandcastle:plan -- --issue 116` | Print the run's shape — branch, bound, next step, agent-run count — and exit. Never invokes an agent |
 | `npm run sandcastle:verdict` | Read the finished run: one block per step verdict, then the whole-branch matrix, then the diffstat |
-| `npm run sandcastle:accept` | Merge the run branch into the **current** branch, remove its worktree, delete the branch |
+| `npm run sandcastle:accept` | Merge the run branch into the **current** branch, file its record under `.scratch/sudoku/issues/`, remove its worktree, delete the branch |
 | `npm run sandcastle:drop` | Take back the ticks the run wrote, remove its worktree, delete its commits |
 | `npm run sandcastle:logs` | Show the newest agent transcript — the live view of a run. `-f` follows it, `-n <lines>` shows more, `--list` lists every transcript |
 | `npm run sandcastle:test` | The harness's own `node --test` suites (also wired into `zig build verify`) |
@@ -147,8 +147,11 @@ is being left as it is, and the drop continues.
 ## Accept, drop, verdict
 
 - **accept** merges the run branch into whatever branch you are on. It refuses when a
-  second `sandcastle/*` branch exists or the run's worktree has uncommitted changes, then removes the
-  worktree and deletes the branch.
+  second `sandcastle/*` branch exists or the run's worktree has uncommitted changes, then files the
+  run's record, removes the worktree and deletes the branch. The record copy sits beside the issue
+  under `.scratch/sudoku/issues/<number>-<slug>/` — the verdicts, the shotgun count and a README
+  naming the branch, its commits, the judged criteria and the concerns not fixed — because the run
+  directory is gitignored and would not survive a clone. It is committed on the accepted branch.
 - **drop** asks once, then reverts the recorded ticks, removes the worktree and deletes the branch. The
   verdicts and the ledger stay in the log directory as the record of what the run did.
 - **verdict** is read-only: it never merges, never deletes, and never touches the issue.
@@ -162,7 +165,7 @@ nothing and says so, rather than guessing a number and closing someone else's is
 ## The project seam
 
 The harness is project-neutral. The generic modules — `plan`, `loop`, `verdict`, `standards`, `ledger`,
-`resume`, `events`, `report` — never name this repository: they take a typed `ProjectConfig`
+`resume`, `events`, `report`, `archive` — never name this repository: they take a typed `ProjectConfig`
 (`project_config.mts`) as a value, built for this repo by `project.mts`. That adapter holds the facts a run
 needs: the gate command (`zig build verify`), the standards file and its section, the tracker's readiness
 label, the agent model, the prompt and verdict paths, and the docs paths.
@@ -172,7 +175,6 @@ and the agent. `boundary.test.mts` enforces the split: a generic module that nam
 project file by an ambient path, hard-codes `process.cwd()` or spawns a subprocess fails the suite. Adding
 a project fact means filling a `ProjectConfig` field; changing harness policy is an ADR, not a config flag.
 
-## Files
 ## Files
 
 | Path | Role |
@@ -184,10 +186,12 @@ a project fact means filling a `ProjectConfig` field; changing harness policy is
 | `.sandcastle/loop.mts` | The step loop, the tracker write, the whole-branch review |
 | `.sandcastle/verdict.mts` | Verdict shapes, their field-by-field validation, and the pass/stop rules |
 | `.sandcastle/ledger.mts`, `drop.mts` | The tick record, and the tracker half of a drop |
+| `.sandcastle/archive.mts` | The record an accept leaves beside the issue: the verdicts copied and the README that indexes them |
 | `.sandcastle/report.mts`, `report_cli.mts` | Turning verdict files into the readable report, and the command that prints it |
 | `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |
 | `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `verdict-standards.json`, `shotgun.json`, `ticks.json`, `run.json`, `events.jsonl`, `run.log` |
+| `.scratch/sudoku/issues/<number>-<slug>/` | An accepted run's record: the verdict files copied, `shotgun.json`, and the README naming the branch and its concerns |
 | `.sandcastle/logs/sandcastle-<branch>-<role>-step-<n>of<m>.log` | The agents' transcripts, one per session; `npm run sandcastle:logs` reads the newest |
 | `.sandcastle/.env` | `GH_TOKEN` for the sandboxed agents (untracked) |
 | `.sandcastle/boundary.test.mts` | The seam's test: a generic module may not name a project fact, read one by an ambient path or spawn a process |

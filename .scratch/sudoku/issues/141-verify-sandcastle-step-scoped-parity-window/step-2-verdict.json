@@ -1,0 +1,13 @@
+{
+  "step": 2,
+  "test_added": ".sandcastle/parity_window.test.mts: scripts/verify-parity-off.sh refuses a missing issue (names -Dparity-off-issue), a CLOSED issue and an unresolvable one, accepts an OPEN issue by printing `── parity OFF (#141) ──` (all against a stubbed `gh`), and `zig build --help` declares -Dparity and -Dparity-off-issue.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "The build wiring is untested: deleting the two `if (parity_off)` blocks in build.zig (omitting verify-parity.sh, setting SUDOKU_PARITY_OFF on run_tests/glue/verify_gate, the guard dependency) leaves .sandcastle/parity_window.test.mts 5/5 green and `zig build verify-run -Dparity=off -Dparity-off-issue=141` then runs scripts/verify-parity.sh (1 `✓ parity:` line) and exits 0, so nothing in the suite goes red when the omission itself is removed — only the guard and the flag declaration are pinned."
+  ],
+  "red_on_revert": "1) `git checkout HEAD~1 -- build.zig` -> parity_window.test.mts: 4 pass, 1 fail (\"the gate declares the parity window options\"). 2) `mv scripts/verify-parity-off.sh /tmp/` -> 1 pass, 4 fail (the four guard cases; spawned bash exits 127). 3) Both reverted together -> 5 fail. 4) Wiring-only revert (kept both option declarations, replaced the two `if (parity_off)` blocks with `verify_run_step.dependOn(&parity_check.step)` + discards): parity_window.test.mts 5 pass, 0 fail, and `zig build verify-run -Dparity=off -Dparity-off-issue=141` printed `✓ parity: 85 scenario(s)` and exited 0 — i.e. that revert is invisible to the suite. Tree restored to HEAD (git status clean).",
+  "ac_at_risk": [],
+  "drift": false
+}

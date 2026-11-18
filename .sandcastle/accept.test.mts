@@ -2,10 +2,10 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeAcceptedRun } from "./accept.mts";
+import { archiveAcceptedRun, closeAcceptedRun } from "./accept.mts";
 import { writeRunRecord } from "./run_record.mts";
 import { ledgerPath } from "./ledger.mts";
 
@@ -69,5 +69,40 @@ test("a run that leaves neither record nor ledger closes nothing and says why", 
     assert.deepEqual(closer.closed, [], "guessing an issue number would close the wrong issue");
   } finally {
     rmSync(join(runsDir, "..", ".."), { recursive: true, force: true });
+  }
+});
+
+test("accepting files the run's record beside the issue, named by the tracker", () => {
+  const root = mkdtempSync(join(tmpdir(), "sandcastle-accept-record-"));
+  const runsDir = join(root, "runs", "1");
+  const archiveRoot = join(root, "issues");
+  try {
+    writeRunRecord(runsDir, {
+      issue: 77,
+      branch: "sandcastle/sequential-reviewer/1",
+      targetBranch: "develop",
+      startedAt: "t1",
+    });
+    writeFileSync(join(runsDir, "step-1-verdict.json"), "{}");
+
+    const filed = archiveAcceptedRun(
+      runsDir,
+      {
+        archiveRoot,
+        branch: "sandcastle/sequential-reviewer/1",
+        into: "develop",
+        base: "base111",
+        head: "head222",
+        commits: [{ sha: "head222", subject: "fix(flow): say what happened" }],
+      },
+      { title: () => "A refused save says what happened" },
+    );
+
+    assert.ok(!("problem" in filed), "the record has an issue to sit beside");
+    assert.equal(filed.dir, join(archiveRoot, "77-a-refused-save-says-what-happened"));
+    assert.ok(existsSync(join(filed.dir, "step-1-verdict.json")), "the verdict is copied, not moved");
+    assert.match(readFileSync(join(filed.dir, "README.md"), "utf8"), /Cut from `develop` at `base111`; head `head222` \(1 commit\)/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

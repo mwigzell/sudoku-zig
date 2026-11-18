@@ -1,0 +1,14 @@
+{
+  "step": 7,
+  "test_added": ".sandcastle/docs_framing.test.mts: reads AGENTS.md, docs/agents/issue-tracker.md and docs/agents/sandcastle.md where they live and requires (a) the standing rule — `## Parity window` for an issue whose steps change a parity-observed contract, not ready-for-agent without one — (b) the tracker's own `## Parity window` section that is a triage gate and is taken away when the issue closes, and (c) the harness manual's exact off-command (PROJECT.verifyOff(141)), 'only ever passed inside' a window, plain verify for every other step, `parity_restored` and the host stop.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "The closing rule the step names ('the window is removed when the issue closes') is pinned by no assertion: deleting ' and the window goes — deleted, or marked closed — when the issue closes.' from the AGENTS.md bullet, or the whole '- The window goes with the issue: when the issue closes, the section is deleted or marked `closed`…' bullet from docs/agents/issue-tracker.md, leaves all 3 docs_framing tests green (measured), because the tracker regex `[Cc]lose[sd]?\\b.*(window|section)` is satisfied by the unrelated line 'A window that names a closed or unknown issue is refused as well'.",
+    "Two more docs_framing claims are satisfied by pre-existing unrelated text, so the sentences they stand for can be deleted with the suite still green: /ready-for-agent/ in the AGENTS.md test matches the label-vocabulary line (removing 'Triage does not move such an issue to `ready-for-agent` without one, ' from the new bullet stays green — measured), and /zig build verify/ matches the new sandcastle paragraph; in the tracker test /ready-for-agent/ matches the label-vocabulary line and 'carries no window' matches the 'no window' alternative (removing ' is not ready for a run — it is not `ready-for-agent`…' stays green — measured)."
+  ],
+  "red_on_revert": "git checkout HEAD~1 -- AGENTS.md docs/agents/issue-tracker.md docs/agents/sandcastle.md docs/agents/triage-labels.md (reverting this step's whole production change, which is the docs), then `node --test .sandcastle/docs_framing.test.mts`: ✖ AGENTS.md carries the standing rule…, ✖ the tracker doc makes the window a triage gate…, ✖ the harness manual names the flag…, 'ℹ tests 3 / ℹ pass 0 / ℹ fail 3', each naming the claim it could not find ('docs/agents/issue-tracker.md does not say the window has a section of its own', '…sandcastle.md does not say the flag is passed only inside a declared window'). Restored with `git checkout HEAD --` the same four files; working tree clean.",
+  "ac_at_risk": [],
+  "drift": false
+}

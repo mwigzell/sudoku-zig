@@ -408,8 +408,12 @@ _Avoid_: marking done, closing (closing is accept)
 A step-scoped, issue-declared period in which `verify` runs with `-Dparity=off`, because a cross-arm contract change cannot be green arm by arm. It names an open issue, ends at the first post-window issue step (plain verify), and the whole-branch review runs plain verify too and must prove parity restored — it is recorded in ADR-0022.
 _Avoid_: turning parity off without a declared window
 
+**Run record**:
+The copy accepting a run leaves beside its issue, under `.scratch/sudoku/issues/<number>-<slug>/`: the step verdicts, the whole-branch matrix and standards lens, the shotgun count, and a README naming the branch, its commits, the judged criteria and the concerns not fixed. It exists because the run directory is gitignored and would not survive a clone; accept commits it on the accepted branch.
+_Avoid_: run log (that stays in `.sandcastle/logs/<stamp>/`)
+
 **Accept / Drop**:
-The human's decision on a finished run: accept merges the run branch and closes the issue; drop reverts the run's ticks and deletes its commits. The agent never runs either.
+The human's decision on a finished run: accept merges the run branch, files its record and closes the issue; drop reverts the run's ticks and deletes its commits. The agent never runs either.
 _Avoid_: the agent accepting, ticking acceptance criteria or closing the issue
 
 **Human** (the owner):

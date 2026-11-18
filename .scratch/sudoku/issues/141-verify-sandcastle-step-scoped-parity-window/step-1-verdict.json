@@ -1,0 +1,15 @@
+{
+  "step": 1,
+  "test_added": ".sandcastle/boundary.test.mts: fails when a generic module carries a repo literal (zig / sudoku / AGENTS.md / the parity spellings), reads a project file by a path it names itself, calls process.cwd(), spawns a subprocess or imports the adapter; a self-test plants each violation to prove the checker matches, and a last test checks the adapter's facts name real files.",
+  "verify_exit": 0,
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "docs/agents/sandcastle.md has two `## Files` headings in a row (the new '## The project seam' section adds one above the existing one at lines 133-134), so the manual renders a duplicated section.",
+    "CONTEXT.md ('Project config') and docs/agents/sandcastle.md:122-125 say the eight generic modules take `ProjectConfig` as a value, but ledger.mts, resume.mts and events.mts never receive it -- they take only `runsDir`/file strings (ledger.mts:25, events.mts:34-61, resume.mts:31) -- so the docs overstate the seam the commit message describes correctly.",
+    "docs/adr/0022-sandcastle-harness-boundaries.md:31 says `ProjectConfig` carries 'step and criterion syntax'; project_config.mts has no such field and plan.mts still hard-codes `## Steps` and the checkbox shape (plan.mts:12,68,75), so the issue's 'implementation matches ADR-0022' criterion is not met."
+  ],
+  "red_on_revert": "Restored the pre-step production modules from 9a42b7a (`git checkout 9a42b7a -- .sandcastle/verdict.mts .sandcastle/standards.mts .sandcastle/loop.mts .sandcastle/report.mts`) and ran `node --test .sandcastle/boundary.test.mts`: 2 of 5 failed, printing `verdict.mts names the Zig toolchain: \"zig\"`, `standards.mts names the standards file: \"AGENTS.md\"`, `loop.mts names the standards file: \"AGENTS.md\"`, `loop.mts spawns a subprocess`. Appending `const VERIFY = \"zig build verify\";` to the current plan.mts likewise failed with `plan.mts names the Zig toolchain: \"zig\"`. With the files restored, all 5 boundary tests pass.",
+  "ac_at_risk": [],
+  "drift": false
+}
