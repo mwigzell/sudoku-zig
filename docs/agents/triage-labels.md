@@ -27,5 +27,6 @@ An issue is not ready until someone has walked it as a player, on each front end
 3. **Each pair:** for every state, say what the player sees and what each control does. Any pair the issue does not answer is an open question for the maintainer.
 4. **Saved data:** check each change to saved data against ADR-0018: an older app must still open the file.
 5. **Steps:** when a run will step the issue, `## Steps` must be `- [ ]` items — one step per run iteration — or the planner refuses it. The shape and what a step must say are in "Steps a run can take" in `docs/agents/issue-tracker.md`.
+6. **Parity window:** an issue whose steps change a contract parity observes declares a step-scoped `## Parity window`, and one that changes such a contract and carries no window is not `ready-for-agent`. The shape and the gate are in "Parity window" in `docs/agents/issue-tracker.md`.
 
 Record the answers in the issue (Decisions, acceptance criteria), not in a comment that can be missed.

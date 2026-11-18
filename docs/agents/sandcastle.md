@@ -84,7 +84,12 @@ The shape `plan.mts` reads, and refuses rather than guesses at:
   the section says the same thing.
 
 The window's steps run the gate with the flag; every other step and the whole-branch review run plain
-`zig build verify`. See ADR-0022 §3 and `docs/agents/verify-standards.md` for the gate half.
+`zig build verify`. The flag is only ever passed inside a declared window — never to a run without one, and
+never to the whole-branch review, which is the integration gate. `scripts/verify-parity-off.sh` refuses it
+without an issue number, or for one the tracker does not report open, and prints `── parity OFF (#N) ──`
+so the omission is visible in the gate's own log. Steps that do not change a parity-observed contract
+declare no window at all, so their green is the plain gate. See ADR-0022 §3 and
+`docs/agents/verify-standards.md` for the gate half.
 
 ## The device lane is outside the gate
 

@@ -81,6 +81,7 @@ Open issues and triage live on **GitHub** (`gh issue list`, `gh issue view N`). 
 Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
 - **Every `/triage`** walks the player's screen (`docs/agents/triage-labels.md`, "Before `ready-for-agent`"): controls, states and each pair, per front end in scope, plus the ADR-0018 check on saved data. An issue moves to `ready-for-agent` only when every pair is answered in the issue.
+- **Parity window**: an issue whose steps change a contract parity observes declares a `## Parity window` in its body, naming the steps the check is off for. Triage does not move such an issue to `ready-for-agent` without one, and the window goes — deleted, or marked closed — when the issue closes. See `docs/agents/issue-tracker.md` ("Parity window").
 
 - **Issue lifecycle**: triage labels above are pre-work roles only. When acceptance criteria are verified, tick the boxes and close the GitHub issue — on the working branch, without waiting for a merge to `main` and without asking. If something blocks closing, state the blocker in one line.
 - **Front ends**: every issue names native, web and Android, each in scope or out of scope with a reason. An issue closes only when every in-scope front end meets the acceptance criteria. See `docs/agents/issue-tracker.md` ("Front ends in every issue").
@@ -103,6 +104,8 @@ Single-context. `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 ### Sandcastle runs
 
 `npm run sandcastle -- --issue N` runs an issue's `## Steps` through one agent per step and leaves a branch for a human to accept or drop. The harness never closes an issue, never ticks acceptance criteria, and the agent never accepts or drops a run. See `docs/agents/sandcastle.md`.
+
+A **parity window** is the one sanctioned way to run a cross-arm refactor, and a step-scoped one: parity compares the front ends against each other, so the first arm of a change to a parity-observed contract — a `CommandTag`, a flow `Step` kind, a fixture `expect` field, a runner step — is red even when it is correct. A windowed step is handed `zig build verify -Dparity=off -Dparity-off-issue=<N>`; every later step and the whole-branch review run plain `zig build verify`, which is the proof parity is back on. See `docs/agents/sandcastle.md` ("The parity window") and ADR-0022 §3.
 
 ### Native renderer facade seam
 

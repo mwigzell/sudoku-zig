@@ -59,6 +59,20 @@ An issue that a sandcastle run steps through writes its steps in a `## Steps` se
 
 Triage fixes the step shape while it is already editing the body.
 
+## Parity window
+Cross-front-end parity compares the arms **against each other**, so an issue whose steps change a contract parity observes — a `CommandTag`, a flow `Step` kind, a fixture `expect` field, a runner step — cannot go green one arm at a time: the first arm is red because the other still speaks the old contract. Such an issue declares the hole instead of hiding it, in a section of its own:
+
+```markdown
+## Parity window
+off for steps 1–4 (#141) — `zig build verify -Dparity=off -Dparity-off-issue=141`
+parity is back on from step 5; final acceptance is plain `zig build verify`
+```
+
+- The gate is off for a named range of the issue's own steps, and the section names the issue the window belongs to as `(#N)`. The shape `plan.mts` reads, and what it refuses, is pinned in `docs/agents/sandcastle.md` ("The parity window").
+- **Triage gate:** an issue that changes a parity-observed contract and carries no window is not ready for a run — it is not `ready-for-agent`, because the first step would come back red on work that is correct. A window that names a closed or unknown issue is refused as well.
+- Every other step runs plain `zig build verify`, and the whole-branch review always does: the section says from which step parity is back on, and that claim is what the run proves.
+- The window goes with the issue: when the issue closes, the section is deleted or marked `closed`, so a later run cannot inherit a hole that has already been paid for.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a **GitHub issue** (`gh issue create`).
