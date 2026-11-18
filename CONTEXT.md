@@ -405,7 +405,7 @@ The run host's edit that flips one checkbox in the issue body (an issue step or 
 _Avoid_: marking done, closing (closing is accept)
 
 **Parity window**:
-A step-scoped, issue-declared period in which `verify` runs with `-Dparity=off`, because a cross-arm contract change cannot be green arm by arm. It names an open issue, ends at the first post-window issue step (plain verify), and is recorded in ADR-0022.
+A step-scoped, issue-declared period in which `verify` runs with `-Dparity=off`, because a cross-arm contract change cannot be green arm by arm. It names an open issue, ends at the first post-window issue step (plain verify), and the whole-branch review runs plain verify too and must prove parity restored — it is recorded in ADR-0022.
 _Avoid_: turning parity off without a declared window
 
 **Accept / Drop**:

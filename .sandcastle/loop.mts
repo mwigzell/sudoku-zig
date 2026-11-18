@@ -13,7 +13,7 @@ import { countShotgun, rgSearch } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
 import { readRunRecord, writeRunRecord } from "./run_record.mts";
 import { gateFor, nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
-import { decide, decideFinal, parityMismatch, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
+import { decide, decideFinal, parityMismatch, parityRestored, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
 
 /** A verdict left by an earlier attempt is not this run's evidence: clear it before the agent writes. */
 function clearVerdict(path: string): void {
@@ -292,7 +292,14 @@ async function finalReview(
       maxIterations: 1,
       agent,
       promptFile: project.paths.prompts.finalReview,
-      promptArgs: { ISSUE: plan.issue, BASE_BRANCH: plan.targetBranch },
+      // The whole-branch review is the integration gate, so it is always handed the gate whole:
+      // a declared window is over by now, and its verdict is what proves the check is back on.
+      promptArgs: {
+        ISSUE: plan.issue,
+        BASE_BRANCH: plan.targetBranch,
+        VERIFY: project.verify,
+        PARITY_LINE: project.parity.sample,
+      },
     }),
     (line) => logEvent("heartbeat", line),
   );
@@ -306,6 +313,14 @@ async function finalReview(
 
   const read = readFinalVerdict(readFileSync(kept, "utf8"));
   if ("problem" in read) return stop(read.problem);
+
+  // The review ran the gate whole, so its verdict must quote that run's parity line: a declared window
+  // the review does not prove restored stops the run here, whatever its criteria matrix says.
+  const unrestored = parityRestored(read.verdict, plan.parity === null ? null : plan.parity.issue, project);
+  if (unrestored !== null) {
+    logEvent("verdict", `whole branch: STOP — ${unrestored}`);
+    return stop(unrestored);
+  }
 
   // The standards lens is a second file with its own verdict: the reviewer answers every rule the
   // branch's own standards file carries, and a rule it skipped, invented or left unevidenced stops the run.

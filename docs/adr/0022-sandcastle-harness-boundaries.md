@@ -39,7 +39,7 @@ These are opinions, not options. Anything a project can configure must be a **pr
 - The section's syntax: `off for steps <first>–<last> (#N)` under that heading, everything else in the section prose. `plan.mts` reads it and refuses a backwards or worded range, a step the issue does not have and a missing issue; a fenced example is documentation, and a section marked `closed` (or deleted) is a window a later run cannot inherit. Whether `#N` is open is the entry's one tracker call, not the parser's.
 - The plan carries the window (`parity: { issue, steps }` or `null`) and prints it, so a step's green can say what it proved.
 - `zig build verify -Dparity=off -Dparity-off-issue=N` omits the parity check, prints an OFF banner and makes both parity runners skip with a logged reason; it refuses a closed or unknown issue.
-- Only the window's steps get the off-command. The first step after the window, and the whole-branch review, run plain `zig build verify`; the loop's host stops when a declared window is not restored.
+- Only the window's steps get the off-command. The first step after the window, and the whole-branch review, run plain `zig build verify`; the review's verdict quotes the parity line that run printed, and the loop's host stops when a declared window is not proven restored.
 - Rejected: using `flowless_commands` as a migration tool (self-certified, no expiry, switches parity off per command on every arm), and disabling parity without a declared, closed window.
 
 ## Consequences

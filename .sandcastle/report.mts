@@ -66,6 +66,11 @@ function formatFinalVerdict(verdict: FinalVerdict): string[] {
     if (entry.evidence.trim().length > 0) lines.push(...field("  evidence:      ", entry.evidence));
   }
   if (verdict.standards !== undefined) lines.push(...field("standards:     ", verdict.standards));
+  // The parity claim is the review's proof that the gate ran whole, so the report states it in words.
+  if (verdict.parity_line !== undefined) {
+    const claim = verdict.parity_restored === true ? "restored" : "not restored";
+    lines.push(...field("parity:        ", `${claim} — ${verdict.parity_line}`));
+  }
   for (const concern of verdict.concerns) lines.push(...field("concern:       ", concern));
   return lines;
 }

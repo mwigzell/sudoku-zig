@@ -165,6 +165,16 @@ export interface CriterionVerdict {
 export interface FinalVerdict {
   /** Every acceptance criterion of the issue, in the issue's order. */
   criteria: CriterionVerdict[];
+  /**
+   * Whether the reviewer's own run of the plain gate reported the cross-arm parity check passing.
+   * The whole-branch verdict must carry it; a sub-issue's matrix is not a gate report and need not.
+   */
+  parity_restored?: boolean;
+  /**
+   * The parity line the plain gate printed, quoted as it was. The host reads this citation against the
+   * project's own shape: a verdict that quotes nothing, or something else, proves nothing about parity.
+   */
+  parity_line?: string;
   /** Anything a human should read before accepting the run. */
   concerns: string[];
   /** The standards verdict as the reviewer worded it, when it reports one here; the lens has its own file. */
@@ -196,6 +206,14 @@ export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { pro
     }
   }
   if (!holds(record.concerns, "strings")) return { problem: "the verdict's concerns is not a list of strings" };
+  // The parity fields are the whole-branch review's proof that the check is back on, so a value the
+  // host cannot read is a problem rather than a citation it might take on trust.
+  if ("parity_restored" in record && typeof record.parity_restored !== "boolean") {
+    return { problem: "the verdict's parity_restored is not a boolean" };
+  }
+  if ("parity_line" in record && typeof record.parity_line !== "string") {
+    return { problem: "the verdict's parity_line is not a string" };
+  }
   return { verdict: record as unknown as FinalVerdict };
 }
 
@@ -219,6 +237,28 @@ export function decideFinal(verdict: FinalVerdict): FinalDecision {
   }
 
   return { kind: "pass" };
+}
+
+/**
+ * Why the branch's parity check is not proven restored, or `null` when it is.
+ *
+ * The whole-branch review runs the plain gate, so its verdict must quote the parity line that gate
+ * printed and report the check passing. The citation is read against `project.parity.line`, and a
+ * declared window that is not proven back on stops the run: the host decides, never the reviewer's
+ * goodwill. `windowIssue` is the issue the plan's window belongs to, or `null` when none was declared.
+ */
+export function parityRestored(verdict: FinalVerdict, windowIssue: number | null, project: ProjectConfig): string | null {
+  const cited = (verdict.parity_line ?? "").trim();
+  if (!project.parity.line.test(cited)) {
+    return cited.length === 0
+      ? `the whole-branch verdict cites no gate parity line; quote the line the plain gate printed, as in \`${project.parity.sample}\``
+      : `the whole-branch verdict's parity line is not the gate's: \`${cited}\`; quote the line the plain gate printed`;
+  }
+  if (verdict.parity_restored === true) return null;
+
+  return windowIssue === null
+    ? `the whole-branch review reported the gate's parity check not restored (\`${cited}\`)`
+    : `parity off was declared for the steps of #${windowIssue}, and the whole-branch review did not prove it restored (\`${cited}\`)`;
 }
 
 /** The criteria the host may tick for a passing verdict, or why it may not. */

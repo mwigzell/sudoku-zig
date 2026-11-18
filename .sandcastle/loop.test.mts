@@ -56,9 +56,11 @@ const passingStandards = () => ({
   shotgun: [] as Array<{ symbol: string; files: number }>,
 });
 
-/** A whole-branch matrix in which the issue's one criterion passes, so the run may pass. */
+/** A whole-branch matrix in which the issue's one criterion passes and the plain gate's parity line is quoted. */
 const passingFinal = () => ({
   criteria: [{ criterion: "Something at issue level.", status: "PASS", evidence: "a test asserts it" }],
+  parity_restored: true,
+  parity_line: PROJECT.parity.sample,
   concerns: [],
 });
 
@@ -588,10 +590,18 @@ test("a sub-issue step is judged by its own reviewer, and its criteria are ticke
   try {
     const parent = planFor(PARENT_BODY);
     const tracker = fakeIssues({ [parent.issue]: PARENT_BODY, [CHILD]: CHILD_BODY });
-    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1)], { criteria: [], concerns: [] }, passingStandards(), {
-      criteria: [{ criterion: "The child's own criterion.", status: "PASS", evidence: "a test in the child's step asserts it" }],
-      concerns: [],
-    });
+    // The whole-branch verdict proves the gate ran whole even when every step was a sub-issue; the
+    // child's own matrix is not a gate report, so it carries no parity field.
+    const sandbox = fakeSandbox(
+      dirs.worktree,
+      [passingVerdict(1)],
+      { criteria: [], parity_restored: true, parity_line: PROJECT.parity.sample, concerns: [] },
+      passingStandards(),
+      {
+        criteria: [{ criterion: "The child's own criterion.", status: "PASS", evidence: "a test in the child's step asserts it" }],
+        concerns: [],
+      },
+    );
 
     const code = await runSteps({
       plan: parent,
@@ -632,6 +642,8 @@ test("a parent with criteria of its own still has them judged, once, by the whol
       [passingVerdict(1)],
       {
         criteria: [{ criterion: "The parent's own end-to-end criterion.", status: "PASS", evidence: "an e2e test crosses both children" }],
+        parity_restored: true,
+        parity_line: PROJECT.parity.sample,
         concerns: [],
       },
       passingStandards(),
@@ -769,6 +781,65 @@ test("a step inside the window that reports parity on stops the run", async () =
     assert.equal(code, 1, "a windowed step that ran the plain gate proves less than its green claims");
     assert.equal(sandbox.runs.length, 2, "the second step never starts");
     assert.doesNotMatch(tracker.body, /- \[x\]/, "no step is ticked on a gate the window did not allow");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("the whole-branch review runs the plain gate even over a window, and proves the window restored", async () => {
+  const dirs = fixture();
+  try {
+    const sandbox = fakeSandbox(dirs.worktree, [
+      passingVerdict(1, `off (#${WINDOW})`),
+      passingVerdict(2, `off (#${WINDOW})`),
+      passingVerdict(3),
+    ]);
+    const code = await runSteps({
+      plan: planFor(WINDOWED),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker: fakeTracker(WINDOWED),
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+      project: PROJECT,
+    });
+
+    assert.equal(code, 0, "a window the review proves restored leaves the run green");
+    const review = sandbox.runs.find((run) => run.name === "final-review");
+    assert.equal(review?.promptArgs.VERIFY, PROJECT.verify, "the review is handed the gate whole, never the window's command");
+    assert.equal(review?.promptArgs.PARITY_LINE, PROJECT.parity.sample, "and the parity line its verdict must quote");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a declared window the whole-branch review does not prove restored stops the run", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(WINDOWED);
+    const sandbox = fakeSandbox(
+      dirs.worktree,
+      [passingVerdict(1, `off (#${WINDOW})`), passingVerdict(2, `off (#${WINDOW})`), passingVerdict(3)],
+      {
+        criteria: [{ criterion: "Something at issue level.", status: "PASS", evidence: "a test asserts it" }],
+        parity_restored: false,
+        parity_line: PROJECT.parity.sample,
+        concerns: [],
+      },
+    );
+
+    const code = await runSteps({
+      plan: planFor(WINDOWED),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+      project: PROJECT,
+    });
+
+    assert.equal(code, 1, "a run that turned parity off is not finished until the review proves it back on");
+    const stop = readEvents(dirs.runsDir).find((entry) => entry.kind === "stop");
+    assert.match(String(stop?.message), new RegExp(`#${WINDOW}`, "u"), "the stop names the window that was left open");
+    assert.doesNotMatch(tracker.body, /- \[x\] Something at issue level\./u, "no criterion is ticked on a gate claim the reviewer did not prove");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

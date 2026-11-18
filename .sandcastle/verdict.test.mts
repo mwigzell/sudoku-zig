@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PROJECT } from "./project.mts";
-import { decide, decideFinal, parityMismatch, readFinalVerdict, readVerdict, tickedCriteria, type FinalVerdict } from "./verdict.mts";
+import { decide, decideFinal, parityMismatch, parityRestored, readFinalVerdict, readVerdict, tickedCriteria, type FinalVerdict } from "./verdict.mts";
 
 /** A step verdict a reviewer may write when the step held up. */
 const PASSING = {
@@ -115,12 +115,17 @@ test("a verdict must declare a parity the host can read", () => {
   assert.ok("problem" in readVerdict(JSON.stringify(withoutParity)), "a verdict with no parity is a problem, not a pass");
 });
 
-/** A whole-branch verdict in which every acceptance criterion is proven. */
+/** The issue a declared parity window hangs on, so a stop can be checked to name it. */
+const WINDOW_ISSUE = 141;
+
+/** A whole-branch verdict: every criterion proven, and the parity line the plain gate printed quoted as it was. */
 const FINAL_PASSING = {
   criteria: [
     { criterion: "the legend line reaches the terminal", status: "PASS", evidence: "shell e2e test asserts the footer text" },
     { criterion: "no core file imports a native adapter", status: "PASS", evidence: "src/test/layering.zig walks src/core" },
   ],
+  parity_restored: true,
+  parity_line: PROJECT.parity.sample,
   standards: "clean",
   concerns: [],
 };
@@ -164,6 +169,42 @@ test("a final verdict that cannot be read is a problem, not a pass", () => {
     readFinalVerdict(JSON.stringify({ ...FINAL_PASSING, criteria: [{ criterion: "x", status: "maybe", evidence: "y" }] })),
     { problem: "the verdict's criteria[0].status is not PASS or FAIL" },
   );
+});
+test("a whole-branch verdict proves parity restored by quoting the gate's own parity line", () => {
+  const restored = FINAL_PASSING as FinalVerdict;
+
+  assert.equal(parityRestored(restored, null, PROJECT), null, "a run that declared no window still quotes the line its plain gate printed");
+  assert.equal(parityRestored(restored, WINDOW_ISSUE, PROJECT), null, "the same citation is what proves a declared window closed");
+});
+
+test("a whole-branch verdict that reports parity not restored stops the run and names the window", () => {
+  const unrestored = { ...FINAL_PASSING, parity_restored: false } as FinalVerdict;
+
+  const reason = parityRestored(unrestored, WINDOW_ISSUE, PROJECT);
+  assert.match(String(reason), new RegExp(`#${WINDOW_ISSUE}`, "u"), "the stop names the window the run declared");
+  assert.match(String(reason), /did not prove it restored/u, "and says the citation did not prove the check back on");
+  assert.match(
+    String(parityRestored(unrestored, null, PROJECT)),
+    /not restored/u,
+    "a reviewer that says the check is off is never read as a green gate, window or no window",
+  );
+});
+
+test("a whole-branch verdict that does not cite the gate's parity line stops the run", () => {
+  const silent = { ...FINAL_PASSING, parity_line: undefined } as FinalVerdict;
+  assert.match(String(parityRestored(silent, WINDOW_ISSUE, PROJECT)), /cites no gate parity line/u);
+
+  const elsewhere = { ...FINAL_PASSING, parity_line: "parity: 0 scenarios" } as FinalVerdict;
+  assert.match(String(parityRestored(elsewhere, WINDOW_ISSUE, PROJECT)), /is not the gate's/u);
+});
+
+test("a whole-branch verdict's parity fields are read as evidence, never guessed at", () => {
+  assert.deepEqual(readFinalVerdict(JSON.stringify({ ...FINAL_PASSING, parity_restored: "yes" })), {
+    problem: "the verdict's parity_restored is not a boolean",
+  });
+  assert.deepEqual(readFinalVerdict(JSON.stringify({ ...FINAL_PASSING, parity_line: 12 })), {
+    problem: "the verdict's parity_line is not a string",
+  });
 });
 
 test("a passing verdict names criteria the issue has, one for one", () => {

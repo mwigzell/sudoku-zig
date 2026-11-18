@@ -20,6 +20,12 @@ export interface ProjectConfig {
    * window covers. `issue` is the window's own issue, so the gate can refuse a closed one.
    */
   verifyOff: (issue: number) => string;
+  /**
+   * The cross-arm parity check the gate runs. `line` is the shape of the line that check prints
+   * when it passed: the whole-branch verdict quotes it, and the host reads that citation against
+   * this shape. `sample` is the same line as a prompt shows it, carrying a count of its own.
+   */
+  parity: { line: RegExp; sample: string };
   /** The file that owns the coding standards, and the level-2 section inside it that numbers them. */
   standards: { file: string; section: string };
   /** The tracker the host writes to, and the label triage puts on an issue a run may step. */

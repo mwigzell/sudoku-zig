@@ -123,6 +123,10 @@ test("the adapter fills every fact the harness hands in", async () => {
   assert.equal(typeof offGate, "string", "a window's step is handed a command, not a flag to add itself");
   assert.ok(offGate.startsWith(`${PROJECT.verify} `), `the off gate is the same gate: ${offGate}`);
   assert.notEqual(offGate, PROJECT.verify, "the off gate is a different command, or the window would change nothing");
+  const parity = PROJECT.parity;
+  assert.ok(parity.line instanceof RegExp, "the parity line is a shape, so the host accepts any run's count");
+  assert.match(parity.sample, parity.line, "the line the prompt shows is one the host accepts");
+
   const standards = PROJECT.standards;
   assert.ok(existsSync(join(HERE, "..", standards.file)), `the standards file ${standards.file} exists`);
   assert.match(standards.section, /\S/u, "the standards section names a heading the file carries");

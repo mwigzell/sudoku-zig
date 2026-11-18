@@ -24,6 +24,9 @@ export const PROJECT: ProjectConfig = {
   verify: VERIFY,
   // The parity check is the one step a window may omit, and the flag names the issue that window belongs to.
   verifyOff: (issue) => `${VERIFY} -Dparity=off -Dparity-off-issue=${issue}`,
+  // The line that check prints when it passed, which the whole-branch verdict must quote, and the
+  // example the final-review prompt shows so the reviewer knows which line to copy.
+  parity: { line: /^✓ parity: \d+ scenario\(s\) on native, web and Android$/u, sample: "✓ parity: 12 scenario(s) on native, web and Android" },
   standards: { file: "AGENTS.md", section: "Coding standards" },
   tracker: { readyLabel: "ready-for-agent" },
   agent: { model: "ollama/sandcastle-worker" },

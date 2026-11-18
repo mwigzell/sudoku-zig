@@ -29,11 +29,13 @@ Your job is to answer one question with evidence: **does this branch meet the is
 
 2. **Judge each criterion on the branch, not on the steps.** For every criterion, find the code or the test that makes it true *now*, and run what you need to run. A criterion is `PASS` only when you can name what you read or ran; a commit message, a step title or a summary is not evidence. If you cannot prove it, it is `FAIL` with empty evidence — that is an honest answer, and the run stops for a human.
 
-3. **Run the gate over the whole branch.** `zig build verify`, and keep its exit code. A branch that is green only in parts is not green.
+3. **Run the gate over the whole branch, with every check on.** `{{VERIFY}}`, and keep its exit code. A branch that is green only in parts is not green. A parity window belongs to the step loop and is over by the time you run: this is the pass that has to show the check back on.
 
-4. **Answer every coding standard**, rule by rule. The list is `AGENTS.md` "## Coding standards" on this branch: read it, and answer **each numbered rule** — none skipped, none invented, and each answer carries `file:line` evidence or names the violation with its site. "Code smell", a hunch or a rule paraphrased out of existence is not an answer. Check the whole diff, not the last commit.
+4. **Quote the gate's parity line.** The gate prints a line shaped like `{{PARITY_LINE}}`, with your run's own count. Copy it as it printed into `parity_line`, and set `parity_restored` to `true` only when that line says the cross-arm comparison passed. The host stops the run when the issue declared a window and your verdict does not prove the check restored; the example count is not yours, and a line you did not read is not evidence.
 
-5. **Say what a human should know.** `concerns` carries what you would tell the person accepting this run: risks, follow-ups, anything that reads as drift from the issue. Do not invent work items.
+5. **Answer every coding standard**, rule by rule. The list is `AGENTS.md` "## Coding standards" on this branch: read it, and answer **each numbered rule** — none skipped, none invented, and each answer carries `file:line` evidence or names the violation with its site. "Code smell", a hunch or a rule paraphrased out of existence is not an answer. Check the whole diff, not the last commit.
+
+6. **Say what a human should know.** `concerns` carries what you would tell the person accepting this run: risks, follow-ups, anything that reads as drift from the issue. Do not invent work items.
 
 # Write the verdict
 
@@ -50,11 +52,15 @@ Write **`.sandcastle/verdict-acs.json`** in the repository root, and nothing els
       "evidence": "the test or command you read or ran, and what it showed"
     }
   ],
+  "parity_restored": true,
+  "parity_line": "the gate's parity line, copied as it printed — its shape is `{{PARITY_LINE}}`",
   "concerns": ["what a human should read before accepting this run"]
 }
 ```
 
 `criteria` lists **every** acceptance criterion of the issue, in the issue's order, worded as the issue words it: the host matches your matrix against the issue body, and a criterion it cannot match stops the run. `status` is `PASS` or `FAIL`, and `PASS` needs the evidence you read or ran. A criterion you cannot prove is `FAIL` with empty `evidence`; do not pad it.
+
+`parity_restored` and `parity_line` are this review's proof that the gate ran whole: the host reads the line against the one the gate prints and stops the run when it is missing, borrowed or reports the check off.
 
 Write **`.sandcastle/verdict-standards.json`** too, and nothing else:
 

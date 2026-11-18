@@ -107,11 +107,16 @@ A step verdict (`verdict.mts`), every field evidence the reviewer produced itsel
 | `concerns` | What the next step or the accepting human should know |
 
 The whole-branch verdict carries `criteria` (`criterion`, `status` of `proven`/`unproven`, `evidence`),
-`standards` and `concerns`. It passes only when every criterion is `proven` **with non-empty evidence** and
-standards are `clean`; an unproven or unevidenced criterion stops the run and names itself. Each criterion
-is matched against the issue body by its text: one the issue does not word that way, or one the matrix
-leaves out, is a stop — the reviewer may neither invent a criterion nor skip the one it could not prove.
-The proven ones are then ticked by the host, exactly as a step is.
+`parity_restored`, `parity_line`, `standards` and `concerns`. It passes only when every criterion is `proven`
+**with non-empty evidence** and standards are `clean`; an unproven or unevidenced criterion stops the run and
+names itself. Each criterion is matched against the issue body by its text: one the issue does not word that
+way, or one the matrix leaves out, is a stop — the reviewer may neither invent a criterion nor skip the one
+it could not prove. The proven ones are then ticked by the host, exactly as a step is.
+
+The whole-branch review is the integration gate, so it is always handed the gate whole — never a window's
+command — and its verdict must quote the parity line that run printed (`project.parity.line`). The host stops
+the run when the citation is missing or is not that line, and when a declared window is not proven restored;
+the reviewer's goodwill is not what closes the window.
 
 The final pass also answers the **standards lens** in `logs/<stamp>/verdict-standards.json`: one entry per
 numbered rule in the branch's own `AGENTS.md` "## Coding standards", each `PASS` with `file:line` or a

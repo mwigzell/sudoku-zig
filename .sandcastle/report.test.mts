@@ -95,3 +95,11 @@ test("a verdict with no standards text reports its criteria instead of crashing"
 test("a whole-branch verdict that cannot be read says so instead of showing a pass", () => {
   assert.match(formatFinalReport("{ not json")[0] ?? "", /^whole branch: STOP — the verdict file is not valid JSON$/u);
 });
+
+test("the whole-branch report states the gate's parity claim in words", () => {
+  const restored = { ...FINAL, parity_restored: true, parity_line: PROJECT.parity.sample };
+  assert.match(formatFinalReport(JSON.stringify(restored)).join("\n"), /parity: +restored — /u);
+
+  const unrestored = { ...FINAL, parity_restored: false, parity_line: PROJECT.parity.sample };
+  assert.match(formatFinalReport(JSON.stringify(unrestored)).join("\n"), /parity: +not restored — /u);
+});
