@@ -140,14 +140,19 @@ export function declaredScenarios(body: string): string[] {
   return declared;
 }
 
-/** Whether any changed path is one of `paths`: an entry ending in `/` is a directory. */
+/** Whether `path` is one of `paths`: an entry ending in `/` is a directory. */
+function namesPath(paths: readonly string[], path: string): boolean {
+  return paths.some((entry) => (entry.endsWith("/") ? path.startsWith(entry) : path === entry));
+}
+
+/** Whether any changed path is one of `paths`. */
 function changesAny(touched: readonly string[], paths: readonly string[]): boolean {
-  return touched.some((path) => paths.some((entry) => (entry.endsWith("/") ? path.startsWith(entry) : path === entry)));
+  return touched.some((path) => namesPath(paths, path));
 }
 
 /** The changed paths that made the branch Android-scope, so a refusal can name them. */
 function androidPathsChanged(diff: BranchDiff, paths: readonly string[]): string[] {
-  return diff.touched.filter((path) => paths.some((entry) => (entry.endsWith("/") ? path.startsWith(entry) : path === entry)));
+  return diff.touched.filter((path) => namesPath(paths, path));
 }
 
 /**
