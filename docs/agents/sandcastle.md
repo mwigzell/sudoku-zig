@@ -147,8 +147,11 @@ is being left as it is, and the drop continues.
 ## Accept, drop, verdict
 
 - **accept** merges the run branch into whatever branch you are on. It refuses when a
-  second `sandcastle/*` branch exists or the run's worktree has uncommitted changes, then files the
-  run's record, removes the worktree and deletes the branch. The record copy sits beside the issue
+  second `sandcastle/*` branch exists, the run's worktree has uncommitted changes, or the run's
+  Android device evidence does not prove what the branch requires — that check is
+  `.sandcastle/android_evidence.mts`, asked as `accept.mts --check` **before** the merge, so a
+  refusal leaves the branch unmerged. It then files the run's record, removes the worktree and
+  deletes the branch. The record copy sits beside the issue
   under `.scratch/sudoku/issues/<number>-<slug>/` — the verdicts, the shotgun count and a README
   naming the branch, its commits, the judged criteria and the concerns not fixed — because the run
   directory is gitignored and would not survive a clone. It is committed on the accepted branch.
@@ -165,8 +168,8 @@ nothing and says so, rather than guessing a number and closing someone else's is
 ## The project seam
 
 The harness is project-neutral. The generic modules — `plan`, `loop`, `verdict`, `standards`, `ledger`,
-`resume`, `events`, `report`, `archive` — never name this repository: they take a typed `ProjectConfig`
-(`project_config.mts`) as a value, built for this repo by `project.mts`. That adapter holds the facts a run
+`resume`, `events`, `report`, `archive`, `android_evidence` — never name this repository: they take a typed
+`ProjectConfig` (`project_config.mts`) as a value, built for this repo by `project.mts`. That adapter holds the facts a run
 needs: the gate command (`zig build verify`), the standards file and its section, the tracker's readiness
 label, the agent model, the prompt and verdict paths, and the docs paths.
 
@@ -187,6 +190,7 @@ a project fact means filling a `ProjectConfig` field; changing harness policy is
 | `.sandcastle/verdict.mts` | Verdict shapes, their field-by-field validation, and the pass/stop rules |
 | `.sandcastle/ledger.mts`, `drop.mts` | The tick record, and the tracker half of a drop |
 | `.sandcastle/archive.mts` | The record an accept leaves beside the issue: the verdicts copied and the README that indexes them |
+| `.sandcastle/android_evidence.mts` | What an Android-scope branch must prove on a device, and whether a run's evidence proves it |
 | `.sandcastle/report.mts`, `report_cli.mts` | Turning verdict files into the readable report, and the command that prints it |
 | `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |

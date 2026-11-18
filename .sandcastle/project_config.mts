@@ -6,6 +6,25 @@
 // adapter; `project.mts` fills it in.
 
 /**
+ * The Android facts a project hands in: which scenario file holds its device suite, which paths
+ * make a branch Android-scope, and the one scenario that proves a branch that changes none.
+ *
+ * `zig build verify` runs no Android test, so the device proof of an Android change is a recorded
+ * run of these methods. Keeping the paths and the smoke here means the harness derives the
+ * requirement from the branch and never names a repository path of its own.
+ */
+export interface AndroidConfig {
+  /** The scenario file whose added or changed methods are a branch's own proof. */
+  testFile: string;
+  /** Paths of the Android app itself: changing one proves nothing without a scenario. */
+  surface: readonly string[];
+  /** Paths that make a branch Android-scope: a change to any of them owes a device run. */
+  code: readonly string[];
+  /** The one method that proves a branch which adds or changes no scenario. */
+  smoke: string;
+}
+
+/**
  * Everything the harness must be told about the repository it runs in.
  *
  * These are project facts, not harness policy: a second consumer fills the same fields with its own
@@ -47,4 +66,6 @@ export interface ProjectConfig {
   };
   /** Where a reader finds the harness's operating manual and its decision records. */
   docs: { harness: string; decisions: string };
+  /** The device suite a branch of this project must prove before it can be accepted. */
+  android: AndroidConfig;
 }
