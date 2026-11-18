@@ -55,6 +55,37 @@ A run aimed at another issue, or one that left no `run.json` record of its aim, 
 The iteration bound is the **unticked** steps plus that final review; agent runs are two per step plus one.
 A resumed issue therefore costs only what is left.
 
+## The parity window
+
+A step-scoped suspension of the cross-arm parity check, for an issue whose steps change a contract
+parity observes — a `CommandTag`, a flow `Step` kind, a fixture `expect` field, a runner step. Parity
+compares the front ends **against each other**, so the first arm of such a change is red even when it is
+correct. The issue body declares the window, and the gate runs those steps with the check omitted.
+
+```md
+## Parity window
+off for steps 1–4 (#141) — `zig build verify -Dparity=off -Dparity-off-issue=141`
+parity is back on from step 5; final acceptance is plain `zig build verify`
+```
+
+The shape `plan.mts` reads, and refuses rather than guesses at:
+
+- The heading is `## Parity window`; the next `##` heading closes the section.
+- One line reads `off for steps <first>–<last>`, with an en dash, a hyphen or an em dash between the
+  ends; one step on its own is written `off for steps <N>`. A range that runs backwards, or one
+  written in words, is a refusal.
+- The section names the issue the window belongs to as `(#N)`. That issue must be open: the entry asks
+  the tracker once, before a plan is printed or a run starts, and a window with no owner stops there.
+- Every step in the range must be a step the issue has; a window that reaches past the last one is a
+  refusal, not a shorter window.
+- The shape written inside a fenced code block is documentation, never a declaration — an issue that
+  documents the window is not an issue that declares one.
+- A section whose first line is `closed` is history, so a later run cannot inherit a window; deleting
+  the section says the same thing.
+
+The window's steps run the gate with the flag; every other step and the whole-branch review run plain
+`zig build verify`. See ADR-0022 §3 and `docs/agents/verify-standards.md` for the gate half.
+
 ## The device lane is outside the gate
 
 `zig build verify` runs no Android test: the suite in `src/android/test/FileBridgeTest.java` needs a connected device, and the harness preflight checks none. A run therefore holds Android-only behaviour by the scenario the step adds (`AGENTS.md` rule 11, `implement-prompt.md` step 6) and by `zig build android-test -Dtest-filter=<method>` when a device happens to be up — never by `verify`. With no device the implementer says so; the owner runs the suite before a push, and the acceptance gate says which scenarios it ran.

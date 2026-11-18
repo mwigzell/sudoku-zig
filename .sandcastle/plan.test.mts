@@ -16,6 +16,7 @@ import {
   tickCriterion,
   tickStep,
   untickCriterion,
+  windowStateRefusal,
 } from "./plan.mts";
 import { PROJECT } from "./project.mts";
 const READY_LABEL = PROJECT.tracker.readyLabel;
@@ -304,4 +305,105 @@ test("a step that names no issue is the issue's own work, so the run is a single
     readSteps(CHECKBOXES).steps.map((step) => step.child),
     [null, null, null],
   );
+});
+
+/**
+ * An issue whose first four steps change a cross-arm contract, so it declares a parity window.
+ * The shape is the one the harness manual pins: a step range and the issue it belongs to.
+ */
+const WINDOW_BODY = `## Parity window
+off for steps 1–4 (#${ISSUE}) — \`zig build verify -Dparity=off -Dparity-off-issue=${ISSUE}\`
+parity is back on at the window's edge; final acceptance is plain \`zig build verify\`
+
+## Steps
+
+- [ ] **Step one:** the seam.
+- [ ] **Step two:** the gate option.
+- [ ] **Step three:** the runners.
+- [ ] **Step four:** the plan.
+- [ ] **Step five:** the loop.
+`;
+
+/** A five-step issue whose `## Parity window` section holds exactly `lines`. */
+function windowBody(...lines: string[]): string {
+  const steps = Array.from({ length: 5 }, (_, at) => `- [ ] **Step ${at + 1}:** work.`);
+  return [`## Parity window`, ...lines, "", "## Steps", "", ...steps, ""].join("\n");
+}
+
+test("a step-scoped parity window is read as the issue and the steps it covers", () => {
+  assert.deepEqual(planFor(WINDOW_BODY).parity, { issue: ISSUE, steps: [1, 2, 3, 4] });
+});
+
+test("a window covering one step is a one-step range, not a malformed one", () => {
+  const plan = planFor(windowBody(`off for steps 3 (#${ISSUE})`));
+  assert.deepEqual(plan.parity, { issue: ISSUE, steps: [3] });
+});
+
+test("an issue that declares no window runs with parity on", () => {
+  assert.equal(planFor(CHECKBOXES).parity, null);
+});
+
+/** This issue's own body shows the shape inside a fence; a documented example is not a declaration. */
+test("a window shown in a fenced code block is documentation, not a declaration", () => {
+  const body = `An issue whose arms move together writes:
+
+\`\`\`
+## Parity window
+off for steps 1–2 (#${ISSUE})
+\`\`\`
+
+## Steps
+
+- [ ] **Step one:** to do.
+- [ ] **Step two:** to do.
+`;
+  assert.equal(planFor(body).parity, null);
+});
+
+test("a window marked closed is no window, so a later run cannot inherit it", () => {
+  const plan = planFor(windowBody(`closed — parity came back on at the window's edge`));
+  assert.equal(plan.parity, null);
+  assert.equal(plan.refusal, null, "a closed window does not block the run");
+});
+
+test("a window range that runs backwards is refused", () => {
+  const plan = planFor(windowBody(`off for steps 4–1 (#${ISSUE})`));
+  assert.equal(plan.refusal?.kind, "parity-window-malformed");
+  assert.deepEqual(plan.parity, null);
+  assert.match(formatPlan(plan).join("\n"), /`## Parity window` cannot be read: .* runs backwards/u);
+});
+
+test("a window range written in words is refused, naming the line it could not read", () => {
+  const plan = planFor(windowBody(`off for steps one–four (#${ISSUE})`));
+  assert.equal(plan.refusal?.kind, "parity-window-malformed");
+  assert.match(formatPlan(plan).join("\n"), /`off for steps one–four \(#\d+\)`/u);
+});
+
+test("a window section with no step range at all is refused", () => {
+  const plan = planFor(windowBody(`parity is off for the front-end arms (#${ISSUE})`));
+  assert.equal(plan.refusal?.kind, "parity-window-malformed");
+});
+
+test("a window naming a step the issue does not have is refused", () => {
+  const plan = planFor(windowBody(`off for steps 1–9 (#${ISSUE})`));
+  assert.deepEqual(plan.refusal, { kind: "parity-window-step", step: 9, steps: 5 });
+  assert.match(formatPlan(plan).join("\n"), /the `## Parity window` names step/u);
+});
+
+test("a window that names no issue is refused: a window with no expiry has an owner instead", () => {
+  const plan = planFor(windowBody("off for steps 1–2"));
+  assert.deepEqual(plan.refusal, { kind: "parity-window-unnamed" });
+  assert.match(formatPlan(plan).join("\n"), /names no issue/u);
+});
+
+/** The tracker's answer decides whether a declared window may be used; the parser only holds the number. */
+test("a window on an issue the tracker does not report open is refused", () => {
+  assert.equal(windowStateRefusal(ISSUE, true), null, "an open issue may carry a window");
+  assert.deepEqual(windowStateRefusal(ISSUE, false), { kind: "parity-window-not-open", issue: ISSUE });
+});
+
+test("the plan prints the window so a reader sees which steps run without parity", () => {
+  const text = formatPlan(planFor(WINDOW_BODY)).join("\n");
+  assert.match(text, new RegExp(`window:\\s+parity off for steps 1–4 \\(#${ISSUE}\\)`, "u"));
+  assert.doesNotMatch(formatPlan(planFor(CHECKBOXES)).join("\n"), /window:/u, "no window, no line");
 });

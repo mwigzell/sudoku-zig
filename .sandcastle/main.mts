@@ -24,7 +24,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PROJECT } from "./project.mts";
-import { formatPlan, makePlan } from "./plan.mts";
+import { formatPlan, makePlan, refusalText, windowStateRefusal, type ParityWindow } from "./plan.mts";
 import { runSteps, type Tracker } from "./loop.mts";
 import { decideResume, type UnsettledRun } from "./resume.mts";
 import { readRunRecord } from "./run_record.mts";
@@ -35,6 +35,29 @@ function runDir(stamp: number): string {
 }
 
 const git = (args: string[]): string => execFileSync("git", args, { encoding: "utf8" }).trim();
+
+/**
+ * The tracker's answer on a declared parity window, as the refusal to print; `null` when it holds.
+ *
+ * Opening an issue is tracker work, so this is the entry's one `gh` call, not the pure parser's. An
+ * issue the tracker cannot resolve answers the same as a closed one: the window has no owner left.
+ */
+function windowStop(parity: ParityWindow | null): string | null {
+  if (parity === null) return null;
+  let open = false;
+  try {
+    const state = execFileSync(
+      "gh",
+      ["issue", "view", String(parity.issue), "--json", "state", "-q", ".state"],
+      { encoding: "utf8" },
+    ).trim();
+    open = state === "OPEN";
+  } catch (error) {
+    console.error(`[stop] the tracker could not resolve #${parity.issue}: ${(error as Error).message}`);
+  }
+  const refusal = windowStateRefusal(parity.issue, open);
+  return refusal === null ? null : refusalText(refusal);
+}
 
 /**
  * The real tracker: `gh` as the host's logged-in user.
@@ -162,6 +185,13 @@ async function main(): Promise<number> {
       labels: viewed.labels,
       project: PROJECT,
     });
+    // A window is only usable while its issue is open; the tracker is asked once, before anything
+    // is printed or started, so a run never inherits a window nobody owns.
+    const window = windowStop(shape.parity);
+    if (window !== null) {
+      console.error(`refused:   ${window}`);
+      return 1;
+    }
     for (const line of formatPlan(shape)) console.log(line);
     // A refused issue cannot be run, so the plan's exit code says so; a reader that scripts
     // the harness sees the refusal instead of a plan it would otherwise act on.
@@ -194,6 +224,12 @@ async function main(): Promise<number> {
 
   if (plan.refusal !== null) {
     for (const line of formatPlan(plan)) console.error(line);
+    return 1;
+  }
+
+  const window = windowStop(plan.parity);
+  if (window !== null) {
+    console.error(`refused:   ${window}`);
     return 1;
   }
 
