@@ -19,15 +19,19 @@
 
 import * as sandcastle from "@ai-hero/sandcastle";
 import { bwrap } from "@ai-hero/sandcastle/sandboxes/bwrap";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { PROJECT } from "./project.mts";
-import { formatPlan, makePlan, refusalText, windowStateRefusal, type ParityWindow } from "./plan.mts";
+import { formatPlan, makePlan, refusalText, windowStateRefusal, type ParityWindow, type Plan } from "./plan.mts";
 import { runSteps, type Tracker } from "./loop.mts";
 import { decideResume, type UnsettledRun } from "./resume.mts";
 import { readRunRecord } from "./run_record.mts";
+import { appendEvent } from "./events.mts";
+import { closeoutFor } from "./closeout.mts";
+import type { BranchDiff } from "./android_evidence.mts";
+import type { AndroidConfig } from "./project_config.mts";
 
 /** The host's run directory: one per run stamp, beside every other run this repository ran. */
 function runDir(stamp: number): string {
@@ -35,6 +39,30 @@ function runDir(stamp: number): string {
 }
 
 const git = (args: string[]): string => execFileSync("git", args, { encoding: "utf8" }).trim();
+
+/** The branch as git reports it: the paths it changes, and its diff of the scenario file. */
+export interface BranchReader {
+  diff(base: string, head: string, android: AndroidConfig): BranchDiff;
+}
+
+/**
+ * The host's reader: two `git diff` calls, so the required set is judged on the branch itself.
+ *
+ * The scenario file's diff is asked for on its own, so a method name is never read out of another
+ * file's hunk that happens to declare a `void` line.
+ */
+export function gitBranchReader(): BranchReader {
+  const run = (args: string[]): string => execFileSync("git", args, { encoding: "utf8" });
+  return {
+    diff: (base, head, android) => ({
+      touched: run(["diff", "--name-only", `${base}...${head}`])
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+      scenarios: run(["diff", `${base}...${head}`, "--", android.testFile]),
+    }),
+  };
+}
 
 /**
  * The tracker's answer on a declared parity window, as the refusal to print; `null` when it holds.
@@ -158,6 +186,74 @@ function readIssue(number: number): { title: string; body: string; labels: strin
   const raw = execFileSync("gh", ["issue", "view", String(number), "--json", "title,body,labels"], { encoding: "utf8" });
   const parsed = JSON.parse(raw) as { title: string; body: string; labels: { name: string }[] };
   return { title: parsed.title, body: parsed.body, labels: parsed.labels.map((label) => label.name) };
+}
+
+/**
+ * The line a run ends on, in its log and on its terminal, and the exit code that line earns.
+ *
+ * `kind` is the event the run records: `end` for a run left for accept, `stop` for one that is not.
+ */
+function endRun(runsDir: string, kind: "end" | "stop", message: string): number {
+  appendEvent(runsDir, { at: new Date().toISOString(), kind, message });
+  if (kind === "stop") {
+    console.error(`[stop] ${message}`);
+    return 1;
+  }
+  console.log(`[end] ${message}`);
+  return 0;
+}
+
+/**
+ * The host's closeout once the loop is green: prove an Android-scope branch on a device.
+ *
+ * The gate runs in the run's own worktree, as the host's process rather than the sandboxed agent, so
+ * the record names the branch tip rather than the host's checkout; it is written into the run
+ * directory accept reads. Anything but a green gate stops the run with its branch left for accept or
+ * drop, exactly as a stopped step does — a missing device is never a skip.
+ */
+function androidCloseout(input: { plan: Plan; tracker: Tracker; runsDir: string; worktree: string }): number {
+  const { plan, tracker, runsDir, worktree } = input;
+  // The declared section is the one Android fact the issue adds, so an unreadable body leaves the
+  // requirement unknown: a stop, as in accept, never an unchecked run.
+  let body = "";
+  try {
+    body = tracker.read(plan.issue).body;
+  } catch (error) {
+    return endRun(
+      runsDir,
+      "stop",
+      `stopped: the body of #${plan.issue} could not be read, so its declared scenarios are unknown: ${(error as Error).message}`
+    );
+  }
+
+  const base = git(["rev-parse", plan.targetBranch]);
+  const head = git(["rev-parse", plan.branch]);
+  const result = closeoutFor(
+    {
+      // The gate runs in the worktree, so the record path is absolute: a relative one would land there.
+      runsDir: resolve(runsDir),
+      issue: plan.issue,
+      body,
+      base,
+      head,
+      android: PROJECT.android,
+      diff: gitBranchReader().diff(base, head, PROJECT.android),
+    },
+    (command) => {
+      // The instrumented run's progress stays on this terminal; the gate's own report is captured,
+      // because it is the reason a stop names. A spawn that never started is reported too.
+      const run = spawnSync("bash", ["-c", command], {
+        cwd: worktree,
+        stdio: ["ignore", "inherit", "pipe"],
+        encoding: "utf8",
+      });
+      const output = run.error === undefined ? (run.stderr ?? "") : `${run.stderr ?? ""}\n${run.error.message}`;
+      if (run.status !== 0) process.stderr.write(output);
+      return { ok: run.status === 0, output };
+    },
+  );
+
+  return endRun(runsDir, result.kind === "stopped" ? "stop" : "end", result.message);
 }
 
 /**
@@ -288,8 +384,14 @@ async function main(): Promise<number> {
     copyToWorktree,
   });
 
+  const tracker = ghTracker();
+
   try {
-    return await runSteps({ plan, sandbox, tracker: ghTracker(), agent: workerAgent(), runsDir, project: PROJECT });
+    const steps = await runSteps({ plan, sandbox, tracker, agent: workerAgent(), runsDir, project: PROJECT });
+    // A green loop is not yet a finished run: an Android-scope branch is proved on a device before
+    // it is left for accept, so the proof is never a discovery at the merge.
+    if (steps !== 0) return steps;
+    return androidCloseout({ plan, tracker, runsDir, worktree: sandbox.worktreePath });
   } finally {
     // Close always: a stopped run leaves its branch and worktree for accept or drop, and the
     // verdicts already copied into the run directory survive the worktree's removal.

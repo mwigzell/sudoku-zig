@@ -7,7 +7,8 @@
 
 /**
  * The Android facts a project hands in: which scenario file holds its device suite, which paths
- * make a branch Android-scope, and the one scenario that proves a branch that changes none.
+ * make a branch Android-scope, the one scenario that proves a branch changing none, and how the
+ * gate that runs them is spelled.
  *
  * `zig build verify` runs no Android test, so the device proof of an Android change is a recorded
  * run of these methods. Keeping the paths and the smoke here means the harness derives the
@@ -22,6 +23,23 @@ export interface AndroidConfig {
   code: readonly string[];
   /** The one method that proves a branch which adds or changes no scenario. */
   smoke: string;
+  /**
+   * How the closeout proves a branch on a device: the gate command, and the script a stop names.
+   *
+   * The harness runs the command in the run's own worktree, so the record names the branch tip
+   * rather than the host's checkout; the command is the project's to spell.
+   */
+  gate: {
+    /**
+     * The command that proves `methods` and writes the record to `evidenceOut`.
+     *
+     * `evidenceOut` is absolute: the command runs in the worktree, where a relative path would
+     * land. `issue` labels the record, so a reader sees whose branch it proves.
+     */
+    command: (input: { methods: readonly string[]; evidenceOut: string; issue: number }) => string;
+    /** The script that starts the device a gate needs, which a missing-device stop tells you to run. */
+    startScript: string;
+  };
 }
 
 /**

@@ -1,6 +1,6 @@
 // android_evidence.mts — what an Android-scope branch must prove, and whether a run's record proves it.
 //
-// `zig build verify` cannot reach the device suite, so the proof of an Android change is a recorded
+// The project's gate cannot reach the device suite, so the proof of an Android change is a recorded
 // device run. Which scenarios it must cover is a property of the branch — the methods it adds or
 // changes, the ones the issue declares, and the pinned smoke when it changes none — never a list
 // guessed before the code exists. Everything here is handed its project facts, so the judgement can
@@ -60,7 +60,7 @@ export type RequiredSet =
   | { kind: "stop"; reason: string };
 
 /** The evidence file a device run leaves in the run directory. */
-const EVIDENCE_FILE = "android-evidence.json";
+export const EVIDENCE_FILE = "android-evidence.json";
 
 /** Where a run's device evidence sits: beside its verdicts, so both are read from one directory. */
 export function evidencePath(runsDir: string): string {

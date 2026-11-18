@@ -29,6 +29,8 @@ const GENERIC_MODULES = [
   "resume.mts",
   "events.mts",
   "report.mts",
+  "android_evidence.mts",
+  "closeout.mts",
 ];
 
 /** The text of one harness module, as committed. */
@@ -148,6 +150,10 @@ test("the adapter fills every fact the harness hands in", async () => {
 
   const android = PROJECT.android;
   assert.match(android.smoke, /^[A-Za-z_]\w*$/u, "the pinned smoke names one method");
+  assert.match(android.gate.startScript, /\S/u, "a missing device names the script that starts one");
+  const gate = android.gate.command({ methods: [android.smoke], evidenceOut: "/tmp/evidence.json", issue: 3 });
+  assert.match(gate, new RegExp(android.smoke, "u"), "the gate command carries the methods it must prove");
+  assert.match(gate, /\/tmp\/evidence\.json/u, "the gate command carries the record path accept reads");
   assert.ok(android.code.length > 0, "a project names the paths that make a branch Android-scope");
   assert.ok(android.surface.length > 0, "a project names the app paths a scenario must cover");
   assert.ok(

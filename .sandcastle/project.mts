@@ -64,5 +64,13 @@ export const PROJECT: ProjectConfig = {
       "scripts/android-test.sh",
     ],
     smoke: "coreAndJsLogLinesReachLogcat",
+    // The device target built for exactly the derived methods: the list is one `-e class` run, and
+    // the record goes where accept reads it. A missing device is named by the gate's own stop.
+    gate: {
+      command: ({ methods, evidenceOut, issue }) =>
+        `zig build android-gate -Dandroid-methods=${methods.join(",")} -Devidence-out='${evidenceOut}' ` +
+        `-Dandroid-issue=${issue} -Dandroid-why='required by this run branch'`,
+      startScript: "scripts/android-emulator-start.sh",
+    },
   },
 };

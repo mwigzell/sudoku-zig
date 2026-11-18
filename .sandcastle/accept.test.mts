@@ -17,6 +17,10 @@ const ANDROID: AndroidConfig = {
   surface: ["src/android/jni_host.zig"],
   code: ["src/android/"],
   smoke: "coreAndJsLogLinesReachLogcat",
+  gate: {
+    command: ({ methods, evidenceOut, issue }) => `gate --methods=${methods.join(",")} --evidence-out=${evidenceOut} --issue=${issue}`,
+    startScript: "scripts/android-emulator-start.sh",
+  },
 };
 
 /** A closer that records what it was asked to close, so no test shells out to `gh`. */

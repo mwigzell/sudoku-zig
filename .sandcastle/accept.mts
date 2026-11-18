@@ -7,10 +7,10 @@
 
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { checkAndroidEvidence, type BranchDiff } from "./android_evidence.mts";
+import { checkAndroidEvidence } from "./android_evidence.mts";
 import { readLedger } from "./ledger.mts";
 import { readRunRecord } from "./run_record.mts";
-import { ghTracker } from "./main.mts";
+import { gitBranchReader, ghTracker, type BranchReader } from "./main.mts";
 import { PROJECT } from "./project.mts";
 import { archiveRun, type RunCommit } from "./archive.mts";
 import type { AndroidConfig } from "./project_config.mts";
@@ -113,30 +113,6 @@ function commitArchive(dir: string, stamp: string, issue: number): void {
     // Staged changes: the record is new or corrected, so it goes in its own commit.
   }
   execFileSync("git", ["commit", "-m", `chore(sandcastle): archive run ${stamp} for #${issue}`]);
-}
-
-/** The branch as git reports it: the paths it changes, and its diff of the scenario file. */
-export interface BranchReader {
-  diff(base: string, head: string, android: AndroidConfig): BranchDiff;
-}
-
-/**
- * The host's reader: two `git diff` calls, so the required set is judged on the branch itself.
- *
- * The scenario file's diff is asked for on its own, so a method name is never read out of another
- * file's hunk that happens to declare a `void` line.
- */
-export function gitBranchReader(): BranchReader {
-  const git = (args: string[]): string => execFileSync("git", args, { encoding: "utf8" });
-  return {
-    diff: (base, head, android) => ({
-      touched: git(["diff", "--name-only", `${base}...${head}`])
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0),
-      scenarios: git(["diff", `${base}...${head}`, "--", android.testFile]),
-    }),
-  };
 }
 
 /**
