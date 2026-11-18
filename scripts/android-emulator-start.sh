@@ -22,11 +22,9 @@ for tool in "$EMULATOR" "$ADB"; do
   fi
 done
 
-# `scripts/android-test.sh` insists on exactly one connected device, so refuse rather than race someone else's.
+# Several devices may be attached; tests and the gate target one by serial (`ANDROID_SERIAL`).
 if "$ADB" devices | tail -n +2 | grep -q "device$"; then
-  echo "error: a device is already connected; stop it first (scripts/android-emulator-stop.sh)" >&2
-  "$ADB" devices >&2
-  exit 1
+  echo "note: other devices are connected; this one is launched on $SERIAL, so name it when targeting a run" >&2
 fi
 
 echo "starting $AVD on $SERIAL (headless, software GPU)"

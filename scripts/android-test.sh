@@ -96,12 +96,23 @@ done < <(find "$OUT/classes" -name '*.class' -print)
 "$ZIPALIGN" -f 4 "$OUT/unaligned.apk" "$OUT/aligned.apk"
 sign_debug_apk "$OUT/aligned.apk" "$OUT/sudoku-test.apk"
 
-# ── device: one connected device; back up the app's data, set the user's default save file aside, restore on exit ──
+# ── device: ANDROID_SERIAL names the one to use; otherwise exactly one; back up the app's data, set the user's default save file aside, restore on exit ──
 DEVICES="$("$ADB" devices | awk 'NR > 1 && $2 == "device" {print $1}')"
-if [[ "$(echo "$DEVICES" | grep -c .)" -ne 1 ]]; then
-  echo "error: expected exactly one connected device or emulator (adb devices); start one with scripts/android-emulator-start.sh" >&2
-  exit 1
+if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+  if ! grep -qxF -- "$ANDROID_SERIAL" <<<"$DEVICES"; then
+    echo "error: ANDROID_SERIAL=$ANDROID_SERIAL is not a connected device or emulator (adb devices); start one with scripts/android-emulator-start.sh" >&2
+    exit 1
+  fi
+  SERIAL="$ANDROID_SERIAL"
+else
+  if [[ "$(echo "$DEVICES" | grep -c .)" -ne 1 ]]; then
+    echo "error: expected exactly one connected device or emulator, or ANDROID_SERIAL naming one (adb devices); start one with scripts/android-emulator-start.sh" >&2
+    exit 1
+  fi
+  SERIAL="$DEVICES"
 fi
+# adb itself targets this serial, so every call below reaches the device the evidence names.
+export ANDROID_SERIAL="$SERIAL"
 
 # The user's default save file (and renamed copies) move aside, not delete-and-push: a move keeps their MediaStore rows.
 HOLD_DIR="/sdcard/Download/sudoku-test-hold"

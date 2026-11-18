@@ -100,7 +100,7 @@ Start an emulator, then run:
 ```bash
 emulator -list-avds
 emulator -avd <name> &
-adb devices            # exactly one device, state "device"
+adb devices            # one device in state "device"; ANDROID_SERIAL picks among several
 zig build android-test
 zig build android-test -Dtest-filter=<method>   # one FileBridgeTest method
 ```

@@ -19,9 +19,9 @@ and the device lane is the one that costs minutes.
 
 The device lane is the **full** suite, never a `-Dtest-filter` run: a filtered run proves a method,
 which is what the close gate requires of a branch, not what a push requires of the commit it lands.
-It needs exactly one device up; a missing device **fails** the gate, naming
-`scripts/android-emulator-start.sh`, and is never skipped. `zig build verify` stays device-free —
-this gate is the only place the toolchain reaches a device.
+It needs a device up — `ANDROID_SERIAL` names which one when several are attached — and a missing device
+**fails** the gate, naming `scripts/android-emulator-start.sh`; a run is never skipped.
+`zig build verify` stays device-free — this gate is the only place the toolchain reaches a device.
 
 ## Record
 

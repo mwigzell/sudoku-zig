@@ -90,6 +90,8 @@ pub const Request = struct {
     java_source: []const u8,
     /// The issue whose branch required the run.
     issue: ?u32 = null,
+    /// The serial `ANDROID_SERIAL` named, when the caller set it; null means the one attached device.
+    device: ?[]const u8 = null,
 };
 
 /// Why a gate run stopped. `runGate` reports each on stderr, so a caller only has to exit non-zero.
@@ -98,7 +100,7 @@ pub const Error = error{
     DirtyWorktree,
     /// No device is attached; the run is never skipped for want of one.
     NoDevice,
-    /// More than one device is attached, so the record could not say which one was proved.
+    /// More than one device is attached and none is named, so the record could not say which one was proved.
     ManyDevices,
     /// The branch commit could not be read, so the record could not name it.
     UnknownCommit,
@@ -128,7 +130,7 @@ fn report(comptime fmt: []const u8, args: anytype) void {
 /// The gate's one instrumented run for a named method set, recorded as evidence.
 ///
 /// Refuses before running when the worktree holds uncommitted changes (the code under test would not
-/// be the code a reader can check) or when exactly one device is not attached (a run that did not
+/// be the code a reader can check) or when there is no device to prove the run (a run that did not
 /// happen proves nothing). A failed run still writes its record, marked `failed`, because a refusal
 /// a reader cannot see is worse than a red one.
 pub fn runGate(io: std.Io, gpa: std.mem.Allocator, request: Request, deps: Deps) Error!void {
@@ -148,7 +150,7 @@ fn gateRun(io: std.Io, gpa: std.mem.Allocator, request: Request, deps: Deps) Err
 
     try requireCleanTree(io, a, deps);
     const commit = try readCommit(io, a, deps);
-    const device = try oneDevice(io, a, deps);
+    const device = try selectDevice(io, a, deps, request.device);
 
     const methods = try methodNames(a, request.required);
     const csv = try std.mem.join(a, ",", methods);
@@ -205,23 +207,44 @@ fn readCommit(io: std.Io, a: std.mem.Allocator, deps: Deps) Error![]const u8 {
     return commit;
 }
 
-/// The one device that proves the run. `scripts/android-test.sh` refuses anything but one, so a
-/// missing or crowded device list is refused here with the instruction that fixes it.
-fn oneDevice(io: std.Io, a: std.mem.Allocator, deps: Deps) Error![]const u8 {
+/// The device that proves the run: the serial `ANDROID_SERIAL` named, else the only attached device.
+/// A missing device, a named one that is not attached, or a crowded list with none named is refused
+/// with the instruction that fixes it — a run that did not happen proves nothing.
+fn selectDevice(io: std.Io, a: std.mem.Allocator, deps: Deps, requested: ?[]const u8) Error![]const u8 {
     const listed = readStdout(io, a, deps, &.{ "adb", "devices" }) orelse {
         report("adb devices could not be read — is platform-tools on PATH? start a device with {s}", .{START_SCRIPT});
         return Error.NoDevice;
     };
+    if (requested) |serial| {
+        if (serial.len > 0) {
+            if (!listsDevice(listed, serial)) {
+                report("ANDROID_SERIAL names {s}, which adb devices does not list as connected; start it with {s}", .{ serial, START_SCRIPT });
+                return Error.NoDevice;
+            }
+            return serial;
+        }
+    }
     const found = parseDevices(listed);
     if (found.count == 0) {
         report("no device attached — start one with {s}; this run is never skipped", .{START_SCRIPT});
         return Error.NoDevice;
     }
     if (found.count > 1) {
-        report("{d} devices attached — exactly one proves a run; stop the others with {s}", .{ found.count, STOP_SCRIPT });
+        report("{d} devices attached — set ANDROID_SERIAL to the one that proves the run", .{found.count});
         return Error.ManyDevices;
     }
     return found.first;
+}
+
+/// Whether `adb devices` output lists `serial` as connected.
+fn listsDevice(listed: []const u8, serial: []const u8) bool {
+    var lines = std.mem.splitScalar(u8, listed, '\n');
+    _ = lines.next(); // the "List of devices attached" header
+    while (lines.next()) |line| {
+        const found = connectedSerial(line) orelse continue;
+        if (std.mem.eql(u8, found, serial)) return true;
+    }
+    return false;
 }
 
 /// Run one command and hand back its stdout; `null` when the command could not be read. The arena
@@ -240,17 +263,23 @@ const Devices = struct {
     count: usize = 0,
 };
 
-/// Read `adb devices` output: every line after the header whose state is `device`. A device that is
-/// `offline` or `unauthorized` is attached but unusable, so it is not counted.
+/// The serial on one `adb devices` line when its state is `device`, else null. An `offline` or
+/// `unauthorized` device is attached but unusable, so it is not a device the run can use.
+fn connectedSerial(line: []const u8) ?[]const u8 {
+    var fields = std.mem.tokenizeAny(u8, line, " \t\r");
+    const serial = fields.next() orelse return null;
+    const state = fields.next() orelse return null;
+    if (!std.mem.eql(u8, state, DEVICE_STATE)) return null;
+    return serial;
+}
+
+/// Read `adb devices` output: every line after the header whose state is `device`.
 fn parseDevices(text: []const u8) Devices {
     var found: Devices = .{};
     var lines = std.mem.splitScalar(u8, text, '\n');
     _ = lines.next(); // the "List of devices attached" header
     while (lines.next()) |line| {
-        var fields = std.mem.tokenizeAny(u8, line, " \t\r");
-        const serial = fields.next() orelse continue;
-        const state = fields.next() orelse continue;
-        if (!std.mem.eql(u8, state, DEVICE_STATE)) continue;
+        const serial = connectedSerial(line) orelse continue;
         found.count += 1;
         if (found.count == 1) found.first = serial;
     }
@@ -422,12 +451,13 @@ pub fn main(init: std.process.Init) !void {
         .manifest = cli.manifest,
         .java_source = cli.java_source,
         .issue = cli.issue,
+        // `adb` itself honours ANDROID_SERIAL, so the serial the run proves is also the one the
+        // test script targets when several devices are attached.
+        .device = init.environ_map.get("ANDROID_SERIAL"),
     }, system_deps) catch std.process.exit(1);
 }
 /// The script that starts the agent's own emulator, which is what a missing device is told to run.
 const START_SCRIPT = "scripts/android-emulator-start.sh";
-/// The script that stops that emulator, which is what a crowded device list is told to run.
-const STOP_SCRIPT = "scripts/android-emulator-stop.sh";
 /// The device suite's runner: it builds the test APK and instruments one run on one device.
 const TEST_SCRIPT = "scripts/android-test.sh";
 /// The `adb devices` state that means a device is usable.
@@ -714,6 +744,44 @@ test "gate: two devices are refused, because the record could not say which one 
     defer gpa.free(path);
 
     try std.testing.expectError(error.ManyDevices, runGate(io, gpa, testRequest(&two_methods, path), .{ .ctx = &fake, .run = fakeRun, .now = fakeNow }));
+    try std.testing.expectEqual(@as(usize, 0), fake.runs);
+}
+
+test "gate: ANDROID_SERIAL picks the device that proves the run when several are attached" {
+    const io = std.testing.io;
+    const gpa = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var fake = Fake{ .devices = "List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice\n" };
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path = try tempEvidencePath(io, gpa, tmp.dir, &path_buf);
+    defer gpa.free(path);
+
+    var request = testRequest(&two_methods, path);
+    request.device = "emulator-5556";
+    try runGate(io, gpa, request, .{ .ctx = &fake, .run = fakeRun, .now = fakeNow });
+
+    const parsed = try readWritten(io, gpa, tmp.dir, "android-evidence.json");
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("emulator-5556", parsed.value.device);
+    try std.testing.expectEqual(@as(usize, 1), fake.runs);
+}
+
+test "gate: a named device that is not attached is refused, never silently swapped" {
+    const io = std.testing.io;
+    const gpa = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var fake = Fake{ .devices = "List of devices attached\nemulator-5554\tdevice\n" };
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path = try tempEvidencePath(io, gpa, tmp.dir, &path_buf);
+    defer gpa.free(path);
+
+    var request = testRequest(&two_methods, path);
+    request.device = "emulator-9999";
+    try std.testing.expectError(error.NoDevice, runGate(io, gpa, request, .{ .ctx = &fake, .run = fakeRun, .now = fakeNow }));
     try std.testing.expectEqual(@as(usize, 0), fake.runs);
 }
 
