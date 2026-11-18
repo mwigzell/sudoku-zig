@@ -158,7 +158,7 @@ _Avoid_: naming a flow after one platform's handler
 
 **Step**:
 One operation a flow asks the platform to do, such as "ask this question" or "write the saved game to the current file". Named for what it achieves, not for the platform call that carries it out; a command's own step takes the command's name, and steps about the puzzle say `_puzzle` (ADR-0016). Each platform has one handler per step, used by every flow.
-_Avoid_: generic steps told apart by a flag; a handler set per flow
+_Avoid_: generic steps told apart by a flag; a handler set per flow; bare "step" in harness prose (that is an **Issue step**)
 
 | Step | The platform… |
 |---|---|
@@ -182,6 +182,9 @@ _Avoid_: generic steps told apart by a flag; a handler set per flow
 | `show_status`, `done` | ends the flow |
 
 `save`, `save_as` and `autosave` carry `replace`: a handler writing a fixed file (native path, host default file, bound file) answers `exists` without writing when the file is there and `replace` is false; core then reissues with `replace` or asks "Replace file?" first, per the **Lane**. A picker never answers `exists`. A step a platform never receives (e.g. `reclaim_file` on native and web) answers failed with a reason for the log.
+
+**Flow step**:
+A **Step** qualified when the context could also mean an **Issue step**; prefer the bare word in core documentation and the qualified one in harness documentation.
 
 **Answer**:
 What the platform reports back after a step (`Input`): the result, or a failure with a reason for the log. Writes answer `wrote` (`ok`, `exists`, `cancelled`, `taken`, `failed`); `restore`, `open`, `import_puzzle` and `paste_puzzle` share one `read` answer (bytes and an optional name, `cancelled`, or `failed`). `prompt_message` answers `pressed`, the index of the button. `forget_current_file` answers `forgot`: `forgotten`, or `refused` with the settings refusal core keeps (`settings_unreadable` / `settings_unwritable`), or `failed` with a reason — a store error that is no refusal, or an adapter's own failure. The startup flow logs a `failed` reason once and ends on core's generic failure sentence, because no settings repair is true of it.
@@ -352,6 +355,62 @@ _Avoid_: `step(line)`, `page_bytes_out`, or other REPL imports (removed — see 
 **glue.js**:
 Thin loader/instantiator — marshals JSON and byte buffers across the wasm export table. Shared by the served page and node contract tests.
 _Avoid_: embedding game rules or SaveFormat parsing
+
+### Sandcastle (issue → branch)
+
+The words the run harness, the issue bodies and ADR-0022 use. They describe how work is carried out; none of them names app behaviour.
+
+**Tracker**:
+The issue tracker — GitHub (`mwigzell/sudoku-zig`) — and the only issue surface. Read and written through `gh` by the run host and the human's accept command; never a local file.
+_Avoid_: a local issue list, a `.scratch` ledger
+
+**Run**:
+One sandcastle execution aimed at one issue: one branch, one worktree, one run directory, one tick ledger. A repository holds one unaccepted run at a time; aiming at the same issue continues it.
+_Avoid_: job, session (see **Agent session**)
+
+**Run host**:
+The harness process on the developer's machine (`.sandcastle/main.mts` → `loop.mts`), outside the agent's sandbox. It runs the loop, inspects the branch's commits, reads the verdicts, runs `gh`, writes the tracker, and decides pass or stop from a verdict.
+_Avoid_: host (that is the app's platform entry, `src/native/host.zig`), orchestrator
+
+**Agent session**:
+One fresh agent process inside the sandbox — an **implementer** or a **reviewer**. It writes only its commit (implementer) or its verdict file (reviewer); it has no tracker write path.
+_Avoid_: worker (the model's role name, not the actor), run
+
+**Implementer**:
+The agent session that performs one issue step: red test, green, verify, docs, one commit.
+_Avoid_: coder, author
+
+**Reviewer**:
+The agent session that tries to falsify one issue step and writes `.sandcastle/verdict.json`. It may not commit and may not write the tracker; its verdict is evidence, not a decision.
+_Avoid_: judge (the host decides from the verdict)
+
+**Issue step**:
+One `- [ ]` checkbox under an issue's `## Steps` — the unit a run executes, an implementer performs and a reviewer judges. Always qualify it as an issue step in harness prose.
+_Avoid_: bare "step" in harness prose; that is a **Step** (flow step) in `src/core/flow/`. Write **flow step** when the core one is meant.
+
+**Acceptance criterion**:
+One `- [ ]` under an issue's `## Acceptance criteria`. The whole-branch review judges every one with evidence; the run host ticks the ones it proved.
+_Avoid_: AC as a synonym for an issue step
+
+**Verdict**:
+A reviewer's structured answer — one issue step's verdict, or the whole-branch acceptance-criteria matrix — written to `.sandcastle/verdict.json` and copied into the run directory. The host decides pass or stop from it; the reviewer does not.
+_Avoid_: decision, approval
+
+**Tick**:
+The run host's edit that flips one checkbox in the issue body (an issue step or an acceptance criterion). Every tick is recorded in the run's ledger so a drop can take back exactly those it wrote.
+_Avoid_: marking done, closing (closing is accept)
+
+**Parity window**:
+A step-scoped, issue-declared period in which `verify` runs with `-Dparity=off`, because a cross-arm contract change cannot be green arm by arm. It names an open issue, ends at the first post-window issue step (plain verify), and is recorded in ADR-0022.
+_Avoid_: turning parity off without a declared window
+
+**Accept / Drop**:
+The human's decision on a finished run: accept merges the run branch and closes the issue; drop reverts the run's ticks and deletes its commits. The agent never runs either.
+_Avoid_: the agent accepting, ticking acceptance criteria or closing the issue
+
+**Human** (the owner):
+The person who decides accept or drop, triages issues, can stop a run at any moment, and is the only actor who may commission or settle one. Not an agent session or the model's role.
+_Avoid_: "the user" (ambiguous with the player)
 
 ## Architectural Decisions
 
