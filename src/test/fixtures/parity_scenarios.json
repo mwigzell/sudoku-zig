@@ -160,6 +160,29 @@
       }
     },
     {
+      "name": "relaunch_restores_the_bookmark_and_rewind",
+      "summary": "A bookmark autosaved with Auto Save on comes back on the next launch: Rewind is offered again and returns the board to the bookmarked move.",
+      "config": {"auto_restore": true, "auto_new": false, "auto_save": true},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [
+        {"fill": {"row": 0, "col": 0, "digit": 4}},
+        {"bookmark": true},
+        {"fill": {"row": 0, "col": 1, "digit": 8}},
+        {"relaunch": true},
+        {"rewind": true}
+      ],
+      "expect": {
+        "questions": 0,
+        "written": ["sudoku.sud", "sudoku.sud", "sudoku.sud", "sudoku.sud"],
+        "legend": {"undo": true, "redo": true, "rewind": false},
+        "probes": [
+          {"row": 0, "col": 0, "value": 4, "given": false},
+          {"row": 0, "col": 1, "value": 0, "given": false}
+        ]
+      }
+    },
+    {
       "name": "paste_valid_resets_history",
       "summary": "Pasting a valid puzzle replaces the board with new givens and clears undo history.",
       "config": {"auto_restore": false, "auto_new": false, "auto_save": false},

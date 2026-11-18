@@ -357,6 +357,33 @@ test "startup restore reads the file, shows the game and continues it" {
     try std.testing.expectEqual(@import("../file_policy.zig").WriteContext.continuation, h.session.write_context);
 }
 
+test "startup restore keeps the bookmark, so Rewind is offered again" {
+    var h = try Harness.init();
+    defer h.deinit();
+
+    // A game the player bookmarked and then moved past, saved as the file startup reads.
+    var source = try game_engine.GameEngine.init(open_line, config.Config.default());
+    defer source.deinit();
+    _ = source.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = .four } });
+    _ = source.exec(.{ .bookmark = {} });
+    _ = source.exec(.{ .fill = .{ .row = 0, .col = 3, .digit = .eight } });
+    const bytes = try source.toSaveFormat(std.testing.allocator);
+    defer std.testing.allocator.free(bytes);
+
+    var f = h.flow(restore_opts, test_file);
+    _ = f.next(.start);
+    const shown = f.next(.{ .read = .{ .file = .{ .bytes = bytes } } }).show_game;
+    try std.testing.expectEqual(@as(?u16, 1), h.engine.state.bookmark);
+    try std.testing.expect(shown.legend.rewind);
+    try std.testing.expectEqual(Step.done, f.next(.ack));
+
+    // The restored bookmark is usable, not just present: Rewind returns the bookmarked board.
+    const rewound = h.engine.exec(.{ .rewind = {} });
+    const cell = @import("../board/cell.zig");
+    try std.testing.expectEqual(cell.CellValue.four, rewound.ok.board_view.get(0, 2));
+    try std.testing.expectEqual(cell.CellValue.zero, rewound.ok.board_view.get(0, 3));
+}
+
 test "startup restore of a solved game asks, and New game writes the new game" {
     const policy = @import("../file_policy.zig");
     var h = try Harness.init();

@@ -68,13 +68,14 @@ comptime {
 const NIBBLE_BITS: u3 = 4;
 const NIBBLE_MASK: u8 = 0x0F;
 const MAX_CELL_VALUE: u8 = 9;
-/// Sections this app writes: board, givens, history, status and marks always; the bookmark only
-/// when the player has pinned one.
-const SECTION_COUNT: u16 = 6;
+/// Most sections one file can hold: board, givens, history, status and marks always, plus the
+/// bookmark when the player has pinned one. A file without a bookmark holds one fewer (see
+/// `sectionCount`), so this is the cap, not every file's count.
+const MAX_SECTION_COUNT: u16 = 6;
 
-/// Sections in a save of this state: a game with no bookmark omits that section.
+/// Sections this state's file holds: a game with no bookmark omits that section.
 fn sectionCount(self: *const state_mod.State) u16 {
-    return if (self.bookmark == null) SECTION_COUNT - 1 else SECTION_COUNT;
+    return if (self.bookmark == null) MAX_SECTION_COUNT - 1 else MAX_SECTION_COUNT;
 }
 
 // ---------------------------------------------------------------------------
@@ -466,7 +467,7 @@ test "header is magic, version 1 and the section count" {
 
     try std.testing.expectEqualStrings("SUD0", buf[0..4]);
     try std.testing.expectEqual(@as(u16, 1), std.mem.readInt(u16, buf[4..6], .little));
-    try std.testing.expectEqual(SECTION_COUNT, std.mem.readInt(u16, buf[6..8], .little));
+    try std.testing.expectEqual(MAX_SECTION_COUNT, std.mem.readInt(u16, buf[6..8], .little));
 }
 
 test "status is stored at its own length, not padded" {
@@ -745,7 +746,7 @@ test "a save with no bookmark writes no bookmark section" {
     const buf = try toSaveFormat(&st, std.testing.allocator);
     defer std.testing.allocator.free(buf);
 
-    try std.testing.expectEqual(SECTION_COUNT - 1, std.mem.readInt(u16, buf[6..8], .little));
+    try std.testing.expectEqual(MAX_SECTION_COUNT - 1, std.mem.readInt(u16, buf[6..8], .little));
     var loaded = try fromSaveFormat(std.testing.allocator, buf);
     defer loaded.history.deinit();
     try std.testing.expectEqual(@as(?u16, null), loaded.bookmark);

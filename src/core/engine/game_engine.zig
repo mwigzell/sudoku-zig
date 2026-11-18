@@ -76,6 +76,9 @@ pub const GameEngine = struct {
     pencil_mode: bool = false,
     /// The last command set or removed a mark (a mark, or its Undo or Redo).
     marks_changed: bool = false,
+    /// Whether the command just run changed the game. `unchanged()` is the only ok result that
+    /// leaves this false; autosave reads it so a command that could not act writes nothing.
+    last_exec_changed: bool = true,
     /// The selected cell: set by a select, or by the last cell a move changed (fill, clear, mark,
     /// or their Undo or Redo). Deselect and loading a game drop it; Hint, Solve and refused moves
     /// leave it. Session state, never saved.
@@ -326,7 +329,13 @@ pub const GameEngine = struct {
     pub fn unchanged(self: *@This()) Event {
         self.beginEventMsg();
         self.marks_changed = false;
+        self.last_exec_changed = false;
         return self.finishOkEvent(self.state.board.asView(), false, null, false);
+    }
+
+    /// Whether the command just run changed the game; false after an `unchanged()` result.
+    pub fn lastExecChanged(self: *const @This()) bool {
+        return self.last_exec_changed;
     }
 
     /// One error string in engine scratch — safe for wasm JSON after exec returns.
@@ -367,6 +376,7 @@ pub const GameEngine = struct {
     pub fn exec(self: *@This(), cmd: command.Command) Event {
         self.beginEventMsg();
         self.marks_changed = false;
+        self.last_exec_changed = true;
         switch (cmd) {
             .fill => |f| {
                 if (self.pencil_mode and f.digit != .zero) {

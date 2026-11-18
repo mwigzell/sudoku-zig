@@ -218,7 +218,7 @@ pub const CommandFlow = struct {
             .show_status, .prompt_message => return self.finish(step),
             else => return step,
         }
-        self.autosave = AutosaveFlow.afterCommand(self.session, self.cfg.auto_save, self.cmd);
+        self.autosave = AutosaveFlow.afterCommand(self.session, self.cfg.auto_save, self.cmd, self.engine.lastExecChanged());
         self.phase = .autosaving;
         return self.continueAutosave(.start);
     }
@@ -273,6 +273,51 @@ test "a move shows the board and the edited cell, then autosaves to the default 
     const shown = flow.next(.start).show_game;
     try testing.expectEqual(@as(u4, 0), shown.frame.selected.?.row);
     try testing.expect(shown.legend.undo);
+    try testing.expect(flow.next(.ack) == .resolve_default_target);
+    try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).autosave.name);
+    try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
+}
+
+test "a rewind that cannot act changes nothing and does not autosave" {
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    var engine = try testEngine(cfg);
+    defer engine.deinit();
+    var session = FileSession{};
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .rewind = {} });
+
+    const shown = flow.next(.start).show_game;
+    try testing.expect(!shown.legend.rewind);
+    // No bookmark, so Rewind cannot act: no write, no default target, no binding.
+    try testing.expect(flow.next(.ack) == .done);
+}
+
+test "a no-op rewind writes nothing even when a file is already bound" {
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    var engine = try testEngine(cfg);
+    defer engine.deinit();
+    var session = FileSession{};
+    session.setCurrentFile("game.sud");
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .rewind = {} });
+
+    _ = flow.next(.start).show_game;
+    // Bound file or not, a rewind that cannot act must not write it.
+    try testing.expect(flow.next(.ack) == .done);
+}
+
+test "a rewind that acts autosaves the rewound game" {
+    var cfg = config.Config.default();
+    cfg.auto_save = true;
+    var engine = try testEngine(cfg);
+    defer engine.deinit();
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
+    _ = engine.exec(.{ .bookmark = {} });
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 3, .digit = .nine } });
+    var session = FileSession{};
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .rewind = {} });
+
+    _ = flow.next(.start).show_game;
     try testing.expect(flow.next(.ack) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).autosave.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);

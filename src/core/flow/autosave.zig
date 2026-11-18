@@ -15,6 +15,8 @@ const SaveFlow = save_mod.SaveFlow;
 pub const AutosaveFlow = struct {
     session: *FileSession,
     auto_save: bool,
+    /// Whether the command changed the game; a no-op result must not write or bind a file.
+    changed: bool = true,
     kind: Kind,
     phase: Phase = .start,
     save: SaveFlow = undefined,
@@ -22,9 +24,10 @@ pub const AutosaveFlow = struct {
     const Kind = union(enum) { after_command: command.CommandTag, flush };
     const Phase = enum { start, resolving, saving, finished };
 
-    /// Autosave after `tag` ran; skipped when autosave is off or the command does not change the game.
-    pub fn afterCommand(session: *FileSession, auto_save: bool, tag: command.CommandTag) AutosaveFlow {
-        return .{ .session = session, .auto_save = auto_save, .kind = .{ .after_command = tag } };
+    /// Autosave after `tag` ran; skipped when autosave is off, the command changed nothing, or
+    /// the tag never changes the game.
+    pub fn afterCommand(session: *FileSession, auto_save: bool, tag: command.CommandTag, changed: bool) AutosaveFlow {
+        return .{ .session = session, .auto_save = auto_save, .changed = changed, .kind = .{ .after_command = tag } };
     }
 
     /// Final write when the app is closing: only continues an existing current file, since nobody can be asked.
@@ -59,6 +62,7 @@ pub const AutosaveFlow = struct {
     }
 
     fn startAfterCommand(self: *AutosaveFlow, tag: command.CommandTag) Step {
+        if (!self.changed) return self.finish(.done);
         if (!file_policy.commandTriggersAutoSave(tag)) return self.finish(.done);
         if (self.session.currentFile()) |current| return self.saveTo(current);
         self.phase = .resolving;
@@ -89,19 +93,19 @@ const testing = std.testing;
 
 test "autosave off does nothing" {
     var session = FileSession{};
-    var flow = AutosaveFlow.afterCommand(&session, false, .fill);
+    var flow = AutosaveFlow.afterCommand(&session, false, .fill, true);
     try testing.expect(flow.next(.start) == .done);
 }
 
 test "commands that do not change the game do not autosave" {
     var session = FileSession{};
-    var flow = AutosaveFlow.afterCommand(&session, true, .set_config);
+    var flow = AutosaveFlow.afterCommand(&session, true, .set_config, true);
     try testing.expect(flow.next(.start) == .done);
 }
 
 test "with no current file autosave asks the platform for its default target" {
     var session = FileSession{};
-    var flow = AutosaveFlow.afterCommand(&session, true, .fill);
+    var flow = AutosaveFlow.afterCommand(&session, true, .fill, true);
     try testing.expect(flow.next(.start) == .resolve_default_target);
     try testing.expectEqualStrings("sudoku.sud", flow.next(.{ .default_target = "sudoku.sud" }).autosave.name);
     try testing.expect(flow.next(.{ .wrote = .{ .ok = "sudoku.sud" } }) == .done);
@@ -112,7 +116,7 @@ test "with no current file autosave asks the platform for its default target" {
 test "autosave follows the current file" {
     var session = FileSession{ .write_context = .continuation };
     session.setCurrentFile("/docs/game.sud");
-    var flow = AutosaveFlow.afterCommand(&session, true, .undo);
+    var flow = AutosaveFlow.afterCommand(&session, true, .undo, true);
     try testing.expectEqualStrings("/docs/game.sud", flow.next(.start).autosave.name);
     const write = flow.next(.{ .wrote = .exists }).autosave;
     try testing.expectEqualStrings("/docs/game.sud", write.name);
@@ -124,7 +128,7 @@ test "autosave onto an existing file after New asks first and keeps it when decl
     var session = FileSession{};
     session.setCurrentFile("game.sud");
     session.apply(.new_game_success);
-    var flow = AutosaveFlow.afterCommand(&session, true, .paste);
+    var flow = AutosaveFlow.afterCommand(&session, true, .paste, true);
     _ = flow.next(.start);
     try testing.expectEqualStrings(std.fmt.comptimePrint(file_policy.REPLACE_CONFIRM_FMT, .{"game.sud"}), flow.next(.{ .wrote = .exists }).prompt_message.text);
     try testing.expect(flow.next(.{ .pressed = step_mod.QUESTION_CANCEL }) == .done);
@@ -134,7 +138,7 @@ test "autosave onto an existing file after New asks first and keeps it when decl
 test "autosave write failure is shown" {
     var session = FileSession{};
     session.setCurrentFile("game.sud");
-    var flow = AutosaveFlow.afterCommand(&session, true, .fill);
+    var flow = AutosaveFlow.afterCommand(&session, true, .fill, true);
     _ = flow.next(.start);
     try testing.expectEqualStrings(save_mod.SAVE_FAILED_MSG, flow.next(.{ .wrote = .{ .failed = "AccessDenied" } }).prompt_message.text);
 }
