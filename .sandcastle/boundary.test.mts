@@ -30,6 +30,8 @@ const GENERIC_MODULES = [
   "events.mts",
   "report.mts",
   "archive.mts",
+  "android_evidence.mts",
+  "closeout.mts",
 ];
 
 /** The text of one harness module, as committed. */
@@ -146,6 +148,25 @@ test("the adapter fills every fact the harness hands in", async () => {
   assert.match(paths.runsDir, /\S/u);
   assert.match(paths.archive, /\S/u, "an accepted run's record has a home");
   assert.match(paths.env, /\S/u);
+
+  const android = PROJECT.android;
+  assert.match(android.smoke, /^[A-Za-z_]\w*$/u, "the pinned smoke names one method");
+  assert.match(android.gate.startScript, /\S/u, "a missing device names the script that starts one");
+  const gate = android.gate.command({ methods: [android.smoke], evidenceOut: "/tmp/evidence.json", issue: 3 });
+  assert.match(gate, new RegExp(android.smoke, "u"), "the gate command carries the methods it must prove");
+  assert.match(gate, /\/tmp\/evidence\.json/u, "the gate command carries the record path accept reads");
+  assert.ok(android.code.length > 0, "a project names the paths that make a branch Android-scope");
+  assert.ok(android.surface.length > 0, "a project names the app paths a scenario must cover");
+  assert.ok(
+    android.code.includes(`${android.testFile}`) || android.code.some((path) => android.testFile.startsWith(path)),
+    "the scenario file is inside the Android-scope paths, or its own change would owe nothing",
+  );
+  // The pinned smoke is a real scenario: a name no method declares would prove nothing on a device.
+  assert.match(
+    readFileSync(join(HERE, "..", android.testFile), "utf8"),
+    new RegExp(`void\\s+${android.smoke}\\s*\\(`, "u"),
+    `the scenario file declares ${android.smoke}`,
+  );
 
   const docs = PROJECT.docs;
   assert.ok(existsSync(join(HERE, "..", docs.harness)), `the harness manual ${docs.harness} exists`);

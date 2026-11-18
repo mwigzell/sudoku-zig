@@ -46,4 +46,31 @@ export const PROJECT: ProjectConfig = {
     },
   },
   docs: { harness: "docs/agents/sandcastle.md", decisions: "docs/adr" },
+  // The device suite `zig build verify` cannot reach, the app paths whose change owes a scenario,
+  // and the one pinned method that proves tooling work which changes no scenario at all.
+  android: {
+    testFile: "src/android/test/FileBridgeTest.java",
+    surface: [
+      "src/android/jni_host.zig",
+      "src/entry_android.zig",
+      "src/android/bootstrap/",
+      "src/wasm/android_bridge.js",
+    ],
+    code: [
+      "src/android/",
+      "src/entry_android.zig",
+      "src/wasm/android_bridge.js",
+      "build/android.zig",
+      "scripts/android-test.sh",
+    ],
+    smoke: "coreAndJsLogLinesReachLogcat",
+    // The device target built for exactly the derived methods: the list is one `-e class` run, and
+    // the record goes where accept reads it. A missing device is named by the gate's own stop.
+    gate: {
+      command: ({ methods, evidenceOut, issue }) =>
+        `zig build android-gate -Dandroid-methods=${methods.join(",")} -Devidence-out='${evidenceOut}' ` +
+        `-Dandroid-issue=${issue} -Dandroid-why='required by this run branch'`,
+      startScript: "scripts/android-emulator-start.sh",
+    },
+  },
 };

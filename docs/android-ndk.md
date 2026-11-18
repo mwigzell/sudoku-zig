@@ -100,7 +100,7 @@ Start an emulator, then run:
 ```bash
 emulator -list-avds
 emulator -avd <name> &
-adb devices            # exactly one device, state "device"
+adb devices            # one device in state "device"; ANDROID_SERIAL picks among several
 zig build android-test
 zig build android-test -Dtest-filter=<method>   # one FileBridgeTest method
 ```
@@ -110,3 +110,15 @@ The step builds the app APK and a separate, self-instrumenting test APK (`com.wi
 **Device state is put back afterwards:** the app's private data is backed up (`run-as … tar`) and restored; the user's `Download/Sudoku/sudoku.sud` and any `sudoku (N).sud` are moved to `Download/sudoku-test-hold/` for the run and moved back (a move keeps their MediaStore rows and owners); other files in the folder are not touched. A copy of the folder is also kept in `zig-out/android-test/backup/`. If the device could not be fully restored (for example the emulator crashed), the backup is kept and the next run restores from it.
 
 **Libraries:** the androidx test jars are committed in `third_party/androidx-test/` with their licences, pinned by version and SHA-256 in `scripts/android-test.sh`. A missing file is downloaded from Google Maven / Maven Central on the next run; a hash mismatch fails the step. The pins are the newest releases that need no Kotlin runtime (monitor 1.6.1 and later do).
+
+## Device gate (`zig build android-gate`)
+
+One instrumented run for exactly the scenarios a branch must prove, recorded as evidence:
+
+```bash
+zig build android-gate -Dandroid-methods=<method>[,<method>...] -Devidence-out=<path>
+```
+
+The methods become one `-e class` list, so two scenarios cost one run, not two. `-Devidence-out` defaults to `zig-out/android-evidence.json`; `-Dandroid-issue=<n>` labels the record with the issue, and `-Dandroid-why=<text>` says why the branch requires those scenarios.
+
+The record is the JSON `{issue?, required, methods, command, result, device, duration_s, commit, clean_tree, at}`. It **refuses** rather than skips: uncommitted changes are rejected before the run (`git status --porcelain`), and no device — or more than one — is a failure naming `scripts/android-emulator-start.sh` / `scripts/android-emulator-stop.sh`. A failed run still writes its record, marked `failed`. Every failure the tool exits on names its reason on stderr — an allocation failure included — so a refusal is never a bare non-zero exit. The tool's own suite (`src/android/gate.zig`) runs in `zig build verify`; only the device run needs a device.

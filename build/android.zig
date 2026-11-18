@@ -18,6 +18,7 @@ const SoPathDebugX86 = "zig-out/lib/" ++ SoSubPathDebugX86;
 const SoPathRelease = "zig-out/lib/" ++ SoSubPathRelease;
 const AndroidStepDesc = "Build a debug-signed Android APK (arm64-v8a + x86_64, no Gradle)";
 const AndroidTestStepDesc = "Run the UiAutomator file bridge tests against a connected emulator";
+const AndroidGateStepDesc = "Run the named file bridge methods on one device and record the evidence (needs -Dandroid-methods)";
 const AndroidBundleStepDesc = "Build a release-signed Android App Bundle for Google Play (arm64-v8a, no Gradle)";
 const BootstrapRoot = "src/android/bootstrap";
 const ManifestPath = BootstrapRoot ++ "/AndroidManifest.xml";
@@ -79,7 +80,6 @@ fn addAndroidLib(
     return b.addInstallArtifact(lib, .{ .dest_sub_path = dest_sub_path });
 }
 
-
 pub fn addAndroidStep(b: *std.Build, deps: struct {
     wasm_emit: *std.Build.Step,
     gen_build_info: *std.Build.Step,
@@ -88,6 +88,12 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     /// Runs only the FileBridgeTest method with this name.
     test_filter: ?[]const u8,
 }) *std.Build.Step {
+    // Registered before either toolchain check: `zig build android-gate -Dandroid-methods=…` has to
+    // report the missing NDK or SDK, not an unknown option.
+    const android_methods = b.option([]const u8, "android-methods", "Comma-separated FileBridgeTest methods `android-gate` must run");
+    const evidence_out = b.option([]const u8, "evidence-out", "Where `android-gate` writes its evidence JSON (default: zig-out/android-evidence.json)");
+    const android_issue = b.option(u32, "android-issue", "The issue whose branch requires `android-gate`'s evidence");
+    const android_why = b.option([]const u8, "android-why", "Why `android-gate` requires the named methods, recorded with each");
     const ndk_opt = b.option([]const u8, "ndk", "Android NDK root (default: $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT)");
     const ndk_root = resolveNdkRoot(b, ndk_opt) orelse {
         const fail = b.addSystemCommand(&.{
@@ -101,6 +107,8 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         android_fail.dependOn(&fail.step);
         const android_test_fail = b.step("android-test", AndroidTestStepDesc);
         android_test_fail.dependOn(&fail.step);
+        const android_gate_fail = b.step("android-gate", AndroidGateStepDesc);
+        android_gate_fail.dependOn(&fail.step);
         const android_bundle_fail = b.step("android-bundle", AndroidBundleStepDesc);
         android_bundle_fail.dependOn(&fail.step);
         return android_fail;
@@ -142,6 +150,8 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         step.dependOn(&fail.step);
         const test_step = b.step("android-test", AndroidTestStepDesc);
         test_step.dependOn(&fail.step);
+        const gate_step = b.step("android-gate", AndroidGateStepDesc);
+        gate_step.dependOn(&fail.step);
         const bundle_step = b.step("android-bundle", AndroidBundleStepDesc);
         bundle_step.dependOn(&fail.step);
         return step;
@@ -184,6 +194,41 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     run_tests.step.dependOn(&package_apk.step);
     const android_test_step = b.step("android-test", AndroidTestStepDesc);
     android_test_step.dependOn(&run_tests.step);
+
+    // The gate is the host-side tool: one instrumented run for the methods a branch must prove, and
+    // the evidence record a reader checks. It runs on the host, so it is built for the host target.
+    const gate_exe = b.addExecutable(.{
+        .name = "android-gate",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/android/gate.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .link_libc = true,
+        }),
+    });
+    const run_gate = b.addRunArtifact(gate_exe);
+    run_gate.has_side_effects = true;
+    run_gate.step.dependOn(&package_apk.step);
+    run_gate.addArgs(&[_][]const u8{
+        "--sdk",
+        sdk_root,
+        "--api",
+        b.fmt("{d}", .{android_api_level}),
+        "--app-apk",
+        OutDir ++ "/" ++ ApkName,
+        "--out",
+        TestOutDir,
+        "--manifest",
+        TestManifestPath,
+        "--java",
+        TestJavaSource,
+    });
+    if (android_methods) |methods| run_gate.addArgs(&[_][]const u8{ "--methods", methods });
+    if (android_why) |why| run_gate.addArgs(&[_][]const u8{ "--why", why });
+    if (evidence_out) |path| run_gate.addArgs(&[_][]const u8{ "--evidence-out", path });
+    if (android_issue) |issue| run_gate.addArgs(&[_][]const u8{ "--issue", b.fmt("{d}", .{issue}) });
+    const android_gate_step = b.step("android-gate", AndroidGateStepDesc);
+    android_gate_step.dependOn(&run_gate.step);
 
     const package_bundle = b.addSystemCommand(&.{
         "bash",

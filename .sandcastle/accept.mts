@@ -1,16 +1,19 @@
 // accept.mts — what accepting a run leaves behind: its record beside the issue, and the issue closed.
 //
-// `scripts/sandcastle-accept.sh` merges the run branch, then calls this. Filing the record and
-// closing belong here rather than in the entry: the run already proved the issue's criteria, so
-// accepting it is the end of that issue. The git half of the merge stays in the script.
+// `scripts/sandcastle-accept.sh` asks this twice: `--check` before the merge, whether the run proved
+// the branch on a device, then the close path after it, which files the record and closes the issue.
+// The check comes before the merge because a refusal after it would leave the branch already in. The
+// git half of the merge stays in the script.
 
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { checkAndroidEvidence } from "./android_evidence.mts";
 import { readLedger } from "./ledger.mts";
 import { readRunRecord } from "./run_record.mts";
-import { ghTracker } from "./main.mts";
+import { gitBranchReader, ghTracker, type BranchReader } from "./main.mts";
 import { PROJECT } from "./project.mts";
 import { archiveRun, type RunCommit } from "./archive.mts";
+import type { AndroidConfig } from "./project_config.mts";
 
 /** Something that can close an issue: `gh` through the host's own login. */
 export interface IssueCloser {
@@ -26,16 +29,22 @@ export function ghCloser(): IssueCloser {
   };
 }
 
-/** A tracker fact the record needs: the issue's title, so its directory says what the work was. */
+/**
+ * A tracker fact the record and the accept check need: the issue's title, so its directory says
+ * what the work was, and its body, where the scenarios the change exercises are declared.
+ */
 export interface IssueReader {
   title(issue: number): string;
+  body(issue: number): string;
 }
 
-/** The host's reader: one `gh issue view`, with the login the host already has. */
+/** The host's reader: `gh issue view`, with the login the host already has. */
 export function ghReader(): IssueReader {
+  const view = (issue: number, fields: string, jq: string): string =>
+    execFileSync("gh", ["issue", "view", String(issue), "--json", fields, "--jq", jq], { encoding: "utf8" });
   return {
-    title: (issue) =>
-      execFileSync("gh", ["issue", "view", String(issue), "--json", "title", "--jq", ".title"], { encoding: "utf8" }).trim(),
+    title: (issue) => view(issue, "title", ".title").trim(),
+    body: (issue) => view(issue, "body", ".body"),
   };
 }
 
@@ -106,6 +115,39 @@ function commitArchive(dir: string, stamp: string, issue: number): void {
   execFileSync("git", ["commit", "-m", `chore(sandcastle): archive run ${stamp} for #${issue}`]);
 }
 
+/**
+ * Why the run may not be accepted for want of device proof, or `null` when it may.
+ *
+ * Both accept paths call this — `--check` before the merge and the close path after it — so neither
+ * can skip the evidence. The issue's body supplies the scenarios it declares; a body that cannot be
+ * read is a refusal rather than an unchecked accept.
+ */
+export function androidRefusal(input: {
+  runsDir: string;
+  base: string;
+  head: string;
+  android: AndroidConfig;
+  reader: IssueReader;
+  diff: BranchReader;
+}): string | null {
+  const issue = issueOfRun(input.runsDir);
+  let body = "";
+  if (issue !== null) {
+    try {
+      body = input.reader.body(issue);
+    } catch (error) {
+      return `the body of #${issue} could not be read, so its declared scenarios are unknown: ${(error as Error).message}`;
+    }
+  }
+  return checkAndroidEvidence({
+    diff: input.diff.diff(input.base, input.head, input.android),
+    body,
+    android: input.android,
+    runsDir: input.runsDir,
+    commit: input.head,
+  });
+}
+
 if (import.meta.main) {
   const at = process.argv.indexOf("--stamp");
   const stamp = at === -1 ? "" : (process.argv[at + 1] ?? "");
@@ -121,15 +163,43 @@ if (import.meta.main) {
   };
   const base = argOf("--base");
   const head = argOf("--head");
-
+  const check = process.argv.includes("--check");
   if (!/^\d+$/u.test(stamp) || base.length === 0 || head.length === 0) {
     console.error(
-      "usage: npx tsx .sandcastle/accept.mts --stamp <run stamp> --branch <branch> --into <branch> --base <sha> --head <sha>",
+      "usage: npx tsx .sandcastle/accept.mts [--check] --stamp <run stamp> --branch <branch> --into <branch> --base <sha> --head <sha>",
     );
     process.exit(1);
   }
 
   const runsDir = join(PROJECT.paths.runsDir, stamp);
+  const evidence = (): string | null =>
+    androidRefusal({
+      runsDir,
+      base,
+      head,
+      android: PROJECT.android,
+      reader: ghReader(),
+      diff: gitBranchReader(),
+    });
+
+  // Before the merge there is still a branch to refuse: the script asks, and a refusal leaves the
+  // branch where it is rather than merging work the device never proved.
+  if (check) {
+    const refusal = evidence();
+    if (refusal !== null) {
+      console.error(`[accept] refusing before the merge: ${refusal}`);
+      process.exit(1);
+    }
+    console.log("[accept] the run's device evidence proves this branch");
+    process.exit(0);
+  }
+
+  // The close path asks the same question, so an accept that skipped `--check` cannot close either.
+  const refusal = evidence();
+  if (refusal !== null) {
+    console.error(`[accept] the branch is merged, but its device evidence does not prove it: ${refusal}`);
+    process.exit(1);
+  }
   let archived = false;
   // The merge already happened, so a failure here loses the record but not the branch: report it and
   // still close the issue, then exit non-zero so the accept is not mistaken for a clean one.

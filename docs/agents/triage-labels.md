@@ -16,7 +16,7 @@ Edit the right-hand column to match whatever vocabulary you actually use.
 
 **`ready-for-agent` means a run can execute it, not that one cycle closes it.** Sandcastle (`npm run sandcastle -- --issue N`) runs the issue's `## Steps` one step per iteration: a fresh implementer, a fresh reviewer, then the host ticks that step, and a person accepts or drops the branch at the end. The human is in the loop per step, which is why a cloud LLM is not a problem; a multi-step issue with tickable steps is exactly the case the harness is for, so it stays `ready-for-agent`.
 
-Use `ready-for-human` only when the work itself cannot be delegated: a decision that is the owner's, a task with no executable step or no proof the branch can carry, or access the run does not have. A step that needs a connected device is still runnable: it adds the scenario, says the hand-run is the owner's before a push, and the scenario is the artifact.
+Use `ready-for-human` only when the work itself cannot be delegated: a decision that is the owner's, a task with no executable step or no proof the branch can carry, or access the run does not have. A step that needs a connected device is still runnable: it adds or updates the scenario, and the close and push gates run that scenario on a device — the scenario is the artifact, and the evidence is what accept reads.
 
 ## Before `ready-for-agent`: walk the player's screen
 
@@ -30,3 +30,5 @@ An issue is not ready until someone has walked it as a player, on each front end
 6. **Parity window:** an issue whose steps change a contract parity observes declares a step-scoped `## Parity window`, and one that changes such a contract and carries no window is not `ready-for-agent`. The shape and the gate are in "Parity window" in `docs/agents/issue-tracker.md`.
 
 Record the answers in the issue (Decisions, acceptance criteria), not in a comment that can be missed.
+
+The `## Android scenarios` section is optional. Triage adds it only when it already knows which existing device method proves the change; it is not a `ready-for-agent` condition, because closeout derives the required set from the branch. "A device step is still runnable" above is why a device step is not `ready-for-human` on its own. See "Android scenarios" in `docs/agents/issue-tracker.md`.

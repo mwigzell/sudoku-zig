@@ -91,9 +91,42 @@ so the omission is visible in the gate's own log. Steps that do not change a par
 declare no window at all, so their green is the plain gate. See ADR-0022 §3 and
 `docs/agents/verify-standards.md` for the gate half.
 
-## The device lane is outside the gate
+## The device lane: a close gate and a push gate
 
-`zig build verify` runs no Android test: the suite in `src/android/test/FileBridgeTest.java` needs a connected device, and the harness preflight checks none. A run therefore holds Android-only behaviour by the scenario the step adds (`AGENTS.md` rule 11, `implement-prompt.md` step 6) and by `zig build android-test -Dtest-filter=<method>` when a device happens to be up — never by `verify`. With no device the implementer says so; the owner runs the suite before a push, and the acceptance gate says which scenarios it ran.
+`zig build verify` runs no Android test: the suite in `src/android/test/FileBridgeTest.java` needs a
+connected device, and the harness preflight checks none, so the gate stays device-free. The lane is held
+at the two boundaries a branch passes — close and push — and by the scenario a step adds (`AGENTS.md`
+rule 11, `implement-prompt.md` step 6).
+
+**Close: one recorded run per branch.** When the issue's branch has Android in scope, the host runs the
+closeout (`.sandcastle/closeout.mts`) once the step loop is green, outside the sandbox — the command is
+the project's, `ProjectConfig.android.gate.command`, spelled:
+
+```sh
+zig build android-gate -Dandroid-methods=<a>,<b> -Devidence-out=<run directory>/android-evidence.json
+```
+
+It runs exactly the methods the branch owes — those it adds or changes, those the issue declares under
+`## Android scenarios`, and the pinned smoke when it changes none — in one instrumented run, and writes
+`android-evidence.json` beside the verdicts: each required method and why, the command, the result, the
+device, the duration, the commit, whether the tree was clean, and when. A dirty worktree is refused
+before the run, because evidence from uncommitted code proves nothing; with no device the target fails
+naming `scripts/android-emulator-start.sh`. The target never skips, and a branch that changes the
+Android app without adding, changing or declaring a scenario stops with `no scenario names this change`.
+
+The run then ends `ready to accept` with the evidence in its directory, or `stopped: device` with the
+gate's own reason — never a skip, and never a discovery after the merge. `accept` asks again before it
+merges: `accept.mts --check` reads the evidence and the branch and refuses with one reason naming the
+defect — no evidence, a failed run, another commit, a dirty tree, or a required method the record does
+not name — and the close path reuses that check, so an accept cannot skip it. `drop` ignores evidence
+entirely, and `archive.mts` copies the file into the accepted record.
+
+**Push: the whole suite.** A push waits for `zig build push-gate` (`scripts/push-gate.sh`): plain
+`zig build verify`, then `zig build verify-slow`, then the whole device suite unfiltered — cheapest
+first, stopped at the first failure, each lane's status written to
+`.zig-cache/push-gate/<commit>.json`. A filtered run proves a method, which is what a close owes; the
+commit a push lands owes the suite, and a missing device fails that lane rather than skipping it. See
+`docs/agents/push-gate.md`.
 
 ## What a verdict must say
 
@@ -149,8 +182,11 @@ is being left as it is, and the drop continues.
 ## Accept, drop, verdict
 
 - **accept** merges the run branch into whatever branch you are on. It refuses when a
-  second `sandcastle/*` branch exists or the run's worktree has uncommitted changes, then files the
-  run's record, removes the worktree and deletes the branch. The record copy sits beside the issue
+  second `sandcastle/*` branch exists, the run's worktree has uncommitted changes, or the run's
+  Android device evidence does not prove what the branch requires — that check is
+  `.sandcastle/android_evidence.mts`, asked as `accept.mts --check` **before** the merge, so a
+  refusal leaves the branch unmerged. It then files the run's record, removes the worktree and
+  deletes the branch. The record copy sits beside the issue
   under `.scratch/sudoku/issues/<number>-<slug>/` — the verdicts, the shotgun count and a README
   naming the branch, its commits, the judged criteria and the concerns not fixed — because the run
   directory is gitignored and would not survive a clone. It is committed on the accepted branch.
@@ -167,8 +203,8 @@ nothing and says so, rather than guessing a number and closing someone else's is
 ## The project seam
 
 The harness is project-neutral. The generic modules — `plan`, `loop`, `verdict`, `standards`, `ledger`,
-`resume`, `events`, `report`, `archive` — never name this repository: they take a typed `ProjectConfig`
-(`project_config.mts`) as a value, built for this repo by `project.mts`. That adapter holds the facts a run
+`resume`, `events`, `report`, `archive`, `android_evidence` — never name this repository: they take a typed
+`ProjectConfig` (`project_config.mts`) as a value, built for this repo by `project.mts`. That adapter holds the facts a run
 needs: the gate command (`zig build verify`), the standards file and its section, the tracker's readiness
 label, the agent model, the prompt and verdict paths, and the docs paths.
 
@@ -189,11 +225,12 @@ a project fact means filling a `ProjectConfig` field; changing harness policy is
 | `.sandcastle/verdict.mts` | Verdict shapes, their field-by-field validation, and the pass/stop rules |
 | `.sandcastle/ledger.mts`, `drop.mts` | The tick record, and the tracker half of a drop |
 | `.sandcastle/archive.mts` | The record an accept leaves beside the issue: the verdicts copied and the README that indexes them |
+| `.sandcastle/android_evidence.mts` | What an Android-scope branch must prove on a device, and whether a run's evidence proves it |
 | `.sandcastle/report.mts`, `report_cli.mts` | Turning verdict files into the readable report, and the command that prints it |
 | `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |
-| `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `verdict-standards.json`, `shotgun.json`, `ticks.json`, `run.json`, `events.jsonl`, `run.log` |
-| `.scratch/sudoku/issues/<number>-<slug>/` | An accepted run's record: the verdict files copied, `shotgun.json`, and the README naming the branch and its concerns |
+| `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `verdict-standards.json`, `shotgun.json`, `ticks.json`, `run.json`, `android-evidence.json`, `events.jsonl`, `run.log` |
+| `.scratch/sudoku/issues/<number>-<slug>/` | An accepted run's record: the verdict files copied, `shotgun.json`, `android-evidence.json`, and the README naming the branch and its concerns |
 | `.sandcastle/logs/sandcastle-<branch>-<role>-step-<n>of<m>.log` | The agents' transcripts, one per session; `npm run sandcastle:logs` reads the newest |
 | `.sandcastle/.env` | `GH_TOKEN` for the sandboxed agents (untracked) |
 | `.sandcastle/boundary.test.mts` | The seam's test: a generic module may not name a project fact, read one by an ambient path or spawn a process |

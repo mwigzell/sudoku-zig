@@ -6,6 +6,43 @@
 // adapter; `project.mts` fills it in.
 
 /**
+ * The Android facts a project hands in: which scenario file holds its device suite, which paths
+ * make a branch Android-scope, the one scenario that proves a branch changing none, and how the
+ * gate that runs them is spelled.
+ *
+ * `zig build verify` runs no Android test, so the device proof of an Android change is a recorded
+ * run of these methods. Keeping the paths and the smoke here means the harness derives the
+ * requirement from the branch and never names a repository path of its own.
+ */
+export interface AndroidConfig {
+  /** The scenario file whose added or changed methods are a branch's own proof. */
+  testFile: string;
+  /** Paths of the Android app itself: changing one proves nothing without a scenario. */
+  surface: readonly string[];
+  /** Paths that make a branch Android-scope: a change to any of them owes a device run. */
+  code: readonly string[];
+  /** The one method that proves a branch which adds or changes no scenario. */
+  smoke: string;
+  /**
+   * How the closeout proves a branch on a device: the gate command, and the script a stop names.
+   *
+   * The harness runs the command in the run's own worktree, so the record names the branch tip
+   * rather than the host's checkout; the command is the project's to spell.
+   */
+  gate: {
+    /**
+     * The command that proves `methods` and writes the record to `evidenceOut`.
+     *
+     * `evidenceOut` is absolute: the command runs in the worktree, where a relative path would
+     * land. `issue` labels the record, so a reader sees whose branch it proves.
+     */
+    command: (input: { methods: readonly string[]; evidenceOut: string; issue: number }) => string;
+    /** The script that starts the device a gate needs, which a missing-device stop tells you to run. */
+    startScript: string;
+  };
+}
+
+/**
  * Everything the harness must be told about the repository it runs in.
  *
  * These are project facts, not harness policy: a second consumer fills the same fields with its own
@@ -47,4 +84,6 @@ export interface ProjectConfig {
   };
   /** Where a reader finds the harness's operating manual and its decision records. */
   docs: { harness: string; decisions: string };
+  /** The device suite a branch of this project must prove before it can be accepted. */
+  android: AndroidConfig;
 }

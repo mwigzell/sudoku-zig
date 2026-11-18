@@ -1,13 +1,27 @@
-// accept.test.mts — accepting a run closes the issue it was aimed at, and only when it can name it.
+// accept.test.mts — accepting a run closes the issue it was aimed at, and only on proof it named.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { archiveAcceptedRun, closeAcceptedRun } from "./accept.mts";
+import { androidRefusal, archiveAcceptedRun, closeAcceptedRun } from "./accept.mts";
+import { evidencePath } from "./android_evidence.mts";
 import { writeRunRecord } from "./run_record.mts";
 import { ledgerPath } from "./ledger.mts";
+import type { AndroidConfig } from "./project_config.mts";
+
+/** The Android facts these fixtures hand in, so the check is judged without this repo's adapter. */
+const ANDROID: AndroidConfig = {
+  testFile: "src/android/test/FileBridgeTest.java",
+  surface: ["src/android/jni_host.zig"],
+  code: ["src/android/"],
+  smoke: "coreAndJsLogLinesReachLogcat",
+  gate: {
+    command: ({ methods, evidenceOut, issue }) => `gate --methods=${methods.join(",")} --evidence-out=${evidenceOut} --issue=${issue}`,
+    startScript: "scripts/android-emulator-start.sh",
+  },
+};
 
 /** A closer that records what it was asked to close, so no test shells out to `gh`. */
 function fakeCloser() {
@@ -95,7 +109,7 @@ test("accepting files the run's record beside the issue, named by the tracker", 
         head: "head222",
         commits: [{ sha: "head222", subject: "fix(flow): say what happened" }],
       },
-      { title: () => "A refused save says what happened" },
+      { title: () => "A refused save says what happened", body: () => "" },
     );
 
     assert.ok(!("problem" in filed), "the record has an issue to sit beside");
@@ -104,5 +118,69 @@ test("accepting files the run's record beside the issue, named by the tracker", 
     assert.match(readFileSync(join(filed.dir, "README.md"), "utf8"), /Cut from `develop` at `base111`; head `head222` \(1 commit\)/u);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("accept refuses an Android branch whose run left no device evidence, before the merge", () => {
+  const runsDir = fixture();
+  try {
+    writeRunRecord(runsDir, {
+      issue: 142,
+      branch: "sandcastle/sequential-reviewer/1",
+      targetBranch: "develop",
+      startedAt: "t1",
+    });
+
+    const refusal = androidRefusal({
+      runsDir,
+      base: "base111",
+      head: "head222",
+      android: ANDROID,
+      reader: { title: () => "a fixture", body: () => "" },
+      diff: { diff: () => ({ touched: ["src/android/gate.zig"], scenarios: "" }) },
+    });
+
+    assert.match(String(refusal), /no android-evidence\.json/u, "the merge waits for the device run");
+  } finally {
+    rmSync(join(runsDir, "..", ".."), { recursive: true, force: true });
+  }
+});
+
+test("accept lets the same branch through once its run holds passing evidence", () => {
+  const runsDir = fixture();
+  try {
+    writeRunRecord(runsDir, {
+      issue: 142,
+      branch: "sandcastle/sequential-reviewer/1",
+      targetBranch: "develop",
+      startedAt: "t1",
+    });
+    writeFileSync(
+      evidencePath(runsDir),
+      JSON.stringify({
+        required: [{ method: ANDROID.smoke, why: "the pinned smoke" }],
+        methods: [ANDROID.smoke],
+        command: "scripts/android-test.sh emulator-5554 coreAndJsLogLinesReachLogcat",
+        result: "passed",
+        device: "emulator-5554",
+        duration_s: 9,
+        commit: "head222",
+        clean_tree: true,
+        at: "2026-01-01T00:00:00Z",
+      }),
+    );
+
+    const refusal = androidRefusal({
+      runsDir,
+      base: "base111",
+      head: "head222",
+      android: ANDROID,
+      reader: { title: () => "a fixture", body: () => "" },
+      diff: { diff: () => ({ touched: ["src/android/gate.zig"], scenarios: "" }) },
+    });
+
+    assert.equal(refusal, null, "the device run proved the pinned smoke on this commit");
+  } finally {
+    rmSync(join(runsDir, "..", ".."), { recursive: true, force: true });
   }
 });

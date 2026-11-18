@@ -35,6 +35,8 @@ test {
     _ = .{ shell, desktop_web, desktop_terminal, web_host, open_browser, android_jni_host, wasm_wire, wasm_boundary, startup_config, config_store, cli };
     // Layering gate: no file-scope import under `src/core/` may reach the native adapters.
     _ = @import("test/layering.zig");
+    // The device gate is a host tool, so its own suite runs here rather than behind a device.
+    _ = @import("android/gate.zig");
 }
 
 /// Resolve startup config and dispatch to web or terminal desktop entry.

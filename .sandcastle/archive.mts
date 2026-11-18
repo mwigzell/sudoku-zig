@@ -1,13 +1,14 @@
 // archive.mts — the record an accepted run leaves beside the issue it did.
 //
 // A run's directory is git-ignored, so the evidence an accept rested on would not survive a clone.
-// Accepting copies the verdicts next to the issue and writes a README naming the branch, its
-// commits, the judged criteria and the concerns the reviewer still held. The paths and the issue
-// come in from the caller: this module reads no project file and runs no command of its own.
+// Accepting copies the verdicts and the device evidence next to the issue and writes a README naming
+// the branch, its commits, the judged criteria and the concerns the reviewer still held. The paths
+// and the issue come in from the caller: this module reads no project file and runs no command of its own.
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readLedger, type Tick } from "./ledger.mts";
+import { EVIDENCE_FILE } from "./android_evidence.mts";
 import { readFinalVerdict, type FinalVerdict } from "./verdict.mts";
 
 /** One commit the accepted branch carried, oldest first: the short id and what it says. */
@@ -63,6 +64,7 @@ const FILE_ROLES: Readonly<Record<string, string>> = {
   "verdict-acs.json": "the whole-branch acceptance-criteria matrix, with the evidence quoted",
   "verdict-standards.json": "the standards lens, one answer per numbered rule",
   "shotgun.json": "the symbols the branch carries through several files",
+  [EVIDENCE_FILE]: "the device run accept gated on: the methods, the commit and the result",
 };
 
 
@@ -76,7 +78,7 @@ function stepNumber(name: string): number {
 function recordFiles(runsDir: string): string[] {
   const present = new Set(readdirSync(runsDir));
   const steps = [...present].filter((name) => stepNumber(name) !== -1).sort((a, b) => stepNumber(a) - stepNumber(b));
-  const rest = ["verdict-acs.json", "verdict-standards.json", "shotgun.json"].filter((name) => present.has(name));
+  const rest = ["verdict-acs.json", "verdict-standards.json", "shotgun.json", EVIDENCE_FILE].filter((name) => present.has(name));
   return [...steps, ...rest];
 }
 

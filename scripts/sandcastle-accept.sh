@@ -31,6 +31,13 @@ if [ -n "$worktree" ] && [ -n "$(git -C "$worktree" status --porcelain)" ]; then
   exit 1
 fi
 
+# The device check runs before the merge: refusing inside the close path would leave the branch
+# already merged, with nothing left to hold back. The close path asks the same question again.
+if ! npx tsx .sandcastle/accept.mts --check --stamp "${BRANCH##*/}" --branch "$BRANCH" --into "$CURRENT" --base "$BASE" --head "$HEAD_SHA"; then
+  echo "Refused $BRANCH: it is not merged, and its worktree and branch are left as they are." >&2
+  exit 1
+fi
+
 echo "Merging $BRANCH ($(git rev-list --count "$CURRENT..$BRANCH") commit(s)) into $CURRENT"
 git merge --no-edit "$BRANCH"
 

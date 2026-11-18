@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { archiveDirName, archiveRun } from "./archive.mts";
 import { writeLedger } from "./ledger.mts";
 import { writeRunRecord } from "./run_record.mts";
+import { EVIDENCE_FILE } from "./android_evidence.mts";
 
 /** The issue the fixture run was aimed at; the record's heading is built from it, not spelled out. */
 const ISSUE = 42;
@@ -51,6 +52,7 @@ function fixtureRun(): { root: string; runsDir: string } {
   writeFileSync(join(runsDir, "verdict-acs.json"), JSON.stringify(FINAL));
   writeFileSync(join(runsDir, "verdict-standards.json"), "{}");
   writeFileSync(join(runsDir, "shotgun.json"), JSON.stringify(SHOTGUN));
+  writeFileSync(join(runsDir, EVIDENCE_FILE), JSON.stringify({ result: "passed", commit: "b649adc", methods: ["aProvenScenario"] }));
   writeFileSync(join(runsDir, "run.log"), "not part of the record");
   return { root, runsDir };
 }
@@ -96,7 +98,7 @@ test("accepting copies the verdicts and writes the run record", () => {
     const dir = archiveRun(facts(runsDir, archiveRoot));
 
     assert.equal(dir, join(archiveRoot, "42-a-refused-save-says-what-happened"));
-    for (const name of ["step-1-verdict.json", "verdict-acs.json", "verdict-standards.json", "shotgun.json"]) {
+    for (const name of ["step-1-verdict.json", "verdict-acs.json", "verdict-standards.json", "shotgun.json", EVIDENCE_FILE]) {
       assert.ok(existsSync(join(dir, name)), `${name} is part of the record`);
     }
     assert.equal(existsSync(join(dir, "run.log")), false, "the transcript stays in the run directory");
@@ -109,6 +111,11 @@ test("accepting copies the verdicts and writes the run record", () => {
     assert.match(readme, /2\. `b649adc` fix\(flow\): a refused save says the game file was written/u);
     assert.match(readme, /Steps: 1 of 1 ticked; acceptance criteria: 1 of 2/u);
     assert.match(readme, /parity restored — `✓ parity: 85 scenario\(s\) on native, web and Android`/u);
+    assert.match(
+      readme,
+      new RegExp(`\`${EVIDENCE_FILE}\` — the device run accept gated on`, "u"),
+      "the record says what the device evidence answers, so a clone keeps the proof",
+    );
     assert.match(readme, /- PASS — Plain `zig build verify` is untouched\./u);
     assert.match(readme, /- PASS — The window is refused when closed\./u);
     assert.match(readme, /The ADR reads stricter than the shipped seam\./u);
