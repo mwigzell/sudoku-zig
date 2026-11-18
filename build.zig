@@ -247,6 +247,14 @@ pub fn build(b: *std.Build) void {
     const verify_slow_step = b.step("verify-slow", "Slow gate: verify-slow-run + timing (docs/verify-slow-timing.json)");
     verify_slow_step.dependOn(&verify_slow_gate.step);
 
+    // The push boundary: every lane a push must prove, cheapest first, in one command so a push
+    // cannot be assembled from whichever gates a session remembered. `-- --lanes` prints the table.
+    const push_gate = b.addSystemCommand(&.{ "bash", "scripts/push-gate.sh" });
+    push_gate.addPassthruArgs();
+    push_gate.has_side_effects = true;
+    const push_gate_step = b.step("push-gate", "Push gate: verify, verify-slow and the full device suite, cheapest first");
+    push_gate_step.dependOn(&push_gate.step);
+
     _ = android_build.addAndroidStep(b, .{
         .wasm_emit = &wasm_emit.step,
         .gen_build_info = &gen_build_info.step,

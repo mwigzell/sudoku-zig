@@ -210,6 +210,7 @@ Every cycle gate lives in the build as a single command so task-local checklists
 zig build verify
 ```
 at `/home/mark/Dev/src/sudoku/`. Runs all tests + `zig fmt --check` + **standards** (`scripts/verify-standards.sh` on the branch diff vs `origin/main`) + coverage, and dumps the per-file `percent_covered` JSON (kcov) alongside. See `docs/agents/verify-standards.md`. **Timing:** `scripts/verify-gate.sh` enforces `docs/verify-timing.json` policy (budget + regression); last successful run timing is written to local untracked state under `.zig-cache/`. See `docs/agents/verify-timing.md`. **Slow (delivery):** `zig build verify-slow` — costly suites via `src/entry_verify_slow.zig` (currently includes live generator properties in `src/test/slow/puzzle_gen_live.zig`); timed via `docs/verify-slow-timing.json` with local timing state in `.zig-cache/`. See `docs/agents/verify-slow.md`. Not part of `verify`. Verify stays report-only; `zig build cov` regenerates the report and opens it in the browser; `zig build cov-report` is the report-only target (no browser).
+**Push gate (`zig build push-gate`):** the only way to push. `zig build verify`, then `zig build verify-slow`, then the full Android device suite, cheapest first and stopped at the first failure; each lane's status is recorded under `.zig-cache/push-gate/<commit>.json`. A missing device fails the gate rather than skipping it. See `docs/agents/push-gate.md`.
 ## run build
 zig build run
 - expect that the output is a message and an ascii cell matrix of the initial puzzle.

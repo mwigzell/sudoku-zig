@@ -99,7 +99,7 @@ sign_debug_apk "$OUT/aligned.apk" "$OUT/sudoku-test.apk"
 # ── device: one connected device; back up the app's data, set the user's default save file aside, restore on exit ──
 DEVICES="$("$ADB" devices | awk 'NR > 1 && $2 == "device" {print $1}')"
 if [[ "$(echo "$DEVICES" | grep -c .)" -ne 1 ]]; then
-  echo "error: expected exactly one connected device or emulator (adb devices); start the emulator first" >&2
+  echo "error: expected exactly one connected device or emulator (adb devices); start one with scripts/android-emulator-start.sh" >&2
   exit 1
 fi
 
