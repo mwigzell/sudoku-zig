@@ -38,10 +38,17 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 regression_limit="$(awk -v last="$last" -v factor="$REGRESSION_FACTOR" 'BEGIN { printf "%.2f", last * factor }')"
 
+# The timed runs are their own `zig build` invocations, so a parity window declared on the outer one
+# has to travel in the environment; without the flag the argument list is empty and nothing changes.
+parity_args=()
+if [[ -n "${SUDOKU_PARITY_OFF:-}" ]]; then
+  parity_args=(-Dparity=off "-Dparity-off-issue=$SUDOKU_PARITY_OFF")
+fi
+
 # Untimed: a cold cache must not read as a suite slowdown.
 warmup_status=0
 TIMEFORMAT='%R'
-{ time { zig build verify-build || warmup_status=$?; }; } 2> >(tee "$WARMUP_LOG" >&2)
+{ time { zig build verify-build "${parity_args[@]}" || warmup_status=$?; }; } 2> >(tee "$WARMUP_LOG" >&2)
 warmup_elapsed="$(tail -1 "$WARMUP_LOG" | awk '{ printf "%.2f", $1 }')"
 if [[ "$warmup_status" -ne 0 ]]; then
   echo "verify timing: warm-up build failed" >&2
@@ -50,7 +57,7 @@ fi
 
 verify_status=0
 TIMEFORMAT='%R'
-{ time { zig build verify-run || verify_status=$?; }; } 2> >(tee "$TIME_LOG" >&2)
+{ time { zig build verify-run "${parity_args[@]}" || verify_status=$?; }; } 2> >(tee "$TIME_LOG" >&2)
 elapsed="$(tail -1 "$TIME_LOG" | awk '{ printf "%.2f", $1 }')"
 
 if [[ -z "$elapsed" ]]; then

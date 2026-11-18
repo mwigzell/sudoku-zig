@@ -81,6 +81,8 @@ Nothing is silent (`AGENTS.md`, "Coding standards" rule 6). On added lines in ap
 
 `scripts/verify-parity.sh` runs on the whole repo (not the branch diff) as part of `verify`. It fails when a scenario in `src/test/fixtures/parity_scenarios.json` is missing from `docs/parity-matrix.md` or its name is duplicated; when either runner (`src/test/parity/native.zig` for native, `src/wasm/flows/parity.test.mjs` for web and Android) stops loading the scenarios or drops out of its test list; when a scenario `skip` lacks a gap or an open issue, or a `not_on` lacks a reason; or when a step kind in `src/core/flow/step.zig` has no `STEP_*` constant and `case` in `src/wasm/flows/step_runner.js` (native gets that check from the Zig compiler). Steps a front end never receives are listed in the fixture's `steps_not_received`. It calls `gh` only when a skip exists. See `docs/parity-matrix.md`.
 
+**Parity window.** `zig build verify -Dparity=off -Dparity-off-issue=<N>` omits this check for an issue whose steps change a parity-observed contract; `scripts/verify-parity-off.sh` refuses the flag without an issue, or for one the tracker does not report open, and prints `── parity OFF (#N) ──` so the omission is visible in the gate's log. The flag is only ever passed inside a declared window: the steps after it and the whole-branch review run plain `zig build verify`, which is the proof parity is back on. See ADR-0022 §3.
+
 ## What it does not enforce
 
 SOLID judgement, Feature Envy, speculative generality, and full architecture review still belong in **two-axis review** (`/code-review` skill or GitHub review issues). The script prints a reminder when it passes.

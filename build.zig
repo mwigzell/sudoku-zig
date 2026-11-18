@@ -7,6 +7,19 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // --- Parity window (ADR-0022 §3) ---
+    // Parity compares the front ends against each other, so the first arm of a contract change is
+    // red on its own. An issue may declare a window: its steps run the gate with the check omitted,
+    // named by this flag and validated against the tracker; the steps after it run plain `verify`.
+    const Parity = enum { on, off };
+    const parity = b.option(Parity, "parity", "Cross-front-end parity check: on (default), or off inside a declared parity window") orelse .on;
+    const parity_off_issue = b.option(u32, "parity-off-issue", "The open issue whose declared window turns the parity check off");
+    const parity_off = parity == .off;
+    // The guard reads the number as text; a missing one is its first refusal, not a build panic.
+    const parity_off_arg = if (parity_off_issue) |n| b.fmt("{d}", .{n}) else "";
+    // The environment variable that tells the parity runners which issue opened the window.
+    const PARITY_OFF_ENV = "SUDOKU_PARITY_OFF";
+
     const gen_build_info = b.addSystemCommand(&.{ "bash", "scripts/gen-build-info.sh" });
     // --- Executable ---
     const exe_mod = b.addModule("sudoku", .{
@@ -182,12 +195,20 @@ pub fn build(b: *std.Build) void {
     const parity_step = b.step("parity", "Parity drift check: fixture, matrix and runners agree (the parity tests run in test and glue)");
     parity_step.dependOn(&parity_check.step);
 
+    // Inside a window the check is omitted, so the guard is what still proves the window is live.
+    const parity_window = b.addSystemCommand(&.{ "bash", "scripts/verify-parity-off.sh" });
+    parity_window.addArg(parity_off_arg);
+
     const verify_run_step = b.step("verify-run", "Internal: exe + test + fmt + standards + parity + glue + coverage");
     verify_run_step.dependOn(&exe.step); // entry point must compile — test mode never analyzes main()
     verify_run_step.dependOn(&run_tests.step);
     verify_run_step.dependOn(&fmt_check.step);
     verify_run_step.dependOn(&standards_check.step);
-    verify_run_step.dependOn(&parity_check.step);
+    if (parity_off) {
+        verify_run_step.dependOn(&parity_window.step);
+    } else {
+        verify_run_step.dependOn(&parity_check.step);
+    }
     verify_run_step.dependOn(&glue.step);
     verify_run_step.dependOn(&sandcastle_test.step);
     verify_run_step.dependOn(&typecheck.step);
@@ -202,6 +223,18 @@ pub fn build(b: *std.Build) void {
     const verify_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-gate.sh" });
     const verify_step = b.step("verify", "Gate: verify-run + timing integrity (docs/verify-timing.json)");
     verify_step.dependOn(&verify_gate.step);
+
+    // A window reaches the suites, not just the graph: `SUDOKU_PARITY_OFF` carries the issue number to
+    // the parity runners, and the gate forwards it so its timed inner run omits the same check.
+    if (parity_off) {
+        if (parity_off_issue != null) {
+            run_tests.setEnvironmentVariable(PARITY_OFF_ENV, parity_off_arg);
+            glue.setEnvironmentVariable(PARITY_OFF_ENV, parity_off_arg);
+            verify_gate.setEnvironmentVariable(PARITY_OFF_ENV, parity_off_arg);
+        }
+        run_tests.step.dependOn(&parity_window.step);
+        glue.step.dependOn(&parity_window.step);
+    }
 
     // Slow tests (generator properties, etc.) — delivery phase; not part of verify.
     const run_slow_tests = b.addSystemCommand(&.{
