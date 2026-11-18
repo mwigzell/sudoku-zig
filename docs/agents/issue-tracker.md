@@ -96,6 +96,8 @@ Two rules close the hole a list written before the code leaves open:
 
 The set is not advice. The `android-gate` build target runs it on one device and records the evidence, accept refuses before merging without that evidence, and a push runs the whole suite. The gates and the evidence file are in `docs/agents/sandcastle.md`.
 
+**Direct work keeps the same record.** A change made outside sandcastle — the owner working in the repository by hand — runs the gate itself (`zig build android-gate -Dandroid-methods=… -Devidence-out=…`), pastes the line it prints into the issue before closing, and keeps the JSON beside the branch's evidence. Closing by hand without that line is the skip the harness refuses; the criterion is the record, not which runner wrote it.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a **GitHub issue** (`gh issue create`).

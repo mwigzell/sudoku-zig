@@ -29,6 +29,7 @@ const GENERIC_MODULES = [
   "resume.mts",
   "events.mts",
   "report.mts",
+  "archive.mts",
   "android_evidence.mts",
   "closeout.mts",
 ];
