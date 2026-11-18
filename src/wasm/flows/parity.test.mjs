@@ -26,12 +26,20 @@ import { fakeSettingsDialog, generatingModalStub, loadGame, settleFlow } from ".
 const SCENARIOS_URL = new URL("../../test/fixtures/parity_scenarios.json", import.meta.url);
 const NATIVE_TRANSCRIPTS_URL = new URL("../../../.zig-cache/parity/native.json", import.meta.url);
 const SCENARIOS = JSON.parse(readFileSync(SCENARIOS_URL, "utf8"));
-assert.ok(
-  existsSync(NATIVE_TRANSCRIPTS_URL),
-  "native parity transcripts missing: the glue step runs the native tests first (zig build glue)",
-);
-const NATIVE = JSON.parse(readFileSync(NATIVE_TRANSCRIPTS_URL, "utf8"));
-const NATIVE_BY_NAME = new Map(NATIVE.scenarios.map((t) => [t.name, t]));
+/** The issue whose declared parity window turns this runner off; empty when parity is on. */
+const PARITY_OFF_ISSUE = (process.env.SUDOKU_PARITY_OFF ?? "").trim();
+
+/** Native transcripts, read on first use: inside a window the native run that writes them skips too. */
+let nativeTranscripts = null;
+function nativeRun() {
+  if (nativeTranscripts) return nativeTranscripts;
+  assert.ok(
+    existsSync(NATIVE_TRANSCRIPTS_URL),
+    "native parity transcripts missing: the glue step runs the native tests first (zig build glue)",
+  );
+  nativeTranscripts = JSON.parse(readFileSync(NATIVE_TRANSCRIPTS_URL, "utf8"));
+  return nativeTranscripts;
+}
 
 const NATIVE_ENTRY = "native";
 const WEB = "web";
@@ -445,7 +453,7 @@ async function launch(platform, cfg, world, ui) {
   game.generatePuzzle = ({ difficulty }) => {
     if (world.generate === "cancelled") return { ok: false, error: "cancelled" };
     if (world.generate === "failed") return { ok: false, error: FAILED_REASON };
-    return { ok: true, line: NATIVE.generated_lines[difficulty] };
+    return { ok: true, line: nativeRun().generated_lines[difficulty] };
   };
   const recorder = recordSteps(game);
   const boot = {
@@ -747,7 +755,6 @@ const noteKinds = (entry, transcript) => {
     if (e.type) promptTypesSeen.add(e.type);
   }
 };
-NATIVE.scenarios.forEach((t) => noteKinds(NATIVE_ENTRY, t));
 
 /** Where a transcript first departs from the reference: an event index, else the end state. */
 function firstDifference(got, reference) {
@@ -770,46 +777,60 @@ const withoutNativeOnlyGaps = (t) => ({
   ...t,
   events: t.events.filter((e, i, all) => !NOT_ON_NATIVE_STEPS.has(e.step) && !pickerTargetBeforeSaveAs(all, i)),
 });
-const failures = [];
 
-assert.ok(SCENARIOS.scenarios.length > 0);
-for (const scenario of SCENARIOS.scenarios) {
-  for (const [entry, reason] of Object.entries(scenario.not_on ?? {})) {
-    assert.ok([NATIVE_ENTRY, WEB, ANDROID].includes(entry), `${scenario.name}: not_on names unknown front end ${entry}`);
-    assert.ok(typeof reason === "string" && reason.length > 0, `${scenario.name}: not_on ${entry} gives no reason`);
-  }
-  const native = runsOn(scenario, NATIVE_ENTRY) ? NATIVE_BY_NAME.get(scenario.name) : null;
-  if (runsOn(scenario, NATIVE_ENTRY)) assert.ok(native, `${scenario.name}: no native transcript; rerun the native tests`);
-  const ran = {};
-  for (const platform of PLATFORMS) {
-    if (!runsOn(scenario, platform)) continue;
-    try {
-      ran[platform] = await runScenario(scenario, platform);
-      noteKinds(platform, ran[platform]);
-    } catch (err) {
-      failures.push(`${scenario.name} on ${platform}: ${err.message}`);
+/**
+ * Compare every shared scenario's web and Android runs against the native transcript, and check that
+ * each front end received the step kinds the matrix says it does. Throws on the first drift.
+ */
+async function checkParity() {
+  const nativeByName = new Map(nativeRun().scenarios.map((t) => [t.name, t]));
+  for (const transcript of nativeRun().scenarios) noteKinds(NATIVE_ENTRY, transcript);
+  const failures = [];
+
+  assert.ok(SCENARIOS.scenarios.length > 0);
+  for (const scenario of SCENARIOS.scenarios) {
+    for (const [entry, reason] of Object.entries(scenario.not_on ?? {})) {
+      assert.ok([NATIVE_ENTRY, WEB, ANDROID].includes(entry), `${scenario.name}: not_on names unknown front end ${entry}`);
+      assert.ok(typeof reason === "string" && reason.length > 0, `${scenario.name}: not_on ${entry} gives no reason`);
+    }
+    const native = runsOn(scenario, NATIVE_ENTRY) ? nativeByName.get(scenario.name) : null;
+    if (runsOn(scenario, NATIVE_ENTRY)) assert.ok(native, `${scenario.name}: no native transcript; rerun the native tests`);
+    const ran = {};
+    for (const platform of PLATFORMS) {
+      if (!runsOn(scenario, platform)) continue;
+      try {
+        ran[platform] = await runScenario(scenario, platform);
+        noteKinds(platform, ran[platform]);
+      } catch (err) {
+        failures.push(`${scenario.name} on ${platform}: ${err.message}`);
+      }
+    }
+    const label = native ? NATIVE_ENTRY : WEB;
+    const reference = native ?? ran[WEB];
+    for (const [platform, transcript] of Object.entries(ran)) {
+      if (!reference || reference === transcript) continue;
+      const got = native ? withoutNativeOnlyGaps(transcript) : transcript;
+      if (JSON.stringify(got) === JSON.stringify(reference)) continue;
+      failures.push(`${scenario.name} on ${platform} differs from ${label}: ${JSON.stringify(firstDifference(got, reference))}`);
     }
   }
-  const label = native ? NATIVE_ENTRY : WEB;
-  const reference = native ?? ran[WEB];
-  for (const [platform, transcript] of Object.entries(ran)) {
-    if (!reference || reference === transcript) continue;
-    const got = native ? withoutNativeOnlyGaps(transcript) : transcript;
-    if (JSON.stringify(got) === JSON.stringify(reference)) continue;
-    failures.push(`${scenario.name} on ${platform} differs from ${label}: ${JSON.stringify(firstDifference(got, reference))}`);
-  }
-}
-assert.deepEqual(failures, [], `parity: ${failures.length} front-end differences:\n${failures.join("\n")}`);
+  assert.deepEqual(failures, [], `parity: ${failures.length} front-end differences:\n${failures.join("\n")}`);
 
-for (const entry of [NATIVE_ENTRY, ...PLATFORMS]) {
-  const notReceived = SCENARIOS.steps_not_received?.[entry] ?? {};
-  for (const kind of NATIVE.step_kinds) {
-    const reason = notReceived[kind];
-    if (reason === undefined) assert.ok(kindsSeen[entry].has(kind), `parity: no scenario issues the ${kind} step on ${entry}`);
-    else {
-      assert.ok(typeof reason === "string" && reason.length > 0, `parity: steps_not_received ${entry}.${kind} gives no reason`);
-      assert.ok(!kindsSeen[entry].has(kind), `parity: ${entry} receives ${kind}, which steps_not_received says it never does`);
+  for (const entry of [NATIVE_ENTRY, ...PLATFORMS]) {
+    const notReceived = SCENARIOS.steps_not_received?.[entry] ?? {};
+    for (const kind of nativeRun().step_kinds) {
+      const reason = notReceived[kind];
+      if (reason === undefined) assert.ok(kindsSeen[entry].has(kind), `parity: no scenario issues the ${kind} step on ${entry}`);
+      else {
+        assert.ok(typeof reason === "string" && reason.length > 0, `parity: steps_not_received ${entry}.${kind} gives no reason`);
+        assert.ok(!kindsSeen[entry].has(kind), `parity: ${entry} receives ${kind}, which steps_not_received says it never does`);
+      }
     }
   }
+  for (const type of PROMPT_TYPES) assert.ok(promptTypesSeen.has(type), `parity: no scenario shows a ${type} prompt`);
 }
-for (const type of PROMPT_TYPES) assert.ok(promptTypesSeen.has(type), `parity: no scenario shows a ${type} prompt`);
+
+// A window's arms speak different contracts while they migrate, and the native run that writes the
+// transcripts this runner compares against stops too: prove nothing, and leave the reason on the console.
+if (PARITY_OFF_ISSUE !== "") console.info(`expected: parity off (#${PARITY_OFF_ISSUE})`);
+else await checkParity();

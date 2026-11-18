@@ -9,6 +9,8 @@ Core's sentences are never copied into the fixture: the transcripts compare the 
 
 `zig build glue` runs the native tests first, then the JS runner. `zig build parity` (part of `zig build verify`) fails when a scenario is missing from this table, a `not_on` entry gives no reason, or a skip names no open issue.
 
+Inside a declared parity window (`zig build verify -Dparity=off -Dparity-off-issue=N`, ADR-0022 §3) the drift check is omitted and both runners stop before reading the fixture: each logs `expected: parity off (#N)` — the native one to the host log, the JS one to the console — so a run that proved nothing never reads as one that proved parity. The drift check also fails when a runner stops accepting that window, or stops saying so.
+
 ## Transcript
 
 Each event is one step core issued, with the fields that matter for it, and the platform's answer:

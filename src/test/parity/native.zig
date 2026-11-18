@@ -1,7 +1,8 @@
 // Cross-front-end parity, native side: every shared scenario runs through the real `Sudoku`
 // loop (startup flow, then `turn` per step) with a scripted renderer and an in-memory folder.
 // Each run records the steps core issued and the shell's answers; the transcripts are written
-// for the web and Android runs (`src/wasm/flows/parity.test.mjs`) to compare against.
+// for the web and Android runs (`src/wasm/flows/parity.test.mjs`) to compare against. Inside a
+// declared parity window the arms differ on purpose, so the run stops and says why.
 const std = @import("std");
 const shell = @import("../../native/shell/shell.zig");
 const facade_mod = @import("../../core/renderer/facade.zig");
@@ -22,11 +23,21 @@ const SCENARIOS_PATH = "src/test/fixtures/parity_scenarios.json";
 const TRANSCRIPTS_DIR = ".zig-cache/parity";
 const TRANSCRIPTS_FILE = "native.json";
 const NATIVE = "native";
+/// The variable a parity window sets to its issue number; the build sets it only for a window it accepted.
+const PARITY_OFF_ENV = "SUDOKU_PARITY_OFF";
 const FOLDER_PREFIX = MemoryTransport.DIR ++ "/";
 /// A settings folder no write can create, for scenarios where storing settings fails.
 const UNWRITABLE_DATA_DIR = "/dev/null/sudoku";
 /// The file an `import` step's text is read from.
 const IMPORT_NAME = "puzzle.txt";
+
+/// The issue whose declared parity window turns this run off, or null when parity is on.
+/// The value is the issue number as text: the build's guard already refused a window that is not live.
+fn parityWindowIssue() ?[:0]const u8 {
+    const raw = std.c.getenv(PARITY_OFF_ENV) orelse return null;
+    const issue = std.mem.sliceTo(raw, 0);
+    return if (issue.len == 0) null else issue;
+}
 
 const Move = struct { row: u8, col: u8, digit: u8 };
 const CellAt = struct { row: u8, col: u8 };
@@ -672,6 +683,12 @@ fn writeTranscripts(io: std.Io, arena: std.mem.Allocator, transcripts: []const T
 }
 
 test "parity scenarios: native shell meets every shared scenario and writes its transcripts" {
+    // A window's arms speak different contracts while they migrate, so a run here would fail on the
+    // arm still to move. The run stops before reading the fixture, and the host log carries the reason.
+    if (parityWindowIssue()) |issue| {
+        std.debug.print("expected: parity off (#{s})\n", .{issue});
+        return error.SkipZigTest;
+    }
     const io = std.testing.io;
     const gpa = std.testing.allocator;
     var arena_state = std.heap.ArenaAllocator.init(gpa);

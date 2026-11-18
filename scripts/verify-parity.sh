@@ -36,6 +36,13 @@ grep -q '^test "parity scenarios: ' "$NATIVE_RUNNER" || violation "$NATIVE_RUNNE
 [[ "$WEB_RUNNER" == "$WASM_SUITES/"* ]] || violation "$WEB_RUNNER is outside the discovered suites"
 grep -q "\"--test\", \"$WASM_SUITES/\"" build.zig || violation "$WEB_RUNNER is not run by the glue discovery step"
 
+# Inside a declared window both runners stop before comparing arms, and they say why: a runner that
+# ignored the window would fail on the arm still to migrate, and one that stopped silently hides it.
+for runner in "$NATIVE_RUNNER" "$WEB_RUNNER"; do
+  grep -q "SUDOKU_PARITY_OFF" "$runner" || violation "$runner ignores SUDOKU_PARITY_OFF, so a declared window cannot skip it"
+  grep -q "expected: parity off" "$runner" || violation "$runner skips without logging 'expected: parity off (#N)'"
+done
+
 if ! jq -e '.scenarios | length > 0' "$SCENARIOS" >/dev/null; then
   violation "$SCENARIOS has no scenarios"
 fi
