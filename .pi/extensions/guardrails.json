@@ -73,6 +73,18 @@
       {
         "kind": "directory",
         "path": "~/.honcho/src"
+      },
+      {
+        "kind": "file",
+        "path": "~/.hermes"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.hermes"
+      },
+      {
+        "kind": "directory",
+        "path": "~/hermes"
       }
     ]
   },
