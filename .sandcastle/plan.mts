@@ -385,6 +385,30 @@ export function windowStateRefusal(issue: number, open: boolean): Refusal | null
   return open ? null : { kind: "parity-window-not-open", issue };
 }
 
+/** What the gate is for one step: the command it runs, and the parity its verdict must declare. */
+export interface StepGate {
+  /** The command the implementer and the step reviewer run for this step. */
+  command: string;
+  /** `on` outside a declared window, `off (#N)` inside it: the reviewer reports what it ran. */
+  parity: string;
+}
+
+/**
+ * The gate one step runs, decided by the issue's declared window.
+ *
+ * Parity compares the front ends against each other, so the steps that change a shared contract run
+ * the gate with that check off, and every other step runs it whole. The first step past the window
+ * is already the integration gate: it proves the contract again with both arms on one side.
+ *
+ * `window` is the plan's, `step` the position being run; `project` supplies both commands.
+ */
+export function gateFor(window: ParityWindow | null, step: number, project: ProjectConfig): StepGate {
+  const covered = window !== null && window.steps.includes(step) ? window : null;
+  return covered === null
+    ? { command: project.verify, parity: "on" }
+    : { command: project.verifyOff(covered.issue), parity: `off (#${covered.issue})` };
+}
+
 
 /** How the run would be aimed at one issue, resolved from the issue and the run's stamp. */
 export function makePlan(

@@ -37,6 +37,7 @@ function formatVerdict(verdict: StepVerdict, project: ProjectConfig): string[] {
     `step ${verdict.step}: ${decision.kind === "tick" ? "PASS" : `STOP — ${decision.reason}`}`,
     ...field("test added:    ", verdict.test_added || "(none)"),
     `  verify:        exit ${verdict.verify_exit}`,
+    ...field("parity:        ", verdict.parity),
     ...field("standards:     ", verdict.standards),
     ...field("red on revert: ", verdict.red_on_revert || "(none)"),
   ];

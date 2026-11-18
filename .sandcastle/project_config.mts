@@ -15,6 +15,11 @@
 export interface ProjectConfig {
   /** The gate command every step, step reviewer and whole-branch review runs and quotes. */
   verify: string;
+  /**
+   * The same gate with this project's cross-arm parity check off, for the steps a declared parity
+   * window covers. `issue` is the window's own issue, so the gate can refuse a closed one.
+   */
+  verifyOff: (issue: number) => string;
   /** The file that owns the coding standards, and the level-2 section inside it that numbers them. */
   standards: { file: string; section: string };
   /** The tracker the host writes to, and the label triage puts on an issue a run may step. */

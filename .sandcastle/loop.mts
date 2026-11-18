@@ -12,8 +12,8 @@ import { withHeartbeat } from "./heartbeat.mts";
 import { countShotgun, rgSearch } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
 import { readRunRecord, writeRunRecord } from "./run_record.mts";
-import { nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
-import { decide, decideFinal, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
+import { gateFor, nextStep, readCriteria, readSteps, tickCriterion, tickStep, type Plan } from "./plan.mts";
+import { decide, decideFinal, parityMismatch, readFinalVerdict, readVerdict, tickedCriteria } from "./verdict.mts";
 
 /** A verdict left by an earlier attempt is not this run's evidence: clear it before the agent writes. */
 function clearVerdict(path: string): void {
@@ -117,6 +117,9 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     }
 
     const stage = `step ${step.position}/${steps.length}`;
+    // The window decides this step's gate: its prompt carries the command, so the agent never
+    // chooses the gate and a step after the window cannot inherit the check being off.
+    const gate = gateFor(plan.parity, step.position, project);
     // Sandcastle reserves SOURCE_BRANCH (the run branch, which the prompt reads directly) and
     // TARGET_BRANCH (the host's current branch, which the harness must not depend on). The run's
     // own base travels under its own name, so the review diff range is the branch it was cut from.
@@ -126,6 +129,8 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       STEPS_TOTAL: steps.length,
       STEP_TITLE: step.title,
       BASE_BRANCH: plan.targetBranch,
+      VERIFY: gate.command,
+      PARITY: gate.parity,
       ...childArgs(step.child, project),
     };
 
@@ -169,8 +174,20 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if ("problem" in read) return stop(read.problem);
 
     const decision = decide(read.verdict, step.position, project);
-    event("verdict", `${stage}: ${decision.kind === "tick" ? "PASS" : `STOP — ${decision.reason}`}`);
-    if (decision.kind === "stop") return stop(decision.reason);
+    if (decision.kind === "stop") {
+      event("verdict", `${stage}: STOP — ${decision.reason}`);
+      return stop(decision.reason);
+    }
+
+    // The run gave this step a gate; a verdict that declares another one did not run it, so its
+    // green is about a different check. Never keep the hole open, and never accept it a step early.
+    const wrongGate = parityMismatch(read.verdict, gate.parity);
+    if (wrongGate !== null) {
+      event("verdict", `${stage}: STOP — ${wrongGate}`);
+      return stop(wrongGate);
+    }
+
+    event("verdict", `${stage}: PASS`);
 
     // A sub-issue step is a whole issue: its own reviewer judged that child's criteria, and the host
     // ticks them on the child. A child with any criterion still failing is not a finished step.

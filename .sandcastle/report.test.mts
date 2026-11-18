@@ -14,6 +14,7 @@ function passingVerdict(step: number) {
     step,
     test_added: "a test that fails without the change",
     verify_exit: 0,
+    parity: "on",
     standards: "clean",
     on_track: true,
     concerns: [] as string[],

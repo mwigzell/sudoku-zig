@@ -8,6 +8,9 @@ import type { ProjectConfig } from "./project_config.mts";
 
 export type { ProjectConfig } from "./project_config.mts";
 
+/** The one gate command, so the parity-off variant is the same gate with one flag added. */
+const VERIFY = "zig build verify";
+
 /**
  * This repository, as the harness sees it.
  *
@@ -18,7 +21,9 @@ export type { ProjectConfig } from "./project_config.mts";
  * - `ready-for-agent` is triage's word that an issue is specified enough to step.
  */
 export const PROJECT: ProjectConfig = {
-  verify: "zig build verify",
+  verify: VERIFY,
+  // The parity check is the one step a window may omit, and the flag names the issue that window belongs to.
+  verifyOff: (issue) => `${VERIFY} -Dparity=off -Dparity-off-issue=${issue}`,
   standards: { file: "AGENTS.md", section: "Coding standards" },
   tracker: { readyLabel: "ready-for-agent" },
   agent: { model: "ollama/sandcastle-worker" },

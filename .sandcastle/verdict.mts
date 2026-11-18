@@ -16,6 +16,11 @@ export interface StepVerdict {
   test_added: string;
   /** Exit code of the project's verify command (`ProjectConfig.verify`) in the reviewer's own run. */
   verify_exit: number;
+  /**
+   * The gate the reviewer ran, as `on` or `off (#N)`: `off (#N)` only when that gate carried this
+   * project's parity-off flag for the window's issue N. The plan decides which of the two a step gets.
+   */
+  parity: string;
   /** The mechanical standards result, or the violation that was found. */
   standards: string;
   /** Whether the new test encodes what the issue's step text asked for. */
@@ -43,6 +48,7 @@ const FIELD_TYPES: ReadonlyArray<[keyof StepVerdict, "string" | "number" | "bool
   ["step", "number"],
   ["test_added", "string"],
   ["verify_exit", "number"],
+  ["parity", "string"],
   ["standards", "string"],
   ["on_track", "boolean"],
   ["concerns", "strings"],
@@ -55,6 +61,9 @@ function holds(value: unknown, type: "string" | "number" | "boolean" | "strings"
   if (type === "strings") return Array.isArray(value) && value.every((item) => typeof item === "string");
   return typeof value === type;
 }
+
+/** The parity a verdict may declare: the gate whole, or the gate with the check off for issue N. */
+const PARITY_DECLARATION = /^(?:on|off \(#\d+\))$/u;
 
 /**
  * Read a reviewer's verdict file.
@@ -77,6 +86,11 @@ export function readVerdict(raw: string): VerdictRead {
     if (!holds(record[field], type)) {
       return { problem: `the verdict's ${field} is not ${type === "strings" ? "a list of strings" : `a ${type}`}` };
     }
+  }
+  // The field says which gate the step ran, so a value the host cannot read would make its green
+  // ambiguous rather than wrong: it is a problem, never a pass.
+  if (!PARITY_DECLARATION.test(record.parity as string)) {
+    return { problem: "the verdict's parity is not `on` or `off (#N)`" };
   }
   return { verdict: record as unknown as StepVerdict };
 }
@@ -106,6 +120,27 @@ export function decide(verdict: StepVerdict, expectedStep: number, project: Proj
     return { kind: "stop", reason: "no red-on-revert evidence for the test the step added" };
   }
   return { kind: "tick", step: verdict.step };
+}
+
+/**
+ * Why a step's declared parity is not the gate the run gave it, or `null` when it is.
+ *
+ * The window decides which gate each step runs, so the verdict's parity is checked against it: a
+ * step that ran a different gate proves something other than what the run claims, and the loop
+ * stops rather than reading its green as proof. `expected` is the step's `gateFor(...).parity`.
+ */
+export function parityMismatch(verdict: StepVerdict, expected: string): string | null {
+  if (verdict.parity === expected) return null;
+  if (expected === "on") {
+    return (
+      `step ${verdict.step} is outside the parity window, but its reviewer ran the gate with parity ` +
+      `${verdict.parity}; a step outside the window runs the gate whole`
+    );
+  }
+  return (
+    `step ${verdict.step} is inside the parity window, but its reviewer ran the gate with parity ` +
+    `${verdict.parity}; a windowed step must declare ${expected}`
+  );
 }
 
 // ---------------------------------------------------------------------------

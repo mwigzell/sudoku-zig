@@ -99,7 +99,8 @@ A step verdict (`verdict.mts`), every field evidence the reviewer produced itsel
 | `step` | The step it judges; a verdict naming another step stops the run |
 | `test_added` | The failing test, as `file: what it asserts`. Empty stops the run |
 | `red_on_revert` | What happened when the step's production change was reverted. Empty stops the run |
-| `verify_exit` | The reviewer's own `zig build verify` exit code; must be 0 |
+| `verify_exit` | The exit code of the gate this step was given (`on`, or `off` inside a window); must be 0 |
+| `parity` | The gate the reviewer ran, `on` or `off (#N)`. A step outside the window that ran with the check off — or a windowed step that ran the gate whole — stops the run |
 | `standards` | `clean`, or the violation; anything else stops the run |
 | `on_track`, `drift` | Whether the diff is this step, and whether the branch is still heading for the issue |
 | `ac_at_risk` | Criteria this step endangers; any entry stops the run |

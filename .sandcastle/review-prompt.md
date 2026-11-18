@@ -35,7 +35,7 @@ Your job is to **falsify this step**, not to polish it and not to judge the whol
 
 3. **Try to break the step's test.** Find it, run it, and confirm it encodes what the step's text asks for. Then **revert this step's production change**, run the test again, and record what you saw. A test that stays green when the code it covers is removed asserts a mock, a tautology, or nothing at all.
 
-4. **Check the gate.** Run `zig build verify` yourself and keep the output. A run that skipped tests, or a claim of green with no output, is a fail.
+4. **Check the gate.** Run `{{VERIFY}}` yourself and keep the output. This run gives this step parity `{{PARITY}}`: `on` means the gate compares the front ends, and `off (#N)` means it ran with that check off for the declared window's issue N. A run that skipped tests, a claim of green with no output, or a gate other than the one you were given, is a fail.
 
 5. **Check the branch for drift.** Because the earlier steps are here, you can see the shape the branch is taking. Name any acceptance criterion this step appears to endanger, and say whether the accumulated branch still reads like it is heading for the issue's criteria.
 
@@ -53,6 +53,7 @@ Write `.sandcastle/verdict.json` in the repository root with exactly these field
   "step": {{STEP}},
   "test_added": "file: what the new test asserts",
   "verify_exit": 0,
+  "parity": "{{PARITY}}",
   "standards": "clean",
   "on_track": true,
   "concerns": ["a broken path, a test that cannot fail, or a false claim"],
@@ -63,6 +64,7 @@ Write `.sandcastle/verdict.json` in the repository root with exactly these field
 ```
 
 - `standards`: the word `clean`, or the violation you found as one sentence.
+- `parity`: the gate you actually ran — `on`, or `off (#N)` naming the window's issue. The run gives this step `{{PARITY}}`; write that only if it is the gate you ran, because a verdict whose parity is not the step's declared gate stops the run.
 - `on_track`: false when the step's test does not encode what the step asked for.
 - `concerns`: only what a later step, or the accepting human, must act on — one of three things: a **broken path** (code that now panics, refuses wrongly, or logs one event twice), a **test that cannot fail** or fails for the wrong reason (a fixture that is trivially satisfied, a test a revert leaves green), or a **false claim** in the issue, an ADR or `CONTEXT.md` at this commit. Everything else stays unwritten: intermediate states a later step fixes by existing, coverage percentages, wording a later step rewrites, "cheap to add later", and anything you would describe as a note rather than a defect. An unwritten concern costs nothing; a written one is read as work.
 - The issue's **Front ends** section is the fence. A real defect that only manifests on a front end the issue marks **out of scope** is not a concern, however clearly you can see it: say it in your reply and leave `concerns` alone. The same goes for a criterion that would only be reachable if this issue grew a front end it disclaims.

@@ -25,9 +25,10 @@ const TWO_STEPS = `## Steps
 - [ ] Something at issue level.
 `;
 
-/** A reviewer's verdict for one step, passing unless the test says otherwise. */
-const passingVerdict = (step: number) => ({
+/** A reviewer's verdict for one step, declaring the gate it ran; `parity` is `on` unless the step sits in a window. */
+const passingVerdict = (step: number, parity = "on") => ({
   step,
+  parity,
   test_added: `a test for step ${step}`,
   verify_exit: 0,
   standards: "clean",
@@ -658,6 +659,116 @@ test("a parent with criteria of its own still has them judged, once, by the whol
       [parent.issue, CHILD].sort(),
       "one criterion belongs to the child, one to the parent",
     );
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+/** An issue whose first two steps migrate a cross-arm contract, and whose third is the integration gate. */
+const WINDOW = 141;
+const WINDOWED = `## Parity window
+off for steps 1–2 (#${WINDOW})
+
+## Steps
+
+- [ ] **Step one:** the native arm.
+- [ ] **Step two:** the web arm.
+- [ ] **Step three:** the integration gate.
+
+## Acceptance criteria
+
+- [ ] Something at issue level.
+`;
+
+test("only the window's steps get the off gate, and the step after the window runs the plain gate", async () => {
+  const dirs = fixture();
+  try {
+    const sandbox = fakeSandbox(dirs.worktree, [
+      passingVerdict(1, `off (#${WINDOW})`),
+      passingVerdict(2, `off (#${WINDOW})`),
+      passingVerdict(3),
+    ]);
+    const plan = planFor(WINDOWED);
+    assert.deepEqual(plan.parity?.steps, [1, 2], "the fixture declares a window over its first two steps");
+
+    const code = await runSteps({
+      plan,
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker: fakeTracker(WINDOWED),
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+      project: PROJECT,
+    });
+
+    assert.equal(code, 0, "windowed verdicts that declare the gate they ran let the run finish");
+    const implementers = sandbox.runs.filter((run) => run.promptFile === PROJECT.paths.prompts.implement);
+    assert.deepEqual(
+      implementers.map((run) => run.promptArgs.VERIFY),
+      [PROJECT.verifyOff(WINDOW), PROJECT.verifyOff(WINDOW), PROJECT.verify],
+      "the window's steps run the off command and the step after it runs the gate whole",
+    );
+    const reviewers = sandbox.runs.filter((run) => run.promptFile === PROJECT.paths.prompts.review);
+    assert.deepEqual(
+      reviewers.map((run) => run.promptArgs.PARITY),
+      [`off (#${WINDOW})`, `off (#${WINDOW})`, "on"],
+      "the reviewer is told the gate this step's verdict must declare",
+    );
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+/** A two-step issue whose window closes after the first, so step two is already the integration gate. */
+const WINDOW_ONE = `## Parity window
+off for steps 1 (#${WINDOW})
+
+## Steps
+
+- [ ] **Step one:** the migrating arm.
+- [ ] **Step two:** the integration gate.
+`;
+
+test("a step outside the window that reports parity off stops the run", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(WINDOW_ONE);
+    const sandbox = fakeSandbox(dirs.worktree, [
+      passingVerdict(1, `off (#${WINDOW})`),
+      passingVerdict(2, `off (#${WINDOW})`),
+    ]);
+    const code = await runSteps({
+      plan: planFor(WINDOW_ONE),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+      project: PROJECT,
+    });
+
+    assert.equal(code, 1, "the window ended, so a step that kept the hole open stops the run");
+    assert.doesNotMatch(tracker.body, /- \[x\] \*\*Step two:\*\*/, "the step whose gate was wrong is not ticked");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a step inside the window that reports parity on stops the run", async () => {
+  const dirs = fixture();
+  try {
+    const tracker = fakeTracker(WINDOW_ONE);
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)]);
+    const code = await runSteps({
+      plan: planFor(WINDOW_ONE),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker,
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+      project: PROJECT,
+    });
+
+    assert.equal(code, 1, "a windowed step that ran the plain gate proves less than its green claims");
+    assert.equal(sandbox.runs.length, 2, "the second step never starts");
+    assert.doesNotMatch(tracker.body, /- \[x\]/, "no step is ticked on a gate the window did not allow");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

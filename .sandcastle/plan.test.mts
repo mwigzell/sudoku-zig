@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   agentRuns,
   formatPlan,
+  gateFor,
   makePlan,
   maxSteps,
   nextStep,
@@ -406,4 +407,20 @@ test("the plan prints the window so a reader sees which steps run without parity
   const text = formatPlan(planFor(WINDOW_BODY)).join("\n");
   assert.match(text, new RegExp(`window:\\s+parity off for steps 1–4 \\(#${ISSUE}\\)`, "u"));
   assert.doesNotMatch(formatPlan(planFor(CHECKBOXES)).join("\n"), /window:/u, "no window, no line");
+});
+
+test("only the window's steps get the off command; every later step runs the plain gate", () => {
+  const plan = planFor(WINDOW_BODY);
+  for (const step of plan.parity!.steps) {
+    assert.deepEqual(gateFor(plan.parity, step, PROJECT), {
+      command: PROJECT.verifyOff(ISSUE),
+      parity: `off (#${ISSUE})`,
+    });
+  }
+  assert.deepEqual(
+    gateFor(plan.parity, 5, PROJECT),
+    { command: PROJECT.verify, parity: "on" },
+    "the step after the window is the integration gate",
+  );
+  assert.deepEqual(gateFor(null, 1, PROJECT), { command: PROJECT.verify, parity: "on" }, "no window, the whole gate");
 });
