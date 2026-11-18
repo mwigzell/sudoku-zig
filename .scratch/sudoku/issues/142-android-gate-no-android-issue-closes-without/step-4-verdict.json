@@ -1,0 +1,14 @@
+{
+  "step": 4,
+  "test_added": ".sandcastle/push_gate.test.mts: (1) scripts/push-gate.sh --lanes reports exactly verify/verify-slow/android-device with commands `zig build verify`, `zig build verify-slow`, `zig build android-test` (unfiltered, default env); (2) a clean run executes verify then slow then device and writes <recordDir>/<HEAD>.json with commit=HEAD, result=passed and every lane passed; (3) a failing slow lane exits non-zero, stops (device never ran) and records verify=passed, verify-slow=failed, android-device=skipped; (4) docs/agents/push-gate.md carries the claims (push-gate command, only way to push, cheapest first, first failure, verify-slow, android-test, .zig-cache/push-gate, never skip, android-emulator-start.sh) and AGENTS.md names the step.",
+  "verify_exit": 0,
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "docs/agents/push-gate.md:23-24 claims 'this gate is the only place the toolchain reaches a device', which is false at this commit: `zig build android-gate` (build/android.zig:230 -> src/android/gate.zig:432 runs scripts/android-test.sh) is a second device-reaching build target."
+  ],
+  "red_on_revert": "`git checkout 532319a^ -- AGENTS.md build.zig scripts/android-test.sh && rm scripts/push-gate.sh docs/agents/push-gate.md` then `node --test .sandcastle/push_gate.test.mts` -> 4/4 red (pass 0, fail 4: script ENOENT for the three behaviour tests, doc ENOENT for the manual test). Restored, then two targeted mutations: (a) `if [[ \"$result\" == \"passed\" ]]` -> `if true` in scripts/push-gate.sh:56 -> only 'the first failing lane stops the gate...' failed (pass 3, fail 1); (b) device lane default -> `zig build android-test -Dtest-filter=x` -> only 'the gate's lanes are verify, verify-slow and the full device suite, cheapest first' failed (pass 3, fail 1). Tree restored clean (git status empty) before running the gate.",
+  "ac_at_risk": [],
+  "drift": false
+}

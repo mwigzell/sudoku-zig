@@ -1,0 +1,15 @@
+{
+  "step": 3,
+  "test_added": ".sandcastle/android_evidence.test.mts: the required set derived from a branch (a public `void name(` added line becomes required; a private helper is not; a declared `## Android scenarios` method is required; a fenced example is not; the pinned smoke when no scenario changes; `no scenario names this change` for a changed surface), and the evidence judged (touches no Android code -> null, matching record -> null, no file, failed run, stale commit, dirty tree, short method list each refused with the defect named); .sandcastle/accept.test.mts: androidRefusal refuses a run with no evidence and passes on a record proving the branch; .sandcastle/boundary.test.mts: PROJECT.android facts are filled and the pinned smoke is a method the scenario file declares",
+  "verify_exit": 0,
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "The declared-section source is dead for core-only branches: android_evidence.mts:162 returns `not-android` (no requirement at all) as soon as no changed path is in `android.code`, before the issue's `## Android scenarios` is read. Probed with `requiredScenarios({diff:{touched:['src/core/engine/pencil.zig'],scenarios:''}, body:'## Android scenarios\\n\\n`freshAppWithAutoSave` ...'})` -> {\"kind\":\"not-android\"} and `checkAndroidEvidence` -> null, so a core change that declares its scenario is accepted with no device evidence — the one case android_evidence.mts:123 says the section exists for (\"how a bridge or core change names the proof it needs\").",
+    "The project seam gate lost coverage in this commit while the doc claims it gained some: boundary.test.mts:23-32 drops `archive.mts` from GENERIC_MODULES and never adds `android_evidence.mts`, yet docs/agents/sandcastle.md:170-171 lists both as generic modules that \"never name this repository\". Re-adding both to the list and running `node --test .sandcastle/boundary.test.mts` shows archive.mts clean and `android_evidence.mts names the Zig toolchain: \"zig\"` (its header comment, android_evidence.mts:3) — so the removal was not needed for archive and the module the commit message says \"is scanned by the boundary test\" is not scanned and would fail if it were."
+  ],
+  "red_on_revert": "`git checkout e8c7d0c -- .sandcastle/accept.mts .sandcastle/project.mts .sandcastle/project_config.mts scripts/sandcastle-accept.sh docs/agents/sandcastle.md && git rm .sandcastle/android_evidence.mts`, then `node --test .sandcastle/android_evidence.test.mts .sandcastle/accept.test.mts` -> both files fail (tests 2 / pass 0 / fail 2, ERR_MODULE_NOT_FOUND). Targeted reverts of the single checks, restoring after each: deleting the commit comparison (android_evidence.mts:241-243) -> `✖ evidence from another commit refuses, naming both commits` (12 pass, 1 fail); making `withoutFences` keep fenced lines -> `✖ a fenced example of the declared section is not read as a method` (11 pass, 2 fail). Restored to c4678cb, both suites green (19/19).",
+  "ac_at_risk": [],
+  "drift": false
+}

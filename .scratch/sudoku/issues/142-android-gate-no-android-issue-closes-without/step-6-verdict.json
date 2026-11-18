@@ -1,0 +1,12 @@
+{
+  "step": 6,
+  "test_added": ".sandcastle/docs_framing.test.mts: three tests pin this step's doc claims — (1) docs/agents/sandcastle.md no longer contains 'when a device happens to be up' and states `zig build android-gate`, `zig build push-gate`, `docs/agents/push-gate.md`, the whole/full device suite, never-skip, `stopped: device` and device-free `verify`; (2) the row for `.sandcastle/logs/<stamp>/` and the row for `.scratch/sudoku/issues/<number>-<slug>/` each list `android-evidence.json`; (3) docs/adr/0022-sandcastle-harness-boundaries.md no longer says 'by a hand-run' and names `android-gate`, `push-gate` and 'outside `verify`'. Helpers `tableRow` (fails when the row is absent) and `decisionFile` (reads ADR-0022 where it lives) keep the checks anchored in the real files.",
+  "verify_exit": 0,
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "git checkout 0f62258^ -- docs/agents/sandcastle.md docs/adr/0022-sandcastle-harness-boundaries.md (docs reverted, test kept), then `node --test .sandcastle/docs_framing.test.mts`: 3 of 9 fail — \"docs/agents/sandcastle.md must not leave the device run to 'when a device happens to be up'\", \"docs/agents/sandcastle.md must list the device evidence among a run's files\", \"docs/adr/0022-sandcastle-harness-boundaries.md must not leave the device proof to a hand-run\"; restored with `git checkout 0f62258 -- ...` and it prints 9 pass / 0 fail. Per-claim probe: the old manual already matched only the 'never skip|never a skip' regex; android-gate, push-gate, docs/agents/push-gate.md, whole/full device suite, `stopped: device` and device-free were all absent, and the old ADR lacked android-gate/push-gate while carrying 'by a hand-run'.",
+  "ac_at_risk": [],
+  "drift": false
+}

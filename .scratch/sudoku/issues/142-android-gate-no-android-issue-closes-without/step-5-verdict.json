@@ -1,0 +1,14 @@
+{
+  "step": 5,
+  "test_added": ".sandcastle/closeout.test.mts (8 tests, fake gate + fake diff): not-Android needs no gate run (commands empty, evidence null); an added scenario reaches the project gate as --methods=… with the run directory's absolute evidence path and --issue; tooling-only Android change runs the pinned smoke; a declared `## Android scenarios` method is what a bridge change runs; a failed gate stops with `stopped: device — ` and the start script; a record naming another commit stops (\"not this branch's head\"); a changed Android surface with no scenario stops with \"no scenario names this change\" before any gate runs; and a text test pins main.mts's `if (steps !== 0) return steps;` between `await runSteps(` and `return androidCloseout(`, plus `worktree: sandbox.worktreePath`. .sandcastle/archive.test.mts also asserts android-evidence.json is copied into the accepted record with its role line.",
+  "verify_exit": 0,
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "main.mts:256 (endRun, main.mts:196) appends the run's `end` event after loop.mts:381 already appended `[end] every acceptance criterion passed; the issue is left open for accept or drop`, so every green run logs its end twice and a closeout that stops leaves run.log reading `[end] every acceptance criterion passed; the issue is left open for accept or drop` followed by `[stop] stopped: device — …` with exit 1 — the log asserts the opposite of the outcome (demonstrated: `npx tsx /tmp/logshape.mts` over events.mts prints both orders)."
+  ],
+  "red_on_revert": "Restored HEAD first, then (a) `git checkout 532319a -- .sandcastle/{main,project,project_config,android_evidence,archive}.mts && rm .sandcastle/closeout.mts` -> `node --test .sandcastle/closeout.test.mts` fails with `ERR_MODULE_NOT_FOUND … closeout.mts` (and boundary/archive fail on the removed EVIDENCE_FILE export); (b) with closeout.mts kept, deleting its `checkAndroidEvidence` readback (lines 105-115) -> `✖ a record that proves another commit is a stop, not a ready run … 'ready' !== 'stopped'`; (c) deleting `if (set.kind === \"stop\")` (line 95) -> `✖ a changed Android surface with no scenario stops before any gate runs` (closeoutFor throws) plus `✖ the entry runs the closeout only after a green loop … the closeout runs after the loop returns, never before it`; (d) `git checkout 532319a -- .sandcastle/main.mts` with closeout.mts kept -> only `✖ the entry runs the closeout only after a green loop, and returns what it decides` fails. All runs after `git checkout HEAD -- .sandcastle` (green again: 201 harness tests pass).",
+  "ac_at_risk": [],
+  "drift": false
+}

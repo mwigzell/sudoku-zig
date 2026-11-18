@@ -1,0 +1,14 @@
+{
+  "step": 2,
+  "test_added": ".sandcastle/docs_framing.test.mts: three new tests pin the step's three framing claims — AGENTS.md rule 11 names \"Android scenarios\", \"derived at closeout\" and \"no scenario names this change\"; docs/agents/issue-tracker.md names the `## Android scenarios` section, \"Added or changed\" methods, \"pinned smoke\", `ProjectConfig.android.smoke`, `src/android/jni_host.zig` and the same stop; docs/agents/triage-labels.md says the section is not a `ready-for-agent` condition, keeps \"still runnable\" and points at the tracker's derived set.",
+  "verify_exit": 0,
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "The tracker claim in .sandcastle/docs_framing.test.mts (`/fence/iu`, \"a fenced example of the section is not read as a declaration\") cannot fail: the regex is satisfied by the unrelated pre-existing sentence \"The Front ends section is the fence.\" (docs/agents/issue-tracker.md:37). Removing the fence-aware sentence from the new section (line 89) leaves `node --test .sandcastle/docs_framing.test.mts` 6/6 green, so the doc's promise to the fence-aware declared-section reader is unpinned."
+  ],
+  "red_on_revert": "git checkout e8c7d0c~1 -- AGENTS.md docs/agents/issue-tracker.md docs/agents/triage-labels.md && node --test .sandcastle/docs_framing.test.mts -> `ℹ tests 6 / ℹ pass 3 / ℹ fail 3`, failing with \"AGENTS.md does not say rule 11 points at the tracker's `## Android scenarios` section\", \"docs/agents/issue-tracker.md does not say the derived set has a section of its own\", \"docs/agents/triage-labels.md does not say the section is not a readiness condition\"; restored with `git checkout e8c7d0c -- …` and `git status --porcelain` empty.",
+  "ac_at_risk": [],
+  "drift": false
+}

@@ -1,0 +1,62 @@
+{
+  "rules": [
+    {
+      "rule": "Document public surfaces.",
+      "verdict": "PASS",
+      "evidence": "src/android/gate.zig:13,21,25,49,57,60,63,74,96,134,390 — every pub struct/enum/const/fn carries a doc comment and Evidence's nine fields (:28-47) each say what they mean; .sandcastle/android_evidence.mts:14,22,46,54,63,66,94,127,165,196,227 and .sandcastle/closeout.mts:20,28,31,49,85 likewise. Non-obvious blocks carry signposts: android_evidence.mts:74-92 (why only public declarations count, why `+++` is skipped), gate.zig:88-95 (why the gate options are registered before the toolchain checks), gate.zig:245-249 (why offline/unauthorized devices are not counted)."
+    },
+    {
+      "rule": "DRY",
+      "verdict": "PASS",
+      "evidence": ".sandcastle/android_evidence.mts:144-156 — one `namesPath` is the only place an entry's `/`-suffix directory rule is decided, used by `changesAny` and `androidPathsChanged`, so closeout and accept cannot drift (branch commit 5abb434 carried it once); the gate command is spelled once in project.mts:69-73 and consumed at closeout.mts:99. Shotgun reported below: `clean_tree` is a wire key shared by the Zig writer (src/android/gate.zig:45,319), the TS reader (.sandcastle/android_evidence.mts:42,212) and their tests/docs — a contract, but it is the one key this branch carries through several layers."
+    },
+    {
+      "rule": "SOLID principles:",
+      "verdict": "PASS",
+      "evidence": ".sandcastle/android_evidence.mts:165 decides which scenarios a branch owes and :227 judges a record; .sandcastle/closeout.mts:85 runs the phase; src/android/gate.zig:134 records one device run; archive.mts:64 files the record — one reason to change each. Dependencies point at abstractions handed in: AndroidConfig/BranchDiff/IssueReader (project_config.mts:18-45, android_evidence.mts:46, accept.mts:31-36) and the injected GateRunner (closeout.mts:28) and RunFn/NowFn (gate.zig:57-72), which is what lets closeout.test.mts and gate.zig's fake drive the same production paths without a device."
+    },
+    {
+      "rule": "No magic numbers.",
+      "verdict": "PASS",
+      "evidence": "src/android/gate.zig:428-438 names START_SCRIPT, STOP_SCRIPT, TEST_SCRIPT, DEVICE_STATE, DEFAULT_EVIDENCE and DEFAULT_WHY, :516 names FLAG_ERROR_EXIT; .sandcastle/android_evidence.mts:74-92 names the added-method, diff-header, declared-heading, next-section, fence and code-span patterns; .sandcastle/closeout.mts:68-77 keeps the one-line reason trim/filter without bare literals beyond the index."
+    },
+    {
+      "rule": "Constructors are pure.",
+      "verdict": "PASS",
+      "evidence": ".sandcastle/android_evidence.mts:66-68 `evidencePath` is a join and nothing else; src/android/gate.zig:390-425 `main` only parses flags into Cli (defaults at :440-475) before calling runGate, and the record itself is built field by field at :158-171 with the write left to writeEvidence (:284) at the caller's call."
+    },
+    {
+      "rule": "Nothing is silent",
+      "verdict": "PASS",
+      "evidence": "Every refusal or caught error in the new code names its system message: src/android/gate.zig:134-140 (the OOM line, the one no call site can name), :184-192 dirty tree, :195-204 unreadable commit, :210-222 device list, :284-297 record write, :361-378 spawn/wait/run, :405-412 record directory — all through report(), which falls back to stderr when its sink is full (:118-128). main.mts:221-227 turns a tracker read failure into the stop line, :250-253 folds spawnSync's error.message into the gate's output; accept.mts:138-141 returns the body-read error as the refusal; android_evidence.mts:216-219 returns the unreadable record as its problem. The gate's own standards check reported `✓ PASSED mechanical standards clean (103 file(s))`."
+    },
+    {
+      "rule": "no God classes",
+      "verdict": "PASS",
+      "evidence": "src/android/gate.zig is split into requireCleanTree (:184), readCommit (:195), oneDevice (:210), parseDevices (:245), methodNames (:259), testArgv (:268), writeEvidence (:284), writeEvidenceObject (:302), isoUtc (:334), systemRun (:361) with the entry at :390; .sandcastle/closeout.mts:85-122 keeps the phase to one branch per outcome; main.mts:214-257 keeps the wiring thin and delegates the decision to closeoutFor."
+    },
+    {
+      "rule": "Clean code style",
+      "verdict": "PASS",
+      "evidence": "`zig build verify` exited 0 on this branch: `zig fmt --check` is part of the run and `✓ PASSED mechanical standards clean (103 file(s))` covers the diff; no compiler warning appears in the 768-test output, and `tsc --noEmit` passed on the harness."
+    },
+    {
+      "rule": "Central plumbing is mandatory (hard rule).",
+      "verdict": "PASS",
+      "evidence": "The Android facts are one project value: project.mts:51-75 fills AndroidConfig (testFile, surface, code, the pinned smoke, the gate command and its start script), typed at project_config.mts:18-45; the generic modules take it as a value (android_evidence.mts:165, closeout.mts:86), and .sandcastle/boundary.test.mts:23-35 lists both new modules so a repository path or a spawned process in them fails the suite. src/android/gate.zig adds no user-facing status copy for a front end — it is a host tool built as its own executable (build/android.zig:200-231) and is not reachable from the Android entry; its record keys are the contract accept reads."
+    },
+    {
+      "rule": "Web modules import each other by namespace.",
+      "verdict": "PASS",
+      "evidence": "`git diff --name-only develop...HEAD` lists no file under `src/wasm/`, so no web module or its import style changed on this branch."
+    },
+    {
+      "rule": "Android-only behaviour ships its device test.",
+      "verdict": "PASS",
+      "evidence": "The branch touches `src/android/gate.zig` (a host tool) but none of the app-surface paths in project.mts:53-58, and adds no method to src/android/test/FileBridgeTest.java, so the derived set is the pinned smoke `coreAndJsLogLinesReachLogcat`; running requiredScenarios against this branch's real diff returned exactly that one requirement. The smoke is a real declared scenario (src/android/test/FileBridgeTest.java:634) and .sandcastle/boundary.test.mts asserts that, so the pin cannot point at a name no method has. The branch's own run of that method belongs to the closeout phase (see the criteria verdict)."
+    }
+  ],
+  "shotgun": [
+    { "symbol": "clean_tree", "files": 6 }
+  ]
+}

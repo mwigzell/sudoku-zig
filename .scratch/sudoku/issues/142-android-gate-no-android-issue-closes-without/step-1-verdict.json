@@ -1,0 +1,14 @@
+{
+  "step": 1,
+  "test_added": "src/android/gate.zig (9 tests, run by `zig build verify` via the new `_ = @import(\"android/gate.zig\")` in src/entry_native.zig): the record names issue/commit/clean_tree/device/duration_s/methods/required[].why and is produced by exactly one injected run whose recorded command carries the comma list; a dirty worktree is refused before any run and writes no record; no device and two devices are refused with the start/stop script named; a failed run still writes result=failed with the commit; parseDevices counts only `device` state (offline/unauthorized dropped); isoUtc pins 1970-01-01T00:00:00Z and 2000-02-29; an injected FailingAllocator proves runGate prints 'android-gate: the run stopped, out of memory: OutOfMemory'",
+  "verify_exit": 0,
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "the step's device proof is missing: no artefact records a passing run. The only evidence JSON on disk is .zig-cache/android-evidence.json (gitignored) with {\"result\":\"failed\",\"duration_s\":0,\"commit\":\"e5ad8db2bfeb…\",\"device\":\"emulator-5554\"}, produced by the missing-APK path (I reproduced the same shape: `zig build-exe src/android/gate.zig` then the built tool on a clean tree printed 'the device run failed (1 method(s) on emulator-5554)' and exited 1 because scripts/android-test.sh exits 2 with no output when zig-out/android/sudoku.apk and $SDK/platforms are absent). The commit message says the Agent_API_30 hand-run is left to the owner, so nothing yet proves `zig build android-gate` runs the named methods on a device, or that scripts/android-test.sh's comma list is accepted by AndroidJUnitRunner as one `-e class` spec."
+  ],
+  "red_on_revert": "Two production mutations, each reverted with `git checkout -- src/android/gate.zig`, run as `zig test src/_one_gate_test.zig -lc` (temp root importing android/gate.zig): (a) dropped the `if (err == Error.OutOfMemory) report(\"the run stopped, out of memory: {s}\", …)` line from runGate -> 'expected: android-gate: the run stopped, out of memory: OutOfMemory / found: (end of string)', '8 passed; 0 skipped; 1 failed'; (b) made requireCleanTree's trim length test `>= 0` (so it always returns) and dropped parseDevices' `if (!std.mem.eql(u8, state, DEVICE_STATE)) continue` -> 'gate: a dirty worktree is refused before the device run starts... FAIL (TestExpectedError)' and 'gate: adb devices keeps only the devices that are connected...expected 1, found 3 ... FAIL', '7 passed; 0 skipped; 2 failed'. Restored: 9/9 pass, `git status --porcelain` empty.",
+  "ac_at_risk": [],
+  "drift": false
+}
