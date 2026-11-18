@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PROJECT } from "./project.mts";
@@ -35,6 +35,27 @@ function states(file: string, claims: ReadonlyArray<readonly [RegExp, string]>):
   for (const [claim, meaning] of claims) {
     assert.match(text, claim, `${file} does not say ${meaning}`);
   }
+}
+
+/**
+ * The table row a document keeps for `path`, so an index entry is checked where a reader looks.
+ *
+ * A path with no row is a failure of its own: a claim about a row that does not exist would pass
+ * on any prose at all.
+ */
+function tableRow(file: string, path: string): string {
+  const row = docOf(file)
+    .split("\n")
+    .find((line) => line.startsWith(`| \`${path}`));
+  assert.ok(row !== undefined, `${file}'s tables have no row for \`${path}\``);
+  return row;
+}
+
+/** The decision record whose file name starts with `number`: a decision is read where it lives. */
+function decisionFile(number: string): string {
+  const name = readdirSync(join(ROOT, PROJECT.docs.decisions)).find((entry) => entry.startsWith(`${number}-`));
+  assert.ok(name !== undefined, `${PROJECT.docs.decisions} has no ADR-${number}`);
+  return join(PROJECT.docs.decisions, name);
 }
 
 test("AGENTS.md carries the standing rule: a parity-observed contract change declares a step-scoped window", () => {
@@ -96,4 +117,47 @@ test("triage keeps the Android scenarios section optional and a device step runn
     [/still runnable/u, "a step that needs a device is still runnable"],
     [/Android scenarios/u, "it points at the tracker's derived set"],
   ]);
+});
+
+test("the harness manual replaces the hand-run with the close gate and the push gate", () => {
+  const harness = PROJECT.docs.harness;
+  const text = docOf(harness);
+  // The lane is no longer left to a device that happens to be up: a run and a push each end at a gate.
+  assert.ok(
+    !text.includes("when a device happens to be up"),
+    `${harness} must not leave the device run to 'when a device happens to be up'`,
+  );
+  states(harness, [
+    [/zig build android-gate/u, "the close gate is the target the host runs"],
+    [/zig build push-gate/u, "a push waits for the push gate"],
+    [/docs\/agents\/push-gate\.md/u, "the push gate's own doc is where its lanes and record are read"],
+    [/whole device suite|full device suite/iu, "a push runs the whole device suite, never a filtered run"],
+    [/never skip|never a skip/iu, "a missing device fails the gate rather than being skipped"],
+    [/stopped: device/u, "a run with no device ends `stopped: device`"],
+    [/device-free/iu, "`zig build verify` stays device-free"],
+  ]);
+});
+
+test("the run-directory and record tables carry the device evidence file", () => {
+  const harness = PROJECT.docs.harness;
+  assert.match(
+    tableRow(harness, ".sandcastle/logs/<stamp>/"),
+    /android-evidence\.json/u,
+    `${harness} must list the device evidence among a run's files`,
+  );
+  assert.match(
+    tableRow(harness, ".scratch/sudoku/issues/<number>-<slug>/"),
+    /android-evidence\.json/u,
+    `${harness} must list the device evidence among an accepted run's record`,
+  );
+});
+
+test("ADR-0022 sends the device lane to the close and push boundaries", () => {
+  const adr = decisionFile("0022");
+  const text = docOf(adr);
+  // The lane stays outside `verify`; what replaced the hand-run is the close gate and the push gate.
+  assert.doesNotMatch(text, /by a hand-run/u, `${adr} must not leave the device proof to a hand-run`);
+  assert.match(text, /android-gate/u, `${adr} must name the close gate that proves a branch on a device`);
+  assert.match(text, /push-gate/u, `${adr} must name the push gate that runs the whole device suite`);
+  assert.match(text, /outside `verify`/u, `${adr} must keep the device lane outside \`verify\``);
 });

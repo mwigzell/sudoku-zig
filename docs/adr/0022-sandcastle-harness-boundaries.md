@@ -22,7 +22,7 @@ A cross-arm refactor exposed a second gap: parity compares the front ends **agai
 - The tracker is written only by the run host, never by an agent session: the host ticks the issue step it just accepted and the acceptance criteria the whole-branch review proved. The human's accept command closes the issue. An agent never accepts or drops a run, never ticks, and never closes the issue it worked on.
 - The whole-branch review judges the issue's acceptance criteria with evidence per criterion; an unevidenced or invented criterion stops the run.
 - The harness's own tests run in `zig build verify`, so the gate covers the tool that produces the gate.
-- The Android device lane stays outside `verify`: the gate has no device, so a run holds Android-only behaviour by the scenario it adds and by a hand-run, never by pretending `verify` covers it.
+- The Android device lane stays outside `verify`: the gate has no device, so the lane is held at the two boundaries a branch passes — the **close gate** (`zig build android-gate`, the branch's derived scenarios recorded in `android-evidence.json`, which accept refuses without before it merges) and the **push gate** (`zig build push-gate`, the whole device suite) — never by pretending `verify` covers it, and never by a proof nobody recorded. The lane's own decision record follows separately; the operating detail is `docs/agents/sandcastle.md` and `docs/agents/push-gate.md`.
 
 These are opinions, not options. Anything a project can configure must be a **project fact** (paths, commands, syntax), never a harness policy choice.
 
