@@ -283,8 +283,9 @@ assert.equal(game.exports.step, undefined, "REPL step export must be gone");
   const fresh = await glue.loadArtifact(wasmBytes);
   assert.equal(fresh.init().ok, true);
 
-  const loaded = openBytes(fresh, saved.bytes);
-  assert.equal(loaded.text, null, "solvable load should not warn");
+  const loaded = openBytes(fresh, saved.bytes, "round_trip.sud");
+  // The open says it opened the file and appends no warning: a solvable load has nothing to add.
+  assert.equal(loaded.text, coreText.OPENED_FMT.replace("{s}", "round_trip.sud"), "a solvable open warns about nothing");
   const opened = fresh.getState();
   assert.deepEqual(opened.cells, before.cells, "open did not restore the board");
   assert.equal(opened.selected, null, "open drops the selection");

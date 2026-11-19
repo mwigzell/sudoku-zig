@@ -19,7 +19,7 @@ pub fn set(engine: *game_engine.GameEngine) game_engine.Event {
     engine.state.bookmark = move;
     engine.beginEventMsg();
     engine.appendEventMsgFmt(BOOKMARK_SET_FMT, .{move});
-    return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+    return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 
 /// Whether Rewind can act in this game: a bookmark sits behind the current move.
@@ -38,9 +38,10 @@ pub fn rewind(engine: *game_engine.GameEngine) game_engine.Event {
         if (undone != .ok) return undone;
     }
     const bookmark = engine.state.bookmark.?;
+    // Rewind undoes one move at a time, so this reset replaces the notices those undos produced.
     engine.beginEventMsg();
     engine.appendEventMsgFmt(REWOUND_FMT, .{bookmark});
-    return engine.finishOkEvent(engine.state.board.asView(), false, null, true);
+    return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 
 // ---------------------------------------------------------------------------
@@ -188,4 +189,21 @@ test "the two bookmark confirmations read as sentences" {
     var buf: [128]u8 = undefined;
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, BOOKMARK_SET_FMT, .{12}));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, REWOUND_FMT, .{12}));
+}
+
+test "a rewind reports itself once, not the notices of the undos it replayed" {
+    var engine = try initEngine();
+    defer engine.deinit();
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
+    _ = set(&engine);
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 3, .digit = .nine } });
+    _ = engine.exec(.{ .fill = .{ .row = 1, .col = 1, .digit = .four } });
+    _ = engine.exec(.{ .fill = .{ .row = 2, .col = 2, .digit = .nine } });
+
+    // Four moves down to the bookmark is four undos, each naming its cell; the rewind replaces
+    // all of that with its own single sentence.
+    const event = try expectOk(rewind(&engine));
+    var buf: [64]u8 = undefined;
+    const want = try std.fmt.bufPrint(&buf, REWOUND_FMT, .{1});
+    try std.testing.expectEqualStrings(want, event.ok.msg.?);
 }
