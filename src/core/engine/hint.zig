@@ -137,13 +137,13 @@ pub fn execute(engine: *game_engine.GameEngine, requested: command.HintData) gam
     const solved = solver.solve(engine.state.board) catch |err| switch (err) {
         error.Conflict => {
             appendNoSolutionFor(engine, hint);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
     };
     switch (solved) {
         .none => {
             appendNoSolutionFor(engine, hint);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
         .solution => |solution| {
             if (hint.row != null and hint.col != null) {
@@ -152,7 +152,7 @@ pub fn execute(engine: *game_engine.GameEngine, requested: command.HintData) gam
                 appendEnginePickMsg(engine, solution);
             }
             if (engine.event_msg.optional() == null) appendNoSolutionMsg(engine);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
     }
 }

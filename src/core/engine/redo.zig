@@ -13,6 +13,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     }
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
+        // Every redo names what it replayed, from the history entry behind it.
         .cell => |c| {
             engine.state.board.setCell(c.row, c.col, c.new_value) catch |err| {
                 return engine.eventFromSetCellError(c.row, c.col, err);
@@ -20,6 +21,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             // Redo replays the edit on the board Undo restored, so it clears the same marks it recorded.
             _ = fill_command.clearMarks(&engine.state.board, c.row, c.col, c.new_value);
             engine.state.history.pointer += 1;
+            appendRedoneMsgFmt(engine, game_engine.REDID_MOVE_FMT, c.row, c.col);
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },
         .solve_batch => |snap| {
@@ -36,15 +38,21 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             }
             engine.state.history.pointer += 1;
             engine.state.board.validate();
-            engine.beginEventMsg();
-            engine.appendEventMsg(game_engine.WIN_STATUS_MSG);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+            engine.appendEventMsg(game_engine.REDID_SOLVE_MSG);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
         .mark => |m| {
             engine.state.history.pointer += 1;
+            appendRedoneMsgFmt(engine, game_engine.REDID_MARK_FMT, m.row, m.col);
             return pencil_command.applyForward(engine, m);
         },
     }
+}
+
+/// Append `fmt` naming the cell a command touched; `{s}` is its label (e.g. C3).
+fn appendRedoneMsgFmt(engine: *game_engine.GameEngine, comptime fmt: []const u8, row: u4, col: u4) void {
+    var label_buf: [2]u8 = undefined;
+    engine.appendEventMsgFmt(fmt, .{board.formatCellLabel(&label_buf, row, col)});
 }
 
 // ---------------------------------------------------------------------------
@@ -120,10 +128,10 @@ test "command.redo.execute re-solves a solve batch to the captured grid" {
     for (solution, 0..) |ch, i| expected[i] = ch - '0';
     try std.testing.expectEqual(expected, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
-    try std.testing.expect(event.ok.msg != null);
-    try std.testing.expect(std.mem.indexOf(u8, event.ok.msg.?, "You win!") != null);
-    try std.testing.expect(engine.durableStatus() != null);
-    try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
+    // The undo's sentence is still on the line; the redo appends its own after it.
+    const want = game_engine.UNDID_SOLVE_MSG ++ " " ++ game_engine.REDID_SOLVE_MSG;
+    try std.testing.expectEqualStrings(want, event.ok.msg.?);
+    try std.testing.expectEqualStrings(want, engine.durableStatus().?);
 }
 
 test "Solve clears every mark as player fills would; Undo restores them and Redo clears them again" {

@@ -78,6 +78,10 @@ _Avoid_: Payload (ambiguous), State dump
 Player action vocabulary (`fill`, `clear`, `undo`, `redo`, `bookmark`, `rewind`, `quit`, plus session tags parsed but not executed in `GameEngine.exec`). Native: parsed from a terminal line, where **Bookmark** and **Rewind** are typed words. Wasm: JSON action payloads (`{"action":"fill","row":…}`), with the two bookmark controls on web and Android as Edit → **Set Bookmark** and Edit → **Rewind to Bookmark**. Carries intent, not state.
 _Avoid_: Input action (framework term)
 
+**Durable status** (`State.status`):
+The one sentence the player sees about their last command, kept until another command speaks: drawn below the terminal board, in the page's status bar, and saved in the game file so it survives a relaunch. Core writes it from one rule, on the seam `beginEventMsg` / `appendEventMsg` / `finishOkEvent`: a command that appends sets the line to what it appended; a command that appends nothing leaves the line alone. There is no clear-or-keep argument, and no route — gameplay command or menu action — assigns it directly. A command that changes the board must speak; a command that adds something special (a clash, a win) appends it after its own sentence. Front ends draw what they are handed and never word it themselves (ADR-0023).
+_Avoid_: clearing the line from a front end; a per-call flag deciding whether silence clears or keeps; wording a status in an adapter
+
 **GameEngine**:
 Portable orchestrator. Gameplay `exec` (fill, clear, undo, redo, quit) mutates `State`, runs validation, and returns `Event`. Owns the SUD0 codec (`toSaveFormat` / `fromSaveFormat` on bytes). **No** `FileTransport`, paths, or `std.Io`. Session persistence is **not** in `exec`. Single cross-cutting native test seam: Command → GameEngine → Event.
 _Avoid_: Engine alone (ambiguous — Solver Service also contains "engine" semantics), Controller (MVC framework term)

@@ -19,7 +19,7 @@ pub fn set(engine: *game_engine.GameEngine) game_engine.Event {
     engine.state.bookmark = move;
     engine.beginEventMsg();
     engine.appendEventMsgFmt(BOOKMARK_SET_FMT, .{move});
-    return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+    return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 
 /// Whether Rewind can act in this game: a bookmark sits behind the current move.
@@ -38,9 +38,10 @@ pub fn rewind(engine: *game_engine.GameEngine) game_engine.Event {
         if (undone != .ok) return undone;
     }
     const bookmark = engine.state.bookmark.?;
+    // Rewind undoes one move at a time, so this reset replaces the notices those undos produced.
     engine.beginEventMsg();
     engine.appendEventMsgFmt(REWOUND_FMT, .{bookmark});
-    return engine.finishOkEvent(engine.state.board.asView(), false, null, true);
+    return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 
 // ---------------------------------------------------------------------------

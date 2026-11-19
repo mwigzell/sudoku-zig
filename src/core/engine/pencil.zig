@@ -33,7 +33,7 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.PencilData) game_e
 /// Flip Pencil mode. It is session state: not saved, and kept across New, Open and restore.
 pub fn toggleMode(engine: *game_engine.GameEngine) game_engine.Event {
     engine.pencil_mode = !engine.pencil_mode;
-    return engine.finishOkEvent(engine.state.board.asView(), false, null, false);
+    return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 
 /// Make a recorded toggle (a new mark or Redo): remove the replaced digit, then flip the mark.
@@ -44,10 +44,12 @@ pub fn applyForward(engine: *game_engine.GameEngine, toggle: mutation_history.Ma
             return engine.eventFromSetCellError(toggle.row, toggle.col, err);
         };
     }
+    appendToggledMsg(engine, toggle);
     engine.state.board.toggleMark(toggle.row, toggle.col, toggle.digit);
     if (toggle.old_value == .zero) return finishMarkOnly(engine, toggle);
+    // A mark that replaced a digit says what became of that digit as well.
     var label_buf: [2]u8 = undefined;
-    engine.appendEventMsgFmt(REPLACED_BY_MARK_FMT, .{
+    appendMarkMsg(engine, REPLACED_BY_MARK_FMT, .{
         @backingInt(toggle.old_value),
         board.formatCellLabel(&label_buf, toggle.row, toggle.col),
     });
@@ -67,7 +69,30 @@ pub fn applyBackward(engine: *game_engine.GameEngine, toggle: mutation_history.M
 
 /// A mark alone changes no digit, so there is no conflict, solvability or win to report.
 fn finishMarkOnly(engine: *game_engine.GameEngine, toggle: mutation_history.MarkToggle) game_engine.Event {
-    return engine.finishOkEvent(engine.state.board.asView(), false, .{ .row = toggle.row, .col = toggle.col }, true);
+    return engine.finishOkEvent(engine.state.board.asView(), false, .{ .row = toggle.row, .col = toggle.col });
+}
+
+/// Say whether `toggle` is taking a mark off or putting it on, read from the cell before the flip.
+fn appendToggledMsg(engine: *game_engine.GameEngine, toggle: mutation_history.MarkToggle) void {
+    const marked = engine.state.board.marksAt(toggle.row, toggle.col) & markBit(toggle.digit) != 0;
+    // One label buffer for both fragments: a returned label dies with the function's frame.
+    var label_buf: [2]u8 = undefined;
+    const args = .{ @backingInt(toggle.digit), board.formatCellLabel(&label_buf, toggle.row, toggle.col) };
+    if (marked) {
+        appendMarkMsg(engine, game_engine.MARK_REMOVED_FMT, args);
+    } else {
+        appendMarkMsg(engine, game_engine.MARKED_FMT, args);
+    }
+}
+
+/// The cell's bit for one digit's mark.
+fn markBit(digit: cell.CellValue) board.MarkSet {
+    return @as(board.MarkSet, 1) << @intCast(board.markPlane(digit));
+}
+
+/// Append one status fragment for a mark command.
+fn appendMarkMsg(engine: *game_engine.GameEngine, comptime fmt: []const u8, args: anytype) void {
+    engine.appendEventMsgFmt(fmt, args);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,10 +110,6 @@ const EMPTY_COL: u4 = 2;
 
 fn testEngine() !game_engine.GameEngine {
     return game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
-}
-
-fn markBit(digit: cell.CellValue) board.MarkSet {
-    return @as(board.MarkSet, 1) << @intCast(board.markPlane(digit));
 }
 
 test "a mark toggles on and off in an empty cell, one history step each" {
@@ -139,9 +160,15 @@ test "a mark on a player's digit replaces it, says so, and Undo puts the digit b
     try std.testing.expect(ev == .ok);
     try std.testing.expectEqual(cell.CellValue.zero, ev.ok.board_view.get(EMPTY_ROW, EMPTY_COL));
     try std.testing.expectEqual(markBit(.five), ev.ok.board_view.marks(EMPTY_ROW, EMPTY_COL));
-    var want_buf: [64]u8 = undefined;
+    var want_buf: [160]u8 = undefined;
     var label_buf: [2]u8 = undefined;
-    const want = try std.fmt.bufPrint(&want_buf, REPLACED_BY_MARK_FMT, .{ 7, board.formatCellLabel(&label_buf, EMPTY_ROW, EMPTY_COL) });
+    const label = board.formatCellLabel(&label_buf, EMPTY_ROW, EMPTY_COL);
+    var marked_buf: [64]u8 = undefined;
+    var replaced_buf: [96]u8 = undefined;
+    const want = try std.fmt.bufPrint(&want_buf, "{s} {s}", .{
+        try std.fmt.bufPrint(&marked_buf, game_engine.MARKED_FMT, .{ 5, label }),
+        try std.fmt.bufPrint(&replaced_buf, REPLACED_BY_MARK_FMT, .{ 7, label }),
+    });
     try std.testing.expectEqualStrings(want, ev.ok.msg.?);
 
     const undone = engine.exec(.{ .undo = {} });
@@ -210,4 +237,66 @@ test "marks are visible with the setting on, in Pencil mode, or right after a ma
     cfg.show_marks = true;
     engine.useConfig(cfg);
     try std.testing.expect(engine.marksVisible());
+}
+
+test "a command that says nothing leaves the durable status alone" {
+    var engine = try testEngine();
+    defer engine.deinit();
+
+    _ = engine.exec(.{ .hint = .{ .row = EMPTY_ROW, .col = EMPTY_COL } });
+    const after_hint = engine.durableStatus().?;
+
+    // A select writes nothing, so the hint sentence is still the line.
+    const selected = engine.exec(.{ .select = .{ .row = EMPTY_ROW, .col = EMPTY_COL } });
+    try std.testing.expect(selected == .ok);
+    try std.testing.expectEqualStrings(after_hint, selected.ok.msg.?);
+    try std.testing.expectEqualStrings(after_hint, engine.durableStatus().?);
+}
+
+test "a mark, its undo and its redo each say what they did" {
+    var engine = try testEngine();
+    defer engine.deinit();
+    var label_buf: [2]u8 = undefined;
+    var want_buf: [64]u8 = undefined;
+    const label = board.formatCellLabel(&label_buf, EMPTY_ROW, EMPTY_COL);
+
+    const on = engine.exec(.{ .pencil = .{ .row = EMPTY_ROW, .col = EMPTY_COL, .digit = .three } });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&want_buf, game_engine.MARKED_FMT, .{ 3, label }),
+        on.ok.msg.?,
+    );
+
+    const off = engine.exec(.{ .pencil = .{ .row = EMPTY_ROW, .col = EMPTY_COL, .digit = .three } });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&want_buf, game_engine.MARK_REMOVED_FMT, .{ 3, label }),
+        off.ok.msg.?,
+    );
+
+    const undone = engine.exec(.{ .undo = {} });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&want_buf, game_engine.UNDID_MARK_FMT, .{label}),
+        undone.ok.msg.?,
+    );
+
+    const redone = engine.exec(.{ .redo = {} });
+    // The redo's own sentence, then the toggle sentence it replays after it.
+    var redo_buf: [96]u8 = undefined;
+    const redo_head = try std.fmt.bufPrint(&redo_buf, game_engine.REDID_MARK_FMT, .{label});
+    try std.testing.expectEqualStrings(redo_head, redone.ok.msg.?[0..redo_head.len]);
+    var removed_buf: [64]u8 = undefined;
+    const removed_tail = try std.fmt.bufPrint(&removed_buf, game_engine.MARK_REMOVED_FMT, .{ 3, label });
+    try std.testing.expectEqualStrings(removed_tail, redone.ok.msg.?[redo_head.len + 1 ..]);
+}
+
+test "the eight cell sentences read as sentences" {
+    const sentence = @import("../../test/sentence.zig");
+    var buf: [64]u8 = undefined;
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.FILLED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.CLEARED_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.MARKED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.MARK_REMOVED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.UNDID_MOVE_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.UNDID_MARK_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.REDID_MOVE_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.REDID_MARK_FMT, .{"E5"}));
 }

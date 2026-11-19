@@ -20,7 +20,7 @@ If each route, or each call site, decides for itself whether the line is cleared
 - **Core owns the status line.** It is produced in one place, from one rule, for every command — engine-routed and menu-routed alike. No route sets it directly.
 - **A command that writes to the scratch buffer sets the durable status to what it wrote.**
 - **A command that writes nothing leaves the durable status alone.** Keeping is the default, not a per-site choice; there is no clear-or-keep argument on the seam.
-- **A command that changes the board must write.** Silence is legitimate only when the board is unchanged. A board-changing command that says nothing leaves a sentence that no longer describes the game, which is a defect, not a policy option.
+- **A command that changes the board must write.** Silence is legitimate only when the board is unchanged. A board-changing command that says nothing leaves a sentence that no longer describes the game, which is a defect, not a policy option. Fill, clear, pencil mark on, pencil mark off, and the undo and redo of a cell move and of a mark each append one sentence naming the cell; the undo and redo of a solve name the solve.
 - **A command that has something special to add appends it.** A conflict or a win follows the command's own sentence rather than replacing it.
 - **Front ends draw the status they are handed.** Non-null is drawn; null draws nothing. No front end decides whether a status core produced should be shown.
 

@@ -39,6 +39,26 @@ pub const IMPORTED_MSG = "The puzzle was imported.";
 pub const PASTED_MSG = "The puzzle was pasted.";
 pub const CONFLICT_MSG = "That digit clashes with another in the same row, column or box.";
 pub const WIN_STATUS_MSG = "You win!";
+/// Status line for a cell filled; `{d}` is the digit, `{s}` the cell label (e.g. E5).
+pub const FILLED_FMT = "Filled {d} in {s}.";
+/// Status line for a cell cleared; `{s}` is the cell label.
+pub const CLEARED_FMT = "Cleared {s}.";
+/// Status line for a pencil mark added; `{d}` is the digit, `{s}` the cell label (e.g. C3).
+pub const MARKED_FMT = "Marked {d} in {s}.";
+/// Status line for a pencil mark taken off; the same fields as `MARKED_FMT`.
+pub const MARK_REMOVED_FMT = "Removed {d} from {s}.";
+/// Status line after an undo of a cell move; `{s}` is the cell label.
+pub const UNDID_MOVE_FMT = "Undid the move in {s}.";
+/// Status line after an undo of a mark toggle; `{s}` is the cell label.
+pub const UNDID_MARK_FMT = "Undid the mark in {s}.";
+/// Status line after an undo of a whole Solve; a batch has no single cell to name.
+pub const UNDID_SOLVE_MSG = "Undid the solve.";
+/// Status line after a redo of a cell move; `{s}` is the cell label.
+pub const REDID_MOVE_FMT = "Redid the move in {s}.";
+/// Status line after a redo of a mark toggle; `{s}` is the cell label.
+pub const REDID_MARK_FMT = "Redid the mark in {s}.";
+/// Status line after a redo of a whole Solve; a batch has no single cell to name.
+pub const REDID_SOLVE_MSG = "Redid the solve.";
 
 /// Error sentences a command shows in a dialog; technical detail goes to the log.
 pub const PUZZLE_CELL_MSG = "That cell is part of the puzzle, so it can't be changed.";
@@ -235,7 +255,7 @@ pub const GameEngine = struct {
         };
         self.beginEventMsg();
         self.appendEventMsg(loaded_msg);
-        return self.finishOkEvent(self.state.board.asView(), false, null, false);
+        return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
     /// New game from a one-line puzzle string (generate dialog or fallback fixture).
@@ -254,12 +274,14 @@ pub const GameEngine = struct {
         };
     }
 
-    /// Clear the per-exec `.ok.msg` scratch buffer before appending message parts.
+    /// Clear the per-exec scratch buffer before a command appends its text. A command that never
+    /// appends leaves the buffer empty, and `finishOkEvent` then keeps the durable status as it is.
     pub fn beginEventMsg(self: *@This()) void {
         self.event_msg.reset();
     }
 
-    /// Append one `.ok.msg` fragment; multiple sources may contribute in the same exec step.
+    /// Append one fragment to the current command's text; several sources may contribute in the
+    /// same exec step, and `finishOkEvent` folds the whole of it into the durable status.
     pub fn appendEventMsg(self: *@This(), part: []const u8) void {
         self.event_msg.append(part);
     }
@@ -293,30 +315,29 @@ pub const GameEngine = struct {
             .open => {
                 if (opened_label) |label| self.appendEventMsgFmt(OPENED_FMT, .{label});
                 self.appendUnsolvableLoadWarningIfNeeded();
-                return self.finishOkEvent(self.state.board.asView(), false, null, true);
+                return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .startup_restore => {
                 if (self.state.status.optional()) |persisted| self.appendEventMsg(persisted);
-                return self.finishOkEvent(self.state.board.asView(), false, null, true);
+                return self.finishOkEvent(self.state.board.asView(), false, null);
             },
         }
     }
 
-    /// Build `.ok` using accumulated msg (null when nothing was appended).
+    /// Fold the exec step's scratch buffer into the durable status, then build `.ok`.
+    /// A command that wrote to the buffer sets the durable status to what it wrote; a command
+    /// that wrote nothing leaves the durable status as it stands, so the last sentence survives.
     /// A non-null `edited_cell` becomes the selection.
     pub fn finishOkEvent(
         self: *@This(),
         view: board.Board.BoardView,
         is_quit: bool,
         edited_cell: ?event.CellCoord,
-        clear_when_empty: bool,
     ) Event {
         if (edited_cell) |c| self.selected = c;
         if (self.event_msg.optional()) |msg| {
             self.state.status.reset();
             self.state.status.append(msg);
-        } else if (clear_when_empty) {
-            self.state.status.reset();
         }
         return .{ .ok = .{
             .board_view = view,
@@ -330,7 +351,7 @@ pub const GameEngine = struct {
         self.beginEventMsg();
         self.marks_changed = false;
         self.last_exec_changed = false;
-        return self.finishOkEvent(self.state.board.asView(), false, null, false);
+        return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
     /// Whether the command just run changed the game; false after an `unchanged()` result.
@@ -368,7 +389,18 @@ pub const GameEngine = struct {
         if (self.state.board.isSolved()) {
             self.appendEventMsg(WIN_STATUS_MSG);
         }
-        return self.finishOkEvent(view, false, .{ .row = row, .col = col }, true);
+        return self.finishOkEvent(view, false, .{ .row = row, .col = col });
+    }
+
+    /// Say what a fill or a clear did to the cell: its new digit, or that it is now empty.
+    fn appendCellEditMsg(self: *@This(), row: u4, col: u4, digit: cell.CellValue) void {
+        var label_buf: [2]u8 = undefined;
+        const label = board.formatCellLabel(&label_buf, row, col);
+        if (digit == .zero) {
+            self.appendEventMsgFmt(CLEARED_FMT, .{label});
+        } else {
+            self.appendEventMsgFmt(FILLED_FMT, .{ @backingInt(digit), label });
+        }
     }
 
     /// Route a gameplay command through Board mutation + render update.
@@ -392,11 +424,11 @@ pub const GameEngine = struct {
             },
             .select => |s| {
                 self.selected = .{ .row = s.row, .col = s.col };
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
+                return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .deselect => {
                 self.selected = null;
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
+                return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .clear => |c| {
                 return clear_command.execute(self, c);
@@ -440,6 +472,7 @@ pub const GameEngine = struct {
             return self.eventFromSetCellError(row, col, err);
         };
         const cleared_peers = fill_command.clearMarks(&self.state.board, row, col, digit);
+        appendCellEditMsg(self, row, col, digit);
         // Persist the successful mutation in history
         // First discard stale future entries from any earlier undo branch
         self.state.history.truncateFuture();
@@ -482,7 +515,7 @@ pub const GameEngine = struct {
             error.Conflict => return self.errorEvent(SOLVE_CONFLICT_MSG),
         };
         switch (solved) {
-            .none => return self.finishOkEvent(self.state.board.asView(), false, null, false),
+            .none => return self.finishOkEvent(self.state.board.asView(), false, null),
             .solution => |grid| {
                 if (self.placeSolution(grid)) |failed| return failed;
                 self.state.history.truncateFuture();
@@ -493,7 +526,7 @@ pub const GameEngine = struct {
                 self.state.board.validate();
                 self.beginEventMsg();
                 self.appendEventMsg(WIN_STATUS_MSG);
-                return self.finishOkEvent(self.state.board.asView(), false, null, false);
+                return self.finishOkEvent(self.state.board.asView(), false, null);
             },
         }
     }
@@ -1009,7 +1042,11 @@ test "exec clear after unsolvable fill restores solvable board without warning" 
         .clear = command.ClearData{ .row = 1, .col = 1 },
     });
     try std.testing.expect(cleared == .ok);
-    try std.testing.expect(cleared.ok.msg == null);
+    var cell_text_buf: [48]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&cell_text_buf, CLEARED_FMT, .{"B2"}),
+        cleared.ok.msg.?,
+    );
     const solved = try solver.solve(engine.state.board);
     try std.testing.expect(solved == .solution);
 }
@@ -1024,7 +1061,11 @@ test "exec undo after unsolvable fill restores solvable board without warning" {
 
     const undo = execTest(&engine, command.Command{ .undo = {} });
     try std.testing.expect(undo == .ok);
-    try std.testing.expect(undo.ok.msg == null);
+    var cell_text_buf: [48]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&cell_text_buf, UNDID_MOVE_FMT, .{"B2"}),
+        undo.ok.msg.?,
+    );
     const solved = try solver.solve(engine.state.board);
     try std.testing.expect(solved == .solution);
 }
@@ -1040,14 +1081,22 @@ test "exec fill creates conflict → cell marked and status msg set" {
 
     const first = execTest(&engine, fill1);
     try std.testing.expect(first == .ok);
-    try std.testing.expect(first.ok.msg == null);
+    // A fill with no conflict shows its own sentence and nothing else.
+    var fill_buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&fill_buf, FILLED_FMT, .{ 1, "C1" }), first.ok.msg.?);
 
     const second = execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.one },
     });
     try std.testing.expect(second == .ok);
     const view = second.ok.board_view;
-    try std.testing.expectEqualStrings(CONFLICT_MSG, second.ok.msg.?);
+    var filled_buf: [48]u8 = undefined;
+    var conflict_buf: [128]u8 = undefined;
+    const second_want = try std.fmt.bufPrint(&conflict_buf, "{s} {s}", .{
+        try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{ 1, "D1" }),
+        CONFLICT_MSG,
+    });
+    try std.testing.expectEqualStrings(second_want, second.ok.msg.?);
 
     // Both cells in row 0 must now be flagged as conflicting
     try std.testing.expect(view.isConflictingRowCol(0, 2));
@@ -1094,7 +1143,8 @@ test "exec fill no conflict → no bits set" {
         .fill = command.FillData{ .row = 0, .col = 2, .digit = cell.CellValue.one },
     });
     try std.testing.expect(ev == .ok);
-    try std.testing.expect(ev.ok.msg == null);
+    var fill_buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&fill_buf, FILLED_FMT, .{ 1, "C1" }), ev.ok.msg.?);
     const view = ev.ok.board_view;
 
     // The filled cell must be conflict-free
@@ -1526,7 +1576,7 @@ test "Menu with nothing picked shows the game again, its status kept and nothing
     try std.testing.expectEqual(history_before, engine.state.history.count());
 }
 
-test "durable status clears on solved-to-unsolved cell edit and re-announces on re-solve" {
+test "durable status drops the win text on a solved-to-unsolved cell edit and re-announces on re-solve" {
     const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
     var line: [81]u8 = undefined;
     @memcpy(&line, full);
@@ -1550,7 +1600,12 @@ test "durable status clears on solved-to-unsolved cell edit and re-announces on 
         .clear = .{ .row = row, .col = col },
     });
     try std.testing.expect(unsolve == .ok);
-    try std.testing.expect(unsolve.ok.msg == null);
+    var cleared_buf: [32]u8 = undefined;
+    var label_buf: [2]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&cleared_buf, CLEARED_FMT, .{board.formatCellLabel(&label_buf, row, col)}),
+        unsolve.ok.msg.?,
+    );
 
     const win_again = execTest(&engine, command.Command{
         .fill = .{ .row = row, .col = col, .digit = digit },
@@ -1680,6 +1735,7 @@ test "every status message reads as a sentence, including formatted ones" {
         PASTED_MSG,                         CONFLICT_MSG,                     hint_command.no_solution_msg,
         hint_command.load_no_solution_msg,  hint_command.puzzle_complete_msg, export_flow.COPIED_MSG,
         startup_policy.IDLE_STARTUP_STATUS, file_policy.WRITE_CANCELLED_MSG,  file_policy.SAVE_WHILE_AUTO_SAVE_MSG,
+        UNDID_SOLVE_MSG,                    REDID_SOLVE_MSG,
     }) |msg| try sentence.expectSentence(msg);
     var buf: [128]u8 = undefined;
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, OPENED_FMT, .{"game.sud"}));
@@ -1689,6 +1745,15 @@ test "every status message reads as a sentence, including formatted ones" {
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.BLOCKER_FMT, .{ "C2", '5', '3' }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.PLACEMENT_FMT, .{ "C2", '5' }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.NO_SOLUTION_AT_FMT, .{"C2"}));
+    var cell_buf: [64]u8 = undefined;
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, FILLED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, CLEARED_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, MARKED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, MARK_REMOVED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, UNDID_MOVE_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, UNDID_MARK_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, REDID_MOVE_FMT, .{"E5"}));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, REDID_MARK_FMT, .{"E5"}));
 }
 
 test "legend rewind is on only when a bookmark sits behind the pointer" {

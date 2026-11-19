@@ -15,11 +15,13 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     const notice = bookmarkNoticeAfterUndo(engine);
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
+        // Every undo names what it undid, from the history entry it replayed.
         .cell => |c| {
             engine.state.board.setCell(c.row, c.col, c.old_value) catch |err| {
                 return engine.eventFromSetCellError(c.row, c.col, err);
             };
             fill_command.restoreMarks(&engine.state.board, c);
+            appendUndoneMsgFmt(engine, game_engine.UNDID_MOVE_FMT, c.row, c.col);
             appendBookmarkNotice(engine, notice);
             return engine.finishOkAfterCellEdit(c.row, c.col);
         },
@@ -29,15 +31,22 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             };
             engine.state.board.mark_bits = snap.mark_bits;
             engine.state.board.validate();
-            engine.beginEventMsg();
+            engine.appendEventMsg(game_engine.UNDID_SOLVE_MSG);
             appendBookmarkNotice(engine, notice);
-            return engine.finishOkEvent(engine.state.board.asView(), false, null, true);
+            return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
         .mark => |m| {
+            appendUndoneMsgFmt(engine, game_engine.UNDID_MARK_FMT, m.row, m.col);
             appendBookmarkNotice(engine, notice);
             return pencil_command.applyBackward(engine, m);
         },
     }
+}
+
+/// Append `fmt` naming the cell a command touched; `{s}` is its label (e.g. C3).
+fn appendUndoneMsgFmt(engine: *game_engine.GameEngine, comptime fmt: []const u8, row: u4, col: u4) void {
+    var label_buf: [2]u8 = undefined;
+    engine.appendEventMsgFmt(fmt, .{board.formatCellLabel(&label_buf, row, col)});
 }
 
 /// What this undo owes the player about the bookmark it just moved away from.
@@ -130,7 +139,7 @@ test "command.undo.execute restores the before snapshot of one solve" {
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.entries.items.len);
 }
 
-test "command.undo.execute clears stale win status when solve-batch undo unsolves board" {
+test "command.undo.execute of a solve batch says what it undid" {
     const puzzle_gen = @import("../puzzle_gen/mod.zig");
     const command = @import("../command.zig");
 
@@ -138,13 +147,15 @@ test "command.undo.execute clears stale win status when solve-batch undo unsolve
     defer engine.deinit();
 
     _ = engine.exec(command.Command{ .solve_for_me = {} });
-    try std.testing.expect(engine.durableStatus() != null);
     try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
 
+    // A solve is one history step, so its undo names the solve rather than a cell, and follows
+    // the win sentence the solve itself left on the line.
     const event = execute(&engine);
     try std.testing.expect(event == .ok);
-    try std.testing.expect(event.ok.msg == null);
-    try std.testing.expect(engine.durableStatus() == null);
+    const want = game_engine.WIN_STATUS_MSG ++ " " ++ game_engine.UNDID_SOLVE_MSG;
+    try std.testing.expectEqualStrings(want, event.ok.msg.?);
+    try std.testing.expectEqualStrings(want, engine.durableStatus().?);
     try std.testing.expect(!engine.state.board.isSolved());
 }
 
@@ -183,8 +194,10 @@ test "an undo that lands on the bookmark warns the next one drops it" {
     _ = engine.exec(.{ .fill = .{ .row = 0, .col = 3, .digit = .nine } });
 
     const event = engine.exec(.{ .undo = {} }); // pointer 2 -> 1, resting on the bookmark
+    // The undo's own sentence first, then the notice: the notice alone would misplace the blame.
     try std.testing.expectEqualStrings(
-        std.fmt.comptimePrint(bookmark_command.AT_BOOKMARK_FMT, .{1}),
+        std.fmt.comptimePrint(game_engine.UNDID_MOVE_FMT, .{"D1"}) ++ " " ++
+            std.fmt.comptimePrint(bookmark_command.AT_BOOKMARK_FMT, .{1}),
         event.ok.msg.?,
     );
     try std.testing.expectEqual(@as(?u16, 1), engine.state.bookmark);
@@ -203,7 +216,8 @@ test "the undo past the bookmark says it was cleared" {
 
     const event = engine.exec(.{ .undo = {} }); // pointer 1 -> 0, crossing it
     try std.testing.expectEqualStrings(
-        std.fmt.comptimePrint(bookmark_command.BOOKMARK_CLEARED_FMT, .{1}),
+        std.fmt.comptimePrint(game_engine.UNDID_MOVE_FMT, .{"A1"}) ++ " " ++
+            std.fmt.comptimePrint(bookmark_command.BOOKMARK_CLEARED_FMT, .{1}),
         event.ok.msg.?,
     );
     try std.testing.expectEqual(@as(?u16, null), engine.state.bookmark);
@@ -220,7 +234,13 @@ test "a bookmark at move zero is kept, with no next-undo claim" {
 
     const event = engine.exec(.{ .undo = {} }); // pointer 1 -> 0: landing, not crossing
     try std.testing.expectEqual(@as(?u16, 0), engine.state.bookmark);
-    try std.testing.expect(event.ok.msg == null);
+    // Landing on the bookmark adds no notice: the undo's own sentence is the whole line.
+    var label_buf: [2]u8 = undefined;
+    var want_buf: [48]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&want_buf, game_engine.UNDID_MOVE_FMT, .{board.formatCellLabel(&label_buf, 0, 3)}),
+        event.ok.msg.?,
+    );
 }
 
 test "the two bookmark notices read as sentences" {
