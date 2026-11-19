@@ -1,0 +1,71 @@
+{
+  "criteria": [
+    {
+      "criterion": "`finishOkEvent` takes no clear-or-keep argument, and the engine has no remaining per-site decision about whether an empty command clears the durable status.",
+      "status": "PASS",
+      "evidence": "src/core/engine/game_engine.zig:326-342 — finishOkEvent(self, view, is_quit, edited_cell) has no fourth parameter and folds only `if (self.event_msg.optional()) |msg| { state.status.reset(); state.status.append(msg); }`. `rg -n clear_when_empty src/ docs/ *.md` returns no match (exit 1). All 18 call sites pass three/four args with no flag (pencil.zig:36,77; hint.zig:140,146,155; undo.zig:36; redo.zig:42; bookmark.zig:22,44; game_engine.zig:258,269,313,317,349,387,428,513,523 via gate run)."
+    },
+    {
+      "criterion": "The seam's doc comments state both rules: a command that writes sets the durable status; a command that writes nothing leaves it alone.",
+      "status": "PASS",
+      "evidence": "src/core/engine/game_engine.zig:272-273 (beginEventMsg: 'A command that never appends leaves the buffer empty, and `finishOkEvent` then keeps the durable status as it is'), :278-279 (appendEventMsg), :322-325 (finishOkEvent: 'A command that wrote to the buffer sets the durable status to what it wrote; a command that wrote nothing leaves the durable status as it stands, so the last sentence survives')."
+    },
+    {
+      "criterion": "Fill, clear, pencil mark on, pencil mark off, undo of a cell move, undo of a mark, redo of a cell move and redo of a mark each append their sentence, using the wording in Decisions.",
+      "status": "PASS",
+      "evidence": "Wording: game_engine.zig:42-61 FILLED_FMT 'Filled {d} in {s}.' / CLEARED_FMT 'Cleared {s}.' / MARKED_FMT 'Marked {d} in {s}.' / MARK_REMOVED_FMT 'Removed {d} from {s}.' / UNDID_MOVE_FMT 'Undid the move in {s}.' / UNDID_MARK_FMT 'Undid the mark in {s}.' / REDID_MOVE_FMT 'Redid the move in {s}.' / REDID_MARK_FMT 'Redid the mark in {s}.' Appended at: game_engine.zig:470 appendCellEditMsg in tryFill (serves both fill and clear — clear.zig:12 delegates to tryFill); pencil.zig:52 appendToggledMsg; undo.zig:24,39; redo.zig:24,46. Gate ran these tests green: `core.engine.game_engine.test.each board-changing command says what it did, and a new game speaks too...OK`, `core.engine.pencil.test.a mark, its undo and its redo each say what they did...OK`, `core.engine.redo.test.a redo of a mark names only the redo, not what the mark did...OK`, `core.engine.undo.test.command.undo.execute of a solve batch says what it undid...OK`."
+    },
+    {
+      "criterion": "A conflicting fill shows both its fill sentence and the conflict sentence; a winning fill shows both its fill sentence and the win sentence.",
+      "status": "PASS",
+      "evidence": "src/core/engine/game_engine.zig:470 appends the fill sentence before :376-387 finishOkAfterCellEdit appends CONFLICT_MSG (:380) or WIN_STATUS_MSG (:385). Gate: `core.engine.game_engine.test.a conflicting fill shows its fill sentence and then the conflict...OK` and `core.engine.game_engine.test.exec fill that completes the board shows its fill sentence and then You win!...OK` (asserts `FILLED_FMT ++ \" \" ++ WIN_STATUS_MSG`)."
+    },
+    {
+      "criterion": "Selecting a cell after a hint leaves the hint as the durable status.",
+      "status": "PASS",
+      "evidence": "game_engine.zig:420-426: select/deselect call finishOkEvent with no append, so :333-336 keeps the durable status. Gate: `core.engine.pencil.test.a command that says nothing leaves the durable status alone...OK` (hint → select → msg and durableStatus still the hint text) and `core.engine.game_engine.test.a hint survives a select, and a new game replaces it...OK`."
+    },
+    {
+      "criterion": "Undo and redo of a solve batch no longer reset the scratch buffer mid-command; the rewind handler's reset carries a one-line reason.",
+      "status": "PASS",
+      "evidence": "src/core/engine/undo.zig:36-37 — `.solve_batch` appends UNDID_SOLVE_MSG with no beginEventMsg; src/core/engine/redo.zig:41-42 same. `rg -n event_msg\\.reset src/core/engine/*.zig` matches only game_engine.zig:275 (beginEventMsg), :359 (errorEvent). bookmark.zig:41-43 has the reset with the comment 'Rewind undoes one move at a time, so this reset replaces the notices those undos produced.' Gate: `core.engine.bookmark.test.a rewind reports itself once, not the notices of the undos it replayed...OK`."
+    },
+    {
+      "criterion": "No handler outside the one command entry point and the one deliberate replacement resets the scratch buffer.",
+      "status": "PASS",
+      "evidence": "`rg -n \"beginEventMsg|event_msg\\.reset\" src/` on the branch: beginEventMsg called at game_engine.zig:256 (loadOneLine), :267 (newFromOneLinePuzzle), :308 (finishLoadEvent), :346 (unchanged), :404 (exec — the one entry point), :522 (solve_for_me); bookmark.zig:20 (set) and :42 (rewind — the deliberate replacement). hint.zig:292,317 are inside test blocks (after a `test \"…\"` line, asserted via line numbers). All remaining resets are start-of-command or the rewind."
+    },
+    {
+      "criterion": "`newFromOneLinePuzzle` sets the durable status through `beginEventMsg` and `finishOkEvent`; nothing outside the seam assigns `state.status`.",
+      "status": "PASS",
+      "evidence": "game_engine.zig:263-270 — newFromOneLinePuzzle does beginEventMsg / appendEventMsg(NEW_GAME_STARTED_MSG) / finishOkEvent. `rg -n \"state\\.status\" src/ --glob '!*test*'` shows only game_engine.zig:195 (fromSaveFormat restore lane), :334-335 (finishOkEvent), and save_format.zig:269-270 (codec decode). Gate: `core.engine.game_engine.test.a new game reaches the status line through the seam and keeps no selection behind...OK`."
+    },
+    {
+      "criterion": "The eight new sentences are in the sentence check's list and pass it.",
+      "status": "PASS",
+      "evidence": "game_engine.zig:1741-1767 — 'every status message reads as a sentence, including formatted ones' now includes UNDID_SOLVE_MSG/REDID_SOLVE_MSG (:1750) and formatted FILLED_FMT, CLEARED_FMT, MARKED_FMT, MARK_REMOVED_FMT, UNDID_MOVE_FMT, UNDID_MARK_FMT, REDID_MOVE_FMT, REDID_MARK_FMT (:1761-1768). Also repeated in pencil.zig:296-304 'the eight cell sentences read as sentences'. Gate: `core.engine.game_engine.test.every status message reads as a sentence, including formatted ones...OK`, `core.engine.pencil.test.the eight cell sentences read as sentences...OK`."
+    },
+    {
+      "criterion": "`docs/adr/0023-core-owns-the-status-line.md` records the rule, and `CONTEXT.md` lists it.",
+      "status": "PASS",
+      "evidence": "docs/adr/0023-core-owns-the-status-line.md:23-29 — 'A command that writes to the scratch buffer sets the durable status to what it wrote', 'A command that writes nothing leaves the durable status alone … there is no clear-or-keep argument on the seam', and the board-changing list. CONTEXT.md:81-83 — **Durable status** (`State.status`) entry, including the seam naming and the _Avoid_ line."
+    },
+    {
+      "criterion": "`zig build verify` green, with the timing line reported.",
+      "status": "PASS",
+      "evidence": "`zig build verify` exit code 0 (re-run as /tmp/verify-144b.log). Log reads `781 passed; 2 skipped; 0 failed.`, `✓ parity: 85 scenario(s) on native, web and Android`, `✓ PASSED mechanical standards clean (107 file(s))`, and `── verify timing ── warm-up: 1.41s / run: 12.61s / last: 11.39s / budget: 18.0s / ✓ PASSED timing gate` (first run: run 11.39s)."
+    }
+  ],
+  "parity_restored": true,
+  "parity_line": "✓ parity: 85 scenario(s) on native, web and Android",
+  "concerns": [
+    "Text drift beyond the issue: FILLED_FMT is 'Filled {d} in {s}.' where the Player screen / Decisions table writes 'Filled E5 with 3.' — the branch chose 'in' and documented it in ADR-0023; a human should decide whether that rewording is acceptable since the issue said text was 'new, not reworded' (the eight sentences are all new, but 'in' vs 'with' is a wording choice to confirm).",
+    "The eight sentences are spread over three modules (game_engine.zig, pencil.zig, redo.zig/undo.zig) with three near-identical label-formatting helpers: appendCellEditMsg (game_engine.zig:391), appendUndoneMsgFmt (undo.zig:47), appendRedoneMsgFmt (redo.zig:54) and appendMarkMsg (pencil.zig:99, a one-line pass-through wrapper around appendEventMsgFmt). Consolidating the cell-label sentence helper into one place would remove the duplication (AGENTS.md rule 2, DRY); it was not judged a violation because each site has a distinct message set.",
+    "applyForward gained a `speak: bool` parameter (pencil.zig:44) so a redo can suppress the toggle's own 'Marked …' — this is a per-call voice flag at a helper seam. It does not reintroduce a clear-or-keep flag on finishOkEvent, but it is the same shape of judgement the ticket removed; the redo path is pinned by 'a redo of a mark names only the redo, not what the mark did'.",
+    "A mark that replaces a player's digit now reads 'Marked 5 in B2. The 7 in B2 was replaced by a pencil mark.' (pencil.zig:52 then :57) — correct per the 'special messages append' decision, but the resulting sentence pair is worth a player-screen sanity check.",
+    "Undo of a solve-batch after a win reads 'You win! Undid the solve.', and redo of a solve reads 'Undid the solve. Redid the solve.' — the accumulation is what the rule dictates (append appends); the redo case in particular is a slightly odd running account. Confirmed by undo.zig:142 test and redo.zig test.",
+    "Was a scope addition: src/wasm/boundary.zig writeCoreTextJson now exports BOOKMARK_SET_FMT, REWOUND_FMT, FILLED_FMT, CLEARED_FMT, MARKED_FMT, UNDID_MOVE_FMT to JS for the new step_runner.test.mjs assertion. This is a wire-surface addition that the issue did not name, though it is core-owned text and the gate's wasm-ownership check passes.",
+    "No Android-only surface changed (git diff --name-only develop...HEAD lists no src/android file), so the declared pinned smoke coreAndJsLogLinesReachLogcat remains the whole device requirement; it was not run in this review (verify has no device).",
+    "Android scenario requirement: satisfied by declaration, but a human running push-gate still owns the device evidence."
+  ]
+}

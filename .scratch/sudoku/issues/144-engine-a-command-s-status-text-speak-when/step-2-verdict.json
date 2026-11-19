@@ -1,0 +1,12 @@
+{
+  "step": 2,
+  "test_added": "src/core/engine/game_engine.zig:1807 — `a new game reaches the status line through the seam and keeps no selection behind`: after a fill (selected != null) and a hand-planted scratch fragment, `newFromOneLinePuzzle` returns `.ok` whose `msg`, `durableStatus()`, and `event_msg` all equal `NEW_GAME_STARTED_MSG` (fragment replaced, not appended), and `engine.selected` is null.",
+  "verify_exit": 0,
+  "parity": "off (#144)",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Restored the pre-step body (git show 13cde07^:src/core/engine/game_engine.zig) and re-appended only this step's test block, then `zig test src/_one_test.zig -lc --test-filter \"a new game reaches the status line through the seam\"`: FAIL at `expectEqualStrings(NEW_GAME_STARTED_MSG, engine.event_msg.optional().?)` — `expected: A new game has started.` / `found: Filled 4 in A1. stale fragment` (`1 passed; 0 skipped; 1 failed`). Second variant, direct `state.status` write preceded by a `self.event_msg.reset()` so the outcome looks identical: the test panics on `attempt to use null value` at the same `event_msg.optional().?` line. So the test falsifies both the old body and an outcome-equivalent direct write.",
+  "ac_at_risk": [],
+  "drift": false
+}

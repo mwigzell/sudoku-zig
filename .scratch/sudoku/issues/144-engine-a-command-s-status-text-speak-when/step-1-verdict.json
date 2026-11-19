@@ -1,0 +1,14 @@
+{
+  "step": 1,
+  "test_added": "src/core/engine/pencil.zig:242 'a command that says nothing leaves the durable status alone' — runs a hint, then a select, and asserts both the returned ok.msg and engine.durableStatus() still equal the hint sentence, i.e. an empty scratch buffer leaves the durable status untouched.",
+  "verify_exit": 0,
+  "parity": "off (#144)",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [
+    "False claim in CONTEXT.md:81-82 (added by this commit): the Durable status entry says 'no route — gameplay command or menu action — assigns it directly', but game_engine.zig:266-267 (newFromOneLinePuzzle) still assigns state.status.reset()/append directly at this commit. Routing it through the seam is step 5's work, so the sentence is ahead of the code; it becomes true only when step 5 lands."
+  ],
+  "red_on_revert": "Reverted the seam's new behaviour by re-adding an `else { self.state.status.reset(); }` branch to finishOkEvent (game_engine.zig:338-341), then ran `zig test src/_one_test.zig -lc --test-filter 'a command that says nothing leaves the durable status alone'`. Result: `thread panic: attempt to use null value` at src/core/engine/pencil.zig:252 on `selected.ok.msg.?` — the select cleared the hint sentence, so the test fails. Restored with `git checkout -- src/core/engine/game_engine.zig`; tree verified pristine (`git diff HEAD --stat` empty).",
+  "ac_at_risk": [],
+  "drift": false
+}

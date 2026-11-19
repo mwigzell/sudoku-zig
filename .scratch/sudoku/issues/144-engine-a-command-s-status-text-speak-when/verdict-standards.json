@@ -1,0 +1,62 @@
+{
+  "rules": [
+    {
+      "rule": "Document public surfaces.",
+      "verdict": "PASS",
+      "evidence": "src/core/engine/game_engine.zig:42-61 — all ten new pub const message templates carry doc comments; :272-279 and :322-325 document beginEventMsg/appendEventMsg/finishOkEvent; pencil.zig:38-40 documents the new `speak` parameter; the new private fns (:391 appendCellEditMsg, undo.zig:47, redo.zig:54, pencil.zig:81,94,99) each have a header comment. `zig build verify` mechanical standards gate: ✓ PASSED (public API docs check included)."
+    },
+    {
+      "rule": "DRY",
+      "verdict": "PASS",
+      "evidence": "pencil.zig:81 appendToggledMsg and :99 appendMarkMsg collapse the two mark sentences onto one formatter; undo.zig:47 and redo.zig:54 each replace repeated bufPrint+append with one helper; game_engine.zig:557 labelOf and :562 sentenceThen are shared by tests rather than repeated. Residual near-duplication of the three cell-label appenders is named in concerns, not judged a violation."
+    },
+    {
+      "rule": "SOLID principles:",
+      "verdict": "PASS",
+      "evidence": "Single Responsibility: game_engine.zig:391 appendCellEditMsg only words a cell edit; pencil.zig:81-90 words a toggle; undo.zig:24-25 / redo.zig:24-25 choose their wording from the history entry rather than guessing. Dependency Inversion: all new text lives in src/core/engine (game_engine.zig:42-61) and reaches JS only through the core table at src/wasm/boundary.zig:543-548. Open/Closed: the seam (finishOkEvent) was not branched on tag; each command appends."
+    },
+    {
+      "rule": "No magic numbers.",
+      "verdict": "PASS",
+      "evidence": "The branch introduces no bare literals in production code; the new label buffers use named sizes at the point of need (game_engine.zig:392 `var label_buf: [2]u8`, undo.zig:48, redo.zig:55 — cell labels are two characters) and every user-facing string is a named pub const (game_engine.zig:42-61)."
+    },
+    {
+      "rule": "Constructors are pure.",
+      "verdict": "PASS",
+      "evidence": "No constructor changed on this branch (git diff develop...HEAD lists no init/fromX edit). The branch touches game_engine.zig:263-270 newFromOneLinePuzzle, which is not a constructor but a command — it mutates and returns an Event, as before."
+    },
+    {
+      "rule": "Nothing is silent",
+      "verdict": "PASS",
+      "evidence": "No new catch was added silently: game_engine.zig:264 `self.applyOneLinePuzzle(line) catch {` returns errorEvent(NEW_GAME_FAILED_MSG) — an error event the player sees, unchanged from before the branch. `zig build verify` standards gate: ✓ PASSED (silent catches check included, line '── standards gate ──/✓ PASSED mechanical standards clean (107 file(s))')."
+    },
+    {
+      "rule": "no God classes",
+      "verdict": "PASS",
+      "evidence": "The branch shrinks finishOkEvent (game_engine.zig:326-342, now one if), removes branches from undo/redo, and puts the wording behind small focused helpers (appendCellEditMsg :391, appendToggledMsg pencil.zig:81, appendUndoneMsgFmt undo.zig:47, appendRedoneMsgFmt redo.zig:54). No function grew into a larger switch."
+    },
+    {
+      "rule": "Clean",
+      "verdict": "PASS",
+      "evidence": "`zig build verify` exit 0 with `781 passed; 2 skipped; 0 failed.` and `✓ PASSED mechanical standards clean (107 file(s))`, which includes zig fmt --check. No compiler warnings in the build log (grep -in warning on /tmp/verify-144b.log matches only test names)."
+    },
+    {
+      "rule": "Central plumbing is mandatory (hard rule).",
+      "verdict": "PASS",
+      "evidence": "Every new sentence is a core constant (game_engine.zig:42-61) and the status lifecycle stays in the core seam (game_engine.zig:326-342) — the branch removes the per-site clear-or-keep decision rather than moving it. Adapters only forward: src/wasm/boundary.zig:543-548 exposes core text for tests, src/wasm/status_bar.js:16 shows what it is handed. `rg -n \"state\\.status\" src/ --glob '!*test*'` shows no adapter assignment."
+    },
+    {
+      "rule": "Web modules import each other by namespace.",
+      "verdict": "PASS",
+      "evidence": "The only JS changed is a test: src/wasm/flows/step_runner.test.mjs:169-176 calls `stepRunner.runCommand(...)` and `fillText(coreText.FILLED_FMT, ...)` through existing namespaces. No new JS module or import was added on this branch."
+    },
+    {
+      "rule": "Android-only behaviour ships its device test.",
+      "verdict": "PASS",
+      "evidence": "No Android-only surface changed: `git diff --name-only develop...HEAD` lists CONTEXT.md, docs/adr/0023, six src/core/engine files, src/wasm/{boundary.zig,artifacts/glue.test.mjs,flows/step_runner.test.mjs} — no src/android file, no entry_android.zig, no WebView bridge. The issue's ## Android scenarios declares the pinned smoke coreAndJsLogLinesReachLogcat for exactly that case."
+    }
+  ],
+  "shotgun": [
+    { "symbol": "FILLED_FMT", "files": 4 }
+  ]
+}
