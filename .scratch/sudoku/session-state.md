@@ -1,28 +1,29 @@
-# Session state — #127
+# Session state — bookmark notices
 
-Updated: 2026-11-09. HITL: stopped after one red→green cycle, awaiting direction.
+Updated: 2026-11-18. Cycle complete, uncommitted, awaiting owner review.
 
-## Issue
+## Change
 
-GitHub **#127** — `Android: portrait-only play, and an opaque menubar` (`enhancement`, `ready-for-agent`, agent brief posted).
-Two changes, two slices. **Both slices done; cycle complete, uncommitted.**
+Undo now tells the player when the bookmark matters (owner chose wording option b):
 
-## Slice A — opaque menubar (DONE)
+- landing on it (`pointer == bookmark`, `pointer > 0`): `At the bookmark (move {d}). The next undo drops it.`
+- crossing it (`bookmark > pointer`): `Bookmark at move {d} cleared: undone past it.` and `bookmark = null`.
+- a bookmark at move 0 is kept and gets no next-undo claim (nothing further to undo).
 
-- RED: `src/wasm/menus/menu_bar.test.mjs` — new block asserts the `#menu-bar` rule in `page.html` declares a non-transparent `background` (reads `page.html` as text, the seam the file already uses). Failed with `#menu-bar declares a background`.
-- GREEN: `src/wasm/artifacts/page.html` — added `background: var(--page-bg);` plus a one-line comment inside `#menu-bar`.
-- Gate: `zig build verify` green — 646 passed, 2 skipped, 0 failed; `menu_bar.test.mjs OK`; coverage 89.84%; timing 11.14s vs 15.0s budget.
-- **Uncommitted**: `src/wasm/artifacts/page.html`, `src/wasm/menus/menu_bar.test.mjs`.
+## Files
 
-## Slice B — portrait lock on Android (DONE, no test by owner's call)
+- `src/core/engine/bookmark.zig` — `AT_BOOKMARK_FMT`, `BOOKMARK_CLEARED_FMT` (core-owned text).
+- `src/core/engine/undo.zig` — `BookmarkNotice` + `bookmarkNoticeAfterUndo` replaces `discardBookmarkBelowPointer`; notice appended per branch because the `.solve_batch` path calls `beginEventMsg()` and would otherwise drop it.
+- Tests in `undo.zig`: landing notice, clearing notice, move-0 edge case, sentence check. Existing undo tests unchanged.
 
-- `src/android/bootstrap/AndroidManifest.xml`: `android:screenOrientation="portrait"` on the main activity. `src/android/test/AndroidManifest.xml` and `configChanges` untouched.
-- Owner chose **no automated test** (option C): the manifest line plus manual device proof.
-- Proof on device `8aa2f03a`: before the change, `adb shell cmd window user-rotation lock 1` rotated the display (`cur=2400x1080`); after, the same command leaves it at `cur=1080x2400`, portrait.
-- `zig build android` + `adb install -r` fine; `zig build verify` still green (646 passed, 2 skipped).
+## Gates
 
-## Context worth keeping
+- `zig build verify` green: 17.03s vs 18.0s budget; timing gate passed.
+- `zig build run -- -h` rc 0 (entry point compiles).
+- No parity/fixture change needed: no scenario uses bookmark steps.
 
-- The reported misalignment was **not reproducible** from any artifact (Nov 8 release bundle embeds a `page.html` byte-identical to main; Debug and ReleaseSmall builds also clean; cold launch through Auto New, resume, rotation, landscape scroll all clean). Recorded as background in the issue.
-- Verified latent defects: `#menu-bar` was transparent (fixed here), and `position: sticky` does not pin the menubar in the WebView (Chromium does) — portrait lock removes the landscape scroll path; the sticky difference is unaddressed.
-- Device `8aa2f03a` currently runs the release-bundle APK from `zig-out/android-bundle/sudoku.aab`; rotation left on auto.
+Not committed. Not pushed.
+
+## Prior state (superseded) — #127 menu bar / portrait
+
+Closed work; kept here only as history. Commit history is the record.
