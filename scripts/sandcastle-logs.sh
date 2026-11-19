@@ -88,7 +88,9 @@ fi
 # Say which file is being shown on stderr so a pipe stays clean.
 echo "== ${target} (last ${lines} lines; --list for every run) ==" >&2
 
-if [ "$follow" -eq 1 ]; then
-  exec tail -n "$lines" -f -- "$target"
-fi
-tail -n "$lines" -- "$target"
+# A terminal gets the painted view; a pipe or a redirect gets the plain file, so `| grep` still works.
+paint=()
+if [ -t 1 ]; then paint=(--colour); fi
+if [ "$follow" -eq 1 ]; then paint+=(--follow); fi
+
+exec npx tsx .sandcastle/paint_log.mts "$target" "$lines" "${paint[@]}"

@@ -9,6 +9,7 @@ import type { ProjectConfig } from "./project_config.mts";
 import { emptyLedger, ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
+import { emptyTail, readNewLines, transcriptRole } from "./transcript.mts";
 import { branchSearch, countShotgun } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
 import { readRunRecord, writeRunRecord } from "./run_record.mts";
@@ -22,6 +23,9 @@ function clearVerdict(path: string): void {
 
 /** One implementer and one reviewer run per step. */
 export const STAGES_PER_STEP = 2;
+
+/** How often the agent's transcript is folded into the run's log while it works. */
+const TRANSCRIPT_POLL_MS = 2_000;
 
 /** What the loop is told before it starts: the run's issue, branch and sandbox. */
 export interface StepLoopOptions {
@@ -89,8 +93,28 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
 
   // An agent can think for minutes without logging; the wait beats, so `status` can still tell a
   // working run from a dead one.
-  const waiting = <T,>(what: string, work: Promise<T>): Promise<T> =>
-    withHeartbeat(what, work, (line) => event("heartbeat", line));
+  //
+  // The agent's own transcript is mirrored into the log while it works, so a person following the
+  // run reads the reasoning in the same stream as the steps rather than in a second file.
+  const waiting = <T,>(what: string, work: Promise<T>): Promise<T> => {
+    const logsDir = join(runsDir, "..");
+    let tail = emptyTail();
+    const mirror = (): void => {
+      const read = readNewLines(tail, logsDir);
+      tail = read.tail;
+      const role = tail.path === null ? "agent" : transcriptRole(tail.path);
+      for (const line of read.lines) {
+        const at = new Date().toISOString();
+        appendEvent(runsDir, { at, kind: "detail", message: line, role });
+      }
+    };
+    const timer = setInterval(mirror, TRANSCRIPT_POLL_MS);
+    timer.unref();
+    return withHeartbeat(what, work, (line) => event("heartbeat", line)).finally(() => {
+      clearInterval(timer);
+      mirror();
+    });
+  };
 
   // Every tick this run writes is recorded here, so a drop can take exactly those back.
   const ledgerFile = ledgerPath(runsDir);
