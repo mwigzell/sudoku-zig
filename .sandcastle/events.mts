@@ -97,7 +97,7 @@ export function paintRunLogLine(event: RunEvent, colour: boolean): string {
   const body = event.message;
   switch (event.kind) {
     case "step": {
-      // The message opens with the stage ("step 3/5: …"), which older logs carry where `step` is absent.
+      // The message opens with the stage ("step N/M: …"), which older logs carry where `step` is absent.
       const stage = event.step ? `${event.step.at}/${event.step.of}` : (/^step (\d+\/\d+)/u.exec(body)?.[1] ?? "");
       const title = body.replace(/^step \d+\/\d+: /u, "");
       return `${rule(c.cyan, `STEP ${stage}`)}\n${c.cyan}${c.bold}${title}${c.reset}`;
