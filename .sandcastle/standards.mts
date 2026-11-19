@@ -42,6 +42,9 @@ const RULE = /^(\d+)\.\s+\*\*(.+?)\*\*(.*)$/u;
 // Plain words after the bold belong to the title; a separator or a capital starts the description.
 const TITLE_CONTINUATION = /^[a-z][^.:;,!?—–(]*/u;
 
+// A dash after the bold text introduces a gloss of the same standard, which a report may quote.
+const TITLE_GLOSS = /^[—–-]\s*([^.:;,!?(]+)/u;
+
 /**
  * The level-2 heading that opens the standards section, built from the project's section name.
  *
@@ -90,6 +93,10 @@ export function readRules(markdown: string, project: ProjectConfig): Rule[] {
  */
 function ruleTitle(bold: string, rest: string): { title: string; aliases?: string[] } {
   if (/[.:;,!?]$/u.test(bold)) return { title: bold };
+  // A dash after the bold text introduces a gloss of the same rule, so `**DRY** — Don't repeat
+  // yourself.` is answered by either half: the bold text, or the words the dash introduces.
+  const gloss = TITLE_GLOSS.exec(rest.trim());
+  if (gloss) return { title: bold, aliases: [`${bold} — ${gloss[1]!.trim()}`, `${bold} ${gloss[1]!.trim()}`] };
   const continuation = TITLE_CONTINUATION.exec(rest.trim());
   if (!continuation) return { title: bold };
   // A report may name the standard by its bold text alone; both readings are the same rule.

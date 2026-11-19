@@ -25,7 +25,8 @@ const STANDARDS = `# Agents
 test("the rules are the numbered items under the standards heading, and nothing else", () => {
   assert.deepEqual(readRules(STANDARDS, PROJECT), [
     { position: 1, title: "Document public surfaces." },
-    { position: 2, title: "DRY" },
+    // A dash after the bold text glosses the same rule, so the report may quote either half.
+    { position: 2, title: "DRY", aliases: ["DRY — Don't repeat yourself", "DRY Don't repeat yourself"] },
     { position: 3, title: "No magic numbers." },
   ]);
 });
