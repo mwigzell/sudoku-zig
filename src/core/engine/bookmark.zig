@@ -190,3 +190,20 @@ test "the two bookmark confirmations read as sentences" {
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, BOOKMARK_SET_FMT, .{12}));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, REWOUND_FMT, .{12}));
 }
+
+test "a rewind reports itself once, not the notices of the undos it replayed" {
+    var engine = try initEngine();
+    defer engine.deinit();
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
+    _ = set(&engine);
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 3, .digit = .nine } });
+    _ = engine.exec(.{ .fill = .{ .row = 1, .col = 1, .digit = .four } });
+    _ = engine.exec(.{ .fill = .{ .row = 2, .col = 2, .digit = .nine } });
+
+    // Four moves down to the bookmark is four undos, each naming its cell; the rewind replaces
+    // all of that with its own single sentence.
+    const event = try expectOk(rewind(&engine));
+    var buf: [64]u8 = undefined;
+    const want = try std.fmt.bufPrint(&buf, REWOUND_FMT, .{1});
+    try std.testing.expectEqualStrings(want, event.ok.msg.?);
+}
