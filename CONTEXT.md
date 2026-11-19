@@ -422,4 +422,4 @@ _Avoid_: "the user" (ambiguous with the player)
 
 ## Architectural Decisions
 
-See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, ADR-0011 layer ownership, ADR-0014 persistent settings and in-app editing, ADR-0013 Android entry options, ADR-0019 core owns the selection and the frame).
+See `docs/adr/` for numbered ADRs as cross-cutting decisions are recorded (e.g., ADR-0010 structured wasm boundary, ADR-0011 layer ownership, ADR-0014 persistent settings and in-app editing, ADR-0013 Android entry options, ADR-0019 core owns the selection and the frame, ADR-0023 core owns the status line).
