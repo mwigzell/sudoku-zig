@@ -4,8 +4,11 @@
 // run wants those lines in the same stream as the steps, so this tails the newest transcript and
 // hands each new line back as a `detail` event. The transcript stays on disk: this only mirrors it.
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
+
+/** How often the mirror retries when a filesystem watch cannot be set up at all. */
+const FALLBACK_POLL_MS = 5_000;
 
 /** The newest agent transcript under `logsDir`, or `null` when no agent has written one yet. */
 export function newestTranscript(logsDir: string): string | null {
@@ -48,4 +51,42 @@ export function readNewLines(tail: Tail, logsDir: string): { lines: string[]; ta
   const fresh = text.slice(offset, end + 1);
   const lines = fresh.split("\n").filter((line) => line.trim().length > 0);
   return { lines, tail: { path, offset: end + 1 } };
+}
+
+/**
+ * Call `onLine` whenever a transcript under `logsDir` grows, and return the function that stops it.
+ *
+ * The directory is watched rather than the file, because each agent writes a new transcript and a
+ * watch on the old one would outlive it. A watch that cannot be set up falls back to a slow timer:
+ * the mirror is a convenience, and losing its immediacy must never cost the run its log.
+ * `onLine` is called once immediately, so a transcript that already has lines is not missed.
+ */
+export function watchTranscript(logsDir: string, onLine: () => void): () => void {
+  let watcher: FSWatcher | null = null;
+  let timer: NodeJS.Timeout | null = null;
+  const wake = (): void => {
+    try {
+      onLine();
+    } catch {
+      // A transcript that is being rotated can vanish mid-read; the next write reads it again.
+    }
+  };
+  try {
+    watcher = watch(logsDir, { persistent: false }, wake);
+    // A watcher that errors is dead; the timer takes over so the log keeps filling.
+    watcher.on("error", () => {
+      watcher?.close();
+      watcher = null;
+      timer ??= setInterval(wake, FALLBACK_POLL_MS);
+      timer.unref();
+    });
+  } catch {
+    timer = setInterval(wake, FALLBACK_POLL_MS);
+    timer.unref();
+  }
+  wake();
+  return () => {
+    watcher?.close();
+    if (timer !== null) clearInterval(timer);
+  };
 }

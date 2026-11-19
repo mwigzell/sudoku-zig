@@ -11,7 +11,7 @@ import { resolveRolePrompt } from "./role_prompt.mts";
 import { emptyLedger, ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
 import { appendEvent, formatAgentCost, type AgentCost, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
-import { emptyTail, readNewLines, transcriptRole } from "./transcript.mts";
+import { emptyTail, readNewLines, transcriptRole, watchTranscript } from "./transcript.mts";
 import { branchSearch, countShotgun } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
 import { readRunRecord, writeRunRecord } from "./run_record.mts";
@@ -52,9 +52,6 @@ async function forkRole(seed: SeedSession, sandbox: StepSandbox, role: RoleFork)
 
 /** One implementer and one reviewer run per step. */
 export const STAGES_PER_STEP = 2;
-
-/** How often the agent's transcript is folded into the run's log while it works. */
-const TRANSCRIPT_POLL_MS = 2_000;
 
 /** What the loop is told before it starts: the run's issue, branch and sandbox. */
 export interface StepLoopOptions {
@@ -163,10 +160,11 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
         appendEvent(runsDir, { at, kind: "detail", message: line, role });
       }
     };
-    const timer = setInterval(mirror, TRANSCRIPT_POLL_MS);
-    timer.unref();
+    // The transcript is watched, not polled: the kernel says when a line lands, so a run that is
+    // thinking costs no wake-ups and a line appears as soon as it is written.
+    const stopWatching = watchTranscript(logsDir, mirror);
     return withHeartbeat(what, work, (line) => event("heartbeat", line)).finally(() => {
-      clearInterval(timer);
+      stopWatching();
       mirror();
     });
   };
