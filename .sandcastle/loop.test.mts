@@ -79,6 +79,11 @@ function fakeTracker(body: string, options: { ignoreWrites?: boolean } = {}) {
   return tracker;
 }
 
+/** A line only the implementer's prompt carries, so a fork's role is read from its text. */
+const IMPLEMENTER_MARKER = "You are the implementer for";
+/** A line only the whole-branch review's prompt carries. */
+const FINAL_REVIEW_MARKER = "You are the reviewer for the **whole branch**";
+
 /**
  * A sandbox that answers each role: the implementer commits, the reviewer writes the next
  * queued verdict (or nothing, when the queue holds `null`).
@@ -92,38 +97,48 @@ function fakeSandbox(
   implementCommits = 1,
 ) {
   const queued = [...verdicts];
-  /** What one `run()` call was given; the loop's own prompt arguments are what the tests check. */
-  type RunOptions = { name?: string; promptFile?: string; promptArgs: Record<string, string | number | boolean> };
+  /**
+   * What one role's fork was given: its name and the prompt text it was handed.
+   *
+   * A fork takes a resolved prompt and refuses prompt arguments, so the prompt's own text is the
+   * only place a role's values can be checked.
+   */
+  type RunOptions = { name?: string; prompt: string };
   const runs: RunOptions[] = [];
+  /** What one role's fork answers: the implementer commits, the reviewer writes the next verdict. */
+  const answer = async (prompt: string, options: { name?: string }) => {
+    runs.push({ name: options?.name, prompt });
+    if (prompt.includes(IMPLEMENTER_MARKER)) {
+      const commits = Array.from({ length: implementCommits }, (_unused, index) => ({ sha: `abc${index + 1}` }));
+      return { commits, iterations: [], stdout: "" };
+    }
+    // The whole-branch review is the run's last agent: it writes its own file, naming no step.
+    if (prompt.includes(FINAL_REVIEW_MARKER)) {
+      const final_file = join(worktree, PROJECT.paths.verdicts.criteria);
+      if (final === null) rmSync(final_file, { force: true });
+      else writeFileSync(final_file, JSON.stringify(final));
+      const standards_file = join(worktree, PROJECT.paths.verdicts.standards);
+      if (standards === null) rmSync(standards_file, { force: true });
+      else writeFileSync(standards_file, JSON.stringify(standards));
+      return { commits: [], iterations: [], stdout: "" };
+    }
+    // A child-issue step's reviewer also adjudicates the child's own criteria, in the same file
+    // shape the whole-branch review uses for the parent's.
+    if (childMatrix !== null) writeFileSync(join(worktree, PROJECT.paths.verdicts.criteria), JSON.stringify(childMatrix));
+    const verdict = queued.shift();
+    const file = join(worktree, PROJECT.paths.verdicts.step);
+    if (verdict !== null && verdict !== undefined) writeFileSync(file, JSON.stringify(verdict));
+    else rmSync(file, { force: true });
+    return { commits: [], iterations: [], stdout: "" };
+  };
   const sandbox = {
     branch: "sandcastle/sequential-reviewer/1",
     worktreePath: worktree,
     runs,
-    run: async (options: RunOptions) => {
-      runs.push(options);
-      if (options.promptFile?.includes("implement") === true) {
-        const commits = Array.from({ length: implementCommits }, (_unused, index) => ({ sha: `abc${index + 1}` }));
-        return { commits, iterations: [], stdout: "" };
-      }
-      // The whole-branch review is the run's last agent: it writes its own file, naming no step.
-      if (options.promptFile?.includes("final") === true) {
-        const final_file = join(worktree, PROJECT.paths.verdicts.criteria);
-        if (final === null) rmSync(final_file, { force: true });
-        else writeFileSync(final_file, JSON.stringify(final));
-        const standards_file = join(worktree, PROJECT.paths.verdicts.standards);
-        if (standards === null) rmSync(standards_file, { force: true });
-        else writeFileSync(standards_file, JSON.stringify(standards));
-        return { commits: [], iterations: [], stdout: "" };
-      }
-      // A child-issue step's reviewer also adjudicates the child's own criteria, in the same file
-      // shape the whole-branch review uses for the parent's.
-      if (childMatrix !== null) writeFileSync(join(worktree, PROJECT.paths.verdicts.criteria), JSON.stringify(childMatrix));
-      const verdict = queued.shift();
-      const file = join(worktree, PROJECT.paths.verdicts.step);
-      if (verdict !== null && verdict !== undefined) writeFileSync(file, JSON.stringify(verdict));
-      else rmSync(file, { force: true });
-      return { commits: [], iterations: [], stdout: "" };
-    },
+    // The seed is the run's one cold session; every role forks it, so a fork is where a role's
+    // resolved prompt is recorded.
+    run: async () => ({ commits: [], iterations: [{ sessionId: "seed-session" }], stdout: "", fork: answer }),
+    exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
   };
   return sandbox;
 }
@@ -161,7 +176,7 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
 
     assert.equal(code, 0, "a run whose steps all stand exits green once the whole branch passes");
     assert.equal(sandbox.runs.length, 5, "two steps, two runs each, then the whole-branch review");
-    assert.match(String(sandbox.runs[4]?.promptFile), /final-review-prompt/, "the last agent reads the whole branch");
+    assert.match(String(sandbox.runs.find((run) => run.name === "final-review")?.prompt), /whole branch/u, "the last agent reads the whole branch");
     assert.ok(existsSync(join(dirs.runsDir, "verdict-acs.json")), "the whole-branch verdict is kept");
     assert.match(tracker.body, /- \[x\] \*\*Step one:\*\*/, "step one was ticked on the issue");
     assert.match(tracker.body, /- \[x\] \*\*Step two:\*\*/, "step two was ticked on the issue");
@@ -185,7 +200,7 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
     const events = readEvents(dirs.runsDir);
     assert.deepEqual(
       [...new Set(events.map((entry) => entry.kind))],
-      ["run", "step", "agent-start", "agent-end", "verdict", "tick", "criterion", "end"],
+      ["run", "step", "agent-start", "agent-end", "agent-cost", "verdict", "tick", "criterion", "end"],
       "every transition the loop makes is one line, and no kind is missing",
     );
     assert.equal(events[0]?.kind, "run", "the log opens with the run");
@@ -194,6 +209,18 @@ test("each step gets an implementer and a reviewer run, and the host ticks it", 
       events.filter((entry) => entry.kind === "agent-start").length,
       5,
       "an agent start per role per step, plus the whole-branch review",
+    );
+    // The seed's id is on the log, so a resumed run and every fork can be traced to the session
+    // whose prefix they carry.
+    assert.equal(
+      events.some((entry) => entry.kind === "run" && entry.message.includes("seed session seed-session")),
+      true,
+      "the log names the seed session every role forked",
+    );
+    assert.equal(
+      events.filter((entry) => entry.kind === "agent-cost").length,
+      5,
+      "one cost line per agent run, so two consecutive steps can be compared",
     );
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
@@ -215,10 +242,12 @@ test("a run keeps one branch, one commit per step, and pushes nothing", async ()
     });
 
     assert.equal(code, 0, "both steps stand, so the run finishes green");
-    const implementers = sandbox.runs.filter((run) => run.promptFile?.includes("implement") === true);
+    const implementers = sandbox.runs.filter((run) => run.prompt.includes(IMPLEMENTER_MARKER));
+    // The step number reaches the agent through the prompt's own text, which is the only place a
+    // fork can carry it: a fork takes no prompt arguments.
     assert.deepEqual(
-      implementers.map((run) => run.promptArgs.STEP),
-      [1, 2],
+      implementers.map((run) => /step `(\d+)` of/u.exec(run.prompt)?.[1]),
+      ["1", "2"],
       "one implementer per step, so the branch holds one commit per step",
     );
     const record = readRunRecord(dirs.runsDir);
@@ -308,11 +337,18 @@ function silentReviewerSandbox(worktree: string) {
   return {
     branch: "sandcastle/sequential-reviewer/1",
     worktreePath: worktree,
-    run: async (options: { promptFile?: string }) => ({
-      commits: options.promptFile?.includes("implement") === true ? [{ sha: "abc1" }] : [],
-      iterations: [],
+    run: async () => ({
+      commits: [],
+      iterations: [{ sessionId: "seed-session" }],
       stdout: "",
+      // The implementer commits; the reviewer writes nothing, so the verdict it left is all there is.
+      fork: async (prompt: string) => ({
+        commits: prompt.includes(IMPLEMENTER_MARKER) ? [{ sha: "abc1" }] : [],
+        iterations: [],
+        stdout: "",
+      }),
     }),
+    exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
   };
 }
 
@@ -368,10 +404,17 @@ test("an implementer that commits nothing is a stop, not an empty pass", async (
       branch: "sandcastle/sequential-reviewer/1",
       worktreePath: dirs.worktree,
       runs: [] as unknown[],
-      run: async (options: { promptFile?: string }) => {
-        sandbox.runs.push(options);
-        return { commits: [], iterations: [], stdout: "" };
-      },
+      run: async () => ({
+        commits: [],
+        iterations: [{ sessionId: "seed-session" }],
+        stdout: "",
+        // The implementer commits nothing, so the loop stops before a reviewer is asked.
+        fork: async (prompt: string) => {
+          sandbox.runs.push(prompt);
+          return { commits: [], iterations: [], stdout: "" };
+        },
+      }),
+      exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
     };
     const code = await runSteps({
       plan: planFor(TWO_STEPS),
@@ -445,13 +488,17 @@ test("the loop never passes sandcastle's reserved prompt arguments", async () =>
       project: PROJECT,
     });
 
-    // Sandcastle fills these itself and refuses a run that overrides them, so a step that
-    // names one takes the whole run down before an agent ever starts.
+    // A fork's prompt is inline, so sandcastle substitutes nothing in it and refuses prompt
+    // arguments outright: the loop fills the run's own branch and the review's base into the text,
+    // and TARGET_BRANCH stays absent because the harness must not depend on the host's branch.
     assert.equal(sandbox.runs.length, 5, "both roles ran for both steps, then the whole-branch review");
     for (const passed of sandbox.runs) {
-      assert.equal("SOURCE_BRANCH" in passed.promptArgs, false, "SOURCE_BRANCH is sandcastle's to fill");
-      assert.equal("TARGET_BRANCH" in passed.promptArgs, false, "TARGET_BRANCH is sandcastle's to fill");
-      assert.equal(passed.promptArgs.BASE_BRANCH, "develop", "the review diffs against the run's own base");
+      assert.equal(/\{\{[A-Z_]+\}\}/u.test(passed.prompt), false, "no placeholder reaches the agent unfilled");
+    }
+    // Only the two reviews name the branch: the implementer works on it and is never asked to.
+    for (const review of sandbox.runs.filter((run) => run.name?.startsWith("reviewer-") === true || run.name === "final-review")) {
+      assert.equal(review.prompt.includes(sandbox.branch), true, "the review reads the run's own branch");
+      assert.equal(review.prompt.includes("develop"), true, "the review diffs against the run's own base");
     }
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
@@ -622,9 +669,9 @@ test("a sub-issue step is judged by its own reviewer, and its criteria are ticke
     });
 
     assert.equal(code, 0, `a child whose criteria pass leaves the run green: ${sandbox.runs.map((run) => run.name).join(",")}`);
-    const review = sandbox.runs.find((run) => run.promptFile?.includes("review") === true);
-    assert.equal(review?.promptArgs.CHILD_ISSUE, CHILD, "the reviewer is told which sub-issue it is judging");
-    assert.ok(String(review?.promptArgs.CHILD_OUTPUT).includes(PROJECT.paths.verdicts.criteria), "and which file to write");
+    const review = sandbox.runs.find((run) => run.name?.startsWith("reviewer-") === true);
+    assert.equal(review?.prompt.includes(`#${CHILD}`), true, "the reviewer is told which sub-issue it is judging");
+    assert.equal(review?.prompt.includes(PROJECT.paths.verdicts.criteria), true, "and which file to write");
     assert.equal(
       sandbox.runs.some((run) => run.name === "final-review"),
       true,
@@ -722,15 +769,15 @@ test("only the window's steps get the off gate, and the step after the window ru
     });
 
     assert.equal(code, 0, "windowed verdicts that declare the gate they ran let the run finish");
-    const implementers = sandbox.runs.filter((run) => run.promptFile === PROJECT.paths.prompts.implement);
+    const implementers = sandbox.runs.filter((run) => run.name?.startsWith("implementer-") === true);
     assert.deepEqual(
-      implementers.map((run) => run.promptArgs.VERIFY),
+      implementers.map((run) => [PROJECT.verifyOff(WINDOW), PROJECT.verify].find((gate) => run.prompt.includes(gate))),
       [PROJECT.verifyOff(WINDOW), PROJECT.verifyOff(WINDOW), PROJECT.verify],
       "the window's steps run the off command and the step after it runs the gate whole",
     );
-    const reviewers = sandbox.runs.filter((run) => run.promptFile === PROJECT.paths.prompts.review);
+    const reviewers = sandbox.runs.filter((run) => run.name?.startsWith("reviewer-") === true);
     assert.deepEqual(
-      reviewers.map((run) => run.promptArgs.PARITY),
+      reviewers.map((run) => [`off (#${WINDOW})`, "on"].find((parity) => run.prompt.includes(`parity \`${parity}\``))),
       [`off (#${WINDOW})`, `off (#${WINDOW})`, "on"],
       "the reviewer is told the gate this step's verdict must declare",
     );
@@ -814,8 +861,8 @@ test("the whole-branch review runs the plain gate even over a window, and proves
 
     assert.equal(code, 0, "a window the review proves restored leaves the run green");
     const review = sandbox.runs.find((run) => run.name === "final-review");
-    assert.equal(review?.promptArgs.VERIFY, PROJECT.verify, "the review is handed the gate whole, never the window's command");
-    assert.equal(review?.promptArgs.PARITY_LINE, PROJECT.parity.sample, "and the parity line its verdict must quote");
+    assert.equal(review?.prompt.includes(PROJECT.verify), true, "the review is handed the gate whole, never the window's command");
+    assert.equal(review?.prompt.includes(PROJECT.parity.sample), true, "and the parity line its verdict must quote");
   } finally {
     rmSync(dirs.root, { recursive: true, force: true });
   }

@@ -35,6 +35,7 @@ export const PROJECT: ProjectConfig = {
     archive: ".scratch/sudoku/issues",
     env: ".sandcastle/.env",
     prompts: {
+      seed: ".sandcastle/seed-prompt.md",
       implement: ".sandcastle/implement-prompt.md",
       review: ".sandcastle/review-prompt.md",
       finalReview: ".sandcastle/final-review-prompt.md",

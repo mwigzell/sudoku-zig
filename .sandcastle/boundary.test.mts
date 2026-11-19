@@ -32,6 +32,8 @@ const GENERIC_MODULES = [
   "archive.mts",
   "android_evidence.mts",
   "closeout.mts",
+  "role_prompt.mts",
+  "seed.mts",
 ];
 
 /** The text of one harness module, as committed. */
@@ -58,8 +60,15 @@ const REPO_LITERALS: ReadonlyArray<{ pattern: RegExp; fact: string }> = [
 const AMBIENT_READ = /(?:readFileSync|readFile|readdirSync)\(\s*["'`]/u;
 /** A read rooted at a directory the module names itself, instead of one it was handed. */
 const AMBIENT_ROOT = /(?:readFileSync|readFile)\(\s*join\(\s*["'`]/u;
-/** A subprocess: the entry owns those, so a generic module must not reach one. */
-const SUBPROCESS = /\b(?:execFileSync|execFile|execSync|spawnSync|spawn)\b/u;
+/**
+ * A subprocess: the entry owns those, so a generic module must not reach one.
+ *
+ * The node process APIs, by name. A module may *declare* the capability it is handed (`exec`) or
+ * describe a role spawning cold in a comment; calling a process API is what it may not do. A
+ * capability call like `sandbox.exec(...)` is deliberately not matched: the sandbox is handed in,
+ * and a generic module reaching it is the seam working, not a break.
+ */
+const SUBPROCESS = /\b(?:execFileSync|execFile|execSync|spawnSync|spawnSync|spawn)\s*\(/u;
 /** Importing the adapter would let a generic module read this repo's facts without being given them. */
 const ADAPTER_IMPORT = /from\s+["'][^"']*project\.mts["']/u;
 /** The config type is a type-only import: it is erased, so no runtime edge to the adapter exists. */
@@ -112,6 +121,12 @@ test("the checker itself catches a planted literal, ambient read, subprocess and
   assert.equal(seamViolations("x.mts", 'const verify = "zig build verify";\n').length, 1);
   assert.equal(seamViolations("x.mts", 'readFileSync(".sandcastle/verdict.json", "utf8");\n').length, 1);
   assert.equal(seamViolations("x.mts", 'execFileSync("gh", ["issue", "view"]);\n').length, 1);
+  assert.equal(seamViolations("x.mts", 'spawn("git", ["status"]);\n').length, 1, "a bare spawn call is a subprocess too");
+  // The capability a generic module is handed is not a subprocess: naming it, or calling it on
+  // the sandbox it was given, is the seam working.
+  assert.deepEqual(seamViolations("x.mts", "  exec(command: string): Promise<void>;\n"), []);
+  assert.deepEqual(seamViolations("x.mts", 'await sandbox.exec("git status");\n'), []);
+  assert.deepEqual(seamViolations("x.mts", "// a role would spawn cold\n"), [], "prose is not a call");
   assert.equal(seamViolations("x.mts", 'import { PROJECT } from "./project.mts";\n').length, 1);
   assert.equal(seamViolations("x.mts", 'import { ProjectConfig } from "./project_config.mts";\n').length, 1);
   assert.deepEqual(seamViolations("x.mts", 'import type { ProjectConfig } from "./project_config.mts";\n'), []);

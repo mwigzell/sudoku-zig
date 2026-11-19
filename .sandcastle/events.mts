@@ -13,6 +13,7 @@ export type EventKind =
   | "step"
   | "agent-start"
   | "agent-end"
+  | "agent-cost"
   | "heartbeat"
   | "verdict"
   | "tick"
@@ -34,6 +35,25 @@ export type RunEvent = {
    * `role` so a reader can tell the implementer's reasoning from the reviewer's.
    */
   role?: string;
+  /**
+   * What one agent run cost, on its `agent-cost` event: the session it ran in and its tokens, so
+   * two consecutive steps can be compared without opening the agent's own session file.
+   */
+  cost?: AgentCost;
+};
+
+/** One agent run's session and token cost, as the agent reported them. */
+export type AgentCost = {
+  /** The session this run used; a fork's own id, not the seed's. */
+  sessionId: string | null;
+  /** Tokens the model read that were not cached. */
+  inputTokens: number;
+  /** Tokens written to the prompt cache, which a fork's shared prefix mostly is. */
+  cacheCreationInputTokens: number;
+  /** Tokens read from the prompt cache. */
+  cacheReadInputTokens: number;
+  /** Tokens the model wrote. */
+  outputTokens: number;
 };
 
 /** `events.jsonl`, the machine-readable half of the run's log. */
@@ -44,6 +64,21 @@ export function eventsPath(runsDir: string): string {
 /** `run.log`, the half a person reads. */
 export function runLogPath(runsDir: string): string {
   return join(runsDir, "run.log");
+}
+
+/**
+ * What one agent run cost, as one line: its session, then its tokens.
+ *
+ * The figures are the agent's own, and a fork's cached prefix shows up as cache reads, which is
+ * what makes the seed's saving visible: a step that re-read the startup context would pay it
+ * again as input.
+ */
+export function formatAgentCost(cost: AgentCost): string {
+  const session = cost.sessionId === null ? "no session id" : `session ${cost.sessionId}`;
+  return (
+    `${session}: input ${cost.inputTokens}, cached input ${cost.cacheReadInputTokens}` +
+    ` (+${cost.cacheCreationInputTokens} written), output ${cost.outputTokens}`
+  );
 }
 
 /**

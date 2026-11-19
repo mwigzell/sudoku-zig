@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendEvent, eventsPath, formatRunLogLine, readEvents, runLogPath } from "./events.mts";
+import { appendEvent, eventsPath, formatAgentCost, formatRunLogLine, readEvents, runLogPath } from "./events.mts";
 
 test("every event lands in both halves of the log, in order", () => {
   const dir = mkdtempSync(join(tmpdir(), "sandcastle-events-"));
@@ -41,5 +41,25 @@ test("a run.log line carries the time, the kind and the message", () => {
   assert.equal(
     formatRunLogLine({ at: "t1", kind: "stop", message: "the step added no test" }),
     "t1 [stop] the step added no test",
+  );
+});
+
+test("an agent run's cost line names its session and its tokens", () => {
+  const line = formatAgentCost({
+    sessionId: "fork-7",
+    inputTokens: 120,
+    cacheCreationInputTokens: 9000,
+    cacheReadInputTokens: 41000,
+    outputTokens: 640,
+  });
+  assert.equal(
+    line,
+    "session fork-7: input 120, cached input 41000 (+9000 written), output 640",
+    "a reader compares two steps by these four figures, so each is named",
+  );
+  assert.match(
+    formatAgentCost({ sessionId: null, inputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, outputTokens: 0 }),
+    /^no session id:/u,
+    "a run the agent gave no id for says so rather than showing a blank",
   );
 });

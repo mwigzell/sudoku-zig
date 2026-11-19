@@ -4,10 +4,12 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentProvider, SandboxRunOptions } from "@ai-hero/sandcastle";
+import type { AgentProvider, SandboxRunOptions, SandboxRunResult } from "@ai-hero/sandcastle";
 import type { ProjectConfig } from "./project_config.mts";
+import { openSeed, type SeedSession } from "./seed.mts";
+import { resolveRolePrompt } from "./role_prompt.mts";
 import { emptyLedger, ledgerPath, readLedger, recordCriterion, recordTick, writeLedger } from "./ledger.mts";
-import { appendEvent, type EventKind } from "./events.mts";
+import { appendEvent, formatAgentCost, type AgentCost, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
 import { emptyTail, readNewLines, transcriptRole } from "./transcript.mts";
 import { branchSearch, countShotgun } from "./shotgun.mts";
@@ -19,6 +21,33 @@ import { decide, decideFinal, parityMismatch, parityRestored, readFinalVerdict, 
 /** A verdict left by an earlier attempt is not this run's evidence: clear it before the agent writes. */
 function clearVerdict(path: string): void {
   rmSync(path, { force: true });
+}
+
+/** One role's run: its prompt resolved, then forked from the run's seed session. */
+interface RoleFork {
+  /** Log name for this agent run. */
+  name: string;
+  /** The role's prompt template, whose placeholders and shell blocks are resolved before the fork. */
+  promptFile: string;
+  /** Values for the template's `{{KEY}}` placeholders. */
+  promptArgs?: Record<string, string | number>;
+}
+
+/**
+ * Fork the run's seed with one role's instruction.
+ *
+ * A fork takes its prompt inline, and an inline prompt gets neither placeholder substitution nor
+ * shell-block expansion, so the role's template is resolved here first — against the sandbox, so
+ * its `git` and `gh` blocks see the branch under review.
+ */
+async function forkRole(seed: SeedSession, sandbox: StepSandbox, role: RoleFork): Promise<SandboxRunResult> {
+  // Sandcastle substitutes nothing in an inline prompt, so the run's own branch is supplied here.
+  // TARGET_BRANCH is the host's branch, which the harness must not depend on.
+  const args = { SOURCE_BRANCH: sandbox.branch, ...role.promptArgs };
+  const prompt = await resolveRolePrompt(readFileSync(role.promptFile, "utf8"), args, sandbox);
+  // The prompt is already resolved, so the fork is handed text and nothing else: sandcastle refuses
+  // promptArgs on an inline prompt, and a fork is always inline.
+  return seed.fork(prompt, { name: role.name });
 }
 
 /** One implementer and one reviewer run per step. */
@@ -60,8 +89,10 @@ export interface StepSandbox {
   readonly branch: string;
   /** Host path of the worktree, where the reviewer leaves its verdict. */
   readonly worktreePath: string;
-  /** Run one agent session and report the commits it made. */
-  run(options: SandboxRunOptions): Promise<{ commits: readonly { sha: string }[] }>;
+  /** Open the run's seed session, which every role forks. */
+  run(options: SandboxRunOptions): Promise<SandboxRunResult>;
+  /** Run a command in the sandbox, so a role prompt's shell blocks see the branch under review. */
+  exec(command: string): Promise<{ exitCode: number; stdout: string; stderr: string }>;
 }
 
 /**
@@ -76,15 +107,39 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
   const { plan, sandbox, tracker, agent, runsDir, project } = options;
   mkdirSync(runsDir, { recursive: true });
 
+  // One seed per run: every role forks it, so the startup context is paid for once.
+  const seed = await openSeed(sandbox, agent, project.paths.prompts.seed);
+
   // One call per transition: what a person sees on stdout is also what the run's log keeps.
   // A step event also carries its iteration as data, so a reader need not parse the message.
-  const event = (kind: EventKind, message: string, step?: { at: number; of: number }): void => {
+  const event = (kind: EventKind, message: string, step?: { at: number; of: number }, cost?: AgentCost): void => {
     const at = new Date().toISOString();
-    appendEvent(runsDir, step === undefined ? { at, kind, message } : { at, kind, message, step });
+    const base = { at, kind, message, ...(step === undefined ? {} : { step }), ...(cost === undefined ? {} : { cost }) };
+    appendEvent(runsDir, base);
     console.log(`[${kind}] ${message}`);
   };
 
+  // One line per agent run, so two consecutive steps can be compared without opening the agent's
+  // own session file. The figures are the agent's; a run that reported none says so rather than
+  // claiming zero.
+  const logCost = (what: string, run: SandboxRunResult): void => {
+    const iteration = run.iterations.at(-1);
+    const usage = iteration?.usage;
+    const cost = {
+      sessionId: iteration?.sessionId ?? null,
+      inputTokens: usage?.inputTokens ?? 0,
+      cacheCreationInputTokens: usage?.cacheCreationInputTokens ?? 0,
+      cacheReadInputTokens: usage?.cacheReadInputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+    };
+    const message = usage === undefined ? `${what}: the agent reported no token usage` : `${what}: ${formatAgentCost(cost)}`;
+    event("agent-cost", message, undefined, cost);
+  };
+
   event("run", `${plan.branch} on the step loop for issue #${plan.issue}, logs in ${runsDir}`);
+  // The seed's id is recorded before any role runs: a resumed run forks the same seed, and the
+  // log says which session every fork's prefix came from.
+  event("run", `seed session ${seed.sessionId}`);
 
   const stop = (reason: string): number => {
     event("stop", reason);
@@ -137,7 +192,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if (step === null) {
       // Every step is ticked, so this iteration is the whole-branch review: the run's last agent,
       // and the only place the issue's acceptance criteria are judged. It reports; it never ticks.
-      return await finalReview({ plan, sandbox, tracker, agent, runsDir, project, ledgerFile }, stop, event);
+      return await finalReview({ plan, sandbox, tracker, agent, runsDir, project, ledgerFile, seed }, stop, event, logCost);
     }
 
     const stage = `step ${step.position}/${steps.length}`;
@@ -160,14 +215,13 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
 
     event("step", `${stage}: ${step.title}`, { at: step.position, of: steps.length });
     event("agent-start", `${stage} implementer`);
-    const implement = await waiting(`${stage} implementer`, sandbox.run({
+    const implement = await waiting(`${stage} implementer`, forkRole(seed, sandbox, {
       name: `implementer-${stage.replace(" ", "-").replace("/", "of")}`,
-      maxIterations: 1,
-      agent,
       promptFile: project.paths.prompts.implement,
       promptArgs,
     }));
     event("agent-end", `${stage} implementer`);
+    logCost(`${stage} implementer`, implement);
     if (implement.commits.length === 0) return stop(`the implementer committed nothing for ${stage}`);
     if (implement.commits.length > 1) {
       return stop(`the implementer made ${implement.commits.length} commits for ${stage}; a step is one commit`);
@@ -180,14 +234,13 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     clearVerdict(join(sandbox.worktreePath, project.paths.verdicts.criteria));
 
     event("agent-start", `${stage} reviewer`);
-    const review = await waiting(`${stage} reviewer`, sandbox.run({
+    const review = await waiting(`${stage} reviewer`, forkRole(seed, sandbox, {
       name: `reviewer-${stage.replace(" ", "-").replace("/", "of")}`,
-      maxIterations: 1,
-      agent,
       promptFile: project.paths.prompts.review,
       promptArgs,
     }));
     event("agent-end", `${stage} reviewer`);
+    logCost(`${stage} reviewer`, review);
     if (review.commits.length > 0) return stop(`the reviewer committed to ${plan.branch}; a review may not write`);
 
     if (!existsSync(verdictPath)) return stop(`the reviewer wrote no ${project.paths.verdicts.step} for ${stage}`);
@@ -296,11 +349,12 @@ function childArgs(child: number | null, project: ProjectConfig): Record<string,
  * run passes only when every criterion is `PASS` with evidence. Returns the process exit code.
  */
 async function finalReview(
-  options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "tracker" | "agent" | "runsDir" | "project">> & { ledgerFile: string },
+  options: Required<Pick<StepLoopOptions, "plan" | "sandbox" | "tracker" | "agent" | "runsDir" | "project">> & { ledgerFile: string; seed: SeedSession },
   stop: (reason: string) => number,
   logEvent: (kind: EventKind, message: string) => void,
+  logCost: (what: string, run: SandboxRunResult) => void,
 ): Promise<number> {
-  const { plan, sandbox, tracker, agent, runsDir, project, ledgerFile } = options;
+  const { plan, sandbox, tracker, agent, runsDir, project, ledgerFile, seed } = options;
 
   const verdictPath = join(sandbox.worktreePath, project.paths.verdicts.criteria);
   const standardsPath = join(sandbox.worktreePath, project.paths.verdicts.standards);
@@ -311,10 +365,8 @@ async function finalReview(
   logEvent("agent-start", "final reviewer: the issue's acceptance criteria");
   const review = await withHeartbeat(
     "final reviewer",
-    sandbox.run({
+    forkRole(seed, sandbox, {
       name: "final-review",
-      maxIterations: 1,
-      agent,
       promptFile: project.paths.prompts.finalReview,
       // The whole-branch review is the integration gate, so it is always handed the gate whole:
       // a declared window is over by now, and its verdict is what proves the check is back on.
@@ -328,6 +380,7 @@ async function finalReview(
     (line) => logEvent("heartbeat", line),
   );
   logEvent("agent-end", "final reviewer");
+  logCost("final reviewer", review);
   if (review.commits.length > 0) return stop(`the whole-branch reviewer committed to ${plan.branch}; a review may not write`);
 
   if (!existsSync(verdictPath)) return stop(`the whole-branch reviewer wrote no ${project.paths.verdicts.criteria}`);

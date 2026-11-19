@@ -40,20 +40,32 @@ A run aimed at another issue, or one that left no `run.json` record of its aim, 
 3. **One sandbox for the whole run**, created once: bwrap, the `pi` agent on `ollama/sandcastle-worker`,
    the host's `~/.pi/agent` mounted, `npm install` before the first agent, `node_modules` copied in. Every
    step commits to the one run branch, cut from the branch the run was started on.
-4. **Per step, two fresh sessions.** An implementer performs that step only (red test, green, `verify`,
-   red-on-revert proof, docs) and commits once; a reviewer in a new session tries to falsify it and writes
+4. **One seed session per run, forked per role.** Before any step, the loop opens one session
+   carrying the startup context — system prompt, the project's standing instructions, skills, tool
+   schemas, and the domain model `seed-prompt.md` has it read — and records its id on the log. Every
+   role then **forks** that seed with its own instruction as the delta. Fork, not resume: a reviewer
+   exists to falsify the implementer's work, so it must not inherit the implementer's transcript, and
+   a fork gives both a warm prefix and a clean role. An agent that cannot fork stops the run, naming
+   that, rather than spawning cold for every step.
+5. **Per step, two roles.** An implementer performs that step only (red test, green, `verify`,
+   red-on-revert proof, docs) and commits once; a reviewer tries to falsify it and writes
    `.sandcastle/verdict.json`. A step with no commit, two commits, or a reviewer that commits at all stops
    the run.
-5. **The host reads the verdict** and decides (see below). On a pass it ticks that step on the issue and
+6. **The host reads the verdict** and decides (see below). On a pass it ticks that step on the issue and
    records the tick. Nothing else is ever written to the issue, and acceptance criteria are never touched.
-6. **After the last tick, the whole-branch review** runs: one more session reads the entire diff and judges
+7. **After the last tick, the whole-branch review** runs: one more fork reads the entire diff and judges
    the issue's acceptance criteria, writing `.sandcastle/verdict-acs.json`. The host then ticks every
    criterion that session proved — matched one for one against the issue body, so a criterion it invented
    or skipped stops the run — and leaves the issue open. The run exits 0 only if every criterion is proven
    with evidence.
 
-The iteration bound is the **unticked** steps plus that final review; agent runs are two per step plus one.
-A resumed issue therefore costs only what is left.
+The iteration bound is the **unticked** steps plus that final review; agent runs are two per step plus one,
+all forked from the run's one seed. A resumed issue therefore costs only what is left.
+
+Every agent run leaves an `agent-cost` line in the run's log: the session it used and its input,
+cached-input and output tokens. The seed's id is logged before the first role runs, so a fork's
+cached prefix is traceable to the session it came from, and two consecutive steps can be compared
+without opening the agent's own session file.
 
 ## The parity window
 
@@ -227,7 +239,9 @@ a project fact means filling a `ProjectConfig` field; changing harness policy is
 | `.sandcastle/archive.mts` | The record an accept leaves beside the issue: the verdicts copied and the README that indexes them |
 | `.sandcastle/android_evidence.mts` | What an Android-scope branch must prove on a device, and whether a run's evidence proves it |
 | `.sandcastle/report.mts`, `report_cli.mts` | Turning verdict files into the readable report, and the command that prints it |
-| `.sandcastle/{implement,review,final-review}-prompt.md` | What each agent is told |
+| `.sandcastle/seed-prompt.md`, `seed.mts` | The run's one seed session: what it reads, and the fork every role is handed |
+| `.sandcastle/role_prompt.mts` | A role's prompt resolved for a fork: `{{KEY}}` filled, `!`cmd`` blocks run in the sandbox |
+| `.sandcastle/{implement,review,final-review}-prompt.md` | What each role is told, as the delta on the seed |
 | `.sandcastle/CODING_STANDARDS.md` | Points the agents at the standards' owners |
 | `.sandcastle/logs/<stamp>/` | `step-<n>-verdict.json`, `verdict-acs.json`, `verdict-standards.json`, `shotgun.json`, `ticks.json`, `run.json`, `android-evidence.json`, `events.jsonl`, `run.log` |
 | `.scratch/sudoku/issues/<number>-<slug>/` | An accepted run's record: the verdict files copied, `shotgun.json`, `android-evidence.json`, and the README naming the branch and its concerns |

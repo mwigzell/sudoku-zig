@@ -77,8 +77,8 @@ export interface ProjectConfig {
     archive: string;
     /** The file holding the token the sandboxed agents call the tracker with. */
     env: string;
-    /** What each role's agent session is told, by role. */
-    prompts: { implement: string; review: string; finalReview: string };
+    /** What each role's agent session is told, by role; `seed` opens the session every role forks. */
+    prompts: { seed: string; implement: string; review: string; finalReview: string };
     /** Where the agents write their verdicts inside the worktree, by kind. */
     verdicts: { step: string; criteria: string; standards: string };
   };
