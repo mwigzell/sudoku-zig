@@ -7,6 +7,10 @@ const undo_command = @import("undo.zig");
 pub const BOOKMARK_SET_FMT = "Bookmark set at move {d}.";
 /// Status text after a rewind; `{d}` is the move number of the bookmark.
 pub const REWOUND_FMT = "Rewound to the bookmark at move {d}.";
+/// Status text when an undo lands on the bookmark; `{d}` is the move it pins.
+pub const AT_BOOKMARK_FMT = "At the bookmark (move {d}). The next undo drops it.";
+/// Status text when an undo crosses the bookmark; `{d}` is the move it pinned before it went.
+pub const BOOKMARK_CLEARED_FMT = "Bookmark at move {d} cleared: undone past it.";
 
 /// Pin the current history position, replacing any earlier bookmark; reports the move.
 pub fn set(engine: *game_engine.GameEngine) game_engine.Event {
