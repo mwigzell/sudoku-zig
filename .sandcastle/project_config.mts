@@ -81,6 +81,13 @@ export interface ProjectConfig {
     prompts: { seed: string; implement: string; review: string; finalReview: string };
     /** Where the agents write their verdicts inside the worktree, by kind. */
     verdicts: { step: string; criteria: string; standards: string };
+    /**
+     * Where the agent writes its session files, one directory per working directory.
+     *
+     * A run's cost is read from here: the `pi` provider reports a session id but no token usage,
+     * so the figures come from the session file the agent itself wrote.
+     */
+    sessions: string;
   };
   /** Where a reader finds the harness's operating manual and its decision records. */
   docs: { harness: string; decisions: string };

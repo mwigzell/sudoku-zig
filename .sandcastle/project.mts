@@ -45,6 +45,8 @@ export const PROJECT: ProjectConfig = {
       criteria: ".sandcastle/verdict-acs.json",
       standards: ".sandcastle/verdict-standards.json",
     },
+    // pi writes its sessions under the agent config dir, which the sandbox mounts from the host.
+    sessions: `${process.env.HOME}/.pi/agent/sessions`,
   },
   docs: { harness: "docs/agents/sandcastle.md", decisions: "docs/adr" },
   // The device suite `zig build verify` cannot reach, the app paths whose change owes a scenario,

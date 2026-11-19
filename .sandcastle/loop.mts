@@ -12,6 +12,7 @@ import { emptyLedger, ledgerPath, readLedger, recordCriterion, recordTick, write
 import { appendEvent, formatAgentCost, type AgentCost, type EventKind } from "./events.mts";
 import { withHeartbeat } from "./heartbeat.mts";
 import { emptyTail, readNewLines, transcriptRole, watchTranscript } from "./transcript.mts";
+import { readSessionCost } from "./session_cost.mts";
 import { branchSearch, countShotgun } from "./shotgun.mts";
 import { readReport, readRules, validateReport } from "./standards.mts";
 import { readRunRecord, writeRunRecord } from "./run_record.mts";
@@ -117,19 +118,30 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
   };
 
   // One line per agent run, so two consecutive steps can be compared without opening the agent's
-  // own session file. The figures are the agent's; a run that reported none says so rather than
-  // claiming zero.
+  // own session file. The provider's own figures are used when it reports them; pi reports none,
+  // so its session file is read instead. A run with neither says so rather than claiming zero.
   const logCost = (what: string, run: SandboxRunResult): void => {
     const iteration = run.iterations.at(-1);
+    const sessionId = iteration?.sessionId ?? null;
     const usage = iteration?.usage;
+    const fromSession = usage === undefined ? readSessionCost(project.paths.sessions, sessionId) : null;
+    const tokens =
+      usage !== undefined
+        ? {
+            inputTokens: usage.inputTokens,
+            cacheCreationInputTokens: usage.cacheCreationInputTokens,
+            cacheReadInputTokens: usage.cacheReadInputTokens,
+            outputTokens: usage.outputTokens,
+          }
+        : fromSession;
     const cost = {
-      sessionId: iteration?.sessionId ?? null,
-      inputTokens: usage?.inputTokens ?? 0,
-      cacheCreationInputTokens: usage?.cacheCreationInputTokens ?? 0,
-      cacheReadInputTokens: usage?.cacheReadInputTokens ?? 0,
-      outputTokens: usage?.outputTokens ?? 0,
+      sessionId,
+      inputTokens: tokens?.inputTokens ?? 0,
+      cacheCreationInputTokens: tokens?.cacheCreationInputTokens ?? 0,
+      cacheReadInputTokens: tokens?.cacheReadInputTokens ?? 0,
+      outputTokens: tokens?.outputTokens ?? 0,
     };
-    const message = usage === undefined ? `${what}: the agent reported no token usage` : `${what}: ${formatAgentCost(cost)}`;
+    const message = tokens === null ? `${what}: no token usage was reported or recorded` : `${what}: ${formatAgentCost(cost)}`;
     event("agent-cost", message, undefined, cost);
   };
 

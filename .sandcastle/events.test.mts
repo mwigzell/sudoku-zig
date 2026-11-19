@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendEvent, eventsPath, formatAgentCost, formatRunLogLine, readEvents, runLogPath } from "./events.mts";
+import { appendEvent, eventsPath, formatAgentCost, formatRunLogLine, localTime, readEvents, runLogPath } from "./events.mts";
 
 test("every event lands in both halves of the log, in order", () => {
   const dir = mkdtempSync(join(tmpdir(), "sandcastle-events-"));
@@ -62,4 +62,14 @@ test("an agent run's cost line names its session and its tokens", () => {
     /^no session id:/u,
     "a run the agent gave no id for says so rather than showing a blank",
   );
+});
+
+test("a log line's time is the reader's own clock, not the UTC the file stores", () => {
+  // The log keeps UTC so two logs compare; a person watching the run reads their local time.
+  const at = "2026-11-19T22:39:30.000Z";
+  const local = new Date(at);
+  const expected = local.toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+  assert.equal(localTime(at), expected);
+  assert.equal(localTime("not a timestamp"), "", "an unreadable stamp yields nothing rather than a wrong time");
 });

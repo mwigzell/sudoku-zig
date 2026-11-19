@@ -96,6 +96,18 @@ export function formatRunLogLine(event: RunEvent): string {
 const NO_COLOUR = { reset: "", dim: "", bold: "", red: "", green: "", yellow: "", cyan: "", magenta: "" };
 type Palette = typeof NO_COLOUR;
 
+/**
+ * An event's timestamp as the reader's own clock reads it, `HH:MM:SS`.
+ *
+ * The log stores UTC so two logs compare; a person watching the run wants their local time, and a
+ * timestamp that silently disagrees with the wall clock is worse than none.
+ */
+export function localTime(at: string): string {
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "";
+  return when.toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 function palette(on: boolean): Palette {
   if (!on) return NO_COLOUR;
   return {
@@ -128,7 +140,7 @@ function rule(colour: string, label: string, width = 78): string {
  */
 export function paintRunLogLine(event: RunEvent, colour: boolean): string {
   const c = palette(colour);
-  const time = `${c.dim}${event.at.slice(11, 19)}${c.reset}`;
+  const time = `${c.dim}${localTime(event.at)}${c.reset}`;
   const body = event.message;
   switch (event.kind) {
     case "step": {
