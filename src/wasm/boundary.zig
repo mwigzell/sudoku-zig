@@ -540,6 +540,13 @@ pub fn writeCoreTextJson(out: OutBuffer) !void {
         .{ .key = "COPY_FAILED_MSG", .text = flow_export.COPY_FAILED_MSG },
         .{ .key = "IDLE_STARTUP_STATUS", .text = startup_policy.IDLE_STARTUP_STATUS },
         .{ .key = "NEW_GAME_STARTED_MSG", .text = game_engine.NEW_GAME_STARTED_MSG },
+        .{ .key = "BOOKMARK_SET_FMT", .text = bookmark_command.BOOKMARK_SET_FMT },
+        .{ .key = "REWOUND_FMT", .text = bookmark_command.REWOUND_FMT },
+        // What a command did to the board: the sentences a page draws for a move, a mark and their undo.
+        .{ .key = "FILLED_FMT", .text = game_engine.FILLED_FMT },
+        .{ .key = "CLEARED_FMT", .text = game_engine.CLEARED_FMT },
+        .{ .key = "MARKED_FMT", .text = game_engine.MARKED_FMT },
+        .{ .key = "UNDID_MOVE_FMT", .text = game_engine.UNDID_MOVE_FMT },
         .{ .key = "OPENED_FMT", .text = game_engine.OPENED_FMT },
         .{ .key = "PASTED_MSG", .text = game_engine.PASTED_MSG },
         .{ .key = "PUZZLE_LENGTH_MSG", .text = game_engine.PUZZLE_LENGTH_MSG },

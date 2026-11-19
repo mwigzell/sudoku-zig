@@ -166,6 +166,16 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   assert.ok(logged.some((line) => String(line).includes("disk full")), "the thrown message is logged as an error");
 }
 
+// A board-changing command says what it did: the fill's own sentence reaches the page's status bar.
+{
+  const core = await loadCoreFlow({ autoSave: false });
+  const handlers = recordingHandlers();
+  const shown = [];
+  handlers.showGame = (step) => shown.push(step.text);
+  await stepRunner.runCommand(core, FILL, handlers);
+  assert.deepEqual(shown, [fillText(coreText.FILLED_FMT, FILL.digit, "C1")], "the fill's sentence is what the page draws");
+}
+
 // A move's first autosave with no current file resolves the default target, then asks when that file is there.
 {
   const core = await loadCoreFlow({ autoSave: true });

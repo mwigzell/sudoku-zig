@@ -44,7 +44,8 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         .mark => |m| {
             engine.state.history.pointer += 1;
             appendRedoneMsgFmt(engine, game_engine.REDID_MARK_FMT, m.row, m.col);
-            return pencil_command.applyForward(engine, m);
+            // The redo already named the mark; the toggle's own "Marked …" would say it twice.
+            return pencil_command.applyForward(engine, m, false);
         },
     }
 }
@@ -58,6 +59,24 @@ fn appendRedoneMsgFmt(engine: *game_engine.GameEngine, comptime fmt: []const u8,
 // ---------------------------------------------------------------------------
 // Tests — verify redo handler seam
 // ---------------------------------------------------------------------------
+
+test "a redo of a mark names only the redo, not what the mark did" {
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
+    const config = @import("../config.zig");
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    // B1 is empty in the easy puzzle; mark it, undo the mark, then redo it.
+    _ = engine.exec(.{ .pencil = .{ .row = 0, .col = 1, .digit = .eight } });
+    _ = engine.exec(.{ .undo = {} });
+    const redone = engine.exec(.{ .redo = {} });
+    var label_buf: [2]u8 = undefined;
+    var text_buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, game_engine.REDID_MARK_FMT, .{board.formatCellLabel(&label_buf, 0, 1)}),
+        redone.ok.msg.?,
+    );
+}
 
 test "command.redo.execute fails when nothing to redo" {
     const puzzle_gen = @import("../puzzle_gen/mod.zig");

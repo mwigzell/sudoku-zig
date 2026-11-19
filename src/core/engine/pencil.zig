@@ -27,7 +27,7 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.PencilData) game_e
         log.err("history push failed: {s}", .{@errorName(err)});
         return engine.errorEvent(game_engine.MOVE_NOT_RECORDED_MSG);
     };
-    return applyForward(engine, toggle);
+    return applyForward(engine, toggle, true);
 }
 
 /// Flip Pencil mode. It is session state: not saved, and kept across New, Open and restore.
@@ -37,14 +37,19 @@ pub fn toggleMode(engine: *game_engine.GameEngine) game_engine.Event {
 }
 
 /// Make a recorded toggle (a new mark or Redo): remove the replaced digit, then flip the mark.
-pub fn applyForward(engine: *game_engine.GameEngine, toggle: mutation_history.MarkToggle) game_engine.Event {
+/// `speak` is false when the caller already said what the toggle did, so the mark is not named twice.
+pub fn applyForward(
+    engine: *game_engine.GameEngine,
+    toggle: mutation_history.MarkToggle,
+    speak: bool,
+) game_engine.Event {
     engine.marks_changed = true;
     if (toggle.old_value != .zero) {
         engine.state.board.setCell(toggle.row, toggle.col, .zero) catch |err| {
             return engine.eventFromSetCellError(toggle.row, toggle.col, err);
         };
     }
-    appendToggledMsg(engine, toggle);
+    if (speak) appendToggledMsg(engine, toggle);
     engine.state.board.toggleMark(toggle.row, toggle.col, toggle.digit);
     if (toggle.old_value == .zero) return finishMarkOnly(engine, toggle);
     // A mark that replaced a digit says what became of that digit as well.
@@ -279,13 +284,12 @@ test "a mark, its undo and its redo each say what they did" {
     );
 
     const redone = engine.exec(.{ .redo = {} });
-    // The redo's own sentence, then the toggle sentence it replays after it.
-    var redo_buf: [96]u8 = undefined;
-    const redo_head = try std.fmt.bufPrint(&redo_buf, game_engine.REDID_MARK_FMT, .{label});
-    try std.testing.expectEqualStrings(redo_head, redone.ok.msg.?[0..redo_head.len]);
-    var removed_buf: [64]u8 = undefined;
-    const removed_tail = try std.fmt.bufPrint(&removed_buf, game_engine.MARK_REMOVED_FMT, .{ 3, label });
-    try std.testing.expectEqualStrings(removed_tail, redone.ok.msg.?[redo_head.len + 1 ..]);
+    // The redo names the mark once: the toggle's own "Removed 3 from …" would say it a second time.
+    var redo_buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&redo_buf, game_engine.REDID_MARK_FMT, .{label}),
+        redone.ok.msg.?,
+    );
 }
 
 test "the eight cell sentences read as sentences" {

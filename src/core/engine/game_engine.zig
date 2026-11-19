@@ -553,6 +553,16 @@ fn execMoveTest(engine: *GameEngine, cmd: command.Command) Event {
     return engine.exec(cmd);
 }
 
+/// The cell label (e.g. `E5`) of `row`/`col`; `buf` must hold at least two bytes.
+fn labelOf(buf: []u8, row: u4, col: u4) []const u8 {
+    return board.formatCellLabel(buf[0..2], row, col);
+}
+
+/// A command's status when it says what it did to a cell and then something more, e.g. a conflict.
+fn sentenceThen(buf: []u8, head: []const u8, then: []const u8) []const u8 {
+    return std.fmt.bufPrint(buf, "{s} {s}", .{ head, then }) catch unreachable;
+}
+
 fn openFromSaveProbeTest(engine: *GameEngine, buf: []const u8, opened_label: ?[]const u8) Event {
     engine.warn_unsolvable_load = true;
     return engine.openFromSave(buf, opened_label);
@@ -1495,7 +1505,7 @@ test "getLegend: fresh engine has Fill/Clear/Quit only" {
     try std.testing.expect(!cmds.redo);
 }
 
-test "exec fill that completes the board announces You win!" {
+test "exec fill that completes the board shows its fill sentence and then You win!" {
     const full = "483921657967345821251876493548132976729564138136798245372689514814253769695417382";
     var line: [81]u8 = undefined;
     @memcpy(&line, full);
@@ -1511,8 +1521,15 @@ test "exec fill that completes the board announces You win!" {
         .fill = command.FillData{ .row = row, .col = col, .digit = cell.rawToCellValue(fill_digit - '0') },
     });
     try std.testing.expect(ev == .ok);
-    try std.testing.expect(ev.ok.msg != null);
-    try std.testing.expect(std.mem.indexOf(u8, ev.ok.msg.?, "You win!") != null);
+    // The win appends to the move's own sentence; it does not replace it.
+    var label_buf: [2]u8 = undefined;
+    var filled_buf: [64]u8 = undefined;
+    var text_buf: [160]u8 = undefined;
+    const filled = try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{
+        cell.rawToCellValue(fill_digit - '0'),
+        labelOf(&label_buf, row, col),
+    });
+    try std.testing.expectEqualStrings(sentenceThen(&text_buf, filled, WIN_STATUS_MSG), ev.ok.msg.?);
 }
 
 test "exec fill that does not complete the board has no win message" {
@@ -1822,4 +1839,90 @@ test "a new game reaches the status line through the seam and keeps no selection
     try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, engine.event_msg.optional().?);
     // The selection is the new board's own; a new game neither sets nor carries one over.
     try std.testing.expectEqual(@as(?event.CellCoord, null), engine.selected);
+}
+
+test "each board-changing command says what it did, and a new game speaks too" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    var label_buf: [2]u8 = undefined;
+    var text_buf: [128]u8 = undefined;
+
+    // A mark on, then off: the toggle says which way it went.
+    const marked = execTest(&engine, .{ .pencil = .{ .row = 0, .col = 1, .digit = .eight } });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, MARKED_FMT, .{ 8, labelOf(&label_buf, 0, 1) }),
+        marked.ok.msg.?,
+    );
+    const unmarked = execTest(&engine, .{ .pencil = .{ .row = 0, .col = 1, .digit = .eight } });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, MARK_REMOVED_FMT, .{ 8, labelOf(&label_buf, 0, 1) }),
+        unmarked.ok.msg.?,
+    );
+
+    // Undo and redo name the entry they replay: a mark, then a cell move.
+    const undone_mark = execTest(&engine, .{ .undo = {} });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, UNDID_MARK_FMT, .{labelOf(&label_buf, 0, 1)}),
+        undone_mark.ok.msg.?,
+    );
+    const redone_mark = execTest(&engine, .{ .redo = {} });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, REDID_MARK_FMT, .{labelOf(&label_buf, 0, 1)}),
+        redone_mark.ok.msg.?,
+    );
+    const filled = execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, FILLED_FMT, .{ 4, labelOf(&label_buf, 0, 0) }),
+        filled.ok.msg.?,
+    );
+    const undone_move = execTest(&engine, .{ .undo = {} });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, UNDID_MOVE_FMT, .{labelOf(&label_buf, 0, 0)}),
+        undone_move.ok.msg.?,
+    );
+    const redone_move = execTest(&engine, .{ .redo = {} });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, REDID_MOVE_FMT, .{labelOf(&label_buf, 0, 0)}),
+        redone_move.ok.msg.?,
+    );
+
+    // A clear names the cell it emptied.
+    const cleared = execTest(&engine, .{ .clear = .{ .row = 0, .col = 0 } });
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, CLEARED_FMT, .{labelOf(&label_buf, 0, 0)}),
+        cleared.ok.msg.?,
+    );
+
+    // A new game reaches the line through the same seam as Open, Import and Paste.
+    const started = engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.hard());
+    try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, started.ok.msg.?);
+}
+
+test "a conflicting fill shows its fill sentence and then the conflict" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
+    defer engine.deinit();
+    // Row 0 has two empty cells, so two ones clash.
+    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 2, .digit = .one } }));
+    const clash = execTest(&engine, .{ .fill = .{ .row = 0, .col = 3, .digit = .one } });
+    var label_buf: [2]u8 = undefined;
+    var filled_buf: [64]u8 = undefined;
+    var text_buf: [160]u8 = undefined;
+    const filled = try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{ 1, labelOf(&label_buf, 0, 3) });
+    try std.testing.expectEqualStrings(sentenceThen(&text_buf, filled, CONFLICT_MSG), clash.ok.msg.?);
+}
+
+test "a hint survives a select, and a new game replaces it" {
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    const hint = execTest(&engine, .{ .hint = .{} });
+    const hint_text = hint.ok.msg.?;
+
+    // Selecting changes no board, so it writes nothing and the hint stays on the line.
+    const selected = execTest(&engine, .{ .select = .{ .row = 4, .col = 4 } });
+    try std.testing.expectEqualStrings(hint_text, selected.ok.msg.?);
+    const deselected = execTest(&engine, .{ .deselect = {} });
+    try std.testing.expectEqualStrings(hint_text, deselected.ok.msg.?);
+
+    const started = engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.hard());
+    try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, started.ok.msg.?);
 }
