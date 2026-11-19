@@ -250,7 +250,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     const read = readVerdict(readFileSync(keptVerdict, "utf8"));
     if ("problem" in read) return stop(read.problem);
 
-    const decision = decide(read.verdict, step.position, project);
+    const decision = decide(read.verdict, step.position);
     if (decision.kind === "stop") {
       event("verdict", `${stage}: STOP — ${decision.reason}`);
       return stop(decision.reason);

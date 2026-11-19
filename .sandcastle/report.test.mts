@@ -13,7 +13,6 @@ function passingVerdict(step: number) {
   return {
     step,
     test_added: "a test that fails without the change",
-    verify_exit: 0,
     parity: "on",
     standards: "clean",
     on_track: true,
@@ -25,25 +24,24 @@ function passingVerdict(step: number) {
 }
 
 test("a passing verdict reads PASS with its evidence underneath", () => {
-  const lines = formatReport(STEP, JSON.stringify(passingVerdict(STEP)), PROJECT);
+  const lines = formatReport(STEP, JSON.stringify(passingVerdict(STEP)));
   assert.equal(lines[0], `step ${STEP}: PASS`);
   assert.ok(lines.some((line) => line.includes("test added:") && line.includes("fails without the change")));
-  assert.ok(lines.some((line) => line.includes("verify:        exit 0")));
 });
 
-test("a verdict that breaks a stop rule says STOP and why, naming the project's gate", () => {
-  const lines = formatReport(STEP, JSON.stringify({ ...passingVerdict(STEP), verify_exit: 1 }), PROJECT);
-  assert.equal(lines[0], `step ${STEP}: STOP — ${PROJECT.verify} exited 1`);
+test("a verdict that breaks a stop rule says STOP and why", () => {
+  const lines = formatReport(STEP, JSON.stringify({ ...passingVerdict(STEP), on_track: false }));
+  assert.equal(lines[0], `step ${STEP}: STOP — the step is not on track`);
 });
 
 test("a verdict for another step is a stop, not a pass for this one", () => {
   const later = STEP + 1;
-  const lines = formatReport(STEP, JSON.stringify(passingVerdict(later)), PROJECT);
+  const lines = formatReport(STEP, JSON.stringify(passingVerdict(later)));
   assert.equal(lines[0], `step ${STEP}: STOP — the verdict names step ${later}`);
 });
 
 test("a verdict that cannot be read is reported, never passed", () => {
-  const lines = formatReport(STEP, "{not json", PROJECT);
+  const lines = formatReport(STEP, "{not json");
   assert.equal(lines.length, 1);
   assert.match(lines[0] ?? "", /^step /u);
   assert.match(lines[0] ?? "", /STOP — /u);
@@ -51,7 +49,7 @@ test("a verdict that cannot be read is reported, never passed", () => {
 
 test("a long field wraps under the label and keeps every word", () => {
   const long = Array.from({ length: 40 }, (_, index) => `word${index}`).join(" ");
-  const lines = formatReport(STEP, JSON.stringify({ ...passingVerdict(STEP), concerns: [long] }), PROJECT);
+  const lines = formatReport(STEP, JSON.stringify({ ...passingVerdict(STEP), concerns: [long] }));
   const concern = lines.filter((line) => line.includes("concern:") || /^ {17}\S/u.test(line));
   assert.ok(concern.length > 1, "the concern occupies more than one line");
   for (const line of concern) assert.ok(line.length <= 110, `line too wide: ${line}`);

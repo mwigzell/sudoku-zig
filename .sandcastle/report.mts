@@ -1,7 +1,6 @@
 // report.mts — turn the reviewer's verdict files into something a person can read in a
-// terminal. The raw transcript stays on disk for the cases that need it. The project's facts
-// (its gate command, for the stop reason) arrive as a `ProjectConfig`.
-import type { ProjectConfig } from "./project_config.mts";
+// terminal. The raw transcript stays on disk for the cases that need it. A step verdict is
+// read on its own evidence, so the report needs no project facts to print it.
 import { decide, decideFinal, readFinalVerdict, readVerdict, type FinalVerdict, type StepVerdict } from "./verdict.mts";
 
 /** Width a field's text is wrapped to, so a long verdict reads down the page, not off it. */
@@ -31,12 +30,11 @@ function field(label: string, value: string): string[] {
 }
 
 /** One verdict's lines: the decision, then the evidence a person checks it by. */
-function formatVerdict(verdict: StepVerdict, project: ProjectConfig): string[] {
-  const decision = decide(verdict, verdict.step, project);
+function formatVerdict(verdict: StepVerdict): string[] {
+  const decision = decide(verdict, verdict.step);
   const lines = [
     `step ${verdict.step}: ${decision.kind === "tick" ? "PASS" : `STOP — ${decision.reason}`}`,
     ...field("test added:    ", verdict.test_added || "(none)"),
-    `  verify:        exit ${verdict.verify_exit}`,
     ...field("parity:        ", verdict.parity),
     ...field("standards:     ", verdict.standards),
     ...field("red on revert: ", verdict.red_on_revert || "(none)"),
@@ -47,11 +45,11 @@ function formatVerdict(verdict: StepVerdict, project: ProjectConfig): string[] {
 }
 
 /** The report body for one verdict file's contents. `step` is the step it is expected to judge. */
-export function formatReport(step: number, raw: string, project: ProjectConfig): string[] {
+export function formatReport(step: number, raw: string): string[] {
   const read = readVerdict(raw);
   if ("problem" in read) return [`step ${step}: STOP — ${read.problem}`];
   if (read.verdict.step !== step) return [`step ${step}: STOP — the verdict names step ${read.verdict.step}`];
-  return formatVerdict(read.verdict, project);
+  return formatVerdict(read.verdict);
 }
 
 /** The whole-branch report: the decision first, then the matrix a person reads it by. */

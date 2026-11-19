@@ -47,10 +47,10 @@ A run aimed at another issue, or one that left no `run.json` record of its aim, 
    exists to falsify the implementer's work, so it must not inherit the implementer's transcript, and
    a fork gives both a warm prefix and a clean role. An agent that cannot fork stops the run, naming
    that, rather than spawning cold for every step.
-5. **Per step, two roles.** An implementer performs that step only (red test, green, `verify`,
-   red-on-revert proof, docs) and commits once; a reviewer tries to falsify it and writes
-   `.sandcastle/verdict.json`. A step with no commit, two commits, or a reviewer that commits at all stops
-   the run.
+5. **Per step, two roles.** An implementer performs that step only (red test, green, one `verify`
+   run, red-on-revert proof, docs) and commits once; a reviewer tries to falsify it — re-reading the
+   implementer's gate output rather than repeating the run — and writes `.sandcastle/verdict.json`.
+   A step with no commit, two commits, or a reviewer that commits at all stops the run.
 6. **The host reads the verdict** and decides (see below). On a pass it ticks that step on the issue and
    records the tick. Nothing else is ever written to the issue, and acceptance criteria are never touched.
 7. **After the last tick, the whole-branch review** runs: one more fork reads the entire diff and judges
@@ -149,8 +149,7 @@ A step verdict (`verdict.mts`), every field evidence the reviewer produced itsel
 | `step` | The step it judges; a verdict naming another step stops the run |
 | `test_added` | The failing test, as `file: what it asserts`. Empty stops the run |
 | `red_on_revert` | What happened when the step's production change was reverted. Empty stops the run |
-| `verify_exit` | The exit code of the gate this step was given (`on`, or `off` inside a window); must be 0 |
-| `parity` | The gate the reviewer ran, `on` or `off (#N)`. A step outside the window that ran with the check off — or a windowed step that ran the gate whole — stops the run |
+| `parity` | The gate the implementer ran for this step, `on` or `off (#N)`, as the reviewer read it from the commit. A step outside the window that ran with the check off — or a windowed step that ran the gate whole — stops the run |
 | `standards` | `clean`, or the violation; anything else stops the run |
 | `on_track`, `drift` | Whether the diff is this step, and whether the branch is still heading for the issue |
 | `ac_at_risk` | Criteria this step endangers; any entry stops the run |
@@ -283,8 +282,8 @@ programs (`status` reads it) and `logs/<stamp>/run.log` for a person.
 
 A stopped run leaves its branch and worktree with the verdicts it produced, and says why in `[stop] …`.
 The verdict files say what the reviewer saw; the diff is `git diff <base-branch>...<branch>`. The two usual
-causes are a step that did not prove itself (no red-on-revert evidence, a `verify` failure, a criterion at
-risk) and an agent that went off-script (two commits, or a reviewer that wrote).
+causes are a step that did not prove itself (no red-on-revert evidence, a gate run that is not the step's
+gate, a criterion at risk) and an agent that went off-script (two commits, or a reviewer that wrote).
 
 A run is cut from and accepted into the branch it was started on.
 

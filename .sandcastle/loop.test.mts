@@ -31,7 +31,6 @@ const passingVerdict = (step: number, parity = "on") => ({
   step,
   parity,
   test_added: `a test for step ${step}`,
-  verify_exit: 0,
   standards: "clean",
   on_track: true,
   concerns: [],

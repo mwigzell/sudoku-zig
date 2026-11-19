@@ -157,7 +157,7 @@ function readme(run: ArchiveRun, files: readonly string[], ticks: readonly Tick[
   for (const name of files) {
     const role = stepNumber(name) === -1
       ? (FILE_ROLES[name] ?? "the run's own record")
-      : "a step reviewer's verdict: the test added, what happened on revert, `verify_exit`, standards";
+      : "a step reviewer's verdict: the test added, what happened on revert, standards";
     lines.push(`- \`${name}\` — ${role}`);
   }
   lines.push("");
