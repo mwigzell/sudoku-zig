@@ -39,8 +39,8 @@ pub const IMPORTED_MSG = "The puzzle was imported.";
 pub const PASTED_MSG = "The puzzle was pasted.";
 pub const CONFLICT_MSG = "That digit clashes with another in the same row, column or box.";
 pub const WIN_STATUS_MSG = "You win!";
-/// Status line for a cell filled; `{d}` is the digit, `{s}` the cell label (e.g. E5).
-pub const FILLED_FMT = "Filled {d} in {s}.";
+/// Status line for a cell filled; `{s}` is the cell label (e.g. E5), `{d}` the digit.
+pub const FILLED_FMT = "Filled {s} with {d}.";
 /// Status line for a cell cleared; `{s}` is the cell label.
 pub const CLEARED_FMT = "Cleared {s}.";
 /// Status line for a pencil mark added; `{d}` is the digit, `{s}` the cell label (e.g. C3).
@@ -394,7 +394,8 @@ pub const GameEngine = struct {
         if (digit == .zero) {
             self.appendEventMsgFmt(CLEARED_FMT, .{label});
         } else {
-            self.appendEventMsgFmt(FILLED_FMT, .{ @backingInt(digit), label });
+            // A filled cell reads cell-first like every other sentence, so the digit trails the label.
+            self.appendEventMsgFmt(FILLED_FMT, .{ label, @backingInt(digit) });
         }
     }
 
@@ -1088,7 +1089,7 @@ test "exec fill creates conflict → cell marked and status msg set" {
     try std.testing.expect(first == .ok);
     // A fill with no conflict shows its own sentence and nothing else.
     var fill_buf: [64]u8 = undefined;
-    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&fill_buf, FILLED_FMT, .{ 1, "C1" }), first.ok.msg.?);
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&fill_buf, FILLED_FMT, .{ "C1", 1 }), first.ok.msg.?);
 
     const second = execTest(&engine, command.Command{
         .fill = command.FillData{ .row = 0, .col = 3, .digit = cell.CellValue.one },
@@ -1098,7 +1099,7 @@ test "exec fill creates conflict → cell marked and status msg set" {
     var filled_buf: [48]u8 = undefined;
     var conflict_buf: [128]u8 = undefined;
     const second_want = try std.fmt.bufPrint(&conflict_buf, "{s} {s}", .{
-        try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{ 1, "D1" }),
+        try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{ "D1", 1 }),
         CONFLICT_MSG,
     });
     try std.testing.expectEqualStrings(second_want, second.ok.msg.?);
@@ -1149,7 +1150,7 @@ test "exec fill no conflict → no bits set" {
     });
     try std.testing.expect(ev == .ok);
     var fill_buf: [64]u8 = undefined;
-    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&fill_buf, FILLED_FMT, .{ 1, "C1" }), ev.ok.msg.?);
+    try std.testing.expectEqualStrings(try std.fmt.bufPrint(&fill_buf, FILLED_FMT, .{ "C1", 1 }), ev.ok.msg.?);
     const view = ev.ok.board_view;
 
     // The filled cell must be conflict-free
@@ -1526,8 +1527,8 @@ test "exec fill that completes the board shows its fill sentence and then You wi
     var filled_buf: [64]u8 = undefined;
     var text_buf: [160]u8 = undefined;
     const filled = try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{
-        cell.rawToCellValue(fill_digit - '0'),
         labelOf(&label_buf, row, col),
+        cell.rawToCellValue(fill_digit - '0'),
     });
     try std.testing.expectEqualStrings(sentenceThen(&text_buf, filled, WIN_STATUS_MSG), ev.ok.msg.?);
 }
@@ -1758,7 +1759,7 @@ test "every status message reads as a sentence, including formatted ones" {
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.PLACEMENT_FMT, .{ "C2", '5' }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.NO_SOLUTION_AT_FMT, .{"C2"}));
     var cell_buf: [64]u8 = undefined;
-    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, FILLED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, FILLED_FMT, .{ "E5", 3 }));
     try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, CLEARED_FMT, .{"E5"}));
     try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, MARKED_FMT, .{ 3, "E5" }));
     try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, MARK_REMOVED_FMT, .{ 3, "E5" }));
@@ -1872,7 +1873,7 @@ test "each board-changing command says what it did, and a new game speaks too" {
     );
     const filled = execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } });
     try std.testing.expectEqualStrings(
-        try std.fmt.bufPrint(&text_buf, FILLED_FMT, .{ 4, labelOf(&label_buf, 0, 0) }),
+        try std.fmt.bufPrint(&text_buf, FILLED_FMT, .{ labelOf(&label_buf, 0, 0), 4 }),
         filled.ok.msg.?,
     );
     const undone_move = execTest(&engine, .{ .undo = {} });
@@ -1907,7 +1908,7 @@ test "a conflicting fill shows its fill sentence and then the conflict" {
     var label_buf: [2]u8 = undefined;
     var filled_buf: [64]u8 = undefined;
     var text_buf: [160]u8 = undefined;
-    const filled = try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{ 1, labelOf(&label_buf, 0, 3) });
+    const filled = try std.fmt.bufPrint(&filled_buf, FILLED_FMT, .{ labelOf(&label_buf, 0, 3), 1 });
     try std.testing.expectEqualStrings(sentenceThen(&text_buf, filled, CONFLICT_MSG), clash.ok.msg.?);
 }
 

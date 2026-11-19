@@ -295,7 +295,7 @@ test "a mark, its undo and its redo each say what they did" {
 test "the eight cell sentences read as sentences" {
     const sentence = @import("../../test/sentence.zig");
     var buf: [64]u8 = undefined;
-    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.FILLED_FMT, .{ 3, "E5" }));
+    try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.FILLED_FMT, .{ "E5", 3 }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.CLEARED_FMT, .{"E5"}));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.MARKED_FMT, .{ 3, "E5" }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, game_engine.MARK_REMOVED_FMT, .{ 3, "E5" }));

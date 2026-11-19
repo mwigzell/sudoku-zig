@@ -173,7 +173,7 @@ const REPLACE_ASK = ["ask", coreText.REPLACE_CONFIRM_TITLE, fillText(coreText.RE
   const shown = [];
   handlers.showGame = (step) => shown.push(step.text);
   await stepRunner.runCommand(core, FILL, handlers);
-  assert.deepEqual(shown, [fillText(coreText.FILLED_FMT, FILL.digit, "C1")], "the fill's sentence is what the page draws");
+  assert.deepEqual(shown, [fillText(coreText.FILLED_FMT, "C1", FILL.digit)], "the fill's sentence names the cell first");
 }
 
 // A move's first autosave with no current file resolves the default target, then asks when that file is there.
