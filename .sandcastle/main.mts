@@ -120,13 +120,17 @@ export function ghTracker(): Tracker {
 // would misbehave should not start at all.
 // ---------------------------------------------------------------------------
 
-/** Every run leaves a worktree, so more than one line means an earlier run was never settled. */
+/**
+ * Every run leaves a worktree, so a second one means an earlier run was never settled. The repo's
+ * own worktree is always listed, and a resumed run works in the one it already cut, so only a
+ * worktree beyond that first one is a leftover.
+ */
 function checkNoLeftoverWorktrees(): void {
   const worktrees = git(["worktree", "list", "--porcelain"])
     .split("\n\n")
     .filter((block) => block.trim().length > 0);
-  if (worktrees.length > 1) {
-    throw new Error(`a previous run's worktree is still here (${worktrees.length} worktrees): accept or drop it first`);
+  if (worktrees.length > 2) {
+    throw new Error(`a previous run's worktree is still here (${worktrees.length - 1} worktrees): accept or drop it first`);
   }
 }
 
