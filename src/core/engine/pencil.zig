@@ -27,7 +27,9 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.PencilData) game_e
         log.err("history push failed: {s}", .{@errorName(err)});
         return engine.errorEvent(game_engine.MOVE_NOT_RECORDED_MSG);
     };
-    return applyForward(engine, toggle, true);
+    // A fresh mark says what it did; a redo names the redo instead, so the replay stays silent.
+    appendToggledMsg(engine, toggle);
+    return applyForward(engine, toggle);
 }
 
 /// Flip Pencil mode. It is session state: not saved, and kept across New, Open and restore.
@@ -37,11 +39,10 @@ pub fn toggleMode(engine: *game_engine.GameEngine) game_engine.Event {
 }
 
 /// Make a recorded toggle (a new mark or Redo): remove the replaced digit, then flip the mark.
-/// `speak` is false when the caller already said what the toggle did, so the mark is not named twice.
+/// The caller says what the toggle did; this only replays it, so a redo is not named twice.
 pub fn applyForward(
     engine: *game_engine.GameEngine,
     toggle: mutation_history.MarkToggle,
-    speak: bool,
 ) game_engine.Event {
     engine.marks_changed = true;
     if (toggle.old_value != .zero) {
@@ -49,7 +50,6 @@ pub fn applyForward(
             return engine.eventFromSetCellError(toggle.row, toggle.col, err);
         };
     }
-    if (speak) appendToggledMsg(engine, toggle);
     engine.state.board.toggleMark(toggle.row, toggle.col, toggle.digit);
     if (toggle.old_value == .zero) return finishMarkOnly(engine, toggle);
     // A mark that replaced a digit says what became of that digit as well.

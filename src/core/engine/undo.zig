@@ -11,6 +11,8 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     if (engine.state.history.pointer == 0) {
         return game_engine.Event{ .error_msg = game_engine.NOTHING_TO_UNDO_MSG };
     }
+    // Undo does not go through `exec`, so it starts its own line rather than appending to the last command's.
+    engine.beginEventMsg();
     engine.state.history.pointer -= 1;
     const notice = bookmarkNoticeAfterUndo(engine);
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
@@ -149,11 +151,11 @@ test "command.undo.execute of a solve batch says what it undid" {
     _ = engine.exec(command.Command{ .solve_for_me = {} });
     try std.testing.expect(std.mem.indexOf(u8, engine.durableStatus().?, "You win!") != null);
 
-    // A solve is one history step, so its undo names the solve rather than a cell, and follows
-    // the win sentence the solve itself left on the line.
+    // A solve is one history step, so its undo names the solve rather than a cell. The win the solve
+    // left on the line belongs to that earlier command, so this one starts its own line.
     const event = execute(&engine);
     try std.testing.expect(event == .ok);
-    const want = game_engine.WIN_STATUS_MSG ++ " " ++ game_engine.UNDID_SOLVE_MSG;
+    const want = game_engine.UNDID_SOLVE_MSG;
     try std.testing.expectEqualStrings(want, event.ok.msg.?);
     try std.testing.expectEqualStrings(want, engine.durableStatus().?);
     try std.testing.expect(!engine.state.board.isSolved());

@@ -1759,6 +1759,8 @@ test "every status message reads as a sentence, including formatted ones" {
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.PLACEMENT_FMT, .{ "C2", '5' }));
     try sentence.expectSentence(try std.fmt.bufPrint(&buf, hint_command.NO_SOLUTION_AT_FMT, .{"C2"}));
     var cell_buf: [64]u8 = undefined;
+    // A fill reads cell-first, matching the player screen: "Filled E5 with 3."
+    try std.testing.expectEqualStrings("Filled E5 with 3.", try std.fmt.bufPrint(&cell_buf, FILLED_FMT, .{ "E5", 3 }));
     try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, FILLED_FMT, .{ "E5", 3 }));
     try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, CLEARED_FMT, .{"E5"}));
     try sentence.expectSentence(try std.fmt.bufPrint(&cell_buf, MARKED_FMT, .{ 3, "E5" }));

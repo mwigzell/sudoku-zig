@@ -11,6 +11,8 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
     if (engine.state.history.pointer >= engine.state.history.entries.items.len) {
         return game_engine.Event{ .error_msg = game_engine.NOTHING_TO_REDO_MSG };
     }
+    // Redo does not go through `exec`, so it starts its own line rather than appending to the last command's.
+    engine.beginEventMsg();
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
         // Every redo names what it replayed, from the history entry behind it.
@@ -44,8 +46,8 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         .mark => |m| {
             engine.state.history.pointer += 1;
             appendRedoneMsgFmt(engine, game_engine.REDID_MARK_FMT, m.row, m.col);
-            // The redo already named the mark; the toggle's own "Marked …" would say it twice.
-            return pencil_command.applyForward(engine, m, false);
+            // The redo names the mark; the replay itself stays silent, so it is not said twice.
+            return pencil_command.applyForward(engine, m);
         },
     }
 }
@@ -69,6 +71,25 @@ test "a redo of a mark names only the redo, not what the mark did" {
     // B1 is empty in the easy puzzle; mark it, undo the mark, then redo it.
     _ = engine.exec(.{ .pencil = .{ .row = 0, .col = 1, .digit = .eight } });
     _ = engine.exec(.{ .undo = {} });
+    const redone = engine.exec(.{ .redo = {} });
+    var label_buf: [2]u8 = undefined;
+    var text_buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        try std.fmt.bufPrint(&text_buf, game_engine.REDID_MARK_FMT, .{board.formatCellLabel(&label_buf, 0, 1)}),
+        redone.ok.msg.?,
+    );
+}
+
+test "a redo after an undo starts its own line instead of appending to it" {
+    const puzzle_gen = @import("../puzzle_gen/mod.zig");
+    const config = @import("../config.zig");
+
+    var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    // The undo leaves its sentence on the line; the redo is a separate command and must not join it.
+    _ = engine.exec(.{ .pencil = .{ .row = 0, .col = 1, .digit = .eight } });
+    const undone = engine.exec(.{ .undo = {} });
+    try std.testing.expect(std.mem.indexOf(u8, undone.ok.msg.?, game_engine.UNDID_MARK_FMT[0..7]) != null);
     const redone = engine.exec(.{ .redo = {} });
     var label_buf: [2]u8 = undefined;
     var text_buf: [64]u8 = undefined;
@@ -147,8 +168,8 @@ test "command.redo.execute re-solves a solve batch to the captured grid" {
     for (solution, 0..) |ch, i| expected[i] = ch - '0';
     try std.testing.expectEqual(expected, board.toFlat(engine.state.board));
     try std.testing.expectEqual(@as(usize, 1), engine.state.history.pointer);
-    // The undo's sentence is still on the line; the redo appends its own after it.
-    const want = game_engine.UNDID_SOLVE_MSG ++ " " ++ game_engine.REDID_SOLVE_MSG;
+    // The undo was its own command, so the redo starts a fresh line instead of appending to it.
+    const want = game_engine.REDID_SOLVE_MSG;
     try std.testing.expectEqualStrings(want, event.ok.msg.?);
     try std.testing.expectEqualStrings(want, engine.durableStatus().?);
 }
