@@ -258,20 +258,15 @@ pub const GameEngine = struct {
         return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
-    /// New game from a one-line puzzle string (generate dialog or fallback fixture).
+    /// New game from a one-line puzzle string (generate dialog or fallback fixture). The board is
+    /// replaced; the selection is left as it is, as every other route to a board does.
     pub fn newFromOneLinePuzzle(self: *@This(), line: []const u8) Event {
         self.applyOneLinePuzzle(line) catch {
-            return .{ .error_msg = NEW_GAME_FAILED_MSG };
+            return self.errorEvent(NEW_GAME_FAILED_MSG);
         };
-        self.state.status.reset();
-        self.state.status.append(NEW_GAME_STARTED_MSG);
-        return .{
-            .ok = .{
-                .board_view = self.state.board.asView(),
-                .msg = self.state.status.optional(),
-                .is_quit = false,
-            },
-        };
+        self.beginEventMsg();
+        self.appendEventMsg(NEW_GAME_STARTED_MSG);
+        return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
     /// Clear the per-exec scratch buffer before a command appends its text. A command that never
@@ -1808,4 +1803,23 @@ test "loading a game takes the bookmark from the file, not from the live game" {
     try engine.fromSaveFormat(plain);
     try std.testing.expectEqual(@as(?u16, null), engine.state.bookmark);
     try std.testing.expect(!engine.getLegend(false).rewind);
+}
+
+test "a new game reaches the status line through the seam and keeps no selection behind" {
+    // A fill first, so the durable status holds text the new game has to replace.
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.easy(), config.Config.default());
+    defer engine.deinit();
+    _ = try expectOk(execTest(&engine, .{ .fill = .{ .row = 0, .col = 0, .digit = .four } }));
+    try std.testing.expect(engine.selected != null);
+
+    // Leave text in the scratch buffer, as a command that ran before would; a new game goes through
+    // the seam, so its own text replaces that, not just the durable status.
+    engine.appendEventMsg("stale fragment");
+    const started = engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.hard());
+    try std.testing.expect(started == .ok);
+    try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, started.ok.msg.?);
+    try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, engine.durableStatus().?);
+    try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, engine.event_msg.optional().?);
+    // The selection is the new board's own; a new game neither sets nor carries one over.
+    try std.testing.expectEqual(@as(?event.CellCoord, null), engine.selected);
 }
