@@ -396,6 +396,59 @@ test("a step that is not on track stops the run: nothing is ticked and no later 
   }
 });
 
+test("a resumed step's implementer is handed the reviewer's own words for why it stopped", async () => {
+  const dirs = fixture();
+  try {
+    // A run that stopped at step 1 left its verdict behind; resuming re-runs the step from that record.
+    mkdirSync(dirs.runsDir, { recursive: true });
+    writeFileSync(
+      join(dirs.runsDir, "step-1-verdict.json"),
+      JSON.stringify({
+        ...passingVerdict(1),
+        on_track: false,
+        concerns: ["the page's disable never reaches the running app"],
+        ac_at_risk: ["Pencil shows and hides the marks"],
+      }),
+    );
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)]);
+    await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker: fakeTracker(TWO_STEPS),
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+      project: PROJECT,
+    });
+
+    const implementer = String(sandbox.runs.find((run) => run.prompt.includes(IMPLEMENTER_MARKER))?.prompt);
+    assert.match(implementer, /attempted before and the reviewer stopped it/u, "the retry says it is a retry");
+    assert.match(implementer, /the page's disable never reaches the running app/u, "the reviewer's concern is the brief");
+    assert.match(implementer, /Pencil shows and hides the marks/u, "the criterion it endangered is named too");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
+test("a first attempt's implementer is handed no retry note", async () => {
+  const dirs = fixture();
+  try {
+    const sandbox = fakeSandbox(dirs.worktree, [passingVerdict(1), passingVerdict(2)]);
+    await runSteps({
+      plan: planFor(TWO_STEPS),
+      sandbox: sandbox as unknown as StepSandbox,
+      tracker: fakeTracker(TWO_STEPS),
+      agent: {} as never,
+      runsDir: dirs.runsDir,
+      project: PROJECT,
+    });
+
+    const implementer = String(sandbox.runs.find((run) => run.prompt.includes(IMPLEMENTER_MARKER))?.prompt);
+    assert.doesNotMatch(implementer, /attempted before/u, "a step's first attempt reads as the step alone");
+  } finally {
+    rmSync(dirs.root, { recursive: true, force: true });
+  }
+});
+
 test("an implementer that commits nothing is a stop, not an empty pass", async () => {
   const dirs = fixture();
   try {

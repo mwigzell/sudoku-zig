@@ -24,6 +24,28 @@ function clearVerdict(path: string): void {
   rmSync(path, { force: true });
 }
 
+/**
+ * What the last attempt at `step` was told it got wrong, as the implementer's prompt reads it.
+ *
+ * A stopped step is resumed by running it again, and a fresh session inherits nothing of why it
+ * stopped. The reviewer's own words are the brief for the retry, so they are read back from the
+ * kept verdict rather than paraphrased here. An empty string on a first attempt, or when the kept
+ * verdict cannot be read: a retry that cannot say what was wrong is still a retry.
+ */
+function retryNote(runsDir: string, step: number): string {
+  const path = join(runsDir, `step-${step}-verdict.json`);
+  if (!existsSync(path)) return "";
+  const read = readVerdict(readFileSync(path, "utf8"));
+  if ("problem" in read) return "";
+  const { on_track, concerns, ac_at_risk } = read.verdict;
+  if (on_track && concerns.length === 0 && ac_at_risk.length === 0) return "";
+  const lines = ["## This step was attempted before and the reviewer stopped it", "", "The branch already carries that attempt. Read what the reviewer said, then make it true."];
+  if (!on_track) lines.push("", "The reviewer judged the step not on track.");
+  if (concerns.length > 0) lines.push("", "The reviewer's concerns:", ...concerns.map((entry) => `- ${entry}`));
+  if (ac_at_risk.length > 0) lines.push("", "Acceptance criteria it judged at risk:", ...ac_at_risk.map((entry) => `- ${entry}`));
+  return lines.join("\n");
+}
+
 /** One role's run: its prompt resolved, then forked from the run's seed session. */
 interface RoleFork {
   /** Log name for this agent run. */
@@ -217,6 +239,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
       STEP: step.position,
       STEPS_TOTAL: steps.length,
       STEP_TITLE: step.title,
+      RETRY_NOTE: retryNote(runsDir, step.position),
       BASE_BRANCH: plan.targetBranch,
       VERIFY: gate.command,
       PARITY: gate.parity,

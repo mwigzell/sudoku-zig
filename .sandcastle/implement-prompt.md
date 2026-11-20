@@ -4,6 +4,8 @@ You are the implementer for **one step** of a multi-step issue: issue `#{{ISSUE}
 
 > {{STEP_TITLE}}
 
+{{RETRY_NOTE}}
+
 A separate reviewer falsifies this step in a fresh session. Your summary is a claim; only command output is evidence.
 
 ## Project rules — read these first
