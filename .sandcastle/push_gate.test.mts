@@ -44,7 +44,7 @@ function head(): string {
 /** The environment without this gate's overrides, so a default lane list is read uninfluenced. */
 function bareEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  for (const name of ["PUSH_GATE_VERIFY_CMD", "PUSH_GATE_SLOW_CMD", "PUSH_GATE_DEVICE_CMD", RECORD_DIR_ENV]) delete env[name];
+  for (const name of ["PUSH_GATE_VERIFY_CMD", "PUSH_GATE_SLOW_CMD", "PUSH_GATE_DEVICE_CMD", "PUSH_GATE_EMULATOR_CMD", RECORD_DIR_ENV]) delete env[name];
   return env;
 }
 
@@ -56,6 +56,7 @@ function fakeLanes(log: string, statuses: { verify?: number; slow?: number; devi
     PUSH_GATE_VERIFY_CMD: lane("verify"),
     PUSH_GATE_SLOW_CMD: lane("slow"),
     PUSH_GATE_DEVICE_CMD: lane("device"),
+    PUSH_GATE_EMULATOR_CMD: `printf 'emulator\\n' >> '${log}'; exit 0`,
   };
 }
 
@@ -107,7 +108,7 @@ test("a clean push runs every lane in order and records each one passed", () => 
     const run = runGate(recordDir, fakeLanes(log));
 
     assert.equal(run.status, 0, `a passing push gate exits zero; it printed:\n${run.stdout}${run.stderr}`);
-    assert.deepEqual(lanesRun(log), ["verify", "slow", "device"], "lanes run cheapest first");
+    assert.deepEqual(lanesRun(log), ["verify", "slow", "emulator", "device"], "the device lane starts its emulator, then runs the suite");
     const record = recordIn(recordDir);
     assert.equal(record.commit, head(), "the record names the commit it proved");
     assert.equal(record.result, "passed");
@@ -156,8 +157,8 @@ test("the manual makes the gate the only way to push, and names what it runs", (
     [/verify-slow/u, "the slow suite is a lane"],
     [/android-test/u, "the full device suite is a lane"],
     [/\.zig-cache\/push-gate/u, "where the per-lane record lives"],
-    [/never skip|does not skip/u, "a missing device fails the run rather than skipping it"],
-    [/scripts\/android-emulator-start\.sh/u, "the start-script the missing device names"],
+    [/never skip|does not skip/u, "a device that fails to boot fails the run rather than skipping it"],
+    [/scripts\/android-emulator-start\.sh/u, "the device lane starts its own emulator"],
   ];
   for (const [claim, meaning] of claims) assert.match(text, claim, `${DOC} does not say ${meaning}`);
 

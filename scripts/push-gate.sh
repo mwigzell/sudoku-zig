@@ -19,6 +19,8 @@ LANE_CMDS=(
   "${PUSH_GATE_DEVICE_CMD:-zig build android-test}"
 )
 RECORD_DIR="${PUSH_GATE_RECORD_DIR:-$ROOT/.zig-cache/push-gate}"
+# The device lane's own emulator start, overridable so the gate's suite can prove the order without a device.
+EMULATOR_CMD="${PUSH_GATE_EMULATOR_CMD:-$ROOT/scripts/android-emulator-start.sh}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "push gate: jq required" >&2
@@ -54,6 +56,19 @@ for i in "${!LANE_NAMES[@]}"; do
   duration=null
   # Lanes after a failure stay skipped: the run is already red, and the device lane costs minutes.
   if [[ "$result" == "passed" ]]; then
+    # The device lane owns its device: start the emulator, wait for it to be up, then run the suite.
+    if [[ "$name" == "android-device" ]]; then
+      echo "── push gate: starting the Android emulator ──"
+      SECONDS=0
+      if ! bash -o pipefail -c "$EMULATOR_CMD"; then
+        status=failed
+        result=failed
+        duration=$SECONDS
+        jq -nc --arg name "$name" --arg command "$cmd" --arg status "$status" --argjson duration "$duration" \
+          '{name: $name, command: $command, status: $status, duration_s: $duration}' >> "$lanes_json"
+        continue
+      fi
+    fi
     echo "── push gate: $name ($cmd) ──"
     SECONDS=0
     if bash -o pipefail -c "$cmd"; then

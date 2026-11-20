@@ -22,6 +22,12 @@ for tool in "$EMULATOR" "$ADB"; do
   fi
 done
 
+# An emulator already up on the target serial is reused: no second launch, no port clash.
+if "$ADB" -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -q '^1$'; then
+  echo "$SERIAL already up — reusing it"
+  exit 0
+fi
+
 # Several devices may be attached; tests and the gate target one by serial (`ANDROID_SERIAL`).
 if "$ADB" devices | tail -n +2 | grep -q "device$"; then
   echo "note: other devices are connected; this one is launched on $SERIAL, so name it when targeting a run" >&2
