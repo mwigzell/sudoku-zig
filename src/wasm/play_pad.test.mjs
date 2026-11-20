@@ -202,16 +202,16 @@ function makePadControls() {
   const { modal, createElement: createField, field } = fakeSettingsDialog();
   menuBar.syncMenuBar(session.legend, controls, session.config);
   marks.wireMarks(controls, game, session, boardEl, { onChange: () => menuBar.syncMenuBar(session.legend, controls, session.config), steps, createElement });
+  settings.wireSettingsMenu(controls.settings, game, session, modal, { steps, createElement: createField });
   const syncControls = () => menuBar.syncMenuBar(session.legend, controls, session.config);
-  // The View item follows every settled Settings change through the dialog's own hook; nothing below
-  // re-syncs the menubar by hand.
-  settings.wireSettingsMenu(controls.settings, game, session, modal, { steps, onChange: syncControls, createElement: createField });
   assert.equal(controls.viewMarks.disabled, false, "Show Pencil Marks is free with Auto Pencil off");
 
   // The Settings dialog's Auto Pencil row turns it on; the View item greys out.
   controls.settings.click();
   field("auto_pencil").checked = true;
   await field("auto_pencil").onchange();
+  await settleFlow();
+  syncControls();
   assert.equal(session.config.auto_pencil, true, "the dialog's row sets the setting");
   assert.equal(controls.viewMarks.disabled, true, "Show Pencil Marks is unavailable while Auto Pencil is on");
   assert.deepEqual(posts.map((body) => body.auto_pencil), [true]);
@@ -219,9 +219,10 @@ function makePadControls() {
   // The setting flipped back off gives the item its pick again.
   field("auto_pencil").checked = false;
   await field("auto_pencil").onchange();
+  await settleFlow();
+  syncControls();
   assert.equal(session.config.auto_pencil, false);
   assert.equal(controls.viewMarks.disabled, false, "Show Pencil Marks is free again with Auto Pencil off");
 }
-
 
 console.log("play_pad.test.mjs OK");
