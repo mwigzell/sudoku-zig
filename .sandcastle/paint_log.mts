@@ -38,8 +38,28 @@ function lastLines(path: string, count: number): string[] {
   return lines.slice(Math.max(0, lines.length - count));
 }
 
-/** Print the last `count` lines of `path`, painted. */
+/**
+ * The run's latest header and its latest step, painted, so a reader who attaches mid-run knows
+ * where they are. The tail alone loses both: a step's agent writes hundreds of lines, which pushes
+ * the `[run]` and `[step]` events far above any window a terminal can show.
+ *
+ * Read from the whole file rather than the tail window, because the header is at the top by
+ * definition. A resumed run writes a header per resume, so only the latest is shown; a run that has
+ * not reached its first step yet shows the header alone.
+ */
+export function contextLines(path: string, colour: boolean): string[] {
+  const lines = readFileSync(path, "utf8").split("\n").filter((line) => line.length > 0);
+  const painted: string[] = [];
+  const header = lines.findLast((line) => parseRunLogLine(line)?.kind === "run");
+  if (header !== undefined) painted.push(paint(header, colour));
+  const step = lines.findLast((line) => parseRunLogLine(line)?.kind === "step");
+  if (step !== undefined) painted.push(paint(step, colour));
+  return painted;
+}
+
+/** Print the run's context, then the last `count` lines of `path`, painted. */
 export function printTail(path: string, count: number, colour: boolean): void {
+  for (const line of contextLines(path, colour)) console.log(line);
   for (const line of lastLines(path, count)) console.log(paint(line, colour));
 }
 
