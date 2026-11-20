@@ -202,7 +202,7 @@ export async function runSteps(options: StepLoopOptions): Promise<number> {
     if (step === null) {
       // Every step is ticked, so this iteration is the whole-branch review: the run's last agent,
       // and the only place the issue's acceptance criteria are judged. It reports; it never ticks.
-      return await finalReview({ plan, sandbox, tracker, agent, runsDir, project, ledgerFile, seed }, stop, event, logCost);
+      return await finalReview({ plan, sandbox, tracker, agent, runsDir, project, ledgerFile, seed }, stop, event, logCost, waiting);
     }
 
     const stage = `step ${step.position}/${steps.length}`;
@@ -363,6 +363,8 @@ async function finalReview(
   stop: (reason: string) => number,
   logEvent: (kind: EventKind, message: string) => void,
   logCost: (what: string, run: SandboxRunResult) => void,
+  /** Runs one agent to completion, mirroring its transcript and beating while it works. */
+  waiting: <T>(what: string, work: Promise<T>) => Promise<T>,
 ): Promise<number> {
   const { plan, sandbox, tracker, agent, runsDir, project, ledgerFile, seed } = options;
 
@@ -373,7 +375,9 @@ async function finalReview(
   clearVerdict(standardsPath);
 
   logEvent("agent-start", "final reviewer: the issue's acceptance criteria");
-  const review = await withHeartbeat(
+  // The whole-branch review is the run's longest single agent, so it gets the same mirroring a step's
+  // role does: its reasoning lands in the log as it works, instead of five heartbeats and silence.
+  const review = await waiting(
     "final reviewer",
     forkRole(seed, sandbox, {
       name: "final-review",
@@ -387,7 +391,6 @@ async function finalReview(
         PARITY_LINE: project.parity.sample,
       },
     }),
-    (line) => logEvent("heartbeat", line),
   );
   logEvent("agent-end", "final reviewer");
   logCost("final reviewer", review);
