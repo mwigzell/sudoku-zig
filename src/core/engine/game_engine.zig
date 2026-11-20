@@ -1772,6 +1772,42 @@ test "Auto Pencil off: a digit in Pencil toggles the mark, as the manual game al
     try std.testing.expectEqual(@as(board.MarkSet, 1) << @intCast(board.markPlane(.four)), ev.ok.board_view.marks(0, 2));
 }
 
+test "a manual mark survives Auto Pencil on and off, pruned and restored by fill Undo and Redo" {
+    var cfg = config.Config.default();
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+    defer engine.deinit();
+
+    // Manual game: Pencil on, mark B2 (1,1) with 8. C1 (0,2) is a box peer.
+    _ = engine.exec(.{ .toggle_pencil_mode = {} });
+    _ = engine.exec(.{ .pencil = .{ .row = 1, .col = 1, .digit = .eight } });
+    _ = engine.exec(.{ .toggle_pencil_mode = {} });
+    const eight: board.MarkSet = @as(board.MarkSet, 1) << @intCast(board.markPlane(.eight));
+    try std.testing.expectEqual(eight, engine.state.board.marksAt(1, 1));
+
+    // Auto Pencil on: the mark plane is untouched, but a fill now always fills.
+    cfg.auto_pencil = true;
+    engine.useConfig(cfg);
+    try std.testing.expect(engine.auto_pencil);
+    try std.testing.expectEqual(eight, engine.state.board.marksAt(1, 1));
+
+    // Fill C1 (0,2) with 8: the fill prunes 8 from its box peer B2.
+    _ = engine.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = .eight } });
+    try std.testing.expectEqual(@as(board.MarkSet, 0), engine.state.board.marksAt(1, 1));
+
+    // Undo the fill: the peer's mark comes back, exactly as the manual game restores it.
+    _ = engine.exec(.{ .undo = {} });
+    try std.testing.expectEqual(eight, engine.state.board.marksAt(1, 1));
+
+    // Redo the fill: the mark is pruned again.
+    _ = engine.exec(.{ .redo = {} });
+    try std.testing.expectEqual(@as(board.MarkSet, 0), engine.state.board.marksAt(1, 1));
+
+    // Auto Pencil off: the manual mark shows as fills have left it (pruned by the redo).
+    cfg.auto_pencil = false;
+    engine.useConfig(cfg);
+    try std.testing.expectEqual(@as(board.MarkSet, 0), engine.state.board.marksAt(1, 1));
+}
+
 test "every engine error message reads as a sentence" {
     const sentence = @import("../../test/sentence.zig");
     inline for (.{
