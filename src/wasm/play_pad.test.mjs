@@ -67,7 +67,7 @@ function makePadControls() {
   assert.equal(pad.pencil.attrs["aria-pressed"], "false");
 
   playPad.syncPlayPad(pad, {}, {}, null, true);
-  assert.equal(pad.pencil.attrs["aria-pressed"], "true", "Pencil shows core's Pencil mode");
+  assert.equal(pad.pencil.attrs["aria-pressed"], "true", "Pencil shows core's Pencil");
 }
 
 // ── wired to a real game: pad and menus run the same commands and always show the same state ──
@@ -86,7 +86,7 @@ function makePadControls() {
   const syncControls = () => {
     const sel = selection.getSelection();
     menuBar.syncMenuBar(session.legend, menuControls, session.config);
-    playPad.syncPlayPad(pad, session.legend, session.config, sel ? cellAt(sel) : null, session.state.pencil_mode);
+    playPad.syncPlayPad(pad, session.legend, session.config, sel ? cellAt(sel) : null, session.state.is_pencil);
   };
   const selectAndSync = (cell) => {
     selection.getSelection = () => cell;
@@ -145,28 +145,28 @@ function makePadControls() {
   assert.equal(pad.region.attrs["aria-pressed"], "false", "the pad shows the state the View menu set");
   assert.equal(menuControls.viewRegion.attrs["aria-checked"], "false");
 
-  // Pencil: the pad turns core's Pencil mode on; a digit then toggles a mark instead of filling.
+  // Pencil: the pad turns core's Pencil on; a digit then toggles a mark instead of filling.
   const markCell = { row: FILL_MOVE.row, col: FILL_MOVE.col + 1 };
   assert.equal(cellAt(markCell).value, 0, "the mark cell starts empty");
   pad.pencil.click();
   await settleFlow();
-  assert.equal(session.state.pencil_mode, true);
+  assert.equal(session.state.is_pencil, true);
   assert.equal(pad.pencil.attrs["aria-pressed"], "true");
   const marked = board.handlePlayKey(game, boardEl, { getSelection: () => markCell, select() {} }, "3", createElement, "", { steps });
   await marked.done;
-  assert.equal(cellAt(markCell).value, 0, "a digit in Pencil mode does not fill");
+  assert.equal(cellAt(markCell).value, 0, "a digit in Pencil does not fill");
   assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3]);
 
-  // Show Pencil Marks off: marks stay visible while Pencil mode is on, and hide once it is off.
+  // Show Pencil Marks off: marks stay visible while Pencil is on, and hide once it is off.
   menuControls.viewMarks.click();
   await settleFlow();
   assert.equal(session.config.show_marks, false);
   assert.equal(menuControls.viewMarks.attrs["aria-checked"], "false");
-  assert.equal(session.state.marks_visible, true, "Pencil mode keeps marks visible");
+  assert.equal(session.state.marks_visible, true, "Pencil keeps marks visible");
   pad.pencil.click();
   await settleFlow();
-  assert.equal(session.state.pencil_mode, false);
-  assert.equal(session.state.marks_visible, false, "with the setting off and Pencil mode off, marks are hidden");
+  assert.equal(session.state.is_pencil, false);
+  assert.equal(session.state.marks_visible, false, "with the setting off and Pencil off, marks are hidden");
   assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3], "hiding marks keeps them");
 
   pad.undo.click();

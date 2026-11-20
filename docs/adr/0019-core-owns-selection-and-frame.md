@@ -18,7 +18,7 @@ The terminal's `Facade.render(view, status, selection, marks_visible)` took one 
 - **What clears it:** a deselect from the front end (web and Android: tapping the selected cell again, Esc, Edit → Deselect Cell) and loading a game (New, Open, Import, Paste, restore).
 - **`select` and `deselect` are commands.** They keep the status line and write nothing: no autosave, no settings.
 - **Hint carries its own target;** core never takes it from the selection. The terminal's bare `hint` and Menu → Hint are board-wide, `hint E5` is about E5. Web and Android send the selected cell, read from core's frame.
-- **The frame** (`src/core/frame.zig`) is one draw's state, from one builder, `frame.build(engine, status)`: the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on), `marks_visible` and `pencil_mode`.
+- **The frame** (`src/core/frame.zig`) is one draw's state, from one builder, `frame.build(engine, status)`: the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on), `marks_visible` and `is_pencil`.
   - **Terminal:** `Facade.render(frame)` takes it as its only drawing argument.
   - **Web and Android:** the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`), with `selected` and `region` (cell indices).
 

@@ -12,11 +12,11 @@ const CLEAR_KEY = "0";
 
 /**
  * @typedef {Object} PlayPadControls
- * @property {HTMLElement[]} digits Digit keys: they fill the selected cell, or toggle its mark in Pencil mode.
+ * @property {HTMLElement[]} digits Digit keys: they fill the selected cell, or toggle its mark in Pencil.
  * @property {HTMLElement | null} clear Clears the selected cell.
  * @property {HTMLElement | null} undo
  * @property {HTMLElement | null} redo
- * @property {HTMLElement | null} pencil Toggle; `aria-pressed` mirrors core's `pencil_mode`.
+ * @property {HTMLElement | null} pencil Toggle; `aria-pressed` mirrors core's `is_pencil`.
  * @property {HTMLElement | null} hint
  * @property {HTMLElement | null} region Toggle; `aria-pressed` mirrors `config.show_region`.
  */
@@ -47,7 +47,7 @@ export function collectPlayPadControls(padEl) {
  * @param {Record<string, boolean>} legend
  * @param {{ show_region?: boolean }} config
  * @param {{ clearable?: boolean, fillable?: boolean } | null} selectedCell The selected cell's snapshot, or null when none is selected.
- * @param {boolean} pencilMode Core's Pencil mode.
+ * @param {boolean} pencilMode Core's Pencil.
  */
 export function syncPlayPad(controls, legend, config, selectedCell, pencilMode) {
   for (const key of controls.digits) key.disabled = selectedCell?.fillable !== true;

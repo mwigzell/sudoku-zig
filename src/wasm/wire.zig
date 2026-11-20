@@ -24,7 +24,7 @@ pub const CellSnapshot = struct {
 /// and the selected cell with its shaded region. The status line travels beside it.
 pub const GameSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
-    pencil_mode: bool,
+    is_pencil: bool,
     marks_visible: bool,
     selected: ?event.CellCoord,
     region: ?board.CellMask,
@@ -33,7 +33,7 @@ pub const GameSnapshot = struct {
     pub fn fromFrame(frame: frame_mod.Frame) GameSnapshot {
         var snap: GameSnapshot = .{
             .cells = undefined,
-            .pencil_mode = frame.pencil_mode,
+            .is_pencil = frame.is_pencil,
             .marks_visible = frame.marks_visible,
             .selected = frame.selected,
             .region = frame.region,
@@ -65,7 +65,7 @@ pub const GameSnapshot = struct {
 /// JSON shape of `GameSnapshot`; the region is its cell indices, since JS numbers cannot hold 81 bits.
 const JsonSnapshot = struct {
     cells: [board.CELL_COUNT]CellSnapshot,
-    pencil_mode: bool,
+    is_pencil: bool,
     marks_visible: bool,
     selected: ?event.CellCoord,
     region: ?[]const u8,
@@ -85,8 +85,8 @@ pub fn writeGameSnapshotJson(w: *std.Io.Writer, snap: GameSnapshot) !void {
         if (i > 0) try std.Io.Writer.writeAll(w, ",");
         try writeCellJson(w, cell);
     }
-    try std.Io.Writer.print(w, "],\"pencil_mode\":{any},\"marks_visible\":{any},\"selected\":", .{
-        snap.pencil_mode,
+    try std.Io.Writer.print(w, "],\"is_pencil\":{any},\"marks_visible\":{any},\"selected\":", .{
+        snap.is_pencil,
         snap.marks_visible,
     });
     if (snap.selected) |sel| {
@@ -131,7 +131,7 @@ pub fn deserializeSnapshot(allocator: std.mem.Allocator, json_text: []const u8) 
     }
     return .{
         .cells = parsed.value.cells,
-        .pencil_mode = parsed.value.pencil_mode,
+        .is_pencil = parsed.value.is_pencil,
         .marks_visible = parsed.value.marks_visible,
         .selected = parsed.value.selected,
         .region = region,
@@ -145,7 +145,7 @@ test "GameSnapshot captures value given conflict clearable fillable from the fra
     try b.setCell(0, 3, .seven);
     b.refreshConflictsForCell(0, 3);
 
-    const snap = GameSnapshot.fromFrame(.{ .board = b.asView(), .pencil_mode = true });
+    const snap = GameSnapshot.fromFrame(.{ .board = b.asView(), .is_pencil = true });
     const idx = @as(usize, 0) * board.DIMENSION_SIZE + @as(usize, 2);
     try std.testing.expectEqual(@as(u8, 7), snap.cells[idx].value);
     try std.testing.expect(!snap.cells[idx].given);
@@ -173,7 +173,7 @@ test "GameSnapshot JSON round-trip preserves cells, selection and region" {
 
     const original = GameSnapshot.fromFrame(.{
         .board = b.asView(),
-        .pencil_mode = true,
+        .is_pencil = true,
         .selected = .{ .row = 1, .col = 2 },
         .region = conflict.unitsMask(1, 2),
     });

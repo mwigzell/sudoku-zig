@@ -63,7 +63,7 @@ Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or pla
 _Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer); parallel `Sudoku.out` / domain stdout for progress
 
 **Frame** (`core/frame.zig`):
-One draw's state, built by core from one builder (`frame.build(engine, status)`): the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on, else none), `marks_visible` and `pencil_mode`. The terminal's `render` takes it as its only drawing argument; the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`). New drawing state is a frame field (ADR-0019).
+One draw's state, built by core from one builder (`frame.build(engine, status)`): the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on, else none), `marks_visible` and `is_pencil`. The terminal's `render` takes it as its only drawing argument; the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`). New drawing state is a frame field (ADR-0019).
 _Avoid_: front ends working out the region or the selection; a new `render` argument per piece of state
 
 **Selected cell** (`GameEngine.selected`):
@@ -132,16 +132,16 @@ _Avoid_: "hint at position", implying local-constraint derivation; a permanent a
 A small digit in an empty cell meaning "this digit might go here"; a cell can hold all nine. Each digit has a fixed spot in the cell's 3×3 grid (1 top left … 9 bottom right). Core stores them as nine bit-planes on `Board` (`mark_bits`, one `CellMask` per digit); `marksAt` reads one cell's `MarkSet`. Marks are the player's notes and are never checked: a contradicting mark is allowed. A cell never holds a digit and marks at once — marking a player digit replaces it (`REPLACED_BY_MARK_FMT`); marking a given is refused. Each toggle is one Undo step; marks are saved in the game file (marks section, mark-toggle history entry) but never in a puzzle line (Copy, Export).
 _Avoid_: notes, candidates (auto-candidates is a different, unbuilt feature), corner/centre marks
 
-**Pencil mode** (`toggle_pencil_mode`):
-Core session state, off at each start and not saved: while on, a digit toggles that mark instead of filling the cell. Web and Android: the pad's Pencil button and P. The terminal has no mode; it marks with the `pencil` command (`p A1 5`).
-_Avoid_: a front-end-held mode flag
+**Pencil** (`is_pencil`, `toggle_pencil_mode`):
+Core session state, off at each start and not saved: it shows and hides the marks. In the manual game it also makes a digit in the selected cell toggle that mark instead of filling. Web and Android: the pad's Pencil button and P. The terminal keeps no switch; it marks with the `pencil` command (`p A1 5`).
+_Avoid_: a front-end-held switch flag; reading "mode" as the Auto Pencil setting
 
 **Auto-clear**:
 Placing a digit (player fill or Solve) replaces the cell's marks and removes that digit's mark from every cell in its row, column and box — one mask operation per plane (`clearPeerMarks`). Undo restores both. Hint never writes, so it leaves marks alone; Clear on a marked empty cell removes all its marks (`clearable`).
 _Avoid_: having a front end remove marks itself
 
 **Show Pencil Marks** (`show_marks`) and **`marks_visible`**:
-`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil mode or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`); web and Android draw only set marks.
+`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`); web and Android draw only set marks.
 _Avoid_: front ends deciding visibility from `show_marks` alone
 
 ### Undo history
@@ -349,7 +349,7 @@ The Config on the wire, in the same shape as `config.json`'s `config` object: bo
 _Avoid_: passing puzzle bytes across the boundary; numeric choice values; per-field wire structs
 
 **GameSnapshot**:
-JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `pencil_mode`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
+JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `is_pencil`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
 _Avoid_: duplicating SaveFormat fields in JS
 
 **entry_wasm**:

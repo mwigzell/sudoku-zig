@@ -189,7 +189,7 @@ test "getName returns correct display name for each tag" {
 
 test "comptime invariant: CommandTag covers terminal line plus session and config commands" {
     const enum_field_count = @typeInfo(CommandTag).@"enum".field_names.len;
-    // Commands + SessionCommands + set_config, settings, Pencil mode and select/deselect cover all CommandTag variants.
+    // Commands + SessionCommands + set_config, settings, Pencil and select/deselect cover all CommandTag variants.
     try std.testing.expectEqual(enum_field_count, Commands.len + SessionCommands.len + 5);
 }
 

@@ -1,4 +1,4 @@
-// marks.js — pencil marks: View → Show Pencil Marks and the pad's Pencil mode, both run through core.
+// marks.js — pencil marks: View → Show Pencil Marks and the pad's Pencil switch, both run through core.
 
 import * as board from "../board.js";
 import * as settings from "./settings.js";

@@ -92,8 +92,9 @@ pub const GameEngine = struct {
     warn_dead_moves: bool = false,
     /// On open/load, probe solvability and warn when the puzzle has no completion.
     warn_unsolvable_load: bool = false,
-    /// Digits toggle pencil marks instead of filling. Session state: starts off, never saved.
-    pencil_mode: bool = false,
+    /// The Pencil switch: draws the pencil marks, and in the manual game makes a digit toggle one
+    /// instead of filling. Session state: starts off, never saved. Not the Auto Pencil setting.
+    is_pencil: bool = false,
     /// The last command set or removed a mark (a mark, or its Undo or Redo).
     marks_changed: bool = false,
     /// Whether the command just run changed the game. `unchanged()` is the only ok result that
@@ -169,10 +170,10 @@ pub const GameEngine = struct {
         return false;
     }
 
-    /// Whether front ends draw pencil marks: the setting is on, Pencil mode is on,
+    /// Whether front ends draw pencil marks: the setting is on, Pencil is on,
     /// or the last command changed a mark, so a player always sees the mark they made.
     pub fn marksVisible(self: *const @This()) bool {
-        return self.show_marks or self.pencil_mode or self.marks_changed;
+        return self.show_marks or self.is_pencil or self.marks_changed;
     }
 
     /// Serialize full game state to a heap-allocated byte buffer.
@@ -407,7 +408,7 @@ pub const GameEngine = struct {
         self.last_exec_changed = true;
         switch (cmd) {
             .fill => |f| {
-                if (self.pencil_mode and f.digit != .zero) {
+                if (self.is_pencil and f.digit != .zero) {
                     return pencil_command.execute(self, .{ .row = f.row, .col = f.col, .digit = f.digit });
                 }
                 return fill_command.execute(self, f);

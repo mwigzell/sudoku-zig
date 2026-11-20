@@ -63,7 +63,7 @@ pub const generating_js: []const u8 = @embedFile("../wasm/dialogs/generating.js"
 pub const gen_progress_rows_js: []const u8 = @embedFile("../wasm/gen/gen_progress_rows.js");
 /// Region overlay toggle (`/region.js`).
 pub const region_js: []const u8 = @embedFile("../wasm/menus/region.js");
-/// Show Pencil Marks and Pencil mode toggles (`/menus/marks.js`).
+/// Show Pencil Marks and Pencil toggles (`/menus/marks.js`).
 pub const marks_js: []const u8 = @embedFile("../wasm/menus/marks.js");
 /// Keyboard shortcuts that press menu items and pad buttons (`/menus/shortcuts.js`).
 pub const shortcuts_js: []const u8 = @embedFile("../wasm/menus/shortcuts.js");

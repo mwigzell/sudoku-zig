@@ -121,9 +121,9 @@ export type GenText = { title: string; busy: string; done: string; cancelling: s
 export type GameState = {
   /** Per cell; `marks` has bit `k` set when digit `k + 1` is pencil-marked. */
   cells: Array<{ value: number; given: boolean; conflict: boolean; clearable: boolean; fillable: boolean; marks: number }>;
-  /** Digits toggle pencil marks (core's Pencil mode). */
-  pencil_mode: boolean;
-  /** Draw pencil marks: core decides from the setting, Pencil mode and the last command. */
+  /** The Pencil switch, read by the pad's Pencil button: core's `is_pencil`, not the Auto Pencil setting. */
+  is_pencil: boolean;
+  /** Draw pencil marks: core decides from the setting, Pencil and the last command. */
   marks_visible: boolean;
   /** Core's selected cell, or null. */
   selected: { row: number; col: number } | null;

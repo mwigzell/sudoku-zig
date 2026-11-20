@@ -20,8 +20,10 @@ pub const Frame = struct {
     region: ?board.CellMask = null,
     /// Draw pencil marks (`GameEngine.marksVisible`).
     marks_visible: bool = false,
-    /// Digits toggle pencil marks (the pad's Pencil button); the terminal ignores it.
-    pencil_mode: bool = false,
+    /// The Pencil switch (the pad's Pencil button); the terminal keeps no switch.
+    /// Not the Auto Pencil setting: it shows and hides marks, and in the manual game it also
+    /// makes a digit toggle a mark.
+    is_pencil: bool = false,
 
     /// Is (row, col) the selected cell?
     pub fn isSelected(self: Frame, row: u4, col: u4) bool {
@@ -46,7 +48,7 @@ pub fn build(engine: *game_engine.GameEngine, cfg: config.Config, status: ?[]con
         .selected = selected,
         .region = if (selected) |sel| (if (cfg.show_region) conflict.unitsMask(sel.row, sel.col) else null) else null,
         .marks_visible = engine.marksVisible(),
-        .pencil_mode = engine.pencil_mode,
+        .is_pencil = engine.is_pencil,
     };
 }
 
@@ -72,14 +74,14 @@ test "the frame shades the selected cell's row, column and box only while Show R
     try std.testing.expectEqual(@as(?board.CellMask, null), off.region);
 }
 
-test "the frame carries the status line, marks_visible and Pencil mode; nothing selected shades nothing" {
+test "the frame carries the status line, marks_visible and Pencil; nothing selected shades nothing" {
     var engine = try game_engine.GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
 
     const frame = build(&engine, config.Config.default(), "status line 1");
     try std.testing.expectEqualStrings("status line 1", frame.status.?);
     try std.testing.expectEqual(engine.marksVisible(), frame.marks_visible);
-    try std.testing.expectEqual(engine.pencil_mode, frame.pencil_mode);
+    try std.testing.expectEqual(engine.is_pencil, frame.is_pencil);
     try std.testing.expectEqual(@as(?board.CellMask, null), frame.region);
     try std.testing.expect(!frame.isSelected(0, 0));
 }
