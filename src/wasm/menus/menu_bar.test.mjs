@@ -105,6 +105,15 @@ function makeControls() {
   assert.equal(controls.viewMarks.textContent, rowLabel("show_marks"));
 }
 
+
+{
+  const controls = makeControls();
+  menuBar.syncMenuBar({}, controls, { auto_pencil: false });
+  assert.equal(controls.viewMarks.disabled, false, "Show Pencil Marks is free with Auto Pencil off");
+  menuBar.syncMenuBar({}, controls, { auto_pencil: true });
+  assert.equal(controls.viewMarks.disabled, true, "Auto Pencil draws its own candidates, so the item is unavailable");
+}
+
 {
   const controls = makeControls();
   menuBar.syncMenuBar(

@@ -5,10 +5,11 @@ import * as playPad from "./play_pad.js";
 import * as board from "./board.js";
 import * as menu from "./menus/menu.js";
 import * as menuBar from "./menus/menu_bar.js";
+import * as settings from "./menus/settings.js";
 import * as region from "./menus/region.js";
 import * as marks from "./menus/marks.js";
 import * as webSteps from "./flows/web_steps.js";
-import { FILL_MOVE, loadGame, promptDialogStub, settleFlow, startNewGame } from "./test_support.mjs";
+import { configTable, fakeSettingsDialog, FILL_MOVE, loadGame, promptDialogStub, settleFlow, startNewGame } from "./test_support.mjs";
 
 function makeBtn() {
   const handlers = {};
@@ -177,6 +178,51 @@ function makePadControls() {
   await settleFlow();
   assert.equal(cellAt(markCell).marks, 0, "Undo takes the mark back");
   assert.equal(session.state.marks_visible, true, "Undo of a mark shows the marks");
+}
+
+// ── View → Show Pencil Marks is unavailable while Auto Pencil is on, and free again once it is off ──
+{
+  const game = await loadGame();
+  startNewGame(game);
+  const session = {
+    state: game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    configTable,
+  };
+  const controls = { settings: makeBtn(), viewMarks: makeBtn() };
+  const boardEl = { children: [], replaceChildren() {} };
+  const createElement = () => ({ dataset: {}, setAttribute() {}, appendChild() {}, classList: { add() {}, remove() {}, contains: () => false } });
+  const posts = [];
+  const fetchFn = async (url, init) => {
+    posts.push(JSON.parse(init.body));
+    return { ok: true, status: 204 };
+  };
+  const steps = webSteps.webSteps(game, session, { fetchFn, promptDialog: promptDialogStub() });
+  const { modal, createElement: createField, field } = fakeSettingsDialog();
+  menuBar.syncMenuBar(session.legend, controls, session.config);
+  marks.wireMarks(controls, game, session, boardEl, { onChange: () => menuBar.syncMenuBar(session.legend, controls, session.config), steps, createElement });
+  settings.wireSettingsMenu(controls.settings, game, session, modal, { steps, createElement: createField });
+  const syncControls = () => menuBar.syncMenuBar(session.legend, controls, session.config);
+  assert.equal(controls.viewMarks.disabled, false, "Show Pencil Marks is free with Auto Pencil off");
+
+  // The Settings dialog's Auto Pencil row turns it on; the View item greys out.
+  controls.settings.click();
+  field("auto_pencil").checked = true;
+  await field("auto_pencil").onchange();
+  await settleFlow();
+  syncControls();
+  assert.equal(session.config.auto_pencil, true, "the dialog's row sets the setting");
+  assert.equal(controls.viewMarks.disabled, true, "Show Pencil Marks is unavailable while Auto Pencil is on");
+  assert.deepEqual(posts.map((body) => body.auto_pencil), [true]);
+
+  // The setting flipped back off gives the item its pick again.
+  field("auto_pencil").checked = false;
+  await field("auto_pencil").onchange();
+  await settleFlow();
+  syncControls();
+  assert.equal(session.config.auto_pencil, false);
+  assert.equal(controls.viewMarks.disabled, false, "Show Pencil Marks is free again with Auto Pencil off");
 }
 
 console.log("play_pad.test.mjs OK");
