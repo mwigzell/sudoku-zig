@@ -76,7 +76,8 @@ fn dispatchToParser(cmd_name: []const u8, it: anytype) ParseCommandResult {
         return parseFill(coord_str, digit_s);
     }
     if (std.ascii.eqlIgnoreCase(cmd_name, "pencil")) {
-        const coord_str = it.next() orelse return .{ .error_msg = PENCIL_USAGE_MSG };
+        // Bare pencil (the Pencil button) toggles the switch; pencil A1 5 toggles one mark.
+        const coord_str = it.next() orelse return .{ .valid = Command.toggle_pencil_mode };
         const digit_s = it.next() orelse return .{ .error_msg = PENCIL_USAGE_MSG };
         return parsePencil(coord_str, digit_s);
     }
@@ -524,6 +525,12 @@ test "pencil: p A1 5 toggles mark 5 in A1; a missing digit asks for one" {
     try std.testing.expectEqual(Command{ .pencil = .{ .row = 0, .col = 0, .digit = .five } }, res.valid);
     try std.testing.expectEqualStrings(PENCIL_USAGE_MSG, parse("pencil A1").error_msg);
     try std.testing.expectEqualStrings(DIGIT_FORMAT_MSG, parse("pencil A1 0").error_msg);
+}
+
+test "pencil: bare p toggles the Pencil switch; p A1 5 toggles one mark" {
+    try std.testing.expectEqual(Command.toggle_pencil_mode, parse("p").valid);
+    try std.testing.expectEqual(Command.toggle_pencil_mode, parse("Pencil").valid);
+    try std.testing.expectEqual(Command{ .pencil = .{ .row = 0, .col = 0, .digit = .five } }, parse("pencil A1 5").valid);
 }
 
 test "getName returns correct display name for each tag" {

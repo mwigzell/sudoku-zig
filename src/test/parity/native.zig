@@ -6,6 +6,7 @@
 const std = @import("std");
 const shell = @import("../../native/shell/shell.zig");
 const facade_mod = @import("../../core/renderer/facade.zig");
+const frame_mod = @import("../../core/frame.zig");
 const flow_mod = @import("../../core/flow/mod.zig");
 const command = @import("../../core/command.zig");
 const config = @import("../../core/config.zig");
@@ -42,7 +43,10 @@ fn parityWindowIssue() ?[:0]const u8 {
 const Move = struct { row: u8, col: u8, digit: u8 };
 const CellAt = struct { row: u8, col: u8 };
 /// One cell's expected value; `marks` (bit `k` = digit `k + 1`) is checked when given.
-const Probe = struct { row: u8, col: u8, value: u8, given: bool, marks: ?u16 = null };
+const Probe = struct { row: u8, col: u8, value: u8, given: bool, marks: ?board.MarkSet = null };
+/// One cell's expected marks in the final state's `marks` array: a literal golden, independent of
+/// the cross-arm diff, so the field is proven populated and not only carried.
+const FinalMark = struct { row: u8, col: u8, marks: board.MarkSet };
 
 /// A saved game: `puzzle_line` with the player's `moves` on top. `corrupt` stores bytes that are no saved game.
 const SavedFile = struct {
@@ -98,6 +102,7 @@ const Step = struct {
     pencil: ?Move = null,
     toggle_pencil_mode: ?bool = null,
     toggle_show_marks: ?bool = null,
+    toggle_auto_pencil: ?bool = null,
     select: ?CellAt = null,
     deselect: ?bool = null,
     relaunch: ?bool = null,
@@ -118,7 +123,7 @@ const ScenarioConfig = struct {
     difficulty: ?[]const u8 = null,
 };
 
-const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null, show_marks: ?bool = null };
+const Settings = struct { auto_save: ?bool = null, show_region: ?bool = null, theme: ?[]const u8 = null, show_marks: ?bool = null, auto_pencil: ?bool = null };
 const Legend = struct { undo: ?bool = null, redo: ?bool = null, rewind: ?bool = null };
 
 /// Outcomes every front end that runs the scenario must meet, on top of matching each other.
@@ -132,6 +137,9 @@ const Expect = struct {
     settings: ?Settings = null,
     legend: ?Legend = null,
     probes: []const Probe = &.{},
+    /// Cells whose marks the final state's `marks` array must report: a literal golden, independent
+    /// of the cross-arm diff, so the field is proven populated and not only carried.
+    final_marks: []const FinalMark = &.{},
     /// The cell drawn as selected after the steps.
     selected: ?CellAt = null,
     /// Nothing is drawn as selected after the steps.
@@ -214,6 +222,8 @@ const FinalConfig = struct {
 const Final = struct {
     cells: []const u8,
     givens: []const u8,
+    /// The marks drawn in every cell, row by row: core's drawing rule, not the player's own planes.
+    marks: []const board.MarkSet,
     undo: bool,
     redo: bool,
     /// Rewind to Bookmark: offered only while a bookmark sits behind the current move.
@@ -460,6 +470,7 @@ fn configChange(step: Step, cfg: config.Config) ?config_table.Change {
     if (step.toggle_auto_save != null) return config_table.toggle(cfg, row("auto_save"));
     if (step.toggle_region != null) return config_table.toggle(cfg, row("show_region"));
     if (step.toggle_show_marks != null) return config_table.toggle(cfg, row("show_marks"));
+    if (step.toggle_auto_pencil != null) return config_table.toggle(cfg, row("auto_pencil"));
     if (step.toggle_warn_solvability != null) return config_table.toggle(cfg, row("warn_solvability"));
     if (step.toggle_auto_restore != null) return config_table.toggle(cfg, row("auto_restore"));
     if (step.toggle_auto_new != null) return config_table.toggle(cfg, row("auto_new"));
@@ -505,9 +516,15 @@ fn finalState(arena: std.mem.Allocator, app: *shell.Sudoku, recorder: *Recorder)
     };
     const legend = app.engine.getLegend(app.cfg.auto_save);
     const cfg = app.cfg;
+    // The marks the board is drawn with: one source for the whole board, so a divergence in the
+    // drawing rule cannot hide in a cell no probe names.
+    const drawn = frame_mod.build(&app.engine, cfg, null).drawnMarks();
+    const marks = try arena.alloc(board.MarkSet, board.CELL_COUNT);
+    for (drawn, marks) |set, *out| out.* = set;
     return .{
         .cells = cells,
         .givens = givens,
+        .marks = marks,
         .undo = legend.undo,
         .redo = legend.redo,
         .rewind = legend.rewind,
@@ -590,12 +607,13 @@ fn runScenario(arena: std.mem.Allocator, io: std.Io, data_dir: []const u8, scena
 
     const written = try arena.alloc([]const u8, transport.written.items.len);
     for (transport.written.items, written) |path, *name| name.* = try arena.dupe(u8, std.fs.path.basename(path));
-    try checkExpect(io, settings_dir, scenario.expect, recorder.events.items, written, &app, &recorder);
-    return .{ .name = scenario.name, .events = recorder.events.items, .final = try finalState(arena, &app, &recorder) };
+    const final = try finalState(arena, &app, &recorder);
+    try checkExpect(io, settings_dir, scenario.expect, recorder.events.items, written, &app, &recorder, final);
+    return .{ .name = scenario.name, .events = recorder.events.items, .final = final };
 }
 
 /// The scenario's own expectations, checked here as the web and Android runs check them.
-fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const Event, written: []const []const u8, app: *shell.Sudoku, recorder: *const Recorder) !void {
+fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const Event, written: []const []const u8, app: *shell.Sudoku, recorder: *const Recorder, final: Final) !void {
     var questions: usize = 0;
     var errors: usize = 0;
     for (events) |e| if (e.buttons) |b| {
@@ -626,6 +644,7 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         if (want.show_region) |on| try std.testing.expectEqual(on, saved.show_region);
         if (want.theme) |name| try std.testing.expectEqualStrings(name, @tagName(saved.theme));
         if (want.show_marks) |on| try std.testing.expectEqual(on, saved.show_marks);
+        if (want.auto_pencil) |on| try std.testing.expectEqual(on, saved.auto_pencil);
     }
     if (expect.legend) |want| {
         const got = app.engine.getLegend(app.cfg.auto_save);
@@ -634,12 +653,22 @@ fn checkExpect(io: std.Io, data_dir: []const u8, expect: Expect, events: []const
         if (want.rewind) |on| try std.testing.expectEqual(on, got.rewind);
     }
     const view = app.engine.eventBoard();
+    // Probes read the marks the board is drawn with, the same source `final` reports, so a probe
+    // and the final state can never mean two different rules.
+    const drawn = frame_mod.build(&app.engine, app.cfg, null).drawnMarks();
     for (expect.probes) |p| {
         const row: u4 = @intCast(p.row);
         const col: u4 = @intCast(p.col);
         try std.testing.expectEqual(cell.rawToCellValue(p.value), view.get(row, col));
         try std.testing.expectEqual(p.given, view.isGiven(row, col));
-        if (p.marks) |want| try std.testing.expectEqual(want, view.marks(row, col));
+        if (p.marks) |want| try std.testing.expectEqual(want, drawn[@as(usize, row) * board.DIMENSION_SIZE + @as(usize, col)]);
+    }
+    // The final state's own `marks` array is the field the transcript carries; pin a literal value
+    // so the field is proven populated, not only compared arm against arm.
+    for (expect.final_marks) |fm| {
+        const row: u4 = @intCast(fm.row);
+        const col: u4 = @intCast(fm.col);
+        try std.testing.expectEqual(fm.marks, final.marks[@as(usize, row) * board.DIMENSION_SIZE + @as(usize, col)]);
     }
     if (expect.selected) |want| try std.testing.expectEqual(@as(?CellAt, want), recorder.last_selected);
     if (expect.nothing_selected != null) try std.testing.expectEqual(@as(?CellAt, null), recorder.last_selected);

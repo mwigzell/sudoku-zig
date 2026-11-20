@@ -232,6 +232,75 @@
       }
     },
     {
+      "name": "auto_pencil_setting_turns_on",
+      "summary": "Auto Pencil turns on through Settings and the stored value follows.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{"toggle_auto_pencil": true}],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "settings": {"auto_pencil": true},
+        "probes": []
+      }
+    },
+    {
+      "name": "auto_pencil_setting_turns_off",
+      "summary": "Auto Pencil turns off again through Settings and the stored value follows.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{"toggle_auto_pencil": true}, {"toggle_auto_pencil": true}],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "settings": {"auto_pencil": false},
+        "probes": []
+      }
+    },
+    {
+      "name": "auto_pencil_draws_candidates",
+      "summary": "With Auto Pencil and Pencil on, a fill draws the board's candidates for the cell's peers and none for the filled cell itself.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{"toggle_auto_pencil": true}, {"toggle_pencil_mode": true}, {"fill": {"row": 0, "col": 1, "digit": 8}}],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "settings": {"auto_pencil": true},
+        "probes": [
+          {"row": 0, "col": 0, "value": 0, "given": false, "marks": 24},
+          {"row": 0, "col": 1, "value": 8, "given": false, "marks": 0},
+          {"row": 1, "col": 1, "value": 0, "given": false, "marks": 106}
+        ],
+        "final_marks": [
+          {"row": 0, "col": 0, "marks": 24},
+          {"row": 0, "col": 1, "marks": 0},
+          {"row": 1, "col": 1, "marks": 106}
+        ]
+      }
+    },
+    {
+      "name": "auto_pencil_undo_and_off_clear_marks",
+      "summary": "Undoing the fill and turning Auto Pencil off leaves no drawn marks; the steps walked are proven by the transcript.",
+      "config": {"auto_restore": false, "auto_new": false, "auto_save": false},
+      "puzzle_line": "003020600900305001001806400008102900700000008006708200002609500800203009005010300",
+      "answers": [],
+      "steps": [{"toggle_auto_pencil": true}, {"toggle_pencil_mode": true}, {"fill": {"row": 0, "col": 1, "digit": 8}}, {"undo": true}, {"toggle_auto_pencil": true}],
+      "expect": {
+        "questions": 0,
+        "written": [],
+        "settings": {"auto_pencil": false},
+        "probes": [
+          {"row": 0, "col": 0, "value": 0, "given": false, "marks": 0},
+          {"row": 0, "col": 1, "value": 0, "given": false, "marks": 0},
+          {"row": 1, "col": 1, "value": 0, "given": false, "marks": 0}
+        ]
+      }
+    },
+    {
       "name": "pencil_mark_replaces_digit_undo_restores",
       "summary": "In Pencil mode a digit on the player's digit replaces it with that mark and autosaves; Undo puts the digit back without the mark.",
       "config": {"auto_restore": false, "auto_new": false, "auto_save": true},
@@ -330,6 +399,9 @@
           {"row": 1, "col": 1, "value": 0, "given": false, "marks": 0},
           {"row": 3, "col": 0, "value": 0, "given": false, "marks": 0},
           {"row": 4, "col": 4, "value": 0, "given": false, "marks": 16}
+        ],
+        "final_marks": [
+          {"row": 4, "col": 4, "marks": 16}
         ]
       }
     },

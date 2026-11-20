@@ -362,6 +362,60 @@ test "integrated e2e - full seam: fill command via prefix dispatch" {
     }
 }
 
+test "integrated e2e - auto pencil: P toggles candidates on and off" {
+    // Arrange: fresh engine through the real AsciiRenderer, raw text in.
+    const cfg: config.Config = .{
+        .difficulty = .hard,
+        .renderers = .{ .preferred = .ansi, .fallback = .ansi },
+        .log_level = .info,
+    };
+
+    // menu -> 14 (Settings) -> 8 (Auto Pencil) turns the setting on;
+    // P toggles the Pencil switch, so candidates draw, then digits only; quit ends the loop.
+    const responses = [_][]const u8{
+        "menu", "14", "8",
+        "P",    "P",  "quit",
+    };
+    var host = host_mod.Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+
+    // One turn() consumes the whole Menu -> Settings -> Auto Pencil chain,
+    // since the menu and settings sheets read their picks inside getCommandInput.
+    try std.testing.expect(!try sudoku.turn()); // menu -> 14 -> 8
+    try std.testing.expect(sudoku.cfg.auto_pencil);
+
+    // First P: the Pencil switch comes on, so every empty cell draws its candidates.
+    try std.testing.expect(!try sudoku.turn()); // P
+    try std.testing.expect(sudoku.engine.is_pencil);
+    {
+        const frame = frame_mod.build(&sudoku.engine, sudoku.cfg, null);
+        const drawn = frame.drawnMarks();
+        var any_marks = false;
+        for (drawn) |m| {
+            if (m != 0) any_marks = true;
+        }
+        try std.testing.expect(any_marks);
+    }
+
+    // Second P: the switch goes off, so no cell draws marks.
+    try std.testing.expect(!try sudoku.turn()); // P
+    try std.testing.expect(!sudoku.engine.is_pencil);
+    {
+        const frame = frame_mod.build(&sudoku.engine, sudoku.cfg, null);
+        for (frame.drawnMarks()) |m| try std.testing.expectEqual(@as(board.MarkSet, 0), m);
+    }
+
+    // Quit ends the loop.
+    try std.testing.expect(try sudoku.turn());
+}
+
 test "deterministic major path: save_as then open restores saved snapshot" {
     const steps = [_]command.ParseCommandResult{
         .{ .valid = .{ .fill = .{ .row = 2, .col = 0, .digit = .seven } } },

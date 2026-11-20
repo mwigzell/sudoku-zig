@@ -69,6 +69,10 @@ Each scenario's `expect` is checked on every front end that runs it, on top of t
 | `paste_valid_resets_history` | Pasting a valid puzzle replaces the board with new givens and clears undo history. | native, web, android | — |
 | `paste_invalid_keeps_board` | Pasting an invalid line shows an error and leaves the board and undo history as they were. | native, web, android | — |
 | `settings_change_does_not_autosave` | With Auto Save on, View and Settings changes persist the settings but never write the game file. | native, web, android | — |
+| `auto_pencil_setting_turns_on` | Auto Pencil turns on through Settings and the stored value follows. | native, web, android | — |
+| `auto_pencil_setting_turns_off` | Auto Pencil turns off again through Settings and the stored value follows. | native, web, android | — |
+| `auto_pencil_draws_candidates` | With Auto Pencil and Pencil on, a fill draws the board's candidates for the cell's peers and none for the filled cell itself. | native, web, android | — |
+| `auto_pencil_undo_and_off_clear_marks` | Undoing the fill and turning Auto Pencil off leaves no drawn marks; the steps walked are proven by the transcript. | native, web, android | — |
 | `pencil_mark_replaces_digit_undo_restores` | In Pencil mode a digit on the player's digit replaces it with that mark and autosaves; Undo puts the digit back without the mark. | native, web, android | — |
 | `pencil_command_toggles_mark` | The pencil command toggles one mark on and off in an empty cell; each toggle autosaves. | native | web: The page marks a cell through Pencil mode and a digit; it sends no pencil command.; android: The page marks a cell through Pencil mode and a digit; it sends no pencil command. |
 | `pencil_mode_digit_marks_cell` | In Pencil mode a digit toggles that mark instead of filling the cell; each mark autosaves, the mode toggle does not. | native, web, android | — |

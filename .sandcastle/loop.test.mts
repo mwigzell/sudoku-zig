@@ -399,7 +399,7 @@ test("a step that is not on track stops the run: nothing is ticked and no later 
 test("a resumed step's implementer is handed the reviewer's own words for why it stopped", async () => {
   const dirs = fixture();
   try {
-    // A run that stopped at step 1 left its verdict behind; resuming re-runs the step from that record.
+    // A run that stopped at its first step left a verdict behind; resuming re-runs the step from that record.
     mkdirSync(dirs.runsDir, { recursive: true });
     writeFileSync(
       join(dirs.runsDir, "step-1-verdict.json"),

@@ -601,6 +601,7 @@ async function runStep(run, world, ui, step) {
     controls.viewMarks.click();
     return settleFlow();
   }
+  if (step.toggle_auto_pencil) return setting("auto_pencil");
   // A tap on a cell, a tap on the selected cell, Esc and Edit → Deselect Cell all run `selectCell`.
   if (step.select) return board.selectCell(game, step.select, { boardEl: ui.boardEl, createElement, steps });
   if (step.deselect) return board.selectCell(game, null, { boardEl: ui.boardEl, createElement, steps });
@@ -643,6 +644,8 @@ function finalState(run, ui) {
   return compact({
     cells: new TextDecoder().decode(line.bytes),
     givens: game.getState().cells.map((c) => (c.given ? "1" : "0")).join(""),
+    // The marks the page draws: the snapshot's, which core fills from its drawing rule.
+    marks: game.getState().cells.map((c) => c.marks ?? 0),
     undo: legend.undo,
     redo: legend.redo,
     rewind: legend.rewind,
@@ -665,7 +668,7 @@ function finalState(run, ui) {
 }
 
 /** The scenario's own expectations, checked as the native run checks them. */
-function checkExpect(expect, events, world, run) {
+function checkExpect(expect, events, world, run, final) {
   const prompts = events.filter((e) => e.step === stepRunner.STEP_PROMPT_MESSAGE);
   if (expect.questions !== undefined) assert.equal(prompts.filter((p) => p.buttons.length > 1).length, expect.questions, "questions asked");
   if (expect.errors !== undefined) assert.equal(prompts.filter((p) => p.buttons.length === 1).length, expect.errors, "errors shown");
@@ -685,6 +688,11 @@ function checkExpect(expect, events, world, run) {
     assert.equal(c.value, p.value, `probe ${p.row},${p.col} value`);
     assert.equal(c.given, p.given, `probe ${p.row},${p.col} given`);
     if (p.marks !== undefined) assert.equal(c.marks, p.marks, `probe ${p.row},${p.col} marks`);
+  }
+  // The final state's own `marks` array is the field the transcript carries; pin a literal value
+  // so the field is proven populated, not only compared arm against arm.
+  for (const fm of expect.final_marks ?? []) {
+    assert.equal(final.marks[fm.row * 9 + fm.col], fm.marks, `final marks ${fm.row},${fm.col}`);
   }
   const selected = run.session.state.selected ?? null;
   if (expect.selected) assert.deepEqual(selected, expect.selected, "selected cell");
@@ -737,8 +745,9 @@ async function runScenario(scenario, platform) {
       }
       await runStep(run, world, ui, step);
     }
-    checkExpect(scenario.expect ?? {}, events, world, run);
-    return { name: scenario.name, events: compact(events), final: finalState(run, ui) };
+    const final = finalState(run, ui);
+    checkExpect(scenario.expect ?? {}, events, world, run, final);
+    return { name: scenario.name, events: compact(events), final };
   } finally {
     globalThis.fetch = prevFetch;
   }
@@ -767,7 +776,21 @@ function firstDifference(got, reference) {
   const fields = Object.keys({ ...got.final, ...reference.final }).filter(
     (k) => JSON.stringify(got.final[k]) !== JSON.stringify(reference.final[k]),
   );
+  if (fields.length === 0) return {};
   return { final: Object.fromEntries(fields.map((k) => [k, { got: got.final[k], want: reference.final[k] }])) };
+}
+
+// The comparison must flag a `final.marks` divergence: after both arms read core's drawing rule,
+// the only way they can differ is one arm being fed a different source (the player's own planes).
+{
+  const drawingRule = { events: [], final: { cells: "0", marks: [0, 0, 1] } };
+  const playersOwn = { events: [], final: { cells: "0", marks: [0, 0, 0] } };
+  assert.deepEqual(firstDifference(drawingRule, drawingRule), {}, "one drawing rule on both arms agrees");
+  assert.deepEqual(
+    firstDifference(playersOwn, drawingRule),
+    { final: { marks: { got: [0, 0, 0], want: [0, 0, 1] } } },
+    "an arm reading the player's own marks differs from one reading the drawing rule",
+  );
 }
 
 /** The terminal types Save As's file with the command, so core asks it for no default target first. */
@@ -833,4 +856,6 @@ async function checkParity() {
 // A window's arms speak different contracts while they migrate, and the native run that writes the
 // transcripts this runner compares against stops too: prove nothing, and leave the reason on the console.
 if (PARITY_OFF_ISSUE !== "") console.info(`expected: parity off (#${PARITY_OFF_ISSUE})`);
-else await checkParity();
+else {
+  await checkParity();
+}
