@@ -63,7 +63,7 @@ Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or pla
 _Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer); parallel `Sudoku.out` / domain stdout for progress
 
 **Frame** (`core/frame.zig`):
-One draw's state, built by core from one builder (`frame.build(engine, status)`): the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on, else none), `marks_visible` and `is_pencil`. The terminal's `render` takes it as its only drawing argument; the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`). New drawing state is a frame field (ADR-0019).
+One draw's state, built by core from one builder (`frame.build(engine, status)`): the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on, else none), `marks_visible`, `is_pencil` and `auto_pencil`. The terminal's `render` takes it as its only drawing argument; the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`). New drawing state is a frame field (ADR-0019). Which marks a cell shows comes from one function, `Frame.drawnMarks()` — the whole board in one pass, so no front end derives the rule.
 _Avoid_: front ends working out the region or the selection; a new `render` argument per piece of state
 
 **Selected cell** (`GameEngine.selected`):
@@ -144,9 +144,9 @@ _Avoid_: a front-end-held switch flag; reading "mode" as the Auto Pencil setting
 Placing a digit (player fill or Solve) replaces the cell's marks and removes that digit's mark from every cell in its row, column and box — one mask operation per plane (`clearPeerMarks`). Undo restores both. Hint never writes, so it leaves marks alone; Clear on a marked empty cell removes all its marks (`clearable`).
 _Avoid_: having a front end remove marks itself
 
-**Show Pencil Marks** (`show_marks`) and **`marks_visible`**:
-`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`); web and Android draw only set marks.
-_Avoid_: front ends deciding visibility from `show_marks` alone
+**Show Pencil Marks** (`show_marks`), **`marks_visible`** and **`drawnMarks`**:
+`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. `marks_visible` = `show_marks` or Pencil or the last command set/removed a mark (incl. its Undo/Redo): it is the board's size, so nobody enters a mark they cannot see, and the terminal draws its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`). Which marks each cell shows is core's `Frame.drawnMarks()`: Auto Pencil on draws the board's candidates wherever Pencil is on, Auto Pencil off draws the player's marks wherever Pencil or Show Pencil Marks asks for them, and a cell holding a digit draws none. Front ends draw what it hands them; the page does not gate on `marks_visible`.
+_Avoid_: front ends deciding visibility from `show_marks` alone; a page that draws `marks_visible` itself
 
 ### Undo history
 
@@ -353,8 +353,8 @@ The Config on the wire, in the same shape as `config.json`'s `config` object: bo
 _Avoid_: passing puzzle bytes across the boundary; numeric choice values; per-field wire structs
 
 **GameSnapshot**:
-JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `is_pencil`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
-_Avoid_: duplicating SaveFormat fields in JS
+JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `is_pencil`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). A cell's `marks` are the ones `Frame.drawnMarks()` draws there, already 0 for a cell that draws none. Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
+_Avoid_: duplicating SaveFormat fields in JS; a page that re-derives which cells show marks
 
 **entry_wasm**:
 Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getConfigTable`, `getState`, `toSaveFormat`, `toPuzzle`, and the core flow (`commandStart` / `flowNext` / `flowRead`, and `flowFail` when the web side cannot carry a flow on). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.

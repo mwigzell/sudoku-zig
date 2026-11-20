@@ -119,16 +119,26 @@ export type GenText = { title: string; busy: string; done: string; cancelling: s
 
 /** Board snapshot as wasm `getState` and `show_game` report it. */
 export type GameState = {
-  /** Per cell; `marks` has bit `k` set when digit `k + 1` is pencil-marked. */
-  cells: Array<{ value: number; given: boolean; conflict: boolean; clearable: boolean; fillable: boolean; marks: number }>;
+  /** Per cell; `marks` are exactly the marks core draws there (bit `k` = digit `k + 1`), already 0 for a cell that draws none. */
+  cells: Array<CellSnapshot>;
   /** The Pencil switch, read by the pad's Pencil button: core's `is_pencil`, not the Auto Pencil setting. */
   is_pencil: boolean;
-  /** Draw pencil marks: core decides from the setting, Pencil and the last command. */
+  /** The board's size: draw the cells whole, with marks (`GameEngine.marksVisible`). Which marks a cell shows is `cells[].marks`. */
   marks_visible: boolean;
   /** Core's selected cell, or null. */
   selected: { row: number; col: number } | null;
   /** Cell indices (`row * 9 + col`) Show Region shades around the selected cell; null when none are shaded. */
   region: number[] | null;
+};
+
+/** One cell of the board snapshot: the display twin of core's cell in its frame. */
+export type CellSnapshot = {
+  value: number;
+  given: boolean;
+  conflict: boolean;
+  clearable: boolean;
+  fillable: boolean;
+  marks: number;
 };
 
 /** The Config as core writes it to `config.json`: one entry per config table row, on/off as a boolean, a choice by name. */

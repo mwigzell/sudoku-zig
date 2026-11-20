@@ -23,7 +23,7 @@ export function syncMarksMenu(controls, config) {
 
 /**
  * Wire View → Show Pencil Marks. Both toggles redraw the board, because either can change
- * core's `marks_visible`.
+ * the marks core draws.
  * @param {{ viewMarks?: HTMLElement | null }} controls
  * @param {GameApi} game
  * @param {WebSession} session

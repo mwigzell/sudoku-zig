@@ -29,7 +29,7 @@ pub const GameSnapshot = struct {
     selected: ?event.CellCoord,
     region: ?board.CellMask,
 
-    /// Snapshot what `frame` draws.
+    /// Snapshot what `frame` draws; a cell's `marks` are the ones `drawnMarks` draws there.
     pub fn fromFrame(frame: frame_mod.Frame) GameSnapshot {
         var snap: GameSnapshot = .{
             .cells = undefined,
@@ -39,6 +39,7 @@ pub const GameSnapshot = struct {
             .region = frame.region,
         };
         const view = frame.board;
+        const drawn = frame.drawnMarks();
         for (0..board.DIMENSION_SIZE) |r_u| {
             const row: u4 = @intCast(r_u);
             for (0..board.DIMENSION_SIZE) |c_u| {
@@ -50,7 +51,7 @@ pub const GameSnapshot = struct {
                     .conflict = view.isConflictingRowCol(row, col),
                     .clearable = clear_command.canClear(view, row, col),
                     .fillable = fill_command.canFill(view, row, col),
-                    .marks = view.marks(row, col),
+                    .marks = drawn[idx],
                 };
             }
         }

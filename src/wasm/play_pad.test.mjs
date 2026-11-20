@@ -156,18 +156,22 @@ function makePadControls() {
   await marked.done;
   assert.equal(cellAt(markCell).value, 0, "a digit in Pencil does not fill");
   assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3]);
+  // Read straight from core: the mark the player made is still on the board after this flow.
+  const markOnBoard = game.getState().cells[board.cellIndex(markCell.row, markCell.col)].marks;
+  assert.equal(markOnBoard, 1 << 2, "the mark is on the board");
 
-  // Show Pencil Marks off: marks stay visible while Pencil is on, and hide once it is off.
+  // Show Pencil Marks off: core still draws the mark while Pencil is on, and draws none once it is off.
   menuControls.viewMarks.click();
   await settleFlow();
   assert.equal(session.config.show_marks, false);
   assert.equal(menuControls.viewMarks.attrs["aria-checked"], "false");
   assert.equal(session.state.marks_visible, true, "Pencil keeps marks visible");
+  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3], "core draws the mark while Pencil is on");
   pad.pencil.click();
   await settleFlow();
   assert.equal(session.state.is_pencil, false);
-  assert.equal(session.state.marks_visible, false, "with the setting off and Pencil off, marks are hidden");
-  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3], "hiding marks keeps them");
+  assert.equal(session.state.marks_visible, false, "with the setting off and Pencil off, the board is the small one");
+  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [], "with both off, core draws no marks");
 
   pad.undo.click();
   await settleFlow();

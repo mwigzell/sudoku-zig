@@ -98,6 +98,11 @@ pub const Board = struct {
             return self._board.marksAt(row, col);
         }
 
+        /// The digits not placed in (row, col)'s row, column or box: the cell's simple candidates.
+        pub fn candidates(self: BoardView, row: u4, col: u4) MarkSet {
+            return self._board.candidates(row, col);
+        }
+
         /// Bulk resolve against flat storage by index list.
         pub fn resolve(self: BoardView, indices: []const usize) [9]CellValue {
             var vals: [9]CellValue = undefined;
