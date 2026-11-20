@@ -192,6 +192,8 @@ export function wireSudokuApp({
   help.wireHelpAbout(menuControls.about, game, aboutModal);
   settings.wireSettingsMenu(menuControls.settings, game, session, settingsModal, {
     closeMenus: () => menuBar.closeAll?.(),
+    // A Settings change is a Config change: the View items and pad that read one follow it as it lands.
+    onChange: syncControls,
     steps,
   });
 

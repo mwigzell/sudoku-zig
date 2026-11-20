@@ -141,18 +141,20 @@ function controlValue(input) {
 /**
  * File → Settings dialog: one control per config table row; each change runs `set_config` through core,
  * then the dialog re-syncs from the Config core shows, or from the session's when core refused it.
+ * `onChange` runs once a change has settled, so controls elsewhere on the page that read a Config
+ * field follow it immediately instead of waiting for the dialog to close.
  * @param {HTMLElement | null} settingsBtn
  * @param {import("../types").GameApi} game
  * @param {import("../types").WebSession} session
  * @param {SettingsModal} modal
- * @param {{ steps: FlowHandlers, onDismiss?: () => void, closeMenus?: () => void, createElement?: (tag: string) => HTMLElement }} options
+ * @param {{ steps: FlowHandlers, onChange?: () => void, onDismiss?: () => void, closeMenus?: () => void, createElement?: (tag: string) => HTMLElement }} options
  */
 export function wireSettingsMenu(
   settingsBtn,
   game,
   session,
   modal,
-  { steps, onDismiss, closeMenus, createElement = (tag) => document.createElement(tag) },
+  { steps, onChange, onDismiss, closeMenus, createElement = (tag) => document.createElement(tag) },
 ) {
   if (!settingsBtn || !modal?.el) return;
   const controls = buildSettingsFields(modal, session.configTable, createElement);
@@ -168,6 +170,7 @@ export function wireSettingsMenu(
       await stepRunner.runCommand(game, setConfigAction(field, controlValue(input)), steps, (step) =>
         syncSettingsFields(controls, step.config));
       syncSettingsFields(controls, session.config);
+      onChange?.();
     });
   }
 
