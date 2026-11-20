@@ -123,6 +123,7 @@ const FINAL_PASSING = {
   parity_line: PROJECT.parity.sample,
   standards: "clean",
   concerns: [],
+  drift: [],
 };
 
 test("a final pass proves every acceptance criterion and is the only way out of the run", () => {
@@ -130,6 +131,21 @@ test("a final pass proves every acceptance criterion and is the only way out of 
   assert.ok("verdict" in read, JSON.stringify(read));
   assert.deepEqual(decideFinal(read.verdict), { kind: "pass" });
 });
+test("a branch that is not the shape the issue's Decisions chose stops the run, and the stop names it", () => {
+  const verdict = { ...FINAL_PASSING, drift: ["the drawing rule is asked cell by cell, not answered for the whole board"] };
+
+  assert.deepEqual(decideFinal(verdict as FinalVerdict), {
+    kind: "stop",
+    reason: "drifted from the issue's decisions: the drawing rule is asked cell by cell, not answered for the whole board",
+  });
+});
+
+test("a whole-branch verdict that cannot say where it departs is a problem, not a pass", () => {
+  const { drift: _omitted, ...withoutDrift } = FINAL_PASSING;
+
+  assert.deepEqual(readFinalVerdict(JSON.stringify(withoutDrift)), { problem: "the verdict's drift is not a list of strings" });
+});
+
 
 test("a criterion nobody proved stops the run, and the stop names it", () => {
   const verdict = {

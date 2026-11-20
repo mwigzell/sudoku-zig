@@ -173,6 +173,12 @@ export interface FinalVerdict {
   parity_line?: string;
   /** Anything a human should read before accepting the run. */
   concerns: string[];
+  /**
+   * Where the branch departs from the issue's own Decisions, one entry per departure, or empty.
+   * A criterion can pass while the code is not the shape the issue decided on, so this is judged
+   * apart from the matrix: any entry stops the run for a human, as a step's `drift` does.
+   */
+  drift: string[];
   /** The standards verdict as the reviewer worded it, when it reports one here; the lens has its own file. */
   standards?: string;
 }
@@ -202,6 +208,9 @@ export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { pro
     }
   }
   if (!holds(record.concerns, "strings")) return { problem: "the verdict's concerns is not a list of strings" };
+  // A departure from the issue's Decisions is a stop, so a verdict that cannot say where it departs
+  // is unreadable rather than clean: the field is required, and an empty list is the honest answer.
+  if (!holds(record.drift, "strings")) return { problem: "the verdict's drift is not a list of strings" };
   // The parity fields are the whole-branch review's proof that the check is back on, so a value the
   // host cannot read is a problem rather than a citation it might take on trust.
   if ("parity_restored" in record && typeof record.parity_restored !== "boolean") {
@@ -218,7 +227,9 @@ export function readFinalVerdict(raw: string): { verdict: FinalVerdict } | { pro
  *
  * A run passes only when every criterion is marked `PASS` with evidence the reviewer read. Any
  * criterion `FAIL`, or `PASS` on nothing, stops the run with the criteria named, so a human reads the
- * matrix instead of a run claiming to be done. The standards lens is judged separately, from its own report.
+ * matrix instead of a run claiming to be done. A departure from the issue's Decisions stops it too:
+ * criteria describe behaviour, and a branch can meet them while not being the shape the issue decided
+ * on. The standards lens is judged separately, from its own report.
  */
 export function decideFinal(verdict: FinalVerdict): FinalDecision {
   const failed = verdict.criteria.filter((entry) => entry.status !== "PASS");
@@ -230,6 +241,11 @@ export function decideFinal(verdict: FinalVerdict): FinalDecision {
   const unevidenced = verdict.criteria.filter((entry) => entry.evidence.trim().length === 0);
   if (unevidenced.length > 0) {
     return { kind: "stop", reason: `no evidence: ${unevidenced.map((entry) => entry.criterion).join("; ")}` };
+  }
+
+  // The issue's Decisions are the shape the owner chose, not a suggestion the criteria can overrule.
+  if (verdict.drift.length > 0) {
+    return { kind: "stop", reason: `drifted from the issue's decisions: ${verdict.drift.join("; ")}` };
   }
 
   return { kind: "pass" };

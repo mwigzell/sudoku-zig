@@ -37,6 +37,8 @@ Your job is to answer one question with evidence: **does this branch meet the is
 
 6. **Say what a human should know.** `concerns` carries what you would tell the person accepting this run: risks, follow-ups, anything that reads as drift from the issue. Do not invent work items.
 
+7. **Name every departure from the issue's Decisions.** The issue's `## Decisions` section is the shape the owner chose — a function's signature, where a rule lives, what a value carries. Read it against the branch and list each place the code does something else, however well it behaves: `drift` is a list of those, worded as the departure, with the file that shows it. Any entry stops the run for a human, so an empty list is the honest answer only when the branch is the shape the issue decided on. A criterion passing does not excuse a departure: the criteria judge behaviour, the Decisions judge shape.
+
 # Write the verdict
 
 The host ticks the criteria you pass — the ones marked `PASS` with evidence — and leaves the issue open. You never tick anything yourself, and you never touch the issue.
@@ -54,7 +56,8 @@ Write **`.sandcastle/verdict-acs.json`** in the repository root, and nothing els
   ],
   "parity_restored": true,
   "parity_line": "the gate's parity line, copied as it printed — its shape is `{{PARITY_LINE}}`",
-  "concerns": ["what a human should read before accepting this run"]
+  "concerns": ["what a human should read before accepting this run"],
+  "drift": ["where the branch is not the shape the issue's Decisions chose, or an empty list"]
 }
 ```
 

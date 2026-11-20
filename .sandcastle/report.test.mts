@@ -70,6 +70,7 @@ const FINAL = {
   ],
   standards: "clean",
   concerns: ["the second criterion needs a human read"],
+  drift: [],
 };
 
 test("the whole-branch report leads with the decision and shows every criterion", () => {
@@ -83,7 +84,7 @@ test("the whole-branch report leads with the decision and shows every criterion"
 });
 
 test("a verdict with no standards text reports its criteria instead of crashing", () => {
-  const withoutStandards = { criteria: FINAL.criteria, concerns: FINAL.concerns };
+  const withoutStandards = { criteria: FINAL.criteria, concerns: FINAL.concerns, drift: FINAL.drift };
   const text = formatFinalReport(JSON.stringify(withoutStandards)).join("\n");
 
   assert.match(text, /^ {2}PASS +the legend line reaches the terminal$/mu);

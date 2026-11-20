@@ -26,6 +26,7 @@ const FINAL = {
   parity_restored: true,
   parity_line: "✓ parity: 85 scenario(s) on native, web and Android",
   concerns: ["The ADR reads stricter than the shipped seam."],
+  drift: [],
   standards: "All rules pass.",
 };
 

@@ -445,6 +445,9 @@ async function finalReview(
     logEvent("verdict", `${entry.status}: ${entry.criterion}`);
   }
   for (const concern of read.verdict.concerns) logEvent("verdict", `concern: ${concern}`);
+  // A departure from the issue's Decisions is logged before the decision stops the run, so the log
+  // names the shape the branch took instead of leaving the reader to find it in the prompt's answer.
+  for (const departure of read.verdict.drift) logEvent("verdict", `drift: ${departure}`);
 
   if (decision.kind === "stop") return stop(decision.reason);
 

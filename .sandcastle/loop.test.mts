@@ -62,6 +62,7 @@ const passingFinal = () => ({
   parity_restored: true,
   parity_line: PROJECT.parity.sample,
   concerns: [],
+  drift: [],
 });
 
 /** An in-memory tracker: the loop's own writes are observable, and nothing leaves the test. */
@@ -650,11 +651,12 @@ test("a sub-issue step is judged by its own reviewer, and its criteria are ticke
     const sandbox = fakeSandbox(
       dirs.worktree,
       [passingVerdict(1)],
-      { criteria: [], parity_restored: true, parity_line: PROJECT.parity.sample, concerns: [] },
+      { criteria: [], parity_restored: true, parity_line: PROJECT.parity.sample, concerns: [], drift: [] },
       passingStandards(),
       {
         criteria: [{ criterion: "The child's own criterion.", status: "PASS", evidence: "a test in the child's step asserts it" }],
         concerns: [],
+        drift: [],
       },
     );
 
@@ -700,11 +702,13 @@ test("a parent with criteria of its own still has them judged, once, by the whol
         parity_restored: true,
         parity_line: PROJECT.parity.sample,
         concerns: [],
+        drift: [],
       },
       passingStandards(),
       {
         criteria: [{ criterion: "The child's own criterion.", status: "PASS", evidence: "the child's step test asserts it" }],
         concerns: [],
+        drift: [],
       },
     );
 
@@ -879,6 +883,7 @@ test("a declared window the whole-branch review does not prove restored stops th
         parity_restored: false,
         parity_line: PROJECT.parity.sample,
         concerns: [],
+        drift: [],
       },
     );
 
