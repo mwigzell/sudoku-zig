@@ -130,7 +130,11 @@ _Avoid_: "hint at position", implying local-constraint derivation; a permanent a
 
 **Pencil mark**:
 A small digit in an empty cell meaning "this digit might go here"; a cell can hold all nine. Each digit has a fixed spot in the cell's 3×3 grid (1 top left … 9 bottom right). Core stores them as nine bit-planes on `Board` (`mark_bits`, one `CellMask` per digit); `marksAt` reads one cell's `MarkSet`. Marks are the player's notes and are never checked: a contradicting mark is allowed. A cell never holds a digit and marks at once — marking a player digit replaces it (`REPLACED_BY_MARK_FMT`); marking a given is refused. Each toggle is one Undo step; marks are saved in the game file (marks section, mark-toggle history entry) but never in a puzzle line (Copy, Export).
-_Avoid_: notes, candidates (auto-candidates is a different, unbuilt feature), corner/centre marks
+_Avoid_: notes, corner/centre marks
+
+**Candidates**:
+The digits 1–9 not placed in a cell's row, column or box (`Board.candidates`) — its simple candidates, with no further elimination. Computed from the cells on every read and never stored, so a conflicting board still answers; reading one for a filled cell is allowed.
+_Avoid_: storing a second mark set or saving candidates; treating them as the player's marks (`mark_bits`)
 
 **Pencil** (`is_pencil`, `toggle_pencil_mode`):
 Core session state, off at each start and not saved: it shows and hides the marks. In the manual game it also makes a digit in the selected cell toggle that mark instead of filling. Web and Android: the pad's Pencil button and P. The terminal keeps no switch; it marks with the `pencil` command (`p A1 5`).

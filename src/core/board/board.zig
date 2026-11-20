@@ -43,6 +43,9 @@ pub fn cellBit(row: u4, col: u4) CellMask {
 /// One cell's pencil marks: bit `k` is set when digit `k + 1` is marked.
 pub const MarkSet = u9;
 
+/// Every digit 1–9 marked: all nine bits of a `MarkSet`.
+pub const ALL_DIGITS: MarkSet = ~@as(MarkSet, 0);
+
 /// The mark plane for a digit 1..9: its index in `Board.mark_bits`, which is also
 /// the mark's spot in the cell's 3×3 grid (0 top left through 8 bottom right).
 pub fn markPlane(digit: CellValue) usize {
@@ -310,6 +313,27 @@ pub const Board = struct {
     /// Mark digit in every cell of `cells`: the inverse of `clearPeerMarks`.
     pub fn restoreMarks(self: *Board, digit: CellValue, cells: CellMask) void {
         self.mark_bits[markPlane(digit)] |= cells;
+    }
+
+    /// The digit in (row, col) as its `MarkSet` bit, or 0 for an empty cell.
+    fn digitMark(value: CellValue) MarkSet {
+        return if (value == .zero) 0 else @as(MarkSet, 1) << @intCast(markPlane(value));
+    }
+
+    /// The digits not placed in (row, col)'s row, column or box — its simple
+    /// candidates, read from the cells so a conflicting board still answers.
+    /// Answering for a filled cell is allowed; no caller draws it.
+    pub fn candidates(self: Board, row: u4, col: u4) MarkSet {
+        const scopes = [_][DIMENSION_SIZE]usize{
+            asRow(row).indices,
+            asCol(col).indices,
+            asBoxOf(row, col).indices,
+        };
+        var placed: MarkSet = 0;
+        for (scopes) |indices| {
+            for (indices) |idx| placed |= digitMark(self.cells[idx].value);
+        }
+        return ALL_DIGITS & ~placed;
     }
 
     /// Full-board conflict recompute after broad state changes.
@@ -708,4 +732,32 @@ test "setMarks replaces one cell's marks; clearPeerMarks and restoreMarks undo e
 
     b.restoreMarks(.five, cleared);
     try std.testing.expectEqual(cellBit(4, 4) | cleared, b.mark_bits[markPlane(.five)]);
+}
+
+test "candidates of an empty board are every digit" {
+    const b = Board.init();
+    for (0..DIMENSION_SIZE) |r| {
+        for (0..DIMENSION_SIZE) |c| {
+            try std.testing.expectEqual(ALL_DIGITS, b.candidates(@intCast(r), @intCast(c)));
+        }
+    }
+}
+
+test "candidates drop a digit placed in the row, the column and the box" {
+    var b = Board.init();
+    // Row 4, column 4 — the cell under test is the box's centre.
+    try b.setCell(4, 0, .one); // same row
+    try b.setCell(0, 4, .two); // same column
+    try b.setCell(3, 3, .three); // same box, neither the row nor the column
+    try b.setCell(8, 8, .four); // none of them: a different row, column and box
+
+    const digit = struct {
+        fn bit(v: CellValue) MarkSet {
+            return @as(MarkSet, 1) << @intCast(markPlane(v));
+        }
+    }.bit;
+
+    const expected = ALL_DIGITS & ~(digit(.one) | digit(.two) | digit(.three));
+    try std.testing.expectEqual(expected, b.candidates(4, 4));
+    try std.testing.expect(b.candidates(4, 4) & digit(.four) != 0);
 }
