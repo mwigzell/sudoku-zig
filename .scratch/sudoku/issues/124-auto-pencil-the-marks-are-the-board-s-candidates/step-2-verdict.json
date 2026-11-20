@@ -1,0 +1,11 @@
+{
+  "step": 2,
+  "test_added": "src/core/engine/pencil.zig:204-214 (\"in Pencil a fill toggles a mark instead; the mode survives a new game\"), src/core/frame.zig:84 (frame carries the switch), src/wasm/play_pad.test.mjs:153,168 and src/wasm/menus/shortcuts.test.mjs:131-137: the pre-existing tests, updated only in the field name, now read `is_pencil` on the engine, the frame and the wasm snapshot; a rename adds no new assertion, so the suite that reads the renamed field is the step's coverage.",
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Reverted the engine field alone with `sed -i 's/^    is_pencil: bool = false,/    pencil_mode: bool = false,/' src/core/engine/game_engine.zig`, then `zig test src/entry_native.zig -lc` failed to compile, naming every reader of the renamed field: `src/core/engine/game_engine.zig:176:40: error: no field named 'is_pencil'`, `src/core/engine/game_engine.zig:411:26: error: no field named 'is_pencil'`, `src/core/engine/pencil.zig:204:36: error: no field named 'is_pencil' in struct 'core.engine.game_engine.GameEngine'`, plus `src/core/frame.zig:51:29` and `src/core/frame.zig:84:40`. The rename cannot be half-reverted or reverted silently; restored with backups and `git status --porcelain` empty. The web arm was independently proven live: `node --test src/wasm/play_pad.test.mjs` and `src/wasm/menus/shortcuts.test.mjs` both pass against the rebuilt `src/wasm/artifacts/artifact.wasm`, which carries `\"is_pencil\"` once and `\"pencil_mode\"` zero times.",
+  "ac_at_risk": [],
+  "drift": false
+}

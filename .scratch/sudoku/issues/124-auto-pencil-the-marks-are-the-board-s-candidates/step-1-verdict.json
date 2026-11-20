@@ -1,0 +1,11 @@
+{
+  "step": 1,
+  "test_added": "src/core/config_table.zig:228 'the auto pencil row toggles the setting' asserts the row's label is 'Auto Pencil', its kind is on_off, Config.default() reads off, and config_table.apply(toggle) sets auto_pencil true; src/core/config.zig:79 (config.default) asserts the default is off; src/core/config_store.zig:417 ('a missing field keeps its default') asserts a config.json written without the field reads auto_pencil as Config.default()'s value (off)",
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Deleted only the row at src/core/config_table.zig:108 and ran `zig test src/_probe.zig -lc` (a temp root importing core/config.zig, core/config_table.zig, core/config_store.zig; no -Dtest-filter, so every test in those files ran): printed `src/core/config_table.zig:146:5: error: no config table row for auto_pencil` at the comptime check (config_table.zig:122) and again at the `apply` call site (config_table.zig:154) — compile failure, as the commit claims. Then restored the row and flipped only the default to `auto_pencil: bool = true` and re-ran: `2/122 core.config.test.config.default produces valid config...FAIL (TestFailed)` and `6/122 core.config_table.test.the auto pencil row toggles the setting...FAIL (TestUnexpectedResult)`; 120 passed, 2 failed. Third probe: restored the field default, deleted just the assertion line src/core/config_store.zig:417, and ran the 'a missing field keeps its default' test in isolation — it printed `error: TestUnexpectedResult` / `expected false, found true` at config_store.zig:417, i.e. the test does execute and does compare the field, not a tautology. All three files restored with `git status --short` clean apart from the review's own untracked files.",
+  "ac_at_risk": [],
+  "drift": false
+}

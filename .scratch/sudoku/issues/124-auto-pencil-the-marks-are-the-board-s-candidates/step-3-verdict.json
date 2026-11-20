@@ -1,0 +1,11 @@
+{
+  "step": 3,
+  "test_added": "src/core/board/board.zig:739-762 — two tests. \"candidates of an empty board are every digit\" asserts all 81 cells of a fresh board answer ALL_DIGITS (full nine-bit set); \"candidates drop a digit placed in the row, the column and the box\" fills (4,0)=1 (same row), (0,4)=2 (same column), (3,3)=3 (same box, neither row nor col) and (8,8)=4 (none of the three), asserts candidates(4,4) equals ALL_DIGITS minus exactly digits 1-3, and asserts digit 4 is still present — so both the removal and the non-removal of an out-of-scope digit are pinned.",
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Removed the production block src/core/board/board.zig:318-337 (digitMark + candidates) with the edit tool, keeping both tests. `zig test src/_one_test.zig -lc --test-filter \"candidates\"` then failed to compile: `board.zig:742:44: error: no field or member function named 'candidates' in 'core.board.board.Board'`, and the same error at the second call site — red for the right reason, not an assertion the tests would have satisfied anyway. Restoring the file and re-running printed `2/3 core.board.board.test.candidates of an empty board are every digit...OK`, `3/3 core.board.board.test.candidates drop a digit placed in the row, the column and the box...OK`, `All 3 tests passed.`; `zig fmt --check src/core/board/board.zig` printed FMT_OK. Scratch roots src/_one_test.zig and src/_probe.zig deleted; `git status --short` empty.",
+  "ac_at_risk": [],
+  "drift": false
+}

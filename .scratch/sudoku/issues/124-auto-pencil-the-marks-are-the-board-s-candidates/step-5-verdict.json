@@ -1,0 +1,11 @@
+{
+  "step": 5,
+  "test_added": "src/core/engine/game_engine.zig:1743 (plus :1761): with auto_pencil on and Pencil on, a digit fills the cell (value .four) and records no mark, and Undo takes the digit back to zero; with auto_pencil off and Pencil on, the same fill leaves the cell empty and sets digit 4's mark plane",
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Reverted the production gate only, src/core/engine/game_engine.zig:417 `if (self.is_pencil and !self.auto_pencil and f.digit != .zero)` back to `if (self.is_pencil and f.digit != .zero)`, then ran `zig test src/_one_test.zig -lc --test-filter \"Auto Pencil\"` with a temporary root importing src/core/engine/game_engine.zig. Printed: `3/4 core.engine.game_engine.test.Auto Pencil on: a digit fills even in Pencil, and toggles no mark...expected .four, found .zero / FAIL (TestExpectedEqual)` at game_engine.zig:1753, `3 passed; 0 skipped; 1 failed.` Restored the gate (tree clean per `git diff --stat`, temporary root deleted) and re-ran the same filter: all 4 tests passed.",
+  "ac_at_risk": [],
+  "drift": false
+}

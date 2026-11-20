@@ -1,0 +1,11 @@
+{
+  "step": 4,
+  "test_added": "src/core/frame.zig: three tests for Frame.drawnMarks() — the four combinations of Auto Pencil and Show Pencil Marks with Pencil off (empty cell, Auto Pencil on draws only with Pencil on and ignores Show Pencil Marks); a filled cell and a given report none in all eight combinations; Auto Pencil off with Pencil on draws an unselected empty cell's player marks. Plus src/wasm/board.test.mjs (the page draws the marks core hands it, with or without marks_visible) and src/wasm/play_pad.test.mjs (marks a flow leaves on the board, read from core).",
+  "parity": "on",
+  "standards": "clean",
+  "on_track": true,
+  "concerns": [],
+  "red_on_revert": "Kept the three tests, replaced the rule in src/core/frame.zig with the pre-step one (`if (!marks_visible) return drawn;` then `board.marks` everywhere — no candidates, no auto_pencil), and `zig test src/_review_one.zig -lc --test-filter \"drawn marks\"` printed: 'drawn marks: the four combinations of Auto Pencil and Show Pencil Marks, with Pencil off...FAIL expected 384, found 0' at frame.zig:155, '3 passed; 0 skipped; 1 failed.' The two other tests stayed green (their fixtures hold no player marks in one case and the marks_visible on default in the other). Removing only the Auto Pencil arm of the gate (`const draw = true`, Auto Pencil drawing with Pencil off) failed the same test with 'expected 0, found 384'; making Auto Pencil also honour Show Pencil Marks failed it the same way. Reverting `.marks = drawn[idx]` to `view.marks(row, col)` in src/wasm/wire.zig left every GameSnapshot test green — no test there pins that the snapshot's marks are the drawn ones, only the frame tests do. Frame restored byte-identical to /tmp/frame.orig.zig; no file in the branch is modified.",
+  "ac_at_risk": [],
+  "drift": false
+}
