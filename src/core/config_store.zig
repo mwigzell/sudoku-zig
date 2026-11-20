@@ -310,6 +310,7 @@ fn nonDefaultConfig() config.Config {
         .auto_restore = true,
         .auto_new = true,
         .auto_save = true,
+        .auto_pencil = true,
         .show_marks = false,
         .test_probe = true,
     };
@@ -387,7 +388,7 @@ test "the config object writes bools as bools and choices by name" {
     var w = std.Io.Writer.fixed(&buf);
     try writeConfigJson(&w, nonDefaultConfig());
     try std.testing.expectEqualStrings(
-        "{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"show_marks\":false,\"test_probe\":true}",
+        "{\"difficulty\":\"hard\",\"log_level\":\"warn\",\"theme\":\"light\",\"show_region\":true,\"warn_solvability\":true,\"auto_restore\":true,\"auto_new\":true,\"auto_save\":true,\"auto_pencil\":true,\"show_marks\":false,\"test_probe\":true}",
         w.buffered(),
     );
 }
@@ -395,7 +396,7 @@ test "the config object writes bools as bools and choices by name" {
 test "a field this app does not know is ignored; the known fields and the current file still load" {
     const newer =
         \\{"config":{"difficulty":"hard","log_level":"warn","theme":"light","show_region":true,"warn_solvability":true,
-        \\"auto_restore":true,"auto_new":true,"auto_save":true,"show_marks":false,"test_probe":true,"from_a_newer_app":{"x":[1,2]}},
+        \\"auto_restore":true,"auto_new":true,"auto_save":true,"auto_pencil":true,"show_marks":false,"test_probe":true,"from_a_newer_app":{"x":[1,2]}},
         \\"also_newer":1,"current_file":"/games/a.sud"}
     ;
     try expectSavedFieldsEqual(nonDefaultConfig(), try loadBytes(std.testing.allocator, newer));
@@ -413,6 +414,7 @@ test "a missing field keeps its default" {
     const defaults = config.Config.default();
     try std.testing.expectEqual(defaults.show_marks, cfg.show_marks);
     try std.testing.expectEqual(defaults.auto_save, cfg.auto_save);
+    try std.testing.expectEqual(defaults.auto_pencil, cfg.auto_pencil);
     try std.testing.expectEqual(config.ViewTheme.dark, cfg.theme);
     try std.testing.expect(cfg.show_region);
 }

@@ -105,6 +105,7 @@ const app_rows = [_]Row{
     .{ .field = "auto_restore", .label = "Auto Restore", .kind = .on_off },
     .{ .field = "auto_new", .label = "Auto New", .kind = .on_off },
     .{ .field = "auto_save", .label = "Auto Save", .kind = .on_off },
+    .{ .field = "auto_pencil", .label = "Auto Pencil", .kind = .on_off },
     .{ .field = "show_region", .label = "Show Region", .kind = .on_off },
     .{ .field = "show_marks", .label = "Show Pencil Marks", .kind = .on_off },
 };
@@ -223,6 +224,17 @@ test "apply sets an on/off field and a choice field by name" {
     try apply(&cfg, .{ .field = "log_level", .value = .{ .choice = "warn" } });
     try testing.expect(cfg.show_region);
     try testing.expectEqual(logger.Severity.warn, cfg.log_level);
+}
+
+test "the auto pencil row toggles the setting" {
+    const r = comptime row("auto_pencil");
+    try testing.expectEqualStrings("Auto Pencil", r.label);
+    try testing.expect(r.kind == .on_off);
+    const cfg = Config.default();
+    try testing.expect(!get(cfg, r).on);
+    var next = cfg;
+    try apply(&next, toggle(cfg, r));
+    try testing.expect(next.auto_pencil);
 }
 
 test "apply refuses an unknown field, a value of the wrong kind and a choice not offered" {

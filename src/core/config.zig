@@ -42,6 +42,8 @@ pub const Config = struct {
     auto_new: bool = true,
     /// Save policy: write successful state-changing commands automatically.
     auto_save: bool = true,
+    /// The marks are the board's candidates rather than the player's own notes; digits always fill.
+    auto_pencil: bool = false,
     /// Draw pencil marks. Hiding them never removes them.
     show_marks: bool = true,
     /// Exists only in test builds, to prove a new field needs no production code beyond this struct and the config table.
@@ -74,4 +76,5 @@ test "config.default produces valid config" {
     if (!cfg.auto_new) return error.TestFailed;
     if (!cfg.auto_save) return error.TestFailed;
     if (!cfg.show_marks) return error.TestFailed;
+    if (cfg.auto_pencil) return error.TestFailed;
 }
