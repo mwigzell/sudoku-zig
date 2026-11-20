@@ -83,9 +83,16 @@ export function markDigits(marks) {
   return digits;
 }
 
-/** Marks to draw in a cell: only when core says marks are visible, and only in an empty cell. */
-function shownMarks(state, cell) {
-  return state.marks_visible === true && cell.value === 0 ? (cell.marks ?? 0) : 0;
+/**
+ * Marks to draw in a cell: exactly the ones core's snapshot carries.
+ *
+ * Core decides which cells show marks, from Auto Pencil, Pencil and Show Pencil Marks, so the page
+ * draws what it is handed and never gates on `marks_visible` itself.
+ * @param {import("./types").CellSnapshot} cell
+ * @returns {number}
+ */
+function shownMarks(cell) {
+  return cell.marks ?? 0;
 }
 
 /**
@@ -138,7 +145,7 @@ export function boardCellDescriptors(state) {
       cell,
       classes,
       text: formatDigit(cell),
-      marks: shownMarks(state, cell),
+      marks: shownMarks(cell),
     };
   });
 }

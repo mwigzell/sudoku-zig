@@ -114,7 +114,7 @@ function makeRoot(controls) {
   assert.equal(root.press({ key: "x" }), false, "other keys are left alone");
 }
 
-// ── wired to a real game: P runs the Pencil button's command, so core's Pencil mode toggles ──
+// ── wired to a real game: P runs the Pencil button's command, so core's Pencil toggles ──
 {
   const game = await loadGame();
   startNewGame(game);
@@ -128,13 +128,13 @@ function makeRoot(controls) {
   const root = makeRoot({ [PENCIL]: pencil });
   shortcuts.wireShortcuts(/** @type {any} */ (root), { platform: "Linux x86_64" });
 
-  assert.equal(session.state.pencil_mode, false);
+  assert.equal(session.state.is_pencil, false);
   root.press({ key: "p" });
   await settleFlow();
-  assert.equal(session.state.pencil_mode, true, "P turns core's Pencil mode on");
+  assert.equal(session.state.is_pencil, true, "P turns core's Pencil on");
   root.press({ key: "P" });
   await settleFlow();
-  assert.equal(session.state.pencil_mode, false, "Caps Lock P turns it off again");
+  assert.equal(session.state.is_pencil, false, "Caps Lock P turns it off again");
 }
 
 console.log("shortcuts.test.mjs OK");

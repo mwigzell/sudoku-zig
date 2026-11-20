@@ -92,8 +92,13 @@ pub const GameEngine = struct {
     warn_dead_moves: bool = false,
     /// On open/load, probe solvability and warn when the puzzle has no completion.
     warn_unsolvable_load: bool = false,
-    /// Digits toggle pencil marks instead of filling. Session state: starts off, never saved.
-    pencil_mode: bool = false,
+    /// The Pencil switch: draws the pencil marks, and in the manual game makes a digit toggle one
+    /// instead of filling. Session state: starts off, never saved. Not the Auto Pencil setting.
+    is_pencil: bool = false,
+    /// The Auto Pencil setting, given by whoever holds Config (`useConfig`). On, the marks are the
+    /// board's candidates and Pencil only shows them, so a digit always fills; off, the manual game
+    /// where Pencil makes a digit toggle the player's own mark.
+    auto_pencil: bool = false,
     /// The last command set or removed a mark (a mark, or its Undo or Redo).
     marks_changed: bool = false,
     /// Whether the command just run changed the game. `unchanged()` is the only ok result that
@@ -104,12 +109,13 @@ pub const GameEngine = struct {
     /// leave it. Session state, never saved.
     selected: ?event.CellCoord = null,
 
-    /// Take the Config fields the engine plays by: solvability warnings and Show Pencil Marks.
-    /// The engine keeps no Config; whoever holds it calls this again after a change.
+    /// Take the Config fields the engine plays by: solvability warnings, Show Pencil Marks and
+    /// Auto Pencil. The engine keeps no Config; whoever holds it calls this again after a change.
     pub fn useConfig(self: *@This(), cfg: config.Config) void {
         self.warn_dead_moves = cfg.warn_solvability;
         self.warn_unsolvable_load = cfg.warn_solvability;
         self.show_marks = cfg.show_marks;
+        self.auto_pencil = cfg.auto_pencil;
     }
 
     /// Build an engine from a one-line puzzle string, playing by `cfg` (see `useConfig`).
@@ -169,10 +175,10 @@ pub const GameEngine = struct {
         return false;
     }
 
-    /// Whether front ends draw pencil marks: the setting is on, Pencil mode is on,
+    /// Whether front ends draw pencil marks: the setting is on, Pencil is on,
     /// or the last command changed a mark, so a player always sees the mark they made.
     pub fn marksVisible(self: *const @This()) bool {
-        return self.show_marks or self.pencil_mode or self.marks_changed;
+        return self.show_marks or self.is_pencil or self.marks_changed;
     }
 
     /// Serialize full game state to a heap-allocated byte buffer.
@@ -407,7 +413,8 @@ pub const GameEngine = struct {
         self.last_exec_changed = true;
         switch (cmd) {
             .fill => |f| {
-                if (self.pencil_mode and f.digit != .zero) {
+                // Pencil toggles a mark in the manual game only; Auto Pencil keeps a digit a fill.
+                if (self.is_pencil and !self.auto_pencil and f.digit != .zero) {
                     return pencil_command.execute(self, .{ .row = f.row, .col = f.col, .digit = f.digit });
                 }
                 return fill_command.execute(self, f);
@@ -1715,19 +1722,54 @@ test "getLegend: Save and Open always available" {
     try std.testing.expect(!engine.getLegend(true).save);
 }
 
-test "useConfig gives the engine the solvability warnings and Show Pencil Marks" {
+test "useConfig gives the engine the solvability warnings, Show Pencil Marks and Auto Pencil" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
     try std.testing.expect(!engine.warn_dead_moves);
     try std.testing.expect(!engine.warn_unsolvable_load);
+    try std.testing.expect(!engine.auto_pencil);
 
     var cfg = config.Config.default();
     cfg.warn_solvability = true;
     cfg.show_marks = !cfg.show_marks;
+    cfg.auto_pencil = true;
     engine.useConfig(cfg);
     try std.testing.expect(engine.warn_dead_moves);
     try std.testing.expect(engine.warn_unsolvable_load);
     try std.testing.expectEqual(cfg.show_marks, engine.show_marks);
+    try std.testing.expectEqual(cfg.auto_pencil, engine.auto_pencil);
+}
+
+test "Auto Pencil on: a digit fills even in Pencil, and toggles no mark" {
+    var cfg = config.Config.default();
+    cfg.auto_pencil = true;
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+    defer engine.deinit();
+    _ = engine.exec(.{ .toggle_pencil_mode = {} });
+    try std.testing.expect(engine.is_pencil);
+
+    const ev = engine.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = .four } });
+    try std.testing.expect(ev == .ok);
+    try std.testing.expectEqual(cell.CellValue.four, ev.ok.board_view.get(0, 2));
+    // The cell holds a digit, and no mark was recorded for it.
+    try std.testing.expectEqual(@as(board.MarkSet, 0), ev.ok.board_view.marks(0, 2));
+    // A fill is one history step of its own kind, so Undo takes the digit back off.
+    _ = engine.exec(.{ .undo = {} });
+    try std.testing.expectEqual(cell.CellValue.zero, engine.state.board.getCellValue(0, 2));
+}
+
+test "Auto Pencil off: a digit in Pencil toggles the mark, as the manual game always has" {
+    const cfg = config.Config.default();
+    try std.testing.expect(!cfg.auto_pencil);
+    var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), cfg);
+    defer engine.deinit();
+    _ = engine.exec(.{ .toggle_pencil_mode = {} });
+
+    const ev = engine.exec(.{ .fill = .{ .row = 0, .col = 2, .digit = .four } });
+    try std.testing.expect(ev == .ok);
+    try std.testing.expectEqual(cell.CellValue.zero, ev.ok.board_view.get(0, 2));
+    // The mark plane for digit 4, read from the board rather than the engine's own helper.
+    try std.testing.expectEqual(@as(board.MarkSet, 1) << @intCast(board.markPlane(.four)), ev.ok.board_view.marks(0, 2));
 }
 
 test "every engine error message reads as a sentence" {

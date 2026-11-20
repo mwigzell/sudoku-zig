@@ -1,4 +1,4 @@
-// marks.js — pencil marks: View → Show Pencil Marks and the pad's Pencil mode, both run through core.
+// marks.js — pencil marks: View → Show Pencil Marks and the pad's Pencil switch, both run through core.
 
 import * as board from "../board.js";
 import * as settings from "./settings.js";
@@ -23,7 +23,7 @@ export function syncMarksMenu(controls, config) {
 
 /**
  * Wire View → Show Pencil Marks. Both toggles redraw the board, because either can change
- * core's `marks_visible`.
+ * the marks core draws.
  * @param {{ viewMarks?: HTMLElement | null }} controls
  * @param {GameApi} game
  * @param {WebSession} session

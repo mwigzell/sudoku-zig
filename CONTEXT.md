@@ -63,7 +63,7 @@ Interface for presenting Board state in the terminal. AsciiRenderer (ANSI or pla
 _Avoid_: View (conflicts with RowView/ColView), UI, TUI (TUI = an ncurses front-end, not the current AsciiRenderer); parallel `Sudoku.out` / domain stdout for progress
 
 **Frame** (`core/frame.zig`):
-One draw's state, built by core from one builder (`frame.build(engine, status)`): the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on, else none), `marks_visible` and `pencil_mode`. The terminal's `render` takes it as its only drawing argument; the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`). New drawing state is a frame field (ADR-0019).
+One draw's state, built by core from one builder (`frame.build(engine, status)`): the board, the status line, the selected cell, its region (`conflict.unitsMask` while Show Region is on, else none), `marks_visible`, `is_pencil` and `auto_pencil`. The terminal's `render` takes it as its only drawing argument; the wasm snapshot is serialized from it (`GameSnapshot.fromFrame`). New drawing state is a frame field (ADR-0019). Which marks a cell shows comes from one function, `Frame.drawnMarks()` — the whole board in one pass, so no front end derives the rule.
 _Avoid_: front ends working out the region or the selection; a new `render` argument per piece of state
 
 **Selected cell** (`GameEngine.selected`):
@@ -130,19 +130,25 @@ _Avoid_: "hint at position", implying local-constraint derivation; a permanent a
 
 **Pencil mark**:
 A small digit in an empty cell meaning "this digit might go here"; a cell can hold all nine. Each digit has a fixed spot in the cell's 3×3 grid (1 top left … 9 bottom right). Core stores them as nine bit-planes on `Board` (`mark_bits`, one `CellMask` per digit); `marksAt` reads one cell's `MarkSet`. Marks are the player's notes and are never checked: a contradicting mark is allowed. A cell never holds a digit and marks at once — marking a player digit replaces it (`REPLACED_BY_MARK_FMT`); marking a given is refused. Each toggle is one Undo step; marks are saved in the game file (marks section, mark-toggle history entry) but never in a puzzle line (Copy, Export).
-_Avoid_: notes, candidates (auto-candidates is a different, unbuilt feature), corner/centre marks
+_Avoid_: notes, corner/centre marks
 
-**Pencil mode** (`toggle_pencil_mode`):
-Core session state, off at each start and not saved: while on, a digit toggles that mark instead of filling the cell. Web and Android: the pad's Pencil button and P. The terminal has no mode; it marks with the `pencil` command (`p A1 5`).
-_Avoid_: a front-end-held mode flag
+**Candidates**:
+The digits 1–9 not placed in a cell's row, column or box (`Board.candidates`) — its simple candidates, with no further elimination. Computed from the cells on every read and never stored, so a conflicting board still answers; reading one for a filled cell is allowed.
+_Avoid_: storing a second mark set or saving candidates; treating them as the player's marks (`mark_bits`)
+
+**Pencil** (`is_pencil`, `toggle_pencil_mode`):
+Core session state, off at each start and not saved: it shows and hides the marks. In the manual game — Auto Pencil off — it also makes a digit in the selected cell toggle that mark instead of filling; with Auto Pencil on a digit always fills, because the marks are the board's candidates. Web and Android: the pad's Pencil button and P. The terminal keeps no switch; it marks with the `pencil` command (`p A1 5`).
+What a digit does is decided in one place, the engine's `.fill` arm: it hands the digit to the mark toggle only while `is_pencil` is on and Auto Pencil is off. The engine takes `auto_pencil` beside the other fields it plays by (`useConfig`).
+_Avoid_: a front-end-held switch flag; reading "mode" as the Auto Pencil setting
 
 **Auto-clear**:
 Placing a digit (player fill or Solve) replaces the cell's marks and removes that digit's mark from every cell in its row, column and box — one mask operation per plane (`clearPeerMarks`). Undo restores both. Hint never writes, so it leaves marks alone; Clear on a marked empty cell removes all its marks (`clearable`).
 _Avoid_: having a front end remove marks itself
 
-**Show Pencil Marks** (`show_marks`) and **`marks_visible`**:
-`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. Core sends one flag, `marks_visible` = `show_marks` or Pencil mode or the last command set/removed a mark (incl. its Undo/Redo), so nobody enters a mark they cannot see. Front ends draw marks exactly when it is on — the terminal switches to its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`); web and Android draw only set marks.
-_Avoid_: front ends deciding visibility from `show_marks` alone
+**Show Pencil Marks** (`show_marks`), **`marks_visible`** and **`drawnMarks`**:
+`show_marks` is a saved setting (on by default) edited from View on web and Android and the Menu in the terminal; hiding never removes marks. While Auto Pencil is on it is greyed everywhere and its pick does nothing — the terminal's Menu draws `15) Show Pencil Marks (unavailable)` and ignores the number, as Solve does, and the page disables View → Show Pencil Marks — and its saved value is left alone, so turning Auto Pencil off gives the item its pick back. `marks_visible` = `show_marks` or Pencil or the last command set/removed a mark (incl. its Undo/Redo): it is the board's size, so nobody enters a mark they cannot see, and the terminal draws its large board (3×5 cells; the styled renderers draw marks in their own colour, unlike a player's digit or a dim given, and leave an unset mark blank; plain `ascii` shows `·`). Which marks each cell shows is core's `Frame.drawnMarks()`: Auto Pencil on draws the board's candidates wherever Pencil is on, Auto Pencil off draws the player's marks wherever Pencil or Show Pencil Marks asks for them, and a cell holding a digit draws none. Front ends draw what it hands them; the page does not gate on `marks_visible`.
+The greyed item is the one place a front end reads the setting for itself: whether a pick it owns can act is a property of that pick, and the words stay core's (the terminal's row label and `(unavailable)` come from the config table and the renderer's menu, the page's from the config row it already draws).
+_Avoid_: front ends deciding visibility from `show_marks` alone; a page that draws `marks_visible` itself
 
 ### Undo history
 
@@ -327,7 +333,7 @@ Fn-pointer vtable for file read/write/delete/resolve. **Owned by native `Storage
 _Avoid_: "transport" alone, io (the point is GameEngine carries none)
 
 **Config** (`config.zig`):
-The player's configuration: difficulty, log level, theme, show region, show pencil marks, warn solvability, auto restore, auto new, auto save, plus a `renderers` section (CLI per run, native only, never saved). Stored in `config.json` as `{"config": …, "current_file": …}`. Startup: `config.json` → CLI overrides → save, on `Config.default()` only when there is no file yet (one info line); a file that exists but cannot be read, does not parse, or holds a value the config table rejects is refused with `Error.System` and one log line naming the reason (`config_store`), never replaced by the defaults; a write the system refuses (a full disk, a folder this user may not write) answers `Error.WriteFailed`, with its own one line, so no caller reports it as a file to repair. Held beside the engine, like `FileSession`; changed only by `set_config`. Not puzzle cells or undo history; not in `Legend`, `State`, or SUD0.
+The player's configuration: difficulty, log level, theme, show region, show pencil marks, warn solvability, auto restore, auto new, auto save, auto pencil, plus a `renderers` section (CLI per run, native only, never saved). Stored in `config.json` as `{"config": …, "current_file": …}`. Startup: `config.json` → CLI overrides → save, on `Config.default()` only when there is no file yet (one info line); a file that exists but cannot be read, does not parse, or holds a value the config table rejects is refused with `Error.System` and one log line naming the reason (`config_store`), never replaced by the defaults; a write the system refuses (a full disk, a folder this user may not write) answers `Error.WriteFailed`, with its own one line, so no caller reports it as a file to repair. Held beside the engine, like `FileSession`; changed only by `set_config`. Not puzzle cells or undo history; not in `Legend`, `State`, or SUD0.
 _Avoid_: "settings" or "prefs" for Config or its fields; folding Config into Legend or save files; JS boot defaults that override host-resolved config
 
 **Settings**:
@@ -349,8 +355,8 @@ The Config on the wire, in the same shape as `config.json`'s `config` object: bo
 _Avoid_: passing puzzle bytes across the boundary; numeric choice values; per-field wire structs
 
 **GameSnapshot**:
-JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `pencil_mode`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
-_Avoid_: duplicating SaveFormat fields in JS
+JSON-serializable display twin of the **Frame** (`GameSnapshot.fromFrame`) — per-cell `value`, `given`, `conflict`, `clearable`, `fillable`, `marks`; `is_pencil`, `marks_visible`, `selected` (`{row, col}` or null) and `region` (cell indices or null). A cell's `marks` are the ones `Frame.drawnMarks()` draws there, already 0 for a cell that draws none. Returned by `getState()` and embedded in successful `exec` responses. DOM shell renders from this shape.
+_Avoid_: duplicating SaveFormat fields in JS; a page that re-derives which cells show marks
 
 **entry_wasm**:
 Second entry point (not `entry_native.zig`). Exports structured API: `init`, `exec`, `getLegend`, `getConfig`, `getConfigTable`, `getState`, `toSaveFormat`, `toPuzzle`, and the core flow (`commandStart` / `flowNext` / `flowRead`, and `flowFail` when the web side cannot carry a flow on). JSON strings in linear memory (NUL-terminated); SUD0 bytes for save/load. Contract tested by `glue.test.mjs`.

@@ -5,10 +5,11 @@ import * as playPad from "./play_pad.js";
 import * as board from "./board.js";
 import * as menu from "./menus/menu.js";
 import * as menuBar from "./menus/menu_bar.js";
+import * as settings from "./menus/settings.js";
 import * as region from "./menus/region.js";
 import * as marks from "./menus/marks.js";
 import * as webSteps from "./flows/web_steps.js";
-import { FILL_MOVE, loadGame, promptDialogStub, settleFlow, startNewGame } from "./test_support.mjs";
+import { configTable, fakeSettingsDialog, FILL_MOVE, loadGame, promptDialogStub, settleFlow, startNewGame } from "./test_support.mjs";
 
 function makeBtn() {
   const handlers = {};
@@ -67,7 +68,7 @@ function makePadControls() {
   assert.equal(pad.pencil.attrs["aria-pressed"], "false");
 
   playPad.syncPlayPad(pad, {}, {}, null, true);
-  assert.equal(pad.pencil.attrs["aria-pressed"], "true", "Pencil shows core's Pencil mode");
+  assert.equal(pad.pencil.attrs["aria-pressed"], "true", "Pencil shows core's Pencil");
 }
 
 // ── wired to a real game: pad and menus run the same commands and always show the same state ──
@@ -86,7 +87,7 @@ function makePadControls() {
   const syncControls = () => {
     const sel = selection.getSelection();
     menuBar.syncMenuBar(session.legend, menuControls, session.config);
-    playPad.syncPlayPad(pad, session.legend, session.config, sel ? cellAt(sel) : null, session.state.pencil_mode);
+    playPad.syncPlayPad(pad, session.legend, session.config, sel ? cellAt(sel) : null, session.state.is_pencil);
   };
   const selectAndSync = (cell) => {
     selection.getSelection = () => cell;
@@ -145,34 +146,83 @@ function makePadControls() {
   assert.equal(pad.region.attrs["aria-pressed"], "false", "the pad shows the state the View menu set");
   assert.equal(menuControls.viewRegion.attrs["aria-checked"], "false");
 
-  // Pencil: the pad turns core's Pencil mode on; a digit then toggles a mark instead of filling.
+  // Pencil: the pad turns core's Pencil on; a digit then toggles a mark instead of filling.
   const markCell = { row: FILL_MOVE.row, col: FILL_MOVE.col + 1 };
   assert.equal(cellAt(markCell).value, 0, "the mark cell starts empty");
   pad.pencil.click();
   await settleFlow();
-  assert.equal(session.state.pencil_mode, true);
+  assert.equal(session.state.is_pencil, true);
   assert.equal(pad.pencil.attrs["aria-pressed"], "true");
   const marked = board.handlePlayKey(game, boardEl, { getSelection: () => markCell, select() {} }, "3", createElement, "", { steps });
   await marked.done;
-  assert.equal(cellAt(markCell).value, 0, "a digit in Pencil mode does not fill");
+  assert.equal(cellAt(markCell).value, 0, "a digit in Pencil does not fill");
   assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3]);
+  // Read straight from core: the mark the player made is still on the board after this flow.
+  const markOnBoard = game.getState().cells[board.cellIndex(markCell.row, markCell.col)].marks;
+  assert.equal(markOnBoard, 1 << 2, "the mark is on the board");
 
-  // Show Pencil Marks off: marks stay visible while Pencil mode is on, and hide once it is off.
+  // Show Pencil Marks off: core still draws the mark while Pencil is on, and draws none once it is off.
   menuControls.viewMarks.click();
   await settleFlow();
   assert.equal(session.config.show_marks, false);
   assert.equal(menuControls.viewMarks.attrs["aria-checked"], "false");
-  assert.equal(session.state.marks_visible, true, "Pencil mode keeps marks visible");
+  assert.equal(session.state.marks_visible, true, "Pencil keeps marks visible");
+  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3], "core draws the mark while Pencil is on");
   pad.pencil.click();
   await settleFlow();
-  assert.equal(session.state.pencil_mode, false);
-  assert.equal(session.state.marks_visible, false, "with the setting off and Pencil mode off, marks are hidden");
-  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [3], "hiding marks keeps them");
+  assert.equal(session.state.is_pencil, false);
+  assert.equal(session.state.marks_visible, false, "with the setting off and Pencil off, the board is the small one");
+  assert.deepEqual(board.markDigits(cellAt(markCell).marks), [], "with both off, core draws no marks");
 
   pad.undo.click();
   await settleFlow();
   assert.equal(cellAt(markCell).marks, 0, "Undo takes the mark back");
   assert.equal(session.state.marks_visible, true, "Undo of a mark shows the marks");
+}
+
+// ── View → Show Pencil Marks is unavailable while Auto Pencil is on, and free again once it is off ──
+{
+  const game = await loadGame();
+  startNewGame(game);
+  const session = {
+    state: game.getState(),
+    legend: game.getLegend(),
+    config: game.getConfig(),
+    configTable,
+  };
+  const controls = { settings: makeBtn(), viewMarks: makeBtn() };
+  const boardEl = { children: [], replaceChildren() {} };
+  const createElement = () => ({ dataset: {}, setAttribute() {}, appendChild() {}, classList: { add() {}, remove() {}, contains: () => false } });
+  const posts = [];
+  const fetchFn = async (url, init) => {
+    posts.push(JSON.parse(init.body));
+    return { ok: true, status: 204 };
+  };
+  const steps = webSteps.webSteps(game, session, { fetchFn, promptDialog: promptDialogStub() });
+  const { modal, createElement: createField, field } = fakeSettingsDialog();
+  menuBar.syncMenuBar(session.legend, controls, session.config);
+  marks.wireMarks(controls, game, session, boardEl, { onChange: () => menuBar.syncMenuBar(session.legend, controls, session.config), steps, createElement });
+  settings.wireSettingsMenu(controls.settings, game, session, modal, { steps, createElement: createField });
+  const syncControls = () => menuBar.syncMenuBar(session.legend, controls, session.config);
+  assert.equal(controls.viewMarks.disabled, false, "Show Pencil Marks is free with Auto Pencil off");
+
+  // The Settings dialog's Auto Pencil row turns it on; the View item greys out.
+  controls.settings.click();
+  field("auto_pencil").checked = true;
+  await field("auto_pencil").onchange();
+  await settleFlow();
+  syncControls();
+  assert.equal(session.config.auto_pencil, true, "the dialog's row sets the setting");
+  assert.equal(controls.viewMarks.disabled, true, "Show Pencil Marks is unavailable while Auto Pencil is on");
+  assert.deepEqual(posts.map((body) => body.auto_pencil), [true]);
+
+  // The setting flipped back off gives the item its pick again.
+  field("auto_pencil").checked = false;
+  await field("auto_pencil").onchange();
+  await settleFlow();
+  syncControls();
+  assert.equal(session.config.auto_pencil, false);
+  assert.equal(controls.viewMarks.disabled, false, "Show Pencil Marks is free again with Auto Pencil off");
 }
 
 console.log("play_pad.test.mjs OK");

@@ -33,10 +33,11 @@ pub const PlainStyler = struct {
         );
     }
 
-    /// One text line of board row `row_idx` in the large board (pencil marks shown).
+    /// One text line of board row `row_idx` in the large board (the marks core draws).
     pub fn formatLargeLine(self: *PlainStyler, row_idx: usize, line: usize, frame: Frame, buf: []u8) ![]u8 {
         _ = self;
-        return largeLine(row_idx, line, frame, false, buf);
+        const drawn = frame.drawnMarks();
+        return largeLine(row_idx, line, frame, &drawn, false, buf);
     }
 };
 
@@ -153,17 +154,16 @@ const LARGE_SLOT_MAX = @max(UNSET_MARK.len, MARK_ON.len + 1 + MARK_OFF.len);
 /// Bytes of one line of a large cell's text.
 const LARGE_CELL_TEXT_MAX = 2 + @as(usize, board.BOX_DIMENSION) * LARGE_SLOT_MAX;
 
-/// Line `line` of the cell at (row, col): its marks for that line of the 3×3 grid; when `styled`
-/// a mark is coloured and an unset one blank, when plain an unset one is `·`. A filled cell shows
-/// only its digit, in the middle of the middle line.
-fn largeCellText(view: board.Board.BoardView, row: u4, col: u4, line: usize, styled: bool, out: *[LARGE_CELL_TEXT_MAX]u8) []const u8 {
+/// Line `line` of the cell at (row, col): the `marks` core draws there, for that line of the 3×3
+/// grid; when `styled` a mark is coloured and an unset one blank, when plain an unset one is `·`.
+/// A filled cell shows only its digit, in the middle of the middle line.
+fn largeCellText(view: board.Board.BoardView, marks: board.MarkSet, row: u4, col: u4, line: usize, styled: bool, out: *[LARGE_CELL_TEXT_MAX]u8) []const u8 {
     const unset = if (styled) UNSET_MARK_STYLED else UNSET_MARK;
     const value = view.get(row, col);
     if (value != .zero) {
         const shown: u8 = if (line == LARGE_CELL_LINES / 2) cell.displayChar(value) else ' ';
         return std.fmt.bufPrint(out, "  {c}  ", .{shown}) catch unreachable;
     }
-    const marks = view.marks(row, col);
     var len: usize = 0;
     out[len] = ' ';
     len += 1;
@@ -198,8 +198,8 @@ fn largeCellStyle(frame: Frame, row: u4, col: u4) []const u8 {
 }
 
 /// One text line of board row `row_idx` in the large board; the row number sits on the
-/// middle line. `styled` adds the ANSI cell styling.
-fn largeLine(row_idx: usize, line: usize, frame: Frame, styled: bool, buf: []u8) ![]u8 {
+/// middle line. `drawn` is core's `Frame.drawnMarks`; `styled` adds the ANSI cell styling.
+fn largeLine(row_idx: usize, line: usize, frame: Frame, drawn: []const board.MarkSet, styled: bool, buf: []u8) ![]u8 {
     var w: std.Io.Writer = .fixed(buf);
     const row: u4 = @intCast(row_idx);
     if (line == LARGE_CELL_LINES / 2) try w.print("{d}│", .{row_idx + 1}) else try w.writeAll(" │");
@@ -208,7 +208,7 @@ fn largeLine(row_idx: usize, line: usize, frame: Frame, styled: bool, buf: []u8)
         var text_buf: [LARGE_CELL_TEXT_MAX]u8 = undefined;
         const style = if (styled) largeCellStyle(frame, row, col) else "";
         try w.writeAll(style);
-        try w.writeAll(largeCellText(frame.board, row, col, line, styled, &text_buf));
+        try w.writeAll(largeCellText(frame.board, drawn[@as(usize, @intCast(row)) * board.DIMENSION_SIZE + c], row, col, line, styled, &text_buf));
         if (style.len > 0) try w.writeAll(RESET);
         if (c % board.BOX_DIMENSION == board.BOX_DIMENSION - 1) try w.writeAll("│");
     }
@@ -226,13 +226,14 @@ test "large board: a marked empty cell shows its marks in place, a filled cell o
     var buf: [512]u8 = undefined;
     var plain = PlainStyler{};
     const empty_box = " ···  ···  ··· │";
+    // The board is drawn with marks while Show Pencil Marks or Pencil asks for them.
     try std.testing.expectEqualStrings(
         " │ 1··       ··· │" ++ empty_box ++ empty_box ++ "\n",
-        try plain.formatLargeLine(0, 0, .{ .board = view }, &buf),
+        try plain.formatLargeLine(0, 0, .{ .board = view, .marks_visible = true }, &buf),
     );
     try std.testing.expectEqualStrings(
         "1│ ·5·   7   ··· │" ++ empty_box ++ empty_box ++ "\n",
-        try plain.formatLargeLine(0, 1, .{ .board = view }, &buf),
+        try plain.formatLargeLine(0, 1, .{ .board = view, .marks_visible = true }, &buf),
     );
 }
 
@@ -281,7 +282,8 @@ pub const AnsiStyler = struct {
     /// One text line of board row `row_idx` in the large board, styled like formatRow's cells.
     pub fn formatLargeLine(self: *AnsiStyler, row_idx: usize, line: usize, frame: Frame, buf: []u8) ![]u8 {
         _ = self;
-        return largeLine(row_idx, line, frame, true, buf);
+        const drawn = frame.drawnMarks();
+        return largeLine(row_idx, line, frame, &drawn, true, buf);
     }
 };
 
@@ -380,7 +382,8 @@ test "large board, styled: marks in their own colour, no dots, empty and filled 
     var b = board.Board.init();
     b.toggleMark(0, 0, .one);
     try b.setCell(0, 1, .seven);
-    const frame = Frame{ .board = b.asView(), .selected = .{ .row = 4, .col = 4 }, .region = conflict.unitsMask(4, 4) };
+    // Show Pencil Marks on: core draws this board's own marks (Auto Pencil off).
+    const frame = Frame{ .board = b.asView(), .marks_visible = true, .selected = .{ .row = 4, .col = 4 }, .region = conflict.unitsMask(4, 4) };
     var buf: [1024]u8 = undefined;
     var ansi = AnsiStyler{};
 

@@ -1,4 +1,4 @@
-// Pencil marks: toggling one mark, and Pencil mode, which turns digit entry into mark toggles.
+// Pencil marks: toggling one mark, and Pencil, which turns digit entry into mark toggles.
 const std = @import("std");
 const game_engine = @import("game_engine.zig");
 const command = @import("../command.zig");
@@ -32,9 +32,9 @@ pub fn execute(engine: *game_engine.GameEngine, data: command.PencilData) game_e
     return applyForward(engine, toggle);
 }
 
-/// Flip Pencil mode. It is session state: not saved, and kept across New, Open and restore.
+/// Flip Pencil. It is session state: not saved, and kept across New, Open and restore.
 pub fn toggleMode(engine: *game_engine.GameEngine) game_engine.Event {
-    engine.pencil_mode = !engine.pencil_mode;
+    engine.is_pencil = !engine.is_pencil;
     return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 
@@ -198,24 +198,24 @@ test "Undo and Redo of a mark on an empty cell remove and restore it" {
     try std.testing.expectEqual(markBit(.three), engine.state.board.marksAt(EMPTY_ROW, EMPTY_COL));
 }
 
-test "in Pencil mode a fill toggles a mark instead; the mode survives a new game" {
+test "in Pencil a fill toggles a mark instead; the mode survives a new game" {
     var engine = try testEngine();
     defer engine.deinit();
-    try std.testing.expect(!engine.pencil_mode);
+    try std.testing.expect(!engine.is_pencil);
 
     _ = engine.exec(.{ .toggle_pencil_mode = {} });
-    try std.testing.expect(engine.pencil_mode);
+    try std.testing.expect(engine.is_pencil);
     const ev = engine.exec(.{ .fill = .{ .row = EMPTY_ROW, .col = EMPTY_COL, .digit = .four } });
     try std.testing.expect(ev == .ok);
     try std.testing.expectEqual(cell.CellValue.zero, ev.ok.board_view.get(EMPTY_ROW, EMPTY_COL));
     try std.testing.expectEqual(markBit(.four), ev.ok.board_view.marks(EMPTY_ROW, EMPTY_COL));
 
     _ = engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.default());
-    try std.testing.expect(engine.pencil_mode);
+    try std.testing.expect(engine.is_pencil);
     try std.testing.expectEqual(@as(board.MarkSet, 0), engine.state.board.marksAt(EMPTY_ROW, EMPTY_COL));
 }
 
-test "marks are visible with the setting on, in Pencil mode, or right after a mark, its Undo or its Redo" {
+test "marks are visible with the setting on, in Pencil, or right after a mark, its Undo or its Redo" {
     var cfg = config.Config.default();
     try std.testing.expect(cfg.show_marks);
     cfg.show_marks = false;

@@ -60,8 +60,15 @@ export const MENU_BAR_MENUS = [
   },
 ];
 
-/** Mirror wasm Legend flags onto File + Edit controls. View/Help stay enabled. */
-export function syncMenuBar(legend, controls) {
+/**
+ * Mirror wasm Legend flags onto File + Edit controls. View/Help stay enabled, except View →
+ * Show Pencil Marks while Auto Pencil is on: core draws its candidates there, so the player's
+ * setting has no pick to make.
+ * @param {Record<string, boolean>} legend
+ * @param {Record<string, HTMLElement | null | undefined>} controls
+ * @param {import("../types").Config} [config]
+ */
+export function syncMenuBar(legend, controls, config) {
   for (const menu of MENU_BAR_MENUS) {
     for (const item of menu.items) {
       if (!item.legendKey) continue;
@@ -73,7 +80,7 @@ export function syncMenuBar(legend, controls) {
   if (controls.viewLight) controls.viewLight.disabled = false;
   if (controls.viewDark) controls.viewDark.disabled = false;
   if (controls.viewRegion) controls.viewRegion.disabled = false;
-  if (controls.viewMarks) controls.viewMarks.disabled = false;
+  if (controls.viewMarks) controls.viewMarks.disabled = config?.auto_pencil === true;
   if (controls.about) controls.about.disabled = false;
   if (controls.settings) controls.settings.disabled = false;
 }
@@ -242,7 +249,7 @@ export function wireMenuBar(controls, session, root) {
   const dropdowns = root ? wireMenuDropdowns(root) : null;
   labelConfigItems(controls, session.configTable);
   const sync = () => {
-    syncMenuBar(session.legend, controls);
+    syncMenuBar(session.legend, controls, session.config);
     syncAutoSave(controls, session.config, session.configTable);
   };
   sync();

@@ -19,6 +19,7 @@ const DEFAULT_CONFIG = {
   auto_restore: false,
   auto_new: false,
   auto_save: false,
+  auto_pencil: false,
   show_marks: true,
 };
 

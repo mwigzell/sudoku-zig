@@ -115,7 +115,7 @@ export function wireSudokuApp({
   const syncPad = () => {
     const sel = selection?.getSelection();
     const cell = sel ? session.state?.cells?.[board.cellIndex(sel.row, sel.col)] ?? null : null;
-    playPad.syncPlayPad(padControls, session.legend, session.config, cell, session.state?.pencil_mode === true);
+    playPad.syncPlayPad(padControls, session.legend, session.config, cell, session.state?.is_pencil === true);
   };
   /** Menu bar and pad show the same legend and config, so they always redraw together. */
   const syncControls = () => {

@@ -32,7 +32,7 @@ pub const Legend = struct {
     paste: bool = false,
     /// Menu Solve. Off when the board is full or has any conflict.
     solve: bool = false,
-    /// Terminal line: toggle a pencil mark (web and Android toggle marks with Pencil mode).
+    /// Terminal line: toggle a pencil mark (web and Android toggle marks with Pencil).
     pencil: bool = false,
 
     /// Fill `names` with main-line terminal commands (play loop + menu entry).

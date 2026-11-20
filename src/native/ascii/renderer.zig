@@ -391,6 +391,8 @@ pub fn AsciiRenderer(StylerType: type) type {
             const marks = comptime config_table.row("show_marks");
             const auto_save = comptime config_table.row("auto_save");
             const auto_save_state = auto_save.valueLabel(config_table.get(cfg, auto_save));
+            // Auto Pencil draws its own candidates, so the player's Show Pencil Marks has no pick to make.
+            const marks_available = !cfg.auto_pencil;
             self.writer.writeAll("\nMenu:\n") catch return facade.Error.System;
             if (cfg.auto_save) {
                 self.writer.print("  1) Save (auto: {s})\n", .{auto_save_state}) catch return facade.Error.System;
@@ -414,7 +416,11 @@ pub fn AsciiRenderer(StylerType: type) type {
             self.writer.writeAll("  12) Copy puzzle\n") catch return facade.Error.System;
             self.writer.writeAll("  13) Paste puzzle\n") catch return facade.Error.System;
             self.writer.writeAll("  14) Settings\n") catch return facade.Error.System;
-            self.writer.print("  15) {s} ({s})\n", .{ marks.label, marks.valueLabel(config_table.get(cfg, marks)) }) catch return facade.Error.System;
+            if (marks_available) {
+                self.writer.print("  15) {s} ({s})\n", .{ marks.label, marks.valueLabel(config_table.get(cfg, marks)) }) catch return facade.Error.System;
+            } else {
+                self.writer.writeAll("  15) Show Pencil Marks (unavailable)\n") catch return facade.Error.System;
+            }
             self.writer.writeAll(MENU_BACK_ROW ++ "> ") catch return facade.Error.System;
 
             const pick = self.readLine() catch return facade.Error.System;
@@ -446,7 +452,10 @@ pub fn AsciiRenderer(StylerType: type) type {
             if (std.mem.eql(u8, pick, "14")) {
                 return try self.showSettingsMenu(cfg);
             }
-            if (std.mem.eql(u8, pick, "15")) return .{ .valid = .{ .set_config = config_table.toggle(cfg, marks) } };
+            if (std.mem.eql(u8, pick, "15")) {
+                if (!marks_available) return try self.showMenu(cfg);
+                return .{ .valid = .{ .set_config = config_table.toggle(cfg, marks) } };
+            }
             try self.acknowledge("invalid menu choice");
             return try self.showMenu(cfg);
         }
@@ -1559,6 +1568,37 @@ test "showMenu: Show Pencil Marks shows its state and toggles the setting" {
     var buf: [64]u8 = undefined;
     const marks_row = try std.fmt.bufPrint(&buf, "15) {s} ({s})", .{ config_table.row("show_marks").label, config_table.ON_LABEL });
     try std.testing.expect(std.mem.indexOf(u8, aw.writer.buffered(), marks_row) != null);
+}
+
+test "showMenu: Show Pencil Marks reads unavailable and its pick is ignored while Auto Pencil is on" {
+    var aw = Io.Writer.Allocating.init(std.testing.allocator);
+    defer aw.deinit();
+
+    var s = styler.PlainStyler{};
+    // The ignored pick falls through to Quit, so the menu is not merely re-drawn.
+    const responses = [_][]const u8{ "15\n", "10\n" };
+    const source: input_source.ReaderSource = .{
+        .mock = input_source.MockSource.init(std.testing.allocator, &responses),
+    };
+    var renderer = AsciiRenderer(styler.PlainStyler).init(
+        std.testing.allocator,
+        &aw.writer,
+        &s,
+        source,
+    );
+    var cfg = test_cfg;
+    cfg.auto_pencil = true;
+
+    const result = (try renderer.showMenu(cfg)).?;
+    switch (result) {
+        .valid => |cmd| try std.testing.expectEqualStrings(@tagName(cmd), "quit"),
+        .error_msg => try std.testing.expect(false),
+    }
+    var buf: [64]u8 = undefined;
+    const marks_row = try std.fmt.bufPrint(&buf, "15) {s} (unavailable)", .{config_table.row("show_marks").label});
+    const written = aw.writer.buffered();
+    try std.testing.expect(std.mem.indexOf(u8, written, marks_row) != null);
+    try std.testing.expect(std.mem.indexOf(u8, written, "invalid menu choice") == null);
 }
 
 test "render: with marks visible the board is the large one, three lines per row" {

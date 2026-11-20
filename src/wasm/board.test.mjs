@@ -192,7 +192,7 @@ function makeRenderElement() {
   assert.ok(playEl._children[0].classList.contains("cell"));
 }
 
-// ── marks: drawn in nine fixed slots, only in an empty cell and only when core says they are visible ──
+// ── marks: drawn in nine fixed slots, exactly the marks core's snapshot carries ──
 {
   assert.deepEqual(boardMod.markDigits(0), []);
   assert.deepEqual(boardMod.markDigits(0b1_0000_0101), [1, 3, 9]);
@@ -200,13 +200,15 @@ function makeRenderElement() {
   const cells = Array.from({ length: 81 }, () => ({ value: 0, given: false, conflict: false, marks: 0 }));
   cells[1] = { value: 0, given: false, conflict: false, marks: 0b1_0000_0101 };
   cells[2] = { value: 6, given: false, conflict: false, marks: 0b10 };
-  const render = (marksVisible) => {
+  const render = (marksVisible, drawn) => {
     const frameEl = makeFrameElement();
-    boardMod.renderBoard(frameEl, { cells, marks_visible: marksVisible }, makeRenderElement());
+    const state = { cells: cells.map((c, i) => ({ ...c, marks: drawn[i] ?? 0 })), marks_visible: marksVisible };
+    boardMod.renderBoard(frameEl, state, makeRenderElement());
     return boardMod.getPlayGrid(frameEl)._children;
   };
+  const playerMarks = { 1: 0b1_0000_0101 };
 
-  const shown = render(true);
+  const shown = render(true, playerMarks);
   const grid = shown[1]._children[0];
   assert.ok(grid.classList.contains("marks"));
   assert.deepEqual(grid._children.map((slot) => slot.textContent), ["1", "", "3", "", "", "", "", "", "9"]);
@@ -214,7 +216,14 @@ function makeRenderElement() {
   assert.equal(shown[2]._children.length, 0, "a filled cell shows only its digit");
   assert.equal(shown[2].textContent, "6");
 
-  assert.equal(render(false)[1]._children.length, 0, "hidden marks are not drawn");
+  // Core decides which cells draw marks; the page draws the marks it is handed either way.
+  assert.equal(render(false, {})[1]._children.length, 0, "nothing drawn where core draws nothing");
+  assert.deepEqual(
+    render(false, playerMarks)[1]._children[0]._children.map((slot) => slot.textContent),
+    ["1", "", "3", "", "", "", "", "", "9"],
+    "marks core draws are drawn even with the flag off",
+  );
+  assert.equal(render(true, {})[2]._children.length, 0, "a filled cell shows only its digit, whatever core draws elsewhere");
 }
 
 {
