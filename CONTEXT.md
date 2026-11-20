@@ -137,7 +137,8 @@ The digits 1–9 not placed in a cell's row, column or box (`Board.candidates`) 
 _Avoid_: storing a second mark set or saving candidates; treating them as the player's marks (`mark_bits`)
 
 **Pencil** (`is_pencil`, `toggle_pencil_mode`):
-Core session state, off at each start and not saved: it shows and hides the marks. In the manual game it also makes a digit in the selected cell toggle that mark instead of filling. Web and Android: the pad's Pencil button and P. The terminal keeps no switch; it marks with the `pencil` command (`p A1 5`).
+Core session state, off at each start and not saved: it shows and hides the marks. In the manual game — Auto Pencil off — it also makes a digit in the selected cell toggle that mark instead of filling; with Auto Pencil on a digit always fills, because the marks are the board's candidates. Web and Android: the pad's Pencil button and P. The terminal keeps no switch; it marks with the `pencil` command (`p A1 5`).
+What a digit does is decided in one place, the engine's `.fill` arm: it hands the digit to the mark toggle only while `is_pencil` is on and Auto Pencil is off. The engine takes `auto_pencil` beside the other fields it plays by (`useConfig`).
 _Avoid_: a front-end-held switch flag; reading "mode" as the Auto Pencil setting
 
 **Auto-clear**:
