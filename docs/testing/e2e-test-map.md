@@ -45,8 +45,8 @@ Renderer smoke tests are **not** use cases and stay in the fast `verify` cycle (
 
 | Current test | Target mnemonic |
 | --- | --- |
-| *(none — `redo` has no e2e)* | `given_a_fill_when_redone_then_digit_returns` |
-| *(none — `hint` has no e2e)* | `given_an_empty_cell_when_hinted_then_a_candidate_is_shown` |
+| *(none — `redo` has no e2e)* | `given_a_fill_when_undone_and_redone_then_digit_returns` |
+| *(none — `hint` has no e2e)* | `given_an_empty_cell_when_hinted_then_a_placement_is_reported` |
 | *(none — `solve_for_me` has no e2e)* | `given_a_game_when_solved_then_board_is_complete` |
 | *(none — `bookmark` has no e2e)* | `given_a_move_when_bookmarked_then_bookmark_is_set` |
 | *(none — `rewind` has no e2e)* | `given_a_bookmark_when_rewound_then_board_returns` |
