@@ -11,7 +11,7 @@ passes, never before it, so a red push gate is the "PR red" case: fix, commit, r
 | # | Lane | Command | Why it is here |
 |---|------|---------|----------------|
 | 1 | `verify` | `zig build verify` | the cycle gate: tests, formatting, standards, coverage |
-| 2 | `verify-slow` | `zig build verify-slow` | the costly suites `verify` leaves out |
+| 2 | `verify-slow` | `zig build verify-slow` | the costly suites `verify` leaves out (see `docs/agents/verify-slow.md`) |
 | 3 | `android-device` | `zig build android-test` | the whole device suite, unfiltered |
 
 The order is by cost, and a lane that fails stops the run: a later lane cannot turn a failure green,

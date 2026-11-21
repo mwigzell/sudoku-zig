@@ -134,7 +134,7 @@ not name — and the close path reuses that check, so an accept cannot skip it. 
 entirely, and `archive.mts` copies the file into the accepted record.
 
 **Push: the whole suite.** A push waits for `zig build push-gate` (`scripts/push-gate.sh`): plain
-`zig build verify`, then `zig build verify-slow`, then the whole device suite unfiltered — cheapest
+`zig build verify`, then `zig build verify-slow` (see `docs/agents/verify-slow.md`), then the whole device suite unfiltered — cheapest
 first, stopped at the first failure, each lane's status written to
 `.zig-cache/push-gate/<commit>.json`. A filtered run proves a method, which is what a close owes; the
 commit a push lands owes the suite, and a missing device fails that lane rather than skipping it. See

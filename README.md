@@ -98,6 +98,9 @@ zig build cov                         # kcov coverage report
 Tests use `std.testing.io` for in-process fake I/O — no real terminal
 stdin/stdout is ever touched by the suite.
 
+The player's use cases — driven through the terminal — are the core e2e suite,
+enumerated in [`docs/testing/core-e2e-cases.md`](docs/testing/core-e2e-cases.md) and run in `zig build verify-slow`.
+
 ## Project layout
 
 ```

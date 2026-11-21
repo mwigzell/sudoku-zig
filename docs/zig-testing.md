@@ -211,3 +211,4 @@ test {
 - [Zig Test documentation](https://zig.anydocs.dev/test/)
 - [0.16.0 Release Notes](https://ziglang.org/download/0.16.0/release-notes.html) — `std.testing.io` and `Io` migration
 - [Zig Devlog 2026](https://ziglang.org/devlog/2026/) — 0.17 build system rework
+- [`docs/testing/core-e2e-cases.md`](testing/core-e2e-cases.md) — the authoritative use-case suite, driven through the terminal, run in `zig build verify-slow`

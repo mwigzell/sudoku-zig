@@ -85,6 +85,10 @@
       {
         "kind": "directory",
         "path": "~/hermes"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.pi"
       }
     ]
   },

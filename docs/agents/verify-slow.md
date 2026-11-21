@@ -18,6 +18,7 @@ Last successful run timing is local-only in `/.zig-cache/verify-slow-timing-loca
 
 - Root file **not** imported from `src/entry_native.zig` (same rule as other opt-in suites).
 - Canonical test entry: `src/entry_verify_slow.zig` (currently imports `src/test/slow/puzzle_gen_live.zig`) — generator uniqueness, givens band, consecutive outputs differ.
+- Core e2e cases: `src/test/slow/core_e2e.zig` — the player's use cases, driven through the terminal, enumerated with Gherkin mnemonics in `docs/testing/core-e2e-cases.md`.
 
 Manual equivalent:
 
