@@ -2,7 +2,7 @@
 # Push gate: the lanes a push must prove, cheapest first, stopping at the first failure.
 #
 # `zig build verify` is device-free by design, so the device suite lives here and only here; a push
-# waits for this run's record. Each lane's status is written to `.zig-cache/push-gate/<commit>.json`
+# waits for this run's record. Each lane's status is written to `.push-gate/<commit>.json`
 # even when a lane fails, so a red push has a record rather than a transcript.
 set -uo pipefail
 
@@ -18,7 +18,7 @@ LANE_CMDS=(
   "${PUSH_GATE_SLOW_CMD:-zig build verify-slow}"
   "${PUSH_GATE_DEVICE_CMD:-zig build android-test}"
 )
-RECORD_DIR="${PUSH_GATE_RECORD_DIR:-$ROOT/.zig-cache/push-gate}"
+RECORD_DIR="${PUSH_GATE_RECORD_DIR:-$ROOT/.push-gate}"
 # The device lane's own emulator start, overridable so the gate's suite can prove the order without a device.
 EMULATOR_CMD="${PUSH_GATE_EMULATOR_CMD:-$ROOT/scripts/android-emulator-start.sh}"
 
@@ -83,8 +83,16 @@ for i in "${!LANE_NAMES[@]}"; do
     '{name: $name, command: $command, status: $status, duration_s: $duration}' >> "$lanes_json"
 done
 
-jq -s --arg commit "$commit" --arg result "$result" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  '{commit: $commit, result: $result, at: $at, lanes: .}' "$lanes_json" > "$record" || {
+# The verify lane's kcov run leaves a per-file summary; the overall total is the weighted
+# covered-lines percentage, read only when that lane actually ran kcov (an overridden lane does not).
+coverage_percent=null
+COVERAGE_JSON="${PUSH_GATE_COVERAGE_JSON:-$ROOT/kcov-out/test/coverage.json}"
+if [[ -f "$COVERAGE_JSON" ]]; then
+  coverage_percent="$(jq -r '.percent_covered' "$COVERAGE_JSON")"
+fi
+
+jq -s --arg commit "$commit" --arg result "$result" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson coverage "$coverage_percent" \
+  '{commit: $commit, result: $result, at: $at, coverage_percent: $coverage, lanes: .}' "$lanes_json" > "$record" || {
   echo "push gate: cannot write the record $record" >&2
   exit 1
 }

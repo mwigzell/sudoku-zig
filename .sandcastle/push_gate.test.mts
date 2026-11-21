@@ -20,6 +20,8 @@ const GATE = join(ROOT, "scripts/push-gate.sh");
 const DOC = "docs/agents/push-gate.md";
 /** The environment variable that moves the per-lane record, so a test never writes the real one. */
 const RECORD_DIR_ENV = "PUSH_GATE_RECORD_DIR";
+/** The environment variable that moves the coverage summary, so a test never reads the real one. */
+const COVERAGE_JSON_ENV = "PUSH_GATE_COVERAGE_JSON";
 
 /** One lane as `--lanes` and the record write it. */
 interface Lane {
@@ -33,6 +35,7 @@ interface Lane {
 interface PushRecord {
   commit: string;
   result: string;
+  coverage_percent: number | null;
   lanes: Lane[];
 }
 
@@ -44,7 +47,7 @@ function head(): string {
 /** The environment without this gate's overrides, so a default lane list is read uninfluenced. */
 function bareEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  for (const name of ["PUSH_GATE_VERIFY_CMD", "PUSH_GATE_SLOW_CMD", "PUSH_GATE_DEVICE_CMD", "PUSH_GATE_EMULATOR_CMD", RECORD_DIR_ENV]) delete env[name];
+  for (const name of ["PUSH_GATE_VERIFY_CMD", "PUSH_GATE_SLOW_CMD", "PUSH_GATE_DEVICE_CMD", "PUSH_GATE_EMULATOR_CMD", RECORD_DIR_ENV, COVERAGE_JSON_ENV]) delete env[name];
   return env;
 }
 
@@ -57,6 +60,7 @@ function fakeLanes(log: string, statuses: { verify?: number; slow?: number; devi
     PUSH_GATE_SLOW_CMD: lane("slow"),
     PUSH_GATE_DEVICE_CMD: lane("device"),
     PUSH_GATE_EMULATOR_CMD: `printf 'emulator\\n' >> '${log}'; exit 0`,
+    [COVERAGE_JSON_ENV]: "/nonexistent/coverage.json",
   };
 }
 
@@ -112,6 +116,7 @@ test("a clean push runs every lane in order and records each one passed", () => 
     const record = recordIn(recordDir);
     assert.equal(record.commit, head(), "the record names the commit it proved");
     assert.equal(record.result, "passed");
+    assert.equal(record.coverage_percent, null, "an overridden verify lane leaves no coverage.json, so the record says null");
     assert.deepEqual(
       record.lanes.map((lane) => [lane.name, lane.status]),
       [
@@ -156,7 +161,7 @@ test("the manual makes the gate the only way to push, and names what it runs", (
     [/first failure/u, "a failure stops the run"],
     [/verify-slow/u, "the slow suite is a lane"],
     [/android-test/u, "the full device suite is a lane"],
-    [/\.zig-cache\/push-gate/u, "where the per-lane record lives"],
+    [/\.push-gate/u, "where the per-lane record lives"],
     [/never skip|does not skip/u, "a device that fails to boot fails the run rather than skipping it"],
     [/scripts\/android-emulator-start\.sh/u, "the device lane starts its own emulator"],
   ];

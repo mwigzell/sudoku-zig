@@ -1,3 +1,4 @@
+.push-gate/
 .zig-cache/
 zig-out/
 src/build_info.zig
