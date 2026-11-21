@@ -240,8 +240,16 @@ pub fn build(b: *std.Build) void {
     const run_slow_tests = b.addSystemCommand(&.{
         "zig", "test", "src/entry_verify_slow.zig", "-lc", "--test-filter", "puzzle_gen live",
     });
-    const verify_slow_run_step = b.step("verify-slow-run", "Internal: costly tests (puzzle_gen live, …)");
+    const run_e2e_tests = b.addSystemCommand(&.{
+        "zig", "test", "src/entry_verify_slow.zig", "-lc", "--test-filter", "core_e2e",
+    });
+    const e2e_step = b.step("verify-slow-e2e", "Terminal e2e suite (core_e2e) alone, no generator");
+    e2e_step.dependOn(&run_e2e_tests.step);
+    const puzzle_gen_step = b.step("verify-slow-puzzle-gen", "Live generator properties (puzzle_gen live) alone, no e2e");
+    puzzle_gen_step.dependOn(&run_slow_tests.step);
+    const verify_slow_run_step = b.step("verify-slow-run", "Internal: costly tests (puzzle_gen live, core_e2e)");
     verify_slow_run_step.dependOn(&run_slow_tests.step);
+    verify_slow_run_step.dependOn(&run_e2e_tests.step);
 
     const verify_slow_gate = b.addSystemCommand(&.{ "bash", "scripts/verify-slow-gate.sh" });
     const verify_slow_step = b.step("verify-slow", "Slow gate: verify-slow-run + timing (docs/verify-slow-timing.json)");
