@@ -806,3 +806,146 @@ test "core_e2e: given_a_game_when_new_without_puzzle_then_generates_at_difficult
     try std.testing.expectEqual(puzzle_gen.Difficulty.easy, sudoku.cfg.difficulty);
     try std.testing.expectEqualStrings(game_engine.NEW_GAME_STARTED_MSG, sudoku.engine.state.status.optional().?);
 }
+
+test "core_e2e: given_a_fill_when_undone_and_redone_then_digit_returns" {
+    const cfg = config.Config.default();
+
+    // fill A3 7 → undo → redo → quit; the redo re-applies the undone seven.
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "undo",
+        "redo",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku.engine.state.board.getCellValue(2, 0));
+}
+
+test "core_e2e: given_an_empty_cell_when_hinted_then_a_placement_is_reported" {
+    const cfg = config.Config.default();
+
+    // menu → 8 (Hint) → quit; the hint reports a placement sentence.
+    const responses = [_][]const u8{
+        "m",
+        "8",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    const contents = std.Io.Writer.buffered(&host.session.writer.mock.writer);
+    try std.testing.expect(std.mem.indexOf(u8, contents, " takes ") != null);
+}
+
+test "core_e2e: given_a_game_when_solved_then_board_is_complete" {
+    const cfg = config.Config.default();
+
+    // menu → 11 (Solve) → quit; the board is complete afterwards.
+    const responses = [_][]const u8{
+        "m",
+        "11",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    try std.testing.expect(sudoku.engine.state.board.isSolved());
+}
+
+test "core_e2e: given_a_move_when_bookmarked_then_bookmark_is_set" {
+    const cfg = config.Config.default();
+
+    // fill A3 7 → bookmark → quit; the bookmark pins move 1.
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "bookmark",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    try std.testing.expectEqual(@as(?u16, 1), sudoku.engine.state.bookmark);
+}
+
+test "core_e2e: given_a_bookmark_when_rewound_then_board_returns" {
+    const cfg = config.Config.default();
+
+    // fill A3 7 → bookmark → fill B1 4 → rewind → quit; the rewind drops the later fill.
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "bookmark",
+        "fill B1 4",
+        "rewind",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku.engine.state.board.getCellValue(2, 0));
+    try std.testing.expectEqual(cell.CellValue.zero, sudoku.engine.state.board.getCellValue(0, 1));
+}
+
+test "core_e2e: given_a_cell_with_auto_pencil_off_when_pencil_mark_toggled_then_mark_flips" {
+    const cfg = config.Config.default();
+
+    // pencil A1 5 → pencil A1 5 → quit; the mark toggles on then off in the empty cell.
+    const responses = [_][]const u8{
+        "pencil A1 5",
+        "pencil A1 5",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    try std.testing.expectEqual(@as(board.MarkSet, 0), sudoku.engine.state.board.marksAt(0, 0));
+}
