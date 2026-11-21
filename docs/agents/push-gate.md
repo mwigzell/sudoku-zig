@@ -35,13 +35,17 @@ Each run writes `.push-gate/<commit>.json` (untracked), failure included:
   "at": "2026-01-01T00:00:00Z",
   "coverage_percent": 89.03,
   "lanes": [
-    { "name": "verify", "command": "zig build verify", "status": "passed", "duration_s": 94 }
+    { "name": "verify", "command": "zig build verify", "status": "passed", "duration_s": 94, "warm_s": 10.87 }
   ]
 }
 ```
 
 `coverage_percent` is the overall covered-lines percentage the verify lane's kcov run reported,
 or `null` when no coverage summary exists (an overridden verify lane does not produce one).
+
+The `verify` and `verify-slow` lanes each carry a `warm_s`: the measured workload their timing
+gate recorded (cache-independent), or `null` when that lane left no timing state. `duration_s` is
+the whole-command wall clock, warm-up build included.
 
 `result` is `passed` only when every lane passed. Each lane's `status` is `passed`, `failed` or
 `skipped`: a lane after the failing one is `skipped`, because the run already stopped. A failed lane
@@ -50,8 +54,9 @@ still leaves its record, so a red push has evidence of which lane failed rather 
 ## Overrides
 
 The lane commands are read from `PUSH_GATE_VERIFY_CMD`, `PUSH_GATE_SLOW_CMD` and
-`PUSH_GATE_DEVICE_CMD`, the record directory from `PUSH_GATE_RECORD_DIR`, and the coverage
-summary path from `PUSH_GATE_COVERAGE_JSON`. The gate's own suite
+`PUSH_GATE_DEVICE_CMD`, the record directory from `PUSH_GATE_RECORD_DIR`, the coverage
+summary path from `PUSH_GATE_COVERAGE_JSON`, and the warm-timing state from
+`PUSH_GATE_VERIFY_TIMING` and `PUSH_GATE_SLOW_TIMING`. The gate's own suite
 (`.sandcastle/push_gate.test.mts`, part of `zig build verify`) uses them to prove the order, the
 stop and the record without a device; they exist for that, not for choosing a cheaper push.
 

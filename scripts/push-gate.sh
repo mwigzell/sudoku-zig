@@ -91,8 +91,22 @@ if [[ -f "$COVERAGE_JSON" ]]; then
   coverage_percent="$(jq -r '.percent_covered' "$COVERAGE_JSON")"
 fi
 
-jq -s --arg commit "$commit" --arg result "$result" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson coverage "$coverage_percent" \
-  '{commit: $commit, result: $result, at: $at, coverage_percent: $coverage, lanes: .}' "$lanes_json" > "$record" || {
+# The verify and slow lanes each leave a warm timing (the measured workload, cache-independent)
+# in their own local state; a lane that did not run leaves none, so those lanes carry no warm_s.
+verify_warm=null
+slow_warm=null
+VERIFY_TIMING="${PUSH_GATE_VERIFY_TIMING:-$ROOT/.zig-cache/verify-timing-local.json}"
+SLOW_TIMING="${PUSH_GATE_SLOW_TIMING:-$ROOT/.zig-cache/verify-slow-timing-local.json}"
+if [[ -f "$VERIFY_TIMING" ]]; then
+  verify_warm="$(jq -r '.last_seconds' "$VERIFY_TIMING")"
+fi
+if [[ -f "$SLOW_TIMING" ]]; then
+  slow_warm="$(jq -r '.last_seconds' "$SLOW_TIMING")"
+fi
+
+
+jq -s --arg commit "$commit" --arg result "$result" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson coverage "$coverage_percent" --argjson verify_warm "$verify_warm" --argjson slow_warm "$slow_warm" \
+  '{commit: $commit, result: $result, at: $at, coverage_percent: $coverage, lanes: [.[] | if .name == "verify" then . + {warm_s: $verify_warm} elif .name == "verify-slow" then . + {warm_s: $slow_warm} else . end]}' "$lanes_json" > "$record" || {
   echo "push gate: cannot write the record $record" >&2
   exit 1
 }

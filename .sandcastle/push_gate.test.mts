@@ -22,6 +22,9 @@ const DOC = "docs/agents/push-gate.md";
 const RECORD_DIR_ENV = "PUSH_GATE_RECORD_DIR";
 /** The environment variable that moves the coverage summary, so a test never reads the real one. */
 const COVERAGE_JSON_ENV = "PUSH_GATE_COVERAGE_JSON";
+/** The environment variables that move the warm-timing state, so a test never reads the real one. */
+const VERIFY_TIMING_ENV = "PUSH_GATE_VERIFY_TIMING";
+const SLOW_TIMING_ENV = "PUSH_GATE_SLOW_TIMING";
 
 /** One lane as `--lanes` and the record write it. */
 interface Lane {
@@ -29,6 +32,7 @@ interface Lane {
   command: string;
   status?: string;
   duration_s?: number | null;
+  warm_s?: number | null;
 }
 
 /** The record one push-gate run wrote, keyed by the commit it names. */
@@ -47,7 +51,7 @@ function head(): string {
 /** The environment without this gate's overrides, so a default lane list is read uninfluenced. */
 function bareEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  for (const name of ["PUSH_GATE_VERIFY_CMD", "PUSH_GATE_SLOW_CMD", "PUSH_GATE_DEVICE_CMD", "PUSH_GATE_EMULATOR_CMD", RECORD_DIR_ENV, COVERAGE_JSON_ENV]) delete env[name];
+  for (const name of ["PUSH_GATE_VERIFY_CMD", "PUSH_GATE_SLOW_CMD", "PUSH_GATE_DEVICE_CMD", "PUSH_GATE_EMULATOR_CMD", RECORD_DIR_ENV, COVERAGE_JSON_ENV, VERIFY_TIMING_ENV, SLOW_TIMING_ENV]) delete env[name];
   return env;
 }
 
@@ -61,6 +65,8 @@ function fakeLanes(log: string, statuses: { verify?: number; slow?: number; devi
     PUSH_GATE_DEVICE_CMD: lane("device"),
     PUSH_GATE_EMULATOR_CMD: `printf 'emulator\\n' >> '${log}'; exit 0`,
     [COVERAGE_JSON_ENV]: "/nonexistent/coverage.json",
+    [VERIFY_TIMING_ENV]: "/nonexistent/verify-timing.json",
+    [SLOW_TIMING_ENV]: "/nonexistent/slow-timing.json",
   };
 }
 
@@ -117,6 +123,15 @@ test("a clean push runs every lane in order and records each one passed", () => 
     assert.equal(record.commit, head(), "the record names the commit it proved");
     assert.equal(record.result, "passed");
     assert.equal(record.coverage_percent, null, "an overridden verify lane leaves no coverage.json, so the record says null");
+    assert.deepEqual(
+      record.lanes.map((lane) => [lane.name, lane.warm_s]),
+      [
+        ["verify", null],
+        ["verify-slow", null],
+        ["android-device", undefined],
+      ],
+      "an overridden lane leaves no timing state, so verify and verify-slow carry null warm_s and the device lane none",
+    );
     assert.deepEqual(
       record.lanes.map((lane) => [lane.name, lane.status]),
       [
