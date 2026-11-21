@@ -675,3 +675,134 @@ test "core_e2e: given_settings_when_auto_flags_changed_then_config_persists" {
     try std.testing.expect(restored.auto_new);
     try std.testing.expect(restored.auto_save);
 }
+
+test "core_e2e: given_a_save_when_reopened_then_snapshot_restores" {
+    const io = std.testing.io;
+    const cfg = config.Config.default();
+    const tmp_path = "/tmp/sudoku_e2e_save_reopen_test.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+
+    // menu → Settings → Auto Save (off), so the later fill does not autosave over
+    // the saved snapshot; then fill A3 7 → save_as → fill A3 1 → open → quit.
+    const responses = [_][]const u8{
+        "m",
+        "14",
+        "7",
+        "fill A3 7",
+        "m",
+        "6",
+        tmp_path,
+        "fill A3 1",
+        "m",
+        "2",
+        tmp_path,
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    // The reopened file restores the saved seven, overwriting the later fill.
+    try std.testing.expectEqual(cell.CellValue.seven, sudoku.engine.state.board.getCellValue(2, 0));
+}
+
+test "core_e2e: given_import_when_exported_then_round_trip_matches" {
+    const io = std.testing.io;
+    const cfg = config.Config.default();
+    const in_path = "/tmp/sudoku_e2e_import_roundtrip_in.txt";
+    const out_path = "/tmp/sudoku_e2e_import_roundtrip_out.txt";
+    // The import's absolute path drifts the transport data dir to /tmp, so the
+    // import autosave writes sudoku.sud there; clean it up like the other files.
+    const autosave_path = "/tmp/sudoku.sud";
+    defer std.Io.Dir.deleteFileAbsolute(io, in_path) catch {};
+    defer std.Io.Dir.deleteFileAbsolute(io, out_path) catch {};
+    defer std.Io.Dir.deleteFileAbsolute(io, autosave_path) catch {};
+    const puzzle_line = puzzle_gen.PuzzleGen.hard();
+    const setup_transport = file_transport.NativeTransport.make(io);
+    try setup_transport.write(setup_transport.context, in_path, puzzle_line);
+
+    // import → export → quit
+    const responses = [_][]const u8{
+        "m",    "3", in_path,
+        "m",    "4", out_path,
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    // The exported file round-trips the imported puzzle line.
+    const bytes = transport.readAll(transport.context, out_path) catch return error.TestFailed;
+    defer transport.free(transport.context, bytes);
+    try std.testing.expectEqualSlices(u8, puzzle_line, bytes);
+}
+
+test "core_e2e: given_a_game_when_new_with_puzzle_then_board_replaced_history_cleared" {
+    const cfg = config.Config.default();
+
+    // fill A3 7 (adds history) → new at Medium → quit
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "m",
+        "5",
+        "2",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    // The new board is the medium fixture and the mutation history is cleared.
+    const expected = try board.fromPuzzle(puzzle_gen.PuzzleGen.medium());
+    try std.testing.expect(board.equal(sudoku.engine.state.board, expected));
+    try std.testing.expectEqual(@as(usize, 0), sudoku.engine.state.history.entries.items.len);
+}
+
+test "core_e2e: given_a_game_when_new_without_puzzle_then_generates_at_difficulty" {
+    const cfg = config.Config.default();
+
+    // fill A3 7 (adds history) → new at Easy → quit
+    const responses = [_][]const u8{
+        "fill A3 7",
+        "m",
+        "5",
+        "1",
+        "quit",
+    };
+    var host = Host.createForTest(cfg, &responses);
+    defer host.deinit();
+    var facade = try host.facade();
+    defer facade.deinit();
+    const transport = file_transport.NativeTransport.make(std.testing.io);
+    var sudoku = try Sudoku.init(cfg, facade, transport, host.writer(), null);
+    defer sudoku.deinit();
+
+    try sudoku.showGame();
+    while (true) if (try sudoku.turn()) break;
+
+    // New generated at the chosen difficulty, cleared history, and spoke its status.
+    try std.testing.expectEqual(@as(usize, 0), sudoku.engine.state.history.entries.items.len);
+    try std.testing.expectEqual(puzzle_gen.Difficulty.easy, sudoku.cfg.difficulty);
+    try std.testing.expectEqualStrings(game_engine.NEW_GAME_STARTED_MSG, sudoku.engine.state.status.optional().?);
+}
