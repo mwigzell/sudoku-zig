@@ -89,6 +89,10 @@
       {
         "kind": "directory",
         "path": "~/.pi"
+      },
+      {
+        "kind": "directory",
+        "path": "~/.local/lib/node_modules/@earendil-works/pi-coding-agent"
       }
     ]
   },
