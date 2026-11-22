@@ -6,6 +6,8 @@ const command = @import("../command.zig");
 const config = @import("../config.zig");
 const config_table = @import("../config_table.zig");
 const game_engine = @import("../engine/game_engine.zig");
+const hint_command = @import("../engine/hint.zig");
+const board = @import("../board/board.zig");
 const step_mod = @import("step.zig");
 const file_session_mod = @import("file_session.zig");
 const config_flow = @import("config.zig");
@@ -161,6 +163,9 @@ pub const CommandFlow = struct {
         };
         logger.min_level = self.cfg.log_level;
         self.engine.useConfig(self.cfg.*);
+        if (change.field.len == "warn_solvability".len and std.mem.eql(u8, change.field, "warn_solvability") and change.value.on) {
+            return self.show(self.engine.solvabilityWarningOn());
+        }
         return self.show(self.engine.unchanged());
     }
 
@@ -363,6 +368,51 @@ test "set_config changes the Config held beside the engine, and the engine takes
     try testing.expectEqual(logger.Severity.debug, logger.min_level);
     try testing.expect(engine.warn_dead_moves and engine.warn_unsolvable_load);
     try testing.expect(!engine.show_marks);
+}
+
+test "toggling warn_solvability on over a dead board appends the no-solution sentence" {
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
+    defer engine.deinit();
+    // A dead board: a cell whose row, column and box together already hold all nine digits.
+    const flat: [81]u8 = .{
+        0, 0, 3, 4, 2, 1, 6, 0, 0, 9, 0, 0, 3, 7, 5, 0, 0, 1, 0, 0, 1, 8, 9, 6, 4, 0, 0,
+        0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
+        0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
+    };
+    const given_bits: board.CellMask = 0x54949b0d901361b25254;
+    engine.state.board = try board.fromFlat(flat, .{ .given_bits = given_bits });
+    engine.state.board.validate();
+    // The prior command left its message in the scratch buffer; the toggle appends to it.
+    engine.appendEventMsg("existing message");
+
+    var session = FileSession{};
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "warn_solvability", .value = .{ .on = true } } });
+    const shown = flow.next(.start).show_game;
+    try testing.expectEqualStrings("existing message " ++ hint_command.no_solution_msg, shown.frame.status.?);
+}
+
+test "toggling warn_solvability on again appends nothing when the sentence is already showing" {
+    var cfg = config.Config.default();
+    var engine = try testEngine(cfg);
+    defer engine.deinit();
+    const flat: [81]u8 = .{
+        0, 0, 3, 4, 2, 1, 6, 0, 0, 9, 0, 0, 3, 7, 5, 0, 0, 1, 0, 0, 1, 8, 9, 6, 4, 0, 0,
+        0, 0, 8, 1, 0, 2, 9, 0, 0, 7, 0, 0, 5, 0, 4, 1, 0, 8, 0, 0, 6, 7, 0, 8, 2, 0, 0,
+        0, 0, 2, 6, 0, 9, 5, 0, 0, 8, 0, 0, 2, 0, 3, 0, 0, 9, 0, 0, 5, 0, 1, 7, 3, 0, 0,
+    };
+    const given_bits: board.CellMask = 0x54949b0d901361b25254;
+    engine.state.board = try board.fromFlat(flat, .{ .given_bits = given_bits });
+    engine.state.board.validate();
+    engine.appendEventMsg("existing message");
+
+    var session = FileSession{};
+    var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "warn_solvability", .value = .{ .on = true } } });
+    _ = flow.next(.start);
+    // Toggle on again: the sentence is already showing, so nothing is appended.
+    var flow2 = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "warn_solvability", .value = .{ .on = true } } });
+    const shown2 = flow2.next(.start).show_game;
+    try testing.expectEqualStrings("existing message " ++ hint_command.no_solution_msg, shown2.frame.status.?);
 }
 
 test "a refused set_config shows core's sentence, changes nothing and persists nothing" {

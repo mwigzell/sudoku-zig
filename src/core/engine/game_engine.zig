@@ -310,6 +310,18 @@ pub const GameEngine = struct {
         if (solved == .none) hint_command.appendLoadNoSolutionMsg(self);
     }
 
+    /// When Solvability Warnings are turned on over a board that is already dead, append the
+    /// move-context no-solution sentence to the current status. Idempotent — a status that
+    /// already carries the sentence is left unchanged.
+    pub fn solvabilityWarningOn(self: *@This()) Event {
+        if (self.event_msg.optional()) |existing| {
+            if (std.mem.indexOf(u8, existing, hint_command.no_solution_msg) != null) return self.unchanged();
+        }
+        const solved = self.probeSolvability(.move) orelse return self.unchanged();
+        if (solved == .none) hint_command.appendNoSolutionMsg(self);
+        return self.finishOkEvent(self.state.board.asView(), false, null);
+    }
+
     fn finishLoadEvent(self: *@This(), opened_label: ?[]const u8, mode: LoadStatusMode) Event {
         self.beginEventMsg();
         switch (mode) {

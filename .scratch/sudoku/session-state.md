@@ -1,28 +1,36 @@
-# Session state — Issue #154
+# Session state — Issue #156 Step 1 (TDD)
 
-## Status
+## Cycle 1 (red → green) — DONE
 
-Step 1 complete and committed (`44f5eab`). Step 2 complete (not committed — working tree).
+**Goal:** toggling `warn_solvability` ON over an already-dead board immediately appends the no-solution sentence.
 
-## Done
+**Red test** (`src/core/flow/command.zig`):
+- `test "toggling warn_solvability on over a dead board appends the no-solution sentence"`
+- Builds a dead board via `board.fromFlat`, seeds the scratch buffer with `"existing message"` via `engine.appendEventMsg`, runs `set_config warn_solvability on`, asserts status == `"existing message There is no solution from here. Try Undo."`.
 
-- `src/test/slow/core_e2e.zig` — 17 raw-input e2e tests, named `core_e2e: <mnemonic>`.
-- `src/entry_verify_slow.zig` — imports `core_e2e.zig`.
-- `build.zig` — `verify-slow-e2e`, `verify-slow-puzzle-gen` steps; `verify-slow-run` runs both.
-- Verified: e2e 17/17, puzzle-gen 3/3, fmt clean.
+**Green implementation:**
+- `src/core/flow/command.zig` `setConfig`: after `useConfig`, when field is `warn_solvability` and value is on, `return self.show(self.engine.solvabilityWarningOn())`.
+- `src/core/engine/game_engine.zig`: new public method `solvabilityWarningOn()` — idempotent (returns `unchanged()` if `no_solution_msg` already in scratch), probes `.move`, appends `no_solution_msg` to scratch via `hint_command.appendNoSolutionMsg`, folds via `finishOkEvent`.
 
-### Step 2 (done, uncommitted)
-- Added 4 raw-input tests to `core_e2e.zig` (now 21 total):
-  - `given_a_save_when_reopened_then_snapshot_restores`
-  - `given_import_when_exported_then_round_trip_matches`
-  - `given_a_game_when_new_with_puzzle_then_board_replaced_history_cleared`
-  - `given_a_game_when_new_without_puzzle_then_generates_at_difficulty`
-- All use `config.Config.default()` with no overrides.
-- save/open: turns autosave off through the real UI (`menu → 14 → 7`, Settings → Auto Save) so the intermediate `fill A3 1` does not autosave over the saved snapshot; `open` then restores the saved seven over the divergent in-memory one.
-- import/export: added `defer deleteFileAbsolute(io, "/tmp/sudoku.sud")` — the import's absolute path drifts the transport data dir to `/tmp`, so the import autosave writes `/tmp/sudoku.sud`; a stale copy from a prior run triggered a "Replace file?" prompt that ate the canned responses.
-- Verified: `zig test src/entry_verify_slow.zig -lc --test-filter "core_e2e"` → 21/21 pass (twice, to confirm no stale-file flakiness), fmt clean.
-- Originals remain in `shell.zig` (Step 4 removes them).
+**Gate:** `zig build verify` PASSED.
 
-## Next
+## KEY MECHANISM (learned the hard way — do not repeat)
 
-Step 3 — new e2e tests for the 6 commands with no coverage (redo, hint, solve_for_me, bookmark, rewind, pencil mark-toggle).
+The status buffer is `event_msg` (scratch) on `GameEngine`, NOT `state.status`.
+
+- Commands append to scratch via `appendEventMsg` / `appendNoSolutionMsg`.
+- `finishOkEvent` is the ONLY thing that writes to `state.status` (reset + copy from scratch).
+- Never write to `state.status` directly. Always append to `event_msg` and fold.
+
+`set_config` does NOT go through `exec()` (which calls `beginEventMsg`), so the scratch buffer is NOT cleared for it — it already holds the prior command's message. So "append, don't clobber" = just append to scratch and fold; no seeding from `state.status` needed.
+
+## Remaining ACs (not yet done — next cycles)
+
+- AC 2 (move-context sentence) — covered by using `no_solution_msg`.
+- AC 3 (preserve existing message, append) — covered by the red test.
+- AC 4 (idempotent — no duplicate on re-toggle) — NOT yet tested; needs a second test.
+
+## Notes
+
+- `probeSolvability(.move)` returns `null` both when warnings disabled AND on conflict (catches `error.Conflict`). Since the toggle only runs when warnings are on, a `null` here means conflict — the `.none` case is what we append for. (No `conflict_bits` check needed in the final version; the probe's `.none` covers unsolvable, and conflict → probe returns null → no append, matching the cell-edit path's `else if`.)
+- Temp test root `src/_one_test.zig` created and deleted (used to run the single test since `command.zig` tests are only discovered via a running test).
