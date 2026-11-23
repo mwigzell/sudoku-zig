@@ -1,6 +1,7 @@
 .push-gate/
 .zig-cache/
 zig-out/
+.releases/
 src/build_info.zig
 build.log
 kcov-out/
