@@ -8,6 +8,11 @@ Derived transparent master:
 
 - `src/wasm/artifacts/branding/sudoku-gator-icon-transparent-1024.png` — white edge-connected background removed; base for platform variants.
 
+Win animation key frames (1024x1024, same camera and scale, flat `#FF00FF` background to key out; shadows are darker magenta so they key to translucent):
+
+- `docs/assets/sudoku-gator-sit-magenta.png` — first frame: the master at 65%, low in the frame, shadow kept.
+- `docs/assets/sudoku-gator-cheer-magenta.png` — last frame: the gator mid-jump, fist pumped and cheering, pencil dropped, smaller airborne shadow.
+
 Web-hosted branding assets:
 
 - `src/wasm/artifacts/branding/favicon-16x16.png`
