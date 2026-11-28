@@ -12,7 +12,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         return game_engine.Event{ .error_msg = game_engine.NOTHING_TO_UNDO_MSG };
     }
     // Undo does not go through `exec`, so it starts its own line rather than appending to the last command's.
-    engine.beginEventMsg();
+    engine.beginPendingStatus();
     engine.state.history.pointer -= 1;
     const notice = bookmarkNoticeAfterUndo(engine);
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
@@ -33,7 +33,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             };
             engine.state.board.mark_bits = snap.mark_bits;
             engine.state.board.validate();
-            engine.appendEventMsg(game_engine.UNDID_SOLVE_MSG);
+            engine.appendPendingStatus(game_engine.UNDID_SOLVE_MSG);
             appendBookmarkNotice(engine, notice);
             return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
@@ -48,7 +48,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 /// Append `fmt` naming the cell a command touched; `{s}` is its label (e.g. C3).
 fn appendUndoneMsgFmt(engine: *game_engine.GameEngine, comptime fmt: []const u8, row: u4, col: u4) void {
     var label_buf: [2]u8 = undefined;
-    engine.appendEventMsgFmt(fmt, .{board.formatCellLabel(&label_buf, row, col)});
+    engine.appendPendingStatusFmt(fmt, .{board.formatCellLabel(&label_buf, row, col)});
 }
 
 /// What this undo owes the player about the bookmark it just moved away from.
@@ -78,8 +78,8 @@ fn bookmarkNoticeAfterUndo(engine: *game_engine.GameEngine) BookmarkNotice {
 fn appendBookmarkNotice(engine: *game_engine.GameEngine, notice: BookmarkNotice) void {
     switch (notice) {
         .none => {},
-        .landed => |move| engine.appendEventMsgFmt(bookmark_command.AT_BOOKMARK_FMT, .{move}),
-        .cleared => |move| engine.appendEventMsgFmt(bookmark_command.BOOKMARK_CLEARED_FMT, .{move}),
+        .landed => |move| engine.appendPendingStatusFmt(bookmark_command.AT_BOOKMARK_FMT, .{move}),
+        .cleared => |move| engine.appendPendingStatusFmt(bookmark_command.BOOKMARK_CLEARED_FMT, .{move}),
     }
 }
 

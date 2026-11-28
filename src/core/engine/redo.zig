@@ -12,7 +12,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
         return game_engine.Event{ .error_msg = game_engine.NOTHING_TO_REDO_MSG };
     }
     // Redo does not go through `exec`, so it starts its own line rather than appending to the last command's.
-    engine.beginEventMsg();
+    engine.beginPendingStatus();
     const entry = engine.state.history.entries.items[engine.state.history.pointer];
     switch (entry) {
         // Every redo names what it replayed, from the history entry behind it.
@@ -40,7 +40,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
             }
             engine.state.history.pointer += 1;
             engine.state.board.validate();
-            engine.appendEventMsg(game_engine.REDID_SOLVE_MSG);
+            engine.appendPendingStatus(game_engine.REDID_SOLVE_MSG);
             return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
         .mark => |m| {
@@ -55,7 +55,7 @@ pub fn execute(engine: *game_engine.GameEngine) game_engine.Event {
 /// Append `fmt` naming the cell a command touched; `{s}` is its label (e.g. C3).
 fn appendRedoneMsgFmt(engine: *game_engine.GameEngine, comptime fmt: []const u8, row: u4, col: u4) void {
     var label_buf: [2]u8 = undefined;
-    engine.appendEventMsgFmt(fmt, .{board.formatCellLabel(&label_buf, row, col)});
+    engine.appendPendingStatusFmt(fmt, .{board.formatCellLabel(&label_buf, row, col)});
 }
 
 // ---------------------------------------------------------------------------

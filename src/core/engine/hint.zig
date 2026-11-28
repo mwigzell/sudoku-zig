@@ -19,24 +19,19 @@ pub const BLOCKER_FMT = "{s} should be {c}, not {c}.";
 /// Hint for an empty cell: cell, solution digit.
 pub const PLACEMENT_FMT = "{s} takes {c}.";
 
-/// Append play-loop dead-end copy after a move that leaves no completion (`.ok.msg` fragment).
-pub fn appendNoSolutionMsg(engine: *game_engine.GameEngine) void {
-    engine.appendEventMsg(no_solution_msg);
+/// Append a no-solution sentence after a probe finds no completion (`.ok.msg` fragment).
+pub fn appendNoSolutionMsg(engine: *game_engine.GameEngine, sentence: []const u8) void {
+    engine.appendPendingStatus(sentence);
 }
 
 /// The no-solution sentence, naming the cell when the hint targeted one.
 fn appendNoSolutionFor(engine: *game_engine.GameEngine, hint: command.HintData) void {
     if (hint.row != null and hint.col != null) {
         var label: [2]u8 = undefined;
-        engine.appendEventMsgFmt(NO_SOLUTION_AT_FMT, .{board.formatCellLabel(&label, hint.row.?, hint.col.?)});
+        engine.appendPendingStatusFmt(NO_SOLUTION_AT_FMT, .{board.formatCellLabel(&label, hint.row.?, hint.col.?)});
     } else {
-        appendNoSolutionMsg(engine);
+        appendNoSolutionMsg(engine, no_solution_msg);
     }
-}
-
-/// Append load/import dead-puzzle copy when the opened grid has no solution (`.ok.msg` fragment).
-pub fn appendLoadNoSolutionMsg(engine: *game_engine.GameEngine) void {
-    engine.appendEventMsg(load_no_solution_msg);
 }
 
 /// One above the maximum candidate count (9); empty cells never exceed 9 options.
@@ -70,12 +65,12 @@ fn appendTargetedMsg(
     const sol_digit = flatDigitDisplay(solutionDigitAt(solution, row, col));
     if (playerDigitChar(view, row, col)) |played| {
         if (played == sol_digit) {
-            engine.appendEventMsgFmt(CONSISTENT_FMT, .{ sol_digit, coord });
+            engine.appendPendingStatusFmt(CONSISTENT_FMT, .{ sol_digit, coord });
         } else {
-            engine.appendEventMsgFmt(BLOCKER_FMT, .{ coord, sol_digit, played });
+            engine.appendPendingStatusFmt(BLOCKER_FMT, .{ coord, sol_digit, played });
         }
     } else {
-        engine.appendEventMsgFmt(PLACEMENT_FMT, .{ coord, sol_digit });
+        engine.appendPendingStatusFmt(PLACEMENT_FMT, .{ coord, sol_digit });
     }
 }
 
@@ -114,7 +109,7 @@ fn appendEnginePickMsg(engine: *game_engine.GameEngine, solution: [81]u8) void {
     }
 
     if (best_row == null) {
-        engine.appendEventMsg(puzzle_complete_msg);
+        engine.appendPendingStatus(puzzle_complete_msg);
         return;
     }
     const row = best_row.?;
@@ -151,7 +146,7 @@ pub fn execute(engine: *game_engine.GameEngine, requested: command.HintData) gam
             } else {
                 appendEnginePickMsg(engine, solution);
             }
-            if (engine.event_msg.optional() == null) appendNoSolutionMsg(engine);
+            if (engine.pending_status.optional() == null) appendNoSolutionMsg(engine, no_solution_msg);
             return engine.finishOkEvent(engine.state.board.asView(), false, null);
         },
     }
@@ -206,7 +201,7 @@ fn hintMsg(engine: *game_engine.GameEngine, hint: command.HintData, buf: *[HINT_
 test "hint: unsolvable board returns the no-solution sentence" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
-    engine.warn_dead_moves = true;
+    engine.warn_solvability = true;
     const fill_ev = engine.exec(command.Command{
         .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
     });
@@ -233,7 +228,7 @@ test "hint: targeted at a given gives the untargeted hint" {
 test "hint: targeted at a given on a dead board gives the untargeted no-solution sentence" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
-    engine.warn_dead_moves = true;
+    engine.warn_solvability = true;
     const fill_ev = engine.exec(command.Command{
         .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
     });
@@ -289,9 +284,9 @@ test "hint: targeted blocker sentence when completion disagrees with cell" {
     if (fill_ev != .ok) return error.TestFailed;
 
     solution[slot.idx] = alt_flat;
-    engine.beginEventMsg();
+    engine.beginPendingStatus();
     appendTargetedMsg(&engine, slot.row, slot.col, solution, engine.state.board.asView());
-    const msg = engine.event_msg.optional() orelse return error.TestFailed;
+    const msg = engine.pending_status.optional() orelse return error.TestFailed;
     try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "should be") != null);
 }
@@ -314,9 +309,9 @@ test "hint: engine-pick surfaces blocker before placement" {
     if (fill_ev != .ok) return error.TestFailed;
 
     solution[slot.idx] = alt_flat;
-    engine.beginEventMsg();
+    engine.beginPendingStatus();
     appendEnginePickMsg(&engine, solution);
-    const msg = engine.event_msg.optional() orelse return error.TestFailed;
+    const msg = engine.pending_status.optional() orelse return error.TestFailed;
     try std.testing.expect(std.mem.indexOf(u8, msg, " should be ") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, " takes ") == null);
 }
@@ -344,7 +339,7 @@ test "hint: targeted empty cell returns placement sentence" {
 test "hint: targeted on dead board returns no-solution not blocker" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
-    engine.warn_dead_moves = true;
+    engine.warn_solvability = true;
     const fill_ev = engine.exec(command.Command{
         .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.eight },
     });
@@ -385,7 +380,7 @@ test "hint: engine-pick on solvable board returns placement" {
 test "fill on dead board uses no-solution hint copy only" {
     var engine = try game_engine.GameEngine.init(@import("../puzzle_gen/mod.zig").PuzzleGen.easy(), @import("../config.zig").Config.default());
     defer engine.deinit();
-    engine.warn_dead_moves = true;
+    engine.warn_solvability = true;
 
     const ev = engine.exec(command.Command{
         .fill = .{ .row = 1, .col = 1, .digit = cell.CellValue.eight },

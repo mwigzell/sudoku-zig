@@ -116,7 +116,7 @@ pub fn formatHostStartupJsonWithCurrentFile(
 }
 
 fn expectStartupConfigOnEngine(engine: anytype, startup: config.Config) !void {
-    try std.testing.expectEqual(startup.warn_solvability, engine.warn_dead_moves);
+    try std.testing.expectEqual(startup.warn_solvability, engine.warn_solvability);
     try std.testing.expectEqual(startup.show_marks, engine.show_marks);
 }
 

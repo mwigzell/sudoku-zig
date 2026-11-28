@@ -97,7 +97,7 @@ fn markBit(digit: cell.CellValue) board.MarkSet {
 
 /// Append one status fragment for a mark command.
 fn appendMarkMsg(engine: *game_engine.GameEngine, comptime fmt: []const u8, args: anytype) void {
-    engine.appendEventMsgFmt(fmt, args);
+    engine.appendPendingStatusFmt(fmt, args);
 }
 
 // ---------------------------------------------------------------------------

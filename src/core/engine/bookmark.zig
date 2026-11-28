@@ -17,8 +17,8 @@ pub fn set(engine: *game_engine.GameEngine) game_engine.Event {
     // The save file stores the pointer in a u16, so the bookmark carries the same range.
     const move: u16 = @intCast(engine.state.history.pointer);
     engine.state.bookmark = move;
-    engine.beginEventMsg();
-    engine.appendEventMsgFmt(BOOKMARK_SET_FMT, .{move});
+    engine.beginPendingStatus();
+    engine.appendPendingStatusFmt(BOOKMARK_SET_FMT, .{move});
     return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 
@@ -39,8 +39,8 @@ pub fn rewind(engine: *game_engine.GameEngine) game_engine.Event {
     }
     const bookmark = engine.state.bookmark.?;
     // Rewind undoes one move at a time, so this reset replaces the notices those undos produced.
-    engine.beginEventMsg();
-    engine.appendEventMsgFmt(REWOUND_FMT, .{bookmark});
+    engine.beginPendingStatus();
+    engine.appendPendingStatusFmt(REWOUND_FMT, .{bookmark});
     return engine.finishOkEvent(engine.state.board.asView(), false, null);
 }
 

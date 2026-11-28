@@ -77,7 +77,6 @@ pub const REDO_FAILED_MSG = "The move could not be redone.";
 const log = logger.Logger(.engine);
 
 /// Owns portable game state. No file transport or I/O here.
-const SolvabilityProbe = enum { move, load };
 const LoadStatusMode = enum {
     open,
     startup_restore,
@@ -85,13 +84,11 @@ const LoadStatusMode = enum {
 
 pub const GameEngine = struct {
     state: state_mod.State,
-    event_msg: event.EventMsg = .{},
+    pending_status: event.EventMsg = .{},
     /// The player's Show Pencil Marks, given by whoever holds Config (`useConfig`).
     show_marks: bool = false,
-    /// After a player move, probe solvability and warn when the board has no completion.
-    warn_dead_moves: bool = false,
-    /// On open/load, probe solvability and warn when the puzzle has no completion.
-    warn_unsolvable_load: bool = false,
+    /// After a player move or an open/load, probe solvability and warn when the board has no completion.
+    warn_solvability: bool = false,
     /// The Pencil switch: draws the pencil marks, and in the manual game makes a digit toggle one
     /// instead of filling. Session state: starts off, never saved. Not the Auto Pencil setting.
     is_pencil: bool = false,
@@ -112,8 +109,7 @@ pub const GameEngine = struct {
     /// Take the Config fields the engine plays by: solvability warnings, Show Pencil Marks and
     /// Auto Pencil. The engine keeps no Config; whoever holds it calls this again after a change.
     pub fn useConfig(self: *@This(), cfg: config.Config) void {
-        self.warn_dead_moves = cfg.warn_solvability;
-        self.warn_unsolvable_load = cfg.warn_solvability;
+        self.warn_solvability = cfg.warn_solvability;
         self.show_marks = cfg.show_marks;
         self.auto_pencil = cfg.auto_pencil;
     }
@@ -259,8 +255,8 @@ pub const GameEngine = struct {
             board.Error.WrongLength => return self.errorEvent(PUZZLE_LENGTH_MSG),
             else => return self.errorEvent(PUZZLE_CHARACTER_MSG),
         };
-        self.beginEventMsg();
-        self.appendEventMsg(loaded_msg);
+        self.beginPendingStatus();
+        self.appendPendingStatus(loaded_msg);
         return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
@@ -270,68 +266,65 @@ pub const GameEngine = struct {
         self.applyOneLinePuzzle(line) catch {
             return self.errorEvent(NEW_GAME_FAILED_MSG);
         };
-        self.beginEventMsg();
-        self.appendEventMsg(NEW_GAME_STARTED_MSG);
+        self.beginPendingStatus();
+        self.appendPendingStatus(NEW_GAME_STARTED_MSG);
         return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
     /// Clear the per-exec scratch buffer before a command appends its text. A command that never
     /// appends leaves the buffer empty, and `finishOkEvent` then keeps the durable status as it is.
-    pub fn beginEventMsg(self: *@This()) void {
-        self.event_msg.reset();
+    pub fn beginPendingStatus(self: *@This()) void {
+        self.pending_status.reset();
     }
 
     /// Append one fragment to the current command's text; several sources may contribute in the
     /// same exec step, and `finishOkEvent` folds the whole of it into the durable status.
-    pub fn appendEventMsg(self: *@This(), part: []const u8) void {
-        self.event_msg.append(part);
+    pub fn appendPendingStatus(self: *@This(), part: []const u8) void {
+        self.pending_status.append(part);
     }
 
     /// Append formatted text to the current `.ok.msg` scratch buffer.
-    pub fn appendEventMsgFmt(self: *@This(), comptime fmt: []const u8, args: anytype) void {
-        self.event_msg.appendFmt(fmt, args);
+    pub fn appendPendingStatusFmt(self: *@This(), comptime fmt: []const u8, args: anytype) void {
+        self.pending_status.appendFmt(fmt, args);
     }
 
     /// Optional solvability check for warning paths — not used by solve_for_me or redo solve_batch.
-    fn probeSolvability(self: *@This(), when: SolvabilityProbe) ?solver.SolveResult {
-        const enabled = switch (when) {
-            .move => self.warn_dead_moves,
-            .load => self.warn_unsolvable_load,
-        };
-        if (!enabled) return null;
+    fn probeSolvability(self: *@This()) ?solver.SolveResult {
+        if (!self.warn_solvability) return null;
         return solver.solve(self.state.board) catch |err| {
             log.info("expected: solvability not checked, the board has a conflict ({s})", .{@errorName(err)});
             return null;
         };
     }
 
-    fn appendUnsolvableLoadWarningIfNeeded(self: *@This()) void {
-        const solved = self.probeSolvability(.load) orelse return;
-        if (solved == .none) hint_command.appendLoadNoSolutionMsg(self);
+    /// Probe solvability; when the board has no completion and the sentence is not already
+    /// showing, append it. Idempotent — a status that already carries the sentence is untouched.
+    fn appendSolvabilityWarningIfNeeded(self: *@This(), sentence: []const u8) void {
+        if (self.pending_status.optional()) |existing| {
+            if (std.mem.indexOf(u8, existing, sentence) != null) return;
+        }
+        const solved = self.probeSolvability() orelse return;
+        if (solved == .none) hint_command.appendNoSolutionMsg(self, sentence);
     }
 
     /// When Solvability Warnings are turned on over a board that is already dead, append the
     /// move-context no-solution sentence to the current status. Idempotent — a status that
     /// already carries the sentence is left unchanged.
     pub fn solvabilityWarningOn(self: *@This()) Event {
-        if (self.event_msg.optional()) |existing| {
-            if (std.mem.indexOf(u8, existing, hint_command.no_solution_msg) != null) return self.unchanged();
-        }
-        const solved = self.probeSolvability(.move) orelse return self.unchanged();
-        if (solved == .none) hint_command.appendNoSolutionMsg(self);
+        self.appendSolvabilityWarningIfNeeded(hint_command.no_solution_msg);
         return self.finishOkEvent(self.state.board.asView(), false, null);
     }
 
     fn finishLoadEvent(self: *@This(), opened_label: ?[]const u8, mode: LoadStatusMode) Event {
-        self.beginEventMsg();
+        self.beginPendingStatus();
         switch (mode) {
             .open => {
-                if (opened_label) |label| self.appendEventMsgFmt(OPENED_FMT, .{label});
-                self.appendUnsolvableLoadWarningIfNeeded();
+                if (opened_label) |label| self.appendPendingStatusFmt(OPENED_FMT, .{label});
+                self.appendSolvabilityWarningIfNeeded(hint_command.load_no_solution_msg);
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
             .startup_restore => {
-                if (self.state.status.optional()) |persisted| self.appendEventMsg(persisted);
+                if (self.state.status.optional()) |persisted| self.appendPendingStatus(persisted);
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
         }
@@ -348,7 +341,7 @@ pub const GameEngine = struct {
         edited_cell: ?event.CellCoord,
     ) Event {
         if (edited_cell) |c| self.selected = c;
-        if (self.event_msg.optional()) |msg| {
+        if (self.pending_status.optional()) |msg| {
             self.state.status.reset();
             self.state.status.append(msg);
         }
@@ -361,7 +354,7 @@ pub const GameEngine = struct {
 
     /// The game shown again as it is, after a command that changed nothing on the board.
     pub fn unchanged(self: *@This()) Event {
-        self.beginEventMsg();
+        self.beginPendingStatus();
         self.marks_changed = false;
         self.last_exec_changed = false;
         return self.finishOkEvent(self.state.board.asView(), false, null);
@@ -374,9 +367,9 @@ pub const GameEngine = struct {
 
     /// One error string in engine scratch — safe for wasm JSON after exec returns.
     pub fn errorEvent(self: *@This(), part: []const u8) Event {
-        self.event_msg.reset();
-        self.event_msg.append(part);
-        return .{ .error_msg = self.event_msg.slice() };
+        self.pending_status.reset();
+        self.pending_status.append(part);
+        return .{ .error_msg = self.pending_status.slice() };
     }
 
     /// Map low-level set-cell errors into user-facing command errors.
@@ -395,12 +388,12 @@ pub const GameEngine = struct {
         self.state.board.refreshConflictsForCell(row, col);
         const view = self.state.board.asView();
         if (view.isConflictingRowCol(row, col)) {
-            self.appendEventMsg(CONFLICT_MSG);
-        } else if (self.probeSolvability(.move)) |solved| {
-            if (solved == .none) hint_command.appendNoSolutionMsg(self);
+            self.appendPendingStatus(CONFLICT_MSG);
+        } else {
+            self.appendSolvabilityWarningIfNeeded(hint_command.no_solution_msg);
         }
         if (self.state.board.isSolved()) {
-            self.appendEventMsg(WIN_STATUS_MSG);
+            self.appendPendingStatus(WIN_STATUS_MSG);
         }
         return self.finishOkEvent(view, false, .{ .row = row, .col = col });
     }
@@ -410,17 +403,17 @@ pub const GameEngine = struct {
         var label_buf: [2]u8 = undefined;
         const label = board.formatCellLabel(&label_buf, row, col);
         if (digit == .zero) {
-            self.appendEventMsgFmt(CLEARED_FMT, .{label});
+            self.appendPendingStatusFmt(CLEARED_FMT, .{label});
         } else {
             // A filled cell reads cell-first like every other sentence, so the digit trails the label.
-            self.appendEventMsgFmt(FILLED_FMT, .{ label, @backingInt(digit) });
+            self.appendPendingStatusFmt(FILLED_FMT, .{ label, @backingInt(digit) });
         }
     }
 
     /// Route a gameplay command through Board mutation + render update.
     /// Session commands (save/open/new/save_as) are handled in native/shell/shell.zig.
     pub fn exec(self: *@This(), cmd: command.Command) Event {
-        self.beginEventMsg();
+        self.beginPendingStatus();
         self.marks_changed = false;
         self.last_exec_changed = true;
         switch (cmd) {
@@ -539,8 +532,8 @@ pub const GameEngine = struct {
                     return self.errorEvent(MOVE_NOT_RECORDED_MSG);
                 };
                 self.state.board.validate();
-                self.beginEventMsg();
-                self.appendEventMsg(WIN_STATUS_MSG);
+                self.beginPendingStatus();
+                self.appendPendingStatus(WIN_STATUS_MSG);
                 return self.finishOkEvent(self.state.board.asView(), false, null);
             },
         }
@@ -569,7 +562,7 @@ fn execTest(engine: *GameEngine, cmd: command.Command) Event {
 }
 
 fn execMoveTest(engine: *GameEngine, cmd: command.Command) Event {
-    engine.warn_dead_moves = true;
+    engine.warn_solvability = true;
     return engine.exec(cmd);
 }
 
@@ -584,7 +577,7 @@ fn sentenceThen(buf: []u8, head: []const u8, then: []const u8) []const u8 {
 }
 
 fn openFromSaveProbeTest(engine: *GameEngine, buf: []const u8, opened_label: ?[]const u8) Event {
-    engine.warn_unsolvable_load = true;
+    engine.warn_solvability = true;
     return engine.openFromSave(buf, opened_label);
 }
 
@@ -1737,8 +1730,7 @@ test "getLegend: Save and Open always available" {
 test "useConfig gives the engine the solvability warnings, Show Pencil Marks and Auto Pencil" {
     var engine = try GameEngine.init(puzzle_gen.PuzzleGen.default(), config.Config.default());
     defer engine.deinit();
-    try std.testing.expect(!engine.warn_dead_moves);
-    try std.testing.expect(!engine.warn_unsolvable_load);
+    try std.testing.expect(!engine.warn_solvability);
     try std.testing.expect(!engine.auto_pencil);
 
     var cfg = config.Config.default();
@@ -1746,8 +1738,7 @@ test "useConfig gives the engine the solvability warnings, Show Pencil Marks and
     cfg.show_marks = !cfg.show_marks;
     cfg.auto_pencil = true;
     engine.useConfig(cfg);
-    try std.testing.expect(engine.warn_dead_moves);
-    try std.testing.expect(engine.warn_unsolvable_load);
+    try std.testing.expect(engine.warn_solvability);
     try std.testing.expectEqual(cfg.show_marks, engine.show_marks);
     try std.testing.expectEqual(cfg.auto_pencil, engine.auto_pencil);
 }
@@ -1924,12 +1915,12 @@ test "a new game reaches the status line through the seam and keeps no selection
 
     // Leave text in the scratch buffer, as a command that ran before would; a new game goes through
     // the seam, so its own text replaces that, not just the durable status.
-    engine.appendEventMsg("stale fragment");
+    engine.appendPendingStatus("stale fragment");
     const started = engine.newFromOneLinePuzzle(puzzle_gen.PuzzleGen.hard());
     try std.testing.expect(started == .ok);
     try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, started.ok.msg.?);
     try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, engine.durableStatus().?);
-    try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, engine.event_msg.optional().?);
+    try std.testing.expectEqualStrings(NEW_GAME_STARTED_MSG, engine.pending_status.optional().?);
     // The selection is the new board's own; a new game neither sets nor carries one over.
     try std.testing.expectEqual(@as(?event.CellCoord, null), engine.selected);
 }

@@ -35,8 +35,7 @@ test "initEngineFromStartup seeds an empty board, gives the engine its Config fi
 
     try std.testing.expectEqual(startup.log_level, logger.min_level);
 
-    try std.testing.expectEqual(startup.warn_solvability, engine.warn_dead_moves);
-    try std.testing.expectEqual(startup.warn_solvability, engine.warn_unsolvable_load);
+    try std.testing.expectEqual(startup.warn_solvability, engine.warn_solvability);
     try std.testing.expectEqual(startup.show_marks, engine.show_marks);
 
     const board = engine.eventBoard();

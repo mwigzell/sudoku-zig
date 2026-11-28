@@ -366,7 +366,7 @@ test "set_config changes the Config held beside the engine, and the engine takes
         try testing.expectEqual(cfg, shown);
     }
     try testing.expectEqual(logger.Severity.debug, logger.min_level);
-    try testing.expect(engine.warn_dead_moves and engine.warn_unsolvable_load);
+    try testing.expect(engine.warn_solvability);
     try testing.expect(!engine.show_marks);
 }
 
@@ -384,7 +384,7 @@ test "toggling warn_solvability on over a dead board appends the no-solution sen
     engine.state.board = try board.fromFlat(flat, .{ .given_bits = given_bits });
     engine.state.board.validate();
     // The prior command left its message in the scratch buffer; the toggle appends to it.
-    engine.appendEventMsg("existing message");
+    engine.appendPendingStatus("existing message");
 
     var session = FileSession{};
     var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "warn_solvability", .value = .{ .on = true } } });
@@ -404,7 +404,7 @@ test "toggling warn_solvability on again appends nothing when the sentence is al
     const given_bits: board.CellMask = 0x54949b0d901361b25254;
     engine.state.board = try board.fromFlat(flat, .{ .given_bits = given_bits });
     engine.state.board.validate();
-    engine.appendEventMsg("existing message");
+    engine.appendPendingStatus("existing message");
 
     var session = FileSession{};
     var flow = CommandFlow.init(&engine, &session, &cfg, .{ .set_config = .{ .field = "warn_solvability", .value = .{ .on = true } } });
