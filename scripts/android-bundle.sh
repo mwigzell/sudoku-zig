@@ -5,8 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ "$#" -ne 11 ]]; then
-  echo "usage: $0 <sdk_root> <min_api> <out_dir> <main_java> <jni_java> <manifest> <res_dir> <so_path> <aab_name> <version_code> <version_name>" >&2
+if [[ "$#" -ne 13 ]]; then
+  echo "usage: $0 <sdk_root> <min_api> <out_dir> <main_java> <jni_java> <manifest> <res_dir> <so_path> <aab_name> <version_code> <version_name> <symbols_so_path> <symbols_zip_name>" >&2
   exit 1
 fi
 
@@ -21,6 +21,8 @@ SO_PATH="$8"
 AAB_NAME="$9"
 VERSION_CODE="${10}"
 VERSION_NAME="${11}"
+SYMBOLS_SO_PATH="${12}"
+SYMBOLS_ZIP_NAME="${13}"
 
 source "$ROOT/scripts/android-sdk-tools.sh"
 resolve_android_tools "$SDK_ROOT" "$MIN_API"
@@ -58,5 +60,13 @@ cp "$SO_PATH" "$MODULE/lib/arm64-v8a/libsudoku_zig.so"
   -keystore "$ANDROID_RELEASE_KEYSTORE" -storepass:env ANDROID_RELEASE_STORE_PASS -keypass:env ANDROID_RELEASE_KEY_PASS \
   -signedjar "$OUT/$AAB_NAME" "$OUT/unsigned.aab" "$ANDROID_RELEASE_KEY_ALIAS" >/dev/null
 "$JAVA" -jar "$BUNDLETOOL_JAR" validate --bundle="$OUT/$AAB_NAME" >/dev/null
-
 echo "App Bundle ready: $OUT/$AAB_NAME"
+
+# Package the unstripped .so into symbols.zip for Play Console symbolication.
+# The zip keeps the ABI layout Google expects (arm64-v8a/libsudoku_zig.so); it is a
+# side artifact, never bundled into the AAB and never installed on a device.
+SYMBOLS_STAGE="$OUT/symbols"
+mkdir -p "$SYMBOLS_STAGE/arm64-v8a"
+cp "$SYMBOLS_SO_PATH" "$SYMBOLS_STAGE/arm64-v8a/libsudoku_zig.so"
+(cd "$SYMBOLS_STAGE" && zip -qr "$OUT/$SYMBOLS_ZIP_NAME" arm64-v8a/libsudoku_zig.so)
+echo "Debug symbols ready: $OUT/$SYMBOLS_ZIP_NAME"

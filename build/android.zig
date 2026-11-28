@@ -13,9 +13,11 @@ const SoSubPathDebug = "libsudoku_zig.so";
 /// The x86_64 build: emulators on x86_64 hosts, alongside the arm64 device build.
 const SoSubPathDebugX86 = "x86_64/libsudoku_zig.so";
 const SoSubPathRelease = "release/libsudoku_zig.so";
+const SoSubPathSymbols = "symbols/arm64-v8a/libsudoku_zig.so";
 const SoPathDebug = "zig-out/lib/" ++ SoSubPathDebug;
 const SoPathDebugX86 = "zig-out/lib/" ++ SoSubPathDebugX86;
 const SoPathRelease = "zig-out/lib/" ++ SoSubPathRelease;
+const SoPathSymbols = "zig-out/lib/" ++ SoSubPathSymbols;
 const AndroidStepDesc = "Build a debug-signed Android APK (arm64-v8a + x86_64, no Gradle)";
 const AndroidTestStepDesc = "Run the UiAutomator file bridge tests against a connected emulator";
 const AndroidGateStepDesc = "Run the named file bridge methods on one device and record the evidence (needs -Dandroid-methods)";
@@ -118,6 +120,9 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     const optimize_debug = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
     // The bundle's native library is always built with release optimization.
     const optimize_release: std.builtin.OptimizeMode = .ReleaseSmall;
+    // The unstripped symbols copy keeps full debug info for Play Console symbolication,
+    // but is never bundled into the AAB or installed on a device.
+    const optimize_symbols: std.builtin.OptimizeMode = .ReleaseSafe;
 
     const host_prebuilt = resolveHostPrebuiltTag(b, ndk_root);
     const sysroot = b.pathJoin(&.{
@@ -137,6 +142,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     android_lib_step.dependOn(&install_debug_x86.step);
 
     const install_release = addAndroidLib(b, sysroot, .aarch64, optimize_release, SoSubPathRelease, deps.wasm_emit, deps.gen_build_info);
+    const install_symbols = addAndroidLib(b, sysroot, .aarch64, optimize_symbols, SoSubPathSymbols, deps.wasm_emit, deps.gen_build_info);
 
     const sdk_opt = b.option([]const u8, "sdk", "Android SDK root (default: $ANDROID_HOME or $ANDROID_SDK_ROOT)");
     const sdk_root = resolveSdkRoot(b, sdk_opt) orelse {
@@ -230,6 +236,7 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
     const android_gate_step = b.step("android-gate", AndroidGateStepDesc);
     android_gate_step.dependOn(&run_gate.step);
 
+    const bundle_aab_name = b.fmt("sudoku-{s}.aab", .{deps.version_name});
     const package_bundle = b.addSystemCommand(&.{
         "bash",
         "scripts/android-bundle.sh",
@@ -241,12 +248,15 @@ pub fn addAndroidStep(b: *std.Build, deps: struct {
         ManifestPath,
         ResourcePath,
         SoPathRelease,
-        BundleName,
+        bundle_aab_name,
         b.fmt("{d}", .{deps.version_code}),
         deps.version_name,
+        SoPathSymbols,
+        "symbols.zip",
     });
     package_bundle.has_side_effects = true;
     package_bundle.step.dependOn(&install_release.step);
+    package_bundle.step.dependOn(&install_symbols.step);
     const android_bundle_step = b.step("android-bundle", AndroidBundleStepDesc);
     android_bundle_step.dependOn(&package_bundle.step);
     return android_step;

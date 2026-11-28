@@ -57,5 +57,13 @@ The console gives no guided order and no explanation of these rules; this memo i
 - Version code = `major*10000 + minor*100 + patch`.
 - Each release needs a higher version code than the last.
 - Build the signed AAB with `zig build android-bundle` (needs `ANDROID_RELEASE_KEYSTORE`
-  and the pass env vars), then copy `zig-out/android-bundle/sudoku.aab` into
+  and the pass env vars), then copy `zig-out/android-bundle/sudoku-<version>.aab` into
   `.releases/` with the version in the name (e.g. `sudoku-0.1.1.aab`).
+
+## Debug symbols
+
+The AAB ships the stripped `.so`; Google wants the unstripped copy separately for
+crash symbolication. `zig build android-bundle` also emits `zig-out/android-bundle/symbols.zip`
+(unstripped `arm64-v8a/libsudoku_zig.so`). Upload it in Play Console to clear the
+"Native code, no debug symbols" warning. It is never bundled into the AAB or installed
+on a device. The "No deobfuscation file" warning is expected — the app is not obfuscated.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Unpack the App Bundle into one universal sudoku.apk, install it on the one connected device or emulator and launch it.
-# Usage: scripts/android-run-bundle.sh [aab]   (default zig-out/android-bundle/sudoku.aab; build it with zig build android-bundle)
+# Usage: scripts/android-run-bundle.sh [aab]   (default zig-out/android-bundle/sudoku-<version>.aab; build it with zig build android-bundle)
 # bundletool signs the APK with the debug keystore, the same key as zig build android, so it installs over the debug build.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-AAB="${1:-zig-out/android-bundle/sudoku.aab}"
+AAB="${1:-zig-out/android-bundle/sudoku-0.1.2.aab}"
 OUT="zig-out/android-bundle/apk"
 APP_PACKAGE="com.wigzell.sudoku_zig"
 SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"

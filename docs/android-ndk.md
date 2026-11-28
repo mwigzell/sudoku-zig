@@ -49,8 +49,13 @@ Use `zig build android-lib` when you only want the `.so`.
 
 Google Play takes an Android App Bundle, not an APK. This step builds the native library with `ReleaseSmall`, links the resources and manifest with `aapt2` in proto format, builds the bundle with `bundletool`, signs it with your upload key (`jarsigner`) and runs `bundletool validate`. Version code and name come from the same build values as the debug APK.
 
+The signed AAB is named `sudoku-<version>.aab` (e.g. `sudoku-0.1.2.aab`). It ships the **stripped** `.so` — that is what users install, unchanged.
+
+The step also builds a second, unstripped `.so` (`ReleaseSafe`) and packages it into `symbols.zip`, laid out by ABI (`arm64-v8a/libsudoku_zig.so`). Upload that zip to Play Console to resolve the "Native code, no debug symbols" warning; it is never bundled into the AAB and never installed on a device.
+
 ```text
-zig-out/android-bundle/sudoku.aab
+zig-out/android-bundle/sudoku-0.1.2.aab
+zig-out/android-bundle/symbols.zip
 ```
 
 Signing comes from the environment; the step fails with a clear error when a variable is missing or the keystore does not open with it. Keep the keystore and its passwords out of the repo.
